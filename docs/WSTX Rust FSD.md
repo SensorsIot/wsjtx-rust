@@ -87,6 +87,34 @@ the [station communication contract](COMMUNICATION.md). Additional operating com
 radio control ownership and optional desktop packaging remain to be specified. A browser
 client is the initial interface direction; a Tauri or other desktop wrapper has not been selected.
 
+### 3.6 Additional targets: configured instances and direct FlexRadio access
+
+The following targets extend the status-only communication slice. They are **specified,
+not implemented or accepted by CR #3**. Their phase numbers describe the requested
+sequence for this extension, not completion of the broader delivery milestones.
+
+- **Phase 1:** at least four independent station-server instances on the same Windows
+  PC, each with its own port, persisted configuration and separate browser window.
+- **Phase 2:** offer an optional direct FlexRadio connection type for a station profile,
+  using the native network API and an intended radio/slice association for that profile.
+
+The default connection path uses the ordinary WSJT-X-style audio-device interface,
+with optional CAT/PTT rig control as required. Physical or virtual audio devices and
+the operator's selected rig-control infrastructure remain supported. That standard
+path may use external FlexRadio desktop/CAT/DAX software when the operator chooses it.
+The optional native FlexRadio path removes those desktop bridges for profiles selecting it.
+
+Each profile independently selects its connection type. Four concurrent instances may
+mix standard audio/rig-control and native FlexRadio profiles. Both paths use the same
+HTML browser interface, station operations, DSP/modem functions and future MCP interface;
+native FlexRadio support neither replaces the general product nor introduces a separate UI.
+
+Four logical station servers do not imply four separate FlexRadio GUI-client connections,
+four physical radios or four independent transmitters. Shared-radio connection/resource
+coordination may be implemented inside the Rust system. The supported radio and firmware
+must actually supply the slice capacity needed by the selected operating scenario;
+four slices are not assumed available on every FlexRadio model.
+
 ## 4. Proposed functional requirements
 
 The broad requirements below are refined during the upstream inventory and their
@@ -116,6 +144,8 @@ the other functional areas retain their proposed scope until settled.
 | FR-019 | Browser operator interface | Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. |
 | FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
 | FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
+| FR-022 | Concurrent persisted station profiles — phase 1 target | Run at least four independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Preserve instance identity and access isolation across restart and concurrent use. Specified target; not implemented or accepted by CR #3. |
+| FR-023 | Optional direct FlexRadio integration — phase 2 target | Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Specified target; not implemented or accepted by CR #3. |
 
 ### 4.1 Browser–server status functions
 
@@ -148,6 +178,81 @@ It exposes no radio-control, transmit, decoding, spectrum or MCP commands. Those
 functions remain governed by their broader requirements and implementing CRs. Future
 spectrum delivery may use compact binary frames with adjustable resolution/rate and
 discard obsolete frames; it is outside the status profile specified here.
+
+### 4.2 Concurrent persisted station profiles — target FR-022
+
+These are additional target clauses. The current environment-variable configuration and
+single-instance status contract do not establish profile persistence or secure concurrent
+four-instance operation.
+
+1. The application MUST support at least four independent station-server instances on
+   the same Windows PC. Each MUST have a distinct listening port, its own persisted
+   profile and an identifiable browser window. Four windows connected to one server do
+   not satisfy this requirement.
+2. Each profile MUST retain its instance identity and selected operating configuration
+   across server/PC restart. Configuration edits and recovery of one profile MUST NOT
+   modify another profile. The configuration format, storage location and editing workflow
+   are selected before implementation; they are not defined by the current environment settings.
+3. Each server MUST load the explicitly selected profile and fail clearly if its port
+   is already occupied or its profile is concurrently owned incompatibly. A collision
+   MUST NOT overwrite configuration or silently attach a browser to a different station.
+   Stopping/restarting one instance MUST leave the other three usable.
+4. Access credentials, login state and station requests MUST remain isolated when the
+   four endpoints use the same hostname and the windows share one browser profile.
+   Concurrent authentication and reconnection MUST not overwrite another instance's
+   session or authorize a request to the wrong station.
+5. Each profile MUST independently persist its connection type, defaulting to the standard
+   audio-device/optional CAT/PTT path. Once the optional phase-2 type is implemented,
+   standard and native FlexRadio profiles MUST run concurrently. Native radio/slice
+   association fields apply only to a profile selecting the native FlexRadio type;
+   they MUST NOT become required configuration for a standard audio/rig-control profile.
+   The persisted association expresses operator intent, not an assumption that an
+   observed runtime slice index remains stable after reconnect or radio restart.
+
+HTTP cookies are not isolated by port; see
+[RFC 6265, section 8.5](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5).
+The current status server uses the same cookie name/path across ports. A future
+multi-instance session design must address that shared-browser collision; the current
+single-instance authentication tests do not verify FR-022 clause 4.
+
+### 4.3 Optional native FlexRadio integration — target FR-023
+
+FlexRadio documents direct TCP command/status access and UDP streaming, and lists its
+native API separately from the Windows .NET FlexLib option. These are the integration
+starting points, not a promise that every model/firmware offers identical resources:
+[developer program](https://www.flexradio.com/api/developer-program/),
+[API overview](https://www.flexradio.com/api).
+
+1. Phase 2 MUST offer direct native-network integration as an optional profile connection
+   type for the selected radio control, status and sample-stream functions. When selected,
+   that native path MUST NOT require the external SmartSDR desktop application, SmartSDR
+   CAT or DAX applications to be installed/running as bridges. This restriction does not
+   prohibit those tools as operator-selected infrastructure for the standard connection
+   path. A Rust implementation may coordinate
+   shared radio access internally without forcing one hardware GUI-client session per
+   logical station server.
+2. This independence concerns desktop applications. Compatible radio-side firmware and
+   its API remain required; this specification does not promise a FlexRadio operating
+   without its SmartSDR radio firmware or an unrestricted firmware compatibility range.
+   Pin supported models, firmware/API versions and selected stream formats before implementation.
+3. Each native FlexRadio profile MUST persist its intended radio and slice association. On every
+   connection/reconnection the system MUST reconcile that intent with authoritative
+   discovery/status and current runtime handles. A changed/transient slice index MUST
+   NOT redirect a station to another station's slice. Unresolvable associations MUST
+   produce a visible unavailable/conflict state rather than guessing a replacement.
+4. Control responses and received stream data MUST be routed to the associated station.
+   Capacity shortages, occupied resources and incompatible API behavior MUST be reported
+   without stealing another profile's slice or silently reducing the requested independence.
+   Four-slice hardware validation requires a model/configuration that actually provides
+   at least four usable slices.
+5. Shared-radio transmit, tuning and other constrained-resource authority MUST be
+   coordinated under FR-008/FR-009 before those operations are enabled. Four station
+   profiles do not confer simultaneous independent transmit authority. Reconnect/profile
+   restoration MUST NOT replay an old transmit request or bypass the future ownership policy.
+6. The native path MUST reuse the common browser, station-operation, DSP/modem and future
+   MCP interfaces. The default standard connection remains usable without FlexRadio
+   hardware or native-profile fields. A mixed set of four instances MUST preserve each
+   profile's selected path, configuration and routing independently.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -363,6 +468,178 @@ or constitute new radio functions. **Level:** 2 — Isolated automated tests.
 | `peer helper: heartbeat interleaving preserves response and total deadline`; [peer.cjs](../tests/peer.cjs) | Emit an exact protocol heartbeat before a known response, then feed unsupported/unexpected events; repeatedly emit valid heartbeats without a response. | The helper returns the known response, exposes other events to the caller's oracle and times out on one unchanged total deadline; listeners are cleaned up. Supports TC-021-005/008. |
 | `link simulator: shared bulk throughput and RTT`; [support.cjs](../tests/support.cjs) | Send concurrent known-size echo transfers through one shared bottleneck, followed by a one-byte round trip. | Independent wall-clock checks reject a link that is either too fast or improperly serialized by propagation delay, and verify the minimum RTT. Supports TC-021-008. |
 
+### 6.2 Planned tests for concurrent persisted profiles
+
+**Status:** planned definitions for FR-022. These tests have no implemented executable
+trace or acceptance result yet. They are additional work beyond CR #3; the status-only
+tests in section 6.1 do not substitute for them. The selected execution location is the
+Windows development PC; hosted execution remains an explicitly chosen alternative.
+
+#### TC-022-001 — Four independent servers and browser windows
+
+**Promise:** FR-022, clauses 1–2 and 5. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC, four candidate server instances and four real browser
+windows, using distinct temporary ports/profiles; no radio or live service.
+
+**Inputs/actions:** Prepare four visibly distinct station profiles, start their servers
+and open one separate browser window for each endpoint. Refresh/query all four, then
+change a setting in one profile through the specified configuration workflow.
+Use standard connection profiles for phase 1; once the optional native connection is
+available, repeat with mixed standard and native profiles using isolated device/API fixtures.
+
+**Expected results:** Four distinct listening endpoints and station identities are
+observable concurrently. Each window displays only its own instance's state. Requests
+and the configuration change affect the selected instance; the other profiles/windows
+remain unchanged. Four windows on a single endpoint fail this case.
+
+#### TC-022-002 — Persistence and independent restart
+
+**Promise:** FR-022, clauses 2 and 5. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC with disposable profile storage, four local server
+instances and real browser windows; no physical radio.
+
+**Inputs/actions:** Save different supported settings for each profile, stop the
+instances and restart them using their selected profiles. Repeat after a controlled
+application/PC restart. Include intended radio/slice association data once its phase-2
+schema is defined; use an emulator for any connection needed to observe it.
+
+**Expected results:** Each instance restores its own saved identity/settings and connection
+type without borrowing another profile's configuration. Native profiles also restore
+their intended association; standard profiles require no native radio/slice fields. Runtime radio handles
+are re-established from current status rather than treated as permanent persisted IDs.
+Missing/corrupt configuration follows the agreed recovery behavior without overwriting
+another profile; that behavior must be settled before implementing this case.
+
+#### TC-022-003 — Stop isolation and collision refusal
+
+**Promise:** FR-022, clause 3. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC, four local candidate instances with disposable profiles
+and controlled occupied-port/profile-lock fixtures.
+
+**Inputs/actions:** While four windows are active, stop one server and continue querying
+the other three. Restart the stopped server. Attempt another launch using an occupied
+port and, separately, a profile already owned incompatibly by an active instance.
+
+**Expected results:** Only the stopped window becomes stale; the other three remain
+usable. Restart reconnects the intended window/profile. Each conflicting launch fails
+clearly before it can alter stored configuration or masquerade as another station.
+
+#### TC-022-004 — Four-instance authentication in one browser profile
+
+**Promise:** FR-022, clause 4. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC, four local TLS server endpoints on distinct ports of
+the **same hostname**, separate test credentials and four windows sharing the **same
+browser profile/cookie store**. Separate browser contexts do not satisfy this case.
+
+**Inputs/actions:** Authenticate independently to each station, refresh all four, then
+force each connection to reconnect. Re-authenticate or rotate access for one station
+according to the selected access contract. Attempt to use one station's credential or
+session at another station's endpoint.
+
+**Expected results:** Each station remains independently authenticated and its requests
+reach only that station. Logging in/reconnecting at one port does not invalidate or
+overwrite the others' sessions. Cross-station credentials/sessions are denied. Cookie
+behavior across ports must be exercised explicitly; the current common-name cookie
+implementation is not accepted as satisfying this planned requirement.
+
+### 6.3 Planned tests for direct FlexRadio integration
+
+**Status:** planned definitions for FR-023, not implemented tests or hardware results.
+Exact protocol fixtures and supported hardware/firmware are selected and pinned before
+implementation. Purely simulated tests do not establish live-radio interoperability.
+
+#### TC-023-001 — Direct protocol and four-station route isolation
+
+**Promise:** FR-023, clauses 1 and 4. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC, candidate Rust system, four station profiles/windows
+and an independent local FlexRadio protocol emulator; no real radio or external service.
+
+**Inputs/actions:** Run with external SmartSDR desktop/CAT/DAX applications absent or
+stopped. Exercise the selected native TCP command/status exchange and UDP sample-stream
+path against pinned reference fixtures. Give each emulated slice distinguishable state
+and data; send concurrent operations from the four logical station servers.
+
+**Expected results:** The Rust system connects directly to the emulated API without a
+desktop bridge. Each response/state update/stream reaches the intended station and no
+other station. Operations change only the associated emulated resource. The oracle uses
+independently specified protocol fixtures, not packets generated by the code under test.
+
+#### TC-023-002 — Persisted intent and changed runtime handles
+
+**Promise:** FR-023, clauses 3–5. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
+
+**Inputs/actions:** Save intended radio/slice associations, disconnect/restart the
+emulated radio and assign different runtime handles before reconnecting. Also present
+missing, ambiguous or occupied intended resources and stale status updates.
+
+**Expected results:** Each profile reconciles its intent with current authoritative
+resources; transient indices do not route it to another station. Unresolved intent is
+reported as unavailable/conflicting without stealing a resource, replaying transmit
+requests or accepting stale handles as authority.
+
+#### TC-023-003 — Capability limits and shared-resource coordination
+
+**Promise:** FR-023, clauses 2, 4–6; FR-008/FR-009. **Level: 2 — Isolated automated tests.**
+**Where it runs:** Windows PC, four logical station servers and an API/resource emulator.
+
+**Inputs/actions:** Emulate sufficient and insufficient slice capacities, incompatible
+supported-version conditions and concurrent conflicting resource requests. Include a
+mixed set of standard audio/rig-control profiles and native FlexRadio profiles, with
+the standard device/rig-control side represented by independent local fixtures. Exercise
+the shared-radio authority policy once specified; use simulated transmit intent only.
+
+**Expected results:** Supported capacity permits the requested independent receive
+resources; insufficient capacity/version incompatibility is explicit and preserves
+existing station ownership. Conflicting operations follow the agreed coordination
+policy. Four server instances never imply four independently authorized transmitters.
+Standard profiles continue through their selected audio/rig-control path without native
+FlexRadio settings; native profiles use the direct API. Both are presented through the
+same browser and shared station-operation interfaces, with no cross-profile routing.
+
+#### TC-023-004 — Live direct-radio tuning and slice lifecycle
+
+**Promise:** FR-023; FR-009. **Level: 4 — Controlled live tests with operator consent.**
+**Where it runs:** Windows PC and a designated FlexRadio test station, using a recorded
+supported model/firmware and hardware capacity of at least four usable slices.
+
+**Inputs/actions:** With explicit consent, stop the external SmartSDR desktop/CAT/DAX
+applications, connect the candidate directly, establish the intended slice associations
+and perform approved receive tuning and slice allocation/release/reconnection. Record
+and restore the test station's agreed operating state. Do not transmit in this case.
+
+**Expected results:** Direct control/status and selected receive streams operate without
+those desktop applications. Each station retains its intended slice and other stations
+remain isolated through the approved lifecycle actions. Live tuning/allocation changes
+radio state, so this case is not classified as read-only level 3.
+
+#### TC-023-005 — Observational live status, only where genuinely read-only
+
+**Promise:** FR-023. **Level: 3 — Live read-only tests.**
+**Where it runs:** An authorized designated FlexRadio station and the Windows PC.
+
+**Inputs/actions:** Observe existing discovery/status/stream identity using a path that
+does not allocate/release slices, tune, change configuration or request transmission.
+
+**Expected results:** Reported state matches the designated radio without changing its
+operating resources. If the selected API workflow requires such changes, use the level-4
+case and operator consent instead; do not relabel a mutating test as observational.
+
+#### TC-023-006 — Conditional future transmit validation
+
+**Promise:** FR-008/FR-009 and FR-023 clause 5.
+**Level: 5 — Tests with external effects and explicit operator consent.**
+**Where it runs:** A designated authorized physical test station, only after transmit
+functionality, its ownership policy and the specific test operation have been approved.
+
+**Inputs/actions:** Under that later approval, request a controlled transmission from
+the owning station and a conflicting request from another profile; exercise the
+specified abort/device-loss path.
+
+**Expected results:** The agreed single-radio transmit authority is enforced, conflicts
+are refused and FR-008 halt/failure behavior is met. This conditional definition does
+not authorize transmission now or make it part of the receive-only live test above.
+
 ## 7. Proposed delivery milestones
 
 | Milestone | Deliverable | Exit evidence |
@@ -403,6 +680,9 @@ The first Windows release may occur before full-suite coverage at M3 or M4. Its 
 
 - [Experimental beta behavior reference](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4)
 - [Sample recordings and provenance](SAMPLES.md)
+- [FlexRadio native API developer program](https://www.flexradio.com/api/developer-program/)
+- [FlexRadio API overview](https://www.flexradio.com/api)
+- [HTTP cookies and port isolation, RFC 6265 section 8.5](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5)
 - [Upstream source at the imported baseline](https://github.com/WSJTX/wsjtx/tree/967c85a6119110788b0df3782cf796485b2cee14)
 - [Upstream program and mode overview](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/README.md)
 - [Upstream GPLv3 license](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/COPYING)
