@@ -211,6 +211,7 @@ fn reply(text: &str) -> Value {
         || object.len() != 3
         || !object.contains_key("v")
         || !object.contains_key("type")
+        || !value["type"].is_string()
     {
         return error(id, "invalid_request");
     }

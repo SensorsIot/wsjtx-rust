@@ -55,7 +55,7 @@ test('TC-021-005: actual-server correlation, negative cases and size boundaries'
   const expected = id => ({v: 1, type: 'station.status', id, data: {version: '0.1.0', radio: 'unconfigured'}});
   const [ra, rb] = await Promise.all([request(a, '{"v":1,"type":"station.get","id":12}'), request(b, '{"v":1,"type":"station.get","id":24}')]);
   assert.deepEqual(ra, expected(12)); assert.deepEqual(rb, expected(24));
-  for (const [input, code] of [['{', 'invalid_json'], ['[]', 'invalid_request'], ['{"v":2,"type":"station.get","id":1}', 'unsupported_version'], ['{"v":1,"type":"unknown","id":1}', 'unknown_command'], ['{"v":1,"type":"station.get"}', 'invalid_request'], ['{"v":1,"type":"station.get","id":"1"}', 'invalid_request'], ['{"v":1,"type":null,"id":1}', 'invalid_request'], ['{"v":1,"type":"station.get","id":9007199254740992}', 'invalid_request'], ['{"v":1,"type":"station.get","id":1,"extra":0}', 'invalid_request']]) {
+  for (const [input, code] of [['{', 'invalid_json'], ['[]', 'invalid_request'], ['{"v":2,"type":"station.get","id":1}', 'unsupported_version'], ['{"v":1,"type":"unknown","id":1}', 'unknown_command'], ['{"v":1,"type":"station.get"}', 'invalid_request'], ['{"v":1,"type":"station.get","id":"1"}', 'invalid_request'], ['{"v":1,"type":null,"id":1}', 'invalid_request'], ['{"v":2,"type":null,"id":1}', 'invalid_request'], ['{"v":1,"type":"station.get","id":9007199254740992}', 'invalid_request'], ['{"v":1,"type":"station.get","id":1,"extra":0}', 'invalid_request']]) {
     assert.equal((await request(a, input)).data.code, code, input);
   }
   const text = '{"v":1,"type":"station.get","id":12}';
@@ -73,6 +73,7 @@ test('TC-021-006: real browser, two clients, desktop and mobile layout', async t
   t.after(() => Promise.all(contexts.map(c => c.close())));
   const pages = await Promise.all(contexts.map(c => c.newPage()));
   const errors = []; for (const page of pages) page.on('pageerror', error => errors.push(String(error)));
+  for (const page of pages) page.on('response', response => {if (['/', '/app.js', '/style.css'].includes(new URL(response.url()).pathname) && !response.ok()) errors.push(`${response.status()} ${response.url()}`);});
   await Promise.all(pages.map(p => connected(p, app.origin)));
   for (const page of pages) {assert.equal(await page.locator('#version').textContent(), '0.1.0'); assert.equal(await page.locator('#radio').textContent(), 'Radio not configured');}
   await pages[0].screenshot({path: 'test-results/station-desktop.png', fullPage: true});
@@ -101,6 +102,12 @@ test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t 
   const restored = Date.now(); proxy.restore();
   await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
   assert.ok(Date.now() - restored < 10000); assert.equal(requests, 2, 'fresh snapshot requested');
+  const silentStart = Date.now(); proxy.blackhole();
+  await page.locator('#connection[data-state="stale"]').waitFor({timeout: 14000});
+  assert.ok(Date.now() - silentStart <= 14000, '13-second detection bound plus 1-second scheduler tolerance');
+  const silentRestore = Date.now(); proxy.restore();
+  await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
+  assert.ok(Date.now() - silentRestore < 10000); assert.equal(requests, 3, 'snapshot after silent failure');
 });
 
 // Proves: FR-021; CL-003-05, CL-003-08; level 2, TLS byte-stream link model, not packet capture.
@@ -111,23 +118,28 @@ test('TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget', {timeout
   proxy.target.port = Number(new URL(app.endpoint).port);
   const contexts = await Promise.all([contextFor(origin, true), contextFor(origin, true)]); t.after(() => Promise.all(contexts.map(c => c.close())));
   const pages = await Promise.all(contexts.map(c => c.newPage()));
-  const started = Date.now(); await Promise.all(pages.map(p => connected(p, origin)));
-  const cold = {milliseconds: Date.now() - started, bytes: {...proxy.counters}};
+  const started = Date.now();
+  const coldPages = await Promise.all(pages.map(async page => {
+    await page.goto(origin);
+    const pageLoaded = Date.now();
+    const resources = await page.evaluate(() => [performance.getEntriesByType('navigation')[0], ...performance.getEntriesByType('resource')].map(entry => ({url: entry.name, transferBytes: entry.transferSize, encodedBodyBytes: entry.encodedBodySize, durationMs: entry.duration})));
+    await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
+    const statusAfterLoadMs = Date.now() - pageLoaded; assert.ok(statusAfterLoadMs < 10000);
+    return {pageLoadMs: pageLoaded - started, statusAfterLoadMs, resources};
+  }));
+  const cold = {milliseconds: Date.now() - started, bytes: {...proxy.counters}, pages: coldPages};
   const baseline = {...proxy.counters}; const idleStart = Date.now();
   await sleep(60000);
   const seconds = (Date.now() - idleStart) / 1000;
   const mean = {up: (proxy.counters.up - baseline.up) / seconds, down: (proxy.counters.down - baseline.down) / seconds};
   for (const direction of ['up', 'down']) assert.ok(mean[direction] <= 1000, `${direction} ${mean[direction]} bytes/s`);
-  for (const page of pages) {
-    const latency = await page.evaluate(() => new Promise((resolve, reject) => {
-      const start = performance.now(); const ws = new WebSocket(`wss://${location.host}/ws`, 'wstx.v1');
-      ws.onopen = () => {window.requestStart = performance.now(); ws.send('{"v":1,"type":"station.get","id":99}');};
-      ws.onmessage = event => {if (JSON.parse(event.data).id === 99) {resolve({request: performance.now() - window.requestStart, connect: performance.now() - start}); ws.close();}};
-      ws.onerror = reject;
-    }));
-    assert.ok(latency.request < 2000, JSON.stringify(latency)); assert.ok(latency.connect < 10000);
-  }
-  const result = {model: 'actual TLS stream + modelled TCP/IPv6/ACK overhead; no packet capture', cold, idleMeanBytesPerSecond: mean};
+  const latencies = await Promise.all(pages.map(async page => {
+    const previous = await page.locator('#updated').textContent(); const start = Date.now();
+    await page.locator('#refresh').click();
+    await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previous, {timeout: 2000});
+    const milliseconds = Date.now() - start; assert.ok(milliseconds < 2000); return milliseconds;
+  }));
+  const result = {model: 'actual TLS stream + modelled TCP/IPv6/ACK overhead; no packet capture', cold, idleMeanBytesPerSecond: mean, concurrentVisibleRefreshMs: latencies};
   console.log(JSON.stringify(result)); await fs.writeFile('test-results/link-budget.json', JSON.stringify(result, null, 2));
 });
 
@@ -153,7 +165,7 @@ test('TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal', asy
   const app = await server(tlsEnv); t.after(() => app.close());
   const context = await contextFor(app.origin); t.after(() => context.close()); const page = await context.newPage();
   await page.goto(app.origin); await page.locator('#login').waitFor({state: 'visible'});
-  await page.locator('#token').fill(token); await page.locator('button').click();
+  await page.locator('#token').fill(token); await page.locator('#login button').click();
   await page.locator('#connection[data-state="connected"]').waitFor();
   const cookie = (await context.cookies()).find(c => c.name === 'wstx_session'); assert.ok(cookie.httpOnly && cookie.secure && cookie.sameSite === 'Strict');
   async function denied(options, status) {
@@ -166,9 +178,25 @@ test('TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal', asy
   await denied({}, 401); await denied({headers: {Cookie: 'wstx_session=invalid'}}, 401);
   await denied({origin: 'https://untrusted.invalid', headers: {Cookie: `wstx_session=${token}`}}, 403);
   await assert.rejects(fetch(app.origin.replace('https:', 'http:')));
+  async function loginRequest(body, origin) {
+    return new Promise((resolve, reject) => {
+      const request = https.request(app.origin + '/session', {method: 'POST', rejectUnauthorized: false, headers: origin ? {Origin: origin} : {}}, response => {response.resume(); resolve(response.statusCode);});
+      request.on('error', reject); request.end(body);
+    });
+  }
+  assert.equal(await loginRequest(token), 403);
+  assert.equal(await loginRequest(token, 'https://untrusted.invalid'), 403);
+  assert.equal(await loginRequest('x'.repeat(1024), app.origin), 401);
+  assert.equal(await loginRequest('x'.repeat(1025), app.origin), 413);
+  await assert.rejects(server({WSTX_BIND: '0.0.0.0:0'}), /Remote binding/);
+  await assert.rejects(server({...tlsEnv, WSTX_BIND: '0.0.0.0:0'}), /Remote binding/);
+  await assert.rejects(server({...tlsEnv, WSTX_TOKEN: undefined, WSTX_BIND: '0.0.0.0:0', WSTX_ORIGIN: 'https://localhost'}), /Remote binding/);
+  await assert.rejects(server({WSTX_TOKEN: token, WSTX_BIND: '0.0.0.0:0', WSTX_ORIGIN: 'https://localhost'}), /Remote binding/);
+  await assert.rejects(server({WSTX_TOKEN: token}), /requires TLS/);
+  await assert.rejects(server({...tlsEnv, WSTX_ORIGIN: 'https://localhost/extra'}), /WSTX_ORIGIN/);
   for (let i = 0; i < 10; i++) {
     const status = await page.evaluate(async () => (await fetch('/session', {method: 'POST', body: 'invalid'})).status);
-    assert.equal(status, i < 9 ? 401 : 429);
+    assert.equal(status, i < 8 ? 401 : 429);
   }
 });
 

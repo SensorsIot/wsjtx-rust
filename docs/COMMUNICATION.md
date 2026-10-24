@@ -58,6 +58,8 @@ The version is the candidate application's package version. Radio is always
 `unconfigured` until a later radio CR. On initial connection and reconnection the
 client MUST request a complete snapshot before showing Connected. There are no changing
 station properties or subscription commands in this slice, and no periodic status polling.
+The Refresh status button requests another snapshot on the existing connection;
+Last updated changes only when a matching snapshot response has been rendered.
 
 Errors have this envelope:
 
@@ -90,6 +92,9 @@ Reconnect delays are one, two, then four seconds, capped at four seconds; succes
 snapshot receipt resets the delay. Once connectivity is restored and loss is detected,
 fresh status MUST arrive within ten seconds. Recovery including an undetected silent
 failure includes the separate detection bound above.
+The watchdog schedules reconnection without waiting for the old WebSocket close
+handshake. Callbacks from replaced sockets are ignored. A new connection that does not
+open within five seconds is abandoned and retried through the same bounded backoff.
 
 At most 16 WebSockets are active; further upgrades return 503. Each peer processes
 one request and response at a time, with no application output queue. The WebSocket
@@ -117,6 +122,13 @@ is tested independently of the station application. Physical-link certification 
 this CR; results MUST identify this model rather than claim on-wire measurements.
 The simulator disconnects overloaded peers above its 128 KiB per-direction pending/write
 buffer cap instead of modelling an unlimited congestion queue.
+Browser Navigation/Resource Timing separately reports cold page and asset transfer sizes
+at the browser HTTP layer, including its reported HTTP-header overhead; these counters
+exclude TLS/TCP/IP overhead. Connection-to-displayed-status time and concurrent visible
+Refresh status times are measured separately. Silent loss is exercised by discarding bytes
+without closing the established test connections; this is a byte-stream blackhole, not
+packet-level loss emulation. Automated real-time bounds allow one second of scheduler
+tolerance for the nominal 13-second silent-loss detection bound.
 
 TC-021-005 through TC-021-009 in issue #3 define verification. They are level 2:
 isolated automated tests on the Windows development machine and Windows CI, with
