@@ -93,8 +93,9 @@ The following targets extend the status-only communication slice. They are **spe
 not implemented or accepted by CR #3**. Their phase numbers describe the requested
 sequence for this extension, not completion of the broader delivery milestones.
 
-- **Phase 1:** at least four independent station-server instances on the same Windows
-  PC, each with its own port, persisted configuration and separate browser window.
+- **Phase 1:** a variable number of independent station-server instances on the same
+  Windows PC, each with its own port, persisted configuration and separate browser window.
+  Four is a minimum acceptance target, not a fixed implementation limit.
 - **Phase 2:** offer an optional direct FlexRadio connection type for a station profile,
   using the native network API and an intended radio/slice association for that profile.
 
@@ -104,13 +105,13 @@ the operator's selected rig-control infrastructure remain supported. That standa
 path may use external FlexRadio desktop/CAT/DAX software when the operator chooses it.
 The optional native FlexRadio path removes those desktop bridges for profiles selecting it.
 
-Each profile independently selects its connection type. Four concurrent instances may
+Each profile independently selects its connection type. Concurrent instances may
 mix standard audio/rig-control and native FlexRadio profiles. Both paths use the same
 HTML browser interface, station operations, DSP/modem functions and future MCP interface;
 native FlexRadio support neither replaces the general product nor introduces a separate UI.
 
-Four logical station servers do not imply four separate FlexRadio GUI-client connections,
-four physical radios or four independent transmitters. Shared-radio connection/resource
+The number of logical station servers does not determine the number of FlexRadio
+GUI-client connections, physical radios or independently usable transmitters. Shared-radio connection/resource
 coordination may be implemented inside the Rust system. The supported radio and firmware
 must actually supply the slice capacity needed by the selected operating scenario;
 four slices are not assumed available on every FlexRadio model.
@@ -144,7 +145,7 @@ the other functional areas retain their proposed scope until settled.
 | FR-019 | Browser operator interface | Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. |
 | FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
 | FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
-| FR-022 | Concurrent persisted station profiles — phase 1 target | Run at least four independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Preserve instance identity and access isolation across restart and concurrent use. Specified target; not implemented or accepted by CR #3. |
+| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. Specified target; not implemented or accepted by CR #3. |
 | FR-023 | Optional direct FlexRadio integration — phase 2 target | Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Specified target; not implemented or accepted by CR #3. |
 
 ### 4.1 Browser–server status functions
@@ -185,10 +186,14 @@ These are additional target clauses. The current environment-variable configurat
 single-instance status contract do not establish profile persistence or secure concurrent
 four-instance operation.
 
-1. The application MUST support at least four independent station-server instances on
-   the same Windows PC. Each MUST have a distinct listening port, its own persisted
-   profile and an identifiable browser window. Four windows connected to one server do
-   not satisfy this requirement.
+1. The application MUST support a variable number N of independent station-server
+   instances on the same Windows PC, without a fixed four-instance limit or fixed-size
+   profile/window assumptions. Each MUST have a distinct listening port, its own
+   persisted profile and an identifiable browser window. Four is the minimum reference
+   acceptance target; verification MUST also exercise a larger count. Practical capacity
+   depends on available compute, memory, ports, devices and radio resources. Resource
+   exhaustion MUST be reported without disrupting existing instances. Multiple windows
+   connected to one server do not satisfy the independent-instance requirement.
 2. Each profile MUST retain its instance identity and selected operating configuration
    across server/PC restart. Configuration edits and recovery of one profile MUST NOT
    modify another profile. The configuration format, storage location and editing workflow
@@ -196,9 +201,9 @@ four-instance operation.
 3. Each server MUST load the explicitly selected profile and fail clearly if its port
    is already occupied or its profile is concurrently owned incompatibly. A collision
    MUST NOT overwrite configuration or silently attach a browser to a different station.
-   Stopping/restarting one instance MUST leave the other three usable.
+   Stopping/restarting one instance MUST leave the other N-1 instances usable.
 4. Access credentials, login state and station requests MUST remain isolated when the
-   four endpoints use the same hostname and the windows share one browser profile.
+   endpoints use the same hostname and the windows share one browser profile.
    Concurrent authentication and reconnection MUST not overwrite another instance's
    session or authorize a request to the wrong station.
 5. Each profile MUST independently persist its connection type, defaulting to the standard
@@ -251,8 +256,21 @@ starting points, not a promise that every model/firmware offers identical resour
    restoration MUST NOT replay an old transmit request or bypass the future ownership policy.
 6. The native path MUST reuse the common browser, station-operation, DSP/modem and future
    MCP interfaces. The default standard connection remains usable without FlexRadio
-   hardware or native-profile fields. A mixed set of four instances MUST preserve each
+   hardware or native-profile fields. A mixed set of instances MUST preserve each
    profile's selected path, configuration and routing independently.
+
+### 4.4 Offline FT4 and FT8 receive milestone — target FR-003/FR-004/FR-018
+
+The offline receive milestone MUST cover both FT4 and FT8. It MUST load supported
+recorded audio, allow explicit mode selection and display decoded messages with the
+mode-appropriate measurements. It MUST run without a physical radio, audio device or
+real-time reception schedule. Both modes use the common receive pipeline and browser
+presentation, with their own protocol-specific processing and acceptance vectors.
+
+Supported recording formats, message variants, numerical tolerances, decoder-quality
+and runtime budgets MUST be settled before implementation. Each mode needs independently
+established expected results and licensed, traceable recordings; FT8 fixtures do not
+establish FT4 correctness. This is a planned milestone, not an implemented decoder.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -474,28 +492,33 @@ or constitute new radio functions. **Level:** 2 — Isolated automated tests.
 trace or acceptance result yet. They are additional work beyond CR #3; the status-only
 tests in section 6.1 do not substitute for them. The selected execution location is the
 Windows development PC; hosted execution remains an explicitly chosen alternative.
+Instance counts are test parameters. The reference cases MUST include N=1, N=4 and
+at least one larger count such as N=6, using isolated device/API fixtures. Four is not
+an implementation ceiling. Lifecycle, persistence and access-isolation cases MUST also
+exercise a count greater than four; unavailable physical radio capacity is tested
+separately from the software instance count.
 
-#### TC-022-001 — Four independent servers and browser windows
+#### TC-022-001 — Variable independent servers and browser windows
 
 **Promise:** FR-022, clauses 1–2 and 5. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC, four candidate server instances and four real browser
+**Where it runs:** Windows PC, N candidate server instances and N real browser
 windows, using distinct temporary ports/profiles; no radio or live service.
 
-**Inputs/actions:** Prepare four visibly distinct station profiles, start their servers
+**Inputs/actions:** Prepare N visibly distinct station profiles, start their servers
 and open one separate browser window for each endpoint. Refresh/query all four, then
 change a setting in one profile through the specified configuration workflow.
 Use standard connection profiles for phase 1; once the optional native connection is
 available, repeat with mixed standard and native profiles using isolated device/API fixtures.
 
-**Expected results:** Four distinct listening endpoints and station identities are
+**Expected results:** N distinct listening endpoints and station identities are
 observable concurrently. Each window displays only its own instance's state. Requests
 and the configuration change affect the selected instance; the other profiles/windows
-remain unchanged. Four windows on a single endpoint fail this case.
+remain unchanged. Multiple windows on a single endpoint do not satisfy this case.
 
 #### TC-022-002 — Persistence and independent restart
 
 **Promise:** FR-022, clauses 2 and 5. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC with disposable profile storage, four local server
+**Where it runs:** Windows PC with disposable profile storage, N local server
 instances and real browser windows; no physical radio. Any full operating-system
 restart portion uses a disposable Windows test VM, not the operator's development PC.
 
@@ -515,25 +538,25 @@ another profile; that behavior must be settled before implementing this case.
 #### TC-022-003 — Stop isolation and collision refusal
 
 **Promise:** FR-022, clause 3. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC, four local candidate instances with disposable profiles
+**Where it runs:** Windows PC, N local candidate instances with disposable profiles
 and controlled occupied-port/profile-lock fixtures.
 
-**Inputs/actions:** While four windows are active, stop one server and continue querying
-the other three. Restart the stopped server. Attempt another launch using an occupied
+**Inputs/actions:** While N windows are active, stop one server and continue querying
+the other N-1. Restart the stopped server. Attempt another launch using an occupied
 port and, separately, a profile already owned incompatibly by an active instance.
 
-**Expected results:** Only the stopped window becomes stale; the other three remain
+**Expected results:** Only the stopped window becomes stale; the other N-1 remain
 usable. Restart reconnects the intended window/profile. Each conflicting launch fails
 clearly before it can alter stored configuration or masquerade as another station.
 
-#### TC-022-004 — Four-instance authentication in one browser profile
+#### TC-022-004 — Multi-instance authentication in one browser profile
 
 **Promise:** FR-022, clause 4. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC, four local TLS server endpoints on distinct ports of
-the **same hostname**, separate test credentials and four windows sharing the **same
+**Where it runs:** Windows PC, N local TLS server endpoints on distinct ports of
+the **same hostname**, separate test credentials and N windows sharing the **same
 browser profile/cookie store**. Separate browser contexts do not satisfy this case.
 
-**Inputs/actions:** Authenticate independently to each station, refresh all four, then
+**Inputs/actions:** Authenticate independently to each station, refresh them all, then
 force each connection to reconnect. Re-authenticate or rotate access for one station
 according to the selected access contract. Attempt to use one station's credential or
 session at another station's endpoint.
@@ -549,6 +572,8 @@ implementation is not accepted as satisfying this planned requirement.
 **Status:** planned definitions for FR-023, not implemented tests or hardware results.
 Exact protocol fixtures and supported hardware/firmware are selected and pinned before
 implementation. Purely simulated tests do not establish live-radio interoperability.
+Four-station cases provide a reference workload, not a software instance limit; expand
+emulated counts beyond four and use actual hardware capacity for live slice tests.
 
 #### TC-023-001 — Direct protocol and four-station route isolation
 
@@ -641,6 +666,19 @@ specified abort/device-loss path.
 **Expected results:** The agreed single-radio transmit authority is enforced, conflicts
 are refused and FR-008 halt/failure behavior is met. This conditional definition does
 not authorize transmission now or make it part of the receive-only live test above.
+
+### 6.4 Planned offline FT4/FT8 decoder tests
+
+These are planned definitions, not executed tests. Each runs at **level 2 — Isolated
+automated tests**, on the **Windows development PC** with recorded or generated fixtures,
+without a radio, live service or audio device. The implementing CR settles input formats,
+reference outputs and quantitative budgets before coding.
+
+| Test | Promises | Inputs/actions | Expected result and oracle | Level / where it runs |
+|---|---|---|---|---|
+| TC-004-001 — Offline FT4 | FR-003, FR-004, FR-018 | Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
+| TC-004-002 — Offline FT8 | FR-003, FR-004, FR-018 | Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
+| TC-004-003 — Invalid and nonmatching input | FR-003, FR-004, FR-018 | Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run. | Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures. | 2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. |
 
 ## 7. Proposed delivery milestones
 
