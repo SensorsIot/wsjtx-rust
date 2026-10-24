@@ -4,8 +4,9 @@
 # cargo fmt, check and clippy run on every push as the rust pack's cost-1 checks.
 - suite: wstx-rust
   cost: 2
-  run: cargo test --locked --all-targets
+  run: cargo test --workspace --locked --all-targets
   paths:
+  - server/
   - src/
   - tests/
   - benches/
