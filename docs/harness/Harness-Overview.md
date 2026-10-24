@@ -33,6 +33,8 @@ station or external-service access, which remains level 3–5. Communication tes
 with `npm test` after `npm ci`, `npx playwright install chromium` and `cargo build --locked`.
 The link simulator accounts for actual encrypted-stream bytes plus modelled transport
 overhead; it is not an on-wire packet capture or a physical-network certification.
+The simulator disconnects a peer whose pending delivery bytes plus destination write
+buffer exceed 128 KiB; it does not emulate arbitrary congestion queues.
 
 The paths a harness change may touch; everything else is product:
 

@@ -38,8 +38,13 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
   const timers = new Set();
   let enabled = true;
   function forward(source, destination, direction) {
+    let pendingBytes = 0;
     source.on('data', data => {
       source.pause();
+      if (pendingBytes + data.length + destination.writableLength > 128 * 1024) {
+        source.destroy(); destination.destroy(); return;
+      }
+      pendingBytes += data.length;
       for (let offset = 0; offset < data.length; offset += 512) {
         const part = data.subarray(offset, offset + 512);
         const reverse = direction === 'up' ? 'down' : 'up';
@@ -50,7 +55,10 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
         next[reverse] = Math.max(now, next[reverse]) + 80 / rate * 1000;
         const timer = setTimeout(() => {
           timers.delete(timer);
-          if (!destination.destroyed) destination.write(part);
+          pendingBytes -= part.length;
+          if (pendingBytes + destination.writableLength > 128 * 1024) {
+            source.destroy(); destination.destroy();
+          } else if (!destination.destroyed) destination.write(part);
         }, Math.max(0, next[direction] + latency - performance.now()));
         timers.add(timer);
       }
