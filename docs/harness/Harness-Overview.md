@@ -20,8 +20,17 @@ contract; the references below are the constraints a change must respect.
 ## Bindings
 
 - **Main branch:** `master`; the push gate compares against `origin/master`.
-- **Deploy:** a release build of the Windows executable ([Building](../BUILDING.md));
-  the dry run is the CI run of the candidate.
+- **Execution mode:** local. The Windows PC is authoritative for compiler checks,
+  the full automated suite including the 60-second bandwidth measurement, and release
+  packaging. The local pre-push hook enforces the ordinary gate. GitHub Actions has
+  only a manual trigger and is an explicit alternative when requested, not a second
+  automatic build after a local pass.
+- **Configuration:** `execution_mode: local` in `.harness/config.yaml` records this
+  project binding. The pinned shared harness does not implement mode switching from
+  that field; enforcement comes from the local hook and manual-only workflow trigger.
+- **Deploy:** a locally built Windows release executable ([Building](../BUILDING.md));
+  the dry run uses that candidate on this PC. The manual hosted alternative can provide
+  the same evidence when explicitly chosen instead.
 - **Live tests:** none yet. Tests that need a radio, a sound device or the network are
   cost 3–5, marked `#[ignore]`, and get their own suites.
 

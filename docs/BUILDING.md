@@ -6,7 +6,10 @@ The root Cargo workspace contains the station-server package in `server/`. Run C
 
 ## GitHub Actions
 
-[Windows Rust](https://github.com/SensorsIot/wsjtx-rust/actions/workflows/windows-rust.yml) runs on pushes and pull requests to `master`, and can also be started manually from the Actions page once the workflow is on the default branch.
+[Windows Rust](https://github.com/SensorsIot/wsjtx-rust/actions/workflows/windows-rust.yml)
+is a manual alternative, started explicitly from the Actions page. Pushes and pull
+requests do not trigger it. Normal development, the full test suite and release packaging
+run on the Windows PC; a local pass is not automatically repeated on GitHub.
 
 The workflow uses a GitHub-hosted Windows Server 2022 x64 runner with the MSVC build tools. It installs Rust 1.99.0, matching `rust-toolchain.toml`, and checks formatting, Clippy warnings, tests, release compilation, and execution of the built program. The executable is uploaded as the `wstx-rust-windows-x64` artifact with a 14-day retention period.
 
@@ -17,6 +20,18 @@ The workflow has read-only repository permissions and pins its checkout and arti
 ## Local Windows development
 
 Install Rust through [rustup](https://rustup.rs/) and the Visual Studio C++ Build Tools with the Desktop development with C++ workload and a Windows SDK. The toolchain file selects the compiler version automatically.
+
+The local pre-push gate is the authoritative check:
+
+```powershell
+python harness/core/tools/gate.py
+```
+
+It selects the affected compiler checks and automated suites, including the full
+communication suite with its 60-second bandwidth measurement. The ordinary push hook
+uses the same gate and its valid memoized results. Do not repeat the individual checks
+below when the gate has already supplied their evidence for the same candidate.
+Release packaging also runs on this PC; start the packaged candidate for the dry run.
 
 From the repository root:
 
@@ -41,6 +56,11 @@ npx playwright install chromium
 cargo build --locked
 npm test
 ```
+
+This is the same full suite selected by the local gate, including the bandwidth test.
+Use the standalone command for targeted development or when that evidence is missing;
+it is not an extra mandatory run after a successful gate. The manual GitHub workflow
+remains an alternative execution location for this full recipe when explicitly chosen.
 
 `WSTX_TEST_EXE` optionally selects an exact packaged executable. Otherwise tests use
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
