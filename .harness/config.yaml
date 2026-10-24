@@ -5,6 +5,5 @@ packs: [rust]
 main: master
 remote: origin
 override_env: HARNESS_GATE_OVERRIDE
-# Project binding; enforcement is the local hook and manual-only workflow trigger.
-# The pinned generic harness does not interpret this field as an execution switch.
+# Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local

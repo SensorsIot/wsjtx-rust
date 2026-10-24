@@ -25,9 +25,9 @@ contract; the references below are the constraints a change must respect.
   packaging. The local pre-push hook enforces the ordinary gate. GitHub Actions has
   only a manual trigger and is an explicit alternative when requested, not a second
   automatic build after a local pass.
-- **Configuration:** `execution_mode: local` in `.harness/config.yaml` records this
-  project binding. The pinned shared harness does not implement mode switching from
-  that field; enforcement comes from the local hook and manual-only workflow trigger.
+- **Configuration:** `execution_mode: local` in `.harness/config.yaml` selects local
+  gate execution. The manual-only hosted workflow supplies the alternative location
+  when explicitly selected; it does not add a routine second run.
 - **Deploy:** a locally built Windows release executable ([Building](../BUILDING.md));
   the dry run uses that candidate on this PC. The manual hosted alternative can provide
   the same evidence when explicitly chosen instead.
