@@ -1,0 +1,19 @@
+# Test registry (harness core/docs/standards/testing.md, "Cost levels").
+#   cost: 1 compiler or syntax check, 2 offline with fixtures or stubs, 3 live read-only,
+#         4 live with the test account, 5 live with effects outside the system
+# cargo fmt, check and clippy run on every push as the rust pack's cost-1 checks.
+- suite: wstx-rust
+  cost: 2
+  run: cargo test --locked --all-targets
+  paths:
+  - src/
+  - tests/
+  - benches/
+  - examples/
+  - build.rs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  needs: The toolchain of rust-toolchain.toml (rustup selects it). Unit, integration and doc tests of the
+    crate; no radio, sound device or network. While the crate has no tests it proves only that every
+    target compiles.

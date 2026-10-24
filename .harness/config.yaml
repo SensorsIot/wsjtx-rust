@@ -1,0 +1,7 @@
+# Harness configuration (https://github.com/SensorsIot/harness, branch V2), installed per
+# user at ~/.claude/skills/harness. Read by its core/tools/project.py.
+project: wsjtx-rust
+packs: [rust]
+main: master
+remote: origin
+override_env: HARNESS_GATE_OVERRIDE
