@@ -1,5 +1,7 @@
 # Rust build output
 **/target/
+node_modules/
+test-results/
 
 # Editor temporary files
 *.swp

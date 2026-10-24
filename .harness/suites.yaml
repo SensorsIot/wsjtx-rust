@@ -15,6 +15,17 @@
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
-  needs: The toolchain of rust-toolchain.toml (rustup selects it). Unit, integration and doc tests of the
-    crate; no radio, sound device or network. While the crate has no tests it proves only that every
-    target compiles.
+  needs: The toolchain of rust-toolchain.toml. No radio or live station.
+- suite: communication
+  cost: 2
+  run: cargo build --workspace --locked && npm test
+  paths:
+  - server/
+  - client/
+  - tests/
+  - docs/COMMUNICATION.md
+  - Cargo.toml
+  - Cargo.lock
+  - package.json
+  - package-lock.json
+  needs: Node 24, npm ci, npx playwright install chromium. Disposable local server, browser and link simulator; no external services.

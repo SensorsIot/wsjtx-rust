@@ -27,6 +27,13 @@ contract; the references below are the constraints a change must respect.
 
 ## Harness paths
 
+Isolated tests may start disposable loopback servers, browsers, TLS endpoints and link
+simulators at level 2. This project binding distinguishes test networking from live
+station or external-service access, which remains level 3–5. Communication tests run
+with `npm test` after `npm ci`, `npx playwright install chromium` and `cargo build --locked`.
+The link simulator accounts for actual encrypted-stream bytes plus modelled transport
+overhead; it is not an on-wire packet capture or a physical-network certification.
+
 The paths a harness change may touch; everything else is product:
 
 - `harness/` (the submodule: its pinned version; fixes are made inside it)

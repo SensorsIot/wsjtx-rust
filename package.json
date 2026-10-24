@@ -1,0 +1,6 @@
+{
+  "name": "wstx-rust-integration-tests",
+  "private": true,
+  "scripts": { "test": "node --test --test-concurrency=1 tests/communication.test.cjs" },
+  "devDependencies": { "playwright": "1.64.1", "selfsigned": "5.5.0", "ws": "8.22.0" }
+}

@@ -52,8 +52,15 @@ jobs:
       - name: Compile Windows release executable
         run: cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
 
-      - name: Run compiled executable
-        run: ./target/x86_64-pc-windows-msvc/release/wstx-rust.exe
+      - name: Install browser test dependencies
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install chromium
+
+      - name: Test packaged server and real browser
+        env:
+          WSTX_TEST_EXE: target/x86_64-pc-windows-msvc/release/wstx-rust.exe
+        run: npm test
 
       - name: Upload Windows executable
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
