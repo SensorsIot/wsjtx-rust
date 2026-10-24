@@ -1,6 +1,6 @@
 # WSTX Rust Functional Specification Document
 
-- Status: Initial draft for discussion
+- Status: Incremental functional specification; selected interface clauses and tests are defined below
 - Created: 2026-10-24
 - Working name: WSTX Rust
 - Repository: https://github.com/SensorsIot/wsjtx-rust
@@ -29,7 +29,11 @@ This is a starting specification, not a claim of implemented functionality. Conf
 - Project documentation is stored in `docs/`.
 - The upstream project is licensed under GPLv3. The port must meet applicable license and attribution requirements when distributed.
 
-The upstream application files have been removed from the current `master` tree to establish a clean basis for the Rust project. The imported implementation remains on `original` and in Git history. A dependency-free Rust package now provides a compiler and linker smoke check on GitHub Actions; it does not implement radio functionality. See [Windows builds](BUILDING.md).
+The imported upstream implementation remains on `original` and in Git history. The Rust
+station server serves a browser status interface; radio functionality is outside the
+initial communication slice. Development checks, the full automated suite and Windows
+packaging run on the development PC. Hosted execution is an explicitly selected
+alternative, not a second automatic run; see [Windows builds](BUILDING.md).
 
 ## 3. Scope
 
@@ -78,11 +82,16 @@ The server reports actual station state; the browser distinguishes confirmed sta
 
 MCP accesses the same station operations and state as the browser. It supports observing and automating FT4/FT8 workflows, including finding candidate stations, selecting a suitable station, and conducting a QSO. Transport, tool names, authentication/authorization, control ownership, and selection policy are specified before the corresponding implementation. MCP does not define a separate modem or timing engine.
 
-The detailed message contract, supported bandwidth/latency envelope, and optional desktop packaging remain open. A browser client is the initial interface direction; a Tauri or other desktop wrapper has not been selected.
+The initial status-only message contract and bandwidth/latency envelope are defined in
+the [station communication contract](COMMUNICATION.md). Additional operating commands,
+radio control ownership and optional desktop packaging remain to be specified. A browser
+client is the initial interface direction; a Tauri or other desktop wrapper has not been selected.
 
 ## 4. Proposed functional requirements
 
-The following requirements are proposed for refinement during the upstream inventory.
+The broad requirements below are refined during the upstream inventory and their
+implementing CRs. Section 4.1 specifies the selected FR-019/FR-021 status profile;
+the other functional areas retain their proposed scope until settled.
 
 | ID | Area | Required behavior |
 | --- | --- | --- |
@@ -108,12 +117,39 @@ The following requirements are proposed for refinement during the upstream inven
 | FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
 | FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
 
-## 5. Proposed quality and compatibility requirements
+### 4.1 Browser–server status functions
 
-The initial FR-019/FR-021 browser/server interface is specified in the
-[station communication contract](COMMUNICATION.md). Its first profile targets 32 kbit/s
-and status-only operation; CR #3 carries clauses CL-003-01 through CL-003-08 and tests
-TC-021-005 through TC-021-009.
+These stable clauses refine FR-019 and FR-021. The FSD is the canonical home of their
+functional meaning and the test definitions in section 6.1. The clauses retain their
+CL-003 identifiers independently of the GitHub issue lifecycle. Issue #3 records change
+approval, implementation/review history and execution evidence; closing it does not
+retire these clauses or tests.
+
+This section also provides orientation to the detailed interface specification:
+message schemas, field bounds, errors, authentication settings, timeouts, resource limits
+and numerical traffic budgets have their single canonical home in
+[COMMUNICATION.md](COMMUNICATION.md). References below use that contract rather than
+redefine its wire format or numeric limits.
+
+| Clause | Promise | Required function | Verification |
+|---|---|---|---|
+| CL-003-01 | FR-019, FR-021 | The Rust server MUST serve the HTML/CSS/JavaScript operator client. The browser MUST visibly show server version, connection state and an unconfigured radio. Refresh status MUST request a fresh snapshot and update the displayed last-update time. | TC-021-006; TC-021-008 |
+| CL-003-02 | FR-021 | Each browser MUST use one versioned WebSocket connection for status requests and responses. The server MUST echo each request ID on the requesting connection and return authoritative version/radio state. Concurrent clients MUST remain independent. | TC-021-005; TC-021-008 |
+| CL-003-03 | FR-021 | The server MUST validate request structure, protocol version, command and message size in the contract's order. Rejected input MUST follow the defined error/close behavior; recoverable errors MUST leave the server available without exposing internal details. | TC-021-005 |
+| CL-003-04 | FR-019, FR-021 | The browser MUST distinguish stale/disconnected state from current station state, detect a silently unresponsive connection, retry at a bounded rate and obtain a full snapshot before showing Connected again. Recovery MUST not wait indefinitely for an old socket to close. | TC-021-006; TC-021-007 |
+| CL-003-05 | FR-021 | The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model and meet its traffic and visible-response budgets. Tests MUST distinguish cold page/assets loading, protocol connection and displayed-status timing, and identify the measurement layer. | TC-021-008 |
+| CL-003-06 | FR-021 | Application output buffering and active connections MUST have explicit bounds. An unresponsive client MUST be removed under the contract's liveness/write limits without blocking another client's status requests. Test results MUST distinguish observed liveness removal from an unobserved send-timeout branch or total-memory bound. | TC-021-008, stalled-reader variant; contract/source review |
+| CL-003-07 | FR-021 | Remote access MUST use the contract's authenticated TLS path and exact Origin validation. The browser MUST offer token login, and invalid or oversized login requests MUST be refused. Insecure remote startup and invalid access settings MUST fail closed. Explicit loopback development MAY remain unauthenticated. | TC-021-009 |
+| CL-003-08 | FR-019, FR-021 | Status MUST use initial/reconnection snapshots, explicit refresh requests and event-driven updates when state changes exist. The client MUST avoid constant status polling and tolerate protocol heartbeats between responses. The initial profile MUST carry no raw audio or spectrum stream and use no application-level compression. | TC-021-007; TC-021-008; peer-helper fixture; protocol/source review |
+
+The initial workflow is open the station page, authenticate when TLS mode requires it,
+receive a status snapshot, optionally refresh status and recover from connection loss.
+It exposes no radio-control, transmit, decoding, spectrum or MCP commands. Those
+functions remain governed by their broader requirements and implementing CRs. Future
+spectrum delivery may use compact binary frames with adjustable resolution/rate and
+discard obsolete frames; it is outside the status profile specified here.
+
+## 5. Proposed quality and compatibility requirements
 
 - **On-air compatibility:** Preserve the protocol definitions and interoperability of the selected upstream baseline. A language rewrite must not silently change message encoding or waveform conventions.
 - **Decoder quality:** Measure decoding success, false positives, sensitivity, and runtime against reference recordings and controlled signals. Numeric tolerances and acceptance thresholds must be agreed per mode.
@@ -148,6 +184,185 @@ Hardware acceleration is an intended optimization route, not a promise that GPU 
 
 Full-project completion requires every inventory item to be implemented and accepted, or explicitly excluded through a documented scope decision. A successful FT8 demonstration alone does not establish full parity.
 
+### 6.1 Browser and server test catalogue
+
+These are durable test definitions, not execution results. Each case names its inputs,
+actions, expected observations and executable trace. Source assertions implement the
+definition; dated outcomes and limitations belong in the implementing issue and stored
+test output. TC-021-001 through TC-021-004 remain associated with the repository-layout
+change; the communication cases continue their numbering.
+
+**Execution level for each case below: 2 — Isolated automated tests.** They use temporary
+processes, recorded/constructed test inputs and disposable credentials. They require no
+physical radio, live station, real user credentials or external service.
+
+**Selected location:** the Windows development PC. The local gate runs the complete
+communication suite, including the full bandwidth measurement, and the Rust test suite.
+The same cases can run on a GitHub Actions Windows runner only when hosted execution
+is explicitly chosen as the alternative mode. Local and hosted runs are not both
+routine requirements. Execution procedures and mode enforcement belong to
+[Building](BUILDING.md) and the [harness binding](harness/Harness-Overview.md#bindings).
+
+#### TC-021-005 — Message exchange and invalid-input handling
+
+**Clauses:** CL-003-02, CL-003-03. **Level:** 2 — Isolated automated tests.
+**Where it runs:** Windows PC, actual candidate Rust server on a temporary loopback
+port, independent WebSocket test peer; the parser examples also run as Rust unit tests.
+
+**Inputs/actions and expected results:**
+
+1. Send the contract's valid station.get example. Expect the specified station.status
+   envelope, matching ID, candidate package version and radio state unconfigured.
+2. Send different request IDs through two concurrent connections. Expect each response
+   on its originating connection with its own ID and authoritative state.
+3. Send malformed JSON, a non-object, unknown command, unsupported version, missing ID,
+   wrong ID type, out-of-range ID, invalid type field and an extra field. Expect the
+   contract's error for each input. A request combining an unsupported version with an
+   invalid type MUST follow shape-before-version validation. A valid peer MUST remain usable.
+4. Send a valid request padded to the message-size boundary. Expect its normal response.
+   Exceed the boundary by one byte and expect transport rejection/closure while the other
+   peer remains usable. Send a binary frame and expect the specified close behavior.
+
+**Oracle:** hand-authored contract examples, candidate version and
+[message/error rules](COMMUNICATION.md#messages-and-validation).
+**Executable trace:** [communication.test.cjs](../tests/communication.test.cjs),
+`TC-021-005: actual-server correlation, negative cases and size boundaries`;
+[protocol_tests.rs](../server/src/protocol_tests.rs),
+`protocol_returns_specified_response_and_errors`.
+
+#### TC-021-006 — Actual browser interface
+
+**Clauses:** CL-003-01, CL-003-04. **Promises:** FR-019, FR-021.
+**Level:** 2 — Isolated automated tests.
+**Where it runs:** Windows PC, automated Chromium with fresh independent browser
+contexts connected to the locally started candidate server.
+
+**Inputs/actions and expected results:**
+
+1. Navigate to the station page. Expect the required HTML, JavaScript and CSS to load
+   successfully, no uncaught page errors, and visible Connected state, candidate version
+   and Radio not configured text.
+2. Open a second independent browser context. Expect the same authoritative version
+   and radio state in both clients.
+3. Capture the desktop view and a 360-pixel-wide view. Expect no horizontal overflow;
+   inspect the screenshots for readable status, login/refresh controls and responsive layout.
+4. Stop the actual server. Expect the page to mark its last state stale/disconnected.
+
+**Oracle:** visible functions in CL-003-01/04 and package version, not a golden image
+generated by the implementation. **Executable trace:**
+[communication.test.cjs](../tests/communication.test.cjs),
+`TC-021-006: real browser, two clients, desktop and mobile layout`.
+Screenshots are `test-results/station-desktop.png` and `test-results/station-mobile.png`.
+
+#### TC-021-007 — Disconnect, retry and state resynchronization
+
+**Clauses:** CL-003-04, CL-003-08. **Promise:** FR-021.
+**Level:** 2 — Isolated automated tests.
+**Where it runs:** Windows PC, actual candidate server and real browser through a
+controllable disposable local proxy, with WebSocket message and attempt timestamps.
+
+**Inputs/actions and expected results:**
+
+1. Connect and observe an unchanged session across a heartbeat interval. Expect an
+   initial snapshot request and no periodic station.get polling.
+2. Cut the connection and keep it unavailable. Expect visible stale/disconnected state
+   and attempts at the bounded reconnect rate from the
+   [liveness contract](COMMUNICATION.md#liveness-and-resource-limits).
+3. Restore connectivity to the actual server. Expect a new station.get exchange and a
+   fresh full snapshot before Connected, within the contract's recovery bound. If a
+   server restart or version change is exercised, the fresh state MUST replace the old
+   display; an unchanged unconfigured state still requires a newly observed exchange.
+4. Drop bytes without closing the established test connection. Expect stale detection
+   within the contract's silent-loss bound and scheduler tolerance. Restore byte delivery;
+   expect bounded recovery and another snapshot without waiting for the old close handshake.
+
+**Oracle:** contract state transitions/time limits and observed request exchange.
+The automation cuts/restores the proxy to the actual server and checks a new snapshot
+exchange; it does not simulate a different application version. **Executable trace:**
+[communication.test.cjs](../tests/communication.test.cjs),
+`TC-021-007: dropped connection, bounded retries, fresh snapshot`.
+
+#### TC-021-008 — Thin-link budget and client isolation
+
+**Clauses:** CL-003-01, CL-003-02, CL-003-05, CL-003-06, CL-003-08.
+**Promise:** FR-021. **Level:** 2 — Isolated automated tests.
+**Where it runs:** Windows PC, two real browser contexts and the candidate TLS server
+through the shared portable link simulator. The stalled-reader variant uses two
+independent local WebSocket peers against the actual server.
+
+**Budget variant — inputs/actions and expected results:**
+
+1. Start two uncached browser contexts sharing the contract's minimum-rate/latency
+   profile. Report cold page and asset timings/sizes separately from protocol connection
+   and first displayed status. Expect first status within its post-load limit.
+2. Keep both clients connected with unchanged station state for the contract's full
+   measurement interval. Expect the aggregate mean in each direction to meet the
+   [traffic budget](COMMUNICATION.md#thin-link-budget-and-test-model), including heartbeat
+   and accounted overhead. Report actual TLS-stream bytes plus the explicit network model;
+   do not describe these values as physical packet capture.
+3. Click Refresh status concurrently in both existing clients. Expect each visible
+   Last updated value to change within the connected-response limit, using the existing
+   WebSocket connections rather than creating replacement test connections.
+4. The minimal profile MUST contain no audio/spectrum stream or application compression;
+   verify that scope against the protocol and implementation. Missing browser, simulator
+   or measurement prerequisites MUST fail verification rather than silently skip it.
+
+**Stalled-reader variant — inputs/actions and expected results:**
+
+1. Connect a peer that stops reading and has automatic Pong replies disabled. Send a
+   bounded burst of read-only status requests; concurrently query a healthy peer and
+   expect its response within the connected-response limit.
+2. Keep the first peer unresponsive past the Pong deadline plus heartbeat-tick bound,
+   then resume reads. Expect its connection to close and the healthy peer to remain usable.
+   This verifies bounded liveness removal and isolation; it does not prove that kernel
+   buffers filled, the send-timeout branch executed or total process memory was measured.
+
+**Oracle:** independently timed link simulator, browser-visible updates and
+[resource/liveness rules](COMMUNICATION.md#liveness-and-resource-limits).
+**Executable trace:** [communication.test.cjs](../tests/communication.test.cjs),
+`TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget` and
+`TC-021-008: stalled reader cannot block another client`.
+The measurement report is `test-results/link-budget.json`.
+
+#### TC-021-009 — Remote access boundary
+
+**Clause:** CL-003-07. **Promise:** FR-021.
+**Level:** 2 — Isolated automated tests.
+**Where it runs:** Windows PC, candidate server, real browser and independent peers
+using a disposable local TLS certificate, test token and configured allowed Origin.
+
+**Inputs/actions and expected results:**
+
+1. Open the TLS page and submit the valid test token through its login form. Expect an
+   authenticated status exchange and the contract's protected cookie attributes.
+2. Attempt WebSocket upgrade with absent/invalid credentials and, separately, a
+   disallowed Origin. Expect the specified denial before station data is returned.
+3. Submit login with missing/disallowed Origin. Expect refusal. Submit an invalid token
+   body at the HTTP body limit and one byte beyond; expect authentication refusal for
+   the former and size rejection for the latter. Exhaust the login-attempt budget and
+   expect the contract's rate-limit response.
+4. Attempt plaintext access to the TLS listener. Expect refusal and no plaintext
+   station response.
+5. Attempt non-loopback startup with required TLS, token or explicit Origin missing;
+   plaintext token configuration; and an Origin containing a path. Expect startup failure.
+   The explicit loopback development fixture remains limited to its configured loopback address.
+
+**Oracle:** [access and startup contract](COMMUNICATION.md#connection-and-security),
+HTTP/upgrade outcomes and protected cookie attributes. **Executable trace:**
+[communication.test.cjs](../tests/communication.test.cjs),
+`TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal`.
+
+#### Supporting test-tool fixtures
+
+These fixtures validate the test machinery; they do not replace the actual-server cases
+or constitute new radio functions. **Level:** 2 — Isolated automated tests.
+**Where they run:** the Windows PC as part of the same full local communication suite.
+
+| Fixture and trace in [communication.test.cjs](../tests/communication.test.cjs) | Input/action | Expected observation |
+|---|---|---|
+| `peer helper: heartbeat interleaving preserves response and total deadline`; [peer.cjs](../tests/peer.cjs) | Emit an exact protocol heartbeat before a known response, then feed unsupported/unexpected events; repeatedly emit valid heartbeats without a response. | The helper returns the known response, exposes other events to the caller's oracle and times out on one unchanged total deadline; listeners are cleaned up. Supports TC-021-005/008. |
+| `link simulator: shared bulk throughput and RTT`; [support.cjs](../tests/support.cjs) | Send concurrent known-size echo transfers through one shared bottleneck, followed by a one-byte round trip. | Independent wall-clock checks reject a link that is either too fast or improperly serialized by propagation delay, and verify the minimum RTT. Supports TC-021-008. |
+
 ## 7. Proposed delivery milestones
 
 | Milestone | Deliverable | Exit evidence |
@@ -173,7 +388,7 @@ The first Windows release may occur before full-suite coverage at M3 or M4. Its 
 ## 9. Open decisions
 
 1. What is the final public product name?
-2. Which message contract and transport connect the station server, browser client, and MCP adapter, and how is control ownership managed?
+2. Which additional operating commands and control-ownership rules extend the initial browser/server status contract, and how does the MCP adapter expose them?
 3. Which mode and user workflow should form the first usable milestone?
 4. Which GUI, audio, radio-control, and DSP libraries should be selected?
 5. What native-library bindings are permitted within the all-Rust goal?

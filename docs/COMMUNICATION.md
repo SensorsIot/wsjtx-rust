@@ -135,6 +135,8 @@ without closing the established test connections; this is a byte-stream blackhol
 packet-level loss emulation. Automated real-time bounds allow one second of scheduler
 tolerance for the nominal 13-second silent-loss detection bound.
 
-TC-021-005 through TC-021-009 in issue #3 define verification. They are level 2:
-isolated automated tests on the Windows development machine and Windows CI, with
-disposable browser/server/TLS/proxy processes and no radio or live service.
+The [FSD test catalogue](WSTX%20Rust%20FSD.md#61-browser-and-server-test-catalogue)
+defines TC-021-005 through TC-021-009 and the supporting fixtures. It is the durable
+home of functional clauses and test procedures; issue #3 holds change/execution evidence.
+The selected execution location is the Windows development PC. Hosted execution is
+an explicitly chosen alternative; the suite is not routinely duplicated on both.

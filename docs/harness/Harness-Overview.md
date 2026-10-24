@@ -55,6 +55,17 @@ The paths a harness change may touch; everything else is product:
 
 ## Documentation is current-state
 
+The [FSD](../WSTX%20Rust%20FSD.md#61-browser-and-server-test-catalogue) owns this project's
+stable functional clauses and test descriptions. Test source holds executable assertions
+and promise tags; issues retain change approval and execution evidence. This explicit
+operator binding overrides the generic preference to keep test descriptions next to
+the test source. Detailed protocol fields, errors and limits remain canonical in the
+FSD's linked communication contract rather than being repeated across the documents.
+Product-specific acceptance tests, fixtures and the provisioning/wiring needed to run
+them belong to the functional CR they verify. Changes to the reusable development method
+belong to harness work; adding browser and thin-link verification for FR-019/FR-021 is
+functional verification rather than a separate harness improvement.
+
 The FSD, its companions and these bindings state the rule that holds now, never the path
 to it ([documentation](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/documentation.md)). Open work lives in
 GitHub issues; history is `git log`.
