@@ -496,11 +496,13 @@ remain unchanged. Four windows on a single endpoint fail this case.
 
 **Promise:** FR-022, clauses 2 and 5. **Level: 2 — Isolated automated tests.**
 **Where it runs:** Windows PC with disposable profile storage, four local server
-instances and real browser windows; no physical radio.
+instances and real browser windows; no physical radio. Any full operating-system
+restart portion uses a disposable Windows test VM, not the operator's development PC.
 
 **Inputs/actions:** Save different supported settings for each profile, stop the
-instances and restart them using their selected profiles. Repeat after a controlled
-application/PC restart. Include intended radio/slice association data once its phase-2
+instances and restart them using their selected profiles. Repeat in a fresh application
+environment; use an isolated test-VM restart if operating-system restart is exercised.
+Include intended radio/slice association data once its phase-2
 schema is defined; use an emulator for any connection needed to observe it.
 
 **Expected results:** Each instance restores its own saved identity/settings and connection
