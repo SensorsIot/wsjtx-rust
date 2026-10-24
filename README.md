@@ -6,6 +6,20 @@ The project has a minimal Rust executable and a Windows/MSVC build workflow. Rad
 
 The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
 
+## Repository layout
+
+The product architecture is defined in the [FSD](docs/WSTX%20Rust%20FSD.md#35-station-server-and-operator-client).
+
+| Path | Contents |
+| --- | --- |
+| `server/` | Rust station-server package; currently the unchanged development executable. |
+| `client/` | Directory reserved for the HTML/CSS/JavaScript browser client; no UI is implemented yet. |
+| `docs/` | Functional specification, build instructions, and source references. |
+| `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
+| `harness/`, `.harness/` | Pinned development harness and project bindings. |
+
+Run Cargo commands from the repository root. The workspace builds its server member and keeps output under the root `target/` directory. A packaged desktop webview is an optional future client distribution, not a requirement for using the browser interface.
+
 ## Documentation
 
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)

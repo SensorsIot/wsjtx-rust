@@ -17,6 +17,9 @@ This is a starting specification, not a claim of implemented functionality. Conf
 
 - The project targets the upstream suite's useful functionality in Rust, with a simpler design; repository structure, internal APIs, and implementation details are not parity requirements.
 - The primary product is a desktop application. Its first release targets Windows; macOS and Linux are planned desktop targets after the Windows release.
+- The project has two applications in one repository: a Rust station server and an HTML/CSS/JavaScript browser client. Both can run on one development computer or on separate station and home computers.
+- The station server owns radio state and timing. The browser renders the operator interface and communicates through a defined control/data interface suitable for limited-bandwidth links.
+- An MCP interface provides access to the same station operations for FT4/FT8 automation, including station selection and QSO operation. Detailed tools and selection policies are defined in their implementing CRs.
 - Use desktop CPU and memory resources effectively, including multicore execution and suitable hardware acceleration. Microcontroller resource limits do not set the primary product's design constraints.
 - A microcontroller edition is a possible secondary product, with its own scope and resource limits. It is not part of the first Windows release commitment.
 - The experimental behavior baseline is pinned to WSJT-X `v3.3.0-beta4`; newer betas require an explicit baseline update.
@@ -48,7 +51,7 @@ The initial mode inventory includes FST4, FST4W, FT4, FT8, JT4, JT9, JT65, MSK14
 
 ### 3.3 Language boundary
 
-Application logic and protocol implementations are intended to be written in Rust. Whether native operating-system interfaces, device drivers, or external libraries may be used through bindings remains an open decision. Retaining the existing Fortran or C++ implementation is not the final implementation goal.
+The station server, radio logic, and protocol implementations are written in Rust. The browser client uses HTML, CSS, and JavaScript. Whether native operating-system interfaces, device drivers, or external libraries may be used through bindings remains an open decision. Retaining the existing Fortran or C++ implementation is not the final implementation goal.
 
 ### 3.4 Release targets
 
@@ -59,6 +62,23 @@ Application logic and protocol implementations are intended to be written in Rus
 | Possible secondary edition | Microcontrollers and other constrained devices | Explore after the desktop foundation is established. Select the supported modes, hardware, memory budget, and interface separately; full desktop feature parity is not assumed. |
 
 Keep protocol logic and input/output boundaries portable where practical. Platform-specific performance work is permitted behind those boundaries. Do not require every desktop feature to fit a microcontroller or require the initial Windows release to ship macOS, Linux, or embedded packages.
+
+### 3.5 Station server and operator client
+
+| Application | Responsibilities |
+| --- | --- |
+| Station server, Rust | Runs beside the radio. Owns audio capture, decoding, encoding, transmit timing, radio control, QSO sequencing, and authoritative station state. Exposes shared station operations to the browser and MCP adapters. |
+| Operator client, HTML/CSS/JavaScript | Runs in the operator's home browser. Renders spectrum/waterfall data and decoded messages, filters and sorts displayed results, presents controls and settings, and requests operations from the server. |
+
+The applications share one repository and are versioned together initially. Their implementation directories are `server/` and `client/`; shared documentation and Cargo workspace files remain at the root. Same-machine development uses the same application boundary as remote operation.
+
+The client-server interface carries commands, decoded messages, status updates, and reduced spectrum data. Continuous raw-audio or IQ transfer is not a prerequisite for normal remote FT4/FT8 operation. The server's radio timing is independent of network round trips and browser rendering.
+
+The server reports actual station state; the browser distinguishes confirmed state, pending requests, stale data, and disconnection. Reconnection resynchronizes state before normal control resumes and does not replay old transmit requests. The loss-of-connection policy for an already active operation remains to be settled before remote transmission is implemented.
+
+MCP accesses the same station operations and state as the browser. It supports observing and automating FT4/FT8 workflows, including finding candidate stations, selecting a suitable station, and conducting a QSO. Transport, tool names, authentication/authorization, control ownership, and selection policy are specified before the corresponding implementation. MCP does not define a separate modem or timing engine.
+
+The detailed message contract, supported bandwidth/latency envelope, and optional desktop packaging remain open. A browser client is the initial interface direction; a Tauri or other desktop wrapper has not been selected.
 
 ## 4. Proposed functional requirements
 
@@ -83,6 +103,10 @@ The following requirements are proposed for refinement during the upstream inven
 | FR-015 | Utilities | Identify the user and validation needs served by upstream utilities. Provide the selected capabilities through the smallest practical interface, documenting any required external compatibility. |
 | FR-016 | Settings and migration | Persist Rust application settings reliably. Define compatibility and migration behavior for existing WSJT-X profiles before a user migration release. |
 | FR-017 | Help and notices | Provide operating guidance, version information, relevant attribution, license access, and a clear indication that this is an independent port. |
+| FR-018 | Recorded audio input | Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. Initial accepted formats and the first import workflow remain to be settled. |
+| FR-019 | Browser operator interface | Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. |
+| FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
+| FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -144,7 +168,7 @@ The first Windows release may occur before full-suite coverage at M3 or M4. Its 
 ## 9. Open decisions
 
 1. What is the final public product name?
-2. Should the Rust application suite remain separate executables or share one application shell?
+2. Which message contract and transport connect the station server, browser client, and MCP adapter, and how is control ownership managed?
 3. Which mode and user workflow should form the first usable milestone?
 4. Which GUI, audio, radio-control, and DSP libraries should be selected?
 5. What native-library bindings are permitted within the all-Rust goal?
