@@ -35,7 +35,7 @@ async function peer(origin, options = {}) {
 }
 async function receive(ws) {
   const message = once(ws, 'message').then(([data]) => JSON.parse(data));
-  return Promise.race([message, sleep(3000).then(() => {throw new Error('Message timeout');})]);
+  return Promise.race([message, sleep(3000, undefined, {ref: false}).then(() => {throw new Error('Message timeout');})]);
 }
 async function request(ws, text) {const response = receive(ws); ws.send(text); return response;}
 async function connected(page, origin) {
@@ -144,7 +144,7 @@ test('TC-021-008: stalled reader cannot block another client', {timeout: 30000},
   assert.ok(Date.now() - started < 2000);
   await sleep(3000);
   const closed = once(slow, 'close'); slow._socket.resume();
-  await Promise.race([closed, sleep(20000).then(() => {throw new Error('Stalled reader was not disconnected');})]);
+  await Promise.race([closed, sleep(20000, undefined, {ref: false}).then(() => {throw new Error('Stalled reader was not disconnected');})]);
   assert.equal((await request(healthy, text)).type, 'station.status');
 });
 
