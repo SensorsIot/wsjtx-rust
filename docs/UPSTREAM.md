@@ -2,6 +2,8 @@
 
 This project is based on [WSJTX/wsjtx](https://github.com/WSJTX/wsjtx). The imported baseline is commit `967c85a6119110788b0df3782cf796485b2cee14`, preserved on this repository's `original` branch.
 
+The imported snapshot is an archive, not the current behavior target. The selected experimental behavior reference is [WSJT-X v3.3.0-beta4](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4), commit `0f7d5928449ec747c3d1f6da1306f8c94404c3a9`. The current plan is to extract functional requirements from documentation and observed behavior, then implement them independently in Rust with a simpler design. The retained upstream credits describe the archived project; they do not identify authors of new Rust code. This is not a claim of formal clean-room development.
+
 ## Repository preparation
 
 On 2026-10-24, the upstream application source, assets, utilities, packaging, and build configuration were removed from the current `master` tree to prepare for a Rust port. The upstream README and Git configuration files were replaced with project-specific versions. The upstream implementation has not yet been translated into Rust.

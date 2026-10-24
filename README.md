@@ -1,13 +1,15 @@
 # WSTX Rust
 
-A planned Rust port of the WSJT-X application suite, including WSJT-X, MAP65, QMAP, and supporting tools. WSTX Rust is a working name; final release branding remains undecided.
+A planned, simplified Rust implementation of WSJT-family radio functionality. Requirements will be extracted from documented and observable behavior, with WSJT-X v3.3.0-beta4 as the initial experimental reference. The existing implementation will not be translated line by line or copied into the Rust project. WSTX Rust is a working name; final release branding remains undecided.
 
-The project is in the specification phase. No Rust implementation or Cargo workspace has been added yet.
+The project has a minimal Rust executable and a Windows/MSVC build workflow. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
 
 ## Documentation
 
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)
 - [Upstream baseline and attribution](docs/UPSTREAM.md)
+- [Windows build environment](docs/BUILDING.md)
+- [Sample recordings and provenance](docs/SAMPLES.md)
 
 ## Branches
 

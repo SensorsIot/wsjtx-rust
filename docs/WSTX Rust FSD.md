@@ -4,31 +4,34 @@
 - Created: 2026-10-24
 - Working name: WSTX Rust
 - Repository: https://github.com/SensorsIot/wsjtx-rust
-- Upstream baseline: WSJTX/wsjtx, commit `967c85a6119110788b0df3782cf796485b2cee14`
+- Behavior reference: WSJT-X `v3.3.0-beta4`, released 2026-10-22, commit `0f7d5928449ec747c3d1f6da1306f8c94404c3a9`
+- Archived source snapshot: WSJTX/wsjtx, commit `967c85a6119110788b0df3782cf796485b2cee14` on `original`; this is not the beta behavior baseline.
 
 ## 1. Purpose
 
-Define the intended behavior and acceptance criteria for a Rust port of the complete WSJT-X repository. The port must preserve on-air interoperability and the workflows needed for weak-signal amateur-radio communication.
+Define the intended behavior and acceptance criteria for a simplified Rust implementation of WSJT-family functionality. The project must preserve on-air interoperability and the workflows needed for weak-signal amateur-radio communication, while keeping the implementation and user experience as simple as possible.
 
-This is a starting specification, not a claim of implemented functionality. Confirmed decisions are listed separately from proposed requirements and open questions. Detailed parity requirements will be derived from the pinned upstream source, documentation, and reference runs.
+This is a starting specification, not a claim of implemented functionality. Confirmed decisions are listed separately from proposed requirements and open questions. Extract requirements from protocol publications, user documentation, release notes, and observable reference behavior. Write the Rust implementation independently rather than copying or translating the upstream source. Previous source inspection and shared repository history mean this process is not a claim of formal clean-room development.
 
 ## 2. Confirmed project decisions
 
-- The project will port the whole upstream project to Rust.
+- The project targets the upstream suite's useful functionality in Rust, with a simpler design; repository structure, internal APIs, and implementation details are not parity requirements.
+- The experimental behavior baseline is pinned to WSJT-X `v3.3.0-beta4`; newer betas require an explicit baseline update.
+- Prefer a small application with shared modules. Add processes, crates, dependencies, or compatibility layers only when a concrete requirement justifies them.
 - The `original` branch preserves the imported upstream source and history as a reference.
 - The `master` branch is the development branch for the Rust port.
 - Project documentation is stored in `docs/`.
 - The upstream project is licensed under GPLv3. The port must meet applicable license and attribution requirements when distributed.
 
-The upstream application files have been removed from the current `master` tree to establish a clean basis for the Rust project. The imported implementation remains on `original` and in Git history. The Rust workspace has not yet been created.
+The upstream application files have been removed from the current `master` tree to establish a clean basis for the Rust project. The imported implementation remains on `original` and in Git history. A dependency-free Rust package now provides a compiler and linker smoke check on GitHub Actions; it does not implement radio functionality. See [Windows builds](BUILDING.md).
 
 ## 3. Scope
 
-The intended end state covers the functionality of WSJT-X, MAP65, QMAP, and the supporting tools shipped in the upstream repository. Delivery can be incremental; full parity is the final target rather than the first release milestone.
+The intended end state covers the useful radio functionality represented by WSJT-X, MAP65, and QMAP. Supporting utilities are included when they serve an identified user or validation need; recreating every upstream file or executable is not a goal. Maintain a feature inventory with explicit decisions to include, merge, defer, or omit each capability. Delivery is incremental, with a small initial operating path.
 
 ### 3.1 Modes and protocols
 
-The initial mode inventory includes FST4, FST4W, FT4, FT8, JT4, JT9, JT65, MSK144, Q65, WSPR, and Echo. Exact variants, submodes, timing options, message types, and special operating modes must be inventoried against the baseline before implementation is declared complete.
+The initial mode inventory includes FST4, FST4W, FT4, FT8, JT4, JT9, JT65, MSK144, Q65, WSPR, Echo, and the experimental JTTY mode. Exact variants, submodes, timing options, message types, and special operating modes must be inventoried against the pinned beta's behavior and documentation before implementation is declared complete.
 
 ### 3.2 Application capabilities
 
@@ -64,7 +67,7 @@ The following requirements are proposed for refinement during the upstream inven
 | FR-012 | Integrations | Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. |
 | FR-013 | EME | Provide baseline astronomical information, Doppler handling, and Echo measurement workflows applicable to each application. |
 | FR-014 | Wideband reception | Replace MAP65 and QMAP capabilities, including supported wideband input, band maps, polarization processing where applicable, and coordination with the narrowband application. |
-| FR-015 | Utilities | Inventory and replace the user-facing upstream utilities and their documented inputs, outputs, and invocation behavior. |
+| FR-015 | Utilities | Identify the user and validation needs served by upstream utilities. Provide the selected capabilities through the smallest practical interface, documenting any required external compatibility. |
 | FR-016 | Settings and migration | Persist Rust application settings reliably. Define compatibility and migration behavior for existing WSJT-X profiles before a user migration release. |
 | FR-017 | Help and notices | Provide operating guidance, version information, relevant attribution, license access, and a clear indication that this is an independent port. |
 
@@ -80,8 +83,8 @@ The following requirements are proposed for refinement during the upstream inven
 
 ## 6. Acceptance and validation approach
 
-1. Build a traceability inventory linking upstream applications, modes, workflows, utilities, and integrations to specification requirements and Rust components.
-2. Pin the reference implementation to the baseline commit and record its build configuration and relevant runtime settings.
+1. Build a functionality inventory from documentation and observed workflows. Link selected capabilities to requirements, acceptance examples, and Rust components; record deferred and omitted capabilities.
+2. Pin the beta reference binary and record its version, hash, relevant runtime settings, and input data. Do not assume the archived `original` snapshot represents the same release.
 3. Establish reference vectors for message packing, error-correction coding, symbol generation, and waveforms. Require exact results where the protocol defines discrete values; define justified tolerances for floating-point processing.
 4. Compare decoders on the same recordings and controlled signal conditions, including weak signals, overlapping signals, timing offsets, and frequency offsets.
 5. Test transmit and receive interoperability with the reference implementation, initially using recorded audio or controlled loopback setups.
@@ -98,7 +101,7 @@ Full-project completion requires every inventory item to be implemented and acce
 | M1: Protocol foundation | Implement shared message and signal primitives; select a first mode after the inventory. | Reference-vector comparisons and an offline encode/decode demonstration. |
 | M2: First usable operating path | Connect audio, sequencing, basic operator controls, and the initial radio-control path. | A complete validated operating scenario for the selected mode. |
 | M3: WSJT-X parity | Implement the remaining narrowband modes, operating workflows, logging, and integrations. | Requirement coverage and per-mode compatibility results. |
-| M4: Full repository parity | Implement MAP65, QMAP, remaining utilities, and supporting distribution assets. | Completed upstream inventory coverage and end-to-end validation. |
+| M4: Suite functional coverage | Implement the selected wideband and EME capabilities and required utilities using shared Rust components. | Every inventory item has an implementation or an explicit defer/omit decision, with end-to-end validation for implemented capabilities. |
 | M5: Release preparation | Finalize branding, notices, documentation, migration, and platform packaging. | Reproducible packages and documented acceptance results. |
 
 No delivery dates or effort estimates have been agreed.
@@ -122,10 +125,12 @@ No delivery dates or effort estimates have been agreed.
 6. Which operating-system versions, CPU architectures, and radio devices are required initially?
 7. What quantitative decoder, timing, and resource targets define acceptable parity?
 8. How much compatibility with existing settings, command-line interfaces, and UI layout is required?
-9. Should future upstream fixes be incorporated continuously or through explicit baseline updates?
+9. Which optional legacy workflows and utilities can be merged, deferred, or omitted to simplify the product?
 
 ## 10. References
 
+- [Experimental beta behavior reference](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4)
+- [Sample recordings and provenance](SAMPLES.md)
 - [Upstream source at the imported baseline](https://github.com/WSJTX/wsjtx/tree/967c85a6119110788b0df3782cf796485b2cee14)
 - [Upstream program and mode overview](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/README.md)
 - [Upstream GPLv3 license](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/COPYING)

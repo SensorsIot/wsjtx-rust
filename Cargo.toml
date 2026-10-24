@@ -1,0 +1,8 @@
+[package]
+name = "wstx-rust"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "A simplified Rust implementation of WSJT-family radio functionality"
+repository = "https://github.com/SensorsIot/wsjtx-rust"
+publish = false
