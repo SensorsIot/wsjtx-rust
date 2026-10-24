@@ -16,6 +16,9 @@ This is a starting specification, not a claim of implemented functionality. Conf
 ## 2. Confirmed project decisions
 
 - The project targets the upstream suite's useful functionality in Rust, with a simpler design; repository structure, internal APIs, and implementation details are not parity requirements.
+- The primary product is a desktop application. Its first release targets Windows; macOS and Linux are planned desktop targets after the Windows release.
+- Use desktop CPU and memory resources effectively, including multicore execution and suitable hardware acceleration. Microcontroller resource limits do not set the primary product's design constraints.
+- A microcontroller edition is a possible secondary product, with its own scope and resource limits. It is not part of the first Windows release commitment.
 - The experimental behavior baseline is pinned to WSJT-X `v3.3.0-beta4`; newer betas require an explicit baseline update.
 - Prefer a small application with shared modules. Add processes, crates, dependencies, or compatibility layers only when a concrete requirement justifies them.
 - The `original` branch preserves the imported upstream source and history as a reference.
@@ -47,6 +50,16 @@ The initial mode inventory includes FST4, FST4W, FT4, FT8, JT4, JT9, JT65, MSK14
 
 Application logic and protocol implementations are intended to be written in Rust. Whether native operating-system interfaces, device drivers, or external libraries may be used through bindings remains an open decision. Retaining the existing Fortran or C++ implementation is not the final implementation goal.
 
+### 3.4 Release targets
+
+| Release direction | Target | Scope |
+| --- | --- | --- |
+| First release | Windows desktop | A usable operating path selected from the functionality inventory, with the existing Windows x64/MSVC build as the initial development target. Exact Windows versions and supported radio hardware remain open. |
+| Subsequent desktop releases | macOS and Linux | Reuse the protocol and signal-processing components, adding and validating platform-specific audio, radio access, UI, packaging, and acceleration as needed. |
+| Possible secondary edition | Microcontrollers and other constrained devices | Explore after the desktop foundation is established. Select the supported modes, hardware, memory budget, and interface separately; full desktop feature parity is not assumed. |
+
+Keep protocol logic and input/output boundaries portable where practical. Platform-specific performance work is permitted behind those boundaries. Do not require every desktop feature to fit a microcontroller or require the initial Windows release to ship macOS, Linux, or embedded packages.
+
 ## 4. Proposed functional requirements
 
 The following requirements are proposed for refinement during the upstream inventory.
@@ -76,10 +89,22 @@ The following requirements are proposed for refinement during the upstream inven
 - **On-air compatibility:** Preserve the protocol definitions and interoperability of the selected upstream baseline. A language rewrite must not silently change message encoding or waveform conventions.
 - **Decoder quality:** Measure decoding success, false positives, sensitivity, and runtime against reference recordings and controlled signals. Numeric tolerances and acceptance thresholds must be agreed per mode.
 - **Timing:** Meet each mode's receive and transmit deadlines on a documented reference machine. Hardware and performance budgets remain to be selected.
-- **Platforms:** Windows, Linux, and macOS are the proposed target platforms, following upstream's platform scope. Supported versions and architectures remain open.
+- **Platforms:** Windows is the first release platform. macOS and Linux are subsequent desktop targets. Supported operating-system versions and CPU architectures remain open beyond the initial Windows x64 build environment.
 - **Reliability:** Recover from device and connection errors with understandable status information; preserve settings and logs across ordinary restarts.
 - **Maintainability:** Keep protocol and signal-processing logic testable independently of the graphical interface and physical radio hardware.
 - **Licensing:** Choose dependencies compatible with distribution of the port under GPLv3 and retain applicable third-party notices.
+
+### 5.1 Desktop performance and acceleration
+
+- **Multicore execution:** Use a bounded pool of CPU workers for independent decode work and other suitable tasks. Support automatic worker selection and an operator override, keeping enough capacity for audio, radio control, and the interface. Preserve ordering where processing stages depend on earlier results.
+- **CPU optimization:** Evaluate optimized FFT processing, data layout, buffer reuse, and SIMD where profiling identifies a useful benefit. Select instruction-specific paths according to the processor's capabilities and retain a portable CPU path.
+- **GPU and other accelerators:** Allow optional acceleration for suitable workloads, such as batched signal processing or spectrum generation. Select APIs and backends after cross-platform feasibility checks and benchmarks; no CUDA, Vulkan, Metal, or other vendor/API dependency has been selected.
+- **CPU-only operation:** The application must remain usable without a dedicated GPU. An unavailable or failed optional acceleration backend must fall back to the CPU path with an understandable status message.
+- **Correctness:** Compare every acceleration path with the same protocol vectors and recordings used by the CPU reference path. Check message correctness, missed signals, false decodes, numerical tolerances, and cancellation behavior; a faster path must meet the agreed acceptance criteria.
+- **Latency and responsiveness:** Measure time from incoming audio to usable decode results, including scheduling, transfers to and from accelerators, and result delivery. Keep the audio and operator-control paths responsive while background processing is active.
+- **Evidence before complexity:** Retain an optimization when end-to-end measurements justify its maintenance cost. Record CPU/GPU model, operating system, compiler/build configuration, worker count, workload, memory use, and timing distributions. Raw arithmetic throughput alone is insufficient.
+
+Hardware acceleration is an intended optimization route, not a promise that GPU decoding will ship in the first Windows release. Release-specific performance budgets and supported backends must be selected through measurement. Microcontroller-specific tradeoffs belong to the potential secondary edition.
 
 ## 6. Acceptance and validation approach
 
@@ -89,7 +114,8 @@ The following requirements are proposed for refinement during the upstream inven
 4. Compare decoders on the same recordings and controlled signal conditions, including weak signals, overlapping signals, timing offsets, and frequency offsets.
 5. Test transmit and receive interoperability with the reference implementation, initially using recorded audio or controlled loopback setups.
 6. Validate operator workflows, device behavior, file formats, and integrations using documented scenarios.
-7. Run the required platform checks and record any unsupported capability explicitly before declaring a release ready.
+7. Run Windows checks for the first release and platform-specific acceptance checks before each subsequent macOS or Linux release. Record unsupported capabilities explicitly.
+8. Benchmark one CPU worker, multiple CPU workers, and each available acceleration backend on identical inputs. Track deadline completion, interface responsiveness, peak memory, and decoder quality as well as throughput. No target hardware or numerical speedup threshold has been agreed yet.
 
 Full-project completion requires every inventory item to be implemented and accepted, or explicitly excluded through a documented scope decision. A successful FT8 demonstration alone does not establish full parity.
 
@@ -102,9 +128,9 @@ Full-project completion requires every inventory item to be implemented and acce
 | M2: First usable operating path | Connect audio, sequencing, basic operator controls, and the initial radio-control path. | A complete validated operating scenario for the selected mode. |
 | M3: WSJT-X parity | Implement the remaining narrowband modes, operating workflows, logging, and integrations. | Requirement coverage and per-mode compatibility results. |
 | M4: Suite functional coverage | Implement the selected wideband and EME capabilities and required utilities using shared Rust components. | Every inventory item has an implementation or an explicit defer/omit decision, with end-to-end validation for implemented capabilities. |
-| M5: Release preparation | Finalize branding, notices, documentation, migration, and platform packaging. | Reproducible packages and documented acceptance results. |
+| M5: Release preparation | Prepare Windows releases at the selected functional milestones, including branding, notices, documentation, migration, packaging, and measured performance. Schedule macOS and Linux releases after Windows. | Reproducible Windows packages and documented acceptance results for the release's agreed scope. Separate platform validation precedes later releases. |
 
-No delivery dates or effort estimates have been agreed.
+The first Windows release may occur before full-suite coverage at M3 or M4. Its exact feature set is still to be selected; Windows-first does not mean every upstream feature must be finished before any release. A possible microcontroller edition has no committed milestone. No delivery dates or effort estimates have been agreed.
 
 ## 8. Licensing, attribution, and branding
 
@@ -122,10 +148,12 @@ No delivery dates or effort estimates have been agreed.
 3. Which mode and user workflow should form the first usable milestone?
 4. Which GUI, audio, radio-control, and DSP libraries should be selected?
 5. What native-library bindings are permitted within the all-Rust goal?
-6. Which operating-system versions, CPU architectures, and radio devices are required initially?
+6. Which Windows versions, reference CPU/GPU configurations, and radio devices are required for the first release? Which macOS and Linux targets follow?
 7. What quantitative decoder, timing, and resource targets define acceptable parity?
 8. How much compatibility with existing settings, command-line interfaces, and UI layout is required?
 9. Which optional legacy workflows and utilities can be merged, deferred, or omitted to simplify the product?
+10. Which workloads benefit enough from SIMD or GPU acceleration to justify dedicated implementations, and which cross-platform backends should be supported?
+11. If a secondary microcontroller edition is pursued, which devices and mode subset should it support?
 
 ## 10. References
 

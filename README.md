@@ -4,6 +4,8 @@ A planned, simplified Rust implementation of WSJT-family radio functionality. Re
 
 The project has a minimal Rust executable and a Windows/MSVC build workflow. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
 
+The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
+
 ## Documentation
 
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)

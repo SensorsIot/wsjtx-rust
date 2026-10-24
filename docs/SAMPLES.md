@@ -40,6 +40,7 @@ This establishes repository provenance. It does not establish the particular Web
 - For the selected WSJT-X `v3.3.0-beta4` behavior reference, generate a separate output set and record the exact binary, settings, command, and audio input. Do not overwrite the historical references.
 - Add synthetic and noise-only inputs alongside the live recordings to measure sensitivity, false decodes, frequency/time error, and crowded-band behavior.
 - Sample data can support an independently designed implementation without importing the C or Fortran decoder code.
+- The recordings are useful independently of ft8_lib's microcontroller focus. Our primary implementation targets desktop resources and performance, with Windows first and macOS/Linux afterward. Evaluate any codec reference on interoperability, decoder quality, and end-to-end latency rather than adopting its embedded resource limits. A possible secondary microcontroller edition may make different tradeoffs.
 
 ## Sources
 
