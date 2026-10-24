@@ -29,14 +29,8 @@ contract; the references below are the constraints a change must respect.
 
 Isolated tests may start disposable loopback servers, browsers, TLS endpoints and link
 simulators at level 2. This project binding distinguishes test networking from live
-station or external-service access, which remains level 3–5. The local communication
-gate uses `npm run test:local` against the current debug build: message validation,
-browser status, reconnect/silent loss, stalled-reader isolation, authentication and
-simulator sanity. It deliberately excludes the 60-second bandwidth-budget measurement.
-GitHub Actions runs `npm test` against the packaged release executable, including that
-measurement. A local fast-profile pass does not certify the bandwidth budget.
-The full suite can also run on demand on this PC. Setup is `npm ci`,
-`npx playwright install chromium` and `cargo build --locked`.
+station or external-service access, which remains level 3–5. Communication tests run
+with `npm test` after `npm ci`, `npx playwright install chromium` and `cargo build --locked`.
 The link simulator accounts for actual encrypted-stream bytes plus modelled transport
 overhead; it is not an on-wire packet capture or a physical-network certification.
 The simulator disconnects a peer whose pending delivery bytes plus destination write
