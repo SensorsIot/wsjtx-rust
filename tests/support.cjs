@@ -40,26 +40,23 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
   function forward(source, destination, direction) {
     source.on('data', data => {
       source.pause();
-      const run = async () => {
-        for (let offset = 0; offset < data.length; offset += 512) {
-          const part = data.subarray(offset, offset + 512);
-          const reverse = direction === 'up' ? 'down' : 'up';
-          const bytes = part.length + 80;
-          counters[direction] += bytes; counters[reverse] += 80;
-          const now = performance.now();
-          const at = Math.max(now, next[direction]);
-          next[direction] = at + bytes / rate * 1000;
-          next[reverse] = Math.max(now, next[reverse]) + 80 / rate * 1000;
-          await new Promise(resolve => {
-            const timer = setTimeout(() => { timers.delete(timer); resolve(); }, Math.max(0, next[direction] + latency - performance.now()));
-            timers.add(timer);
-          });
-          if (destination.destroyed) break;
-          if (!destination.write(part)) await Promise.race([once(destination, 'drain'), once(destination, 'close')]);
-        }
-        source.resume();
-      };
-      run().catch(() => {source.destroy(); destination.destroy();});
+      for (let offset = 0; offset < data.length; offset += 512) {
+        const part = data.subarray(offset, offset + 512);
+        const reverse = direction === 'up' ? 'down' : 'up';
+        const bytes = part.length + 80;
+        counters[direction] += bytes; counters[reverse] += 80;
+        const now = performance.now();
+        next[direction] = Math.max(now, next[direction]) + bytes / rate * 1000;
+        next[reverse] = Math.max(now, next[reverse]) + 80 / rate * 1000;
+        const timer = setTimeout(() => {
+          timers.delete(timer);
+          if (!destination.destroyed) destination.write(part);
+        }, Math.max(0, next[direction] + latency - performance.now()));
+        timers.add(timer);
+      }
+      // Propagation is pipelined: it does not reduce the serialized link rate.
+      const resume = setTimeout(() => {timers.delete(resume); source.resume();}, Math.max(0, next[direction] - performance.now()));
+      timers.add(resume);
     });
   }
   const listener = net.createServer(client => {
