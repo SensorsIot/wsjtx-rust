@@ -33,14 +33,22 @@ The server stays running. Open `http://127.0.0.1:8080` in a browser; stop the se
 with Ctrl+C. Remote TLS and access settings are defined in the
 [communication contract](COMMUNICATION.md#connection-and-security).
 
-For automated browser tests, install Node 24 and run from the repository root:
+For routine local browser checks, install Node 24 and run from the repository root:
 
 ```powershell
 npm ci --ignore-scripts
 npx playwright install chromium
 cargo build --locked
-npm test
+npm run test:local
 ```
+
+This fast profile runs protocol validation, the real browser interface,
+disconnect/silent-loss recovery, slow-reader isolation, authentication and simulator
+sanity against the debug server. It intentionally excludes the 60-second
+TC-021-008 bandwidth-budget measurement and does not certify that budget.
+GitHub Actions runs the full `npm test` suite against the packaged release server,
+including the bandwidth measurement. To run that full suite on this PC on demand,
+use `npm test` after building the executable to test.
 
 `WSTX_TEST_EXE` optionally selects an exact packaged executable. Otherwise tests use
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.

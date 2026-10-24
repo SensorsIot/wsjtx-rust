@@ -18,7 +18,7 @@
   needs: The toolchain of rust-toolchain.toml. No radio or live station.
 - suite: communication
   cost: 2
-  run: cargo build --workspace --locked && npm test
+  run: cargo build --workspace --locked && npm run test:local
   paths:
   - server/
   - client/
