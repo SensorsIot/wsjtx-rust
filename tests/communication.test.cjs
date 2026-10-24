@@ -1,7 +1,7 @@
 'use strict';
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
-const {once} = require('node:events');
+const {once, EventEmitter} = require('node:events');
 const {setTimeout: sleep} = require('node:timers/promises');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -12,6 +12,7 @@ const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
 const WebSocket = require('ws');
 const {server, link} = require('./support.cjs');
+const {receive} = require('./peer.cjs');
 let browser, temporary, tlsEnv;
 const token = 'TestOnlyRandomCredential0123456789ABCDEF';
 before(async () => {
@@ -33,10 +34,6 @@ async function peer(origin, options = {}) {
   await once(ws, 'open');
   return ws;
 }
-async function receive(ws) {
-  const message = once(ws, 'message').then(([data]) => JSON.parse(data));
-  return Promise.race([message, sleep(3000, undefined, {ref: false}).then(() => {throw new Error('Message timeout');})]);
-}
 async function request(ws, text) {const response = receive(ws); ws.send(text); return response;}
 async function connected(page, origin) {
   await page.goto(origin);
@@ -47,6 +44,23 @@ async function contextFor(origin, authenticated = false) {
   if (authenticated) await context.addCookies([{name: 'wstx_session', value: token, url: origin, httpOnly: true, secure: true, sameSite: 'Strict'}]);
   return context;
 }
+
+// Test-tool oracle: a protocol fixture proves heartbeat interleaving and a fixed deadline.
+test('peer helper: heartbeat interleaving preserves response and total deadline', {timeout: 2000}, async () => {
+  const fixture = new EventEmitter();
+  const result = receive(fixture);
+  fixture.emit('message', Buffer.from('{"v":1,"type":"heartbeat"}'));
+  fixture.emit('message', Buffer.from('{"v":1,"type":"station.status","id":7}'));
+  assert.deepEqual(await result, {v: 1, type: 'station.status', id: 7});
+  for (const message of [{v: 2, type: 'heartbeat'}, {v: 1, type: 'heartbeat', id: 7}, {v: 1, type: 'unexpected'}]) {
+    const unexpected = receive(fixture); fixture.emit('message', JSON.stringify(message));
+    assert.deepEqual(await unexpected, message, 'unexpected messages remain visible to the oracle');
+  }
+  const deadline = receive(fixture, 30);
+  const heartbeat = setInterval(() => fixture.emit('message', '{"v":1,"type":"heartbeat"}'), 2);
+  try {await assert.rejects(deadline, /Message timeout/);} finally {clearInterval(heartbeat);}
+  assert.equal(fixture.listenerCount('message'), 0);
+});
 
 // Proves: FR-021; CL-003-02, CL-003-03; level 2, Windows PC/CI, isolated local server.
 test('TC-021-005: actual-server correlation, negative cases and size boundaries', async t => {
