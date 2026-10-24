@@ -102,6 +102,11 @@ write buffer is capped at 2,048 bytes; each send has a two-second deadline. Sock
 buffers are additional OS-managed bounds. A blocked peer is disconnected; it does not
 block another peer's task. These limits bound application queuing, not total process
 memory independently of HTTP/TLS connections managed by the runtime.
+The stalled-reader test keeps a peer paused with automatic Pong replies disabled
+past the liveness deadline plus heartbeat-tick bound, then checks disconnection and
+the other peer's responsiveness. It proves bounded unresponsive-peer removal; because
+OS buffers can absorb the request burst, it does not claim to observe the two-second
+send-timeout branch or independently measure total queue memory.
 
 ## Thin-link budget and test model
 

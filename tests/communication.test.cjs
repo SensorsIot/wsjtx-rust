@@ -144,9 +144,9 @@ test('TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget', {timeout
 });
 
 // Proves: FR-021; CL-003-06; level 2, stalled socket and independent healthy peer.
-test('TC-021-008: stalled reader cannot block another client', {timeout: 30000}, async t => {
+test('TC-021-008: stalled reader cannot block another client', {timeout: 35000}, async t => {
   const app = await server(); t.after(() => app.close());
-  const slow = await peer(app.origin), healthy = await peer(app.origin);
+  const slow = await peer(app.origin, {autoPong: false}), healthy = await peer(app.origin);
   t.after(() => {slow.terminate(); healthy.terminate();});
   slow._socket.pause();
   const text = '{"v":1,"type":"station.get","id":1}';
@@ -154,9 +154,12 @@ test('TC-021-008: stalled reader cannot block another client', {timeout: 30000},
   const started = Date.now();
   assert.equal((await request(healthy, text)).type, 'station.status');
   assert.ok(Date.now() - started < 2000);
-  await sleep(3000);
+  // Remain unresponsive beyond the contract's 15-second Pong deadline and next
+  // five-second heartbeat tick. The OS write buffer may absorb the burst, so this
+  // proves bounded liveness disconnection, not that the two-second send timeout ran.
+  await sleep(22000);
   const closed = once(slow, 'close'); slow._socket.resume();
-  await Promise.race([closed, sleep(20000, undefined, {ref: false}).then(() => {throw new Error('Stalled reader was not disconnected');})]);
+  await Promise.race([closed, sleep(5000, undefined, {ref: false}).then(() => {throw new Error('Unresponsive reader was not disconnected after the liveness deadline');})]);
   assert.equal((await request(healthy, text)).type, 'station.status');
 });
 
