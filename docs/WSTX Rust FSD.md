@@ -110,6 +110,11 @@ The following requirements are proposed for refinement during the upstream inven
 
 ## 5. Proposed quality and compatibility requirements
 
+The initial FR-019/FR-021 browser/server interface is specified in the
+[station communication contract](COMMUNICATION.md). Its first profile targets 32 kbit/s
+and status-only operation; CR #3 carries clauses CL-003-01 through CL-003-08 and tests
+TC-021-005 through TC-021-009.
+
 - **On-air compatibility:** Preserve the protocol definitions and interoperability of the selected upstream baseline. A language rewrite must not silently change message encoding or waveform conventions.
 - **Decoder quality:** Measure decoding success, false positives, sensitivity, and runtime against reference recordings and controlled signals. Numeric tolerances and acceptance thresholds must be agreed per mode.
 - **Timing:** Meet each mode's receive and transmit deadlines on a documented reference machine. Hardware and performance budgets remain to be selected.

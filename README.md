@@ -2,7 +2,7 @@
 
 A planned, simplified Rust implementation of WSJT-family radio functionality. Requirements will be extracted from documented and observable behavior, with WSJT-X v3.3.0-beta4 as the initial experimental reference. The existing implementation will not be translated line by line or copied into the Rust project. WSTX Rust is a working name; final release branding remains undecided.
 
-The project has a minimal Rust executable and a Windows/MSVC build workflow. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
+The project has a Rust station server, a lightweight browser status interface and a Windows/MSVC build workflow. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
 
 The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
 
@@ -12,8 +12,8 @@ The product architecture is defined in the [FSD](docs/WSTX%20Rust%20FSD.md#35-st
 
 | Path | Contents |
 | --- | --- |
-| `server/` | Rust station-server package; currently the unchanged development executable. |
-| `client/` | Directory reserved for the HTML/CSS/JavaScript browser client; no UI is implemented yet. |
+| `server/` | Rust station server, WebSocket protocol and optional native TLS. |
+| `client/` | HTML/CSS/JavaScript status interface, embedded into the server executable. |
 | `docs/` | Functional specification, build instructions, and source references. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
 | `harness/`, `.harness/` | Pinned development harness and project bindings. |
@@ -25,6 +25,7 @@ Run Cargo commands from the repository root. The workspace builds its server mem
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)
 - [Upstream baseline and attribution](docs/UPSTREAM.md)
 - [Windows build environment](docs/BUILDING.md)
+- [Station communication contract](docs/COMMUNICATION.md)
 - [Sample recordings and provenance](docs/SAMPLES.md)
 
 ## Branches
