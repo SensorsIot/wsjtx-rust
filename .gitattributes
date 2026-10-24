@@ -1,6 +1,4 @@
-.gitattributes	export-ignore
-/samples	export-ignore
-/lib/fsk4hf	export-ignore
-/lib/fsk4hf	export-ignore
-/robots		export-ignore
-/plots		export-ignore
+* text=auto
+*.md text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf

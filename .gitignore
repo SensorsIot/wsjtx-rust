@@ -1,24 +1,12 @@
-~*
-TAGS
-tags
-GPATH
-GRTAGS
-GTAGS
+# Rust build output
+**/target/
+
+# Editor temporary files
+*.swp
+*.swo
 *~
-junk*
-jnq*
-!*.exe
-*.o
-*.mod
-*.pro.user
-*.txt
-*.bak
-!**/CMakeLists.txt
-!**/*.txt
-__pycache__
-cmake-build-debug
-cmake-build-release
-CMakeFiles
-fnd
-lib/77bit/tmp
-lib/tmp
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
