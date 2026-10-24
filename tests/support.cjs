@@ -37,9 +37,11 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
   const next = {up: 0, down: 0};
   const timers = new Set();
   let enabled = true;
+  let blackholed = false;
   function forward(source, destination, direction) {
     let pendingBytes = 0;
     source.on('data', data => {
+      if (blackholed) return;
       source.pause();
       if (pendingBytes + data.length + destination.writableLength > 128 * 1024) {
         source.destroy(); destination.destroy(); return;
@@ -58,7 +60,7 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
           pendingBytes -= part.length;
           if (pendingBytes + destination.writableLength > 128 * 1024) {
             source.destroy(); destination.destroy();
-          } else if (!destination.destroyed) destination.write(part);
+          } else if (!destination.destroyed && !blackholed) destination.write(part);
         }, Math.max(0, next[direction] + latency - performance.now()));
         timers.add(timer);
       }
@@ -77,7 +79,8 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
   listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
   return {port: listener.address().port, counters, target,
     cut() {enabled = false; for (const socket of sockets) socket.destroy();},
-    restore() {enabled = true;},
+    blackhole() {blackholed = true;},
+    restore() {enabled = true; blackholed = false;},
     async close() {enabled = false; for (const socket of sockets) socket.destroy(); for (const timer of timers) clearTimeout(timer); listener.close(); await once(listener, 'close');}
   };
 }
