@@ -1,5 +1,5 @@
-# Harness configuration (https://github.com/SensorsIot/harness, branch V2), installed per
-# user at ~/.claude/skills/harness. Read by its core/tools/project.py.
+# Harness configuration (https://github.com/SensorsIot/harness, branch V2, the submodule
+# at harness/). Read by harness/core/tools/project.py.
 project: wsjtx-rust
 packs: [rust]
 main: master

@@ -29,6 +29,7 @@ contract; the references below are the constraints a change must respect.
 
 The paths a harness change may touch; everything else is product:
 
+- `harness/` (the submodule: its pinned version; fixes are made inside it)
 - `.harness/`
 - `docs/harness/`, `AGENTS.md`, `CLAUDE.md`
 - `.github/ISSUE_TEMPLATE/`
