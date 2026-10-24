@@ -53,6 +53,11 @@ jobs:
         run: cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
 
       - name: Install browser test dependencies
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Install Chromium and test packages
         run: |
           npm ci --ignore-scripts
           npx playwright install chromium

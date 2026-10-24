@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const {performance} = require('node:perf_hooks');
 
 async function server(env = {}) {
-  const exe = process.env.WSTX_TEST_EXE || path.resolve('target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
+  const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
   if (!fs.existsSync(exe)) throw new Error(`Missing candidate ${exe}; run cargo build --locked`);
   const clean = {...process.env};
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
@@ -24,7 +24,8 @@ async function server(env = {}) {
     child.once('error', error => {clearTimeout(timer); reject(error);});
     child.once('exit', code => {clearTimeout(timer); reject(new Error(`Server exited ${code}: ${output}`));});
   });
-  return {origin, child, async close() { if (child.exitCode === null) { child.kill(); await once(child, 'exit'); } }};
+  const endpoint = output.match(/WSTX address (https?:\/\/\S+)/)?.[1] || origin;
+  return {origin, endpoint, child, async close() { if (child.exitCode === null && child.signalCode === null) { child.kill(); await once(child, 'exit'); } }};
 }
 
 // Byte-stream link simulator. TLS/WebSocket bytes are real; network headers are an explicit
@@ -69,7 +70,7 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
     forward(client, upstream, 'up'); forward(upstream, client, 'down');
   });
   listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
-  return {port: listener.address().port, counters,
+  return {port: listener.address().port, counters, target,
     cut() {enabled = false; for (const socket of sockets) socket.destroy();},
     restore() {enabled = true;},
     async close() {enabled = false; for (const socket of sockets) socket.destroy(); for (const timer of timers) clearTimeout(timer); listener.close(); await once(listener, 'close');}
