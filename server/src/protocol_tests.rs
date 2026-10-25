@@ -1,6 +1,90 @@
 use super::reply;
 use serde_json::json;
 
+// Proves: CL-006-03/04; TC-010-002 controlled transport readiness, independent of OS socket buffering.
+#[test]
+fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
+    use super::{Message, optional_flush, optional_write};
+    use std::{
+        convert::Infallible,
+        pin::Pin,
+        task::{Context, Poll},
+    };
+    struct Controlled {
+        ready: bool,
+        flush: bool,
+        buffered: usize,
+        starts: usize,
+    }
+    impl futures_sink::Sink<Message> for Controlled {
+        type Error = Infallible;
+        fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            if self.ready && self.buffered == 0 {
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }
+        fn start_send(mut self: Pin<&mut Self>, message: Message) -> Result<(), Self::Error> {
+            assert_eq!(self.buffered, 0);
+            assert!(message.into_data().len() <= 1024);
+            self.buffered = 1;
+            self.starts += 1;
+            Ok(())
+        }
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            _: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            if self.flush {
+                self.buffered = 0;
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Pending
+            }
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    let mut peer = Controlled {
+        ready: false,
+        flush: false,
+        buffered: 0,
+        starts: 0,
+    };
+    assert_eq!(
+        optional_write(&mut peer, Message::Text("optional".into())).unwrap(),
+        None
+    );
+    assert_eq!(peer.starts, 0);
+    peer.ready = true;
+    assert_eq!(
+        optional_write(&mut peer, Message::Text("optional".into())).unwrap(),
+        Some(false)
+    );
+    assert_eq!(peer.buffered, 1);
+    for _ in 0..100 {
+        assert!(!optional_flush(&mut peer).unwrap());
+        assert_eq!(
+            optional_write(&mut peer, Message::Text("replacement".into())).unwrap(),
+            None
+        );
+    }
+    assert_eq!(peer.starts, 1);
+    assert_eq!(
+        super::reply(r#"{"v":1,"type":"station.get","id":9}"#)["type"],
+        "station.status"
+    );
+    peer.flush = true;
+    assert!(optional_flush(&mut peer).unwrap());
+    assert_eq!(peer.buffered, 0);
+    assert_eq!(
+        optional_write(&mut peer, Message::Text("latest".into())).unwrap(),
+        Some(true)
+    );
+}
+
 // Proves: FR-021; TC-021-005. Level 2: isolated tests on Windows PC/CI.
 #[test]
 fn protocol_returns_specified_response_and_errors() {

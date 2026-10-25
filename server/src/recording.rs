@@ -66,8 +66,13 @@ pub struct Wave {
 }
 fn read<const N: usize>(file: &mut File) -> Result<[u8; N]> {
     let mut bytes = [0; N];
-    file.read_exact(&mut bytes)
-        .map_err(|_| "invalid_recording")?;
+    file.read_exact(&mut bytes).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::UnexpectedEof {
+            "invalid_recording"
+        } else {
+            "storage_unavailable"
+        }
+    })?;
     Ok(bytes)
 }
 pub fn validate(file: &mut File) -> Result<Wave> {
@@ -241,6 +246,8 @@ pub struct Job {
 pub struct State {
     pub generation: u64,
     recording: Option<Metadata>,
+    committed_id: Option<String>,
+    unknown_commit: bool,
     pub source_error: Option<&'static str>,
     pub storage_error: Option<&'static str>,
     pub import: Option<Import>,
@@ -261,6 +268,8 @@ struct Resources {
     active_workers: usize,
     peak_workers: usize,
     peak_blocks: usize,
+    cross_deadline: bool,
+    deadline_crossings: usize,
 }
 fn io<T>(value: std::io::Result<T>) -> Result<T> {
     value.map_err(|_| "storage_unavailable")
@@ -288,6 +297,8 @@ impl Recording {
         let mut state = State {
             generation: 0,
             recording: None,
+            committed_id: None,
+            unknown_commit: false,
             source_error: None,
             storage_error: None,
             import: None,
@@ -317,6 +328,7 @@ impl Recording {
                 if m.schema_version != 1 || !profile::valid_uuid(&m.recording_id) {
                     return Err("recording_unavailable");
                 }
+                state.committed_id = Some(m.recording_id.clone());
                 let meta: Metadata =
                     bounded_json(&dir.join(format!("{}.json", m.recording_id)), 1024)?;
                 let wave = validate(&mut io(File::open(
@@ -334,7 +346,10 @@ impl Recording {
             })();
             match loaded {
                 Ok(meta) => state.recording = Some(meta),
-                Err(_) => state.source_error = Some("recording_unavailable"),
+                Err(_) => {
+                    state.source_error = Some("recording_unavailable");
+                    state.unknown_commit = state.committed_id.is_none();
+                }
             }
         }
         let this = Arc::new(Self {
@@ -355,19 +370,29 @@ impl Recording {
     }
     fn cleanup(&self, pending: Option<&str>) -> Result<()> {
         checkpoint("cleanup")?;
-        let committed = self
-            .state
-            .lock()
-            .unwrap()
-            .recording
-            .as_ref()
-            .map(|m| m.recording_id.clone());
-        // A corrupt manifest must survive startup so the source fault remains observable.
+        let (committed, unknown_commit, rejected) = {
+            let s = self.state.lock().unwrap();
+            (
+                s.committed_id.clone(),
+                s.unknown_commit,
+                s.import
+                    .as_ref()
+                    .filter(|i| matches!(i.state, "cancelling" | "failed"))
+                    .map(|i| i.id.clone()),
+            )
+        };
+        // An unreadable manifest provides no authority to delete a possible committed original.
         for entry in io(fs::read_dir(&self.dir))? {
             let entry = io(entry)?;
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if name == "current.json"
+                || (unknown_commit
+                    && name.rsplit_once('.').is_some_and(|(id, ext)| {
+                        profile::valid_uuid(id)
+                            && matches!(ext, "wav" | "json")
+                            && rejected.as_deref() != Some(id)
+                    }))
                 || committed
                     .as_ref()
                     .is_some_and(|id| name == format!("{id}.wav") || name == format!("{id}.json"))
@@ -649,6 +674,8 @@ impl Recording {
         {
             let mut s = self.state.lock().unwrap();
             s.recording = Some(metadata);
+            s.committed_id = Some(id.to_owned());
+            s.unknown_commit = false;
             s.source_error = None;
             s.import.as_mut().unwrap().recording_id = Some(id.to_owned());
             generation = s.generation;
@@ -818,11 +845,31 @@ impl Recording {
                 start += spectrum::HOP;
             }
             let due = Duration::from_secs_f64(row_end as f64 / 12000.0);
-            while began.elapsed() < due {
+            loop {
+                let elapsed = began.elapsed();
+                #[cfg(test)]
+                {
+                    let cross = {
+                        let mut r = self.resources.lock().unwrap();
+                        let cross = r.cross_deadline;
+                        r.cross_deadline = false;
+                        if cross {
+                            r.deadline_crossings += 1;
+                        }
+                        cross
+                    };
+                    if cross {
+                        std::thread::sleep(due.saturating_sub(elapsed) + Duration::from_millis(1));
+                    }
+                }
+                let remaining = due.saturating_sub(elapsed);
+                if remaining.is_zero() {
+                    break;
+                }
                 if job.cancel.load(Ordering::Acquire) {
                     return Err("cancelled");
                 }
-                std::thread::sleep((due - began.elapsed()).min(Duration::from_millis(20)));
+                std::thread::sleep(remaining.min(Duration::from_millis(20)));
             }
             let levels: Vec<u8> = peak.into_iter().map(spectrum::quantize).collect();
             let mut s = self.state.lock().unwrap();

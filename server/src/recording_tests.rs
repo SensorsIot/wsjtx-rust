@@ -450,3 +450,47 @@ fn replay_window_start_and_partial_last_row_follow_source_clock() {
         assert_eq!(frame["data"]["levels"][group], expected, "group {group}");
     }
 }
+
+// Proves: CL-006-01/02; TC-018-002 review regression; readable truncation differs from OS read failure.
+#[test]
+fn parser_preserves_non_eof_os_read_errors() {
+    let f = Fixture::new();
+    let mut valid = f.wave(&wav(&[0]));
+    assert!(validate(&mut valid).is_ok());
+    drop(valid);
+    let mut write_only = fs::OpenOptions::new()
+        .write(true)
+        .open(f.0.join("fixture.wav"))
+        .unwrap();
+    assert_eq!(
+        validate(&mut write_only).unwrap_err(),
+        "storage_unavailable"
+    );
+    drop(write_only);
+    assert_eq!(
+        validate(&mut f.wave(b"RIFF")).unwrap_err(),
+        "invalid_recording"
+    );
+}
+
+// Proves: CL-006-02/04; TC-018-003 review regression; worker preempted across a pacing deadline releases the slot.
+#[test]
+fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let id = import(&r, &wav(&[0; 1200])).unwrap();
+    r.resources.lock().unwrap().cross_deadline = true;
+    let generation = r.snapshot()["generation"].as_u64().unwrap();
+    r.replay(&r.profile, &r.boot, generation, &id).unwrap();
+    let began = Instant::now();
+    while r.snapshot()["job"]["state"] == "running" {
+        assert!(began.elapsed() < Duration::from_secs(2));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(r.snapshot()["job"]["state"], "completed");
+    let resources = r.resources.lock().unwrap();
+    assert_eq!(resources.active_workers, 0);
+    assert_eq!(resources.deadline_crossings, 1);
+    drop(resources);
+    assert!(r.reserve(&r.profile, &r.boot, generation + 1).is_ok());
+}

@@ -17,12 +17,33 @@ draggable, keyboard-accessible separator. Replay uses one worker per station and
 does not play audio or decode messages. Cancel stops the current import or replay;
 reconnection refreshes state without retrying operations.
 
-`npm run test:recording` exercises disposable Windows servers and Chromium, independent
-DFT/byte fixtures, and the shared TLS link simulator. Provision read-only originals
-matching `fixtures/decoder/manifest.json` and `ft4-manifest.json` under `WSTX_SAMPLE_DIR`
-(FT8 WAVs at its root, FT4 files under `ft4/`); the current parallel Windows workspace
-also discovers its existing `resources/issue-7/downloads` fixture directory. Missing
-fixtures fail the suite. Upload/page-load metrics are separate from steady display traffic.
+Recording tests use an explicit, separate prerequisite step. In PowerShell:
+
+```powershell
+$env:WSTX_SAMPLE_DIR = Join-Path $env:LOCALAPPDATA 'WstxRust/recording-fixtures'
+node tools/recording-fixtures.cjs --directory "$env:WSTX_SAMPLE_DIR"
+cargo build --workspace --locked
+npm run test:recording
+```
+
+The setup command downloads the 25 pinned WAVs and applicable license/provenance
+files from the two tracked decoder manifests, verifies size, SHA256 and WAV headers,
+and promotes each file atomically into the selected cache. It refuses Git working
+trees, symlinked directories, unsafe manifest paths and changed existing files.
+`--verify` checks an already provisioned cache without downloading. Downloads have
+bounded time/size limits and acquisition errors fail explicitly. Audio stays out of Git.
+The manifests preserve their sample-specific licensing/provenance limitations; a
+software license is not a new claim about a recording's origin or decoder truth.
+
+`npm run test:recording` is offline: it uses disposable Windows servers/Chromium,
+independent byte/DFT fixtures, the acquired read-only recordings and the shared TLS
+link simulator. Missing recordings fail with the setup command. The current parallel
+Windows clone can also discover its pre-existing `resources/issue-7/downloads` inputs;
+other clones should set `WSTX_SAMPLE_DIR` explicitly. Upload/page-load metrics are
+separate from steady display traffic. The manual-only Windows workflow explicitly
+runs setup and both `npm test` and `npm run test:recording` against the same release
+executable. The local harness gate remains the selected authoritative execution mode;
+editing the workflow does not execute it or establish a hosted passing result.
 
 The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
 

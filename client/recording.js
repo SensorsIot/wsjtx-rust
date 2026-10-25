@@ -112,7 +112,9 @@ document.querySelector('#recording-import').addEventListener('click',async()=>{
   uploading=true;stopped=false;show();
   try{
     const operation=await request('/recording/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(startBody())});
-    uploadId=operation.id;uploadAbort=new AbortController();await sync();
+    uploadId=operation.id;
+    if(stopped){const outcome=await request(`/recording/imports/${uploadId}`,{method:'DELETE'});await sync();importOutcome={...outcome,generation:operation.generation};show();return;}
+    uploadAbort=new AbortController();await sync();
     for(let offset=0;offset<file.size&&!stopped;offset+=2048){
       const end=Math.min(offset+2048,file.size);
       const result=await request(`/recording/imports/${uploadId}`,{method:'PUT',headers:{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${file.size}`},body:file.slice(offset,end),signal:uploadAbort.signal});
@@ -127,6 +129,8 @@ document.querySelector('#recording-replay').addEventListener('click',async()=>{
 document.querySelector('#recording-cancel').addEventListener('click',async()=>{
   stopped=true;uploadAbort?.abort();
   const id=uploadId||snapshot?.import?.id;
+  if(uploading && !id){progress.textContent='Cancellation requested · awaiting reservation response';return;}
+  if(!id && !snapshot?.job){await sync();return;}
   try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown · ${error.message}`;await sync();}
 });
 document.querySelector('#display-profile').addEventListener('change',event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({v:1,type:`spectrum.${event.target.value}`,id:nextId++}));});

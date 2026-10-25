@@ -455,9 +455,10 @@ establish FT4 correctness. This is a planned milestone, not an implemented decod
 
 This is the authorized minimal first-version contract, with independent cases in6.4
 and its communication extension in12.6. Source compatibility has been checked against
-the 22 pinned mono 12kHz PCM16 reference recordings. No feature implementation or
-passing behavior is claimed. Implementation begins only after independent Markdown/
-SysML meaning and readiness review; that review remains pending.
+the 22 pinned mono 12kHz PCM16 FT8 reference recordings and three retained FT4 candidates.
+The source contains the recorded-input/spectrum candidate described below. Independent
+review, execution evidence and acceptance status are recorded on issue #6; source
+presence and model readiness do not establish acceptance.
 
 | Clause | Requirements | Promise | Verification |
 |---|---|---|---|
@@ -589,8 +590,8 @@ original immutable samples. #6 fixes N=2048; #7 owns its supported transform siz
 bounded modem working history. Plan once per needed size/worker, never per display row;
 check lengths before processing so invalid input cannot reach a panic precondition.
 No generic FFT wrapper or additional RealFFT dependency is needed. This is the central
-owned dependency contract; future crate adoption is implementation work, not performed
-by this document. Normative primary API: [RustFFT6.4.1 normalization/output order](https://docs.rs/rustfft/6.4.1/rustfft/),
+owned dependency contract; the candidate declares RustFFT once in the server crate.
+The independent math/oracles remain this definition, rather than library output. Normative primary API: [RustFFT6.4.1 normalization/output order](https://docs.rs/rustfft/6.4.1/rustfft/),
 [`Fft` scratch/buffer contract](https://docs.rs/rustfft/6.4.1/rustfft/trait.Fft.html) and
 [`FftPlannerScalar`](https://docs.rs/rustfft/6.4.1/rustfft/struct.FftPlannerScalar.html).
 The explicit DFT formula above fixes sign/scaling independently of the provider.
@@ -1202,8 +1203,11 @@ reference outputs and quantitative budgets before coding.
 All cases below are **cost 2 - isolated automated tests**, run on the **Windows
 development PC** with disposable profile directories, actual candidate server/browser,
 synthetic WAV bytes, independent calculation scripts and the existing link simulator;
-no radio, audio device or live station is involved. These are durable test definitions, not
-implemented tests or successful results. Original IDs from #6 are preserved.
+no radio, audio device or live station is involved. These are durable test definitions, with executable companions in
+`server/src/recording_tests.rs`, `server/src/protocol_tests.rs`,
+`tests/recording.test.cjs` and `tests/recording-fixtures.test.cjs`. Run/review evidence
+stays on issue #6; definitions and source presence do not claim acceptance. Original
+IDs from #6 are preserved.
 
 | ID | Promises | Setup/input and action | Independent expected oracle |
 |---|---|---|---|
@@ -1662,22 +1666,31 @@ this product map does not change that process.
 
 The current source has an Axum/Tokio status/profile server in
 [server/src/main.rs](../server/src/main.rs), profile validation/persistence/OS ownership in
-[server/src/profile.rs](../server/src/profile.rs), embedded
-[client files](../client/index.html), native TLS and the status/profile test companions.
+[server/src/profile.rs](../server/src/profile.rs), native TLS and embedded
+[client files](../client/index.html). The #6 candidate adds bounded original-WAV import,
+immutable sample blocks, replay/cancellation and recovery in
+[server/src/recording.rs](../server/src/recording.rs), authenticated HTTP recording routes in
+[server/src/recording_http.rs](../server/src/recording_http.rs), the shared RustFFT-backed
+calibrated transform in [server/src/spectrum.rs](../server/src/spectrum.rs), opt-in
+WebSocket display and integrated spectrum/waterfall panes. Its independent verification
+companions implement the six case definitions in6.4. Explicit fixture setup is separate
+from offline test execution; the manual-only Windows workflow includes both legacy and
+recording suites against the same release executable. This describes candidate source
+presence; issue #6 owns its actual run, review and acceptance evidence.
 CR #5 is an implemented candidate that passed independent code review and the local
 Windows gate; live acceptance remains pending.
 No radio, decoder, transmit or MCP behavior is implemented.
 The planned modules and contracts above are introduced by their owning CRs.
 
-Profile schema/session names are settled in 4.2/12.5. Audio formats/sample representation and
-display encoding (#6), decoder variants/quality budgets (#7), independent audio/control support matrices
+Profile schema/session names are settled in 4.2/12.5. The recorded audio/sample/display
+contract (#6) is settled in4.4/6.4/12.6. Decoder variants/quality budgets (#7), independent audio/control support matrices
 (#8), transmit ownership/deadlines (#9), QSO/log format (#10), MCP tools/policy (#12) and
 native FlexRadio coordination/capabilities (#13) are preparation gates. Their named
 owners prevent two implementations from silently selecting incompatible contracts.
 The shared ownership allocation in11.3/11.7 is an early architecture decision.
 The first #6 formats/types/bounds/lifetimes/states/errors/timing/wire/oracles are defined
-in4.4/6.4/12.6 and RecordingReceive.sysml; independent meaning/readiness review remains
-pending, with no implementation claimed. #7 mode contracts and #8/#9 adapter/safety
+in4.4/6.4/12.6 and RecordingReceive.sysml and are represented by the candidate modules
+above. #7 mode contracts and #8/#9 adapter/safety
 contracts remain separate preparation decisions. Settle them in Markdown, reconcile the affected model and compare
 meaning independently before dependent code. A structural model or source fingerprint
 alone does not approve an unresolved data contract or FFT choice.

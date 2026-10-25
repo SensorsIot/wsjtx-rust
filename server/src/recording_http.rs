@@ -65,12 +65,7 @@ fn media(headers: &HeaderMap, raw: bool) -> bool {
     if raw {
         text == "audio/wav"
     } else {
-        matches!(
-            text.as_str(),
-            "application/json"
-                | "application/json; charset=utf-8"
-                | "application/json;charset=utf-8"
-        )
+        json_media_type(headers)
     }
 }
 fn response(status: StatusCode, value: Value) -> Response {

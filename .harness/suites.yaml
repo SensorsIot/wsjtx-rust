@@ -47,8 +47,11 @@
   - client/
   - tests/
   - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/WSTX Rust FSD.md
+  - .github/workflows/windows-rust.yml
   - Cargo.toml
   - Cargo.lock
   - package.json
   - package-lock.json
-  needs: Node 24, npm ci, Playwright Chromium; WSTX_SAMPLE_DIR holds read-only pinned FT8 files and ft4/ files matching fixtures/decoder manifests. On this Windows development clone the existing parallel resources/issue-7/downloads directory supplies them. Disposable servers and calibrated TLS link; no hardware.
+  needs: Node 24, npm ci, Playwright Chromium; Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> explicitly, then set WSTX_SAMPLE_DIR there. Offline gate never downloads fixtures. On this Windows development clone the existing parallel resources/issue-7/downloads directory supplies them. Disposable servers and calibrated TLS link; no hardware.

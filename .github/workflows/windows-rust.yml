@@ -63,6 +63,17 @@ jobs:
           WSTX_TEST_EXE: target/x86_64-pc-windows-msvc/release/wstx-rust.exe
         run: npm test
 
+      - name: Acquire and verify pinned recording fixtures explicitly
+        env:
+          WSTX_SAMPLE_DIR: ${{ runner.temp }}/wstx-recording-fixtures
+        run: node tools/recording-fixtures.cjs --directory "$env:WSTX_SAMPLE_DIR"
+
+      - name: Test packaged recording import and display
+        env:
+          WSTX_TEST_EXE: target/x86_64-pc-windows-msvc/release/wstx-rust.exe
+          WSTX_SAMPLE_DIR: ${{ runner.temp }}/wstx-recording-fixtures
+        run: npm run test:recording
+
       - name: Upload Windows executable
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

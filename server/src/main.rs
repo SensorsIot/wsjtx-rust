@@ -353,6 +353,17 @@ async fn get_profile(State(app): State<App>, headers: HeaderMap) -> Response {
         _ => profile_error(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable", None),
     }
 }
+fn json_media_type(headers: &HeaderMap) -> bool {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let parts: Vec<_> = content_type.split(';').map(str::trim).collect();
+    parts.first() == Some(&"application/json")
+        && parts.len() <= 2
+        && !parts.get(1).is_some_and(|s| *s != "charset=utf-8")
+}
 async fn put_profile(
     State(app): State<App>,
     headers: HeaderMap,
@@ -367,16 +378,7 @@ async fn put_profile(
     if !authenticated(&headers, &app) {
         return profile_error(StatusCode::UNAUTHORIZED, "unauthorized", None);
     }
-    let content_type = headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let parts: Vec<_> = content_type.split(';').map(str::trim).collect();
-    if parts.first() != Some(&"application/json")
-        || parts.len() > 2
-        || parts.get(1).is_some_and(|s| *s != "charset=utf-8")
-    {
+    if !json_media_type(&headers) {
         return profile_error(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "unsupported_media_type",
@@ -556,6 +558,60 @@ async fn send(socket: &mut WebSocket, message: Message) -> bool {
         Ok(Ok(()))
     )
 }
+async fn send_control(socket: &mut WebSocket, message: Message, pending: Option<Instant>) -> bool {
+    if let Some(since) = pending {
+        matches!(
+            tokio::time::timeout_at(
+                (since + Duration::from_secs(2)).into(),
+                send(socket, message)
+            )
+            .await,
+            Ok(true)
+        )
+    } else {
+        send(socket, message).await
+    }
+}
+
+// Optional writes never wait in the connection loop. Readiness flushes prior buffered
+// output; a <=1024-byte event then leaves >=1024 bytes of the 2048-byte buffer for control.
+fn optional_write<S: futures_sink::Sink<Message> + Unpin>(
+    socket: &mut S,
+    message: Message,
+) -> Result<Option<bool>, S::Error> {
+    use std::{
+        pin::Pin,
+        task::{Context, Poll, Waker},
+    };
+    let mut cx = Context::from_waker(Waker::noop());
+    match Pin::new(&mut *socket).poll_ready(&mut cx) {
+        Poll::Pending => return Ok(None),
+        Poll::Ready(result) => result?,
+    }
+    Pin::new(&mut *socket).start_send(message)?;
+    match Pin::new(socket).poll_flush(&mut cx) {
+        Poll::Ready(result) => {
+            result?;
+            Ok(Some(true))
+        }
+        Poll::Pending => Ok(Some(false)),
+    }
+}
+fn optional_flush<S: futures_sink::Sink<Message> + Unpin>(
+    socket: &mut S,
+) -> Result<bool, S::Error> {
+    use std::{
+        pin::Pin,
+        task::{Context, Poll, Waker},
+    };
+    match Pin::new(socket).poll_flush(&mut Context::from_waker(Waker::noop())) {
+        Poll::Ready(result) => {
+            result?;
+            Ok(true)
+        }
+        Poll::Pending => Ok(false),
+    }
+}
 
 async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Recording>>) {
     let mut heartbeat = interval(Duration::from_secs(5));
@@ -566,12 +622,16 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
     let mut thin = false;
     let mut seen = None;
     let mut last_display = Instant::now() - Duration::from_secs(1);
+    let mut optional_since: Option<Instant> = None;
     loop {
         tokio::select! {
             biased;
+            _ = tokio::time::sleep_until((optional_since.unwrap_or_else(Instant::now)+Duration::from_secs(2)).into()), if optional_since.is_some()=>break,
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > Duration::from_secs(15) { break; }
-                if !send(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into())).await || !send(&mut socket, Message::Ping(Vec::new().into())).await { break; }
+                if !send_control(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into()),optional_since).await { break; }
+                optional_since=None;
+                if !send(&mut socket,Message::Ping(Vec::new().into())).await {break;}
             }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Text(text))) => {
@@ -592,22 +652,30 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                             } else { value["data"]["code"] = json!("unavailable"); }
                         }
                     }
-                    if !send(&mut socket, Message::Text(value.to_string().into())).await { break; }
+                    if !send_control(&mut socket, Message::Text(value.to_string().into()),optional_since).await { break; }
+                    optional_since=None;
                 }
                 Some(Ok(Message::Pong(_))) => last_pong = Instant::now(),
-                Some(Ok(Message::Binary(_))) => { let _ = send(&mut socket, Message::Close(Some(CloseFrame { code: 1003, reason: "text required".into() }))).await; break; }
+                Some(Ok(Message::Binary(_))) => { let _ = send_control(&mut socket, Message::Close(Some(CloseFrame { code: 1003, reason: "text required".into() })),optional_since).await; break; }
                 Some(Ok(Message::Ping(_))) => {},
                 _ => break,
             },
             _ = display.tick(), if thin => {
+                if optional_since.is_some() {
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
+                }
                 if last_display.elapsed() < Duration::from_secs(1) { continue; }
                 let frame = recording.as_ref().and_then(|r| r.state.lock().unwrap().frame.clone());
                 if let Some(frame) = frame {
                     let identity = (frame["data"]["job_id"].clone(),frame["data"]["sequence"].clone());
                     if seen.as_ref() != Some(&identity) {
-                        seen = Some(identity);
-                        last_display = Instant::now();
-                        if !send(&mut socket, Message::Text(frame.to_string().into())).await { break; }
+                        let text=frame.to_string();
+                        if text.len()>1024 { continue; }
+                        match optional_write(&mut socket,Message::Text(text.into())) {
+                            Ok(None)=>{},
+                            Ok(Some(flushed))=>{seen=Some(identity);last_display=Instant::now();if !flushed {optional_since=Some(Instant::now());}},
+                            Err(_)=>break,
+                        }
                     }
                 }
             }

@@ -97,10 +97,51 @@ test('TC-018-003 missing original, corrupt metadata and manifest remain recovera
     const f=await fixture(t);const s=await f.upload(wav(.1));
     const file=path.join(f.dir,'recordings',target==='manifest'?'current.json':s.recording.id+(target==='original'?'.wav':'.json'));
     if(target==='original')await fs.unlink(file);else await fs.writeFile(file,'{}');await f.restart();
+    if(target!=='original') {
+      assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),wav(.1),'source fault must not delete the committed original before replacement');
+      const invalid=await f.reserve();const rejected=await f.req('/recording/imports/'+invalid.id,'PUT',Buffer.from('RIFF'),{'Content-Type':'audio/wav','Content-Range':'bytes 0-3/4'});assert.equal(rejected.status,422);
+      assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),wav(.1),'failed replacement must retain the last committed original');
+    }
     const fault=await f.snapshot();assert.equal(fault.source_error,'recording_unavailable');assert.equal(fault.recording,null);
     const r=await f.req('/recording/replay','POST',{...f.body(fault),recording_id:s.recording.id});assert.equal(r.value.error.code,'recording_unavailable');
     const p=await page(f);await p.locator('#signal-status').filter({hasText:/Recording unavailable/}).waitFor();assert.equal(await p.locator('#recording-import').isEnabled(),true);
     const replaced=await f.upload(wav(.1));assert.equal(replaced.source_error,null);const job=await f.replay();await sleep(200);assert.equal((await terminal(f)).job.state,'completed');assert.ok(job.id);
+  }
+});
+
+// Proves: CL-006-02/04; TC-018-003 review regression, cancellation while reservation response is delayed.
+test('TC-018-003 cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
+  const f=await fixture(t),p=await page(f),errors=[];p.on('pageerror',e=>errors.push(String(e)));
+  let release,observed,puts=0,resource;
+  const held=new Promise(r=>release=r),accepted=new Promise(r=>observed=r);t.after(()=>release());
+  p.on('request',r=>{if(r.method()==='PUT'&&r.url().includes('/recording/imports/'))puts++;});
+  await p.route('**/recording/imports',async route=>{const response=await route.fetch();resource=await response.json();observed();await held;await route.fulfill({response});});
+  await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
+  assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
+  await p.locator('#recording-cancel').click();await p.locator('#recording-progress').filter({hasText:/Cancellation requested/}).waitFor();release();
+  await p.locator('#recording-import:enabled').waitFor();assert.equal(puts,0);assert.deepEqual(errors,[]);assert.equal((await f.snapshot()).import,null);assert.equal((await f.req('/recording/imports/'+resource.id)).value.state,'cancelled');
+});
+
+// Proves: CL-006-03/04; TC-010-002, actual subscribed stalled peer plus healthy mandatory control path.
+test('TC-010-002 stalled thin subscriber is bounded and cannot block healthy status',{timeout:35000},async t=>{
+  const f=await fixture(t);await f.upload(wav(30));
+  const slow=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin,autoPong:false});await once(slow,'open');
+  const healthy=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(healthy,'open');t.after(()=>{slow.terminate();healthy.terminate();});
+  const subscribed=receive(slow);slow.send(JSON.stringify({v:1,type:'spectrum.thin',id:1}));assert.equal((await subscribed).type,'spectrum.subscription');slow._socket.pause();
+  const job=await f.replay();
+  for(let n=0;n<4;n++){await sleep(1000);const pending=receive(healthy),start=performance.now();healthy.send(JSON.stringify({v:1,type:'station.get',id:n+2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-start<2000);}
+  await sleep(18000);const closed=once(slow,'close');slow._socket.resume();await Promise.race([closed,sleep(5000).then(()=>{throw Error('stalled thin peer retained past liveness deadline');})]);
+  const pending=receive(healthy);healthy.send(JSON.stringify({v:1,type:'station.get',id:99}));assert.equal((await pending).type,'station.status');await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);
+});
+
+// Proves: CL-006-02; TC-018-003 review regression, JSON media grammar remains the profile grammar.
+test('TC-018-003 recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
+  const f=await fixture(t);
+  for(const type of ['application/json','application/json ;charset=utf-8','application/json;\tcharset=utf-8',' Application/JSON ; CHARSET=UTF-8 ']){
+    const s=await f.snapshot();const r=await f.req('/recording/imports','POST',f.body(s),{'Content-Type':type});assert.equal(r.status,201,type);await f.req('/recording/imports/'+r.value.id,'DELETE');
+  }
+  for(const type of ['application/json;','application/json; charset=ascii','application/json; charset=utf-8; x=1','text/json','application/json; charset="utf-8"']){
+    const s=await f.snapshot();const r=await f.req('/recording/imports','POST',f.body(s),{'Content-Type':type});assert.equal(r.status,415,type);
   }
 });
 // Proves: CL-006-03; TC-010-001/003, real browser canvas data and desktop/narrow accessible layout.
@@ -134,7 +175,7 @@ test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and import unch
   const ft4=JSON.parse(await fs.readFile('fixtures/decoder/ft4-manifest.json','utf8'));
   const inputs=[...ft8.files.filter(f=>f.path.endsWith('.wav')).map(f=>({...f,file:path.join(samples,path.basename(f.path))})),...ft4.files.map(f=>({...f,file:path.join(samples,'ft4',f.relative_download_path)}))];
   assert.equal(inputs.length,25);const f=await fixture(t);
-  for(const input of inputs){const bytes=await fs.readFile(input.file);assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),input.sha256);const s=await f.upload(bytes);assert.equal(s.recording.rate_hz,12000);assert.equal(s.recording.file_bytes,bytes.length);assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),bytes);}
+  for(const input of inputs){const bytes=await fs.readFile(input.file).catch(error=>{if(error.code==='ENOENT')throw Error('Missing recording fixtures. Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> and set WSTX_SAMPLE_DIR to that directory.');throw error;});assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),input.sha256);const s=await f.upload(bytes);assert.equal(s.recording.rate_hz,12000);assert.equal(s.recording.file_bytes,bytes.length);assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),bytes);}
   const p=await page(f);await p.locator('#recording-replay').click();await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>0,{timeout:8000});
   await f.req('/recording/jobs/'+(await f.snapshot()).job.id,'DELETE');await terminal(f);
 });

@@ -1,8 +1,9 @@
-// Canonical recorded receive contract SHA256: ce79891789d32121b903453b12873373070e6e3fabda725faa235b4b70efb0cf
+// Canonical recorded receive contract SHA256: 548f2f9a36e03b169722644b5278c6b3ee8bc6b77455756d4ec8e07ff204bb9c
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Independent
-         readiness review pending; no features implemented/tests executed. Existing
+         candidate recording/spectrum modules and executable verification companions exist;
+         actual run/review/acceptance evidence belongs to issue #6. Existing
          usages only, no new deployment/universal job manager/TX authority.
          Shared RustFFT6.4.1 primary API https://docs.rs/rustfft/6.4.1/rustfft/,
          https://docs.rs/rustfft/6.4.1/rustfft/trait.Fft.html and
@@ -535,7 +536,7 @@ package WstxRecordingReceive {
         doc /* All cases cost 2 - isolated automated tests on Windows development PC.
              Actual candidate server/browser, disposable profiles, synthetic byte fixtures,
              independent direct DFT and pinned actual recordings with chapter13 provenance.
-             No radio/audio device/live station. Definitions are not execution results.
+             No radio/audio device/live station. Definitions and candidate source presence are not acceptance results.
              Original Markdown remains the independent expectation for implementation. */
         verification validRecording {
             subject operation : ImportRecording;
