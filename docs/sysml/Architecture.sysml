@@ -1,8 +1,14 @@
-// Canonical architecture SHA256: f266bfdc1c1d53684776384ab74bcbdb56fea1b79b8be57d1aa7e62c38084cde
+// Canonical architecture SHA256: 8ea0293df09258af2c787eb6457fd1f8f66fec237fc69ad38090df89ad8cb698
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
          Items are semantic responsibilities, not wire schemas or Rust API definitions. */
+
+    doc /* Approved CR #5 profile behavior/data/state/HTTP/session implementation
+         contract is WstxProfiles in Profiles.sysml. It refines the existing station
+         profile/service/web and viewer browser usages below without adding another
+         deployment, runtime part, hardware capability or view. Four independent
+         servers suffice for CR #5 acceptance; stations[*] remains variable. */
 
     part physicalStation {
         part user : Operator;

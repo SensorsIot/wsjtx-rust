@@ -124,6 +124,12 @@ def check_architecture(model: str, source: str):
         raise ValueError("Architecture source changed: review Architecture.sysml against FSD chapter 11 and update its source-hash marker explicitly")
 
 
+def check_profiles_contract(model: str, source: str):
+    marker = re.search(r"^// Canonical profile contract SHA256: ([a-f0-9]{64})$", model, re.MULTILINE)
+    if not marker or marker[1] != digest(source):
+        raise ValueError("Profile contract source changed: reconcile Profiles.sysml with FSD 4.2, 6.2 and 12.5 before updating its source-hash marker")
+
+
 def setup(cache: Path):
     packages = json.loads(TOOLCHAIN.read_text(encoding="utf-8"))
     if sys.platform != "win32" and not os.environ.get("WSTX_SYSML_JAVA"):
@@ -383,6 +389,8 @@ def main(argv=None):
                 raise ValueError("FSD projection is stale; run python tools/sysml.py sync")
             architecture = MODELS / "Architecture.sysml"
             check_architecture(architecture.read_text(encoding="utf-8"), FSD.read_text(encoding="utf-8"))
+            profiles = MODELS / "Profiles.sysml"
+            check_profiles_contract(profiles.read_text(encoding="utf-8"), FSD.read_text(encoding="utf-8"))
             paths = [generated, *sorted(path for path in MODELS.glob("*.sysml") if path != generated)]
             print("Markdown synchronization passed; this alone is not semantic validation.")
         else:

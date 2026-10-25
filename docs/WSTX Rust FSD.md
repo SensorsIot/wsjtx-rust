@@ -208,8 +208,8 @@ four-instance operation.
 1. The application MUST support a variable number N of independent station-server
    instances on the same Windows PC, without a fixed four-instance limit or fixed-size
    profile/window assumptions. Each MUST have a distinct listening port, its own
-   persisted profile and an identifiable browser window. Four is the minimum reference
-   acceptance target; verification MUST also exercise a larger count. Practical capacity
+   persisted profile and an identifiable browser window. Four concurrent servers are
+   sufficient for CR #5 acceptance; no 1/6-instance repetition is required. Practical capacity
    depends on available compute, memory, ports, devices and radio resources. Resource
    exhaustion MUST be reported without disrupting existing instances. Multiple windows
    connected to one server do not satisfy the independent-instance requirement.
@@ -238,6 +238,161 @@ HTTP cookies are not isolated by port; see
 The current status server uses the same cookie name/path across ports. A future
 multi-instance session design must address that shared-browser collision; the current
 single-instance authentication tests do not verify FR-022 clause 4.
+
+#### CR #5 detailed contract — approved target, not implemented
+
+This approved target refines the five numbered clauses above and the approved roadmap
+issue [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5). The operator approved this
+contract with four concurrent servers sufficient for acceptance. It is **not delivered
+behavior**. Preparation proceeds Markdown requirements/tests
+first, then SysML, a meaning comparison, code from the reconciled model, and verification
+against these original Markdown expectations. Product code starts only after independent
+Markdown/model readiness review passes. FR-001, FR-016, FR-019, FR-021 and FR-022 remain
+the owning requirements; full station setup and legacy WSJT-X migration are later scope.
+
+| Stable clause | Requirements | Approved target refinement | Cases |
+|---|---|---|---|
+| CL-005-01 | FR-022 | A selected profile owns one process/listener; N is variable and storage, process and browser collections MUST NOT assume four entries. Four concurrent servers are sufficient for CR #5 acceptance; the implementation has no four-instance ceiling. | TC-022-001 |
+| CL-005-02 | FR-001, FR-016, FR-019, FR-022 | Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. | TC-022-001; TC-022-002 |
+| CL-005-03 | FR-019, FR-021, FR-022 | Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. | TC-022-001; TC-022-003; TC-022-004 |
+| CL-005-04 | FR-016, FR-021, FR-022 | Ownership, invalid storage, occupied endpoints and unavailable startup resources MUST fail explicitly without replacing saved configuration or disrupting a running instance. | TC-022-002; TC-022-003 |
+| CL-005-05 | FR-001, FR-022 | Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. Native FlexRadio is reserved and refused in this phase. | TC-022-001; TC-022-002 |
+
+**Selection and compatibility.** `wstx-rust --create-profile <directory>` creates a new
+directory containing `profile.json`, assigns a fresh lowercase UUID v4 `profile_id`,
+and exits successfully without listening. An existing directory is refused without
+changes, including an empty directory. The parent directory MUST already exist. Normal
+profile startup is `wstx-rust --profile <directory>`; a missing directory/file is an
+error, never implicit creation or fallback. Relative directory arguments resolve against
+the process working directory. Relative `WSTX_TLS_CERT` and `WSTX_TLS_KEY` runtime
+paths also resolve against the process working directory in both startup modes; no TLS
+path is stored in the profile file.
+There is no default profile search, registry, profile import or automatic browser opening.
+The operator opens the reported URL in a separate window for each selected instance.
+Unknown/duplicated arguments and combining creation with startup are errors.
+
+No-argument startup retains chapter 12's existing environment-only status mode and
+`wstx.v1`; it does not claim persisted identity or satisfy FR-022. In profile mode,
+`WSTX_BIND` and `WSTX_ORIGIN`, when present, are refused rather than overriding saved
+settings. `WSTX_TLS_CERT`, `WSTX_TLS_KEY` and `WSTX_TOKEN` retain their chapter 12
+runtime meaning; certificate/key paths are deployment inputs and MUST NOT be saved by
+the settings form. This keeps secrets outside the profile and avoids migrating an
+existing no-argument deployment implicitly. No settings are read from WSJT-X.
+
+**Schema and defaults.** `profile.json` is one UTF-8 JSON object, at most 16,384 bytes.
+Duplicate/unknown fields, unsupported versions, wrong types, malformed UTF-8/JSON,
+out-of-range values and incomplete objects MUST be refused. These are its complete
+schema-version-1 fields; all are required unless explicitly nullable:
+
+| Field | Approved value/domain and creation default |
+|---|---|
+| `schema_version` | Integer exactly `1`. |
+| `profile_id` | Lowercase hyphenated UUID v4, generated only on creation and immutable through application/browser operations; ports and labels are not identity. Offline UUID edits are unsupported. |
+| `revision` | Integer 0 through 9,007,199,254,740,991; starts at 0, increments once per acknowledged settings save. Saving at the maximum is refused. |
+| `display_name` | 1–64 UTF-8 bytes, no control characters or leading/trailing whitespace; default `New station`. Labels need not be unique; the UUID is always shown as well. |
+| `callsign` | Empty (unconfigured), or 3–12 ASCII uppercase letters/digits/slashes containing at least one letter and one digit; default empty. No claim of national callsign eligibility. |
+| `locator` | Empty, or Maidenhead length 4, 6 or 8: two A–R letters, two digits, optional two A–X letters, optional two digits; default empty. |
+| `endpoint` | Object containing exactly `bind` and `origin`. `bind` is a numeric IP/socket port 1–65535; default `127.0.0.1:8080`. `origin` is null (derive bound loopback origin) or an exact origin under 12.1; default null. Profile mode refuses port zero so the endpoint survives restart. Non-loopback requires explicit HTTPS origin plus runtime TLS/token. |
+| `connection_type` | String `standard` by default. `native_flex` is a reserved spelling, refused with `unsupported_connection_type`; no native association fields exist in this schema. |
+| `audio` | Object exactly `{ "input_device": null, "output_device": null }` by default. Either value may instead be a nonempty opaque UTF-8 identifier of at most 256 bytes, without control characters. These are independent saved selections. |
+| `control` | Object exactly `{ "mode": "disabled", "endpoint": null, "ptt": "disabled" }` by default. Mode is `disabled` or `cat`; endpoint is null when disabled and a nonempty opaque UTF-8 identifier up to 256 bytes without control characters when `cat`. PTT is `disabled` or `cat`, with `cat` requiring CAT mode. |
+
+Profile mode supports direct browser-to-listener deployment. Its one effective browser
+origin is the saved `endpoint.origin` when non-null; otherwise it is the bound loopback
+IP/port with `http` or `https` according to runtime TLS. A saved origin MUST use the
+runtime listener's scheme and the same numeric port as `endpoint.bind`; its hostname
+may be `localhost` or a DNS alias resolving to the listener. Origin syntax still follows
+12.1. Null origin is refused for non-loopback binding. Reverse-proxy port/scheme mapping
+is outside CR #5. Readiness output, the URL opened by the operator, GET `/profile`'s
+endpoint, visible browser endpoint and exact Origin validation MUST all use this same
+effective origin. The numeric bind address remains the listener address, not an
+alternative browser identity. These profile-mode rules do not change legacy 12.1.
+
+UUID v4 generation follows the fixed normative reference
+[RFC 9562, section 5.4](https://www.rfc-editor.org/rfc/rfc9562.html#section-5.4).
+The HTTP methods/status semantics in 12.5 follow
+[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html); this FSD defines the narrower
+profile behavior and error mapping. Cookie semantics remain the existing RFC 6265
+reference above.
+
+Audio/control identifiers express desired configuration only. CR #5 MUST NOT enumerate,
+open or emulate working sound devices, radios, serial ports, CAT or PTT. Browser status
+continues to say radio unconfigured and MUST label these selections `Saved; not activated`.
+CAT-disabled audio is valid; selecting CAT does not prove audio exists, and selecting
+audio does not prove control exists. Blank identifiers, invalid enum combinations and
+unknown native fields are errors, not silently repaired defaults. Driver-specific serial,
+radio and native-slice schemas belong to #8/#13 and require an explicit future version
+decision; no invented hardware success or schema migration is part of CR #5.
+
+**Ownership, saving and recovery.** One process exclusively owns a canonical profile
+directory and its UUID for its full lifetime, including before accepting requests.
+Ownership MUST use OS-backed locks released on exit/crash; mere lock-file existence
+MUST NOT deny recovery. Directory aliases MUST converge on the same ownership claim;
+concurrent copies with the same UUID on this PC MUST also be refused. Ownership keys
+are local to the operator's OS account; this is not a hostile-user isolation mechanism.
+No manual deletion of a stale marker is required after a process is killed.
+
+Validate the whole profile, acquire ownership, validate required runtime TLS/token inputs
+and bind the endpoint before reporting readiness. A failed launch exits nonzero with a
+bounded diagnostic identifying the category and selected directory, never a secret;
+it does not open a browser or attach to an existing instance. The following table is the
+independent startup-error oracle. Each negative fixture introduces one listed fault;
+there is no unspecified category choice for that fixture. Existing instances remain
+available and `profile.json` bytes remain unchanged.
+
+| Startup/creation fault | Required diagnostic category |
+|---|---|
+| Unknown/duplicate CLI option or combining create/startup; profile mode with WSTX_BIND or WSTX_ORIGIN present | `invalid_runtime_configuration` |
+| Missing/unreadable selected directory or profile file; denied storage; absent creation parent; existing creation target including empty directory | `resource_unavailable` |
+| Malformed/truncated JSON or UTF-8; duplicate/unknown/missing fields; wrong types; invalid UUID/settings; oversized file; bind port 0/65536; malformed origin; saved origin port differs from bind port | `invalid_profile` |
+| Well-formed integer schema version other than 1, including 0 or 2 | `unsupported_schema` |
+| Reserved `native_flex` connection type | `unsupported_connection_type` |
+| Directory or UUID already owned, including aliases and copied directories | `profile_in_use` |
+| Selected listener port already occupied | `endpoint_in_use` |
+| Incomplete runtime TLS pair; TLS without token; token without TLS; token outside 32–128 ASCII alphanumeric bytes; non-loopback without explicit HTTPS origin/TLS/token; saved origin scheme differs from runtime TLS | `invalid_runtime_configuration` |
+| Missing/unreadable/invalid certificate or private-key file; OS lock/resource acquisition failure other than held ownership; controlled allocation/bind failure other than occupied port | `resource_unavailable` |
+
+Only the owning process writes settings. Browser saves validate a full editable settings
+object plus expected revision, serialize against other saves, write a same-directory
+temporary file, flush it, and atomically replace `profile.json` before acknowledging.
+The previous complete document remains authoritative until replacement succeeds; the
+new complete document becomes authoritative after success. No truncated document may
+be acknowledged. A write/replace failure retains the previous revision in memory and
+on disk, reports an error, and leaves the running server available. A lost response after
+a successful replacement is resolved by reloading the authoritative settings, not
+automatically replaying the edit. Concurrent edits with an old revision are refused.
+External file edits while owned are unsupported and MUST NOT be used as a second writer.
+
+Crash recovery reads only `profile.json`; leftover temporary files are ignored and never
+promoted automatically. A missing, corrupt or future-version file fails closed without
+rewriting it or another profile. With the process stopped, the operator restores a known
+good complete copy to the same path, or creates a new profile in a new directory. No
+automatic backup selection, destructive reset, cross-profile copying or legacy migration
+is implied. Persistence covers restart after an acknowledged save and an orderly OS
+restart; recovery from arbitrary storage failure or sudden power loss is not promised.
+After an OS restart the operator explicitly starts the same profile again; automatic
+startup/service installation is outside this CR. In schema text, control characters
+mean Unicode U+0000–U+001F and U+007F–U+009F; all length limits stated in bytes use UTF-8.
+
+**Browser workflow.** Profile mode displays full UUID, display name, actual endpoint,
+boot identity and saved revision alongside existing connection/radio status. A boot
+identity is a new lowercase UUID v4 for each successful start and is not persisted.
+The document title contains display name and port; the full UUID is visible in the page.
+The settings form edits `display_name`, `callsign`, `locator`, `audio` and `control`
+only, as a whole revision-checked save. UUID, endpoint, connection type, schema and
+revision are read-only; endpoint changes are validated offline edits while stopped.
+All profile-supplied names and identifiers MUST render as literal text, never parsed
+HTML, executable script or unsafe attribute markup, including in titles and form errors.
+The connection-type control shows `Standard` and `Native FlexRadio — reserved`, with
+the latter disabled. Validation errors identify the invalid field, preserve typed input
+and MUST NOT report Saved. Successful saves show the new revision only after durable
+acknowledgement; another window reloads the authoritative form on Refresh/reconnect.
+No periodic settings polling or new hardware access is added.
+
+The HTTP settings and session refinement in [12.5](#125-profile-interface-for-cr-5)
+is part of this approved target. The wider physical/software architecture and ownership
+boundaries in chapter 11 remain applicable. This subsection settles only the #5 slice;
+it does not assert complete product or model implementation readiness.
 
 ### 4.3 Optional native FlexRadio integration — target FR-023
 
@@ -543,84 +698,177 @@ or constitute new radio functions. **Level:** 2 — Isolated automated tests.
 
 ### 6.2 Planned tests for concurrent persisted profiles
 
-**Status:** planned definitions for FR-022. These tests have no implemented executable
-trace or acceptance result yet. They are additional work beyond CR #3; the status-only
-tests in section 6.1 do not substitute for them. The selected execution location is the
-Windows development PC; hosted execution remains an explicitly chosen alternative.
-Instance counts are test parameters. The reference cases MUST include N=1, N=4 and
-at least one larger count such as N=6, using isolated device/API fixtures. Four is not
-an implementation ceiling. Lifecycle, persistence and access-isolation cases MUST also
-exercise a count greater than four; unavailable physical radio capacity is tested
-separately from the software instance count.
+**Status: approved target definitions for CR #5; not implemented or executed.** These are definitions,
+not executed results or delivered behavior. They prove CL-005-01..05 and the approved target
+contracts in 4.2/12.5. All four cases are **Level 2 — isolated automated tests on the
+Windows development PC**, with disposable directories, real candidate processes and
+real Chromium windows. No radio, sound device, station account, live external service
+or duplicate hosted run is needed. Syntax/unit checks supplement these cases; mocked
+servers or multiple windows on one process cannot replace the real-process cases.
+
+**Common independently authored fixture.** Run each case with N=4 concurrent servers;
+1/6-instance repetitions are not required for this CR. Variable N remains an implementation
+requirement, so review must reject fixed four-entry arrays/assumptions. Start from a table prepared
+before implementation: profile i has UUID `00000000-0000-4000-8000-00000000000i`,
+name `Station i`, callsign `TESTi`, locator `JN47AA`, revision 0, standard connection,
+audio input `fixture-input-i`, output `fixture-output-i`, control disabled/null/disabled.
+Use indices 1 through N. The UUIDs are test data, not output accepted from the candidate.
+Reserve N distinct available loopback ports from the OS and record them in the table;
+release the reservations immediately before launch. A reservation race is a fixture
+failure to diagnose, not permission to skip a station. Expected origin is the recorded
+scheme/hostname/port, prepared independently of server readiness output. TLS variants
+bind numeric `127.0.0.1:<port>` but save `https://localhost:<port>` as their origin;
+readiness, GET, visible endpoint and browser URL must all match that prepared origin.
+Plaintext loopback variants use null origin and expect `http://127.0.0.1:<port>`.
+TLS variants use the existing disposable certificate helper and independent generated runtime test tokens satisfying
+12.1; values never enter reports. Separate real windows share ONE Chromium context and
+cookie store. Test setup writes the schema from the Markdown table, not a serialization
+routine or model shared with the implementation. Compare UUID/name/endpoint/settings
+against that table and independently parse saved JSON; a candidate-generated golden
+file is not the oracle. Creation defaults are checked separately against 4.2's table.
+
+Launch readiness must occur within 10 seconds on this PC or the fixture fails with
+process diagnostics. Each Refresh must return matching identity/settings within two
+seconds on unshaped loopback; reconnect follows 12.3's existing ten-second recovery
+bound after loss detection. These are test deadlines, not a hardware-capacity promise.
+Retain the existing thin-link tests/budgets; they are not multiplied into N simultaneous
+32-kbit/s station guarantees. Missing prerequisites, fewer than N processes/windows or
+zero checked fixtures is a failure. Planned executable placement: Rust profile tests
+under `server/` in `wstx-rust`, plus `tests/` real-process/browser cases in `communication`;
+additive launcher support belongs to #5. Existing suites/coverage stay intact.
 
 #### TC-022-001 — Variable independent servers and browser windows
 
-**Promise:** FR-022, clauses 1–2 and 5. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC, N candidate server instances and N real browser
-windows, using distinct temporary ports/profiles; no radio or live service.
+**Promises:** FR-001, FR-019, FR-021, FR-022; CL-005-01, CL-005-02, CL-005-03,
+CL-005-05. **Level:** 2 — isolated automated tests.
+**Where:** Windows PC, N real server processes and separate real browser windows.
 
-**Inputs/actions:** Prepare N visibly distinct station profiles, start their servers
-and open one separate browser window for each endpoint. Refresh/query all four, then
-change a setting in one profile through the specified configuration workflow.
-Use standard connection profiles for phase 1; once the optional native connection is
-available, repeat with mixed standard and native profiles using isolated device/API fixtures.
+**Steps:** Launch each table profile with `--profile`; open one window per recorded
+endpoint. Match every visible full UUID, display name, endpoint, boot ID and revision
+to its fixture; require N distinct boot IDs/listeners/PIDs. Refresh every window.
+In window 1 save name `Edited station 1`, audio input `changed-input-1` and CAT endpoint
+`fixture-cat-1`, CAT mode and disabled PTT; retain its output and all other fields.
+Reload/Refresh a second window on profile 1 and all other station windows. Repeat with
+empty audio selections and disabled CAT; save audio alone and control alone.
 
-**Expected results:** N distinct listening endpoints and station identities are
-observable concurrently. Each window displays only its own instance's state. Requests
-and the configuration change affect the selected instance; the other profiles/windows
-remain unchanged. Multiple windows on a single endpoint do not satisfy this case.
+**Oracle/outcome:** Only profile 1 advances to the next revision and changes the
+specified fields; every other file and visible identity/settings remains equal to the
+input table. The second window observes the same acknowledged revision on refresh.
+All windows show radio unconfigured and saved device selections not activated. No
+serial/device access is attempted. The native option is visibly reserved/disabled.
+There is no four-entry ceiling. Check the form at desktop width and 360 px: identity,
+errors and Save remain readable/reachable with keyboard input.
+
+**Validation variants:** In one isolated profile, submit every editable field's empty,
+maximum and one-beyond-maximum value from 4.2, controls/newlines, malformed callsign/
+locator, wrong JSON types, invalid CAT/PTT combinations and an attempted native selection.
+Empty callsign/locator and nullable audio are valid; empty display name/opaque identifier
+are invalid. Test literal markup in a valid display name and require visible text without
+HTML execution. In particular, save display name `<img src=x onerror=alert(1)>` and
+audio identifier `<script>alert(1)</script>`; require their exact literal text in the
+appropriate page/form fields, no injected element, and no script/dialog execution.
+Exercise wrong profile ID, stale revision, duplicate/extra/missing fields,
+invalid JSON, unsupported media type and exact 8,192/8,193-byte bodies per 12.5 (pad
+an otherwise valid JSON object with whitespace). Each rejected save
+leaves memory/revision/file unchanged and shows its field/error outcome; valid boundary
+saves persist exactly. Revision exhaustion refuses another save. Test a second window
+saving from an old revision: one save wins, one receives 409, no silent merge/lost update.
 
 #### TC-022-002 — Persistence and independent restart
 
-**Promise:** FR-022, clauses 2 and 5. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC with disposable profile storage, N local server
-instances and real browser windows; no physical radio. Any full operating-system
-restart portion uses a disposable Windows test VM, not the operator's development PC.
+**Promises:** FR-001, FR-016, FR-022; CL-005-02, CL-005-04, CL-005-05.
+**Level:** 2 — isolated automated tests. **Where:** Windows PC, disposable storage,
+N real processes/windows. No full OS reboot is required or claimed by this case.
 
-**Inputs/actions:** Save different supported settings for each profile, stop the
-instances and restart them using their selected profiles. Repeat in a fresh application
-environment; use an isolated test-VM restart if operating-system restart is exercised.
-Include intended radio/slice association data once its phase-2
-schema is defined; use an emulator for any connection needed to observe it.
+**Steps:** Create an additional profile with `--create-profile`, independently check
+all creation defaults and UUID v4, and verify creation exits without listening. Save
+different editable values through each table profile's browser, record acknowledged
+revisions/UUIDs, stop all processes, clear inherited WSTX variables and restart using
+only the same paths plus explicit required TLS/token inputs. Reopen/refresh windows.
+Stop/restart only profile 1 again; then kill it after an acknowledged save and restart.
 
-**Expected results:** Each instance restores its own saved identity/settings and connection
-type without borrowing another profile's configuration. Native profiles also restore
-their intended association; standard profiles require no native radio/slice fields. Runtime radio handles
-are re-established from current status rather than treated as permanent persisted IDs.
-Missing/corrupt configuration follows the agreed recovery behavior without overwriting
-another profile; that behavior must be settled before implementing this case.
+**Oracle/outcome:** Saved fields, fixed endpoints, profile UUIDs and revisions exactly
+match the independent input/edit table; boot IDs change. Other profiles remain unchanged.
+A stale lock marker does not block restart and an orphan temporary file is never loaded.
+The fresh-process restart is evidence for process-independent storage; actual OS reboot
+is unexecuted unless separately reported from a disposable Windows VM.
+
+**Recovery/error variants:** Preserve independent byte hashes of all profile files.
+With the target stopped, test missing file, truncated JSON, malformed UTF-8, duplicate/
+unknown/missing fields, invalid UUID, schema 0/2, port 0/65536 and a 16,385-byte file;
+an otherwise valid 16,384-byte file padded with whitespace is accepted. Also try
+`native_flex` and require `unsupported_connection_type`, without an attempted radio
+connection or a change to the standard profile's stored settings.
+Each invalid launch fails nonzero with the defined category and no listener or file rewrite;
+others remain usable. Restore the original bytes and restart successfully. During a
+save inject a deterministic denied-write/atomic-replace failure in disposable storage:
+no acknowledgement, no revision advance, previous complete JSON and current settings
+remain authoritative. At crash-before/after-replacement fault points require either
+complete old or complete new JSON, never a partial file; a lost response is reconciled
+by GET without replay. Test a relative profile argument from another working directory,
+a directory alias, absent parent on creation, existing empty/nonempty creation target,
+unknown/duplicate CLI flags and forbidden WSTX_BIND/WSTX_ORIGIN overrides. No fallback
+or mutation is permitted. This does not certify power-loss durability or WSJT-X migration.
 
 #### TC-022-003 — Stop isolation and collision refusal
 
-**Promise:** FR-022, clause 3. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC, N local candidate instances with disposable profiles
-and controlled occupied-port/profile-lock fixtures.
+**Promises:** FR-021, FR-022; CL-005-03, CL-005-04.
+**Level:** 2 — isolated automated tests. **Where:** Windows PC, N real server/browser
+instances, OS port reservations, ownership aliases/copies and disposable resource fixtures.
 
-**Inputs/actions:** While N windows are active, stop one server and continue querying
-the other N-1. Restart the stopped server. Attempt another launch using an occupied
-port and, separately, a profile already owned incompatibly by an active instance.
+**Steps:** Stop profile 1 and query the other N-1 before, during and after its restart.
+While the original is running attempt: the same profile path, an alias to that directory,
+a copied directory retaining its UUID, and a new UUID/profile requesting an occupied
+port. For separate stopped copies test denied directory access, missing/unreadable TLS
+certificate/key, incomplete TLS pair, absent/invalid token and insecure remote binding.
+Test saved-origin port mismatch separately from a runtime scheme mismatch; the 4.2
+table supplies their distinct expected categories.
+Use a controlled startup resource failure for any exhaustion branch; never exhaust the
+operator PC. After failed launch remove the failing condition and launch successfully.
 
-**Expected results:** Only the stopped window becomes stale; the other N-1 remain
-usable. Restart reconnects the intended window/profile. Each conflicting launch fails
-clearly before it can alter stored configuration or masquerade as another station.
+**Oracle/outcome:** Only the stopped window becomes stale. N-1 Refresh requests continue
+to match their table identities within two seconds. Restart returns profile 1's UUID and
+saved revision with a fresh boot ID. Every conflicting launch fails within the ten-second
+fixture deadline, nonzero, with exactly the category mapped to its single injected
+fault by 4.2's startup-error table; no readiness, browser attachment, settings rewrite
+or existing-session interruption occurs. Pre/post byte hashes of saved files agree.
+Killing a process releases its ownership claim; a stale marker alone does not own it.
+A copied UUID is rejected until the owning process exits, irrespective of directory name.
 
 #### TC-022-004 — Multi-instance authentication in one browser profile
 
-**Promise:** FR-022, clause 4. **Level: 2 — Isolated automated tests.**
-**Where it runs:** Windows PC, N local TLS server endpoints on distinct ports of
-the **same hostname**, separate test credentials and N windows sharing the **same
-browser profile/cookie store**. Separate browser contexts do not satisfy this case.
+**Promises:** FR-019, FR-021, FR-022; CL-005-03, CL-005-04.
+**Level:** 2 — isolated automated tests. **Where:** Windows PC, N real disposable TLS
+listeners on **localhost**, different ports/tokens, N windows in **one browser context**.
+Independent contexts do not satisfy this case; tests never contact an external service.
 
-**Inputs/actions:** Authenticate independently to each station, refresh them all, then
-force each connection to reconnect. Re-authenticate or rotate access for one station
-according to the selected access contract. Attempt to use one station's credential or
-session at another station's endpoint.
+**Steps:** Before login request GET/PUT /profile and WebSocket upgrade without a cookie.
+Log in successively to all N stations; fetch GET `/profile` using ordinary same-origin
+browser fetch with no manually supplied Origin header and require 200. Inspect the cookie store by names/attributes only,
+then Refresh and reconnect every window. Repeat logins in reverse order. Copy station
+1's token to station 2's login, cookie name/value to station 2's upgrade and /profile
+requests, and station 1's session value under station 2's expected cookie name. Supply
+a legacy `wstx_session` cookie and duplicate expected-name cookies. Exercise missing/
+wrong Origin on login, PUT and upgrade, including another station's port and an unrelated
+origin. Rotate only profile 1's runtime token, stop/restart it and repeat authentication;
+query other stations throughout. Run local and cross-station negatives with the same
+four-server fixture. Exercise namespaced cookie expiry and re-login without clearing others.
 
-**Expected results:** Each station remains independently authenticated and its requests
-reach only that station. Logging in/reconnecting at one port does not invalidate or
-overwrite the others' sessions. Cross-station credentials/sessions are denied. Cookie
-behavior across ports must be exercised explicitly; the current common-name cookie
-implementation is not accepted as satisfying this planned requirement.
+**Oracle/outcome:** Exactly one expected namespaced session per logged-in UUID exists
+with the 12.1 attributes and no Domain attribute. All independent sessions survive other
+ports' logins/reconnects. Missing/wrong/duplicated/cross-profile cookies yield 401; wrong
+Origin yields 403 before credentials or settings are accepted. Wrong-station token login
+returns 401. The required HttpOnly cookie is the only permitted browser-persisted
+credential. No secret appears in localStorage/sessionStorage, profile JSON, retained
+form/page state after login submission, URLs, stdout or test reports. Reports inspect
+cookie names/attributes only; the test may transfer values internally for negative cases.
+The old token/session for restarted profile 1 is refused; re-login with its new token
+succeeds while others keep working. Exact-own-Origin authenticated saves succeed only
+at their selected profile, and a different profile's UUID in the HTTP PUT body's
+`profile_id` is denied. Numeric WebSocket correlation IDs retain 12.2's unchanged
+connection-local meaning and are not profile identities. Verify 12.1's body
+and per-process rate limits independently of other profiles. Same-host cookie transport
+is explicitly observed; it is not proof against a hostile service on that hostname.
 
 ### 6.3 Planned tests for direct FlexRadio integration
 
@@ -952,6 +1200,12 @@ write behavior before implementation. A held operating-system-backed ownership l
 prevents incompatible processes writing the same profile; stale-file existence alone
 is not proof that a profile is still owned.
 
+The approved #5 target is in [4.2](#42-concurrent-persisted-station-profiles--target-fr-022)
+and [12.5](#125-profile-interface-for-cr-5), with independent cases in
+[6.2](#62-planned-tests-for-concurrent-persisted-profiles). It is an approved contract,
+approved as a target and pending independent model correspondence review; these ownership rules
+do not imply that saved profiles or their settings interface are already implemented.
+
 The profile is selected explicitly at startup and its effective identity is visible in
 the browser. Starting a second profile does not mutate the first. Missing devices,
 occupied ports or invalid configuration produce explicit failure without overwriting
@@ -1106,7 +1360,7 @@ architecture orientation; the linked GitHub issues remain the work/acceptance ba
 
 | CR | Components and contracts changed | Technical prerequisites | Integration proof |
 |---|---|---|---|
-| [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5) | Bootstrap/profile, station context, visible identity, session isolation | Existing status foundation #3 | Independent profiles and windows at 1, 4 and a larger count; persistence and shared-browser isolation |
+| [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5) | Bootstrap/profile, station context, visible identity, session isolation | Existing status foundation #3 | Four independent profiles/windows sufficient for acceptance; variable-N implementation, persistence and shared-browser isolation |
 | [#6](https://github.com/SensorsIot/wsjtx-rust/issues/6) | Recording source, receive jobs, spectrum products, web transfer/display | #5 context/storage boundary | Actual recorded input through server and browser; analytical spectrum fixtures and bounded link behavior |
 | [#7](https://github.com/SensorsIot/wsjtx-rust/issues/7) | Pure FT4/FT8 processing and receive-result contract | #6 sample/job contract | Independent mode-specific recordings/vectors and measured quality/runtime |
 | [#8](https://github.com/SensorsIot/wsjtx-rust/issues/8) | Independent standard audio and Rust radio-control interfaces/drivers | #5 context and #7 receive pipeline | Offline-validated live input, CAT-disabled audio, audio-independent control and separate failure states |
@@ -1286,6 +1540,7 @@ communication-contract chapters. A rendered diagram is not additional architectu
 |---|---|
 | `Requirements.sysml` | Stable product FR/CL/TC identities and prose from the FSD; generated structured projection. |
 | `Architecture.sysml` | Deployment, parts, semantic interfaces, connections, identity associations and the standard `physicalInterconnection` view described here. |
+| `Profiles.sysml` | Approved CR #5 implementation contract from 4.2, 6.2 and 12.5: typed configuration/HTTP data, ordered validation, lifecycle/save/session behavior, ownership and independent verification. Allocated to the existing profile, station, web and browser usages; not another deployment. Target only until implementation and independent readiness review. |
 
 Only the accepted status slice is implemented. The target structure covers the queued
 CRs and remaining functional ownership in section 11.10. Full implementation readiness
@@ -1508,6 +1763,95 @@ The [test catalogue](#61-browser-and-server-test-catalogue)
 defines TC-021-005 through TC-021-009 and the supporting fixtures. It is the durable
 home of functional clauses and test-case definitions; issue #3 holds change/execution evidence.
 Execution procedures are defined in the project-specific harness.
+
+### 12.5. Profile interface for CR #5
+
+**Status: approved target for CR #5; not implemented or accepted as delivered.** Applies
+only to explicit `--profile` startup. The environment-only CR #3 mode, existing
+`station.get`/`station.status` payloads, `wstx.v1`, 1,024-byte WebSocket limits and
+liveness/rate/connection limits remain unchanged. There is no new WebSocket command
+or version in this target. Profile identity/settings use a separate bounded HTTP
+interface, without serializing internal station objects wholesale.
+
+**Settings representation.** `GET /profile` returns JSON containing exactly
+`profile_id`, `boot_id`, `revision`, `endpoint`, `connection_type` and `settings`.
+Endpoint is the single effective browser origin defined in 4.2, including the saved
+hostname alias when configured, rather than a substituted numeric bind address.
+Settings is an object containing
+exactly `display_name`, `callsign`, `locator`, `audio` and `control`, with the schema
+and values specified in 4.2. No directory, certificate/key path, token, cookie or other
+secret is returned. Schema version is the profile-file version, not the wire version;
+this HTTP representation is the explicit profile API for schema 1. Responses are
+`application/json`, `Cache-Control: no-store`, at most 8,192 bytes. There is no CORS
+permission. In environment-only mode GET and PUT `/profile` return 404.
+
+`PUT /profile` requires `Content-Type: application/json` (optional UTF-8 charset), exact
+Origin and, in TLS mode, the selected profile's valid session cookie. Loopback plaintext
+retains 12.1's trusted-local unauthenticated mode, but still requires exact Origin on
+PUT. GET requires the same session in TLS mode; a supplied Origin must match exactly,
+but an absent Origin is permitted for same-origin browser GET. No GET changes state.
+The PUT body is at most 8,192 bytes and has exactly `profile_id`, `revision`, `settings`.
+The profile ID MUST match the process's selected UUID; clients cannot select another
+profile by request. Revision MUST equal the current saved revision. Settings MUST
+contain the complete editable object. Identity/endpoint/connection type cannot be edited
+through it. The owner serializes revision check, validation and durable write as one
+operation, then returns 200 with the complete updated GET representation. GET and save
+responses derive from the same authoritative configuration. GET overlapping a save
+observes either the complete preceding or complete succeeding revision.
+
+| Condition, in validation order | HTTP result / JSON error code |
+|---|---|
+| PUT missing/wrong Origin; GET supplied wrong Origin | 403 / `forbidden_origin` |
+| TLS request missing/invalid selected-profile cookie | 401 / `unauthorized` |
+| Unsupported PUT content type | 415 / `unsupported_media_type` |
+| PUT body exceeds 8,192 bytes | 413 / `request_too_large` |
+| Invalid JSON/UTF-8, duplicate/missing/extra fields, wrong types, invalid revision or setting | 400 / `invalid_settings`; include `field` as the dotted field name when identifiable, otherwise null |
+| Validly formed UUID for another profile | 403 / `wrong_profile` |
+| Expected revision differs from current | 409 / `revision_conflict` |
+| Current revision already at maximum | 409 / `revision_exhausted` |
+| Required write/flush/replace fails | 503 / `storage_unavailable` |
+
+HTTP errors are `{ "error": { "code": "...", "field": null } }`; only
+`invalid_settings` may carry a non-null field. Errors never echo user-supplied values,
+paths, secrets or internal exceptions. A transport-level body rejection may precede
+application validation and still returns 413. Other endpoint methods return 405 without
+mutation. No partial update, automatic merge, implicit retry or command replay exists.
+The browser MUST obtain both the existing status snapshot and a successful profile GET
+before first displaying Connected for a profile-mode page. A failed profile load/save
+is visibly identified and never presented as a successful configuration update. After
+reconnect or Refresh it reloads profile settings; edits in progress are retained until
+explicit reload or successful save, and a 409 prompts reload before another save.
+The initial page distinguishes profile mode using a nonsecret embedded mode flag, not
+by guessing from an error or silently treating a failed authenticated GET as legacy mode.
+
+**Cross-port sessions.** TLS profile mode replaces the common cookie name with
+`wstx_session_<profile_id>`, using the full persisted lowercase UUID including hyphens.
+Its value is `<profile_id>.<runtime-token>` and MUST be verified against both this
+profile's ID and configured token. Host-only scope (no Domain), Path `/`, Secure,
+HttpOnly, SameSite Strict and Max-Age 28,800 are retained. The server accepts exactly
+one cookie of its expected name; duplicate expected-name cookies are refused. Cookies
+with other names are ignored, including the legacy `wstx_session`; neither a different
+name nor another profile's value can authenticate the selected profile. No-argument
+legacy mode retains its existing common-name contract. There is no migration of a
+legacy login into profile mode. Profile mode login/restart/rotation never deletes another
+profile's cookie. POST `/session` still uses 12.1's raw runtime token and exact Origin;
+it issues only this profile's namespaced cookie. Limits are per process/profile.
+
+The operator MUST provision independent random tokens for distinct authenticated
+profiles, in separate process environments. Deliberately reusing the same login secret
+for two stations grants access to both; cross-station credential-denial acceptance uses
+distinct secrets. Profile sessions are bearer credentials with 12.1's existing browser
+expiry semantics, not a new account/role/expiry system. Token rotation plus restart
+invalidates only that process's previous token and sessions. Authentication and Origin
+rules apply equally to settings and WebSocket access; request profile IDs never grant
+authority. Exact Origin includes the port, so another station's browser Origin is denied.
+
+This design fixes accidental common-cookie collision for station processes trusted by
+the same operator on one hostname. Cookies may be sent to other ports on that hostname;
+namespacing does not protect against a hostile same-host service reading/overwriting
+cookies. Mutually distrusting services require separate host/origin deployment boundaries.
+The scope and RFC constraint in 11.4 remain authoritative; no new hostile-service
+security guarantee is claimed. TC-022-004 explicitly exercises the shared cookie store.
 
 ## 13. FT8 sample recordings and provenance
 

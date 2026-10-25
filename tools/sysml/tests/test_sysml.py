@@ -86,6 +86,17 @@ class ProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Architecture source changed"):
             tool.check_architecture(model, original + " Changed interface.")
 
+    # Proves: CL-014-02, CL-014-04; TC-DOC-001 (documentation freshness, not runtime).
+    # CR #5: a generated requirements projection cannot replace the behavior contract.
+    def test_manual_profile_contract_source_drift_is_not_auto_accepted(self):
+        original = "Approved profile/settings/session contract."
+        model = "// Canonical profile contract SHA256: " + tool.digest(original)
+        tool.check_profiles_contract(model, original)
+        for candidate, source in ((model, original + " Changed."), ("", original)):
+            with self.subTest(model=candidate, source=source):
+                with self.assertRaisesRegex(ValueError, "Profile contract source changed"):
+                    tool.check_profiles_contract(candidate, source)
+
 
 class ValidatorTests(unittest.TestCase):
     # Proves: CL-014-04; TC-DOC-003. This invokes the real parser/resolver, not a mock.
