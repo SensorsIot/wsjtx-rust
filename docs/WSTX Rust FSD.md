@@ -109,8 +109,9 @@ client is the initial interface direction; a Tauri or other desktop wrapper has 
 ### 3.6 Additional targets: configured instances and direct FlexRadio access
 
 The following extensions build on the status-only communication slice. CR #5 now has
-a phase-1 implementation candidate, pending code review, the local gate and live
-acceptance. Phase 2 remains specified future work. Neither was delivered by CR #3.
+a phase-1 implementation candidate that passed independent code review and the local
+Windows gate; live acceptance remains pending. Phase 2 remains specified future work.
+Neither was delivered by CR #3.
 Their phase numbers describe the requested
 sequence for this extension, not completion of the broader delivery milestones.
 
@@ -166,7 +167,7 @@ the other functional areas retain their proposed scope until settled.
 | FR-019 | Browser operator interface | Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. |
 | FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
 | FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
-| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. CR #5 candidate implements phase 1; review, the local gate and live acceptance remain pending. CR #3 did not implement profiles. |
+| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. CR #5 candidate implements phase 1 and passed independent code review and the local Windows gate; live acceptance remains pending. CR #3 did not implement profiles. |
 | FR-023 | Optional direct FlexRadio integration — phase 2 target | Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Specified target; not implemented or accepted by CR #3. |
 
 ### 4.1 Browser–server status functions
@@ -246,7 +247,8 @@ authentication tests alone do not verify FR-022 clause 4.
 This approved target refines the five numbered clauses above and the approved roadmap
 issue [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5). The operator approved this
 contract with four concurrent servers sufficient for acceptance. The implementation
-candidate follows it; **code review, the local gate and live acceptance remain pending**.
+candidate follows it and passed independent code review and the local Windows gate;
+**live acceptance remains pending**.
 Preparation proceeds Markdown requirements/tests
 first, then SysML, a meaning comparison, code from the reconciled model, and verification
 against these original Markdown expectations. Product code starts only after independent
@@ -1237,8 +1239,8 @@ is not proof that a profile is still owned.
 The approved #5 target is in [4.2](#42-concurrent-persisted-station-profiles--target-fr-022)
 and [12.5](#125-profile-interface-for-cr-5), with independent cases in
 [6.2](#62-tests-for-concurrent-persisted-profiles). Its Markdown/model preparation is
-reconciled and the profile/settings candidate is implemented; independent code review,
-the local gate and live acceptance remain pending. The wider target architecture
+reconciled and the profile/settings candidate is implemented; independent code review
+and the local Windows gate passed, while live acceptance remains pending. The wider target architecture
 does not assert hardware or mode implementation.
 
 The profile is selected explicitly at startup and its effective identity is visible in
@@ -1421,8 +1423,9 @@ The current source has an Axum/Tokio status/profile server in
 [server/src/main.rs](../server/src/main.rs), profile validation/persistence/OS ownership in
 [server/src/profile.rs](../server/src/profile.rs), embedded
 [client files](../client/index.html), native TLS and the status/profile test companions.
-CR #5 remains a candidate pending code review, the local gate and live acceptance;
-no radio, decoder, transmit or MCP behavior is implemented.
+CR #5 is an implemented candidate that passed independent code review and the local
+Windows gate; live acceptance remains pending.
+No radio, decoder, transmit or MCP behavior is implemented.
 The planned modules and contracts above are introduced by their owning CRs.
 
 Profile schema/session names are settled in 4.2/12.5. Audio formats/sample representation and
@@ -1537,8 +1540,10 @@ ordinary connections. Structural checks retain this connector-kind distinction.
 ### 11.10. Requirement coverage and remaining design owners
 
 All FSD requirements have a responsibility or an explicit unresolved extension boundary.
-This matrix does not declare the full baseline implemented: only the accepted status
-slice in section 11.8 exists today. Target structure for #5-#13 is detailed above; remaining
+This matrix does not declare the full baseline implemented: section 11.8 distinguishes
+the accepted status slice from the implemented, independently reviewed and locally
+Windows-gated CR #5 profile candidate whose live acceptance remains pending.
+Target structure for #5-#13 is detailed above; remaining
 baseline inventories must be settled before their implementing CRs, without moving
 hardware policy or authoritative state into clients.
 
