@@ -1,10 +1,27 @@
 # Container handoff — 25 October 2026
 
+## Subsequent decision: continue on the Windows PC
+
+The operator chose to continue development here before moving to the container. This
+Windows checkout is again the active supervisor checkout; coordinate ownership before
+starting any container writer. The transfer instructions below remain available for
+the later move.
+
+Current continuation records are in SensorsIot/harness#6 (parallel issue workspaces)
+and the project's issues. The operator explicitly accepted #14's four-role physical
+architecture. GitHub blocking relationships now record integration/acceptance order;
+approved isolated work may overlap once its shared contracts are settled. The first
+hardware end-to-end target is an IC-7300 on another PC; FSD §4.5 and #8 own the details.
+Transport and browser placement are not yet confirmed. Use current issue checkpoints
+and the pinned parallel-work instructions rather than treating the original transfer
+snapshot below as today's readiness verdict.
+
 This is a transfer checkpoint requested by the operator, not a second backlog or FSD.
 Read `AGENTS.md`, the harness reference index and the latest GitHub issue checkpoints.
 The operator authorized continued development toward the complete application and
 explicitly requested pushing this workspace, including agent instructions and memory.
-The old PC session relinquishes repository write ownership after this transfer.
+The original transfer would have relinquished this session's write ownership; the
+subsequent decision above keeps development on this PC for now.
 
 ## Get the repositories and skills
 
