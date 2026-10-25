@@ -1,4 +1,4 @@
-// Canonical architecture SHA256: 65be70ca4d9764a63576ae18d825ec09ec4aac7f0176fb14acc0f186bfb19847
+// Canonical architecture SHA256: 3a3b26077d144257054075089ed408811b6b18272fd85c5afb46f78e893c6c7c
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
@@ -35,12 +35,28 @@ package WstxArchitecture {
     item def StationRequest;
     item def StationOutcome;
     item def Recording;
-    item def SampleBlock;
+    item def SampleBlock {
+        doc /* FSD 11.3 shared receive data: #6 owns one typed immutable sample contract;
+             #6 recorded and #8 live producers feed the existing receive path. Element
+             type/units, rate, frame clock, optional UTC, discontinuity, buffer owner,
+             lifetime, bounds, version and backpressure must be settled before code.
+             No concrete schema or numeric limit is approved here. */
+    }
     item def AudioOutcome;
     item def ControlRequest { ref part resourceContext : RadioBinding; }
     item def ControlOutcome { ref item request : ControlRequest; }
-    item def ProcessingRequest;
-    item def ProcessingResult;
+    item def ProcessingRequest {
+        doc /* FSD 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
+             source, job and generation correlate immutable settings and results;
+             concrete types, versions, lifetimes, queues and cancellation remain gates.
+             Receive jobs do not own transmit lifecycle or independent halt. */
+    }
+    item def ProcessingResult {
+        doc /* FSD 11.3: #7 owns mode-specific decoded payload/units/oracles and required
+             result delivery/retention; #6 owns spectrum frame units/identity/bounds and
+             replaceable display delivery. Concrete typed/versioned schemas and storage
+             lifetimes remain preparation gates, not implemented capabilities. */
+    }
     item def EncodeRequest;
     item def Waveform;
     item def ProfileRequest;
@@ -178,6 +194,8 @@ package WstxArchitecture {
         port audioStatus : ~AudioStatus;
     }
     part def WebAdapter {
+        doc /* FSD 11.3/11.7: extend existing shared profile/auth/Origin/HTTP/WebSocket
+             services once; dependent issues do not add parallel transport authorities. */
         port client : ~BrowserExchange;
         port station : StationOperations;
         port recording : RecordingTransfer;
@@ -204,19 +222,31 @@ package WstxArchitecture {
         port samples : ReceiveSamples;
     }
     part def ReceivePipeline {
+        doc /* FSD 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
+             #7 delivers common receive preprocessing/rate conversion if needed for both
+             recorded (#6) and live (#8) sources. PCM unit mapping is distinct from AGC
+             or modem normalization. No source-specific modem resamplers. #6/#7 settle
+             one shared FFT provider, ordering/scaling, buffer policy and independent
+             oracles before either writes FFT code; no speculative wrapper is required.
+             Concrete contracts/limits and library selection remain unapproved gates. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
         port processing : ReceiveProcessing;
     }
     part def ModeFunctions {
         doc /* Pure receive calculations and encoding/waveform generation. No device,
-             filesystem, wall-clock or network dependency; mode support is CR-specific. */
+             filesystem, wall-clock or network dependency; mode support is CR-specific.
+             FSD 11.3/11.7: #7 owns pure receive functions and mode result payloads;
+             hardware/device-format adaptation and common rate conversion stay outside. */
         port receive : ~ReceiveProcessing;
         port encode : ~EncodeProcessing;
     }
     part def TransmitService {
         doc /* UTC mapping/scheduling, operation authority, bounded halt and audio/PTT
-             coordination. #9 settles deadlines/controller-loss policy before hardware TX. */
+             coordination. #9 settles deadlines/controller-loss policy before hardware TX.
+             FSD 11.3/11.7: transmit lifecycle/halt is distinct from #6 receive jobs;
+             halt cannot wait for receive cancellation, work or congestion. Existing
+             context/resource authority is reused rather than recreated. */
         port operations : ~StationOperations;
         port encode : EncodeProcessing;
         port audio : AudioExchange;

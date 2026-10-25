@@ -1234,6 +1234,40 @@ are not serialized wholesale. Browser file transfer is separate from small contr
 messages; remote requests use profile-scoped recording identities rather than arbitrary
 server filesystem paths.
 
+#### Shared receive data ownership and preparation decisions
+
+The existing status/profile implementation supplies profile and boot identity, profile
+ownership/persistence, authentication, exact Origin checks, HTTP/WebSocket transport,
+request validation and connection liveness. These remain shared services under their
+existing owners. #6 extends those services for recording input and display; #7, #8 and
+#9 MUST NOT create parallel profile, authentication or transport authorities.
+Sample blocks, receive jobs, spectrum frames, decoder results and FFT processing are
+not implemented by the current status/profile code. The following assigns their target
+ownership; it does not approve a concrete schema, library or numerical limit.
+
+| Shared contract / owner | Producer -> consumer | Decisions to settle before dependent code |
+|---|---|---|
+| Receive samples / #6 | Recorded source (#6) and live audio source (#8) -> shared receive pipeline; pipeline -> spectrum and pure receive modem (#7) | One typed real-audio representation: element type, channel identity, sample-unit mapping, rate in samples/s, integer source-frame positions, discontinuity/end-of-stream and optional UTC mapping separate from the sample clock. Specify read-only buffer owner, borrowing/sharing lifetime and release, maximum block/retained-buffer sizes, schema/version compatibility and full-buffer/backpressure behavior. Profile/boot/source identity must survive the path without treating a filename or port as identity. |
+| Receive job / #6 | Station-authorized recorded/live receive requests -> shared receive pipeline; job-tagged progress/completion -> station state owner | One receive lifecycle with immutable mode/settings, source/job identity and station generation; define generation changes, cancellation checkpoints/acknowledgement, worker/queue limits, refusal when full, terminal states, result retention/release and version compatibility. Sample positions, configuration revisions, request IDs and frame sequences are distinct from job generation. Late output cannot replace current state. This contract does not own transmit lifecycle or halt. |
+| Spectrum frame / #6 | Shared receive/spectrum processing -> web adapter -> subscribed browser | Source/job/generation and frame sequence; contributing sample interval, frequency coordinates in Hz and explicitly defined level units/scaling; typed bounded bin storage, immutable ownership/lifetime, frame/version negotiation, display rate and byte limits. Settle latest-frame replacement, explicit time gaps and control/state priority separately from required result delivery. |
+| Decode result / #7 | Pure mode functions -> shared receive pipeline -> station state owner, browser and later QSO/MCP | Shared profile/source/job/generation correlation with a mode-owned typed payload, supported message variants, measurement units/tolerances and result/version compatibility. Settle immutable ownership, retention/resynchronization and bounded delivery; required results cannot inherit discardable spectrum-frame policy. |
+| Transmit request/waveform / #9 | Authorized station operation -> transmit service/pure encoder -> audio/control adapters | Reuse existing context/authority and agreed sample units where applicable; settle waveform types, sample storage lifetime, UTC mapping, resource budgets, cancellation and independent halt deadlines before transmit code. Receive job cancellation or congestion cannot delay transmit halt. |
+
+PCM integer-to-real unit conversion is distinct from gain control, filtering and
+mode-specific normalization. Rate conversion and receive preprocessing have one owner
+in the common receive pipeline, delivered by #7 if required. Recorded and live sources
+feed that boundary; they MUST NOT grow separate modem resamplers. Pure modem functions
+consume the agreed processing input and have no device-format or hardware knowledge.
+This does not select an import format, device rate, AGC policy or resampling algorithm.
+
+FFT functionality needed by spectrum and decoding is selected once before either
+consumer implements it. #6 and #7 jointly settle actual transform sizes, shared provider,
+input/output ordering, scaling/normalization, buffer ownership/reuse and independent
+numerical oracles, with one writer maintaining the selected contract. Existing dependencies
+are inspected first; a new library is justified against the combined workload. The
+selection does not require a speculative abstraction layer or two FFT implementations.
+No FFT dependency/provider/API is approved by this architecture refinement.
+
 ### 11.4. State and data ownership
 
 #### Profiles and persistence
@@ -1415,6 +1449,16 @@ architecture orientation; the linked GitHub issues remain the work/acceptance ba
 | [#12](https://github.com/SensorsIot/wsjtx-rust/issues/12) | MCP adapter and configured automation policy | #10/#11 station-operation contracts | Browser/MCP state equivalence and identical station-side permission/cancellation behavior |
 | [#13](https://github.com/SensorsIot/wsjtx-rust/issues/13) | Optional native radio/sample backend and shared-radio coordination | #5, #8 and #9 ownership/control contracts | Native API fixtures, mixed backend profiles and consented hardware tests; MCP is not a technical prerequisite |
 
+The shared capability allocation below refines the component map; these are target
+responsibilities, not additional runtime parts or implemented capabilities.
+
+| CR | Owns once | Reuses / must not duplicate | Contract gate before its code |
+|---|---|---|---|
+| #6 | Validated recorded source/storage integration, common receive sample contract and receive job/cancel lifecycle, spectrum products and browser display/transfer | Existing profile/context/auth/web services and station authority; no universal job manager or transmit authority | Concrete sample/job/frame schemas, recording workflow, bounds, errors, independent display oracles and reviewed communication extension; shared FFT choice with #7 before FFT code |
+| #7 | Pure FT4/FT8 receive functions and decoded payloads; common receive preprocessing/rate conversion if needed | #6 sample/job/source path and selected shared FFT functionality; no second recording parser, source-specific resampler, job runner or transport engine | Approved shared input/job and FFT contract plus mode input/settings/results, independent FT4/FT8 vectors and numerical/quality/resource budgets |
+| #8 | Live device sample producer, device-format adaptation and independent audio/control drivers, timing/overrun/device-loss reporting | Common receive sample/job/preprocessing path, profiles and station authority; no second decoder, modem resampler or auth service | Concrete device/control capabilities and sample clock/UTC/discontinuity/backpressure contract consistent with common receive input |
+| #9 | Transmit waveform/encoding, UTC scheduling, transmit lifecycle/authority integration and independent halt path | Existing context/resource authority, common sample units and selected FFT functionality where needed; no receive-owned transmit safety policy | Approved transmit/audio/control/waveform contracts, independent timing/failure oracles and halt deadlines that do not wait for receive work |
+
 Before each implementation, its issue settles the affected contract details and updates
 the relevant FSD chapters as needed. A change crossing a component boundary updates
 its producer, consumers and independent tests together. Final validation uses the
@@ -1441,6 +1485,12 @@ display encoding (#6), decoder variants/quality budgets (#7), independent audio/
 (#8), transmit ownership/deadlines (#9), QSO/log format (#10), MCP tools/policy (#12) and
 native FlexRadio coordination/capabilities (#13) are preparation gates. Their named
 owners prevent two implementations from silently selecting incompatible contracts.
+The shared ownership allocation in 11.3/11.7 is an early architecture decision, not
+implementation readiness for #6/#7. Concrete formats, rates, types, buffer lifetimes,
+limits, state/error/timing rules, wire compatibility and independent test oracles remain
+preparation decisions. Settle them in Markdown, reconcile the affected model and compare
+meaning independently before dependent code. A structural model or source fingerprint
+alone does not approve an unresolved data contract or FFT choice.
 These are bounded implementation decisions inside the architecture, not claims of
 completed hardware or mode support.
 
