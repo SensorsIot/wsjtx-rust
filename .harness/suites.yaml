@@ -23,7 +23,7 @@
   - server/
   - client/
   - tests/
-  - docs/COMMUNICATION.md
+  - docs/WSTX Rust FSD.md
   - Cargo.toml
   - Cargo.lock
   - package.json
@@ -34,7 +34,6 @@
   run: python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -q
   paths:
   - docs/WSTX Rust FSD.md
-  - docs/ARCHITECTURE.md
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/

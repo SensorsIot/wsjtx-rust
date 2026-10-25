@@ -34,6 +34,11 @@ class ProjectionTests(unittest.TestCase):
         self.assertIn("Retain the station identity.", rendered)
         self.assertEqual(rendered, tool.render(SOURCE))
 
+    # The single FSD contains both definitions and linked architecture coverage rows.
+    def test_architecture_coverage_references_do_not_redefine_requirements(self):
+        merged = SOURCE + "\n## 11. Architecture\n| [FR-001](#4-proposed-functional-requirements) | Profile responsibility | Target coverage |\n"
+        self.assertEqual(set(tool.catalog(merged)), {"FR-001", "CL-003-01", "TC-001-001"})
+
     # Proves: CL-014-04, CL-014-05; TC-DOC-002.
     def test_reject_duplicate_and_unknown_identity(self):
         with self.assertRaisesRegex(ValueError, "Duplicate definition"):

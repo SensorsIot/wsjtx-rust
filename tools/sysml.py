@@ -19,7 +19,6 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 FSD = ROOT / "docs/WSTX Rust FSD.md"
-ARCH = ROOT / "docs/ARCHITECTURE.md"
 MODELS = ROOT / "docs/sysml"
 TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
 ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
@@ -122,7 +121,7 @@ def render(text: str) -> str:
 def check_architecture(model: str, source: str):
     marker = re.search(r"^// Canonical architecture SHA256: ([a-f0-9]{64})$", model, re.MULTILINE)
     if not marker or marker[1] != digest(source):
-        raise ValueError("Architecture source changed: review Architecture.sysml against ARCHITECTURE.md and update its source-hash marker explicitly")
+        raise ValueError("Architecture source changed: review Architecture.sysml against FSD chapter 11 and update its source-hash marker explicitly")
 
 
 def setup(cache: Path):
@@ -170,7 +169,7 @@ def tool_paths(cache: Path) -> tuple[Path, Path, Path]:
 
 
 def architecture_integrity(output: str) -> dict[str, int]:
-    """TC-DOC-005: independent structural oracle for ARCHITECTURE.md section 9.
+    """TC-DOC-005: independent structural oracle for FSD section 11.9.
 
     Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
     viewer graph. Endpoint expectations bind the Markdown responsibilities to model
@@ -251,7 +250,7 @@ def architecture_integrity(output: str) -> dict[str, int]:
         expected[station + ".backend." + selection] = [("audio", "audioDevices.host"), ("audioDevices.radio", "radioAudio"),
             ("control", "controlDriver.authorized"), ("controlDriver.radio", "radioControl")]
     expected[station + ".backend.nativeFlex"] += [("audioDevices.session", "session.audio"), ("controlDriver.session", "session.control")]
-    # Independent role/contract bindings from ARCHITECTURE.md section 9. A leading
+    # Independent role/contract bindings from FSD section 11.9. A leading
     # ~ marks the provider/conjugate role. Do not infer expected roles from the model.
     role_contracts = {}
 
@@ -383,7 +382,7 @@ def main(argv=None):
             if not generated.exists() or generated.read_text(encoding="utf-8") != expected:
                 raise ValueError("FSD projection is stale; run python tools/sysml.py sync")
             architecture = MODELS / "Architecture.sysml"
-            check_architecture(architecture.read_text(encoding="utf-8"), ARCH.read_text(encoding="utf-8"))
+            check_architecture(architecture.read_text(encoding="utf-8"), FSD.read_text(encoding="utf-8"))
             paths = [generated, *sorted(path for path in MODELS.glob("*.sysml") if path != generated)]
             print("Markdown synchronization passed; this alone is not semantic validation.")
         else:

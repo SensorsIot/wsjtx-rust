@@ -7,6 +7,12 @@
 - Behavior reference: WSJT-X `v3.3.0-beta4`, released 2026-10-22, commit `0f7d5928449ec747c3d1f6da1306f8c94404c3a9`
 - Archived source snapshot: WSJTX/wsjtx, commit `967c85a6119110788b0df3782cf796485b2cee14` on `original`; this is not the beta behavior baseline.
 
+Contents: [Requirements](#4-proposed-functional-requirements) |
+[Acceptance tests](#6-acceptance-and-validation-approach) |
+[11. Architecture](#11-target-product-architecture) |
+[12. Communication contract](#12-station-communication-contract) |
+[13. Recording reference data](#13-ft8-sample-recordings-and-provenance).
+
 ## 1. Purpose
 
 Define the intended behavior and acceptance criteria for a simplified Rust implementation of WSJT-family functionality. The project must preserve on-air interoperability and the workflows needed for weak-signal amateur-radio communication, while keeping the implementation and user experience as simple as possible.
@@ -75,10 +81,10 @@ Keep protocol logic and input/output boundaries portable where practical. Platfo
 
 ### 3.5 Station server and operator client
 
-The [target architecture](ARCHITECTURE.md) is the canonical companion for internal
+The [target architecture in chapter 11](#11-target-product-architecture) defines internal
 component boundaries, data/state ownership, interface responsibilities and the mapping
-of functional CRs to those components. This FSD owns functional promises and test-case
-definitions; [COMMUNICATION.md](COMMUNICATION.md) owns the implemented wire contract.
+of functional CRs to those components. This FSD owns functional promises, test-case
+definitions and the [implemented wire contract in chapter 12](#12-station-communication-contract).
 The architecture distinguishes the existing status-only implementation from planned
 receive, transmit, device and automation components.
 
@@ -96,7 +102,7 @@ The server reports actual station state; the browser distinguishes confirmed sta
 MCP accesses the same station operations and state as the browser. It supports observing and automating FT4/FT8 workflows, including finding candidate stations, selecting a suitable station, and conducting a QSO. Transport, tool names, authentication/authorization, control ownership, and selection policy are specified before the corresponding implementation. MCP does not define a separate modem or timing engine.
 
 The initial status-only message contract and bandwidth/latency envelope are defined in
-the [station communication contract](COMMUNICATION.md). Additional operating commands,
+the [station communication contract](#12-station-communication-contract). Additional operating commands,
 radio control ownership and optional desktop packaging remain to be specified. A browser
 client is the initial interface direction; a Tauri or other desktop wrapper has not been selected.
 
@@ -172,7 +178,7 @@ retire these clauses or tests.
 This section also provides orientation to the detailed interface specification:
 message schemas, field bounds, errors, authentication settings, timeouts, resource limits
 and numerical traffic budgets have their single canonical home in
-[COMMUNICATION.md](COMMUNICATION.md). References below use that contract rather than
+[chapter 12](#12-station-communication-contract). References below use that contract rather than
 redefine its wire format or numeric limits.
 
 | Clause | Promise | Required function | Verification |
@@ -298,7 +304,7 @@ required by this program for its selected supported radios. The initial support 
 protocols and operation subset are settled in #8 and extended by actual later requirements.
 This requirement does not call for Hamlib's full API/ABI, device catalogue or utilities.
 Detailed component responsibilities and reference sources are canonical in
-[the architecture](ARCHITECTURE.md#5-independent-audio-and-radio-control-interfaces).
+[the architecture](#115-independent-audio-and-radio-control-interfaces).
 
 Optional native FlexRadio support supplies the same two interfaces; shared physical
 transport/session management does not merge their sample and control responsibilities.
@@ -316,7 +322,7 @@ transport/session management does not merge their sample and control responsibil
 The functional SysML companion represents the product requirements, architecture and
 verification intent. Its purpose is a sufficient functional contract for AI implementation
 of each approved slice. Current coverage and unresolved design ownership are in the
-[architecture](ARCHITECTURE.md#11-functional-model-and-views).
+[architecture](#1111-functional-model-and-views).
 Model-authoring and maintenance procedures are defined in the
 [project-specific harness](harness/Project-Specifics.md#project-model-documentation-contract),
 which links the general SysML instruction. Harness procedures are not part of the product model.
@@ -396,7 +402,7 @@ port, independent WebSocket test peer; the parser examples also run as Rust unit
    peer remains usable. Send a binary frame and expect the specified close behavior.
 
 **Oracle:** hand-authored contract examples, candidate version and
-[message/error rules](COMMUNICATION.md#messages-and-validation).
+[message/error rules](#122-messages-and-validation).
 **Executable trace:** [communication.test.cjs](../tests/communication.test.cjs),
 `TC-021-005: actual-server correlation, negative cases and size boundaries`;
 [protocol_tests.rs](../server/src/protocol_tests.rs),
@@ -439,7 +445,7 @@ controllable disposable local proxy, with WebSocket message and attempt timestam
    initial snapshot request and no periodic station.get polling.
 2. Cut the connection and keep it unavailable. Expect visible stale/disconnected state
    and attempts at the bounded reconnect rate from the
-   [liveness contract](COMMUNICATION.md#liveness-and-resource-limits).
+   [liveness contract](#123-liveness-and-resource-limits).
 3. Restore connectivity to the actual server. Expect a new station.get exchange and a
    fresh full snapshot before Connected, within the contract's recovery bound. If a
    server restart or version change is exercised, the fresh state MUST replace the old
@@ -469,7 +475,7 @@ independent local WebSocket peers against the actual server.
    and first displayed status. Expect first status within its post-load limit.
 2. Keep both clients connected with unchanged station state for the contract's full
    measurement interval. Expect the aggregate mean in each direction to meet the
-   [traffic budget](COMMUNICATION.md#thin-link-budget-and-test-model), including heartbeat
+   [traffic budget](#124-thin-link-budget-and-test-model), including heartbeat
    and accounted overhead. Report actual TLS-stream bytes plus the explicit network model;
    do not describe these values as physical packet capture.
 3. Click Refresh status concurrently in both existing clients. Expect each visible
@@ -490,7 +496,7 @@ independent local WebSocket peers against the actual server.
    buffers filled, the send-timeout branch executed or total process memory was measured.
 
 **Oracle:** independently timed link simulator, browser-visible updates and
-[resource/liveness rules](COMMUNICATION.md#liveness-and-resource-limits).
+[resource/liveness rules](#123-liveness-and-resource-limits).
 **Executable trace:** [communication.test.cjs](../tests/communication.test.cjs),
 `TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget` and
 `TC-021-008: stalled reader cannot block another client`.
@@ -519,7 +525,7 @@ using a disposable local TLS certificate, test token and configured allowed Orig
    plaintext token configuration; and an Origin containing a path. Expect startup failure.
    The explicit loopback development fixture remains limited to its configured loopback address.
 
-**Oracle:** [access and startup contract](COMMUNICATION.md#connection-and-security),
+**Oracle:** [access and startup contract](#121-connection-and-security),
 HTTP/upgrade outcomes and protected cookie attributes. **Executable trace:**
 [communication.test.cjs](../tests/communication.test.cjs),
 `TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal`.
@@ -771,7 +777,7 @@ duplicated as functional specifications here.
 ## 10. References
 
 - [Experimental beta behavior reference](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4)
-- [Sample recordings and provenance](SAMPLES.md)
+- [Sample recordings and provenance](#13-ft8-sample-recordings-and-provenance)
 - [FlexRadio native API developer program](https://www.flexradio.com/api/developer-program/)
 - [FlexRadio API overview](https://www.flexradio.com/api)
 - [HTTP cookies and port isolation, RFC 6265 section 8.5](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5)
@@ -779,3 +785,780 @@ duplicated as functional specifications here.
 - [Upstream program and mode overview](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/README.md)
 - [Upstream GPLv3 license](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/COPYING)
 - [Upstream trademark policy](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/TRADEMARK.md)
+
+## 11. Target product architecture
+
+**Status:** target design for the queued functional CRs; not a claim that the planned
+modules, interfaces or radio functions are implemented. **Layer:** WHAT.
+This chapter owns component boundaries and internal interface responsibilities.
+The functional requirements and durable tests are defined earlier in this FSD;
+[chapter 12](#12-station-communication-contract) owns implemented wire schemas and limits.
+
+### 11.1. Physical station context
+
+The physical context has four roles: the operator, the computer displaying the browser,
+the computer running the station server, and the radio. Viewer and controller roles may
+run on the same computer locally; the remote arrangement separates them across the
+station link. These roles do not prescribe a hardware model, connector or cable count.
+
+```mermaid
+flowchart LR
+    User["User / operator"]
+    Viewer["Viewer computer: browser"]
+    Controller["Station controller computer: Rust server"]
+    Radio["Radio"]
+    User <-->|"Local interaction"| Viewer
+    Viewer <-->|"IP: commands, state, results, display data; 32 kbit/s thin-link target"| Controller
+    Controller <-->|"Audio samples and timing"| Radio
+    Controller <-->|"Optional CAT / status / PTT"| Radio
+```
+
+Audio and radio control are separate logical interfaces at the controller/radio
+boundary, even when they share a USB cable or network transport. Audio can operate with
+CAT disabled and manual tuning; control can operate without opening audio. The thin-link
+target applies to the viewer/controller link, not to an assumed radio audio stream. It
+is a design target, not a claim that the current status-only implementation proves
+integrated audio/DSP performance. Section 5 retains the independently selected standard
+interfaces and the optional Phase 2 native backend.
+
+#### Runtime shape and software decomposition
+
+One station is one Rust server process, one explicitly selected persisted profile and
+one listening endpoint. The browser runs locally or across the station link. A variable
+number of station processes may run on a machine; four is a minimum reference workload,
+not a fixed array size, launcher limit or radio-capacity promise.
+
+The initial implementation stays in the existing Cargo workspace and server package.
+Modules are introduced when their implementing CR needs them. Separate crates or services
+require a demonstrated reuse, isolation or performance need; the diagram does not require
+a crate per box.
+
+```mermaid
+flowchart LR
+    Browser["Browser window for a station"]
+    MCP["MCP client"]
+    Web["HTTP / WebSocket adapter"]
+    MA["MCP adapter"]
+    Station["Station service: commands, state and authority"]
+    Profile["Profile and persistence"]
+    RX["Receive pipeline and modem functions"]
+    TX["Transmit scheduler and halt"]
+    QSO["QSO sequencing and logging"]
+    Audio["Audio interface: samples and device timing"]
+    Control["Radio-control interface: CAT / PTT and status"]
+    Devices["Standard audio devices"]
+    CAT["Rust CAT / PTT drivers for selected radios"]
+    Authority["One effective shared-radio authority"]
+    Modes["Pure receive / encode modem functions"]
+    Recording["Profile-owned recorded input"]
+    Flex["Optional native FlexRadio backend — Phase 2"]
+    Browser <--> Web
+    MCP <--> MA
+    Web <--> Station
+    MA <--> Station
+    Station <--> Profile
+    Station <--> RX
+    Station <--> TX
+    Station <--> QSO
+    Station <--> Control
+    RX <--> Audio
+    TX <--> Audio
+    TX <--> Control
+    Audio <--> Devices
+    Control <--> Authority
+    Authority <--> CAT
+    Audio <--> Flex
+    Authority <--> Flex
+    RX <--> Modes
+    TX <--> Modes
+    Profile <--> Recording
+    Recording --> Audio
+    QSO <--> Profile
+    Station <--> Audio
+```
+
+The boxes show responsibilities within the station system, not a network hop for each
+arrow. Standard devices/drivers and native FlexRadio are alternative backend selections,
+not simultaneous routes for every station. Carrier connections contain per-client/per-station
+attachments: one browser/MCP association selects one deployed station; each radio channel
+selects that station's backend and intended radio resource. A scalar carrier does not
+broadcast commands or return another profile's state. Optional shared-radio coordination
+is described in section 11.5.
+
+### 11.2. Responsibilities and dependency direction
+
+| Logical component | Owns | Must not own | First CR |
+|---|---|---|---|
+| Bootstrap/profile | Profile selection, stable station identity, endpoint settings, exclusive profile ownership, validated configuration and storage | DSP or browser state | #5 |
+| Station service | Authoritative station state, validated operations, active jobs, state transitions and operation authorization | HTTP/MCP parsing or device-specific protocol syntax | #5 |
+| Web adapter | Embedded client, HTTP/file transfer and versioned WebSocket messages; transport authentication and Origin checks | A second QSO/modem engine or direct radio writes | #5–#6 |
+| Browser client | Presentation, local display filtering, waterfall color/rendering, pending/stale state and operator requests | Authoritative radio state, timing-critical modulation or transmit authority | #5–#6 |
+| Audio interface, sources and sinks | Validated recording input, live-device capture/playback, sample metadata and device errors | CAT commands, PTT commands, mode decoding or QSO decisions | #6, #8 |
+| Receive pipeline/spectrum | Sample-window handling, mode-specific normalization/resampling, bounded receive jobs and spectrum products | File dialogs, HTTP, CAT or UI rendering | #6–#7 |
+| Mode functions | Protocol-specific message/symbol/waveform and decode calculations with independent vectors | Filesystem, hardware, network or wall-clock dependencies | #7, #9, #11 |
+| Radio-control interface and drivers | Selected radio capabilities, CAT/control operations, PTT mechanism, authoritative status and control-resource claims | Audio samples, sound-device operation, browser/MCP policy or duplicated modem logic | #8, #13 |
+| Timing/transmit service | UTC mapping, scheduling, transmit state, audio/PTT coordination and priority halt | Dependence on browser timers or queued visualization work | #9 |
+| QSO/logging | Exchange state, completion/cancellation and durable contact records | Bypassing transmit authority or another profile's storage | #10–#11 |
+| MCP adapter/automation policy | MCP validation/authorization context and configured station-selection/automation requests | Independent station state, direct backend access or separate transmit permissions | #12 |
+
+Transport adapters call station operations. Station operations call domain processing
+and device/storage adapters. Pure mode processing does not depend on these outer adapters.
+Browser and MCP requests cross the same station-side validation and authority boundary.
+
+These are logical boundaries. Proposed Rust areas are profile, station, audio, receive,
+modem, radio_control, transmit, qso, logging and api; names and file splitting follow the actual
+responsibilities when implemented. Empty modules and speculative public APIs are not
+part of this design.
+
+### 11.3. Internal contracts to settle before dependent code
+
+These are semantic contracts, not existing Rust types or a new wire version. The owning
+CR defines concrete types, limits and error variants before code that consumes them.
+
+| Contract | Required information and behavior | Owner / first consumer |
+|---|---|---|
+| Station context | Stable profile ID, display identity, validated configuration revision and runtime instance/boot identity. Ports and display names are not persistent identity. Secrets are not part of ordinary snapshots. | #5 / #6 onward |
+| Operation and snapshot | Caller/authority context, correlated request/operation identity, result or defined error, current state revision and pending/completed distinction. Reconnection uses authoritative snapshots; it never replays an old transmit request. | #5 / web, later MCP |
+| Receive input | Immutable sample blocks with explicit sample representation, rate, channel identity, sample position and discontinuity/end-of-stream information. UTC metadata is separate from the sample clock and may be absent for recordings. | #6 / #7 and #8 |
+| Receive job | Profile, source, selected mode, immutable processing settings, bounded resources and cooperative cancellation. Results identify their job/generation; obsolete results cannot overwrite a newer source or mode. | #6–#7 / station service |
+| Decode result | Mode/source/job identity, independently defined decoded content and applicable timing/frequency/signal measurements. Supported message variants and numerical tolerances belong to the mode contract. | #7 / browser, QSO and MCP |
+| Spectrum frame | Source and sequence identity, frequency/time coordinates and bounded display data. Browser rendering does not require continuous raw audio over the remote link. | #6 / browser |
+| Radio capability/control | Device/radio identity, supported operations, authoritative status, resource ownership and explicit failure/unavailable states. Unsupported capability never becomes a fabricated successful result. | #8 / transmit, later #13 |
+| Transmit request | Profile/caller, current authority, mode/message, schedule and referenced radio resources. Halt and failure handling are local to the server. Link-loss policy and deadlines are settled before hardware transmit is enabled. | #9 / QSO, later MCP |
+| Completed contact | Stable completion identity, agreed contact fields and explicit persisted/unsaved outcome. A replayed completion cannot silently create a second contact. | #10 / browser, MCP |
+
+The initial audio contract supports the real-audio receive path needed by #6–#8. Future
+wideband/IQ or multichannel modes use explicitly typed input capabilities; they must not
+reinterpret complex samples as mono real audio. Likewise, modes are not forced into
+FT8 timing or an interactive QSO workflow when those capabilities do not apply.
+Mode capabilities distinguish receive, encode and operating-workflow support. The FT4
+decoder in #7 does not enable FT4 transmission before #11; unsupported operations are
+refused explicitly rather than silently using another mode.
+
+The wire contract remains separate from these internal types. Each CR extending the
+implemented status protocol updates chapter 12 first, including compatibility,
+version/capability behavior, message limits and error handling. Internal station objects
+are not serialized wholesale. Browser file transfer is separate from small control
+messages; remote requests use profile-scoped recording identities rather than arbitrary
+server filesystem paths.
+
+### 11.4. State and data ownership
+
+#### Profiles and persistence
+
+A profile owns its configuration, station identity, access configuration and contact/
+recording metadata. #5 settles the schema/version, paths, recovery rules and atomic
+write behavior before implementation. A held operating-system-backed ownership lock
+prevents incompatible processes writing the same profile; stale-file existence alone
+is not proof that a profile is still owned.
+
+The profile is selected explicitly at startup and its effective identity is visible in
+the browser. Starting a second profile does not mutate the first. Missing devices,
+occupied ports or invalid configuration produce explicit failure without overwriting
+another profile. Private credentials are never copied into status messages or browser
+storage as part of a configuration snapshot.
+
+Different TCP ports do not isolate cookies. #5 must define per-instance session routing
+and credential verification for one shared browser cookie store; namespacing avoids
+accidental collision but does not make same-host ports a trust boundary between hostile
+services. The same-host multi-instance requirement assumes station processes under the
+same operator's trust. Mutually distrusting deployments require a stronger origin/host
+boundary. The [cookie contract](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5)
+is the protocol constraint; the FSD owns the acceptance cases.
+
+#### Station operations and jobs
+
+One station-state owner serializes authoritative transitions. Long-running processing
+runs outside that state owner and returns job-tagged results. Input, completion and
+cancellation are validated against the current profile, source and generation.
+
+A client displays confirmed, pending and stale state separately. UI history/filtering
+may be local; station configuration, received results required by workflows, radio state,
+QSO progress and contact records remain server-owned. Reconnecting a client obtains a
+new snapshot; late replies from replaced connections or cancelled jobs are discarded.
+
+#### Audio and CPU work
+
+Recorded and live sources feed the same receive boundary. They differ in pacing and
+clock metadata, not in whether they use a second decoder. Offline work uses sample
+positions and a deterministic test clock where needed. Live work maps device/sample
+time to UTC without asking browser timers to schedule radio operations.
+
+The network executor is not a CPU-decoder queue. Processing concurrency, pending jobs
+and sample buffers have explicit bounds, including an operator-visible worker/resource
+budget for concurrent profiles. Automatic worker selection must account for multi-instance
+use rather than assume each process owns the whole PC.
+
+Cancellation is cooperative within bounded processing work. Timing-critical halt does
+not wait for a decode job to finish. Unbounded use of blocking workers is not an adequate
+CPU scheduler; Tokio documents both queue behavior and the inability to abort already
+running blocking tasks in its [blocking-task contract](https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html).
+Specific executors and acceleration libraries are chosen after workload measurement.
+A correct CPU path remains required; GPU/SIMD backends implement the same processing
+contract and must pass the same independent vectors.
+
+### 11.5. Independent audio and radio-control interfaces
+
+#### Audio and control separation
+
+The standard path has two independently configured and tested interfaces:
+
+- **Audio:** input/output device and channel selection, sample movement, rate/timing
+  metadata, buffering and device failure. It does not send CAT or PTT commands.
+- **Radio control:** radio model/protocol selection, serial/network control transport,
+  required frequency/mode/status operations and the selected PTT/split/VFO capabilities.
+  It does not capture, generate or play audio samples.
+
+The profile stores audio settings separately from radio-control/PTT settings. A valid
+audio setup can be used with CAT disabled and manual tuning. A control connection can
+report status or tune an approved radio without opening an audio device. Separate
+capabilities and unavailable/error states prevent one working interface from implying
+that the other is ready. A shared USB cable or network connection does not merge their
+application responsibilities.
+
+One effective authority mediates control access for the selected radio resource across
+station processes, including mixed standard/native selections. Each request identifies its
+station-owned resource binding; authorization preserves that context and outcomes refer
+to their requesting operation. This is semantic ownership/correlation, not a new wire
+schema or a settled coordination algorithm.
+
+The transmit service coordinates both interfaces: obtain authority, prepare the selected
+audio route and radio/PTT state, schedule output, and handle completion/halt/failure.
+Audio failure must still leave the control-side halt/release path usable; control failure
+must not produce a fabricated radio-ready state. Any supported VOX behavior is an explicit
+transmit policy, not a hidden CAT dependency in the audio module.
+
+#### Scope of the Rust Hamlib replacement
+
+The selected [WSJT-X beta build](https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/CMakeLists.txt)
+links Hamlib. [Hamlib](https://github.com/Hamlib/Hamlib/wiki) provides a common radio-control
+API; WSJT-X documents [Radio and Audio](https://wsjtx.github.io/wsjtx/guide-full.html)
+as separate configurations. These sources describe the reference responsibilities,
+not source code to translate into this project.
+
+Our radio_control module implements in Rust only the control behavior needed by this
+program and its selected supported radios. #8 defines the first radio/protocol support
+matrix and required operations; #9 adds the transmit-control behavior it actually needs.
+Support grows when a functional requirement needs it. The target requires neither a
+complete Hamlib port, its full radio/device catalogue, unrelated utilities nor compatibility
+with its C API/ABI. The new module uses our station-facing contract and independent
+protocol documentation/fixtures; no mandatory Hamlib library is part of this design.
+
+Unsupported radio functions are explicit capabilities/errors. Optional interoperability
+with an external control service, if selected in a later requirement, is another control
+driver and does not couple audio to that service.
+
+#### Optional native FlexRadio implementations
+
+The standard path is usable without FlexRadio hardware. Phase 2 implements the same
+separate audio and radio-control interfaces through the native FlexRadio API without
+external SmartSDR desktop/CAT/DAX bridges. The implementations may share a managed native
+session and resource coordinator; they do not require a separate radio connection for
+each interface and do not combine sample handling with control commands.
+
+Station identity, a radio's physical identity, a slice association and a transient API
+handle are different concepts. Persist intent; resolve current handles on connection.
+Profile restoration must not guess a different slice or replay transmit intent.
+
+Multiple station processes sharing a physical radio need one effective arbitration
+authority for constrained resources and transmission. An in-process mutex in each
+station is insufficient. Standard shared-device ownership is explicit in #8; #13 settles
+native API leases, cross-process coordination and actual hardware/client limits before
+enabling shared-radio operation. A project-owned common radio connector is permissible
+if the verified API requires one; its lifetime must not depend on a station instance
+whose shutdown should leave the other instances usable.
+
+This phase-specific placement decision is contained behind the radio boundary. It
+does not change browser, decoder, QSO or MCP contracts. #13 must verify the selected
+radio/API capabilities before choosing the coordination implementation. A fixed four-GUI-
+client design, simultaneous independent transmit assumptions or silently shared PTT are
+not architecture contracts.
+
+### 11.6. Thin-link and failure behavior
+
+Small commands, acknowledgements, snapshots and decoded events have priority over
+optional visualization products. The server generates reduced display data; JavaScript
+renders/colors/filters it. A minimal profile can disable visualization. Raw input audio
+is an explicit station input/transfer operation, not mandatory continuous browser traffic.
+
+Queues have bounds and a defined full-queue policy:
+- Commands are accepted, refused or failed explicitly; effects are not silently dropped.
+- Obsolete spectrum frames may be replaced by fresher ones.
+- Required state/QSO/decode information uses defined delivery/resync or explicit loss
+  reporting; it is not treated like discardable display frames.
+- New work is refused when its budget is exhausted. Existing instances remain serviceable.
+- Active transmit stop/failure handling has a priority path and a specified local deadline.
+
+No single-instance status test certifies aggregate audio/DSP or display traffic for N
+instances. #6/#7 and later CRs define their workload, limits and measurement layer before
+implementation. The implemented status-only budget and simulator limitations remain
+canonical in chapter 12.
+
+Restart/disconnection cancels or marks affected operations unavailable according to their
+contract. The transmitter defaults to unarmed on startup. #9 settles controller-loss,
+device-loss and authority-expiry behavior before transmitting; #12 cannot invent a
+different safety policy in the MCP layer.
+
+### 11.7. Issue-to-architecture map
+
+Roadmap priority and a technical prerequisite are recorded separately. This map is an
+architecture orientation; the linked GitHub issues remain the work/acceptance backlog.
+
+| CR | Components and contracts changed | Technical prerequisites | Integration proof |
+|---|---|---|---|
+| [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5) | Bootstrap/profile, station context, visible identity, session isolation | Existing status foundation #3 | Independent profiles and windows at 1, 4 and a larger count; persistence and shared-browser isolation |
+| [#6](https://github.com/SensorsIot/wsjtx-rust/issues/6) | Recording source, receive jobs, spectrum products, web transfer/display | #5 context/storage boundary | Actual recorded input through server and browser; analytical spectrum fixtures and bounded link behavior |
+| [#7](https://github.com/SensorsIot/wsjtx-rust/issues/7) | Pure FT4/FT8 processing and receive-result contract | #6 sample/job contract | Independent mode-specific recordings/vectors and measured quality/runtime |
+| [#8](https://github.com/SensorsIot/wsjtx-rust/issues/8) | Independent standard audio and Rust radio-control interfaces/drivers | #5 context and #7 receive pipeline | Offline-validated live input, CAT-disabled audio, audio-independent control and separate failure states |
+| [#9](https://github.com/SensorsIot/wsjtx-rust/issues/9) | FT8 encoder, UTC scheduling, transmit authority/halt | #8 adapter contracts | Independent waveforms, deterministic scheduling, halt/failure fixtures and consented hardware verification |
+| [#10](https://github.com/SensorsIot/wsjtx-rust/issues/10) | QSO state owner and contact storage | #9 | Complete FT8 exchange, cancellation and exactly-once logging |
+| [#11](https://github.com/SensorsIot/wsjtx-rust/issues/11) | FT4 encode/timing and mode-specific workflow rules | #7 FT4 decoder and #10 common workflow | Complete FT4 workflow plus FT8 regression cases; shared UI/device/logging services |
+| [#12](https://github.com/SensorsIot/wsjtx-rust/issues/12) | MCP adapter and configured automation policy | #10/#11 station-operation contracts | Browser/MCP state equivalence and identical station-side permission/cancellation behavior |
+| [#13](https://github.com/SensorsIot/wsjtx-rust/issues/13) | Optional native radio/sample backend and shared-radio coordination | #5, #8 and #9 ownership/control contracts | Native API fixtures, mixed backend profiles and consented hardware tests; MCP is not a technical prerequisite |
+
+Before each implementation, its issue settles the affected contract details and updates
+the relevant FSD chapters as needed. A change crossing a component boundary updates
+its producer, consumers and independent tests together. Final validation uses the
+integrated station, not only isolated module tests.
+
+Pure processing and adapter fixtures can be developed independently once their shared
+contract is settled. File ownership, separate working copies/build outputs, review and
+serialized releases are governed by the [harness parallel-work process](https://github.com/SensorsIot/harness/blob/V2/core/docs/Parallel-Work.md);
+this product map does not change that process.
+
+### 11.8. Implementation state and design gates
+
+The current source has a status-only Axum/Tokio server in
+[server/src/main.rs](../server/src/main.rs), embedded
+[client files](../client/index.html), native TLS and the existing status protocol/tests.
+The planned modules and contracts above are introduced by their owning CRs.
+
+Concrete profile schema and session names (#5), audio formats/sample representation and
+display encoding (#6), decoder variants/quality budgets (#7), independent audio/control support matrices
+(#8), transmit ownership/deadlines (#9), QSO/log format (#10), MCP tools/policy (#12) and
+native FlexRadio coordination/capabilities (#13) are preparation gates. Their named
+owners prevent two implementations from silently selecting incompatible contracts.
+These are bounded implementation decisions inside the architecture, not claims of
+completed hardware or mode support.
+
+### 11.9. Structural correspondence oracle
+
+These paths state the intended responsibilities independently of model names or diagram
+layout. The SysML companion must expose one deployment with four physical roles (operator,
+viewer computer, controller computer, radio). Browser and server are decompositions of
+those same viewer/controller roles. Station processes are a variable population; each
+owns exactly one selected profile and one exclusive backend choice. Optional browser/MCP
+clients and optional CAT availability do not imply additional station engines. A backend
+choice describes alternatives, not simultaneous connections to every backend.
+
+The connected semantic paths required for review and automated structural checks are:
+
+1. Operator interaction reaches the browser in the viewer. Browser commands and uploaded
+   recordings cross the viewer/controller link to the web adapter and station authority;
+   snapshots, operation results and display products return along that same boundary.
+2. MCP requests pass through their adapter to the same station authority. Neither client
+   adapter writes the radio or owns a separate processing engine.
+3. Station context and persistence reach its selected profile. A validated browser upload
+   becomes a profile-owned recording source; stored recording input reaches the same audio
+   input/receive pipeline as live samples, without requiring an open live audio device.
+4. Receive work reaches the receive modem and returns results. Transmit operations reach
+   the transmit scheduler, then the encoding modem; the resulting waveform reaches the
+   transmit audio route. The modem remains pure and does not connect directly to hardware.
+5. Live receive samples run from the radio through the selected backend and independent
+   audio boundary to receive processing. Transmit samples take the reverse audio path.
+   Physical controller/radio ports delegate to these same backend usages.
+6. Station control and transmit/halt requests cross the independent control boundary and
+   one effective radio authority before reaching the selected control backend and radio;
+   status and failure outcomes return through that boundary. Audio does not traverse this
+   control authority, and an audio failure does not remove the control-side halt path.
+7. A shared radio has one effective authority referenced by every station's control path,
+   including standard/native backend selections. It is not composed afresh inside each
+   station or native backend. The model's common authority is a logical responsibility,
+   not a decision that an in-process object alone coordinates other processes. #8/#13 own
+   actual resource claims, cross-process placement, leases and hardware limits.
+8. Standard devices/drivers and optional Phase 2 native implementations realize the same
+   two distinct interfaces. Native audio and control may share a session without merging
+   responsibilities. Backend capabilities, formats and concrete APIs remain #6/#8/#13
+   preparation decisions; the model selects no wire schema or driver catalogue.
+
+Semantic exchange types describe requests, outcomes, samples and their direction only.
+They do not promise field encodings, deadlines, capacity, device availability or execution
+of safety behavior. Views select existing model elements and cannot create these paths.
+
+#### Semantic exchange signatures and endpoint roles
+
+The following complete signatures define the semantic item kinds and directions at
+an initiating/producing endpoint. A provider/consuming endpoint conjugates the entire
+signature (swap in/out); it retains exactly the same item kinds. These are logical
+exchanges, not serialized fields, concrete APIs or a choice of sample representation.
+
+| Contract | Initiator/producer signature (item name: semantic kind, direction) |
+|---|---|
+| LocalInteraction | request: OperatorRequest out; presentation: Presentation in |
+| StationOperations | request: StationRequest out; outcome: StationOutcome in |
+| BrowserExchange | request: StationRequest out; outcome: StationOutcome in; upload: Recording out |
+| RecordingTransfer | recording: Recording out |
+| ProfileAccess | request: ProfileRequest out; outcome: ProfileOutcome in |
+| AudioExchange | playback: SampleBlock out; capture: SampleBlock in; outcome: AudioOutcome in |
+| AudioStatus | outcome: AudioOutcome out |
+| ReceiveSamples | samples: SampleBlock out; outcome: AudioOutcome out |
+| ReceiveProcessing | request: ProcessingRequest out; result: ProcessingResult in |
+| EncodeProcessing | request: EncodeRequest out; waveform: Waveform in |
+| RadioControl | request: ControlRequest out; outcome: ControlOutcome in |
+| SessionAccess | operation: NativeSessionOperation out; outcome: NativeSessionOutcome in |
+
+The role bindings are responsibility-based: the user initiates local interaction and
+the browser consumes it; browser/MCP clients initiate station operations, their adapters
+consume client requests and initiate operations to the station service. Station service
+initiates profile, receive, transmit, QSO and control operations; each corresponding
+provider consumes them. Upload moves from web adapter to station validation, from accepted
+recording output to profile storage, then from the stored source to the shared receive
+input. QSO initiates profile contact access. Receive and transmit initiate pure modem
+requests; modem providers return results and waveforms. Audio produces receive samples
+and status; receive processing and station status consume their respective products.
+
+The transmit service initiates playback; the audio interface consumes that transmit
+exchange and initiates its selected backend exchange. Both backend alternatives consume
+host audio/control exchanges and initiate exchanges toward the radio. Each device/driver
+consumes its host-facing exchange and initiates its radio-facing exchange. The physical
+radio is the provider: it consumes playback/control requests and produces capture,
+status and errors. Native audio/control initiate their session exchanges; the managed
+session consumes them. The station control boundary consumes station/TX requests and
+initiates authority requests; common authority consumes requests and initiates authorized
+backend control. Every station's authorized-control ingress is a provider endpoint.
+
+Outer boundary ports retain their delegated roles: viewer station link is initiating,
+controller viewer link is consuming; controller radio ports are initiating and the radio
+ports consuming. A client attachment boundary consumes the selected browser's exchange
+and delegates to the selected web adapter. Delegation can therefore connect equal
+signatures; it must not be checked using a blanket opposite-direction rule. Every
+required boundary, including inherited standard/native ports, has an independent role
+binding in the structural oracle.
+
+Identity promises use **binding connectors**, not ordinary connections: authorization
+preserves the original request, its returned outcome preserves request identity, station
+and backend requests bind to that station's resource context, and each control outcome
+references its original request. An ordinary connection between the same endpoints does
+not assert equality and cannot satisfy these promises. Channel/delegation paths use
+ordinary connections. Structural checks retain this connector-kind distinction.
+
+### 11.10. Requirement coverage and remaining design owners
+
+All FSD requirements have a responsibility or an explicit unresolved extension boundary.
+This matrix does not declare the full baseline implemented: only the accepted status
+slice in section 11.8 exists today. Target structure for #5-#13 is detailed above; remaining
+baseline inventories must be settled before their implementing CRs, without moving
+hardware policy or authoritative state into clients.
+
+| Requirement | Responsible boundary | Target coverage / remaining owner |
+|---|---|---|
+| [FR-001](#4-proposed-functional-requirements) | Station service, selected profile, web presentation | #5 configuration validation/persistence; hardware settings extended by #8 |
+| [FR-002](#4-proposed-functional-requirements) | Independent audio boundary and selected backend | #6/#8 receive/device contracts; #9 playback; no CAT prerequisite |
+| [FR-003](#4-proposed-functional-requirements) | Shared receive input/pipeline and pure modem | #6/#7 recordings/live sources and bounded receive jobs |
+| [FR-004](#4-proposed-functional-requirements) | Pure receive modem, receive-result boundary | #7 independent FT4/FT8 vectors and quality budgets |
+| [FR-005](#4-proposed-functional-requirements) | Transmit scheduler to pure encoding modem, waveform to audio | #9 FT8; #11 FT4; other baseline modes/variants remain inventoried targets |
+| [FR-006](#4-proposed-functional-requirements) | Server receive/transmit scheduling, device/sample timing | #6 sample-clock metadata; #9 UTC mapping, timing failures and deadlines |
+| [FR-007](#4-proposed-functional-requirements) | Station authority and QSO sequencing | #10/#11 exchange/completion/cancellation contracts |
+| [FR-008](#4-proposed-functional-requirements) | Transmit service, independent control boundary and common authority | #9 halt, PTT, failure/controller-loss policy before hardware TX |
+| [FR-009](#4-proposed-functional-requirements) | Rust radio control and selected drivers | #8 support matrix; #9 TX control; #13 native capabilities; no complete Hamlib port |
+| [FR-010](#4-proposed-functional-requirements) | Receive/spectrum products, web adapter, browser rendering | #6 bounded display data; #7 decoded content; mode-specific views added by their CR |
+| [FR-011](#4-proposed-functional-requirements) | QSO/logging and profile-owned contact storage | #10 completed-contact identity/storage; full baseline import/export/duplicate behavior requires inventory before extension |
+| [FR-012](#4-proposed-functional-requirements) | Station operation/result boundary to external integrations | Baseline UDP/reporting inventory and implementing CR remain unresolved; preserve server authority, isolate protocol adapters from modem/radio logic |
+| [FR-013](#4-proposed-functional-requirements) | Pure calculations and station workflow extension | EME astronomical/Doppler/Echo inventory and owning CR remain unresolved; do not assume FT8 timing/workflow covers them |
+| [FR-014](#4-proposed-functional-requirements) | Typed receive capability/input and processing extension | Wideband/IQ/polarization/application coordination inventory and owning CR remain unresolved; no reinterpretation as mono audio |
+| [FR-015](#4-proposed-functional-requirements) | Shared pure functions or station operations, smallest selected UI | Utility inventory and owning CR remain unresolved; no speculative utility service or API |
+| [FR-016](#4-proposed-functional-requirements) | Selected profile/persistence and bootstrap | #5 owns Rust settings; legacy migration compatibility/inventory must be settled before migration release |
+| [FR-017](#4-proposed-functional-requirements) | Web/client help, embedded attribution/version/license content | Existing status client is only partial; operating guidance/baseline help inventory and owning CR remain unresolved |
+| [FR-018](#4-proposed-functional-requirements) | Validated upload, station authority, profile-owned recording source | #6 formats, error contract and first workflow; feeds shared receive input without live device |
+| [FR-019](#4-proposed-functional-requirements) | Viewer browser and web adapter to station service | Accepted status interface only; #5-#11 introduce planned operator workflows |
+| [FR-020](#4-proposed-functional-requirements) | MCP attachment and adapter to same station service | #12 tools, authorization/automation policy and station selection |
+| [FR-021](#4-proposed-functional-requirements) | Physical viewer/controller carrier with station-scoped attachments | Accepted status protocol/budget only; #5/#6 extend routing, resync and workload measurements |
+| [FR-022](#4-proposed-functional-requirements) | Variable controller-hosted processes, one selected profile/backend each | #5 isolation, exclusive storage ownership and explicit endpoints; four is a reference workload |
+| [FR-023](#4-proposed-functional-requirements) | Exclusive optional native backend behind the same audio/control boundaries | #13 Phase 2 session/resource reconciliation and cross-process coordination; no hardware capacity assumption |
+
+### 11.11. Functional model and views
+
+The product model contains only functional product requirements and their structural,
+behavioral and verification companions. The authoritative functional Markdown is this FSD, including its architecture and
+communication-contract chapters. A rendered diagram is not additional architecture.
+
+| Artifact in `docs/sysml/` | Functional source and responsibility |
+|---|---|
+| `Requirements.sysml` | Stable product FR/CL/TC identities and prose from the FSD; generated structured projection. |
+| `Architecture.sysml` | Deployment, parts, semantic interfaces, connections, identity associations and the standard `physicalInterconnection` view described here. |
+
+Only the accepted status slice is implemented. The target structure covers the queued
+CRs and remaining functional ownership in section 11.10. Full implementation readiness
+requires each CR's behavioral/data/state/timing/error contracts and independent oracles;
+structural validation does not establish those facts. Authoring, tool installation and
+validation procedures are in the [project-specific harness](harness/Project-Specifics.md#product-model-maintenance),
+which links the reusable SysML instruction.
+
+#### Inspecting the same model
+
+The ordinary `physicalInterconnection` view in `Architecture.sysml` exposes the immediate
+members of the existing `physicalStation` usage. The four physical roles are `user`,
+`viewer`, `controller` and `radio`; their four connections are local interaction, the IP
+station link, radio audio and optional radio control. A view is a presentation selection;
+it neither creates the underlying architecture nor repairs missing semantic connections.
+No separate entry model, image or viewer helper is required by the architecture.
+
+Expand the same deployment to inspect its software: `viewer.browsers[*]`,
+`controller.stations[*]` and each station's single profile and backend variation. The
+physical station-link connection owns its per-client `attachments[*]`; these reference
+one browser and one actual station, with the operational connectors between those
+selected endpoints. MCP has analogous controller-level attachment associations. Physical
+radio connections own station-bound `channels[*]` whose endpoints use that station's
+selected backend and radio binding. These relationships distinguish aggregate carriers
+from routing every operation to every member of a population. Profiles remain isolated.
+
+Every station references `controller.radioAuthority`; it does not compose a private
+replacement. Request context binds to the station-owned radio binding, authorization
+preserves the original request, and an outcome references that request. This is semantic
+correlation, not serialized ID fields or a settled coordination implementation. #8/#13
+must determine actual cross-process placement, resource claims, leases and radio limits.
+
+`stations.backend` is one variation with standard-device and optional Phase 2 native
+variants. Variants are alternatives, not concurrent running backends. Native audio/control
+can share a managed session; both control paths still use the common authority. Logical
+presence of a driver does not assert CAT availability or transmit readiness.
+
+Definitions describe reusable types; usages and identity references describe this target
+deployment. A general type/dependency graph can omit internal port connections. An
+interconnection view can expose nested usages/connections or keep the physical context
+collapsed. Viewer layout/expansion does not change the model, and is not a validation
+oracle. Current Rust remains the separately labeled status-only subset.
+
+#### Source-arrow and semantic-path coverage
+
+The model's role names bind the following Markdown arrows to actual exchanges. Paths
+below are relative to one `controller.stations` usage unless identified as physical or
+attachment paths. Multi-step paths preserve authority/delegation rather than replacing
+them with a direct bypass. This inventory is reviewed against this chapter; executable
+expectations are authored independently in `architecture_integrity` in `tools/sysml.py`.
+
+| Markdown software arrow | Model endpoint path / responsibility |
+|---|---|
+| Browser <-> Web | Physical `stationLink.attachments`: selected `browser.station` <-> `clientBoundary` <-> selected `station.web.client` |
+| MCP <-> MA | `controller.mcpAttachments`: selected `client.station` <-> selected `station.mcp.client` |
+| Web <-> Station | `web.station` <-> `station.webOperations`; `web.recording` <-> `station.upload` validates upload |
+| MA <-> Station | `mcp.station` <-> `station.mcpOperations` |
+| Station <-> Profile | `station.profile` <-> `profile.context`; accepted recording <-> `profile.upload` |
+| Station <-> RX | `station.receive` <-> `receive.jobs` |
+| Station <-> TX | `station.transmit` <-> `transmit.operations` |
+| Station <-> QSO | `station.qso` <-> `qso.operations` |
+| Station <-> Control | `station.control` <-> `radioControl.station` |
+| RX <-> Audio | `audio.receive` <-> `receive.audio`, with samples and audio outcomes |
+| TX <-> Audio | `transmit.audio` <-> `audio.transmit` |
+| TX <-> Control | `transmit.control` <-> `radioControl.transmit` |
+| Audio <-> Devices | `audio.backend` <-> selected `backend.audio` <-> standard `audioDevices.host`; device radio port via station-bound physical audio channel |
+| Control <-> Authority | `radioControl.backend` <-> `authorityRequest` <-> referenced common `authority.requests` |
+| Authority <-> CAT | Common `authority.authorized` <-> `authorizedControl` <-> selected `backend.control` <-> standard `controlDriver.authorized`; driver radio port via station-bound physical control channel |
+| Audio <-> Flex | Same selected audio boundary, native variant's `audioDevices` and optional shared `session` |
+| Authority <-> Flex | Same authorized control boundary, native variant's `controlDriver` and optional shared `session` |
+| RX <-> Modes | `receive.processing` <-> `modes.receive`, request/result directions |
+| TX <-> Modes | `transmit.encode` <-> `modes.encode`, encode request/waveform return |
+| Profile <-> Recording | `profile.upload` <-> owned `recordings.upload`; `recordings.samples` <-> `profile.recordedSamples` |
+| Recording <-> Audio | `profile.recordedSamples` <-> `audio.recorded`; no live-device prerequisite |
+| QSO <-> Profile | `qso.contacts` <-> `profile.contacts` |
+| Station <-> Audio | `audio.status` <-> `station.audioStatus`, independent availability/error reporting |
+
+The physical four-arrow inventory is `user.interaction` <-> `viewer.operator`,
+`viewer.stationLink` <-> `controller.viewerLink`, `controller.radioAudio` <-> `radio.audio`,
+and `controller.radioControl` <-> `radio.control`. Local interaction delegates to actual
+viewer browsers. IP/radio connections own the scoped attachments/channels above.
+Control-request resource bindings and request/outcome identity are also explicit binding
+connectors. The integrity check covers both standard/native branches and these bindings;
+it does not execute timing, cancellation, authorization or hardware behavior.
+
+## 12. Station communication contract
+
+Status: CR #3 target and implementation contract. Promises: FR-019, FR-021.
+
+### 12.1. Connection and security
+
+The server serves its embedded HTML, JavaScript and CSS at `/`, `/app.js` and
+`/style.css`. No frontend framework, CDN or build step is required. Each client
+uses one WebSocket at `/ws`, subprotocol `wstx.v1`. Origin MUST equal the configured
+origin exactly, including scheme and port. Missing Origin and subprotocol are denied.
+
+Default development binding is `127.0.0.1:8080`, without authentication. This mode
+is for a trusted local computer. A non-loopback binding MUST provide TLS certificate,
+private key, access token and explicit HTTPS origin; startup fails otherwise.
+TLS/token settings also work on loopback for isolated tests. Plaintext token use is refused.
+There is no separate plaintext listener in TLS mode.
+
+Runtime environment settings:
+
+| Setting | Meaning |
+|---|---|
+| WSTX_BIND | Numeric IP and port; `127.0.0.1:8080` by default. Port zero selects a temporary port. |
+| WSTX_ORIGIN | Exact browser origin, without trailing slash, path, query, credentials or fragment. Defaults to the bound loopback URL. |
+| WSTX_TLS_CERT | Path to PEM certificate chain; required with TLS key. Use a certificate trusted by the browser for actual operation. |
+| WSTX_TLS_KEY | Path to PEM private key; restrict file permissions to the server identity. |
+| WSTX_TOKEN | Secret of 32 through 128 ASCII letters/digits; use cryptographically generated randomness and deliver through a protected runtime environment. Never put it in a URL or source file. |
+
+The HTTPS page provides a token login form. `POST /session` requires the exact Origin
+and a raw token body of at most 1,024 bytes. Success returns 204 and a Secure, HttpOnly,
+SameSite=Strict cookie scoped to `/` with browser Max-Age 28,800 seconds. Invalid tokens
+return 401; disallowed/missing Origin returns 403. Login is limited globally to ten
+attempts per 60-second window (429 after that). This small-station limit may temporarily
+deny legitimate login under attack; an internet-facing deployment should add edge rate limiting.
+
+WebSocket upgrades require the cookie in TLS mode. The cookie is the bearer secret;
+its browser expiry is not a server-enforced session expiry. Rotate the configured token
+and restart to invalidate existing credentials; disconnect existing processes when rotating.
+There is no user-account database or transmit authority in this CR. Static assets contain
+no station data and can be loaded before login. Authentication failures do not reveal tokens.
+
+### 12.2. Messages and validation
+
+Messages MUST be UTF-8 JSON text, at most 1,024 bytes per message and per frame.
+Requests have exactly `v`, `type`, `id`; other fields are rejected. IDs are integers
+from zero through 9,007,199,254,740,991. Duplicate IDs are permitted for read-only
+requests; responses echo them on the requesting connection. Ordering follows request
+order on that connection. No state-changing commands exist.
+
+```json
+{"v":1,"type":"station.get","id":12}
+```
+
+```json
+{"v":1,"type":"station.status","id":12,"data":{"version":"0.1.0","radio":"unconfigured"}}
+```
+
+The version is the candidate application's package version. Radio is always
+`unconfigured` until a later radio CR. On initial connection and reconnection the
+client MUST request a complete snapshot before showing Connected. There are no changing
+station properties or subscription commands in this slice, and no periodic status polling.
+The Refresh status button requests another snapshot on the existing connection;
+Last updated changes only when a matching snapshot response has been rendered.
+
+Errors have this envelope:
+
+```json
+{"v":1,"type":"error","id":12,"data":{"code":"unknown_command"}}
+```
+
+| Condition | Code / action |
+|---|---|
+| JSON cannot be parsed | invalid_json; id null |
+| Non-object, missing/extra fields, invalid ID or non-string type | invalid_request; null ID unless valid ID was supplied |
+| Version is not integer 1 | unsupported_version |
+| String command other than station.get | unknown_command |
+| Binary message | Close 1003 |
+| Frame/message over limit | WebSocket transport rejects it; client reconnects |
+
+The server validates request shape, version, then command in that order. Recoverable
+JSON errors leave the connection open. No stack traces or internal exception details
+are returned. There is no application or negotiated WebSocket compression.
+
+### 12.3. Liveness and resource limits
+
+The server sends `{"v":1,"type":"heartbeat"}` and a WebSocket Ping every five seconds.
+Browsers automatically answer the Ping. The server disconnects peers without a Pong
+for more than 15 seconds at the next heartbeat tick. The client marks state stale
+when its connection closes or when no message has arrived for more than 12 seconds,
+checked once per second. Thus silent-loss detection can take 13 seconds.
+
+Reconnect delays are one, two, then four seconds, capped at four seconds; successful
+snapshot receipt resets the delay. Once connectivity is restored and loss is detected,
+fresh status MUST arrive within ten seconds. Recovery including an undetected silent
+failure includes the separate detection bound above.
+The watchdog schedules reconnection without waiting for the old WebSocket close
+handshake. Callbacks from replaced sockets are ignored. A new connection that does not
+open within five seconds is abandoned and retried through the same bounded backoff.
+
+At most 16 WebSockets are active; further upgrades return 503. Each peer processes
+one request and response at a time, with no application output queue. The WebSocket
+write buffer is capped at 2,048 bytes; each send has a two-second deadline. Socket/kernel
+buffers are additional OS-managed bounds. A blocked peer is disconnected; it does not
+block another peer's task. These limits bound application queuing, not total process
+memory independently of HTTP/TLS connections managed by the runtime.
+
+### 12.4. Thin-link budget and test model
+
+The minimum profile targets a shared bottleneck of 32,000 bits/s in each direction,
+with 300 ms RTT and two clients. Mean idle-session usage MUST be at most 1,000 bytes/s
+in each direction over 60 seconds, including heartbeat and accounted protocol overhead.
+A connected status request MUST display within two seconds; first connection/status
+MUST display within ten seconds after the page is loaded. Uncached page time and bytes
+are reported separately. Raw audio and spectrum/waterfall streaming are absent.
+
+The acceptance oracle uses these explicit measurement assumptions; they are test-model
+parameters, not additional radio or physical-network guarantees:
+
+| Measurement parameter | Required accounting / observation |
+|---|---|
+| Stream shaping | Actual TCP-stream bytes, including real TLS records for TLS tests; at most 512-byte accounting segments; shared 4,000 bytes/s per direction and 150 ms one-way latency |
+| Modelled transport overhead | Charge each segment 80 bytes for TCP/IPv6 headers and 80 bytes in the reverse direction for an ACK |
+| Model limits | No retransmission, packet-loss, congestion-control or exact kernel-packetization emulation; overload above 128 KiB per-direction pending/write-buffer cap disconnects the simulated peer |
+| Browser transfer sizes | Navigation/Resource Timing at the HTTP layer, including reported HTTP-header overhead; excludes TLS/TCP/IP overhead; report cold page/assets separately |
+| Response timing | Connection-to-displayed-status and concurrent visible Refresh status measured separately |
+| Silent-loss fixture | Discard established-connection bytes without closing the streams; byte-stream blackhole, not packet loss emulation; nominal 13-second detection bound permits one second of real-time scheduler tolerance |
+| Independent fixture oracle | Simulator bulk-transfer timing is checked independently of the station application |
+
+Measurements MUST identify the accounted byte-stream model and its limitations rather
+than claim on-wire packet measurements or physical-link certification. Browser HTTP
+transfer counters and encrypted-stream accounting are distinct measurement layers.
+Simulator implementation, fixture procedures and scheduler tolerances are documented in
+[the project-specific harness](harness/Project-Specifics.md#communication-verification-model).
+
+The [test catalogue](#61-browser-and-server-test-catalogue)
+defines TC-021-005 through TC-021-009 and the supporting fixtures. It is the durable
+home of functional clauses and test-case definitions; issue #3 holds change/execution evidence.
+Execution procedures are defined in the project-specific harness.
+
+## 13. FT8 sample recordings and provenance
+
+Investigated: 2026-10-24. No third-party sample files or decoder source have been copied into this Rust project as part of this investigation.
+
+### 13.1. Source identified by rust-ft8
+
+The `siuze/rust-ft8` README and benchmark guide identify `kgoba/ft8_lib` as the source of the recordings used for their 22-recording comparison:
+
+| Recording group | Files used in the comparison | Description in rust-ft8 |
+| --- | --- | --- |
+| WebSDR | `websdr_test1.wav` through `websdr_test13.wav` | Public WebSDR recordings of busy on-air FT8 activity. |
+| Timestamped recordings | `191111_110115.wav`, `191111_110130.wav`, `191111_110145.wav`, `191111_110200.wav`, `191111_110215.wav`, `191111_110615.wav`, `191111_110630.wav`, `191111_110645.wav`, `191111_110700.wav` | Baseline recordings supplied with ft8_lib. |
+
+Each recording has a corresponding `.txt` expected-decode file. The benchmark guide describes those texts as decoder output from `wsjtx-lib` or `ft8_lib`, without a per-file decoder version and configuration record.
+
+### 13.2. Independent identity check
+
+Git tree blob identifiers were compared between:
+
+- `siuze/rust-ft8` commit `42d77990188b3af78d72e7eee0f1d1c983aaddf4`, under `tests/wav/`.
+- `kgoba/ft8_lib` commit `9fec6ca39886edbf96f4f5e71edc76da5074e871`, under `test/wav/`.
+
+All 22 benchmark WAV files and all 22 matching text files have identical Git blob identifiers: 44 of 44 files are byte-identical. The text fixtures are therefore inherited too, rather than newly generated for rust-ft8's current Rust implementation or the WSJT-X experimental beta.
+
+For example, `websdr_test1.wav` has blob ID `b4299f33dd98e430533817932e30e121a1d47fd2` in both trees. `191111_110115.wav` has blob ID `b34b35892d93186a392d51034b4f546d74ae111e` in both trees.
+
+### 13.3. Earlier history
+
+The ft8_lib history credits Karlis Goba with adding `tests/websdr_test1.wav` and its expected-decode text on 2019-01-16, in commit `a31733448d79d7e12cd9dc50198ee9f241829da8`, described as adding test cases with corresponding WSJT-X decodes.
+
+The timestamped example `tests/191111_110115.wav` was added on 2019-11-11 in commit `82da02f7ade8bcaa750016625ddd69a2703938d1`, also by Karlis Goba. The files were moved to `test/wav/` in 2022 in commit `a05dbae957a9aef3b3d72cf18aab9c7087dee346`.
+
+This establishes repository provenance. It does not establish the particular WebSDR receiver, original recorder, antenna, band, or recording conditions for every file; those details were not identified in the material reviewed. A file added by a contributor does not by itself establish who recorded it.
+
+### 13.4. Use in this project
+
+Fixture acquisition/manifests and separate baseline-output generation are specified in
+[project-specific harness instructions](harness/Project-Specifics.md#recording-fixture-acquisition).
+Attribution and sample licensing are in the [README](../README.md#license-and-attribution).
+
+- Treat existing text files as historical reference output, not exhaustive independently verified ground truth.
+- Add synthetic and noise-only inputs alongside the live recordings to measure sensitivity, false decodes, frequency/time error, and crowded-band behavior.
+- Sample data can support an independently designed implementation without importing the C or Fortran decoder code.
+- The recordings are useful independently of ft8_lib's microcontroller focus. Our primary implementation targets desktop resources and performance, with Windows first and macOS/Linux afterward. Evaluate any codec reference on interoperability, decoder quality, and end-to-end latency rather than adopting its embedded resource limits. A possible secondary microcontroller edition may make different tradeoffs.
+
+### 13.5. Sources
+
+- [rust-ft8 benchmark guide](https://github.com/siuze/rust-ft8/blob/42d77990188b3af78d72e7eee0f1d1c983aaddf4/docs/BENCHMARK_AND_COMPARISON_GUIDE.md)
+- [rust-ft8 audit and reference-data limitations](https://github.com/siuze/rust-ft8/blob/42d77990188b3af78d72e7eee0f1d1c983aaddf4/docs/DECODE_AND_SPEED_AUDIT_2026-10-03.md)
+- [Original ft8_lib sample directory](https://github.com/kgoba/ft8_lib/tree/9fec6ca39886edbf96f4f5e71edc76da5074e871/test/wav)
+- [2019 WebSDR example introduction](https://github.com/kgoba/ft8_lib/commit/a31733448d79d7e12cd9dc50198ee9f241829da8)
+- [2019 timestamped example introduction](https://github.com/kgoba/ft8_lib/commit/82da02f7ade8bcaa750016625ddd69a2703938d1)
+- [WSJT-X v3.3.0-beta4 release](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4)
