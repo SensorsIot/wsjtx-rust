@@ -69,6 +69,13 @@ Keep protocol logic and input/output boundaries portable where practical. Platfo
 
 ### 3.5 Station server and operator client
 
+The [target architecture](ARCHITECTURE.md) is the canonical companion for internal
+component boundaries, data/state ownership, interface responsibilities and the mapping
+of functional CRs to those components. This FSD owns functional promises and test-case
+definitions; [COMMUNICATION.md](COMMUNICATION.md) owns the implemented wire contract.
+The architecture distinguishes the existing status-only implementation from planned
+receive, transmit, device and automation components.
+
 | Application | Responsibilities |
 | --- | --- |
 | Station server, Rust | Runs beside the radio. Owns audio capture, decoding, encoding, transmit timing, radio control, QSO sequencing, and authoritative station state. Exposes shared station operations to the browser and MCP adapters. |

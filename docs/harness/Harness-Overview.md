@@ -7,6 +7,7 @@ contract; the references below are the constraints a change must respect.
 | Subject | Reference |
 |---|---|
 | Product contract | [WSTX Rust FSD](../WSTX%20Rust%20FSD.md) |
+| Product component/interface boundaries | [Target architecture](../ARCHITECTURE.md) |
 | Upstream relation and provenance | [Upstream](../UPSTREAM.md), [Samples](../SAMPLES.md) |
 | Build environment and CI | [Building](../BUILDING.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |

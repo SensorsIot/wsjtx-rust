@@ -8,7 +8,9 @@ The first release targets Windows desktop. macOS and Linux are planned afterward
 
 ## Repository layout
 
-The product architecture is defined in the [FSD](docs/WSTX%20Rust%20FSD.md#35-station-server-and-operator-client).
+The [FSD](docs/WSTX%20Rust%20FSD.md#35-station-server-and-operator-client) defines the product
+requirements. The [target architecture](docs/ARCHITECTURE.md) defines component boundaries,
+internal contract ownership and how the queued functional CRs fit together.
 
 | Path | Contents |
 | --- | --- |
@@ -23,6 +25,7 @@ Run Cargo commands from the repository root. The workspace builds its server mem
 ## Documentation
 
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)
+- [Target architecture and issue mapping](docs/ARCHITECTURE.md)
 - [Upstream baseline and attribution](docs/UPSTREAM.md)
 - [Windows build environment](docs/BUILDING.md)
 - [Station communication contract](docs/COMMUNICATION.md)
