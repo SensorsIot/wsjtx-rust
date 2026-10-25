@@ -2,6 +2,8 @@
 **/target/
 node_modules/
 test-results/
+__pycache__/
+*.pyc
 
 # Editor temporary files
 *.swp

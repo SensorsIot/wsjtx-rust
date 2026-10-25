@@ -1,0 +1,19 @@
+{
+  "pilot": {
+    "version": "0.62.0",
+    "archive": "jupyter-sysml-kernel-0.62.0.zip",
+    "url": "https://github.com/Systems-Modeling/SysML-v2-Pilot-Implementation/releases/download/2026-08/jupyter-sysml-kernel-0.62.0.zip",
+    "sha256": "5a015ed3f2b3d2dae14e9c3fb9602d9e1fef5f9ce33cf396c422329405cc3cb2",
+    "directory": "pilot-0.62.0",
+    "jar_sha256": "b1ad9d64b1f0c75730facf25a5e2856bc9df2bb4bd39476df2fdf5ae68cd9350",
+    "library_sha256": "57b3b3e437da3c57b0db97ca6268a903f580e250f154d75f5d00358a51964a16"
+  },
+  "jdk_windows_x64": {
+    "version": "21.0.12.1+1",
+    "archive": "OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip",
+    "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip",
+    "sha256": "f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e",
+    "directory": "jdk-21",
+    "executable": "jdk-21.0.12.1+1/bin/java.exe"
+  }
+}

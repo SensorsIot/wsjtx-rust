@@ -305,6 +305,29 @@ transport/session management does not merge their sample and control responsibil
 | TC-009-003 — Control without audio | FR-002, FR-009 | Connect an independent CAT protocol fixture with audio closed/unavailable; exercise only selected supported queries/settings. | Expected control exchanges/status succeed without opening audio; unsupported functions and timeouts follow the defined capability/error contract. | 2 — Isolated automated tests; Windows PC, Rust control module and protocol emulator. |
 | TC-009-004 — Independent failure and coordination | FR-002, FR-008, FR-009 | Lose each interface separately; observe the other; use simulated active transmission and halt. | Separate availability is preserved, failed control is never shown ready, and transmit failure/halt releases through the configured control path according to the agreed policy. No real RF transmission. | 2 — Isolated automated tests; Windows PC, independent audio and radio-control emulators. |
 
+### 4.6 Parallel SysML v2 representation
+
+Markdown remains authoritative initially. The FSD owns functional requirements and
+test definitions, ARCHITECTURE.md owns its declared component/interface responsibilities,
+and COMMUNICATION.md owns detailed implemented wire contracts. A synchronized SysML v2
+representation supports structured review without changing this authority or renumbering
+the existing identities. This section specifies documentation behavior, not radio behavior.
+Only product functional documentation is represented in SysML. Harness/process/skill
+rules and these CL-014/TC-DOC method definitions remain Markdown-only.
+
+| Clause | Area | Required behavior | Verification |
+|---|---|---|---|
+| CL-014-01 | Documentation authority | The parallel model MUST preserve the authoritative Markdown sources and stable FR/CL/TC identities. Model syntax or tool conventions MUST NOT silently migrate authority or replace a requirement with an implementation deviation. | TC-DOC-001 |
+| CL-014-02 | Model coverage | The model MUST declare its covered source slices and distinguish target architecture, partial requirements and implemented status-slice/test elements. It MUST NOT claim that prose projection or successful semantic validation proves full behavior or implementation conformance. | TC-DOC-001; review |
+| CL-014-03 | Architecture boundaries | The structured architecture MUST retain separate audio and radio-control interfaces, variable station processes and optional native FlexRadio implementations behind those interfaces. It MUST retain the scoped Rust control implementation rather than imply a complete Hamlib replacement or a mandatory Hamlib dependency. | TC-DOC-001; semantic validation and review |
+| CL-014-04 | Validation | Reproducible checks MUST compare the covered Markdown projection and run a pinned full SysML parser/name resolver/semantic validator. Missing/invalid tools, model libraries or model files MUST fail; lightweight synchronization/lint checks MUST NOT masquerade as semantic proof or runtime test verdicts. | TC-DOC-002; TC-DOC-003; TC-DOC-004 |
+| CL-014-05 | Synchronization | Changes to a covered Markdown source and its model MUST be reconciled in the same change. Generated content MUST be regenerated and checked; manually modeled architecture MUST be reviewed against its source. Unsupported or unmodeled detail MUST remain explicit. | TC-DOC-001; TC-DOC-002 |
+
+[SysML representation and validation](SYSML.md) defines the model root, coverage,
+source-generation relationship and pinned tool entrypoints. The initial model projects
+defined requirement/clause/test identities and selected architecture boundaries; it does
+not formalize every protocol rule, numerical constraint, state machine or radio waveform.
+
 ## 5. Proposed quality and compatibility requirements
 
 - **On-air compatibility:** Preserve the protocol definitions and interoperability of the selected upstream baseline. A language rewrite must not silently change message encoding or waveform conventions.
@@ -712,6 +735,25 @@ reference outputs and quantitative budgets before coding.
 | TC-004-001 — Offline FT4 | FR-003, FR-004, FR-018 | Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
 | TC-004-002 — Offline FT8 | FR-003, FR-004, FR-018 | Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
 | TC-004-003 — Invalid and nonmatching input | FR-003, FR-004, FR-018 | Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run. | Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures. | 2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. |
+
+### 6.5 Documentation-model test definitions
+
+These checks verify CL-014-01 through CL-014-05; they do not test radio functionality.
+**Level: 2 — Isolated automated tests. Where they run:** the Windows development PC,
+local Markdown/model fixtures and the pinned portable OMG reference validator. They
+require no radio, live service, Jupyter server or global Java installation.
+
+| ID | Clauses | Inputs/actions | Expected results |
+|---|---|---|---|
+| TC-DOC-001 — Projection and identities | CL-014-01, CL-014-02, CL-014-03, CL-014-05 | Generate the declared FSD projection, compare stable IDs/trace relationships and inspect the selected architecture against its Markdown source. | Existing identities/prose remain intact; canonical Markdown is not mutated; the generated representation is current. Audio/control separation, variable station instances and optional native backends remain explicit. Semantic/model review remains distinct from behavior execution. |
+| TC-DOC-002 — Source/model drift | CL-014-04, CL-014-05 | In disposable fixtures, change a covered source or remove/corrupt its generated representation; change the architecture source without reconciling its model. | Synchronization fails and identifies the stale/missing artifact. Regeneration alone cannot claim a manually modeled architecture has been reviewed. |
+| TC-DOC-003 — Full-tool positive and negative models | CL-014-04 | Run the actual pinned validator on a legal model, unmatched syntax and an unresolved type/reference. | The legal model is accepted; malformed syntax and unresolved references return nonzero semantic-validation outcomes with diagnostics. This does not execute modeled verification cases or prove application behavior. |
+| TC-DOC-004 — Unavailable validation | CL-014-04 | Invoke required validation with a missing/invalid Java/validator/library path or absent model file. | The command fails nonzero and never reports semantic PASS. There is no regex-only fallback. |
+
+Executable traces are the scoped tests under `tools/sysml/tests/`, the synchronization
+entrypoint `tools/sysml.py` and full-validator adapter `tools/sysml/Validate.java`;
+their usage and coverage are defined in [SYSML.md](SYSML.md). Execution evidence belongs
+to the documentation CR, not a fabricated modeled verdict.
 
 ## 7. Proposed delivery milestones
 

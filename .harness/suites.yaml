@@ -29,3 +29,14 @@
   - package.json
   - package-lock.json
   needs: Node 24, npm ci, npx playwright install chromium. Disposable local server, browser and link simulator; no external services.
+- suite: sysml-documentation
+  cost: 2
+  run: python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -q
+  paths:
+  - docs/WSTX Rust FSD.md
+  - docs/ARCHITECTURE.md
+  - docs/SYSML.md
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  needs: Python 3.12 and python tools/sysml.py setup once. Portable pinned Java/OMG Pilot in the user cache; no radio, live station or Jupyter service.
