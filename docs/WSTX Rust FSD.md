@@ -242,7 +242,7 @@ The legacy status-only mode uses the same cookie name/path across ports. Profile
 addresses that shared-browser collision through 12.5; the original single-instance
 authentication tests alone do not verify FR-022 clause 4.
 
-#### CR #5 detailed contract — implemented candidate, acceptance pending
+#### CR #5 detailed contract — delivered profile functionality
 
 This approved target refines the five numbered clauses above and the approved roadmap
 issue [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5). The operator approved this
@@ -881,7 +881,7 @@ or constitute new radio functions. **Level:** 2 — Isolated automated tests.
 
 ### 6.2 Tests for concurrent persisted profiles
 
-**Status: implemented candidate companions for CR #5; acceptance pending.** These are
+**Status: delivered verification companions for CR #5.** These are
 durable test definitions, not execution results. Dated results and acceptance stay on
 issue #5. They prove CL-005-01..05 and the approved
 contracts in 4.2/12.5. All four cases are **Level 2 — isolated automated tests on the
