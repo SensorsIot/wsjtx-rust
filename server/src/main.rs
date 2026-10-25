@@ -148,6 +148,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "WSTX_ORIGIN must match the listener scheme, without a trailing slash",
         ));
     }
+    if let Some((store, _)) = &loaded {
+        let effective_origin = configured_origin
+            .clone()
+            .unwrap_or_else(|| format!("{scheme}://{addr}"));
+        store
+            .document
+            .admit_response_budget(&effective_origin)
+            .map_err(|code| error(code, ""))?;
+    }
     let tls = match (cert, key) {
         (Some(cert), Some(key)) => Some(
             axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key)
@@ -290,7 +299,7 @@ fn profile_error(status: StatusCode, code: &str, field: Option<&str>) -> Respons
     (status, Json(json!({"error":{"code":code,"field":field}}))).into_response()
 }
 fn representation(state: &ProfileState, doc: &profile::Document, origin: &str) -> Value {
-    json!({"profile_id":doc.profile_id,"boot_id":state.boot,"revision":doc.revision,"endpoint":origin,"connection_type":doc.connection_type,"settings":doc.settings()})
+    profile::representation(doc, &state.boot, origin)
 }
 async fn get_profile(State(app): State<App>, headers: HeaderMap) -> Response {
     let Some(state) = app.profile.clone() else {

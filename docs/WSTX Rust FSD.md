@@ -347,7 +347,7 @@ available and `profile.json` bytes remain unchanged.
 |---|---|
 | Unknown/duplicate CLI option or combining create/startup; profile mode with WSTX_BIND or WSTX_ORIGIN present | `invalid_runtime_configuration` |
 | Missing/unreadable selected directory or profile file; denied storage; absent creation parent; existing creation target including empty directory | `resource_unavailable` |
-| Malformed/truncated JSON or UTF-8; duplicate/unknown/missing fields; wrong types; invalid UUID/settings; oversized file; bind port 0/65536; malformed origin; saved origin port differs from bind port | `invalid_profile` |
+| Malformed/truncated JSON or UTF-8; duplicate/unknown/missing fields; wrong types; invalid UUID/settings; oversized file; bind port 0/65536; malformed origin; saved origin port differs from bind port; selected origin cannot satisfy the complete response budget in 12.5 | `invalid_profile` |
 | Well-formed integer schema version other than 1, including 0 or 2 | `unsupported_schema` |
 | Reserved `native_flex` connection type | `unsupported_connection_type` |
 | Directory or UUID already owned, including aliases and copied directories | `profile_in_use` |
@@ -737,7 +737,8 @@ seconds on unshaped loopback; reconnect follows 12.3's existing ten-second recov
 bound after loss detection. These are test deadlines, not a hardware-capacity promise.
 Retain the existing thin-link tests/budgets; they are not multiplied into N simultaneous
 32-kbit/s station guarantees. Missing prerequisites, fewer than N processes/windows or
-zero checked fixtures is a failure. Executable companions are the four named cases in
+zero checked fixtures is a failure. Executable companions are the four stable case
+groups and their focused regressions in
 [tests/profiles.test.cjs](../tests/profiles.test.cjs), registered alongside existing tests
 in `communication`, plus the separated Rust cases below in `wstx-rust`. They use the
 original Markdown/domain tables as oracles; implementation and expected results are not
@@ -788,6 +789,14 @@ an otherwise valid JSON object with whitespace). Each rejected save
 leaves memory/revision/file unchanged and shows its field/error outcome; valid boundary
 saves persist exactly. Revision exhaustion refuses another save. Test a second window
 saving from an old revision: one save wins, one receives 409, no silent merge/lost update.
+Also hold a Refresh GET response, begin and hold a PUT, then release the GET while the
+save remains pending. Save stays disabled and even a repeated form submission sends
+no second PUT. Release the PUT: exactly one revision advances, editable controls and
+Save recover their usable state, and permanently read-only controls remain disabled.
+Repeat with the opposite response order on an unchanged revision-0 station: hold the
+Refresh response, complete the PUT and its follow-up revision-1 GET, then release the
+old response. Visible revision, saved fields and acknowledged-save feedback remain at
+revision 1. A changed boot identity still permits restart/recovery resynchronization.
 
 #### TC-022-002 — Persistence and independent restart
 
@@ -824,6 +833,16 @@ by GET without replay. Test a relative profile argument from another working dir
 a directory alias, absent parent on creation, existing empty/nonempty creation target,
 unknown/duplicate CLI flags and forbidden WSTX_BIND/WSTX_ORIGIN overrides. No fallback
 or mutation is permitted. This does not certify power-loss durability or WSJT-X migration.
+For the cross-field response budget, independently build the maximum-encoded-settings
+vector in 12.5. With the selected origin sized so its complete representation is exactly
+8,192 UTF-8 bytes, startup and GET succeed; save from revision 9,007,199,254,740,990 to
+9,007,199,254,740,991 and require a successful response of exactly 8,192 bytes. Increase
+that origin by one unescaped ASCII byte, then separately use a 9,000-character hostname:
+both launches fail `invalid_profile` before readiness without changing stored bytes.
+Use the numeric loopback address to transport the fixture requests and the saved origin
+as the exact Origin header; no external DNS or service is contacted. Other instances
+remain usable. These expectations come from the independent byte calculation, not the
+candidate's admission helper.
 
 #### TC-022-003 — Stop isolation and collision refusal
 
@@ -1805,6 +1824,27 @@ this HTTP representation is the explicit profile API for schema 1. Responses are
 `application/json`, `Cache-Control: no-store`, at most 8,192 bytes. There is no CORS
 permission. In environment-only mode GET and PUT `/profile` return 404.
 
+The size bound applies to the complete serialized UTF-8 response body. Before readiness,
+profile startup MUST admit its effective browser origin only if the representation fits
+for **every permitted later editable setting and revision**, not just its initial values.
+Derive admission by serializing the complete worst-case representation with that origin;
+exceeding 8,192 bytes is `invalid_profile`. There is no independent arbitrary origin-length
+limit. Origin/identity/connection type remain fixed while owned, so an admitted profile's
+later valid saves cannot exceed the response bound.
+
+The independent schema-1 byte oracle uses 36-character profile and boot UUIDs, the
+16-digit maximum revision, connection type `standard`, 64 backslashes as display name,
+callsign `A12345678901`, locator `RR99XX99`, 256 backslashes in **each** audio identifier
+and in the CAT control endpoint, mode `cat`, and PTT `disabled`. Backslashes (or quotes)
+maximize JSON escaping per allowed UTF-8 byte; the disabled PTT spelling is longer.
+With an empty origin string, the complete compact UTF-8 representation is **2,018 bytes**,
+including all keys, punctuation and string delimiters. Thus its origin's escaped contents
+may consume the remaining **6,174 bytes** for this representation. For an ASCII
+`http://<hostname>:<port>` fixture, choose hostname length as 6,174 minus the prefix and
+port-suffix byte lengths. Test exactly at that derived boundary and one byte above it;
+the implementation MUST derive the full bound using the response encoding, rather than
+silently truncating a response or replacing the selected origin.
+
 `PUT /profile` requires `Content-Type: application/json` (optional UTF-8 charset), exact
 Origin and, in TLS mode, the selected profile's valid session cookie. Loopback plaintext
 retains 12.1's trusted-local unauthenticated mode, but still requires exact Origin on
@@ -1841,6 +1881,13 @@ before first displaying Connected for a profile-mode page. A failed profile load
 is visibly identified and never presented as a successful configuration update. After
 reconnect or Refresh it reloads profile settings; edits in progress are retained until
 explicit reload or successful save, and a 409 prompts reload before another save.
+Each browser form permits only one pending save. Disable its controls while that save
+is in flight; Refresh/profile snapshots MUST NOT re-enable Save or permit a second
+submission. On completion restore editable controls while preserving permanently
+read-only controls; conflict/unknown-outcome cases still require explicit reload.
+A response from the same boot MUST NOT replace an already displayed higher revision
+with an older one. A different boot identity permits authoritative resynchronization
+after restart/recovery; its revision is not compared as though it were the same boot.
 The initial page distinguishes profile mode using a nonsecret embedded mode flag, not
 by guessing from an error or silently treating a failed authenticated GET as legacy mode.
 

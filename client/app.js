@@ -7,7 +7,7 @@ const refresh = document.querySelector('#refresh');
 const profileMode = document.body.dataset.profile === 'true';
 const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
-let profileData, editingRevision, dirty = false, conflict = false;
+let profileData, editingRevision, dirty = false, conflict = false, saving = false;
 let socket, timer, pendingId;
 let retry = 1000, lastMessage = 0, nextId = 1;
 function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; }
@@ -89,7 +89,7 @@ async function loadProfile(reload, current) {
     for (const [id, value] of [['#display-name', s.display_name], ['#callsign', s.callsign], ['#locator', s.locator], ['#audio-input', s.audio.input_device], ['#audio-output', s.audio.output_device], ['#control-mode', s.control.mode], ['#control-endpoint', s.control.endpoint], ['#ptt-mode', s.control.ptt]]) document.querySelector(id).value = value ?? '';
     editingRevision = data.revision; dirty = false; conflict = false;
   }
-  document.querySelector('#settings-save').disabled = conflict;
+  document.querySelector('#settings-save').disabled = saving || conflict;
   return true;
 }
 settingsForm.addEventListener('input', () => {dirty = true;});
@@ -98,7 +98,8 @@ document.querySelector('#settings-reload').addEventListener('click', async () =>
   try {await loadProfile(true); settingsResult.textContent = 'Loaded saved settings.';} catch {settingsResult.textContent = 'Could not load saved settings.';}
 });
 settingsForm.addEventListener('submit', async event => {
-  event.preventDefault(); if (!profileMode || !profileData || conflict) return;
+  event.preventDefault(); if (!profileMode || !profileData || saving || conflict) return;
+  saving = true;
   const button = document.querySelector('#settings-save');
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
   for (const [element] of controls) element.disabled = true;
@@ -112,5 +113,5 @@ settingsForm.addEventListener('submit', async event => {
     }
     dirty = false; await loadProfile(true); settingsResult.textContent = `Saved revision ${result.revision}`;
   } catch {settingsResult.textContent = 'Save outcome unknown. Reload saved settings before retrying.'; conflict = true;}
-  finally {for (const [element, disabled] of controls) element.disabled = disabled; button.disabled = conflict;}
+  finally {saving = false; for (const [element, disabled] of controls) element.disabled = disabled; button.disabled = saving || conflict;}
 });

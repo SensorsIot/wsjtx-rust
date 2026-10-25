@@ -37,7 +37,7 @@ async function ports(n) {
 function launch(args, env = {}, cwd) {
   const clean = {...process.env}; for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
   const child = spawn(exe, args, {cwd, env: {...clean, ...env}, windowsHide: true});
-  let output = ''; child.stdout.on('data', b => {output = (output + b).slice(-4096);}); child.stderr.on('data', b => {output = (output + b).slice(-4096);});
+  let output = ''; child.stdout.on('data', b => {output = (output + b).slice(-16384);}); child.stderr.on('data', b => {output = (output + b).slice(-16384);});
   const done = once(child, 'exit');
   return {child, get output() {return output;}, done, async close() {if (child.exitCode === null && child.signalCode === null) {child.kill(); await done;}}};
 }
@@ -72,7 +72,7 @@ async function fixture(t, secured = false) {
 function request(origin, method = 'GET', body, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = (origin.startsWith('https') ? https : http).request(origin + '/profile', {method, rejectUnauthorized: false, agent: false, headers: {Origin: origin, ...(body !== undefined ? {'Content-Type': 'application/json'} : {}), ...headers}}, res => {
-      let data = ''; res.on('data', b => {data += b;}); res.on('end', () => resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, headers: res.headers}));
+      let data = ''; res.on('data', b => {data += b;}); res.on('end', () => resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: Buffer.byteLength(data, 'utf8'), headers: res.headers}));
     }); req.on('error', reject); if (body !== undefined) req.write(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); req.end();
   });
 }
@@ -275,4 +275,95 @@ test('TC-022-004: same-host four-port TLS cookies, reconnect, negatives and rota
   assert.equal(await upgradeStatus(a, `${ca.name}=${ca.value}`), 401); assert.equal((await login(a, oldToken)).status, 401); await pages[0].locator('#token').fill(a.env.WSTX_TOKEN); await pages[0].locator('#login button').click(); await connected(pages[0]);
   for (let i = 1; i < 4; i++) {await pages[i].reload(); await connected(pages[i]);}
   for (const page of pages) {assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]); assert.equal(await page.locator('#token').inputValue(), '');}
+});
+
+// Proves: FR-019, FR-022; CL-005-02, CL-005-03; TC-022-001.
+test('TC-022-001 review regression: Refresh cannot reopen a pending save', {timeout: 30000}, async t => {
+  const {profiles} = await fixture(t), {pages} = await browserWindows(t, profiles);
+  await Promise.all(pages.map(connected)); const page = pages[0];
+  await page.evaluate(() => {
+    const original = window.fetch; window.observedProfilePuts = 0;
+    window.fetch = (...args) => {if (args[0] === '/profile' && args[1]?.method === 'PUT') window.observedProfilePuts++; return original(...args);};
+  });
+  let releaseGet, releasePut, observedGet, observedPut, getHeld = false, putCount = 0;
+  const holdGet = new Promise(r => {releaseGet = r;}), holdPut = new Promise(r => {releasePut = r;});
+  const gotGet = new Promise(r => {observedGet = r;}), gotPut = new Promise(r => {observedPut = r;});
+  await page.route('**/profile', async route => {
+    if (route.request().method() === 'GET' && !getHeld) {
+      getHeld = true; const response = await route.fetch(); observedGet(); await holdGet; await route.fulfill({response});
+    } else if (route.request().method() === 'PUT') {
+      putCount++; observedPut(); await holdPut; await route.continue();
+    } else await route.continue();
+  });
+  try {
+    await page.locator('#display-name').fill('One pending save');
+    const previousUpdate = await page.locator('#updated').textContent(); await page.locator('#refresh').click(); await gotGet;
+    await page.locator('#settings-save').click(); await gotPut;
+    releaseGet(); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
+    const stayedDisabled = await page.locator('#settings-save').isDisabled();
+    // requestSubmit also exercises the explicit submission guard, independently of
+    // a disabled button. The observer counts real fetch invocations synchronously.
+    await page.evaluate(() => document.querySelector('#settings').requestSubmit());
+    assert.equal(stayedDisabled, true, 'Refresh must retain the pending Save disable');
+    assert.equal(await page.evaluate(() => window.observedProfilePuts), 1, 'one form must issue only one pending PUT');
+    releasePut(); await page.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
+    assert.equal(putCount, 1); assert.equal((await request(profiles[0].origin)).body.revision, 1);
+    for (const selector of ['#display-name', '#settings-save', '#settings-reload']) assert.equal(await page.locator(selector).isEnabled(), true);
+    assert.equal(await page.locator('#settings select').first().isDisabled(), true);
+  } finally {releaseGet(); releasePut();}
+
+  // Inverse completion order: a real revision-0 Refresh response arrives only after
+  // the save and its own revision-1 GET have already been acknowledged/rendered.
+  const inverse = pages[1]; let releaseOld, observedOld, oldHeld = false;
+  const oldResponse = new Promise(r => {releaseOld = r;}), oldStarted = new Promise(r => {observedOld = r;});
+  await inverse.route('**/profile', async route => {
+    if (route.request().method() === 'GET' && !oldHeld) {
+      oldHeld = true; const response = await route.fetch(); observedOld(); await oldResponse; await route.fulfill({response});
+    } else await route.continue();
+  });
+  try {
+    await inverse.locator('#display-name').fill('Acknowledged revision 1');
+    const beforeRefresh = await inverse.locator('#updated').textContent(); await inverse.locator('#refresh').click(); await oldStarted;
+    await inverse.locator('#settings-save').click(); await inverse.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
+    assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
+    releaseOld(); await inverse.waitForFunction(old => document.querySelector('#updated').textContent !== old, beforeRefresh);
+    assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
+    assert.equal(await inverse.locator('#display-name').inputValue(), 'Acknowledged revision 1');
+    assert.equal(await inverse.locator('#profile-name').textContent(), 'Acknowledged revision 1');
+    assert.equal(await inverse.locator('#settings-result').textContent(), 'Saved revision 1');
+    assert.equal(await inverse.locator('#settings-save').isEnabled(), true);
+  } finally {releaseOld();}
+});
+
+// Proves: FR-016, FR-022; CL-005-02, CL-005-04; TC-022-002.
+test('TC-022-002 review regression: admit the complete worst-case response budget', {timeout: 30000}, async t => {
+  const {profiles, apps} = await fixture(t); const selected = profiles[0]; await selected.app.close();
+  const file = path.join(selected.dir, 'profile.json'), port = new URL(selected.origin).port;
+  // Independently authored from FSD12.5; never read from the candidate admission helper.
+  const maximum = {display_name: '\\'.repeat(64), callsign: 'A12345678901', locator: 'RR99XX99', audio: {input_device: '\\'.repeat(256), output_device: '\\'.repeat(256)}, control: {mode: 'cat', endpoint: '\\'.repeat(256), ptt: 'disabled'}};
+  const oracle = {profile_id: uuid(1), boot_id: uuid(2), revision: Number.MAX_SAFE_INTEGER, endpoint: '', connection_type: 'standard', settings: maximum};
+  assert.equal(Buffer.byteLength(JSON.stringify(oracle), 'utf8'), 2018);
+  const originFor = extra => 'http://' + 'a'.repeat(6174 - Buffer.byteLength(`http://:${port}`) + extra) + `:${port}`;
+  const atBoundary = originFor(0), document = {...selected.document, ...maximum, revision: Number.MAX_SAFE_INTEGER - 1, endpoint: {bind: selected.document.endpoint.bind, origin: atBoundary}};
+  assert.equal(Buffer.byteLength(JSON.stringify({...oracle, endpoint: atBoundary})), 8192);
+  await fs.writeFile(file, JSON.stringify(document));
+  const admitted = await start({...selected, origin: atBoundary}); apps.push(admitted);
+  let result = await request(selected.origin, 'GET', undefined, {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192);
+  result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, maximum), {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192);
+  await admitted.close();
+  for (const origin of [originFor(1), `http://${'a'.repeat(9000)}:${port}`]) {
+    // The initial settings are small; admission must reserve future valid maximums.
+    const bad = {...selected.document, revision: Number.MAX_SAFE_INTEGER - 1, endpoint: {bind: selected.document.endpoint.bind, origin}};
+    await fs.writeFile(file, JSON.stringify(bad)); const before = await fs.readFile(file);
+    const rejected = launch(['--profile', selected.dir]); apps.push(rejected);
+    const deadline = Date.now() + 10000;
+    while (rejected.child.exitCode === null && rejected.child.signalCode === null && !rejected.output.includes('WSTX listening ') && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+    if (rejected.output.includes('WSTX listening ')) {
+      const reproduced = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, maximum), {Origin: origin});
+      assert.ok(reproduced.bodyBytes > 8192, 'old-code reproduction must observe the oversized response');
+      await rejected.close(); assert.fail('Over-budget profile reached readiness and returned an oversized save response');
+    }
+    const [code, signal] = await rejected.done; assert.equal(signal, null); assert.notEqual(code, 0); assert.match(rejected.output, /invalid_profile/); assert.deepEqual(await fs.readFile(file), before);
+  }
+  for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
 });

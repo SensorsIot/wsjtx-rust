@@ -1,4 +1,4 @@
-// Canonical profile contract SHA256: 9912ffa58350490184796d7b7449ac85a52be5f44fa1119627293b8a257b8e0a
+// Canonical profile contract SHA256: 0585cd5991807f7ffffce7f65a13f8cf8d851ab404e284e315f8e32dae67be9c
 package WstxProfiles {
     private import ScalarValues::*;
 
@@ -191,6 +191,33 @@ package WstxProfiles {
             if not durableReplaceSucceeded ? HttpOutcome::storage_unavailable else
             HttpOutcome::ok;
     }
+    calc def ResponseBudgetAdmission {
+        doc /* FSD12.5 cross-field bound, checked BEFORE readiness. Encode the complete
+             HttpProfileRepresentation using the selected effective origin and worst
+             valid later settings/revision, not merely the initial file values.
+             Independent schema-1 compact UTF-8 oracle: 36-byte profile/boot UUIDs,
+             revision9007199254740991, standard, display64 backslashes, callsign
+             A12345678901, locatorRR99XX99, both audio identifiers256 backslashes,
+             CAT endpoint256 backslashes, CAT mode, disabled PTT. Empty-origin full
+             representation2018 bytes, so escaped origin contents may use6174 bytes.
+             This is a derived complete-response constraint, not an arbitrary host
+             limit. Actual response encoding supplies the byte count. Reject failure
+             as invalid_profile; stable origin/identity/backend then reserve capacity
+             for every valid later edit. Never truncate/substitute endpoint identity. */
+        in completeWorstCaseUtf8Bytes : Integer;
+        return admitted : Boolean = completeWorstCaseUtf8Bytes >= 0 and completeWorstCaseUtf8Bytes <= 8192;
+    }
+    calc def SaveSubmissionAllowed {
+        in saving : Boolean;
+        in conflict : Boolean;
+        return allowed : Boolean = not saving and not conflict;
+    }
+    calc def SnapshotApplicable {
+        in sameBoot : Boolean;
+        in candidateRevision : Integer;
+        in displayedRevision : Integer;
+        return applicable : Boolean = not sameBoot or candidateRevision >= displayedRevision;
+    }
     calc def GetDecision {
         in originAbsentOrExact : Boolean;
         in authValid : Boolean;
@@ -243,7 +270,11 @@ package WstxProfiles {
              Validate runtime: incomplete TLS pair, TLS without token, token without
              TLS, invalid 32..128 ASCII alphanumeric token, insecure/incomplete remote
              inputs or saved origin/runtime scheme mismatch -> invalid_runtime_configuration;
-             absent/unreadable/invalid cert/key -> resource_unavailable. Bind port:
+             absent/unreadable/invalid cert/key -> resource_unavailable.
+             Apply ResponseBudgetAdmission for the effective origin BEFORE readiness;
+             a complete worst-case response over8192 bytes ->invalid_profile even when
+             the file itself fits16384. Valid later settings must retain this guarantee.
+             Bind port:
              occupied -> endpoint_in_use, other OS resource failure -> resource_unavailable.
              Single-fault fixtures have exactly these outcomes. All failed launches
              nonzero, no readiness/browser/attach/file rewrite/other process disruption.
@@ -340,6 +371,14 @@ package WstxProfiles {
              radio stays unconfigured; audio/control selection availability independent.
              PUT validates exact body shape/JSON/UTF8, media type/size before applying.
              Disable form controls while saving, preserving their read-only state;
+             SaveSubmissionAllowed is the per-form submission guard. Refresh/profile
+             GET completion must retain saving OR conflict in Save's disabled state;
+             a second submission during saving sends no second PUT. Restore editable
+             controls after completion, while permanent read-only controls stay disabled.
+             SnapshotApplicable rejects a lower revision from the same boot so a held
+             Refresh cannot overwrite an acknowledged newer save/form. A changed boot
+             permits authoritative restart/recovery resynchronization, including an
+             independently restored lower revision.
              edits typed after submission cannot be clobbered by its acknowledgement.
              Invalid field preserves typed input with error, never Saved. Successful save
              updates revision only on durable 200. On 409 prompt reload before another
@@ -450,8 +489,14 @@ package WstxProfiles {
                  malformed JSON/UTF8/enum/CAT/PTT, wrong UUID, stale/exhausted revision,
                  exact8192/8193 HTTP-byte bodies padded with whitespace and media type.
                  Valid boundaries persist; invalid leaves memory/disk/revision intact.
-                 Two stale competing windows: one winner/one409, no merge. Render
-                 <img src=x onerror=alert(1)> display name and
+                 Two stale competing windows: one winner/one409, no merge.
+                 Hold Refresh GET, start/hold PUT, then release GET: Save stays disabled,
+                 repeated submit sends no second PUT. Release PUT, require one revision
+                 increment and usable editable controls/Save, preserving read-only controls.
+                 Inverse order on revision0 station: hold old Refresh, complete PUT and
+                 its revision1 GET, then release old GET. Visible revision/form/name and
+                 Saved1 feedback remain1; same-boot ordering does not reject changed boots.
+                 Render <img src=x onerror=alert(1)> display name and
                  <script>alert(1)</script> audio ID literally, no element/dialog/script.
                  Desktop/360px identity/errors/Save readable and keyboard reachable.
                  Oracle: original Markdown/domain table and independent fixture edits. */
@@ -478,7 +523,15 @@ package WstxProfiles {
                  aborts delivery; one PUT only and subsequent GET recovers commit. Lost
                  response GET, no replay. Relative path from different CWD, aliases,
                  absent parent/existing empty/nonempty create target, invalid CLI and
-                 forbidden env all have mapped errors. No migration/power-loss claim. */
+                 forbidden env all have mapped errors. Independent ResponseBudgetAdmission
+                 fixture: the full worst-case representation with empty origin is2018
+                 UTF-8 bytes; size the ASCII origin contents to6174 bytes. Startup and
+                 actual GET/PUT bodies must fit exactly8192, including a save from
+                 maxRevision-1 to maxRevision. One extra origin byte or a9000-character
+                 hostname must fail invalid_profile BEFORE readiness without rewriting
+                 any profile. Numeric loopback transports fixture requests with exact
+                 saved Origin header; no external DNS/service. Expected bytes come from
+                 original Markdown, not the candidate helper. No migration/power-loss claim. */
         }
         verification lifecycleIsolation {
             subject operation : LaunchSelectedProfile;

@@ -13,6 +13,7 @@ mod tests;
 
 pub const MAX_REVISION: u64 = 9_007_199_254_740_991;
 pub const MAX_FILE: u64 = 16_384;
+const MAX_RESPONSE: usize = 8192;
 
 fn nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     Option::<String>::deserialize(d)
@@ -200,6 +201,33 @@ impl Document {
         self.audio = s.audio;
         self.control = s.control;
     }
+    pub fn admit_response_budget(&self, origin: &str) -> Result<(), &'static str> {
+        let mut maximum = self.clone();
+        maximum.revision = MAX_REVISION;
+        // Quotes/backslashes cost two JSON bytes per permitted UTF-8 byte. Reserve
+        // every editable maximum plus the longest valid control/PTT combination.
+        maximum.set_settings(Settings {
+            display_name: "\\".repeat(64),
+            callsign: "A12345678901".into(),
+            locator: "RR99XX99".into(),
+            audio: Audio {
+                input_device: Some("\\".repeat(256)),
+                output_device: Some("\\".repeat(256)),
+            },
+            control: Control {
+                mode: "cat".into(),
+                endpoint: Some("\\".repeat(256)),
+                ptt: "disabled".into(),
+            },
+        });
+        let body = representation(&maximum, "00000000-0000-4000-8000-000000000000", origin);
+        let bytes = serde_json::to_vec(&body).map_err(|_| "invalid_profile")?;
+        if bytes.len() > MAX_RESPONSE {
+            Err("invalid_profile")
+        } else {
+            Ok(())
+        }
+    }
     fn validate(&self) -> Result<SocketAddr, &'static str> {
         if self.schema_version != 1 {
             return Err("unsupported_schema");
@@ -233,6 +261,9 @@ impl Document {
         }
         Ok(addr)
     }
+}
+pub fn representation(doc: &Document, boot: &str, origin: &str) -> serde_json::Value {
+    serde_json::json!({"profile_id":doc.profile_id,"boot_id":boot,"revision":doc.revision,"endpoint":origin,"connection_type":doc.connection_type,"settings":doc.settings()})
 }
 pub fn parse_origin(origin: &str) -> Option<axum::http::Uri> {
     let uri: axum::http::Uri = origin.parse().ok()?;
