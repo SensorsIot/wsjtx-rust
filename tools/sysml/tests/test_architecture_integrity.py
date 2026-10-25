@@ -1,0 +1,76 @@
+"""TC-DOC-005: independent architecture oracle using the real pinned Pilot AST."""
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+
+TOOL = Path(__file__).resolve().parents[2] / "sysml.py"
+spec = importlib.util.spec_from_file_location("architecture_tool", TOOL)
+tool = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tool)
+
+
+class ArchitectureIntegrityTests(unittest.TestCase):
+    # Proves: CL-014-03, CL-014-06; TC-DOC-005. No viewer/parser substitute.
+    @classmethod
+    def setUpClass(cls):
+        cls.cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
+        cls.source = (tool.MODELS / "Architecture.sysml").read_text(encoding="utf-8")
+        cls.requirements = tool.MODELS / "Requirements.sysml"
+        cls.accepted = tool.validate([cls.requirements, tool.MODELS / "Architecture.sysml"], cls.cache, inventory=True)
+
+    def test_complete_resolved_deployment(self):
+        self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
+        counts = tool.architecture_integrity(self.accepted.stdout)
+        self.assertGreater(counts["connections"], 0)
+        self.assertEqual(counts["references"], 8)
+
+    def reject(self, original, replacement, diagnostic):
+        self.assertIn(original, self.source, "mutation no longer targets the accepted architecture")
+        mutated = self.source.replace(original, replacement, 1)
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "Architecture.sysml"
+            model.write_text(mutated, encoding="utf-8")
+            result = tool.validate([self.requirements, model], self.cache, inventory=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("syntax/name/semantic validation passed", result.stdout)
+        with self.assertRaisesRegex(ValueError, diagnostic):
+            tool.architecture_integrity(result.stdout)
+
+    def test_removed_physical_delegation_is_legal_sysml_but_fails_integrity(self):
+        self.reject("connection webDelegation connect clientBoundary to station.web.client;", "", "missing required connection")
+
+    def test_missing_encoding_path(self):
+        self.reject("connection encodeModem connect transmit.encode to modes.encode;", "", "missing required connection")
+
+    def test_control_bypasses_common_authority(self):
+        self.reject("connect radioControl.backend to authorityRequest;", "connect radioControl.backend to backend.control;", "missing required connection")
+
+    def test_duplicate_selected_backend(self):
+        self.reject("part profile : PersistedProfile;", "part profile : PersistedProfile; part duplicateBackend : StandardBackend;", "duplicate or detached backend")
+
+    def test_split_shared_authority(self):
+        self.reject("ref part authority : RadioAuthority :> physicalStation.controller.radioAuthority;", "part authority : RadioAuthority;", "one effective authority")
+
+    def test_swapped_browser_station_association(self):
+        self.reject("ref part station : StationProcess :> physicalStation.controller.stations;", "ref part station : StationProcess :> physicalStation.controller.mcpAttachments.station;", "invalid endpoint/resource/authority association")
+
+    def test_wrong_requesting_resource_context(self):
+        self.reject("binding backendContext bind backend.control.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding backendContext bind backend.control.request.resourceContext = otherContext;", "missing required connection")
+
+    def test_wrong_waveform_direction(self):
+        self.reject("in item waveform : Waveform;", "out item waveform : Waveform;", "wrong exchange direction")
+
+    def test_disconnected_parallel_world(self):
+        self.reject("part physicalStation {", "part detachedStations[*] : StationProcess; part physicalStation {", "one physical deployment")
+
+    def test_view_cannot_create_semantics(self):
+        self.reject("expose physicalStation::*;", "expose physicalStation::*; part inventedStation : StationProcess;", "views may expose")
+
+    def test_missing_inventory_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "missing resolved Pilot inventory"):
+            tool.architecture_integrity("semantic validation passed without inventory")
+
+
+if __name__ == "__main__":
+    unittest.main()

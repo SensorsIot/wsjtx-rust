@@ -169,11 +169,128 @@ def tool_paths(cache: Path) -> tuple[Path, Path, Path]:
     return java, jar, library
 
 
-def validate(paths: list[Path], cache: Path) -> subprocess.CompletedProcess:
+def architecture_integrity(output: str) -> dict[str, int]:
+    """TC-DOC-005: independent structural oracle for ARCHITECTURE.md section 9.
+
+    Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
+    viewer graph. Endpoint expectations bind the Markdown responsibilities to model
+    names; they are deliberately not generated from the candidate model.
+    """
+    rows = [line.split("\t")[1:] for line in output.splitlines() if line.startswith("AST\t")]
+    if not rows:
+        raise ValueError("Architecture integrity: missing resolved Pilot inventory")
+    records = {kind: [row[1:] for row in rows if row[0] == kind] for kind in {row[0] for row in rows}}
+    if records.get("ROOTPART") != [["WstxArchitecture::physicalStation"]]:
+        raise ValueError("Architecture integrity: expected one physical deployment")
+    if records.get("VIEWSEMANTIC"):
+        raise ValueError("Architecture integrity: views may expose, not create runtime parts/connections")
+    parts = {row[0]: row[1:] for row in records.get("PART", [])}
+    refs = {row[0]: row[1:] for row in records.get("REF", [])}
+    ports = {row[0]: row[1] for row in records.get("PORT", [])}
+    p = "physicalStation"
+    station = p + ".controller.stations"
+    if {path for path in parts if path.count(".") == 1} != {p + "." + role for role in ("user", "viewer", "controller", "radio")}:
+        raise ValueError("Architecture integrity: expected four physical roles")
+    if parts.get(station, [None, None])[1] != "0:-1":
+        raise ValueError("Architecture integrity: station population must remain variable")
+    for path in (station + ".profile", station + ".backend"):
+        if parts.get(path, [None, None])[1] != "1:1":
+            raise ValueError("Architecture integrity: exactly one selected profile/backend per station")
+    variation = parts.get(station + ".backend", [])
+    if len(variation) < 3 or variation[2] != "true":
+        raise ValueError("Architecture integrity: backend must be an exclusive variation")
+    variants = dict(records.get("VARIANTS", []))
+    if variants.get(station + ".backend") != "standardDevices,nativeFlex":
+        raise ValueError("Architecture integrity: expected standard/native backend alternatives")
+    backend_parts = {path for path, values in parts.items() if values[0] in ("WstxArchitecture::StandardBackend", "WstxArchitecture::NativeBackend")}
+    if backend_parts != {station + ".backend.standardDevices", station + ".backend.nativeFlex"}:
+        raise ValueError("Architecture integrity: duplicate or detached backend")
+    authorities = [path for path, values in parts.items() if values[0] == "WstxArchitecture::RadioAuthority"]
+    if authorities != [p + ".controller.radioAuthority"]:
+        raise ValueError("Architecture integrity: shared radio requires one effective authority")
+
+    expected_refs = {
+        station + ".authority": p + ".controller.radioAuthority",
+        station + ".radioBinding.radio": p + ".radio",
+        p + ".stationLink.attachments.browser": p + ".viewer.browsers",
+        p + ".stationLink.attachments.station": station,
+        p + ".controller.mcpAttachments.client": p + ".controller.mcpClients",
+        p + ".controller.mcpAttachments.station": station,
+        p + ".radioAudio.channels.station": station,
+        p + ".radioControl.channels.station": station,
+    }
+    for path, target in expected_refs.items():
+        if path not in refs or refs[path][1] != "1:1" or refs[path][3] != target:
+            raise ValueError("Architecture integrity: invalid endpoint/resource/authority association " + path)
+
+    # Required exchanges/delegations by independently specified responsibility.
+    expected = {
+        p: [("user.interaction", "viewer.operator"), ("viewer.stationLink", "controller.viewerLink"),
+            ("controller.radioAudio", "radio.audio"), ("controller.radioControl", "radio.control")],
+        p + ".viewer": [("operator", "browsers.operator")],
+        p + ".stationLink.attachments": [("browser.station", "clientBoundary"), ("clientBoundary", "station.web.client")],
+        p + ".controller.mcpAttachments": [("client.station", "station.mcp.client")],
+        p + ".radioAudio.channels": [("station.backend.radioAudio", "station.radioBinding.radio.audio")],
+        p + ".radioControl.channels": [("station.backend.radioControl", "station.radioBinding.radio.control")],
+        p + ".controller.radioAuthority": [("authorized.request", "requests.request"), ("requests.outcome", "authorized.outcome")],
+        station: [("web.station", "station.webOperations"), ("mcp.station", "station.mcpOperations"),
+            ("station.profile", "profile.context"), ("station.receive", "receive.jobs"),
+            ("station.transmit", "transmit.operations"), ("station.qso", "qso.operations"),
+            ("station.control", "radioControl.station"), ("audio.receive", "receive.audio"),
+            ("audio.status", "station.audioStatus"), ("receive.processing", "modes.receive"),
+            ("transmit.encode", "modes.encode"), ("transmit.audio", "audio.transmit"),
+            ("transmit.control", "radioControl.transmit"), ("web.recording", "station.upload"),
+            ("station.acceptedRecording", "profile.upload"), ("profile.recordedSamples", "audio.recorded"),
+            ("qso.contacts", "profile.contacts"), ("audio.backend", "backend.audio"),
+            ("radioControl.backend", "authorityRequest"), ("authorizedControl", "backend.control"),
+            ("authorityRequest", "authority.requests"), ("authority.authorized", "authorizedControl"),
+            ("authorityRequest.request.resourceContext", "radioBinding"), ("backend.control.request.resourceContext", "radioBinding")],
+        station + ".profile": [("upload", "recordings.upload"), ("recordings.samples", "recordedSamples")],
+    }
+    for selection in ("standardDevices", "nativeFlex"):
+        expected[station + ".backend." + selection] = [("audio", "audioDevices.host"), ("audioDevices.radio", "radioAudio"),
+            ("control", "controlDriver.authorized"), ("controlDriver.radio", "radioControl")]
+    expected[station + ".backend.nativeFlex"] += [("audioDevices.session", "session.audio"), ("controlDriver.session", "session.control")]
+    for path, definition in ports.items():
+        if "WstxArchitecture::RadioControl" in definition:
+            expected[path] = [("outcome.request", "request")]
+    expected_edges = {(owner, frozenset(pair)) for owner, pairs in expected.items() for pair in pairs}
+    actual_edges = {(owner, frozenset(endpoints.split("|"))) for owner, _name, endpoints in records.get("EDGE", [])}
+    missing = expected_edges - actual_edges
+    extra = actual_edges - expected_edges
+    if missing:
+        owner, endpoints = sorted(missing, key=lambda entry: (entry[0], sorted(entry[1])))[0]
+        raise ValueError("Architecture integrity: missing required connection at " + owner + " " + " <-> ".join(sorted(endpoints)))
+    if extra:
+        owner, endpoints = sorted(extra, key=lambda entry: (entry[0], sorted(entry[1])))[0]
+        raise ValueError("Architecture integrity: unexpected connection/bypass at " + owner + " " + " <-> ".join(sorted(endpoints)))
+    items = {}
+    for path, name, direction, types in records.get("ITEM", []):
+        items.setdefault(path, {})[name] = (direction, types)
+    for port in ports:
+        if port not in items or any(direction not in ("in", "out", "inout") or not types for direction, types in items[port].values()):
+            raise ValueError("Architecture integrity: port lacks directed semantic items " + port)
+    required_items = {
+        p + ".viewer.browsers.station": {"request": "out", "outcome": "in", "upload": "out"},
+        station + ".web.client": {"request": "in", "outcome": "out", "upload": "in"},
+        station + ".transmit.encode": {"request": "out", "waveform": "in"},
+        station + ".modes.encode": {"request": "in", "waveform": "out"},
+        station + ".audio.receive": {"samples": "out", "outcome": "out"},
+        station + ".station.audioStatus": {"outcome": "in"},
+        station + ".authorityRequest": {"request": "out", "outcome": "in"},
+    }
+    for path, exchanges in required_items.items():
+        for name, direction in exchanges.items():
+            if items.get(path, {}).get(name, (None,))[0] != direction:
+                raise ValueError("Architecture integrity: wrong exchange direction " + path + "." + name)
+    return {"parts": len(parts), "references": len(refs), "ports": len(ports), "connections": len(actual_edges)}
+
+
+def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subprocess.CompletedProcess:
     java, jar, library = tool_paths(cache)
     if not paths or any(not path.is_file() for path in paths):
         raise ValueError("Semantic validation requires existing model files")
-    result = subprocess.run([str(java), "-classpath", str(jar), str(ROOT / "tools/sysml/Validate.java"), str(library), *map(str, paths)], text=True, capture_output=True, timeout=120)
+    result = subprocess.run([str(java), "-classpath", str(jar), str(ROOT / "tools/sysml/Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=120)
     if result.returncode == 0 and "OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed." not in result.stdout:
         raise ValueError("Validator returned no semantic completion marker")
     return result
@@ -208,12 +325,15 @@ def main(argv=None):
             print("Markdown synchronization passed; this alone is not semantic validation.")
         else:
             paths = args.files
-        result = validate(paths, args.cache_dir)
+        result = validate(paths, args.cache_dir, inventory=args.command == "check")
         for line in result.stdout.splitlines():
-            if not line.startswith("Reading "):
+            if not line.startswith(("Reading ", "AST\t")):
                 print(line)
         if result.stderr:
             print(result.stderr, file=sys.stderr, end="")
+        if result.returncode == 0 and args.command == "check":
+            counts = architecture_integrity(result.stdout)
+            print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
         return result.returncode
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"SysML check failed: {error}", file=sys.stderr)

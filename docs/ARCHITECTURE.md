@@ -6,7 +6,34 @@ The [FSD](WSTX%20Rust%20FSD.md) owns functional requirements and durable test de
 this companion owns component boundaries and internal interface responsibilities.
 The [communication contract](COMMUNICATION.md) owns implemented wire schemas and limits.
 
-## 1. Runtime shape
+## 1. Physical station context
+
+The physical context has four roles: the operator, the computer displaying the browser,
+the computer running the station server, and the radio. Viewer and controller roles may
+run on the same computer locally; the remote arrangement separates them across the
+station link. These roles do not prescribe a hardware model, connector or cable count.
+
+```mermaid
+flowchart LR
+    User["User / operator"]
+    Viewer["Viewer computer: browser"]
+    Controller["Station controller computer: Rust server"]
+    Radio["Radio"]
+    User <-->|"Local interaction"| Viewer
+    Viewer <-->|"IP: commands, state, results, display data; 32 kbit/s thin-link target"| Controller
+    Controller <-->|"Audio samples and timing"| Radio
+    Controller <-->|"Optional CAT / status / PTT"| Radio
+```
+
+Audio and radio control are separate logical interfaces at the controller/radio
+boundary, even when they share a USB cable or network transport. Audio can operate with
+CAT disabled and manual tuning; control can operate without opening audio. The thin-link
+target applies to the viewer/controller link, not to an assumed radio audio stream. It
+is a design target, not a claim that the current status-only implementation proves
+integrated audio/DSP performance. Section 5 retains the independently selected standard
+interfaces and the optional Phase 2 native backend.
+
+### Runtime shape and software decomposition
 
 One station is one Rust server process, one explicitly selected persisted profile and
 one listening endpoint. The browser runs locally or across the station link. A variable
@@ -33,6 +60,9 @@ flowchart LR
     Control["Radio-control interface: CAT / PTT and status"]
     Devices["Standard audio devices"]
     CAT["Rust CAT / PTT drivers for selected radios"]
+    Authority["One effective shared-radio authority"]
+    Modes["Pure receive / encode modem functions"]
+    Recording["Profile-owned recorded input"]
     Flex["Optional native FlexRadio backend — Phase 2"]
     Browser <--> Web
     MCP <--> MA
@@ -47,13 +77,25 @@ flowchart LR
     TX <--> Audio
     TX <--> Control
     Audio <--> Devices
-    Control <--> CAT
+    Control <--> Authority
+    Authority <--> CAT
     Audio <--> Flex
-    Control <--> Flex
+    Authority <--> Flex
+    RX <--> Modes
+    TX <--> Modes
+    Profile <--> Recording
+    Recording --> Audio
+    QSO <--> Profile
+    Station <--> Audio
 ```
 
 The boxes show responsibilities within the station system, not a network hop for each
-arrow. Optional coordination of a shared physical radio is described in section 5.
+arrow. Standard devices/drivers and native FlexRadio are alternative backend selections,
+not simultaneous routes for every station. Carrier connections contain per-client/per-station
+attachments: one browser/MCP association selects one deployed station; each radio channel
+selects that station's backend and intended radio resource. A scalar carrier does not
+broadcast commands or return another profile's state. Optional shared-radio coordination
+is described in section 5.
 
 ## 2. Responsibilities and dependency direction
 
@@ -186,6 +228,12 @@ capabilities and unavailable/error states prevent one working interface from imp
 that the other is ready. A shared USB cable or network connection does not merge their
 application responsibilities.
 
+One effective authority mediates control access for the selected radio resource across
+station processes, including mixed standard/native selections. Each request identifies its
+station-owned resource binding; authorization preserves that context and outcomes refer
+to their requesting operation. This is semantic ownership/correlation, not a new wire
+schema or a settled coordination algorithm.
+
 The transmit service coordinates both interfaces: obtain authority, prepare the selected
 audio route and radio/PTT state, schedule output, and handle completion/halt/failure.
 Audio failure must still leave the control-side halt/release path usable; control failure
@@ -304,3 +352,81 @@ native FlexRadio coordination/capabilities (#13) are preparation gates. Their na
 owners prevent two implementations from silently selecting incompatible contracts.
 These are bounded implementation decisions inside the architecture, not claims of
 completed hardware or mode support.
+
+## 9. Structural correspondence oracle
+
+These paths state the intended responsibilities independently of model names or diagram
+layout. The SysML companion must expose one deployment with four physical roles (operator,
+viewer computer, controller computer, radio). Browser and server are decompositions of
+those same viewer/controller roles. Station processes are a variable population; each
+owns exactly one selected profile and one exclusive backend choice. Optional browser/MCP
+clients and optional CAT availability do not imply additional station engines. A backend
+choice describes alternatives, not simultaneous connections to every backend.
+
+The connected semantic paths required for review and automated structural checks are:
+
+1. Operator interaction reaches the browser in the viewer. Browser commands and uploaded
+   recordings cross the viewer/controller link to the web adapter and station authority;
+   snapshots, operation results and display products return along that same boundary.
+2. MCP requests pass through their adapter to the same station authority. Neither client
+   adapter writes the radio or owns a separate processing engine.
+3. Station context and persistence reach its selected profile. A validated browser upload
+   becomes a profile-owned recording source; stored recording input reaches the same audio
+   input/receive pipeline as live samples, without requiring an open live audio device.
+4. Receive work reaches the receive modem and returns results. Transmit operations reach
+   the transmit scheduler, then the encoding modem; the resulting waveform reaches the
+   transmit audio route. The modem remains pure and does not connect directly to hardware.
+5. Live receive samples run from the radio through the selected backend and independent
+   audio boundary to receive processing. Transmit samples take the reverse audio path.
+   Physical controller/radio ports delegate to these same backend usages.
+6. Station control and transmit/halt requests cross the independent control boundary and
+   one effective radio authority before reaching the selected control backend and radio;
+   status and failure outcomes return through that boundary. Audio does not traverse this
+   control authority, and an audio failure does not remove the control-side halt path.
+7. A shared radio has one effective authority referenced by every station's control path,
+   including standard/native backend selections. It is not composed afresh inside each
+   station or native backend. The model's common authority is a logical responsibility,
+   not a decision that an in-process object alone coordinates other processes. #8/#13 own
+   actual resource claims, cross-process placement, leases and hardware limits.
+8. Standard devices/drivers and optional Phase 2 native implementations realize the same
+   two distinct interfaces. Native audio and control may share a session without merging
+   responsibilities. Backend capabilities, formats and concrete APIs remain #6/#8/#13
+   preparation decisions; the model selects no wire schema or driver catalogue.
+
+Semantic exchange types describe requests, outcomes, samples and their direction only.
+They do not promise field encodings, deadlines, capacity, device availability or execution
+of safety behavior. Views select existing model elements and cannot create these paths.
+
+## 10. Requirement coverage and remaining design owners
+
+All FSD requirements have a responsibility or an explicit unresolved extension boundary.
+This matrix does not declare the full baseline implemented: only the accepted status
+slice in section 8 exists today. Target structure for #5-#13 is detailed above; remaining
+baseline inventories must be settled before their implementing CRs, without moving
+hardware policy or authoritative state into clients.
+
+| Requirement | Responsible boundary | Target coverage / remaining owner |
+|---|---|---|
+| FR-001 | Station service, selected profile, web presentation | #5 configuration validation/persistence; hardware settings extended by #8 |
+| FR-002 | Independent audio boundary and selected backend | #6/#8 receive/device contracts; #9 playback; no CAT prerequisite |
+| FR-003 | Shared receive input/pipeline and pure modem | #6/#7 recordings/live sources and bounded receive jobs |
+| FR-004 | Pure receive modem, receive-result boundary | #7 independent FT4/FT8 vectors and quality budgets |
+| FR-005 | Transmit scheduler to pure encoding modem, waveform to audio | #9 FT8; #11 FT4; other baseline modes/variants remain inventoried targets |
+| FR-006 | Server receive/transmit scheduling, device/sample timing | #6 sample-clock metadata; #9 UTC mapping, timing failures and deadlines |
+| FR-007 | Station authority and QSO sequencing | #10/#11 exchange/completion/cancellation contracts |
+| FR-008 | Transmit service, independent control boundary and common authority | #9 halt, PTT, failure/controller-loss policy before hardware TX |
+| FR-009 | Rust radio control and selected drivers | #8 support matrix; #9 TX control; #13 native capabilities; no complete Hamlib port |
+| FR-010 | Receive/spectrum products, web adapter, browser rendering | #6 bounded display data; #7 decoded content; mode-specific views added by their CR |
+| FR-011 | QSO/logging and profile-owned contact storage | #10 completed-contact identity/storage; full baseline import/export/duplicate behavior requires inventory before extension |
+| FR-012 | Station operation/result boundary to external integrations | Baseline UDP/reporting inventory and implementing CR remain unresolved; preserve server authority, isolate protocol adapters from modem/radio logic |
+| FR-013 | Pure calculations and station workflow extension | EME astronomical/Doppler/Echo inventory and owning CR remain unresolved; do not assume FT8 timing/workflow covers them |
+| FR-014 | Typed receive capability/input and processing extension | Wideband/IQ/polarization/application coordination inventory and owning CR remain unresolved; no reinterpretation as mono audio |
+| FR-015 | Shared pure functions or station operations, smallest selected UI | Utility inventory and owning CR remain unresolved; no speculative utility service or API |
+| FR-016 | Selected profile/persistence and bootstrap | #5 owns Rust settings; legacy migration compatibility/inventory must be settled before migration release |
+| FR-017 | Web/client help, embedded attribution/version/license content | Existing status client is only partial; operating guidance/baseline help inventory and owning CR remain unresolved |
+| FR-018 | Validated upload, station authority, profile-owned recording source | #6 formats, error contract and first workflow; feeds shared receive input without live device |
+| FR-019 | Viewer browser and web adapter to station service | Accepted status interface only; #5-#11 introduce planned operator workflows |
+| FR-020 | MCP attachment and adapter to same station service | #12 tools, authorization/automation policy and station selection |
+| FR-021 | Physical viewer/controller carrier with station-scoped attachments | Accepted status protocol/budget only; #5/#6 extend routing, resync and workload measurements |
+| FR-022 | Variable controller-hosted processes, one selected profile/backend each | #5 isolation, exclusive storage ownership and explicit endpoints; four is a reference workload |
+| FR-023 | Exclusive optional native backend behind the same audio/control boundaries | #13 Phase 2 session/resource reconciliation and cross-process coordination; no hardware capacity assumption |
