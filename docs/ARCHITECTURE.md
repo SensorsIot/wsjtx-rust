@@ -29,8 +29,10 @@ flowchart LR
     RX["Receive pipeline and modem functions"]
     TX["Transmit scheduler and halt"]
     QSO["QSO sequencing and logging"]
-    IO["Audio / radio adapter boundary"]
-    Standard["Standard audio + optional CAT/PTT"]
+    Audio["Audio interface: samples and device timing"]
+    Control["Radio-control interface: CAT / PTT and status"]
+    Devices["Standard audio devices"]
+    CAT["Rust CAT / PTT drivers for selected radios"]
     Flex["Optional native FlexRadio backend — Phase 2"]
     Browser <--> Web
     MCP <--> MA
@@ -40,10 +42,14 @@ flowchart LR
     Station <--> RX
     Station <--> TX
     Station <--> QSO
-    RX <--> IO
-    TX <--> IO
-    IO <--> Standard
-    IO <--> Flex
+    Station <--> Control
+    RX <--> Audio
+    TX <--> Audio
+    TX <--> Control
+    Audio <--> Devices
+    Control <--> CAT
+    Audio <--> Flex
+    Control <--> Flex
 ```
 
 The boxes show responsibilities within the station system, not a network hop for each
@@ -57,10 +63,10 @@ arrow. Optional coordination of a shared physical radio is described in section 
 | Station service | Authoritative station state, validated operations, active jobs, state transitions and operation authorization | HTTP/MCP parsing or device-specific protocol syntax | #5 |
 | Web adapter | Embedded client, HTTP/file transfer and versioned WebSocket messages; transport authentication and Origin checks | A second QSO/modem engine or direct radio writes | #5–#6 |
 | Browser client | Presentation, local display filtering, waterfall color/rendering, pending/stale state and operator requests | Authoritative radio state, timing-critical modulation or transmit authority | #5–#6 |
-| Audio sources and sinks | Validated recording input, live-device capture/playback, sample metadata and device errors | Mode decoding or QSO decisions | #6, #8 |
+| Audio interface, sources and sinks | Validated recording input, live-device capture/playback, sample metadata and device errors | CAT commands, PTT commands, mode decoding or QSO decisions | #6, #8 |
 | Receive pipeline/spectrum | Sample-window handling, mode-specific normalization/resampling, bounded receive jobs and spectrum products | File dialogs, HTTP, CAT or UI rendering | #6–#7 |
 | Mode functions | Protocol-specific message/symbol/waveform and decode calculations with independent vectors | Filesystem, hardware, network or wall-clock dependencies | #7, #9, #11 |
-| Radio backend | Selected radio capabilities, authoritative status, control and resource claims | Browser/MCP policy or duplicated modem logic | #8, #13 |
+| Radio-control interface and drivers | Selected radio capabilities, CAT/control operations, PTT mechanism, authoritative status and control-resource claims | Audio samples, sound-device operation, browser/MCP policy or duplicated modem logic | #8, #13 |
 | Timing/transmit service | UTC mapping, scheduling, transmit state, audio/PTT coordination and priority halt | Dependence on browser timers or queued visualization work | #9 |
 | QSO/logging | Exchange state, completion/cancellation and durable contact records | Bypassing transmit authority or another profile's storage | #10–#11 |
 | MCP adapter/automation policy | MCP validation/authorization context and configured station-selection/automation requests | Independent station state, direct backend access or separate transmit permissions | #12 |
@@ -70,7 +76,7 @@ and device/storage adapters. Pure mode processing does not depend on these outer
 Browser and MCP requests cross the same station-side validation and authority boundary.
 
 These are logical boundaries. Proposed Rust areas are profile, station, audio, receive,
-modem, radio, transmit, qso, logging and api; names and file splitting follow the actual
+modem, radio_control, transmit, qso, logging and api; names and file splitting follow the actual
 responsibilities when implemented. Empty modules and speculative public APIs are not
 part of this design.
 
@@ -161,12 +167,58 @@ Specific executors and acceleration libraries are chosen after workload measurem
 A correct CPU path remains required; GPU/SIMD backends implement the same processing
 contract and must pass the same independent vectors.
 
-## 5. Standard and native radio connections
+## 5. Independent audio and radio-control interfaces
 
-The standard path combines the selected audio device with optional CAT/PTT control.
-It is usable without FlexRadio hardware. The optional Phase 2 native FlexRadio backend
-supplies the same station-facing sample/control capabilities using the radio API,
-without external SmartSDR desktop/CAT/DAX bridges.
+### Audio and control separation
+
+The standard path has two independently configured and tested interfaces:
+
+- **Audio:** input/output device and channel selection, sample movement, rate/timing
+  metadata, buffering and device failure. It does not send CAT or PTT commands.
+- **Radio control:** radio model/protocol selection, serial/network control transport,
+  required frequency/mode/status operations and the selected PTT/split/VFO capabilities.
+  It does not capture, generate or play audio samples.
+
+The profile stores audio settings separately from radio-control/PTT settings. A valid
+audio setup can be used with CAT disabled and manual tuning. A control connection can
+report status or tune an approved radio without opening an audio device. Separate
+capabilities and unavailable/error states prevent one working interface from implying
+that the other is ready. A shared USB cable or network connection does not merge their
+application responsibilities.
+
+The transmit service coordinates both interfaces: obtain authority, prepare the selected
+audio route and radio/PTT state, schedule output, and handle completion/halt/failure.
+Audio failure must still leave the control-side halt/release path usable; control failure
+must not produce a fabricated radio-ready state. Any supported VOX behavior is an explicit
+transmit policy, not a hidden CAT dependency in the audio module.
+
+### Scope of the Rust Hamlib replacement
+
+The selected [WSJT-X beta build](https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/CMakeLists.txt)
+links Hamlib. [Hamlib](https://github.com/Hamlib/Hamlib/wiki) provides a common radio-control
+API; WSJT-X documents [Radio and Audio](https://wsjtx.github.io/wsjtx/guide-full.html)
+as separate configurations. These sources describe the reference responsibilities,
+not source code to translate into this project.
+
+Our radio_control module implements in Rust only the control behavior needed by this
+program and its selected supported radios. #8 defines the first radio/protocol support
+matrix and required operations; #9 adds the transmit-control behavior it actually needs.
+Support grows when a functional requirement needs it. The target requires neither a
+complete Hamlib port, its full radio/device catalogue, unrelated utilities nor compatibility
+with its C API/ABI. The new module uses our station-facing contract and independent
+protocol documentation/fixtures; no mandatory Hamlib library is part of this design.
+
+Unsupported radio functions are explicit capabilities/errors. Optional interoperability
+with an external control service, if selected in a later requirement, is another control
+driver and does not couple audio to that service.
+
+### Optional native FlexRadio implementations
+
+The standard path is usable without FlexRadio hardware. Phase 2 implements the same
+separate audio and radio-control interfaces through the native FlexRadio API without
+external SmartSDR desktop/CAT/DAX bridges. The implementations may share a managed native
+session and resource coordinator; they do not require a separate radio connection for
+each interface and do not combine sample handling with control commands.
 
 Station identity, a radio's physical identity, a slice association and a transient API
 handle are different concepts. Persist intent; resolve current handles on connection.
@@ -221,7 +273,7 @@ architecture orientation; the linked GitHub issues remain the work/acceptance ba
 | [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5) | Bootstrap/profile, station context, visible identity, session isolation | Existing status foundation #3 | Independent profiles and windows at 1, 4 and a larger count; persistence and shared-browser isolation |
 | [#6](https://github.com/SensorsIot/wsjtx-rust/issues/6) | Recording source, receive jobs, spectrum products, web transfer/display | #5 context/storage boundary | Actual recorded input through server and browser; analytical spectrum fixtures and bounded link behavior |
 | [#7](https://github.com/SensorsIot/wsjtx-rust/issues/7) | Pure FT4/FT8 processing and receive-result contract | #6 sample/job contract | Independent mode-specific recordings/vectors and measured quality/runtime |
-| [#8](https://github.com/SensorsIot/wsjtx-rust/issues/8) | Standard live audio and radio adapters | #5 context and #7 receive pipeline | The offline-validated pipeline processes live input; hardware failures remain visible |
+| [#8](https://github.com/SensorsIot/wsjtx-rust/issues/8) | Independent standard audio and Rust radio-control interfaces/drivers | #5 context and #7 receive pipeline | Offline-validated live input, CAT-disabled audio, audio-independent control and separate failure states |
 | [#9](https://github.com/SensorsIot/wsjtx-rust/issues/9) | FT8 encoder, UTC scheduling, transmit authority/halt | #8 adapter contracts | Independent waveforms, deterministic scheduling, halt/failure fixtures and consented hardware verification |
 | [#10](https://github.com/SensorsIot/wsjtx-rust/issues/10) | QSO state owner and contact storage | #9 | Complete FT8 exchange, cancellation and exactly-once logging |
 | [#11](https://github.com/SensorsIot/wsjtx-rust/issues/11) | FT4 encode/timing and mode-specific workflow rules | #7 FT4 decoder and #10 common workflow | Complete FT4 workflow plus FT8 regression cases; shared UI/device/logging services |
@@ -246,7 +298,7 @@ The current source has a status-only Axum/Tokio server in
 The planned modules and contracts above are introduced by their owning CRs.
 
 Concrete profile schema and session names (#5), audio formats/sample representation and
-display encoding (#6), decoder variants/quality budgets (#7), audio/CAT backend matrix
+display encoding (#6), decoder variants/quality budgets (#7), independent audio/control support matrices
 (#8), transmit ownership/deadlines (#9), QSO/log format (#10), MCP tools/policy (#12) and
 native FlexRadio coordination/capabilities (#13) are preparation gates. Their named
 owners prevent two implementations from silently selecting incompatible contracts.

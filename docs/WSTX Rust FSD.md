@@ -279,6 +279,32 @@ and runtime budgets MUST be settled before implementation. Each mode needs indep
 established expected results and licensed, traceable recordings; FT8 fixtures do not
 establish FT4 correctness. This is a planned milestone, not an implemented decoder.
 
+### 4.5 Separate audio and radio-control functions — target FR-002/FR-009
+
+Audio and radio control MUST be separate, independently selectable interfaces with
+independent settings, capabilities, availability and errors. Audio capture/playback MUST
+remain usable with CAT disabled and manual tuning; supported radio status/control MUST
+be usable without opening an audio device. The transmit service coordinates the selected
+audio route and PTT mechanism under FR-008 rather than hiding control operations in audio.
+
+The Rust radio-control module MUST implement only the Hamlib-like behavior actually
+required by this program for its selected supported radios. The initial support matrix,
+protocols and operation subset are settled in #8 and extended by actual later requirements.
+This requirement does not call for Hamlib's full API/ABI, device catalogue or utilities.
+Detailed component responsibilities and reference sources are canonical in
+[the architecture](ARCHITECTURE.md#5-independent-audio-and-radio-control-interfaces).
+
+Optional native FlexRadio support supplies the same two interfaces; shared physical
+transport/session management does not merge their sample and control responsibilities.
+
+#### Planned interface-independence tests
+
+| Test | Promises | Inputs/actions | Expected result/oracle | Level / where it runs |
+|---|---|---|---|---|
+| TC-002-003 — Audio without CAT | FR-002, FR-009 | Feed known receive samples through a device fixture with CAT disabled; inject audio-device loss. | The receive pipeline accepts the known samples without control traffic; audio availability/failure is explicit. | 2 — Isolated automated tests; Windows PC, real candidate pipeline and independent device/control fixtures. |
+| TC-009-003 — Control without audio | FR-002, FR-009 | Connect an independent CAT protocol fixture with audio closed/unavailable; exercise only selected supported queries/settings. | Expected control exchanges/status succeed without opening audio; unsupported functions and timeouts follow the defined capability/error contract. | 2 — Isolated automated tests; Windows PC, Rust control module and protocol emulator. |
+| TC-009-004 — Independent failure and coordination | FR-002, FR-008, FR-009 | Lose each interface separately; observe the other; use simulated active transmission and halt. | Separate availability is preserved, failed control is never shown ready, and transmit failure/halt releases through the configured control path according to the agreed policy. No real RF transmission. | 2 — Isolated automated tests; Windows PC, independent audio and radio-control emulators. |
+
 ## 5. Proposed quality and compatibility requirements
 
 - **On-air compatibility:** Preserve the protocol definitions and interoperability of the selected upstream baseline. A language rewrite must not silently change message encoding or waveform conventions.
