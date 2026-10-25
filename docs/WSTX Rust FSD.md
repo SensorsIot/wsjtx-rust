@@ -611,13 +611,20 @@ Browser retains at most 120 rows of 128 values; replacing the source/job clears 
 
 **Detailed display definition.** Detailed is a fast-link profile with 1,024 native
 frequency bins, not a sharpened/resampled Thin image. For 12 kHz input use N=4096,
-hop256, periodic Hann with denominator4096 and the same DFT sign, amplitude/DC rule,
+hop480 (40ms), periodic Hann with denominator4096 and the same DFT sign, amplitude/DC rule,
 dBFS floor/clipping and integer quantization as Thin with N substituted throughout.
 Expose k=0..1023 at center frequency k*2.9296875 Hz, covering [0,3000) Hz without
 frequency pooling. The displayed bin's frequency cell is [k*2.9296875,(k+1)*2.9296875)
 Hz; this is display geometry, not a claim that the Hann response has rectangular support.
-A row j covers source frames [2400*j,min(2400*(j+1),source_frames)); take per-bin
-maximum amplitude of windows whose start (0,256,...) is in this interval, then quantize.
+A row j covers source frames [2400*j,min(2400*(j+1),source_frames)); use global
+window starts0,480,... strictly before EOS. Every nonempty row includes its start2400*j,
+so a full row has exactly five windows and a partial final row has one through five.
+For each bin k, let A[m,k] be each window's calibrated peak-amplitude estimate above;
+compute P[k]=sum(A[m,k]^2)/M over the M actual window starts in this row, then
+L[k]=clamp(10*log10(max(P[k],1e-12)),-120,0) and q=floor(L[k]+120+0.5).
+There is no frequency pooling, logarithmic averaging or maximum hold in Detailed.
+For source_frames2401, row1=[2400,2401) includes only start2400: the lone sample
+multiplies Hann w[0]=0 and the row is legitimately silence, not missing/fabricated data.
 Right-pad partial windows at EOS; window support is 4096/12000 seconds, can cross row
 boundaries and MUST be stated in the legend alongside 2.9296875 Hz bins and 0.2 s rows.
 The spectrum shows the latest row's levels. Row sequence starts0 and advances even
@@ -628,9 +635,14 @@ One replay/source reader and one existing station-owned worker produce both prof
 concurrently; selecting Detailed never starts another job or reparses/reloads the file.
 Reuse RustFFT6.4.1 with one plan/buffer/scratch per needed size, the existing sample
 parser/immutable boundary, identities and cancellation checks. Keep at most two source
-blocks plus one rolling4096-sample window, the two bounded FFT workspaces, per-profile
-peak accumulators and one latest immutable frame per profile in station state. No
-subscriber-specific FFT or unbounded queue. Starting/replacing/cancelling clears both
+blocks plus at most8192 f32 samples in a common bounded history, the two bounded FFT
+workspaces (2048 and4096 complex elements plus their plan-reported scratch), per-profile
+row accumulators (128 maxima for Thin,1024 power sums and a window count for Detailed) and one latest immutable frame per profile in station state. No
+subscriber-specific FFT or unbounded queue. Process the two independent start schedules
+against this same forward-only SourceFile reader. Release common history before the
+minimum next needed start; read only when space remains and retain lookahead only for
+those windows. Pad outside EOS without increasing actual source positions/progress;
+no second source file/parser, whole-recording float array or additional sample backlog. Starting/replacing/cancelling clears both
 latest frames; publication checks the existing complete current job tuple. Browser keeps
 at most600 Detailed rows (120s, 614400 level bytes), or120 Thin rows (15360 level bytes),
 including explicit gap slots, and one pending repaint. These are application retention
@@ -650,14 +662,63 @@ reachable controls and no page overflow. A pointer/focusable readout exposes sel
 bin index, center Hz, q-120 dBFS and row source interval; keyboard Left/Right moves one
 bin and Up/Down one retained row, clamped to available data. Gaps report no measurement.
 
-Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the bottom.
-Draw the most recent rows that fit, bottom-aligned; unused space is background. Older
+Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the top.
+Draw the most recent rows that fit, newest first and top-aligned; unused space below
+is background. Each arrival shifts older rows downward by exactly one row cell. Older
 retained rows can be selected by the keyboard readout without stretching the canvas.
 Missing sequences occupy the same height in grey. Resize/splitter drag/zoom repaints
 from retained values with these same edges and fixed height; receiving the first or
 second row MUST NOT stretch them to fill the pane. Label the visible source-time range,
-frequency units, profile and measured dBFS; selected readout remains accessible without
-hover. Profile changes clear browser history and discard frames of the previous profile.
+frequency units, profile and calibrated bin dBFS; selected readout remains accessible
+without hover. Profile changes clear browser history and discard frames of the previous
+profile. Place spectrum above the shared frequency ruler and waterfall. Frequency ruler
+has labeled major ticks every500Hz and minor ticks every100Hz, positioned by f/3000*W;
+0 and3000Hz delimit the displayed span, not an extra bin. A separate visible time ruler
+beside the waterfall labels the newest row's source start and then every5s of source
+time in the visible range, at the corresponding row top; omit colliding labels closer
+than16CSSpx. Label elapsed source seconds; neither synthetic UTC nor RF frequency/dBm.
+Only visible rows determine the displayed time range, not all retained history.
+
+**Display levels and palette.** The display is a local presentation of calibrated
+levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
+and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
+and Auto black controls in the station page; no server persistence/new WS commands.
+Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
+until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
+nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
+down to -R if necessary. The displayed mapping span is exactly[B,B+R] and the legend
+shows both ends in dBFS. Spectrum vertical positions and color mapping use this same
+span, clipping only presentation; original q-120 stays available in every bin readout.
+
+Auto black defaults on after each new source/job or display profile change, resetting
+R=30 and B=-120. Sort a valid row's Bins quantized values and take the lower median
+qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
+floor); continue waiting instead of locking a false noise floor. On the first accepted
+row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
+manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
+turns Auto off. Turning Auto on clears its frozen estimate and derives it from the latest
+qualifying retained row, or waits for the next one if none exists. Repaint all retained
+rows when presentation controls change; samples/wire data never change or restart.
+
+For an original quantized level q, t=clamp(((q-120)-B)/R,0,1). Map t to this project's
+own RGB anchors, interpolating each channel linearly between adjacent anchors and
+rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
+.50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,255,255).
+Gaps are RGB(96,96,96); unused canvas is RGB(0,0,12). This continuous level-to-color
+mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
+color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
+outside waterfall measured cell interiors. A narrow labeled color legend displays the
+current mapping. No flattening, palette editor, gain normalization or new framework.
+
+Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
+bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)
+describes noise-floor black level and display range. These inform the operator's visual
+expectation, not numerical conformance or copied assets/code. The exact formulas,
+geometry and original palette above are authoritative for this implementation. A real
+busy FT8 recording MUST show multiple recognizable narrow time-varying transmissions
+against a dark noise floor with distinguishable brighter signals, reviewed at desktop
+and360px alongside these reference images; analytical tones alone do not meet visual
+acceptance. Readout remains calibrated dBFS rather than implying receiver RF power.
 
 **Integrated UI.** One browser window/page per station. Spectrum and waterfall
 occupy the upper pane; profile/status/import/replay/controls and future decoded messages
@@ -1267,8 +1328,8 @@ IDs from #6 are preserved.
 | TC-010-001 | CL-006-03 | Independently synthesize silence, DC, coherent tones at 750/1500/2250 Hz at amplitudes 0.5/0.25, two simultaneous tones, a noncoherent tone, clipped input and a burst with specified source-frame start/end. Compute selected windows using a direct DFT test oracle; replay through real browser. | Direct DFT uses published formula without candidate FFT/provider helpers; peak group equals floor(k/4) for coherent bins and row interval follows window-start rule. Half-amplitude change is -6.0206 dB within 0.05 dB prequantization; quantized levels add <=0.5 dB. Silence equals floor; DC uses one-sided exception. Require normal and portable scalar FFT paths against the same direct DFT oracle, then compare full selected rows, axes/legend/row gaps in DOM/canvas sampling and source metadata, not screenshot resemblance alone. |
 | TC-010-002 | CL-006-03, CL-006-04 | Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing. | Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. |
 | TC-010-003 | CL-006-03 | Real browser at 1100x850 and 360x640: import actual recording, verify one station page, drag divider beyond both extremes, use keyboard/touch/zoom and resize during replay. Repeat four independent station windows. | Measured pane bounds meet 160/200 px minima, separator is 12 px and accessible, keyboard steps16px/Home/End clamp, small-height page scrolls, no horizontal page overflow, controls and axes remain reachable. Pointer/keyboard actions change only that station's pane, no second waterfall window appears and data/source identity survives resize. Browser assertions plus desktop/narrow screenshots verify actual layout. |
-| TC-010-004 | CL-006-03, CL-006-04 | Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames2304/2400/2560 with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected peak-held rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement. | Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB above -100dBFS; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses exact window-start membership, not assumed10 hops/row; intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, two latest frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. |
-| TC-010-005 | CL-006-03, CL-006-04 | Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; retain actual recording desktop/mobile screenshots. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off. | Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed row height from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, with grey gaps and background above early rows; no blended colors. Bin count/scroll width, native readout centers/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses same crisp geometry with128 bins. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. |
+| TC-010-004 | CL-006-03, CL-006-04 | Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames1920/2400/2880 and sources of1/2399/2400/2401/2879/2880/2881 frames with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected power-averaged rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement. | Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, two latest frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. |
+| TC-010-005 | CL-006-03, CL-006-04 | Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off. | Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed row height from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and background below early rows; no blended spatial colors. New rows enter at top and history shifts down; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Bin count/scroll width, native readout centers/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses same crisp geometry with128 bins. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. |
 
 ### 6.5 Documentation-tool checks
 
