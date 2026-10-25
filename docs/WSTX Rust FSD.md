@@ -154,7 +154,7 @@ the other functional areas retain their proposed scope until settled.
 | FR-006 | Time and sequencing | Schedule receive and transmit periods against UTC and apply each mode's timing rules. Surface clock or device problems that prevent reliable operation. |
 | FR-007 | QSO operation | Support the baseline workflows for choosing a decoded station, preparing messages, progressing an exchange, and completing or aborting a contact. |
 | FR-008 | Transmit control | Provide clear transmit state and an immediate halt action; handle PTT, radio errors, and device loss without leaving transmit active unintentionally. |
-| FR-009 | Radio control | Support baseline radio-control capabilities, including frequency, mode, PTT, split operation, and supported device interfaces. The hardware support matrix is to be inventoried. |
+| FR-009 | Radio control | Support baseline radio-control capabilities, including frequency, mode, PTT, split operation, and supported device interfaces. The hardware support matrix is to be inventoried. The first hardware end-to-end test target is an Icom IC-7300 on a different PC; #8 must settle its setup and acceptance contract before the test. |
 | FR-010 | Displays | Provide spectrum, waterfall, decode, frequency, and operating-state views sufficient to carry out the baseline workflows. Pixel-identical UI reproduction is not yet a requirement. |
 | FR-011 | Logging | Record completed contacts and support the baseline log formats, import/export paths, and duplicate or prior-contact indications where applicable. |
 | FR-012 | Integrations | Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. |
@@ -468,6 +468,14 @@ Detailed component responsibilities and reference sources are canonical in
 
 Optional native FlexRadio support supplies the same two interfaces; shared physical
 transport/session management does not merge their sample and control responsibilities.
+
+The selected first hardware end-to-end target above belongs to #8's planned
+TC-009-002 controlled live receive/CAT test; transmit testing follows separately in #9.
+Preparation in #8 must settle the exact radio/firmware, station PC and operating system,
+audio devices, independent audio/control transports, browser placement, test steps and
+measurable acceptance criteria. No USB connection or browser host is assumed. Target
+selection establishes neither test readiness nor a passing result; live execution still
+requires operator consent.
 
 #### Planned interface-independence tests
 
