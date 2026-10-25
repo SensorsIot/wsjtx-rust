@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 85fd41fa3c86f76137342d0fe4d72f0adf6a30a21401c4118d30e48e383f3c02
+// Canonical recorded receive contract SHA256: 8bbbb297e06fedde8e6d23fdea2322019ffb249da2823fcc15695bebb726ff4b
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -12,7 +12,7 @@ package WstxRecordingReceive {
     enum def ImportState { enum reserved; enum receiving; enum validating; enum committing; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def DisplayProfile { enum off; enum thin; enum detail; }
-    enum def ReceiveKind { enum spectrum; }
+    enum def ReceiveKind { enum spectrum; enum decode; }
     enum def ErrorCode {
         enum forbidden_origin; enum unauthorized; enum unsupported_media_type;
         enum request_too_large; enum invalid_request; enum unsupported_version;
@@ -21,6 +21,7 @@ package WstxRecordingReceive {
         enum recording_limit; enum storage_unavailable; enum upload_timeout;
         enum cancelled; enum no_recording; enum generation_exhausted;
         enum recording_unavailable; enum unavailable;
+        enum invalid_samples; enum decode_limit; enum decode_failed;
     }
     attribute def Limits {
         attribute rateHz : Integer = 12000;
@@ -170,15 +171,15 @@ package WstxRecordingReceive {
     item def ReceiveJob :> WstxArchitecture::ProcessingRequest {
         attribute schema_version : Integer = 1;
         attribute correlation : Correlation;
-        attribute kind : ReceiveKind = ReceiveKind::spectrum;
+        attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
         attribute processed_frames : Integer;
         attribute error : ErrorCode[0..1];
         attribute cancelRequested : Boolean;
         assert constraint progress { processed_frames >= 0 and processed_frames <= 1440000 }
-        doc /* Immutable spectrum settings below. One import OR replay,oneworker,no
-             pendingjobs;no CPU/file work holding state/profile-settings lock. #7 adds
-             approved mode settings with separate decode pacing/history budgets. New
+        doc /* Shared receive lifecycle: spectrum kind/settings below; target decode kind
+             and immutable mode in StationDecode.sysml. One import OR spectrum OR decode,
+             one worker/no pendingjobs; no CPU/file work holding state/profile lock. New
              generation on import/replay,refuse ceiling not wrap. Cancellation invalidates
              publication before ack;terminal progress remains until nextjob. No TX scope. */
     }
@@ -186,7 +187,7 @@ package WstxRecordingReceive {
         attribute id : String;
         attribute source_id : String;
         attribute generation : Integer;
-        attribute kind : ReceiveKind = ReceiveKind::spectrum;
+        attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
         attribute processed_frames : Integer;
         attribute error : ErrorCode[0..1];
