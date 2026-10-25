@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 77890d0530bc12f65a79cbae6a9e0b58666098bb22ae2d79113bf978df21dd5b
+// Canonical recorded receive contract SHA256: 22d40b7d59a008d12b040c957b31153ecb508cfaae20e93adee7de292d4c77d2
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Independent
@@ -327,7 +327,13 @@ package WstxRecordingReceive {
              `cancelled`, `failed`; terminal progress remains in the snapshot until another job starts.
              Starting an import or replay allocates a fresh station generation; starting replay also
              allocates a fresh job UUID. Cancellation invalidates publication before returning its
-             acknowledgement; terminal transition follows worker release. Do not reuse a generation
+             acknowledgement; every receive terminal transition follows worker release. For a
+             current running job with no accepted cancellation, a processing failure remains
+             nonterminal while the worker is held, then transitions to failed after release;
+             it cannot become completed even if source EOS/completion is also observed. Completion
+             requires source completion, worker release and absence of processing failure. These
+             rules preserve the existing serialized cancellation/state ownership, rather than adding
+             another cancellation priority policy. Do not reuse a generation
              on wrap; refuse new work with `generation_exhausted`. Every publication matches current
              profile/boot/source/job/generation. A prior job's completion/frames cannot replace the
              current snapshot. Source UUID is the persistent recording UUID, not a replay identity.
@@ -483,8 +489,8 @@ package WstxRecordingReceive {
         state running; state cancelling; state completed; state cancelled; state failed;
         transition cancel first running if cancelAccepted then cancelling;
         transition release first cancelling if workerReleased then cancelled;
-        transition complete first running if sourceComplete and workerReleased and not cancelAccepted then completed;
-        transition fail first running if processingFailed then failed;
+        transition complete first running if sourceComplete and workerReleased and not processingFailed and not cancelAccepted then completed;
+        transition fail first running if processingFailed and workerReleased then failed;
     }
     action importRecording : ImportRecording;
     action cancelImport : CancelImport;
@@ -529,8 +535,8 @@ package WstxRecordingReceive {
         verification receiveIsolation {
             subject operation : CancelReceive;
             objective { verify WstxRequirements::'CL-006-02'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; run maximum source and four processes. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors.
-                 Independent expected oracle: Exactly one serialized start wins; errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
+            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors.
+                 Independent expected oracle: Exactly one serialized start wins; errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
         }
         dependency tracereceiveIsolation from receiveIsolation to WstxRequirements::'TC-018-003';
         verification calibratedDisplay {
