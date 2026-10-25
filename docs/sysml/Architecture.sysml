@@ -1,8 +1,11 @@
-// Canonical architecture SHA256: 3a3b26077d144257054075089ed408811b6b18272fd85c5afb46f78e893c6c7c
+// Canonical architecture SHA256: 77890d0530bc12f65a79cbae6a9e0b58666098bb22ae2d79113bf978df21dd5b
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
-         Items are semantic responsibilities, not wire schemas or Rust API definitions. */
+         Items are semantic responsibilities, not wire schemas or Rust API definitions.
+         CR #6 concrete data/state/HTTP/display/oracles refine existing usages in
+         WstxRecordingReceive (RecordingReceive.sysml), FSD4.4/6.4/12.6. Independent
+         implementation readiness review remains pending; no feature execution claimed. */
 
     doc /* Approved CR #5 profile behavior/data/state/HTTP/session implementation
          contract is WstxProfiles in Profiles.sysml. It refines the existing station
@@ -40,7 +43,8 @@ package WstxArchitecture {
              #6 recorded and #8 live producers feed the existing receive path. Element
              type/units, rate, frame clock, optional UTC, discontinuity, buffer owner,
              lifetime, bounds, version and backpressure must be settled before code.
-             No concrete schema or numeric limit is approved here. */
+             Concrete version1 recorded samples and spectrum-path bounds are defined by
+             WstxRecordingReceive::SampleBlock and FSD4.4; #8 live details remain gated. */
     }
     item def AudioOutcome;
     item def ControlRequest { ref part resourceContext : RadioBinding; }
@@ -48,14 +52,15 @@ package WstxArchitecture {
     item def ProcessingRequest {
         doc /* FSD 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
              source, job and generation correlate immutable settings and results;
-             concrete types, versions, lifetimes, queues and cancellation remain gates.
+             concrete recorded spectrum types/lifetimes/bounds/cancellation are defined
+             in RecordingReceive.sysml; #7 mode settings remain separately gated.
              Receive jobs do not own transmit lifecycle or independent halt. */
     }
     item def ProcessingResult {
         doc /* FSD 11.3: #7 owns mode-specific decoded payload/units/oracles and required
              result delivery/retention; #6 owns spectrum frame units/identity/bounds and
-             replaceable display delivery. Concrete typed/versioned schemas and storage
-             lifetimes remain preparation gates, not implemented capabilities. */
+             replaceable display delivery. Concrete spectrum schema/lifetimes are WstxRecordingReceive::SpectrumFrame;
+             #7 decode result payload/retention remain preparation gates. */
     }
     item def EncodeRequest;
     item def Waveform;
@@ -228,7 +233,9 @@ package WstxArchitecture {
              or modem normalization. No source-specific modem resamplers. #6/#7 settle
              one shared FFT provider, ordering/scaling, buffer policy and independent
              oracles before either writes FFT code; no speculative wrapper is required.
-             Concrete contracts/limits and library selection remain unapproved gates. */
+             FSD4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
+             first recorded spectrum contract; independent readiness review is pending.
+             #7 modem sizes/history and #8 live adapter contracts remain separate gates. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
         port processing : ReceiveProcessing;
