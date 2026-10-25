@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "diagrams": [],
+  "preferences": [
+    {
+      "focus": {
+        "file": "Architecture.sysml",
+        "qualified": "WstxArchitecture",
+        "kind": "package"
+      },
+      "view": "source"
+    },
+    {
+      "focus": {
+        "file": "PhysicalArchitecture.sysml",
+        "qualified": "physicalArchitecture",
+        "kind": "view"
+      },
+      "view": "interconnection"
+    }
+  ]
+}
