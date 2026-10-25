@@ -445,10 +445,10 @@ mode-appropriate measurements. It MUST run without a physical radio, audio devic
 real-time reception schedule. Both modes use the common receive pipeline and browser
 presentation, with their own protocol-specific processing and acceptance vectors.
 
-Supported recording formats, message variants, numerical tolerances, decoder-quality
-and runtime budgets MUST be settled before implementation. Each mode needs independently
-established expected results and licensed, traceable recordings; FT8 fixtures do not
-establish FT4 correctness. This is a planned milestone, not an implemented decoder.
+The recorded input capability below and the CR #7 contract in this section define the
+formats, message variants, numerical tolerances and budgets. Both modes require
+independent expected results and traceable recordings; FT8 fixtures do not establish
+FT4 correctness. The decoder remains a target, not an implemented capability.
 
 #### CR #6 recorded-input and display contract
 
@@ -534,8 +534,8 @@ retained windows/storage, ownership and cancellation before decode implementatio
 are contiguous for recordings, starting at zero; discontinuity is false. A future live
 producer declares its gaps explicitly and must settle its own bounded loss policy before
 implementation. Integer-to-real unit conversion is not AGC or modem normalization.
-The shared receive pipeline owns any later #7 rate conversion/preprocessing; pure modem
-functions have no WAV/device knowledge. An incompatible sample semantic change requires
+The shared receive pipeline owns preprocessing; #8 owns its single common native-rate
+conversion stage. Pure #7 modem functions consume canonical12kHz and have no WAV/device knowledge. An incompatible sample semantic change requires
 a new contract version and coordinated producer/consumer review, not reinterpretation.
 
 **Receive lifecycle.** One active import OR replay per station, one CPU worker,
@@ -789,6 +789,190 @@ when needed. Initial split is 50% of available height clamped to minima. Recompu
 on viewport changes; no server persistence of pane size. Verify 1100x850 and 360x640,
 keyboard-only use, touch input, 200% zoom and literal rendering of source/status text.
 No horizontal page overflow; axis labels and primary controls remain reachable.
+
+#### CR #7 offline decode contract — target, not implemented
+
+| Clause | Requirements | Promise | Verification |
+|---|---|---|---|
+| CL-007-01 | FR-003, FR-004, FR-018 | Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz recorded source through the existing receive-job authority without a radio or audio device. | TC-004-001; TC-004-002; TC-004-003 |
+| CL-007-02 | FR-003, FR-004, FR-019 | The common browser MUST show exact supported payload fields, unresolved hash identities, source-relative time, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. | TC-004-001; TC-004-002; TC-004-003 |
+| CL-007-03 | FR-003, FR-004, FR-018 | Each mode MUST satisfy independent payload/channel/waveform oracles; reference decoder output alone MUST NOT define exhaustive truth or make a hash reversible. | TC-004-001; TC-004-002; TC-004-003 |
+| CL-007-04 | FR-003, FR-004, FR-019, FR-021 | CPU-only decoding MUST meet the per-mode quality, rejection, runtime, memory, repeatability, cancellation and link budgets below, with explicit bounded-work failure. | TC-004-001; TC-004-002; TC-004-003 |
+
+**Protocol and supported payloads.** The normal 77-bit FT4/FT8 formats use the
+[QEX protocol definition](https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf), sections 2–5,
+Appendix A and its published data-only generator/parity/section/state tables. Current
+source-field boundaries are pinned to the independently observed WSJT-X 3.3.0-beta4
+portable codec behavior recorded by `fixtures/decoder/reference-manifest.json`, with
+fixed protocol vectors from its pinned official tests. The beta4 baseline does not
+grant a promise to reproduce every permissive malformed-payload display or every
+specialized WSJT-X operating mode. This receive capability enables no transmission,
+AP/station-context guessing, unattended QSO, SuperFox waveform, experimental FT8var or
+legacy 2019 experimental FT4 protocol. All supported families below apply to both modes.
+
+| i3.n3 / i3 | Exact supported content |
+|---|---|
+| 0.0 | Up to 13 base-42 free-text characters; alphabet blank, digits, uppercase A–Z, `+-./?`; trailing padding trimmed, all-blank content invalid. |
+| 0.1 | DXpedition first call/RR73, second call, unresolved 10-bit hash and even report -30..+32. |
+| 0.3 / 0.4 | Field Day two calls, acknowledgement, 1..16 / 17..32 transmitters, class A..F and one-based section indices 1..84 in the published list including DX. Zero and values above 84 invalid. |
+| 0.5 | Exactly 71 telemetry bits, displayed as 18 uppercase hex digits with leading digit 0..7, including zero. |
+| 1 / 2 | Standard calls, CQ/DE/QRZ, CQ numeric 000..999 or 1..4-letter modifier, /R or /P flags respectively, acknowledgement, four-character grid, blank, report -50..+50, or RRR/RR73/73. |
+| 3 | RTTY optional TU;, two calls, acknowledgement, report 529..599 in steps of ten, serial 0..7999 or published state/province codes 8001..8065. Code 8000 and values above 8065 invalid. |
+| 4 | One full nonstandard call up to 11 base-38 characters, unresolved 12-bit hash, hash position, CQ flag and blank/RRR/RR73/73. |
+| 5 | Current extended VHF layout: 12-bit and 22-bit call hashes, acknowledgement, report 52..59, serial 0..2047 and six-character grid AA00AA..RR99XX. |
+
+Unassigned types, 0.2/0.7 and the separate WSPR packaging subtype 0.6 are `unsupported`,
+never ordinary messages. A parity/CRC-valid frame with invalid source fields is
+`invalid_payload`; CRC-invalid hypotheses never become result records. Keep the exact
+77 bits in supported, unsupported and invalid-payload records. Type fields are MSB-first
+in published order, with n3 before i3 for type 0. Type 1/2 widths are
+28,1,28,1,1,15,3; type 3 widths 1,28,28,1,3,13,3; type 4 widths
+12,58,1,2,1,3; current type 5 widths 12,22,1,3,11,25,3.
+
+Standard c28 uses DE=0, QRZ=1, CQ=2, numeric CQ=3..1002, alphabetic CQ=1003 plus
+base-27 modifier (no embedded/trailing blank), hash22=2063592+hash and standard
+mixed-radix call=6257896+call. Reserved holes are invalid. Standard call radices are
+37,36,10,27,27,27 with blank/digits/letters, digits/letters, digits and blank/letters
+alphabets; normalize the digit into position three. K1ABC=10214965,
+W9XYZ=12751800, and FN42=10342 in the mixed 18,18,10,10 grid map.
+Grid/report codes 0..32399 are grids; 32400 is reserved; 32401 blank; 32402 RRR;
+32403 RR73; 32404 73. Reports -50..-31 use 32400+r+35+101, and -30..+50 use
+32400+r+35. Codes above 32505 are invalid canonical source encodings, including
+aliases that a permissive reference decoder might display. No invalid structured
+payload falls back to free text. Hashes remain exact numeric identities with their bit
+width and display `<...>`; no configured call, prior job or other station supplies a
+guessed inverse. A full call decoded inside type 4 remains a concrete call. No hash
+cache crosses profile/source/job boundaries.
+
+**Channel oracles.** Append CRC14 to the 77-bit payload zero-extended to 82 bits,
+polynomial 0x6757, zero initial state, then published GF(2) parity to form 174 bits.
+For FT4, apply the published 77-bit XOR mask before CRC/FEC and reverse it only after
+validation. The independent fixture path uses polynomial division and a separate
+streaming recurrence, checks the published parity syndrome and fixes all tones before
+audio synthesis. Gray maps indexed by bit-group value are FT8 [0,1,3,2,5,6,4,7] and
+FT4 [0,1,3,2]. FT8 has 79 symbols, 1920 source frames each; FT4 has 105 including two
+ramp symbols, 576 frames each. Published Costas arrays, continuous phase, Gaussian
+BT=2/1 and raised-cosine ramp conventions are normative. Fixture generation is separately
+authored and never calls the production decoder/reconstruction kernel as its oracle.
+Fixed vectors carry source, exact fields/payload/CRC/codeword/tones, source-frame start,
+frequency, amplitude/noise/seed, generation parameters and WAV hash. Cross-math waveform
+comparison permits at most one PCM LSB; retained file identity uses its exact hash.
+
+**Ownership, scheduling and lifetime.** Consume the existing schema-1 finite mono-real
+12 kHz `SourceDescriptor`/immutable `SampleBlock` boundary and original-WAV capability.
+Reuse the profile-owned receive state, identity/generation, source reader, validation,
+auth/transport and RustFFT 6.4.1 dependency; no second file reader, FFT wrapper/provider,
+resampler, profile authority or job queue. #8 owns the single common conversion stage
+for native live formats; pure #7 modem functions consume canonical 12 kHz only. Native
+capture counters/UTC/converter delay remain a source timing sidecar. Decoder start_frame
+always indexes canonical samples; do not bridge explicit gaps or renumber segments.
+
+One import OR spectrum replay OR decode worker per station, no queued job. Decode runs
+as fast as bounded processing permits, without source-time pacing. Settings and selected
+mode are immutable per job; changing the browser selector affects only the next job.
+Workers copy active samples into <=360000-frame (30-second) history, holding at most
+two current source blocks and releasing their references after copying. Modem working
+allocations including history, FFT plans/scratch, candidates, recovery and subtraction
+MUST be <=64 MiB; private process-memory increase above idle <=96 MiB. At most 2048
+result records and 2 MiB encoded record content are retained. Exhaustion fails
+`decode_limit`, retaining clearly partial output; never silently drop results.
+
+Use 30-second analysis windows advancing 15 seconds, including all complete waveform
+supports and a final shorter window; no complete edge frame is skipped. Incomplete
+frames alone may complete with zero results, visibly identified. Base-frequency search
+is inclusive 200..3500 Hz, independently of the waterfall's 0..3000 Hz axis. Deduplicate
+same mode/payload within half a symbol of estimated start, retaining repeated messages
+in later transmissions. Results are ordered by publication sequence, not presumed UTC.
+Recording filenames never establish UTC; source-relative seconds are start_frame/12000.
+
+Decoder advances/checks cancellation in <=50 ms CPU quanta with bounded saved state.
+Shared receive work services pending conversion/spectrum between quanta; no extra
+worker substitutes for fairness. Existing cancellation invalidates publication before
+acknowledgement, releases the worker and becomes terminal within 250 ms on the four
+profile workload. Processing failure wins over EOS; terminal states require release.
+Browser closure does not cancel accepted work. Cancellation retains partial results;
+new job/source or restart clears them. Old boot/source/job/generation output cannot
+append. Restart does not persist results or fabricate replacement jobs.
+
+**Bounded processing design.** Use RustFFT planned and portable scalar paths with
+worker-owned checked buffers/scratch and CR6's transform convention. FT8 symbol FFT
+N=1920/hop480; FT4 N=576/hop144. Coarse starts advance N/4, frequencies
+200+j*(12000/N)/2 through 3500, using two shifted frequency grids. For K sync symbols
+and Q tones, sum expected-tone power A and other-tone power B; Costas score is
+(Q-1)*A/B, qualification >=2.7. A=B=0 rejects; B=0,A>0 outranks finite scores.
+FT8 sync indices are 0..6,36..42,72..78; FT4 1..4,34..37,67..70,100..103.
+Keep local maxima separated by half a symbol/half a tone, ties by descending score,
+ascending frequency/time. At most 256 candidates/window/pass; remaining qualified work
+sets `search_limited`, which fails required-corpus completeness acceptance.
+Refine times ±N/8 in N/16 steps and frequency ±spacing/4 in spacing/16 steps within
+source/search bounds, choosing the same score/tie order. No unbounded optimizer.
+
+Initial neighboring tones use maximum symbol power. Each target-tone hypothesis uses
+the published local GFSK template with those fixed neighbors and sine/cosine quadrature
+correlation over the symbol. Normalize squared magnitude by template energy and noise
+energy (positive floor 1e-20); log-sum-exp across Gray bit-zero hypotheses minus bit-one
+gives positive-for-zero LLR, clamped [-12,12] after calibration. Normalized matched
+energy divides by real noise variance PSD*12000/2 (floor1e-20); require mean absolute
+LLR>=1 and <=24 codeword disagreements with the channel hard decisions before
+publication, in addition to CRC/parity/source validation. At most two neighbor
+refinements use posterior hard decisions. FEC uses the published H, normalized min-sum
+alpha 0.8 and <=50 iterations. Success requires zero syndrome, correct CRC and valid
+fields; unsupported tags have their separate result classification. Recovery tests
+<=137 order-0/1/2 flips among 16 least-reliable independent information-basis bits after
+GF(2) reliability-ordered elimination, choosing lowest weighted channel cost among
+CRC-valid codewords. No AP semantic hints. Up to three subtraction passes and 32
+verified subtractions/window may fit reconstructed GFSK sine/cosine amplitudes by 2x2
+least squares and reanalyze a worker-owned residual. Original samples stay immutable.
+One pure reconstruction waveform kernel is owned by #7 and reused by #9 if needed;
+it grants no TX/device authority. This is a bounded independent design, not a claim of
+reference-algorithm equivalence or proof that quality targets have already passed.
+
+**Measurements.** Frequency is the lowest transmitted audio tone, not band center or
+RF frequency. Isolated synthetic error <=1 Hz FT8/<=3 Hz FT4; start error <=240 frames
+(20 ms) FT8/<=144 frames (12 ms) FT4. SNR uses steady fitted sine/cosine power
+(a²+b²)/2 with envelope inside the least-squares fit. Noise is pooled nonoverlapping
+one-symbol periodograms across the candidate support, excluding DC and accepted tone
+bands plus two tone spacings: single-sided PSD=2|X[k]|²/(12000*N), estimate median/ln2
+over >=128 eligible bins across >=eight windows. SNR2500=10log10(Psignal/(PSD*2500)).
+Insufficient bins, nonfinite fit, relative 2x2 determinant <=1e-12 or PSD <=1e-20 gives
+unavailable SNR; otherwise clamp [-60,60] and label clipped values as bounds. Require
+<=3 dB error for isolated noisy >=-15 dB FT8/>=-10 dB FT4 cases. No noiseless or
+crowded-band SNR accuracy is inferred from external decoder output or dBFS.
+
+**Quality and resource acceptance.** Per mode, noiseless fixed vectors cover every
+supported family and all variant boundaries. Forty fixed AWGN cases require >=36 exact
+messages at FT8 -15 dB/FT4 -10 dB; forty require >=20 at -18/-13 dB. Zero incorrect
+payloads in either set. Frequency/start cases include 200,200.5,1000.3,3499,3500 Hz
+and source starts 0,1,1200,8400 frames, all complete supports. Twenty equal-level
+two-tone-spacing overlap cases at -10 dB each require both in >=18; twenty one-spacing
+cases with the weaker six dB below a -10 dB stronger require stronger >=18, weaker >=10.
+Every result must correspond to an injected frame; false or unsupported/invalid frame
+publications in empty-source tests are false alarms, not exempted successes.
+
+Per mode, 1000 fixed noise-only slots split across RMS .001/.01/.05/.1, plus silence,
+wrong-mode and parity-valid/CRC-invalid signals require zero published frames. This
+finite corpus does not prove a universal zero false-alarm rate; zero in 1000 has an
+approximate 95% upper bound .003 per tested slot. Seed/parameter manifests are fixed
+before implementation, using the separately specified SplitMix64/Box-Muller composer.
+Known noise calibration uses SNR2500=10log10((A²/2)/(variance*2500/6000)).
+
+Pinned official reference recordings require >=12/14 FT8 and >=16/19 current FT4
+baseline message/frequency/time matches. Every miss/new result is reported; agreement
+does not establish exhaustive truth. Synthetic exact fields and independent channel
+checks are also mandatory. The 22 inherited FT8 texts are supplementary distributions;
+legacy 2019 FT4 zero-output files are not modern quality negatives.
+
+On the recorded Windows AMD Ryzen 9 5950X reference PC, release build, one worker and
+CPU-only planned/scalar paths: <=5 s for 15 s FT8, <=3 s for 7.5 s FT4, <=40 s for
+120 s input; cold plan/start adds <=2 s. Record ten runs after one excluded warmup,
+min/median/p95/max, build/input hashes, actual OS/power/workload and memory. Four
+concurrent profile processes must meet twice the single-worker time ceilings, <=250 ms
+cancellation release and <=2 s status refresh. Four profiles is a chosen workload,
+not a CPU-count-derived station limit or a promise for another PC. Repeats/planned vs
+scalar must give the same payload multiset, frequency within .2 Hz FT8/.5 Hz FT4 and
+time within one canonical frame. All performance/quality outcomes remain unmeasured
+until the implementation executes these cases. Multipath, drift, AP and special
+waveforms require separate declared capabilities, not implicit parity claims.
 
 ### 4.5 Separate audio and radio-control functions — target FR-002/FR-009
 
@@ -1369,18 +1553,49 @@ specified abort/device-loss path.
 are refused and FR-008 halt/failure behavior is met. This conditional definition does
 not authorize transmission now or make it part of the receive-only live test above.
 
-### 6.4 Planned offline FT4/FT8 decoder tests
+### 6.4 Offline FT4/FT8 decoder test contract — planned execution
 
-These are planned definitions, not executed tests. Each runs at **level 2 — Isolated
-automated tests**, on the **Windows development PC** with recorded or generated fixtures,
-without a radio, live service or audio device. The implementing CR settles input formats,
-reference outputs and quantitative budgets before coding.
+These are durable planned definitions, not executed decoder tests. Each runs at
+**level 2 — isolated automated tests**, on the **Windows development PC** with recorded
+or independently generated fixtures, without a radio, live service or audio device.
+The CR #7 contract in 4.4 and wire extension 12.7 own exact expectations; executable
+companions remain planned until implemented. Missing fixtures/tools, empty manifests
+or zero executed cases fail. Tests verify the complete manifest, not a convenient subset.
 
 | Test | Promises | Inputs/actions | Expected result and oracle | Level / where it runs |
 |---|---|---|---|---|
 | TC-004-001 — Offline FT4 | FR-003, FR-004, FR-018 | Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
 | TC-004-002 — Offline FT8 | FR-003, FR-004, FR-018 | Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
 | TC-004-003 — Invalid and nonmatching input | FR-003, FR-004, FR-018 | Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run. | Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures. | 2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. |
+
+The following named subcases preserve those stable case IDs and prove CL-007-01..04.
+All expected values come from the protocol/tables, independently selected source
+payloads, independent waveform/noise math or hand-specified wire errors; new decoder
+output is never accepted as its own golden value. All are automated cost 2 on the
+Windows PC. Pure math/channel cases belong to the Rust suite, complete recordings and
+quality/resources to an additive decoder fixture suite, and HTTP/browser/link cases to
+the communication/recording companions; none require hardware consent.
+
+| Case/subcase | Setup and action | Independent expected observation |
+|---|---|---|
+| TC-004-001/002 payload-channel | Every supported i3/n3 family; exact fields/77 bits; call/CQ/grid/report/free-text/telemetry/contest/hash boundaries, first/max/invalid values; generate CRC/FEC and both tone frames independently. | Fixed expected fields/CRC/codeword/79 or 105 tones; separate CRC recurrence and published H syndrome agree. Hashes retain numeric width/value and `<...>`; source identity, received text and reference observations remain distinct. Include K1ABC=10214965, W9XYZ=12751800, FN42=10342, type3 WI=8049, type4 PJ2/W1AW with hash12=579 and current VHF hashes2662/3931158, report59/serial2047/gridRR99XX. |
+| TC-004-001/002 complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
+| TC-004-001/002 AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
+| TC-004-001/002 overlap | Twenty equal-level pairs at two tone spacings and twenty pairs at one spacing with six dB difference/mode, fixed seeds/fields/source positions. | Both >=18/20 for equal pairs; stronger>=18 and weaker>=10 for unequal; no fabricated payload. Independent source mixture is the truth, even when the external reference misses weaker content. |
+| TC-004-001/002 recordings | Import pinned official modern FT4 and FT8 plus all22 historical FT8 WAVs unchanged; decode explicit selected modes. | >=16/19 modern FT4 and >=12/14 official FT8 baseline matches; report all misses/new frames and validate their channel/fields independently. Historical text is supplementary, never exhaustive truth; legacyFT4zero is not a modern negative. |
+| TC-004-003 rejection | 1000 full-slot fixed noise inputs/mode at four RMS levels, silence, DC/tones/impulses, wrong mode, truncated support, nonfinite/wrong-rate/discontinuous pure samples, invalid WAV, unsupported tags, invalid source fields, good FEC/bad CRC. | Zero published frames in empty/noise/CRC/wrong-mode corpus, explicit unsupported/invalid classification only for injected CRC-valid frames; defined input errors, no panic, no ordinary-text fallback. Invalid WAV remains the existing import error. Canonical report aliases above32505 remain invalid despite permissive reference output. |
+| TC-004-003 lifecycle-limits | Repeat, cancel during detection/FEC/recovery/subtraction; replace source/start another job/restart; four profiles; history/result/candidate/work/memory ceilings and injected failures. | Same payload multiset and numeric repeat tolerances; publication invalid before cancel ack, terminal after worker release<=250ms, failed processing cannot complete, no stale append, partial outcomes visible, explicit decode_limit/search_limited; no queue or unbounded buffers. |
+| TC-004-003 HTTP-UI | Every12.7 route's positive/malformed/duplicate/unknown/missing/wrong-type/body/cursor cases, auth/Origin/cross-profile/boot/source/job/generation barriers, all job states, literal text, old-server404, two browser observers. | Hand-specified status/error/order/schema; one pending request, immutable job mode, reliable cursor replay and terminal/loaded distinction, no mutation retry, old/stale responses ignored; <=1536-byte page with one <=1024-byte record. |
+| TC-004-003 thin-link | Two actual browsers on existing4000bytes/s/direction+150ms one-way TLS model; maximum result records/pages, synchronized polls and concurrent explicit status; steady60s, cancel/reconnect and stalled reader. | Combined<=3000accountedbytes/s/direction and every refresh<=2s, bounded one pending request/browser, correct no-loss page drain. Cold assets/bulk duration reported separately. Future simultaneous liveFFT/display uses the joint lower-cadence profile and must be remeasured, not presumed to fit. |
+| TC-004-003 performance | Release build on recorded5950X Windows PC; ten runs plus excluded warmup, cold plan, planned/scalar, 15sFT8/7.5sFT4/120s source, one and four profile workers. |4.4 deadlines/memory/cancellation/status limits; record actual OS/build/input/power/workload/min/median/p95/max. CPU-only path required, no speed claim for another PC; no skipped corpus case counts as passed. |
+
+The parameterized corpus has 2286 specified quality cases: 2000 noise-only, 160 AWGN,
+80 overlap, 40 offsets and six silence/wrong-mode/CRC cases. Field-boundary coverage is
+additional, in both modes. Fixture hashes, independent composer version/recipe and exact
+case manifest must be reviewed/pinned before implementation; a change to source-field
+policy requires the corresponding expectation change and independent review, not a
+decoder-generated replacement golden file. Actual results and runtime of this full
+suite remain issue evidence, not implied by this definition.
 
 #### CR #6 recorded-input/display test definitions
 
@@ -1635,7 +1850,7 @@ settings, hardware and mode contracts remain their owning issues' preparation ga
 
 PCM integer-to-real unit conversion is distinct from gain control, filtering and
 mode-specific normalization. Rate conversion and receive preprocessing have one owner
-in the common receive pipeline, delivered by #7 if required. Recorded and live sources
+in the common receive pipeline, with the native live-format conversion stage owned by #8. Recorded and live sources
 feed that boundary; they MUST NOT grow separate modem resamplers. Pure modem functions
 consume the agreed processing input and have no device-format or hardware knowledge.
 This does not select an import format, device rate, AGC policy or resampling algorithm.
@@ -1646,8 +1861,8 @@ input/output ordering, scaling/normalization, buffer ownership/reuse and indepen
 numerical oracles, with one writer maintaining the selected contract. Existing dependencies
 are inspected first; a new library is justified against the combined workload. The
 selection does not require a speculative abstraction layer or two FFT implementations.
-The concrete shared provider/API is now fixed by4.4 for #6/#7; #7 still settles its
-mode-specific transform sizes/preprocessing and numerical oracles before decoder code.
+The shared provider/API and the #7 target transform sizes/preprocessing/oracles are
+fixed in4.4; independent model readiness review is required before decoder code.
 
 ### 11.4. State and data ownership
 
@@ -1836,8 +2051,8 @@ responsibilities, not additional runtime parts or implemented capabilities.
 | CR | Owns once | Reuses / must not duplicate | Contract gate before its code |
 |---|---|---|---|
 | #6 | Validated recorded source/storage integration, common receive sample contract and receive job/cancel lifecycle, spectrum products and browser display/transfer | Existing profile/context/auth/web services and station authority; no universal job manager or transmit authority | Concrete sample/job/frame schemas, recording workflow, bounds, errors, independent display oracles and reviewed communication extension; shared FFT choice with #7 before FFT code |
-| #7 | Pure FT4/FT8 receive functions and decoded payloads; common receive preprocessing/rate conversion if needed | #6 sample/job/source path and selected shared FFT functionality; no second recording parser, source-specific resampler, job runner or transport engine | Approved shared input/job and FFT contract plus mode input/settings/results, independent FT4/FT8 vectors and numerical/quality/resource budgets |
-| #8 | Live device sample producer, device-format adaptation and independent audio/control drivers, timing/overrun/device-loss reporting | Common receive sample/job/preprocessing path, profiles and station authority; no second decoder, modem resampler or auth service | Concrete device/control capabilities and sample clock/UTC/discontinuity/backpressure contract consistent with common receive input |
+| #7 | Pure canonical12kHz FT4/FT8 receive functions, decoded payloads and bounded reconstruction kernel | #6 sample/job/source path and selected shared FFT functionality; no second recording parser, source-specific resampler, job runner or transport engine | Approved shared input/job and FFT contract plus mode input/settings/results, independent FT4/FT8 vectors and numerical/quality/resource budgets |
+| #8 | Live device producer, one common native-format/rate conversion stage, independent audio/control drivers and timing/overrun/device-loss reporting | Common receive sample/job/preprocessing path, profiles and station authority; no second decoder, modem resampler or auth service | Concrete device/control capabilities and sample clock/UTC/discontinuity/backpressure contract consistent with common receive input |
 | #9 | Transmit waveform/encoding, UTC scheduling, transmit lifecycle/authority integration and independent halt path | Existing context/resource authority, common sample units and selected FFT functionality where needed; no receive-owned transmit safety policy | Approved transmit/audio/control/waveform contracts, independent timing/failure oracles and halt deadlines that do not wait for receive work |
 
 Before each implementation, its issue settles the affected contract details and updates
@@ -1870,15 +2085,16 @@ No radio, decoder, transmit or MCP behavior is implemented.
 The planned modules and contracts above are introduced by their owning CRs.
 
 Profile schema/session names are settled in 4.2/12.5. The recorded audio/sample/display
-contract (#6) is settled in4.4/6.4/12.6. Decoder variants/quality budgets (#7), independent audio/control support matrices
+contract (#6) is settled in4.4/6.4/12.6. The #7 decoder target is defined in4.4/6.4/12.7
+and requires independent model sufficiency review before code. Independent audio/control matrices
 (#8), transmit ownership/deadlines (#9), QSO/log format (#10), MCP tools/policy (#12) and
 native FlexRadio coordination/capabilities (#13) are preparation gates. Their named
 owners prevent two implementations from silently selecting incompatible contracts.
 The shared ownership allocation in11.3/11.7 is an early architecture decision.
 The first #6 formats/types/bounds/lifetimes/states/errors/timing/wire/oracles are defined
 in4.4/6.4/12.6 and RecordingReceive.sysml and are represented by the delivered modules
-above. #7 mode contracts and #8/#9 adapter/safety
-contracts remain separate preparation decisions. Settle them in Markdown, reconcile the affected model and compare
+above. The #7 target and #8/#9 adapter/safety contracts require their own readiness
+reviews. Settle them in Markdown, reconcile the affected model and compare
 meaning independently before dependent code. A structural model or source fingerprint
 alone does not approve an unresolved data contract or FFT choice.
 These are bounded implementation decisions inside the architecture, not claims of
@@ -2524,6 +2740,85 @@ streaming-request API. No completion-time promise is made for bulk import.
 Report upload and cold-page bytes/timing separately; fixtures are uploaded before the
 steady-state display measurement. Reconnection resets subscription and refreshes snapshots,
 never resumes or retries a mutation implicitly.
+
+### 12.7. Offline decoder extension for CR #7 — target interface
+
+This is the planned CR #7 extension, not a declaration that decoder routes exist in the
+delivered status/recording server. Apply12.6's selected-profile mode, exact Origin/TLS
+authentication, strict JSON/UUID/safe-integer validation, <=1024-byte control requests,
+no-store/no-CORS, fixed errors and validation order. GET permits absent Origin, rejects
+wrong/repeated Origin, and requires the existing TLS profile session. Mutations require
+exact single Origin including loopback. No route accepts a server path/URL/client
+filename or gives another profile authority. Unsupported methods405; environment-only
+mode404. Existing wstx.v1 status/spectrum payloads remain unchanged; no result event is
+carried only by lossy WebSocket display output.
+
+| Route/method | Exact input | Exact successful result |
+|---|---|---|
+| GET /recording/decoder | No body/query |200 `{v:1,profile_id,boot_id,generation,modes:["ft4","ft8"],job}`; job null or `{id,source_id,generation,mode,state,processed_frames,available_count,error,search_limited}` for the retained current decode job. Snapshot<=1536UTF8bytes. A current nondecode job gives job:null. |
+| POST /recording/decode | `{v:1,profile_id,boot_id,generation,recording_id,mode}`; mode exactly lowercase`ft4|ft8` |202 `{v:1,id,generation,state:"running"}`; allocate jobUUID and fresh station generation, immutable mode/settings, frame0 progress. Existing import/replay/decode activity returns409busy; no queue. |
+| GET /recording/jobs/{id}/decodes?after=N | No body; missing after means0; exactly one canonical decimal nonnegative safe-integer cursor, no leading zeros except0, no unknown query keys |200 `{v:1,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,available_count,next,more,records}`. At mostone record, body<=1536UTF8bytes. next is next unread index; more means another record is already available. Running empty page is distinguished from terminal empty by state. |
+| DELETE /recording/jobs/{id} | Existing no-body cancellation route | Existing response/lifecycle applies to kind`decode` as well as`spectrum`; invalidation before ack, terminal only after release. Terminal repeat does not delete results or cancel another job. |
+
+The12.6 snapshot additionally permits job.kind=`decode` with its existing job fields;
+its detailed immutable mode/results are on the decoder snapshot, not new status fields.
+Existing spectrum jobs retain their exact representation. Unknown syntactic mode/keys,
+duplicate/invalid cursor or cursor>available_count400invalid_request; wrong profile403;
+boot/generation conflict409state_conflict; absent source409no_recording; unavailable
+source409recording_unavailable; busy409busy; unknown/wrong selected source or old/foreign
+job404not_found; generation ceiling409generation_exhausted. Source/read failure uses
+recording_unavailable; invalid pure samples fail invalid_samples; memory/result budget
+exhaustion fail decode_limit; unexpected modem failure fail decode_failed. These last
+three are stable job errors, not leaked exception strings. HTTP storage failures retain
+the existing503storage_unavailable/degraded-worker policy. Failure never reports a
+completed job. Existing validation order wins when several barriers fail.
+
+Each result has exactly `{sequence,status,payload77,i3,n3,text,fields,start_frame,
+frequency_hz,snr_db}`: sequence0..2047; status`decoded|unsupported|invalid_payload`;
+payload77 exactly77ASCIIbinary digits; i30..7; n3null unlessi3=0 then0..7;
+text null unlessdecoded then<=80canonicalASCIIcharacters; fields null unlessdecoded;
+start_frame0..source_frames-1; finitefrequency_hz200..3500; snr_dbnull or finite[-60,60]
+under4.4's estimator. A record serializes to<=1024UTF8bytes. Retain atmost2048records
+and2MiBencodedrecordcontent; oversize/exhaustion failsdecode_limit with partial output.
+No unbounded server/query history; atmost2048nonempty pages plus one empty end page.
+
+Call values have exactly `{kind,text,hash_bits,hash_value}`. kind`call` has concrete
+uppercase text1..13characters (nonstandard full call<=11) and nullhash fields;
+kind`token` has CQ/DE/QRZ/CQmodifier text and nullhash fields; kind`hash` has nulltext,
+hash_bits10/12/22 and corresponding unsigned hash_value. Unresolved display is`<...>`;
+configured/prior calls cannot manufacture text. All fields variant keys are required,
+unknown fields rejected; i3/n3 disambiguates their protocol family:
+
+| Family | Exact fields object |
+|---|---|
+|0.0|`{type:"free_text",value}` with1..13characters in the4.4alphabet.|
+|0.5|`{type:"telemetry",value}` with18uppercasehex digits, first0..7.|
+|1/2|`{type:"standard",to,from,ack,exchange}`; to/fromCall, ackBoolean; exchange exactly`{kind,value}` withkindblank/grid/report/roger and valuenull/grid4/integer-50..50/RRR-or-RR73-or-73 respectively. /R or/P remains explicit in concrete call text.|
+|3|`{type:"rtty",tu,to,from,ack,report,exchange}`; tu/ackBoolean, to/fromCall, report529..599step10; exchange`{kind:"serial"|"state",value}` with integer0..7999or table token.|
+|0.1|`{type:"dxpedition",first,second,hashed,report}`; first/secondCall, hashedCall(hash10), reporteven-30..32.|
+|0.3/0.4|`{type:"field_day",to,from,ack,transmitters,class,section}`; to/fromCall, ackBoolean, mode-specific transmitter range, classA..F, one of84section tokens.|
+|4|`{type:"nonstandard",full_call,hashed_call,hash_second,cq,roger}`; concrete fullCall and hash12Call, Booleanshash_second/cq, rogernull/RRR/RR73/73. CQ ignores hash for display while preserving payload bits/typed raw hash.|
+|5|`{type:"vhf",to,from,ack,report,serial,grid}`; hash12Call to/hash22Call from, ackBoolean, report52..59, serial0..2047, grid6.|
+
+Results append in sequence, carry all identities and remain only for the latest job
+until another job/source or restart. Cancellation retains marked partial results;
+browser closure does not cancel. Another browser can observe/cancel the station-owned
+job. New source/job invalidates prior pages immediately. Snapshot/page queries have no
+side effects and can be repeated; no automatic mutation retry or replay after reconnect.
+Browser obtains the decoder snapshot before enabling controls; older-server404 visibly
+disables decoding. Mode selection is local next-job intent, not a persisted profile edit.
+
+One pending page request/browser, starts>=2000ms apart, none begins while thatbrowser's
+explicit status refresh is pending. Show loaded/available count and terminal state
+separately; do not label a partially drained completed job as fully displayed. All text
+is literal. Stale boot/source/job/generation or old socket callbacks cannot overwrite
+current results. Max-sized two-client page traffic and concurrent status must meet the
+existing32kbit/s accounting model, <=3000bytes/s/direction over60steadyseconds and
+every status refresh<=2s. Cold assets and page-drain duration are reported separately;
+no bulk completion deadline. Future joint live capture/FFT/decode profile limits optional
+spectrum tooneevent/2s and resultpolls toone/4s, retaining explicit row gaps and reliable
+pages; the same combined traffic/latency promises require independent integrated testing.
+Optional display cadence may decrease to preserve control; result loss is never implicit.
 
 ## 13. FT8 sample recordings and provenance
 
