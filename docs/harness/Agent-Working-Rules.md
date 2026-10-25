@@ -40,9 +40,13 @@ rules around it. Agent memory only points here.
 
 ## GitHub issues are the memory
 
-- An issue holds a change's request, its questions and answers, short dated progress
-  notes, the review and acceptance lines, the closing summary and the found-not-fixed
-  list. Nothing about a change lives only in a session, in chat or in a file on a box.
+- An issue holds a change's request, rationale, current status, settled questions,
+  required review and acceptance records, actual run evidence, the closing summary
+  and outstanding approved scope.
+  Findings follow [intake](../../harness/core/docs/CR-Process.md#intake-and-authorization).
+  Continuation state uses the bounded [checkpoint](../../harness/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint).
+  Required evidence lives in these records, rather than only in a session or chat;
+  the issue is not a running diary.
 - **Written for a person.** The title states the problem in plain words; the body opens
   with the problem, the decision or task and a status checklist, readable on a phone.
   Commits, test IDs and paths go below, in a collapsed
