@@ -9,14 +9,14 @@ The first release targets Windows desktop. macOS and Linux are planned afterward
 ## Repository layout
 
 The [FSD](docs/WSTX%20Rust%20FSD.md#35-station-server-and-operator-client) defines the product
-requirements. The [target architecture](docs/ARCHITECTURE.md) defines component boundaries,
+requirements. The [target architecture](docs/WSTX%20Rust%20FSD.md#11-target-product-architecture) defines component boundaries,
 internal contract ownership and how the queued functional CRs fit together.
 
 | Path | Contents |
 | --- | --- |
 | `server/` | Rust station server, WebSocket protocol and optional native TLS. |
 | `client/` | HTML/CSS/JavaScript status interface, embedded into the server executable. |
-| `docs/` | Functional specification, architecture, communication contract and sample references. |
+| `docs/` | One functional specification document and its synchronized SysML model. |
 | `docs/harness/` | Project-specific harness bindings and development instructions. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
 | `harness/`, `.harness/` | Pinned development harness and project bindings. |
@@ -26,12 +26,9 @@ Build, test and packaging instructions are in the [project-specific harness](doc
 ## Documentation
 
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)
-- [Target architecture and issue mapping](docs/ARCHITECTURE.md)
 - [Functional behavior baseline](docs/WSTX%20Rust%20FSD.md#behavior-reference)
 - [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)
 - [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
-- [Station communication contract](docs/COMMUNICATION.md)
-- [Sample recordings and provenance](docs/SAMPLES.md)
 
 ## Branches
 
@@ -82,3 +79,8 @@ Distributed binaries must provide access to complete corresponding source under 
 applicable GPL requirements. Bundled components and assets may have separate terms;
 record their provenance and retain applicable notices. The initial license check
 was not a complete dependency audit. Licensing and trademarks remain separate.
+
+### Candidate recording notices
+
+- Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
+- [ft8_lib MIT license](https://github.com/kgoba/ft8_lib/blob/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE)

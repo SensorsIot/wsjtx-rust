@@ -7,9 +7,9 @@ contract; the references below are the constraints a change must respect.
 | Subject | Reference |
 |---|---|
 | Product contract | [WSTX Rust FSD](../WSTX%20Rust%20FSD.md) |
-| Product component/interface boundaries | [Target architecture](../ARCHITECTURE.md) |
-| Product SysML artifacts and view scope | [Architecture model](../ARCHITECTURE.md#11-functional-model-and-views) |
-| Behavior baseline and provenance | [FSD](../WSTX%20Rust%20FSD.md), [Samples](../SAMPLES.md); notices in [README](../../README.md#license-and-attribution) |
+| Product component/interface boundaries | [Target architecture](../WSTX%20Rust%20FSD.md#11-target-product-architecture) |
+| Product SysML artifacts and view scope | [Architecture model](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views) |
+| Behavior baseline and provenance | [FSD](../WSTX%20Rust%20FSD.md), [Samples](../WSTX%20Rust%20FSD.md#13-ft8-sample-recordings-and-provenance); notices in [README](../../README.md#license-and-attribution) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
 | Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |

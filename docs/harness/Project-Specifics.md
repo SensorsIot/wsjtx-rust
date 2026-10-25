@@ -56,7 +56,7 @@ cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
 
 The server stays running. Open `http://127.0.0.1:8080` in a browser; stop the server
 with Ctrl+C. Remote TLS and access settings are defined in the
-[communication contract](../COMMUNICATION.md#connection-and-security).
+[communication contract](../WSTX%20Rust%20FSD.md#121-connection-and-security).
 
 For automated browser tests, install Node 24 and run from the repository root:
 
@@ -76,7 +76,7 @@ remains an alternative execution location for this full recipe when explicitly c
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
 Screenshots and the thin-link measurement report are written to ignored `test-results/`.
 The portable link simulator uses modelled network overhead, not packet capture;
-see the [measurement limits](../COMMUNICATION.md#thin-link-budget-and-test-model).
+see the [measurement limits](../WSTX%20Rust%20FSD.md#124-thin-link-budget-and-test-model).
 
 ## Same-machine development
 
@@ -92,7 +92,7 @@ Both applications can be developed on one Windows computer: the station-server p
 The reusable [SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
 explains how to write models without project-specific assumptions. This binding selects
 Markdown-primary authority and the local toolchain below. Product model artifacts,
-coverage and view scope belong to [the architecture](../ARCHITECTURE.md#11-functional-model-and-views);
+coverage and view scope belong to [the architecture](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views);
 functional promises and application test cases remain in
 [the FSD](../WSTX%20Rust%20FSD.md). The project model-maintenance contract and
 documentation-tool test definitions are recorded below.
@@ -130,11 +130,13 @@ Edit the authoritative Markdown first, preserving IDs. For FSD changes, regenera
 python tools/sysml.py sync
 ```
 
-For architecture changes, reconcile the manually modeled parts, ports and connections and update
-its source-hash marker after review. Print the expected normalized-source hash with:
+Both model fingerprints now refer to the single FSD. For every FSD change, review its
+effect on the manually modeled architecture, reconcile affected parts, ports and
+connections, and update the architecture source-hash marker after that review. Updating
+the marker alone is not a conformance review. Print the normalized FSD source hash with:
 
 ```powershell
-python -c "from pathlib import Path; import hashlib; print(hashlib.sha256(Path('docs/ARCHITECTURE.md').read_text(encoding='utf-8').encode()).hexdigest())"
+python -c "from pathlib import Path; import hashlib; print(hashlib.sha256(Path('docs/WSTX Rust FSD.md').read_text(encoding='utf-8').encode()).hexdigest())"
 ```
 
 Check synchronization, real model validation and the tool's negative fixtures:
@@ -171,8 +173,8 @@ The `check` command also requests a resolved semantic inventory from the same Pi
 process. The Java adapter traverses actual usage/type/connector objects, inherited
 features, conjugated directed items, reference subsetting, binding-versus-ordinary connector kinds
 and backend variants. Python
-checks an independently authored endpoint/identity oracle bound to ARCHITECTURE.md
-section 9: required physical/delegation paths, recording and encode paths, one profile
+checks an independently authored endpoint/identity oracle bound to FSD
+section 11.9: required physical/delegation paths, recording and encode paths, one profile
 and backend variation per station, common authority, correlated resource context and
 no extra bypass edges or detached runtime inventories. Every boundary role is checked
 against its independently specified complete item-kind/direction signature, including
@@ -196,8 +198,7 @@ belong to test output and the implementing CR. Source/model correspondence and c
 ## Project model documentation contract
 
 Markdown remains authoritative initially. The FSD owns functional requirements and
-test definitions, ARCHITECTURE.md owns its declared component/interface responsibilities,
-and COMMUNICATION.md owns detailed implemented wire contracts. A synchronized SysML v2
+test definitions, architecture, interface responsibilities and implemented wire contracts. A synchronized SysML v2
 representation supports structured review without changing this authority or renumbering
 the existing identities. This section specifies documentation behavior, not radio behavior.
 Only product functional documentation is represented in SysML. Harness/process/skill
@@ -213,7 +214,7 @@ rules and these CL-014/TC-DOC method definitions remain Markdown-only.
 | CL-014-06 | Architecture integrity | The structured architecture MUST represent one coherent physical deployment and its connected software decomposition. Physical links MUST delegate to the same browser/station/backend usages; receive and transmit modem paths and profile-owned recording input MUST remain connected. Per-station backend selection MUST be exclusive, station count variable, and control paths for a shared radio MUST use one effective authority rather than independent per-station authorities. Directed semantic exchanges MUST retain independent audio/control responsibilities without inventing wire schemas. | TC-DOC-005 |
 | CL-014-07 | Implementation sufficiency | The product SysML companion is intended to support AI implementation of the complete functional product. Before code for a functional CR, its approved model slice MUST settle the behavior, interfaces, data ownership, states, timing, errors and independent verification oracles required to implement that slice, with pinned normative external protocol references. An implementing agent MAY choose only declared implementation freedoms and MUST NOT guess unresolved functional decisions. Views only present existing model facts and are not required inputs for code generation. Markdown remains authoritative; unresolved slices MUST be marked not implementation-ready, and structural validation MUST NOT imply complete code-generation readiness. | TC-DOC-006; manual preparation review |
 
-[Functional model and views](../ARCHITECTURE.md#11-functional-model-and-views) defines the model artifacts and coverage.
+[Functional model and views](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views) defines the model artifacts and coverage.
 [Project-specific harness instructions](Project-Specifics.md#product-model-maintenance)
 define source synchronization and pinned tool entrypoints. The initial model projects
 defined requirement/clause/test identities and selected architecture boundaries; it does
@@ -234,10 +235,49 @@ require no radio, live service, Jupyter server or global Java installation.
 | TC-DOC-002 — Source/model drift | CL-014-04, CL-014-05 | In disposable fixtures, change a covered source or remove/corrupt its generated representation; change the architecture source without reconciling its model. | Synchronization fails and identifies the stale/missing artifact. Regeneration alone cannot claim a manually modeled architecture has been reviewed. |
 | TC-DOC-003 — Full-tool positive and negative models | CL-014-04 | Run the actual pinned validator on a legal model, unmatched syntax and an unresolved type/reference. | The legal model is accepted; malformed syntax and unresolved references return nonzero semantic-validation outcomes with diagnostics. This does not execute modeled verification cases or prove application behavior. |
 | TC-DOC-004 — Unavailable validation | CL-014-04 | Invoke required validation with a missing/invalid Java/validator/library path or absent model file. | The command fails nonzero and never reports semantic PASS. There is no regex-only fallback. |
-| TC-DOC-005 - Connected architecture integrity | CL-014-03, CL-014-06 | Load the complete target architecture with the pinned Pilot on the Windows development PC. Extract resolved usage/port/connector chains from its semantic AST and compare with the independent physical and end-to-end path oracle in ARCHITECTURE.md. In isolated copies remove a required connection/delegation, reroute an endpoint to bypass authority, duplicate a selected backend, split shared authority, reverse a provider direction, change a semantic item kind, or weaken an identity binding to an ordinary connection. | The accepted model has one connected physical/software deployment, variable stations, profile-owned recording and TX/modem paths, directed semantic port exchanges, one backend variation per station, and one shared authority. Each negative fixture fails semantic validation or an explicit integrity diagnostic. A view-only edit cannot repair a failed underlying path. Level 2: local isolated automated model checks; no radio, service, viewer or network access. This establishes structural correspondence, not runtime safety, protocol compliance or performance. |
+| TC-DOC-005 - Connected architecture integrity | CL-014-03, CL-014-06 | Load the complete target architecture with the pinned Pilot on the Windows development PC. Extract resolved usage/port/connector chains from its semantic AST and compare with the independent physical and end-to-end path oracle in the FSD architecture chapter. In isolated copies remove a required connection/delegation, reroute an endpoint to bypass authority, duplicate a selected backend, split shared authority, reverse a provider direction, change a semantic item kind, or weaken an identity binding to an ordinary connection. | The accepted model has one connected physical/software deployment, variable stations, profile-owned recording and TX/modem paths, directed semantic port exchanges, one backend variation per station, and one shared authority. Each negative fixture fails semantic validation or an explicit integrity diagnostic. A view-only edit cannot repair a failed underlying path. Level 2: local isolated automated model checks; no radio, service, viewer or network access. This establishes structural correspondence, not runtime safety, protocol compliance or performance. |
 | TC-DOC-006 - Functional implementation readiness | CL-014-01, CL-014-02, CL-014-07 | Before a functional CR writes code, an independent reviewer examines its approved source contract, corresponding model slice and pinned normative references. Trace each required behavior, interface/data/state/timing/error decision and independent test oracle; list the implementation choices explicitly left free. Repeat with a required decision unresolved. | Readiness is granted only when an implementing agent can implement the selected functional slice without guessing product behavior. An unresolved decision refuses readiness and names its owning CR; views cannot supply missing semantics. Level 2: manual offline contract review on the Windows development workspace, because syntax/connectivity automation cannot determine whether all product decisions are sufficient for implementation. This repair does not claim the full product passes readiness. |
 
 Executable traces are the scoped tests under `tools/sysml/tests/`, the synchronization
 entrypoint `tools/sysml.py` and full-validator adapter `tools/sysml/Validate.java`;
-their usage is defined in [project-specific harness instructions](Project-Specifics.md#product-model-maintenance) and their functional coverage in [the architecture](../ARCHITECTURE.md#11-functional-model-and-views). Execution evidence belongs
+their usage is defined in [project-specific harness instructions](Project-Specifics.md#product-model-maintenance) and their functional coverage in [the architecture](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views). Execution evidence belongs
 to the documentation CR, not a fabricated modeled verdict.
+
+## Communication verification model
+
+Functional limits and measurement acceptance are specified in
+[the FSD communication chapter](../WSTX%20Rust%20FSD.md#124-thin-link-budget-and-test-model).
+The following describes this project's verification machinery.
+
+The portable test proxy shapes actual TCP-stream bytes (including real TLS records
+in TLS tests), in at most 512-byte segments, with a shared 4,000-byte/s schedule in each
+direction and 150 ms one-way latency. Each segment is additionally charged 80 bytes
+for TCP/IPv6 headers and 80 bytes in the reverse direction for an ACK. This is explicit
+modelled network overhead, not a packet capture. It does not reproduce retransmissions,
+packet loss, congestion control or exact kernel packetization. Its bulk-transfer timing
+is tested independently of the station application. Physical-link certification is outside
+this CR; results MUST identify this model rather than claim on-wire measurements.
+The simulator disconnects overloaded peers above its 128 KiB per-direction pending/write
+buffer cap instead of modelling an unlimited congestion queue.
+Browser Navigation/Resource Timing separately reports cold page and asset transfer sizes
+at the browser HTTP layer, including its reported HTTP-header overhead; these counters
+exclude TLS/TCP/IP overhead. Connection-to-displayed-status time and concurrent visible
+Refresh status times are measured separately. Silent loss is exercised by discarding bytes
+without closing the established test connections; this is a byte-stream blackhole, not
+packet-level loss emulation. Automated real-time bounds allow one second of scheduler
+tolerance for the nominal 13-second silent-loss detection bound.
+
+The stalled-reader test keeps a peer paused with automatic Pong replies disabled
+past the liveness deadline plus heartbeat-tick bound, then checks disconnection and
+the other peer's responsiveness. It proves bounded unresponsive-peer removal; because
+OS buffers can absorb the request burst, it does not claim to observe the two-second
+send-timeout branch or independently measure total queue memory.
+
+## Recording fixture acquisition
+
+Candidate recordings and oracle limitations are specified in
+[the FSD](../WSTX%20Rust%20FSD.md#13-ft8-sample-recordings-and-provenance).
+
+- Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
+- Keep original WAV files and expected-output texts unchanged, with hashes and source URLs recorded in a fixture manifest when imported.
+- For the selected WSJT-X `v3.3.0-beta4` behavior reference, generate a separate output set and record the exact binary, settings, command, and audio input. Do not overwrite the historical references.
