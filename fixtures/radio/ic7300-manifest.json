@@ -1,0 +1,252 @@
+{
+  "metadata_version": 1,
+  "issue": "https://github.com/SensorsIot/wsjtx-rust/issues/8",
+  "status": "proposed_source_derived_test_vectors",
+  "purpose": "Primary-source protocol preparation metadata for independent future fixtures; not a product contract or executable driver.",
+  "evidence_limits": {
+    "hardware_accessed": false,
+    "hardware_test_result": "not_run",
+    "application_implemented": false,
+    "implementation_readiness_approved": false,
+    "capability_promise": false,
+    "provenance": "Manually derived from documented fields; no Hamlib or upstream implementation code copied.",
+    "manual_content": "Bibliographic references and derived protocol vectors only; no manual PDF included."
+  },
+  "sources": [
+    {
+      "id": "icom-full-manual-12a",
+      "publisher": "Icom Inc. / Icom UK",
+      "url": "https://icomuk.co.uk/files/icom/PDF/advancedManuals/IC-7300_ENG_FM_12a.pdf",
+      "title": "IC-7300 Full Manual",
+      "document_id": "A7292-4EX-12a",
+      "revision_date": "2024-08",
+      "printed_pages": [
+        "12-9",
+        "12-10",
+        "12-11",
+        "19-2",
+        "19-3",
+        "19-7",
+        "19-9",
+        "19-10"
+      ],
+      "pdf_pages_one_based": [
+        125,
+        126,
+        127,
+        160,
+        161,
+        165,
+        167,
+        168
+      ],
+      "examined_on": "2026-10-25"
+    },
+    {
+      "id": "icom-usb-settings-v1",
+      "publisher": "Icom Inc.",
+      "url": "https://www.icomjapan.com/support/manual/2574/",
+      "title": "Tips for the USB port settings",
+      "revision": "Version 1.0, March 2016",
+      "scope": "USB connection concepts; not proof of target-PC device identity or audio formats."
+    },
+    {
+      "id": "icom-usb-driver-guide",
+      "publisher": "Icom Inc.",
+      "url": "https://www.icomjapan.com/support/manual/1768/",
+      "title": "USB Driver (Ver.1.30) installation guide",
+      "printed_pages": [
+        "4",
+        "6",
+        "7",
+        "8"
+      ],
+      "scope": "Serial COM-port identification and separate automatic USB audio-driver installation; PC-dependent numbering."
+    },
+    {
+      "id": "icom-firmware-142",
+      "publisher": "Icom Inc.",
+      "url": "https://www.icomjapan.com/support/firmware_driver/4102/",
+      "version": "1.42",
+      "release_date": "2024-05-15",
+      "scope": "Published firmware only; target installed firmware is unknown. No firmware update requested or performed."
+    }
+  ],
+  "protocol_facts": {
+    "source": "icom-full-manual-12a",
+    "framing": {
+      "printed_page": "19-2",
+      "preamble_hex": "FE FE",
+      "order": [
+        "preamble",
+        "destination_address",
+        "source_address",
+        "command",
+        "optional_subcommand_and_data",
+        "terminator"
+      ],
+      "terminator_hex": "FD",
+      "radio_default_address_hex": "94",
+      "radio_address_is_configurable": true,
+      "radio_address_setting_printed_page": "12-10",
+      "controller_default_address_hex": "E0",
+      "vector_addresses_are_assumptions": true,
+      "ok_code_hex": "FB",
+      "ng_code_hex": "FA",
+      "transaction_id_field_in_documented_frame": false
+    },
+    "frequency_payload": {
+      "printed_page": "19-9",
+      "unit": "Hz",
+      "length_bytes": 5,
+      "encoding": "Packed BCD digit pairs, least significant pair first; high frequency digits fixed as documented for this model.",
+      "example_frequency_hz": 14074000,
+      "example_payload_hex": "00 40 07 14 00"
+    },
+    "mode_payload": {
+      "printed_page": "19-9",
+      "usb_mode_hex": "01",
+      "fil1_hex": "01",
+      "fil2_hex": "02",
+      "fil3_hex": "03",
+      "data_mode_is_separate": true,
+      "data_mode_command_hex": "1A 06",
+      "data_mode_printed_page": "19-10"
+    },
+    "transceive_and_echo": {
+      "printed_pages": [
+        "12-10",
+        "12-11",
+        "19-3"
+      ],
+      "transceive_frequency_command_hex": "00",
+      "transceive_mode_command_hex": "01",
+      "transceive_default_on_is_not_target_observation": true,
+      "usb_echo_back_is_configurable": true,
+      "usb_remote_link_is_configurable": true,
+      "unlinked_usb_and_remote_ports_documented_independent": true
+    }
+  },
+  "vectors": [
+    {
+      "id": "read-frequency-14074000-hz",
+      "kind": "proposed_query_response",
+      "request_hex": "FE FE 94 E0 03 FD",
+      "response_hex": "FE FE E0 94 03 00 40 07 14 00 FD",
+      "expected": {
+        "frequency_hz": 14074000
+      },
+      "printed_pages": [
+        "19-2",
+        "19-3",
+        "19-9"
+      ]
+    },
+    {
+      "id": "read-mode-usb-fil1",
+      "kind": "proposed_query_response",
+      "request_hex": "FE FE 94 E0 04 FD",
+      "response_hex": "FE FE E0 94 04 01 01 FD",
+      "expected": {
+        "mode": "USB",
+        "filter": "FIL1",
+        "data_mode": "not_determined_by_this_query"
+      },
+      "printed_pages": [
+        "19-2",
+        "19-3",
+        "19-9"
+      ]
+    },
+    {
+      "id": "read-data-on-fil1",
+      "kind": "proposed_query_response",
+      "request_hex": "FE FE 94 E0 1A 06 FD",
+      "response_hex": "FE FE E0 94 1A 06 01 01 FD",
+      "expected": {
+        "data_mode": true,
+        "filter": "FIL1"
+      },
+      "printed_pages": [
+        "19-2",
+        "19-7",
+        "19-10"
+      ]
+    },
+    {
+      "id": "read-rx-status",
+      "kind": "proposed_query_response",
+      "request_hex": "FE FE 94 E0 1C 00 FD",
+      "response_hex": "FE FE E0 94 1C 00 00 FD",
+      "expected": {
+        "radio_reported_state": "RX"
+      },
+      "printed_pages": [
+        "19-2",
+        "19-7"
+      ],
+      "restriction": "Query only; does not authorize sending the data-bearing transmit setter."
+    },
+    {
+      "id": "frequency-set-ack-and-readback",
+      "kind": "proposed_offline_protocol_fixture_only",
+      "setter_hex": "FE FE 94 E0 05 00 40 07 14 00 FD",
+      "ack_response_hex": "FE FE E0 94 FB FD",
+      "readback_request_hex": "FE FE 94 E0 03 FD",
+      "readback_response_hex": "FE FE E0 94 03 00 40 07 14 00 FD",
+      "expected": {
+        "frequency_hz": 14074000
+      },
+      "printed_pages": [
+        "19-2",
+        "19-3",
+        "19-9"
+      ],
+      "policy_status": "Readback-after-ack is a proposed application policy, not a manual guarantee of atomic state.",
+      "live_execution": "not_authorized_by_this_metadata"
+    },
+    {
+      "id": "negative-acknowledgement",
+      "kind": "proposed_response_classification",
+      "response_hex": "FE FE E0 94 FA FD",
+      "expected": {
+        "classification": "NG",
+        "confirmed_setting": false
+      },
+      "printed_pages": [
+        "19-2"
+      ],
+      "restriction": "No claim that a particular unspecified request necessarily produces this response."
+    }
+  ],
+  "unverified": {
+    "target_radio_region_and_firmware": "Requires operator inventory; published firmware is not installed-version evidence.",
+    "target_pc_os_architecture_and_browser_placement": "Not confirmed.",
+    "usb_connection": "Not confirmed; USB is a candidate transport, not a requirement.",
+    "audio_transport_and_endpoint": "Not confirmed; independent selection from CAT required.",
+    "audio_sample_formats_channels_and_rates": "No target-specific format matrix established. 48000 Hz / 16-bit is an inspection candidate, not a support promise.",
+    "audio_clock_utc_mapping_and_loss_reporting": "Requires selected backend and shared receive-contract decisions; no hardware timing measurements.",
+    "cat_transport_port_and_exclusive_ownership": "Not confirmed; actual COM identifier and any other controllers require inspection.",
+    "serial_configuration": "No target baud, data bits, parity, stop bits, flow control or initial RTS/DTR behavior confirmed.",
+    "radio_civ_settings": "Address, transceive, USB link, baud, echo and USB Serial Function settings require inspection.",
+    "collision_jammer_retry_protocol": "No primary Icom collision byte pattern, retry delay or collision fixture oracle verified in reviewed sources.",
+    "usb_send_and_keying": "Configured RTS/DTR mappings require inspection before opening hardware; receive-only metadata authorizes no keying.",
+    "timeouts_polling_buffers_and_reconnection": "Exact application limits and error/state policy remain unsettled.",
+    "hardware_acceptance": "Controlled receive/CAT plan and separate operator consent remain required; no RF testing performed."
+  },
+  "ownership_boundary": {
+    "canonical_functional_contract": "docs/WSTX Rust FSD.md; this manifest does not replace or amend it.",
+    "issue_8": "Device producer, device-format adaptation and independent CAT adapter preparation.",
+    "consume_issue_6": "Shared immutable sample blocks, source/profile/job identity, sample positions, discontinuity and bounded receive lifecycle.",
+    "consume_issue_7": "Common receive preprocessing and any required rate conversion; no adapter-owned modem resampler.",
+    "consume_existing_station_services": "Profiles, authentication, authority and communication transport; no parallel services.",
+    "issue_9": "Transmit authority, waveform/playback coordination and independent halt.",
+    "excluded": [
+      "driver implementation",
+      "FFT selection",
+      "modem implementation",
+      "duplicate resampler",
+      "hardware pass evidence"
+    ]
+  }
+}
