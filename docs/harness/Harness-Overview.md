@@ -14,6 +14,7 @@ contract; the references below are the constraints a change must respect.
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
 | Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |
 | Testing | [testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
+| Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
 | Writing functional SysML companions | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
