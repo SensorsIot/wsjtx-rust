@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-10-25",
+  "purpose": "Acquired FT4-candidate recording provenance and byte metadata only; no decoder acceptance evidence.",
+  "official_license_status": "Official project GPL COPYING downloaded alongside external audio; no explicit sample-specific license established by reviewed directory/README. Do not infer recording-specific permission solely from software license.",
+  "documentation_files": [
+    {
+      "file": "official-project-COPYING.txt",
+      "url": "https://raw.githubusercontent.com/WSJTX/wsjtx/967c85a6119110788b0df3782cf796485b2cee14/COPYING",
+      "bytes": 31953,
+      "sha256": "b4bbff835ca86b6051284a77138b7b31db215fb3e8aa70221464126cc9ad60fa"
+    },
+    {
+      "file": "official-project-README.txt",
+      "url": "https://downloads.sourceforge.net/project/wsjt/README.txt",
+      "bytes": 658,
+      "sha256": "1527b0269110bf0067f0904e98371c378e79d6e1506d9034eb5002671315a4f7"
+    },
+    {
+      "file": "official-FT4-experimental-protocol.pdf",
+      "url": "https://wsjt.sourceforge.io/FT4_Protocol.pdf",
+      "bytes": 383466,
+      "sha256": "f5176676431f1de861414ed83ae64c7dcd96f9c17d8564d17acf343d3501b8a3"
+    },
+    {
+      "file": "ce3tsk-project-COPYING.txt",
+      "url": "https://raw.githubusercontent.com/ce3tsk/jtdx_contest/796c25e44762a596eadb277932dbf30073db9602/COPYING",
+      "bytes": 32490,
+      "sha256": "20f3aff83f0714aa25359e07e0c19f682aa0654f2692e7927b49bfc883f734ee"
+    },
+    {
+      "file": "ce3tsk-project-README.md",
+      "url": "https://raw.githubusercontent.com/ce3tsk/jtdx_contest/796c25e44762a596eadb277932dbf30073db9602/README.md",
+      "bytes": 25815,
+      "sha256": "7befcd4867a9ffb612222ad71b677d6b02f8a012f6c3d4708e328a9e84ad9e79"
+    }
+  ],
+  "files": [
+    {
+      "bytes": 131564,
+      "sha256": "44c84ec36a7799b460f2bb529677093146be61db495659c57813176af8dc82ee",
+      "source_url": "https://downloads.sourceforge.net/project/wsjt/samples/FT4/190106_000112.wav",
+      "wave_fmt_fields": [
+        1,
+        1,
+        12000,
+        24000,
+        2,
+        16
+      ],
+      "chunks": [
+        [
+          "fmt ",
+          16
+        ],
+        [
+          "data",
+          131520
+        ]
+      ],
+      "riff_length_matches": true,
+      "channels": 1,
+      "sample_rate_hz": 12000,
+      "sample_width_bytes": 2,
+      "frames": 65760,
+      "duration_seconds": 5.48,
+      "compression": "NONE",
+      "relative_download_path": "official-legacy/190106_000112.wav",
+      "publisher_directory_modified_date": "2019-04-05",
+      "directory_url": "https://sourceforge.net/projects/wsjt/files/samples/FT4/",
+      "download_status": "actual audio bytes downloaded and header/hash verified",
+      "sample_representation": "signed 16-bit little-endian PCM",
+      "stored_in_repository": false,
+      "publisher_checksum_verification": "No publisher checksum acquired; SHA256 computed locally from downloaded bytes.",
+      "ground_truth_status": "No independent message/measurement truth established; no decoder run performed.",
+      "mode_compatibility_status": "Modern FT4 protocol compatibility unverified.",
+      "provenance_status": "Official WSJT sample directory categorizes this file as FT4; capture/generator identity and settings not independently established.",
+      "classification": "2019 official FT4 example from experimental-era publication; exact waveform revision unverified"
+    },
+    {
+      "bytes": 360044,
+      "sha256": "e33d39ef14b520f427843d9ea97f20480901f978b328205db056b53a1d5bef2f",
+      "source_url": "https://downloads.sourceforge.net/project/wsjt/samples/FT4/190106_000115.wav",
+      "wave_fmt_fields": [
+        1,
+        1,
+        12000,
+        24000,
+        2,
+        16
+      ],
+      "chunks": [
+        [
+          "fmt ",
+          16
+        ],
+        [
+          "data",
+          360000
+        ]
+      ],
+      "riff_length_matches": true,
+      "channels": 1,
+      "sample_rate_hz": 12000,
+      "sample_width_bytes": 2,
+      "frames": 180000,
+      "duration_seconds": 15.0,
+      "compression": "NONE",
+      "relative_download_path": "official-legacy/190106_000115.wav",
+      "publisher_directory_modified_date": "2019-03-29",
+      "directory_url": "https://sourceforge.net/projects/wsjt/files/samples/FT4/",
+      "download_status": "actual audio bytes downloaded and header/hash verified",
+      "sample_representation": "signed 16-bit little-endian PCM",
+      "stored_in_repository": false,
+      "publisher_checksum_verification": "No publisher checksum acquired; SHA256 computed locally from downloaded bytes.",
+      "ground_truth_status": "No independent message/measurement truth established; no decoder run performed.",
+      "mode_compatibility_status": "Modern FT4 protocol compatibility unverified.",
+      "provenance_status": "Official WSJT sample directory categorizes this file as FT4; capture/generator identity and settings not independently established.",
+      "classification": "2019 official FT4 example from experimental-era publication; exact waveform revision unverified"
+    },
+    {
+      "bytes": 145196,
+      "sha256": "d9e91fa04ba138a7b9f41b4103823c77ca1c3a9775101f6b14d60935bcd3813b",
+      "source_url": "https://downloads.sourceforge.net/project/wsjt/samples/FT4/000000_000002.wav",
+      "wave_fmt_fields": [
+        1,
+        1,
+        12000,
+        24000,
+        2,
+        16
+      ],
+      "chunks": [
+        [
+          "fmt ",
+          16
+        ],
+        [
+          "data",
+          145152
+        ]
+      ],
+      "riff_length_matches": true,
+      "channels": 1,
+      "sample_rate_hz": 12000,
+      "sample_width_bytes": 2,
+      "frames": 72576,
+      "duration_seconds": 6.048,
+      "compression": "NONE",
+      "relative_download_path": "modern-candidates/000000_000002.wav",
+      "publisher_directory_modified_date": "2026-06-29",
+      "directory_url": "https://sourceforge.net/projects/wsjt/files/samples/FT4/",
+      "download_status": "actual audio bytes downloaded and header/hash verified",
+      "sample_representation": "signed 16-bit little-endian PCM",
+      "stored_in_repository": false,
+      "publisher_checksum_verification": "No publisher checksum acquired; SHA256 computed locally from downloaded bytes.",
+      "ground_truth_status": "No independent message/measurement truth established; no decoder run performed.",
+      "mode_compatibility_status": "Modern FT4 protocol compatibility unverified.",
+      "provenance_status": "Official WSJT sample directory categorizes this file as FT4; capture/generator identity and settings not independently established.",
+      "classification": "2026-date official FT4 candidate; current-protocol compatibility unverified"
+    }
+  ],
+  "unacquired_modern_corpus": {
+    "publisher": "Tihomir Sokcevic, CE3TSK",
+    "benchmark_readme_url": "https://www.ce3tsk.com/download/wav/README.md",
+    "license_claim": "Publisher benchmark README explicitly states recordings and code GPL v3.",
+    "download_status": "blocked: direct audio and publisher-standard ZIP requests returned HTTP 406; no audio bytes acquired",
+    "attempted_standard_zip_urls": [
+      "https://www.ce3tsk.com/download/wav/crowded_band.zip",
+      "https://www.ce3tsk.com/download/wav/ft4_onair_1h.zip"
+    ],
+    "public_mirror_check": {
+      "repository": "https://github.com/ce3tsk/jtdx_contest",
+      "tree_commit": "796c25e44762a596eadb277932dbf30073db9602",
+      "result": "No FT4 WAV/TSV/ZIP found in full repository tree or assets from ten most recent releases."
+    },
+    "ground_truth_status": "Publisher describes synthetic FT4 manifest truth and off-air hour without ground truth; neither independently verified."
+  }
+}
