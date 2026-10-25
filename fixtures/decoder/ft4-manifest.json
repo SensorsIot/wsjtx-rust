@@ -154,10 +154,13 @@
       "sample_representation": "signed 16-bit little-endian PCM",
       "stored_in_repository": false,
       "publisher_checksum_verification": "No publisher checksum acquired; SHA256 computed locally from downloaded bytes.",
-      "ground_truth_status": "No independent message/measurement truth established; no decoder run performed.",
-      "mode_compatibility_status": "Modern FT4 protocol compatibility unverified.",
+      "ground_truth_status": "Pinned external decoder produced19 messages matching official documented fixture count; this is reference baseline output, not independent ground truth.",
+      "mode_compatibility_status": "Exact bytes match pinned official beta4 FT4 fixture; documented --ft4 -d3 run produced19 decode lines. Protocol-wide conformance and independent message/measurement truth remain unverified.",
       "provenance_status": "Official WSJT sample directory categorizes this file as FT4; capture/generator identity and settings not independently established.",
-      "classification": "2026-date official FT4 candidate; current-protocol compatibility unverified"
+      "classification": "2026-date official FT4 fixture with observed beta4 standalone decoding; no independent quality oracle",
+      "pinned_official_source_url": "https://raw.githubusercontent.com/WSJTX/wsjtx/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/samples/FT4/000000_000002.wav",
+      "pinned_official_git_blob_sha1": "e5cdc88040b477cad842d51c4dd8e5fb6fdbe803",
+      "pinned_official_byte_identity_verified": true
     }
   ],
   "unacquired_modern_corpus": {
@@ -175,5 +178,6 @@
       "result": "No FT4 WAV/TSV/ZIP found in full repository tree or assets from ten most recent releases."
     },
     "ground_truth_status": "Publisher describes synthetic FT4 manifest truth and off-air hour without ground truth; neither independently verified."
-  }
+  },
+  "reference_observation_manifest": "reference-manifest.json"
 }

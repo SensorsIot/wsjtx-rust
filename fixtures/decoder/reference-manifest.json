@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-10-25",
+  "purpose": "Pinned offline reference binary acquisition and observable baseline evidence; no candidate decoder implementation or correctness claim.",
+  "release_url": "https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4",
+  "release_tag": "v3.3.0-beta4",
+  "release_commit": "0f7d5928449ec747c3d1f6da1306f8c94404c3a9",
+  "assets": [
+    {
+      "name": "release-manifest.json",
+      "source_url": "https://github.com/WSJTX/wsjtx/releases/download/v3.3.0-beta4/release-manifest.json",
+      "bytes": 8817,
+      "sha256": "046d73e4c4d6d4bc4ad48c1273cafe714a3a8ef09bba43a1a0db34398a111d05",
+      "downloaded_bytes_verified": true
+    },
+    {
+      "name": "SHA256SUMS",
+      "source_url": "https://github.com/WSJTX/wsjtx/releases/download/v3.3.0-beta4/SHA256SUMS",
+      "bytes": 4813,
+      "sha256": "8c95d047e566c33e88fb6c67d9973445132d4ae58a7aefa99a18c78b2049b9eb",
+      "downloaded_bytes_verified": true
+    },
+    {
+      "name": "wsjtx-3.3.0-beta4-windows-x86_64-codec.tar.gz",
+      "source_url": "https://github.com/WSJTX/wsjtx/releases/download/v3.3.0-beta4/wsjtx-3.3.0-beta4-windows-x86_64-codec.tar.gz",
+      "bytes": 6233144,
+      "sha256": "ead15af2ab6126fc2d68105f96f6943c52d45fb40f86fa9ff2771ab5d069423e",
+      "downloaded_bytes_verified": true
+    },
+    {
+      "name": "wsjtx-3.3.0-beta4-windows-x86_64-jt9.tar.gz",
+      "source_url": "https://github.com/WSJTX/wsjtx/releases/download/v3.3.0-beta4/wsjtx-3.3.0-beta4-windows-x86_64-jt9.tar.gz",
+      "bytes": 5950644,
+      "sha256": "cab4a54807e39e57ca4b9874f5bc3dbad252c6bb3757b9731a8abe2372218df5",
+      "downloaded_bytes_verified": true
+    },
+    {
+      "name": "wsjtx-3.3.0-beta4-windows-x86_64-utilities.tar.gz",
+      "source_url": "https://github.com/WSJTX/wsjtx/releases/download/v3.3.0-beta4/wsjtx-3.3.0-beta4-windows-x86_64-utilities.tar.gz",
+      "bytes": 5047331,
+      "sha256": "868b1be818a0d8728153a272524e053e3cf3d05c12e02ddc54de0501649f8a26",
+      "downloaded_bytes_verified": true
+    }
+  ],
+  "archive_verification": "Each downloaded asset matches GitHub asset digest; command-line tarballs also match release-manifest.json and SHA256SUMS.",
+  "executables": [
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-codec\\wsjt-codec.exe",
+      "bytes": 10785880,
+      "sha256": "c3263d36e08e012c4a1856c8046564db97af38dfd589374f56c9ad19934a2655",
+      "executed": false
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-jt9\\jt9.exe",
+      "bytes": 10023652,
+      "sha256": "a2d0b111d91248bf3fd74be016c5afbb82b37fa11bf0e9563a420623bdd1b6ab",
+      "executed": true
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\cwsim.exe",
+      "bytes": 63408,
+      "sha256": "471529bd53c8bca4e4413f33a2fc4f2f8c3687e1f9fc5ba5d4c16765a66a64df",
+      "executed": false
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\encode77.exe",
+      "bytes": 471836,
+      "sha256": "4359a4fa3d57be4ee382b738b48fece1b74f3b4801d6d1163fb3b24a5e733a57",
+      "executed": true
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\ft4sim.exe",
+      "bytes": 525385,
+      "sha256": "9af0e5e984b45a1de70f4407a65aa80d970b06b30b1b330481900bc2ad07dd00",
+      "executed": false
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\jt4sim.exe",
+      "bytes": 130856,
+      "sha256": "68da20fe8f60bc85b16fd26a23efb870ea37f67213489436b2f1993b5877102e",
+      "executed": false
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\jt65sim.exe",
+      "bytes": 156138,
+      "sha256": "7d03ed330caa9d62dac2a68a70b53f8be4a7e7080f6ccc01dc9063ffd64ac8ee",
+      "executed": false
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\sfoxsim.exe",
+      "bytes": 734677,
+      "sha256": "9fb38ed35abd11b45b4fc1f6c7bfe2f077e84d800c6e93247461138104958911",
+      "executed": false
+    },
+    {
+      "file": "unpacked\\wsjtx-3.3.0-beta4-windows-x86_64-utilities\\wsprcode.exe",
+      "bytes": 76411,
+      "sha256": "9e8334a36276cd39ffdbd31e73d154cf623d53f3ff16583379c6562ee2029c2f",
+      "executed": false
+    }
+  ],
+  "reference_execution_authority": "Supervisor authorized verified documented standalone jt9 WAV commands only; no installer, hardware, audio devices or production configuration.",
+  "documentation_urls": [
+    "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/test/fixtures/README.md",
+    "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/README.md"
+  ],
+  "settings_limitation": "Only recorded mode/depth and work directories were explicitly set. Remaining standalone binary defaults are pinned by binary digest, not independently characterized.",
+  "runs": [
+    {
+      "case": "ft4-current",
+      "reference_version": "3.3.0-beta4",
+      "binary_sha256": "a2d0b111d91248bf3fd74be016c5afbb82b37fa11bf0e9563a420623bdd1b6ab",
+      "input_filename": "000000_000002.wav",
+      "input_sha256": "d9e91fa04ba138a7b9f41b4103823c77ca1c3a9775101f6b14d60935bcd3813b",
+      "input_bytes": 145196,
+      "mode_flags": [
+        "--ft4",
+        "-d",
+        "3"
+      ],
+      "data_and_temp_directories": "Unique empty per-case external directories; both explicitly passed with -a/-t; no installed settings used.",
+      "offline_command_evidence": "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/test/fixtures/README.md",
+      "exit_code": 0,
+      "timeout_seconds": 45,
+      "timed_out": false,
+      "observed_decode_lines": 19,
+      "wall_seconds": 1.076216600020416,
+      "runtime_status": "single observation during development workload; not controlled runtime acceptance evidence",
+      "stdout_bytes": 1289,
+      "stdout_sha256": "e336a5626d9a934c11f22198d011733c59756fd65a0c25ab28d22d7f6a182e66",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "external_record_relative_path": "reference-runs/beta4-2026-10-25/ft4-current/run.json",
+      "input_original_unchanged": true,
+      "evidence_class": "external decoder baseline, not independently established ground truth"
+    },
+    {
+      "case": "ft8-official",
+      "reference_version": "3.3.0-beta4",
+      "binary_sha256": "a2d0b111d91248bf3fd74be016c5afbb82b37fa11bf0e9563a420623bdd1b6ab",
+      "input_filename": "210703_133430.wav",
+      "input_sha256": "9feb99c275770a6618538026da7decc6b09eb6cf63121e5168fa86dcdf00c2f5",
+      "input_bytes": 360246,
+      "mode_flags": [
+        "-8"
+      ],
+      "data_and_temp_directories": "Unique empty per-case external directories; both explicitly passed with -a/-t; no installed settings used.",
+      "offline_command_evidence": "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/test/fixtures/README.md",
+      "exit_code": 0,
+      "timeout_seconds": 45,
+      "timed_out": false,
+      "observed_decode_lines": 14,
+      "wall_seconds": 1.5031136000761762,
+      "runtime_status": "single observation during development workload; not controlled runtime acceptance evidence",
+      "stdout_bytes": 959,
+      "stdout_sha256": "b7d72ce85f41244a8b15e498f22be3e20259b369aa2cb3a7faf7ede2bf9091d7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "external_record_relative_path": "reference-runs/beta4-2026-10-25/ft8-official/run.json",
+      "input_original_unchanged": true,
+      "evidence_class": "external decoder baseline, not independently established ground truth"
+    },
+    {
+      "case": "ft4-2019-short",
+      "reference_version": "3.3.0-beta4",
+      "binary_sha256": "a2d0b111d91248bf3fd74be016c5afbb82b37fa11bf0e9563a420623bdd1b6ab",
+      "input_filename": "190106_000112.wav",
+      "input_sha256": "44c84ec36a7799b460f2bb529677093146be61db495659c57813176af8dc82ee",
+      "input_bytes": 131564,
+      "mode_flags": [
+        "--ft4",
+        "-d",
+        "3"
+      ],
+      "data_and_temp_directories": "Unique empty per-case external directories; both explicitly passed with -a/-t; no installed settings used.",
+      "offline_command_evidence": "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/test/fixtures/README.md",
+      "exit_code": 0,
+      "timeout_seconds": 45,
+      "timed_out": false,
+      "observed_decode_lines": 0,
+      "wall_seconds": 0.5129821000155061,
+      "runtime_status": "single observation during development workload; not controlled runtime acceptance evidence",
+      "stdout_bytes": 164,
+      "stdout_sha256": "526c926eb8d142e25ff8e891a113d8e3573d1dab2c4bba2f5f33727d052b13e1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "external_record_relative_path": "reference-runs/beta4-2026-10-25/ft4-2019-short/run.json",
+      "input_original_unchanged": true,
+      "evidence_class": "external decoder baseline, not independently established ground truth"
+    },
+    {
+      "case": "ft4-2019-long",
+      "reference_version": "3.3.0-beta4",
+      "binary_sha256": "a2d0b111d91248bf3fd74be016c5afbb82b37fa11bf0e9563a420623bdd1b6ab",
+      "input_filename": "190106_000115.wav",
+      "input_sha256": "e33d39ef14b520f427843d9ea97f20480901f978b328205db056b53a1d5bef2f",
+      "input_bytes": 360044,
+      "mode_flags": [
+        "--ft4",
+        "-d",
+        "3"
+      ],
+      "data_and_temp_directories": "Unique empty per-case external directories; both explicitly passed with -a/-t; no installed settings used.",
+      "offline_command_evidence": "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/test/fixtures/README.md",
+      "exit_code": 0,
+      "timeout_seconds": 45,
+      "timed_out": false,
+      "observed_decode_lines": 0,
+      "wall_seconds": 0.45666519994847476,
+      "runtime_status": "single observation during development workload; not controlled runtime acceptance evidence",
+      "stdout_bytes": 35,
+      "stdout_sha256": "ef454abec088acb1682697f6f6e4e37bddbfb52306f61ff412504cd9bfacd74a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "external_record_relative_path": "reference-runs/beta4-2026-10-25/ft4-2019-long/run.json",
+      "input_original_unchanged": true,
+      "evidence_class": "external decoder baseline, not independently established ground truth"
+    }
+  ],
+  "protocol_resource": {
+    "source_url": "https://www.arrl.org/files/file/QEX%20Binaries/2020/ft4_ft8_protocols.tgz",
+    "archive_bytes": 6804,
+    "archive_sha256": "19d680a2676490a829245b90d386b72c8f2ea857fcaff3c872a7bcd9ba784f84",
+    "primary_description_url": "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf",
+    "license_evidence": "Paper section 9 identifies the reference-14 resources as public-domain protocol material with stated conditions; this is not a blanket public-domain claim for WSJT-X source or documentation.",
+    "source_code_inspected": false,
+    "published_tables": [
+      {
+        "name": "generator.dat",
+        "bytes": 7839,
+        "sha256": "a803e478e99441043a50819470cbb3866cd72c28b63989792941211bf37a6dc5",
+        "matrix_rows": 83,
+        "matrix_columns": 91
+      },
+      {
+        "name": "parity.dat",
+        "bytes": 3276,
+        "sha256": "a9a1e1cd67d3c83b078c16d2ad83807ce6f5a6aaf84839a2cf5875353909085e",
+        "matrix_rows": 83,
+        "matrix_columns": 174
+      }
+    ],
+    "table_checks": "Parsed published data only: generator83x91, parity83x174; each parity column has3 ones, each row6 or7; H*[I;G] is zero overGF(2) for all91 input basis vectors. This proves table consistency, not message encoder or waveform correctness.",
+    "failed_primary_mirror": "https://physics.princeton.edu/pulsar/k1jt/ft4_ft8_protocols.tgz returned HTTP403."
+  },
+  "documented_encoder_observation": {
+    "binary_sha256": "4359a4fa3d57be4ee382b738b48fece1b74f3b4801d6d1163fb3b24a5e733a57",
+    "message_argument": "CQ K1ABC FN42",
+    "source_url": "https://github.com/WSJTX/wsjtx/blob/0f7d5928449ec747c3d1f6da1306f8c94404c3a9/tests/unit/packjt77/test_encode77.cmake",
+    "exit_code": 0,
+    "stdout_sha256": "4f51cd35d71f117ff7dc81f46aaec0f154ed4f06374083957579fd0afdbf0dfe",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "observed_result": "OK; input and unpacked output text both CQ K1ABC FN42. This invocation emits no payload/codeword/tone/waveform vector.",
+    "external_record_relative_path": "reference-runs/beta4-2026-10-25/encode77-documented-cq/run.json",
+    "evidence_class": "external reference encoder output for preselected message; not independent bit-level ground truth"
+  }
+}
