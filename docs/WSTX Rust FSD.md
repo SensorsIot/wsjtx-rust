@@ -108,9 +108,9 @@ client is the initial interface direction; a Tauri or other desktop wrapper has 
 
 ### 3.6 Additional targets: configured instances and direct FlexRadio access
 
-The following extensions build on the status-only communication slice. CR #5 now has
-a phase-1 implementation candidate that passed independent code review and the local
-Windows gate; live acceptance remains pending. Phase 2 remains specified future work.
+The following extensions build on the status-only communication slice. CR #5 delivers
+phase 1; review, validation and acceptance evidence remains on issue #5. Phase 2 remains
+specified future work.
 Neither was delivered by CR #3.
 Their phase numbers describe the requested
 sequence for this extension, not completion of the broader delivery milestones.
@@ -163,11 +163,11 @@ the other functional areas retain their proposed scope until settled.
 | FR-015 | Utilities | Identify the user and validation needs served by upstream utilities. Provide the selected capabilities through the smallest practical interface, documenting any required external compatibility. |
 | FR-016 | Settings and migration | Persist Rust application settings reliably. Define compatibility and migration behavior for existing WSJT-X profiles before a user migration release. |
 | FR-017 | Help and notices | Provide operating guidance, version information, relevant attribution, license access, and a clear indication that this is an independent port. |
-| FR-018 | Recorded audio input | Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. The first recorded-input format, bounded import/replay workflow and tests are specified in4.4/6.4/12.6 and present as the #6 candidate; acceptance evidence remains on issue #6. |
+| FR-018 | Recorded audio input | Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. The first recorded-input format, bounded import/replay workflow and tests are specified in4.4/6.4/12.6 and delivered by #6; acceptance evidence remains on issue #6. |
 | FR-019 | Browser operator interface | Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. |
 | FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
 | FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
-| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. CR #5 candidate implements phase 1 and passed independent code review and the local Windows gate; live acceptance remains pending. CR #3 did not implement profiles. |
+| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. CR #5 delivers phase 1; review, validation and acceptance evidence remains on issue #5. CR #3 did not implement profiles. |
 | FR-023 | Optional direct FlexRadio integration — phase 2 target | Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Specified target; not implemented or accepted by CR #3. |
 
 ### 4.1 Browser–server status functions
@@ -246,9 +246,8 @@ authentication tests alone do not verify FR-022 clause 4.
 
 This approved target refines the five numbered clauses above and the approved roadmap
 issue [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5). The operator approved this
-contract with four concurrent servers sufficient for acceptance. The implementation
-candidate follows it and passed independent code review and the local Windows gate;
-**live acceptance remains pending**.
+contract with four concurrent servers sufficient for acceptance. The delivered profile
+implementation follows it; review, validation and acceptance evidence remains on issue #5.
 Preparation proceeds Markdown requirements/tests
 first, then SysML, a meaning comparison, code from the reconciled model, and verification
 against these original Markdown expectations. Product code starts only after independent
@@ -456,9 +455,9 @@ establish FT4 correctness. This is a planned milestone, not an implemented decod
 This is the authorized minimal first-version contract, with independent cases in6.4
 and its communication extension in12.6. Source compatibility has been checked against
 the 22 pinned mono 12kHz PCM16 FT8 reference recordings and three retained FT4 candidates.
-The source contains the recorded-input/spectrum candidate described below. Independent
-review, execution evidence and acceptance status are recorded on issue #6; source
-presence and model readiness do not establish acceptance.
+The recorded-input/spectrum functionality described below is delivered. Review,
+validation and acceptance evidence is recorded on issue #6; the wider offline decoder
+milestone remains planned.
 
 | Clause | Requirements | Promise | Verification |
 |---|---|---|---|
@@ -590,7 +589,7 @@ original immutable samples. #6 fixes N=2048; #7 owns its supported transform siz
 bounded modem working history. Plan once per needed size/worker, never per display row;
 check lengths before processing so invalid input cannot reach a panic precondition.
 No generic FFT wrapper or additional RealFFT dependency is needed. This is the central
-owned dependency contract; the candidate declares RustFFT once in the server crate.
+owned dependency contract; the implementation declares RustFFT once in the server crate.
 The independent math/oracles remain this definition, rather than library output. Normative primary API: [RustFFT6.4.1 normalization/output order](https://docs.rs/rustfft/6.4.1/rustfft/),
 [`Fft` scratch/buffer contract](https://docs.rs/rustfft/6.4.1/rustfft/trait.Fft.html) and
 [`FftPlannerScalar`](https://docs.rs/rustfft/6.4.1/rustfft/struct.FftPlannerScalar.html).
@@ -1474,8 +1473,8 @@ is not proof that a profile is still owned.
 The approved #5 target is in [4.2](#42-concurrent-persisted-station-profiles--target-fr-022)
 and [12.5](#125-profile-interface-for-cr-5), with independent cases in
 [6.2](#62-tests-for-concurrent-persisted-profiles). Its Markdown/model preparation is
-reconciled and the profile/settings candidate is implemented; independent code review
-and the local Windows gate passed, while live acceptance remains pending. The wider target architecture
+reconciled and the profile/settings functionality is delivered; review, validation and
+acceptance evidence remains on issue #5. The wider target architecture
 does not assert hardware or mode implementation.
 
 The profile is selected explicitly at startup and its effective identity is visible in
@@ -1667,7 +1666,7 @@ this product map does not change that process.
 The current source has an Axum/Tokio status/profile server in
 [server/src/main.rs](../server/src/main.rs), profile validation/persistence/OS ownership in
 [server/src/profile.rs](../server/src/profile.rs), native TLS and embedded
-[client files](../client/index.html). The #6 candidate adds bounded original-WAV import,
+[client files](../client/index.html). The delivered #6 functionality adds bounded original-WAV import,
 immutable sample blocks, replay/cancellation and recovery in
 [server/src/recording.rs](../server/src/recording.rs), authenticated HTTP recording routes in
 [server/src/recording_http.rs](../server/src/recording_http.rs), the shared RustFFT-backed
@@ -1675,10 +1674,9 @@ calibrated transform in [server/src/spectrum.rs](../server/src/spectrum.rs), opt
 WebSocket display and integrated spectrum/waterfall panes. Its independent verification
 companions implement the six case definitions in6.4. Explicit fixture setup is separate
 from offline test execution; the manual-only Windows workflow includes both legacy and
-recording suites against the same release executable. This describes candidate source
-presence; issue #6 owns its actual run, review and acceptance evidence.
-CR #5 is an implemented candidate that passed independent code review and the local
-Windows gate; live acceptance remains pending.
+recording suites against the same release executable. Issue #6 owns its review,
+validation and acceptance evidence. CR #5 profile/settings functionality is delivered;
+its review, validation and acceptance evidence remains on issue #5.
 No radio, decoder, transmit or MCP behavior is implemented.
 The planned modules and contracts above are introduced by their owning CRs.
 
@@ -1689,7 +1687,7 @@ native FlexRadio coordination/capabilities (#13) are preparation gates. Their na
 owners prevent two implementations from silently selecting incompatible contracts.
 The shared ownership allocation in11.3/11.7 is an early architecture decision.
 The first #6 formats/types/bounds/lifetimes/states/errors/timing/wire/oracles are defined
-in4.4/6.4/12.6 and RecordingReceive.sysml and are represented by the candidate modules
+in4.4/6.4/12.6 and RecordingReceive.sysml and are represented by the delivered modules
 above. #7 mode contracts and #8/#9 adapter/safety
 contracts remain separate preparation decisions. Settle them in Markdown, reconcile the affected model and compare
 meaning independently before dependent code. A structural model or source fingerprint
@@ -1802,8 +1800,8 @@ ordinary connections. Structural checks retain this connector-kind distinction.
 
 All FSD requirements have a responsibility or an explicit unresolved extension boundary.
 This matrix does not declare the full baseline implemented: section 11.8 distinguishes
-the accepted status slice from the implemented, independently reviewed and locally
-Windows-gated CR #5 profile candidate whose live acceptance remains pending.
+the delivered status, CR #5 profile/settings and CR #6 recorded-input/display slices
+from the remaining planned capabilities.
 Target structure for #5-#13 is detailed above; remaining
 baseline inventories must be settled before their implementing CRs, without moving
 hardware policy or authoritative state into clients.
@@ -1844,10 +1842,10 @@ communication-contract chapters. A rendered diagram is not additional architectu
 |---|---|
 | `Requirements.sysml` | Stable product FR/CL/TC identities and prose from the FSD; generated structured projection. |
 | `Architecture.sysml` | Deployment, parts, semantic interfaces, connections, identity associations and the standard `physicalInterconnection` view described here. |
-| `RecordingReceive.sysml` | CR #6 typed recording/sample/job/frame/HTTP/WS data, lifecycle/limits and independent verification from4.4/6.4/12.6, allocated to existing profile/station/receive/audio/web/browser usages. Candidate source/verification companions exist; run, review and acceptance evidence remains on issue #6. |
-| `Profiles.sysml` | Approved CR #5 implementation contract from 4.2, 6.2 and 12.5: typed configuration/HTTP data, ordered validation, lifecycle/save/session behavior, ownership and independent verification. Allocated to the existing profile, station, web and browser usages; not another deployment. Candidate source/test bindings are recorded; code review, the local gate and live acceptance remain separate. |
+| `RecordingReceive.sysml` | CR #6 typed recording/sample/job/frame/HTTP/WS data, lifecycle/limits and independent verification from4.4/6.4/12.6, allocated to existing profile/station/receive/audio/web/browser usages. Delivered source/verification companions exist; review, validation and acceptance evidence remains on issue #6. |
+| `Profiles.sysml` | Approved CR #5 implementation contract from 4.2, 6.2 and 12.5: typed configuration/HTTP data, ordered validation, lifecycle/save/session behavior, ownership and independent verification. Allocated to the existing profile, station, web and browser usages; not another deployment. Delivered source/test bindings are recorded; review, validation and acceptance evidence remains on issue #5. |
 
-The status slice and CR #5 profile candidate are implemented. The target structure covers the queued
+The status, CR #5 profile/settings and CR #6 recorded-input/display slices are delivered. The target structure covers the queued
 CRs and remaining functional ownership in section 11.10. Full implementation readiness
 requires each CR's behavioral/data/state/timing/error contracts and independent oracles;
 structural validation does not establish those facts. Authoring, tool installation and
@@ -2073,7 +2071,8 @@ Execution procedures are defined in the project-specific harness.
 
 ### 12.5. Profile interface for CR #5
 
-**Status: CR #5 implementation contract and candidate; live acceptance pending.** Applies
+**Status: delivered CR #5 profile interface.** Review, validation and acceptance evidence
+remains on issue #5. Applies
 only to explicit `--profile` startup. The environment-only CR #3 mode, existing
 `station.get`/`station.status` payloads, `wstx.v1`, 1,024-byte WebSocket limits and
 liveness/rate/connection limits remain unchanged. There is no new WebSocket command

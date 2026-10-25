@@ -1,9 +1,9 @@
-// Canonical profile contract SHA256: 7dcb243dbff3ad3e85831c623736f75ba8fb5b673bdaa023dffd7504eb73c24b
+// Canonical profile contract SHA256: c78d7c8250b624200d11f237846fd2deea8269e0e73fb45ddf4029b700caa0b7
 package WstxProfiles {
     private import ScalarValues::*;
 
-    doc /* Approved implementation contract for the CR #5 candidate. Product source/test
-         companions now exist; no acceptance or modeled verification verdict is asserted. Markdown remains authoritative:
+    doc /* Implementation contract for the delivered CR #5 profile functionality. Review,
+         validation and acceptance evidence remains on issue #5; no modeled verification verdict is asserted. Markdown remains authoritative:
          docs/WSTX Rust FSD.md 4.2 (selection/schema/ownership), 6.2 (independent cases),
          12.5 (HTTP/session); existing 12.1..12.4 remain the legacy/status contract.
          UUID: RFC 9562 section 5.4, https://www.rfc-editor.org/rfc/rfc9562.html#section-5.4.
@@ -455,7 +455,7 @@ package WstxProfiles {
         doc /* Case identities remain WstxRequirements::TC-022-001..004, projected
              from authoritative Markdown 6.2. No cases/verdicts are regenerated from
              action calculations. These declarations refine their subjects/oracles.
-             Implemented candidate companions, level 2 isolated automated Windows PC tests;
+             Delivered source/test companions, level 2 isolated automated Windows PC tests;
              FOUR real candidate processes, distinct saved ports/profiles, four real
              Chromium windows sharing ONE context/cookie store; no radio/device/live
              account/external-service/duplicate hosted run. Rust profile tests in

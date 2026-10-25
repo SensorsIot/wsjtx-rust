@@ -1,11 +1,11 @@
-// Canonical architecture SHA256: 7dcb243dbff3ad3e85831c623736f75ba8fb5b673bdaa023dffd7504eb73c24b
+// Canonical architecture SHA256: c78d7c8250b624200d11f237846fd2deea8269e0e73fb45ddf4029b700caa0b7
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
          Items are semantic responsibilities, not wire schemas or Rust API definitions.
          CR #6 concrete data/state/HTTP/display/oracles refine existing usages in
-         WstxRecordingReceive (RecordingReceive.sysml), FSD4.4/6.4/12.6. Independent
-         implementation readiness review remains pending; no feature execution claimed. */
+         WstxRecordingReceive (RecordingReceive.sysml), FSD4.4/6.4/12.6. This recorded
+         input/display slice is delivered; review, validation and acceptance evidence remains on issue #6. */
 
     doc /* Approved CR #5 profile behavior/data/state/HTTP/session implementation
          contract is WstxProfiles in Profiles.sysml. It refines the existing station
@@ -234,7 +234,7 @@ package WstxArchitecture {
              one shared FFT provider, ordering/scaling, buffer policy and independent
              oracles before either writes FFT code; no speculative wrapper is required.
              FSD4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
-             first recorded spectrum contract; independent readiness review is pending.
+             delivered recorded spectrum contract; review and acceptance evidence remains on issue #6.
              #7 modem sizes/history and #8 live adapter contracts remain separate gates. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
@@ -377,7 +377,7 @@ package WstxArchitecture {
     dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
     package ImplementedStatusSlice {
         doc /* Legacy status/TLS subset retained alongside Profiles.sysml's implemented
-             CR #5 candidate. Target deployment above is not an assertion of implemented
+             CR #5 profile functionality. Target deployment above is not an assertion of implemented
              radio, modem or MCP support. */
         part def StatusServer;
         dependency statusScope from StatusServer to WstxRequirements::'CL-003-01';
