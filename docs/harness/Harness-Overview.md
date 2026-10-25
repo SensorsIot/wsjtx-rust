@@ -8,11 +8,13 @@ contract; the references below are the constraints a change must respect.
 |---|---|
 | Product contract | [WSTX Rust FSD](../WSTX%20Rust%20FSD.md) |
 | Product component/interface boundaries | [Target architecture](../ARCHITECTURE.md) |
+| Parallel product SysML model and Markdown authority | [SysML representation](../SYSML.md) |
 | Upstream relation and provenance | [Upstream](../UPSTREAM.md), [Samples](../SAMPLES.md) |
 | Build environment and CI | [Building](../BUILDING.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
 | Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |
 | Testing | [testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
+| Writing functional SysML companions | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | [Escapes ledger](Escapes-Ledger.md) |
@@ -55,6 +57,12 @@ The paths a harness change may touch; everything else is product:
 - `.github/workflows/` (the CI build)
 
 ## Documentation is current-state
+
+The Markdown FSD remains authoritative. Only functional product documentation has a
+SysML companion: requirements, product behavior, architecture/interfaces and verification
+cases. Harness instructions, skills, workflows, standards and gate documentation remain
+Markdown. The harness authoring chapter explains how to write product models; the harness
+itself is not modeled in SysML.
 
 The [FSD](../WSTX%20Rust%20FSD.md#61-browser-and-server-test-catalogue) owns this project's
 stable functional clauses and test descriptions. Test source holds executable assertions
