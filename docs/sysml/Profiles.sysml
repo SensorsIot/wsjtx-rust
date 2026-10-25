@@ -1,4 +1,4 @@
-// Canonical profile contract SHA256: 9432de6463ff64131f06c0f58e0ce5f2a4f73000478eb6f3e90fd7a9d376bddb
+// Canonical profile contract SHA256: cb69f3bb6d1d7331b4470b7f5311cbde22bbc8a64d37f4c61722bdbe71b52b3e
 package WstxProfiles {
     private import ScalarValues::*;
 
@@ -345,7 +345,8 @@ package WstxProfiles {
              SameSite=Strict, Max-Age=28800. Expiry is browser lifetime, not a new
              server-enforced session expiry. Token rotation plus this process restart
              invalidates only this profile's old credential; never delete others' cookies.
-             TLS WS still exact Origin, wstx.v1, 1024-byte frames, existing rate/liveness/
+             TLS WS still exact Origin, wstx.v1, 1024-byte incoming/control frames,
+             opt-in outbound Detailed exception in12.6, existing rate/liveness/
              connection rules. No account roles or transmit authority are created.
              HttpOnly cookie is permitted credential persistence; forbid localStorage,
              sessionStorage, profile JSON, retained form/page state after submission,
