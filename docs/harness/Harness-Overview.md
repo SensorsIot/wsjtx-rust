@@ -8,9 +8,9 @@ contract; the references below are the constraints a change must respect.
 |---|---|
 | Product contract | [WSTX Rust FSD](../WSTX%20Rust%20FSD.md) |
 | Product component/interface boundaries | [Target architecture](../ARCHITECTURE.md) |
-| Parallel product SysML model and Markdown authority | [SysML representation](../SYSML.md) |
-| Upstream relation and provenance | [Upstream](../UPSTREAM.md), [Samples](../SAMPLES.md) |
-| Build environment and CI | [Building](../BUILDING.md), `.github/workflows/windows-rust.yml` |
+| Product SysML artifacts and view scope | [Architecture model](../ARCHITECTURE.md#11-functional-model-and-views) |
+| Behavior baseline and provenance | [FSD](../WSTX%20Rust%20FSD.md), [Samples](../SAMPLES.md); notices in [README](../../README.md#license-and-attribution) |
+| Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
 | Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |
 | Testing | [testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
@@ -22,6 +22,10 @@ contract; the references below are the constraints a change must respect.
 
 ## Bindings
 
+The reusable general process is in `harness/core/`; Rust rules and compiler checks are
+in `harness/lang/rust/`. Project configuration is in `.harness/`, and project-specific
+environment, build and model-maintenance instructions are in [Project specifics](Project-Specifics.md).
+
 - **Main branch:** `master`; the push gate compares against `origin/master`.
 - **Execution mode:** local. The Windows PC is authoritative for compiler checks,
   the full automated suite including the 60-second bandwidth measurement, and release
@@ -31,7 +35,7 @@ contract; the references below are the constraints a change must respect.
 - **Configuration:** `execution_mode: local` in `.harness/config.yaml` selects local
   gate execution. The manual-only hosted workflow supplies the alternative location
   when explicitly selected; it does not add a routine second run.
-- **Deploy:** a locally built Windows release executable ([Building](../BUILDING.md));
+- **Deploy:** a locally built Windows release executable ([Project specifics](Project-Specifics.md));
   the dry run uses that candidate on this PC. The manual hosted alternative can provide
   the same evidence when explicitly chosen instead.
 - **Live tests:** none yet. Tests that need a radio, a sound device or the network are
@@ -74,6 +78,11 @@ Product-specific acceptance tests, fixtures and the provisioning/wiring needed t
 them belong to the functional CR they verify. Changes to the reusable development method
 belong to harness work; adding browser and thin-link verification for FR-019/FR-021 is
 functional verification rather than a separate harness improvement.
+
+Documentation-maintenance clauses CL-014 and tool cases TC-DOC are HOW bindings in
+[Project specifics](Project-Specifics.md#project-model-documentation-contract). They
+remain Markdown-only. The FSD owns application functionality and its durable acceptance
+cases; the product SysML represents that functional contract and the declared architecture.
 
 The FSD, its companions and these bindings state the rule that holds now, never the path
 to it ([documentation](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/documentation.md)). Open work lives in

@@ -1,0 +1,243 @@
+# Project-specific harness bindings
+
+**Layer:** HOW. **Scope:** this project's development environment and procedures.
+
+The [general harness](https://github.com/SensorsIot/harness/tree/V2/core) defines the
+development process. The [Rust harness](https://github.com/SensorsIot/harness/tree/V2/lang/rust)
+defines reusable Rust rules and checks. This document binds those reusable instructions
+to this repository's toolchain, paths, test prerequisites and selected execution mode.
+Run the commands below from the repository root.
+
+## Windows build and packaging
+
+The Rust executable serves an embedded browser status client and a versioned WebSocket interface. Radio functionality is not implemented.
+
+The root Cargo workspace contains the station-server package in `server/`. Run Cargo commands from the repository root; the shared lock file and toolchain stay there, and Windows build artifacts remain under `target/x86_64-pc-windows-msvc/`. The `client/` files are embedded at Rust compile time, without a frontend build step.
+
+## GitHub Actions
+
+[Windows Rust](https://github.com/SensorsIot/wsjtx-rust/actions/workflows/windows-rust.yml)
+is a manual alternative, started explicitly from the Actions page. Pushes and pull
+requests do not trigger it. Normal development, the full test suite and release packaging
+run on the Windows PC; a local pass is not automatically repeated on GitHub.
+
+The workflow uses a GitHub-hosted Windows Server 2022 x64 runner with the MSVC build tools. It installs Rust 1.99.0, matching `rust-toolchain.toml`, and checks formatting, Clippy warnings, tests, release compilation, and execution of the built program. The executable is uploaded as the `wstx-rust-windows-x64` artifact with a 14-day retention period.
+
+No radio, sound device, third-party decoder or repository secrets are required. Rust dependencies implement HTTP/WebSockets, asynchronous networking, JSON and TLS. Node 24 test dependencies provide a real Chromium browser, independent WebSocket peer and disposable TLS certificates. The workflow runs browser tests against the compiled release executable. These checks validate status communication, not FT4/FT8 behavior.
+
+The workflow has read-only repository permissions and pins its checkout and artifact actions to specific commits. It does not publish GitHub releases or packages.
+
+## Local Windows development
+
+Install Rust through [rustup](https://rustup.rs/) and the Visual Studio C++ Build Tools with the Desktop development with C++ workload and a Windows SDK. The toolchain file selects the compiler version automatically.
+
+The local pre-push gate is the authoritative check:
+
+```powershell
+python harness/core/tools/gate.py
+```
+
+It selects the affected compiler checks and automated suites, including the full
+communication suite with its 60-second bandwidth measurement. The ordinary push hook
+uses the same gate and its valid memoized results. Do not repeat the individual checks
+below when the gate has already supplied their evidence for the same candidate.
+Release packaging also runs on this PC; start the packaged candidate for the dry run.
+
+From the repository root:
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+cargo fmt --all -- --check
+cargo clippy --workspace --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+cargo test --workspace --locked --all-targets --target x86_64-pc-windows-msvc
+cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
+./target/x86_64-pc-windows-msvc/release/wstx-rust.exe
+```
+
+The server stays running. Open `http://127.0.0.1:8080` in a browser; stop the server
+with Ctrl+C. Remote TLS and access settings are defined in the
+[communication contract](../COMMUNICATION.md#connection-and-security).
+
+For automated browser tests, install Node 24 and run from the repository root:
+
+```powershell
+npm ci --ignore-scripts
+npx playwright install chromium
+cargo build --locked
+npm test
+```
+
+This is the same full suite selected by the local gate, including the bandwidth test.
+Use the standalone command for targeted development or when that evidence is missing;
+it is not an extra mandatory run after a successful gate. The manual GitHub workflow
+remains an alternative execution location for this full recipe when explicitly chosen.
+
+`WSTX_TEST_EXE` optionally selects an exact packaged executable. Otherwise tests use
+the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
+Screenshots and the thin-link measurement report are written to ignored `test-results/`.
+The portable link simulator uses modelled network overhead, not packet capture;
+see the [measurement limits](../COMMUNICATION.md#thin-link-budget-and-test-model).
+
+## Same-machine development
+
+Both applications can be developed on one Windows computer: the station-server process runs locally and the operator client opens in a browser on that computer. The interface between them remains the same when the server is later placed beside a remote radio. The current page reports server version, connection status and an unconfigured radio; it reconnects after connection loss.
+
+## References
+
+- [GitHub guidance for building and testing Rust](https://docs.github.com/en/actions/tutorials/build-and-test-code/rust)
+- [Windows Server 2022 runner software](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md)
+
+## Product model maintenance
+
+The reusable [SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
+explains how to write models without project-specific assumptions. This binding selects
+Markdown-primary authority and the local toolchain below. Product model artifacts,
+coverage and view scope belong to [the architecture](../ARCHITECTURE.md#11-functional-model-and-views);
+functional promises and application test cases remain in
+[the FSD](../WSTX%20Rust%20FSD.md). The project model-maintenance contract and
+documentation-tool test definitions are recorded below.
+Harness instructions are not represented in product SysML.
+
+### Pinned local validation
+
+The full tool is the official OMG SysML v2 Pilot **0.62.0**, release **2026-08**, with
+its matching bundled standard model libraries. The portable Windows bootstrap uses
+Eclipse Temurin JDK **21.0.12.1+1**, x64. Version pins, official URLs and SHA-256 values
+are in `tools/sysml/toolchain.json`.
+
+```powershell
+python tools/sysml.py setup
+```
+
+Setup downloads/extracts under `%USERPROFILE%/.cache/wsjtx-rust/sysml-tools/` and verifies
+official archive SHA-256 values first. JAR and aggregate model-library hashes derived
+from the verified Pilot archive are checked before validation. No JDK/JAR is committed
+or packaged in the station executable. No global PATH, registry, Maven installation or
+Jupyter service is required. Windows x64 is the verified bootstrap target; an explicit
+`WSTX_SYSML_JAVA` path can supply an existing Java 21+ on another platform.
+
+Sources: [Pilot release](https://github.com/Systems-Modeling/SysML-v2-Pilot-Implementation/releases/tag/2026-08),
+[Pilot kernel documentation](https://github.com/Systems-Modeling/SysML-v2-Pilot-Implementation/blob/2026-08/org.omg.sysml.jupyter.kernel/README.adoc)
+and [Temurin archive guidance](https://adoptium.net/installation/archives/).
+This trusted development cache is not an independent authorization boundary for
+deployment or radio operations.
+
+## Synchronization workflow
+
+Edit the authoritative Markdown first, preserving IDs. For FSD changes, regenerate:
+
+```powershell
+python tools/sysml.py sync
+```
+
+For architecture changes, reconcile the manually modeled parts, ports and connections and update
+its source-hash marker after review. Print the expected normalized-source hash with:
+
+```powershell
+python -c "from pathlib import Path; import hashlib; print(hashlib.sha256(Path('docs/ARCHITECTURE.md').read_text(encoding='utf-8').encode()).hexdigest())"
+```
+
+Check synchronization, real model validation and the tool's negative fixtures:
+
+```powershell
+python tools/sysml.py check
+python -m unittest discover -s tools/sysml/tests -q
+```
+
+The scoped `sysml-documentation` level-2 suite selects these commands for the relevant
+Markdown/model/tool changes. The application suites are unchanged. Tool tests live
+under `tools/sysml/tests/`, avoiding the application's unrelated `tests/` trigger.
+Missing/corrupt/stale generated content fails comparison. The architecture-source hash
+detects unreconciled input changes; merely updating it is not semantic review.
+
+## Meaning and limits of semantic validation
+
+`tools/sysml/Validate.java` calls the pinned Pilot's `SysMLInteractive` API, including
+its actual parser, name resolution and Xtext semantic validator. `check` loads the
+requirements before architecture, then additional root model files in sorted order.
+Additional cross-file dependencies must respect that order. A focused invocation accepts
+an explicit ordered file list:
+
+```powershell
+python tools/sysml.py validate docs/sysml/Requirements.sysml docs/sysml/Architecture.sysml
+```
+
+Syntax/type/reference errors fail. Missing/invalid tools, model libraries or model files,
+or missing completion evidence, fail rather than falling back to a lightweight checker.
+Self-tests feed legal, malformed and unresolved-reference fixtures to the actual Pilot.
+They also exercise source drift, missing/corrupt output and unavailable tool/library cases.
+
+The `check` command also requests a resolved semantic inventory from the same Pilot
+process. The Java adapter traverses actual usage/type/connector objects, inherited
+features, conjugated directed items, reference subsetting, binding-versus-ordinary connector kinds
+and backend variants. Python
+checks an independently authored endpoint/identity oracle bound to ARCHITECTURE.md
+section 9: required physical/delegation paths, recording and encode paths, one profile
+and backend variation per station, common authority, correlated resource context and
+no extra bypass edges or detached runtime inventories. Every boundary role is checked
+against its independently specified complete item-kind/direction signature, including
+physical radio providers and inherited/delegated ports. Identity obligations require
+binding connectors; ordinary connections between the same endpoints do not satisfy them. Views may expose existing
+structure but cannot add runtime parts/connections. Empty/missing inventory fails closed.
+The oracle is deliberately specific to this target architecture, not a general SysML
+connectivity theorem or generated approval of whatever the candidate model contains.
+
+TC-DOC-005 fixtures remove connections, bypass authority, split authority, duplicate a
+backend, redirect association/context identity, change waveform/provider directions or semantic item kinds, weaken identity bindings, add detached
+stations and add runtime structure to a view. They run through the real Pilot before
+the integrity assertions. Legal but disconnected/miswired models must fail the explicit
+integrity oracle even when ordinary semantic validation succeeds. The fixture list and
+expected diagnostics remain executable companions to the FSD's durable case definition.
+
+Successful parsing/resolution is not execution of modeled verification cases, proof
+that Rust satisfies the model, or proof of prose behavior. Actual application outcomes
+belong to test output and the implementing CR. Source/model correspondence and connector coverage require review against the Markdown arrows; a disconnected but well-typed model can pass semantic validation.
+
+## Project model documentation contract
+
+Markdown remains authoritative initially. The FSD owns functional requirements and
+test definitions, ARCHITECTURE.md owns its declared component/interface responsibilities,
+and COMMUNICATION.md owns detailed implemented wire contracts. A synchronized SysML v2
+representation supports structured review without changing this authority or renumbering
+the existing identities. This section specifies documentation behavior, not radio behavior.
+Only product functional documentation is represented in SysML. Harness/process/skill
+rules and these CL-014/TC-DOC method definitions remain Markdown-only.
+
+| Clause | Area | Required behavior | Verification |
+|---|---|---|---|
+| CL-014-01 | Documentation authority | The parallel model MUST preserve the authoritative Markdown sources and stable FR/CL/TC identities. Model syntax or tool conventions MUST NOT silently migrate authority or replace a requirement with an implementation deviation. | TC-DOC-001 |
+| CL-014-02 | Model coverage | The model MUST declare its covered source slices and distinguish target architecture, partial requirements and implemented status-slice/test elements. It MUST NOT claim that prose projection or successful semantic validation proves full behavior or implementation conformance. | TC-DOC-001; review |
+| CL-014-03 | Architecture boundaries | The structured architecture MUST retain separate audio and radio-control interfaces, variable station processes and optional native FlexRadio implementations behind those interfaces. It MUST retain the scoped Rust control implementation rather than imply a complete Hamlib replacement or a mandatory Hamlib dependency. | TC-DOC-001; semantic validation and review |
+| CL-014-04 | Validation | Reproducible checks MUST compare the covered Markdown projection and run a pinned full SysML parser/name resolver/semantic validator. Missing/invalid tools, model libraries or model files MUST fail; lightweight synchronization/lint checks MUST NOT masquerade as semantic proof or runtime test verdicts. | TC-DOC-002; TC-DOC-003; TC-DOC-004 |
+| CL-014-05 | Synchronization | Changes to a covered Markdown source and its model MUST be reconciled in the same change. Generated content MUST be regenerated and checked; manually modeled architecture MUST be reviewed against its source. Unsupported or unmodeled detail MUST remain explicit. | TC-DOC-001; TC-DOC-002 |
+| CL-014-06 | Architecture integrity | The structured architecture MUST represent one coherent physical deployment and its connected software decomposition. Physical links MUST delegate to the same browser/station/backend usages; receive and transmit modem paths and profile-owned recording input MUST remain connected. Per-station backend selection MUST be exclusive, station count variable, and control paths for a shared radio MUST use one effective authority rather than independent per-station authorities. Directed semantic exchanges MUST retain independent audio/control responsibilities without inventing wire schemas. | TC-DOC-005 |
+| CL-014-07 | Implementation sufficiency | The product SysML companion is intended to support AI implementation of the complete functional product. Before code for a functional CR, its approved model slice MUST settle the behavior, interfaces, data ownership, states, timing, errors and independent verification oracles required to implement that slice, with pinned normative external protocol references. An implementing agent MAY choose only declared implementation freedoms and MUST NOT guess unresolved functional decisions. Views only present existing model facts and are not required inputs for code generation. Markdown remains authoritative; unresolved slices MUST be marked not implementation-ready, and structural validation MUST NOT imply complete code-generation readiness. | TC-DOC-006; manual preparation review |
+
+[Functional model and views](../ARCHITECTURE.md#11-functional-model-and-views) defines the model artifacts and coverage.
+[Project-specific harness instructions](Project-Specifics.md#product-model-maintenance)
+define source synchronization and pinned tool entrypoints. The initial model projects
+defined requirement/clause/test identities and selected architecture boundaries; it does
+not formalize every protocol rule, numerical constraint, state machine or radio waveform.
+
+## Documentation-tool test definitions
+
+These checks verify CL-014-01 through CL-014-07; they do not test radio functionality.
+TC-DOC-006 is the explicitly manual preparation/readiness review; the remaining cases
+combine automated model checks with the stated source-correspondence review.
+**Level: 2 - isolated local verification, automated unless declared manual. Where they run:** the Windows development PC,
+local Markdown/model fixtures and the pinned portable OMG reference validator. They
+require no radio, live service, Jupyter server or global Java installation.
+
+| ID | Clauses | Inputs/actions | Expected results |
+|---|---|---|---|
+| TC-DOC-001 — Projection and identities | CL-014-01, CL-014-02, CL-014-03, CL-014-05 | Generate the declared FSD projection, compare stable IDs/trace relationships and inspect the selected architecture against its Markdown source. | Existing identities/prose remain intact; canonical Markdown is not mutated; the generated representation is current. Audio/control separation, variable station instances and optional native backends remain explicit. Semantic/model review remains distinct from behavior execution. |
+| TC-DOC-002 — Source/model drift | CL-014-04, CL-014-05 | In disposable fixtures, change a covered source or remove/corrupt its generated representation; change the architecture source without reconciling its model. | Synchronization fails and identifies the stale/missing artifact. Regeneration alone cannot claim a manually modeled architecture has been reviewed. |
+| TC-DOC-003 — Full-tool positive and negative models | CL-014-04 | Run the actual pinned validator on a legal model, unmatched syntax and an unresolved type/reference. | The legal model is accepted; malformed syntax and unresolved references return nonzero semantic-validation outcomes with diagnostics. This does not execute modeled verification cases or prove application behavior. |
+| TC-DOC-004 — Unavailable validation | CL-014-04 | Invoke required validation with a missing/invalid Java/validator/library path or absent model file. | The command fails nonzero and never reports semantic PASS. There is no regex-only fallback. |
+| TC-DOC-005 - Connected architecture integrity | CL-014-03, CL-014-06 | Load the complete target architecture with the pinned Pilot on the Windows development PC. Extract resolved usage/port/connector chains from its semantic AST and compare with the independent physical and end-to-end path oracle in ARCHITECTURE.md. In isolated copies remove a required connection/delegation, reroute an endpoint to bypass authority, duplicate a selected backend, split shared authority, reverse a provider direction, change a semantic item kind, or weaken an identity binding to an ordinary connection. | The accepted model has one connected physical/software deployment, variable stations, profile-owned recording and TX/modem paths, directed semantic port exchanges, one backend variation per station, and one shared authority. Each negative fixture fails semantic validation or an explicit integrity diagnostic. A view-only edit cannot repair a failed underlying path. Level 2: local isolated automated model checks; no radio, service, viewer or network access. This establishes structural correspondence, not runtime safety, protocol compliance or performance. |
+| TC-DOC-006 - Functional implementation readiness | CL-014-01, CL-014-02, CL-014-07 | Before a functional CR writes code, an independent reviewer examines its approved source contract, corresponding model slice and pinned normative references. Trace each required behavior, interface/data/state/timing/error decision and independent test oracle; list the implementation choices explicitly left free. Repeat with a required decision unresolved. | Readiness is granted only when an implementing agent can implement the selected functional slice without guessing product behavior. An unresolved decision refuses readiness and names its owning CR; views cannot supply missing semantics. Level 2: manual offline contract review on the Windows development workspace, because syntax/connectivity automation cannot determine whether all product decisions are sufficient for implementation. This repair does not claim the full product passes readiness. |
+
+Executable traces are the scoped tests under `tools/sysml/tests/`, the synchronization
+entrypoint `tools/sysml.py` and full-validator adapter `tools/sysml/Validate.java`;
+their usage is defined in [project-specific harness instructions](Project-Specifics.md#product-model-maintenance) and their functional coverage in [the architecture](../ARCHITECTURE.md#11-functional-model-and-views). Execution evidence belongs
+to the documentation CR, not a fabricated modeled verdict.

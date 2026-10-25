@@ -35,7 +35,6 @@
   paths:
   - docs/WSTX Rust FSD.md
   - docs/ARCHITECTURE.md
-  - docs/SYSML.md
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/

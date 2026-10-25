@@ -58,5 +58,5 @@ rules around it. Agent memory only points here.
 ## This project
 
 - Development and builds run on Windows (x86_64-pc-windows-msvc), with the toolchain of
-  `rust-toolchain.toml` ([Building](../BUILDING.md)).
+  `rust-toolchain.toml` ([Project specifics](Project-Specifics.md)).
 - Upstream WSJT-X (`upstream` remote) is read for reference only; nothing is pushed there.
