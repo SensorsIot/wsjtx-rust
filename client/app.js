@@ -10,7 +10,7 @@ const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
 let socket, timer, pendingId;
 let retry = 1000, lastMessage = 0, nextId = 1;
-function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; }
+function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new Event('station-stale')); }
 function requestStatus() {
   if (socket?.readyState !== WebSocket.OPEN) return;
   pendingId = nextId++; refresh.disabled = true;
@@ -39,6 +39,7 @@ function connect() {
       const message = JSON.parse(event.data);
       if (message.v !== 1) throw new Error('Unsupported version');
       lastMessage = Date.now();
+      window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
         if (profileMode && !await loadProfile(false, current)) return;
         version.textContent = message.data.version; radio.textContent = 'Radio not configured';
@@ -46,6 +47,7 @@ function connect() {
         document.querySelector('#updated').textContent = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
         refresh.disabled = false;
         retry = 1000; login.hidden = true;
+        if (profileMode) window.dispatchEvent(new CustomEvent('station-ready', {detail: current}));
       }
     } catch { disconnect(current); }
   };

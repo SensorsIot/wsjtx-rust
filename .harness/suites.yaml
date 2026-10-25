@@ -38,3 +38,17 @@
   - tools/sysml.py
   - tools/sysml/
   needs: Python 3.12 and python tools/sysml.py setup once. Portable pinned Java/OMG Pilot in the user cache; no radio, live station or Jupyter service.
+
+- suite: recording
+  cost: 2
+  run: cargo build --workspace --locked && npm run test:recording
+  paths:
+  - server/
+  - client/
+  - tests/
+  - fixtures/decoder/
+  - Cargo.toml
+  - Cargo.lock
+  - package.json
+  - package-lock.json
+  needs: Node 24, npm ci, Playwright Chromium; WSTX_SAMPLE_DIR holds read-only pinned FT8 files and ft4/ files matching fixtures/decoder manifests. On this Windows development clone the existing parallel resources/issue-7/downloads directory supplies them. Disposable servers and calibrated TLS link; no hardware.

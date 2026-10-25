@@ -4,6 +4,9 @@ mod auth_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
+mod recording;
+mod recording_http;
+mod spectrum;
 use axum::{Json, body::Bytes};
 use axum::{
     Router,
@@ -33,6 +36,7 @@ use tokio::{
 struct ProfileState {
     store: Mutex<profile::Store>,
     boot: String,
+    recording: Arc<recording::Recording>,
 }
 
 #[derive(Clone)]
@@ -192,10 +196,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .map(|(store, _)| store.document.profile_id.clone());
     let profile = match loaded {
-        Some((store, _)) => Some(Arc::new(ProfileState {
-            store: Mutex::new(store),
-            boot: profile::new_uuid().map_err(|_| error("resource_unavailable", ""))?,
-        })),
+        Some((store, _)) => {
+            let boot = profile::new_uuid().map_err(|_| error("resource_unavailable", ""))?;
+            let base = selected.clone().ok_or("profile directory absent")?;
+            let id = store.document.profile_id.clone();
+            let recording_boot = boot.clone();
+            let recording = tokio::task::spawn_blocking(move || {
+                recording::Recording::open(&base, id, recording_boot)
+            })
+            .await?;
+            let watched = recording.clone();
+            tokio::spawn(async move {
+                let mut timer = interval(Duration::from_millis(50));
+                loop {
+                    timer.tick().await;
+                    watched.tick();
+                }
+            });
+            Some(Arc::new(ProfileState {
+                store: Mutex::new(store),
+                boot,
+                recording,
+            }))
+        }
         None => None,
     };
     let state = App {
@@ -209,9 +232,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/", get(index))
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/app.js")) }))
+        .route("/recording.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/recording.js")) }))
+        .route("/recording.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../client/recording.css")) }))
         .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../client/style.css")) }))
         .route("/session", post(session).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/profile", get(get_profile).put(put_profile))
+        .route("/recording", get(recording_http::snapshot))
+        .route("/recording/imports", post(recording_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/recording/imports/{id}", get(recording_http::import).put(recording_http::import).delete(recording_http::import).layer(axum::extract::DefaultBodyLimit::max(2048)))
+        .route("/recording/replay", post(recording_http::replay).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/recording/jobs/{id}", axum::routing::delete(recording_http::cancel_job))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
         .layer(axum::middleware::from_fn(|request, next: axum::middleware::Next| async move {
@@ -248,6 +278,8 @@ fn startup_error(code: &str, path: &std::path::Path) -> String {
 }
 async fn index(State(app): State<App>) -> Html<String> {
     Html(include_str!("../../client/index.html").replace(
+        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script></head>" } else { "</head>" }
+    ).replace(
         "data-profile=\"false\"",
         if app.profile.is_some() {
             "data-profile=\"true\""
@@ -481,7 +513,7 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         .max_write_buffer_size(2048)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            connection(socket).await
+            connection(socket, app.profile.map(|p| p.recording.clone())).await
         })
 }
 
@@ -525,22 +557,59 @@ async fn send(socket: &mut WebSocket, message: Message) -> bool {
     )
 }
 
-async fn connection(mut socket: WebSocket) {
+async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Recording>>) {
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.tick().await;
     let mut last_pong = Instant::now();
+    let mut display = interval(Duration::from_millis(100));
+    display.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut thin = false;
+    let mut seen = None;
+    let mut last_display = Instant::now() - Duration::from_secs(1);
     loop {
         tokio::select! {
+            biased;
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > Duration::from_secs(15) { break; }
                 if !send(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into())).await || !send(&mut socket, Message::Ping(Vec::new().into())).await { break; }
             }
             incoming = socket.recv() => match incoming {
-                Some(Ok(Message::Text(text))) => { if !send(&mut socket, Message::Text(reply(&text).to_string().into())).await { break; } }
+                Some(Ok(Message::Text(text))) => {
+                    let mut value = reply(&text);
+                    if value["data"]["code"] == "unknown_command" {
+                        let request: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                        let command = request["type"].as_str().unwrap_or("");
+                        if matches!(command,"recording.get"|"spectrum.thin"|"spectrum.off") {
+                            if let Some(r) = &recording {
+                                if command == "recording.get" {
+                                    let s = r.snapshot();
+                                    value = json!({"v":1,"type":"recording.state","id":request["id"],"data":{"generation":s["generation"],"source_id":s["recording"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"]}});
+                                } else {
+                                    thin = command == "spectrum.thin";
+                                    seen = r.state.lock().unwrap().frame.as_ref().map(|f| (f["data"]["job_id"].clone(),f["data"]["sequence"].clone()));
+                                    value = json!({"v":1,"type":"spectrum.subscription","id":request["id"],"data":{"profile":if thin {"thin"} else {"off"}}});
+                                }
+                            } else { value["data"]["code"] = json!("unavailable"); }
+                        }
+                    }
+                    if !send(&mut socket, Message::Text(value.to_string().into())).await { break; }
+                }
                 Some(Ok(Message::Pong(_))) => last_pong = Instant::now(),
                 Some(Ok(Message::Binary(_))) => { let _ = send(&mut socket, Message::Close(Some(CloseFrame { code: 1003, reason: "text required".into() }))).await; break; }
                 Some(Ok(Message::Ping(_))) => {},
                 _ => break,
+            },
+            _ = display.tick(), if thin => {
+                if last_display.elapsed() < Duration::from_secs(1) { continue; }
+                let frame = recording.as_ref().and_then(|r| r.state.lock().unwrap().frame.clone());
+                if let Some(frame) = frame {
+                    let identity = (frame["data"]["job_id"].clone(),frame["data"]["sequence"].clone());
+                    if seen.as_ref() != Some(&identity) {
+                        seen = Some(identity);
+                        last_display = Instant::now();
+                        if !send(&mut socket, Message::Text(frame.to_string().into())).await { break; }
+                    }
+                }
             }
         }
     }

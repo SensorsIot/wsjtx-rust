@@ -6,12 +6,12 @@ const path = require('node:path');
 const fs = require('node:fs');
 const {performance} = require('node:perf_hooks');
 
-async function server(env = {}) {
+async function server(env = {}, args = []) {
   const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
   if (!fs.existsSync(exe)) throw new Error(`Missing candidate ${exe}; run cargo build --locked`);
   const clean = {...process.env};
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  const child = spawn(exe, [], {env: {...clean, WSTX_BIND: '127.0.0.1:0', ...env}, windowsHide: true});
+  const child = spawn(exe, args, {env: {...clean, ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
   let output = '';
   const origin = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Server readiness timeout: ' + output)); }, 10000);

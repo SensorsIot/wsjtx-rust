@@ -10,6 +10,20 @@ uses its own profile directory and port. The [profile contract](docs/WSTX%20Rust
 defines configuration, locking, recovery and access; device selections are saved intent
 and do not activate hardware. No-argument startup retains the original status mode.
 
+Selected-profile pages import one mono 12 kHz PCM16 WAV of up to 120 seconds and
+preserve its original bytes. Choose a file, import it, then explicitly replay its
+measured spectrum/waterfall. The upper display and lower station controls share a
+draggable, keyboard-accessible separator. Replay uses one worker per station and
+does not play audio or decode messages. Cancel stops the current import or replay;
+reconnection refreshes state without retrying operations.
+
+`npm run test:recording` exercises disposable Windows servers and Chromium, independent
+DFT/byte fixtures, and the shared TLS link simulator. Provision read-only originals
+matching `fixtures/decoder/manifest.json` and `ft4-manifest.json` under `WSTX_SAMPLE_DIR`
+(FT8 WAVs at its root, FT4 files under `ft4/`); the current parallel Windows workspace
+also discovers its existing `resources/issue-7/downloads` fixture directory. Missing
+fixtures fail the suite. Upload/page-load metrics are separate from steady display traffic.
+
 The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
 
 ## Repository layout
@@ -87,6 +101,12 @@ record their provenance and retain applicable notices. The initial license check
 was not a complete dependency audit. Licensing and trademarks remain separate.
 
 ### Candidate recording notices
+
+The shared FFT provider is [RustFFT 6.4.1](https://crates.io/crates/rustfft/6.4.1),
+by Allen Welkie and Elliott Mahler, under MIT OR Apache-2.0. Its complete notices are
+retained in [server/third-party/rustfft](server/third-party/rustfft). The application
+owns FFT scaling, scratch storage and the independent dBFS definition; no upstream
+WSJT-X transform/decoder implementation was copied.
 
 - Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - [ft8_lib MIT license](https://github.com/kgoba/ft8_lib/blob/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE)

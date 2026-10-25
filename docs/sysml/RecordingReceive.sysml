@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 22d40b7d59a008d12b040c957b31153ecb508cfaae20e93adee7de292d4c77d2
+// Canonical recorded receive contract SHA256: ce79891789d32121b903453b12873373070e6e3fabda725faa235b4b70efb0cf
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Independent
@@ -285,8 +285,13 @@ package WstxRecordingReceive {
              source is `recording_unavailable`; the authenticated recording snapshot remains200 with
              `recording:null` and `source_error:"recording_unavailable"`, preserving current identity,
              generation and operation state so a fresh browser can replace it. Profile/status/settings
-             remain available and no source is fabricated. Restart preserves the committed recording ID/bytes, changes boot ID,
-             forgets reservations and marks interrupted replay cancelled. No automatic replay occurs.
+             remain available and no source is fabricated. Restart preserves the committed recording ID/bytes and changes boot ID. The fresh
+             boot starts with generation0, `import:null` and `job:null`; prior reservations and jobs
+             are forgotten. Interrupted replay is invalidated by the changed boot identity, with no
+             durable cancelled-job record, synthetic replacement job or persisted cancellation marker.
+             Old import/job IDs return404; no automatic replay occurs. Cleanup/source failures retain
+             their explicit error fields without recreating a pending operation. Only the declared
+             source metadata/manifest/original persist; receive operations remain boot-local.
              | Route/method | Exact input | Success / transition |
              |---|---|---|
              | POST /recording/imports | `{v:1,profile_id,boot_id,generation}` | 201 `{v:1,id,generation,state:"reserved"}`; reserve one import UUID, increment generation, expire reservation after 30 seconds without PUT; Location identifies import resource. |
@@ -295,6 +300,18 @@ package WstxRecordingReceive {
              | DELETE /recording/imports/{id} | No body | 200 same import representation after cancellation invalidates pre-commit work; reserved can terminate immediately, receiving/validating become cancelling until file worker cleanup finishes, then cancelled. Already completed returns unchanged completed, never deletes committed source; repeating cancelled returns same terminal state. Once committing begins cancellation is refused409 invalid_state; GET reconciles completion/failure. The commit transition and cancellation request serialize so cancellation accepted before it prevents commit. |
              | POST /recording/replay | `{v:1,profile_id,boot_id,generation,recording_id}` | 202 `{v:1,id,generation,state:"running"}`; increment generation/start job at frame0; reject import/replay busy. |
              | DELETE /recording/jobs/{id} | No body | 200 `{v:1,id,generation,state}`; current running -> cancelling and publication invalidation before response; terminal jobs return unchanged terminal state. Worker release bound is separate from HTTP round trip. |*/
+    }
+    action def RecoverRecordedSource {
+        out 'snapshot' : RecordingSnapshot;
+        assert constraint newBootGeneration { 'snapshot'.generation == 0 }
+        doc /* FSD4.4/12.6 restart postconditions: preserve selected profile and committed
+             source UUID/original bytes; generate a new boot identity. Fresh snapshot
+             import and job are null, generation0. Prior boot operations are forgotten,
+             their import resources/job DELETE return404. No durable cancelled job,
+             synthetic new job, cancellation marker or automatic replay. Only declared
+             source metadata/manifest/original persist. Startup source/cleanup errors
+             remain explicit error fields without resurrecting a pending operation.
+             This refines recovery of existing profile/recording usages, not a new part. */
     }
     action def CancelImport {
         in importId : String;
@@ -493,6 +510,7 @@ package WstxRecordingReceive {
         transition fail first running if processingFailed and workerReleased then failed;
     }
     action importRecording : ImportRecording;
+    action recoverSource : RecoverRecordedSource;
     action cancelImport : CancelImport;
     action replaySpectrum : ReplaySpectrum;
     action cancelReceive : CancelReceive;
@@ -504,6 +522,7 @@ package WstxRecordingReceive {
     satisfy WstxRequirements::'CL-006-03' by spectrum;
     satisfy WstxRequirements::'CL-006-04' by cancelReceive;
     dependency storageOwner from importRecording to WstxArchitecture::physicalStation::controller::stations::profile::recordings;
+    dependency recoveryOwner from recoverSource to WstxArchitecture::physicalStation::controller::stations::profile::recordings;
     dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::controller::stations::station;
     dependency receiveOwner from replaySpectrum to WstxArchitecture::physicalStation::controller::stations::receive;
     dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::controller::stations::receive;
@@ -522,7 +541,7 @@ package WstxRecordingReceive {
             subject operation : ImportRecording;
             objective { verify WstxRequirements::'CL-006-01'; verify WstxRequirements::'CL-006-02'; }
             doc /* TC-018-001: setup/input/action: Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability.
-                 Independent expected oracle: Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; jobs/generations differ, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. */
+                 Independent expected oracle: Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. */
         }
         dependency tracevalidRecording from validRecording to WstxRequirements::'TC-018-001';
         verification invalidRecording {
@@ -535,8 +554,8 @@ package WstxRecordingReceive {
         verification receiveIsolation {
             subject operation : CancelReceive;
             objective { verify WstxRequirements::'CL-006-02'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors.
-                 Independent expected oracle: Exactly one serialized start wins; errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
+            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors.
+                 Independent expected oracle: Exactly one serialized start wins. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
         }
         dependency tracereceiveIsolation from receiveIsolation to WstxRequirements::'TC-018-003';
         verification calibratedDisplay {
