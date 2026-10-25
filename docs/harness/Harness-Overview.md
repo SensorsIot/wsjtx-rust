@@ -68,12 +68,16 @@ cases. Harness instructions, skills, workflows, standards and gate documentation
 Markdown. The harness authoring chapter explains how to write product models; the harness
 itself is not modeled in SysML.
 
+For each functional issue, follow [the required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
+Markdown requirements and tests first, then SysML, semantic comparison, implementation
+from the reconciled model, and verification against the original Markdown expectations.
+
 The [FSD](../WSTX%20Rust%20FSD.md#61-browser-and-server-test-catalogue) owns this project's
 stable functional clauses and test descriptions. Test source holds executable assertions
 and promise tags; issues retain change approval and execution evidence. This explicit
 operator binding overrides the generic preference to keep test descriptions next to
 the test source. Detailed protocol fields, errors and limits remain canonical in the
-FSD's linked communication contract rather than being repeated across the documents.
+FSD's communication subchapter rather than being repeated across documents.
 Product-specific acceptance tests, fixtures and the provisioning/wiring needed to run
 them belong to the functional CR they verify. Changes to the reusable development method
 belong to harness work; adding browser and thin-link verification for FR-019/FR-021 is

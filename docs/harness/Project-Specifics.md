@@ -197,6 +197,28 @@ belong to test output and the implementing CR. Source/model correspondence and c
 
 ## Project model documentation contract
 
+### Required sequence for functional issues
+
+1. Write and approve the requirements and test cases in the single Markdown FSD first.
+   Preserve stable IDs and define setup, actions, expected results, independent oracles,
+   test level and execution location before implementation.
+2. Transfer the approved functional contract into the SysML model, keeping the Markdown.
+3. Compare Markdown and SysML for equivalent meaning: behavior, interfaces, ownership,
+   states, timing, failure outcomes and verification cases. Resolve gaps and disagreements
+   against the approved Markdown before code is written. Syntax or matching names alone
+   is not this comparison.
+4. Implement the product code from the reconciled SysML slice and its declared normative
+   references. If a required decision is missing, return to requirements/model alignment;
+   do not invent behavior or silently fill the gap during coding.
+5. Verify the resulting code against the original Markdown requirements and the test
+   expectations defined there. Do not derive both implementation and expected results
+   solely from SysML or from the new code: that could reproduce the same mistake twice.
+6. Record results and reconcile the FSD/model before closing the issue.
+
+Markdown is the authority and independent verification reference; SysML is the functional
+implementation specification. Views are optional presentations, not another source of
+behavior. This sequence applies to product functionality; harness HOW remains Markdown.
+
 Markdown remains authoritative initially. The FSD owns functional requirements and
 test definitions, architecture, interface responsibilities and implemented wire contracts. A synchronized SysML v2
 representation supports structured review without changing this authority or renumbering
@@ -213,6 +235,7 @@ rules and these CL-014/TC-DOC method definitions remain Markdown-only.
 | CL-014-05 | Synchronization | Changes to a covered Markdown source and its model MUST be reconciled in the same change. Generated content MUST be regenerated and checked; manually modeled architecture MUST be reviewed against its source. Unsupported or unmodeled detail MUST remain explicit. | TC-DOC-001; TC-DOC-002 |
 | CL-014-06 | Architecture integrity | The structured architecture MUST represent one coherent physical deployment and its connected software decomposition. Physical links MUST delegate to the same browser/station/backend usages; receive and transmit modem paths and profile-owned recording input MUST remain connected. Per-station backend selection MUST be exclusive, station count variable, and control paths for a shared radio MUST use one effective authority rather than independent per-station authorities. Directed semantic exchanges MUST retain independent audio/control responsibilities without inventing wire schemas. | TC-DOC-005 |
 | CL-014-07 | Implementation sufficiency | The product SysML companion is intended to support AI implementation of the complete functional product. Before code for a functional CR, its approved model slice MUST settle the behavior, interfaces, data ownership, states, timing, errors and independent verification oracles required to implement that slice, with pinned normative external protocol references. An implementing agent MAY choose only declared implementation freedoms and MUST NOT guess unresolved functional decisions. Views only present existing model facts and are not required inputs for code generation. Markdown remains authoritative; unresolved slices MUST be marked not implementation-ready, and structural validation MUST NOT imply complete code-generation readiness. | TC-DOC-006; manual preparation review |
+| CL-014-08 | Functional implementation sequence | Each functional issue MUST define Markdown requirements and tests first, transfer them to SysML, compare both for semantic equivalence before coding, implement from the reconciled model, and verify the code against the original Markdown requirements and independent test expectations. The Markdown MUST remain available as the authority and verification reference. Missing decisions return to contract alignment; implementation and expected results MUST NOT share the model or code as their sole oracle. | TC-DOC-006; independent review |
 
 [Functional model and views](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views) defines the model artifacts and coverage.
 [Project-specific harness instructions](Project-Specifics.md#product-model-maintenance)
@@ -222,7 +245,7 @@ not formalize every protocol rule, numerical constraint, state machine or radio 
 
 ## Documentation-tool test definitions
 
-These checks verify CL-014-01 through CL-014-07; they do not test radio functionality.
+These checks verify CL-014-01 through CL-014-08; they do not test radio functionality.
 TC-DOC-006 is the explicitly manual preparation/readiness review; the remaining cases
 combine automated model checks with the stated source-correspondence review.
 **Level: 2 - isolated local verification, automated unless declared manual. Where they run:** the Windows development PC,
@@ -236,7 +259,7 @@ require no radio, live service, Jupyter server or global Java installation.
 | TC-DOC-003 — Full-tool positive and negative models | CL-014-04 | Run the actual pinned validator on a legal model, unmatched syntax and an unresolved type/reference. | The legal model is accepted; malformed syntax and unresolved references return nonzero semantic-validation outcomes with diagnostics. This does not execute modeled verification cases or prove application behavior. |
 | TC-DOC-004 — Unavailable validation | CL-014-04 | Invoke required validation with a missing/invalid Java/validator/library path or absent model file. | The command fails nonzero and never reports semantic PASS. There is no regex-only fallback. |
 | TC-DOC-005 - Connected architecture integrity | CL-014-03, CL-014-06 | Load the complete target architecture with the pinned Pilot on the Windows development PC. Extract resolved usage/port/connector chains from its semantic AST and compare with the independent physical and end-to-end path oracle in the FSD architecture chapter. In isolated copies remove a required connection/delegation, reroute an endpoint to bypass authority, duplicate a selected backend, split shared authority, reverse a provider direction, change a semantic item kind, or weaken an identity binding to an ordinary connection. | The accepted model has one connected physical/software deployment, variable stations, profile-owned recording and TX/modem paths, directed semantic port exchanges, one backend variation per station, and one shared authority. Each negative fixture fails semantic validation or an explicit integrity diagnostic. A view-only edit cannot repair a failed underlying path. Level 2: local isolated automated model checks; no radio, service, viewer or network access. This establishes structural correspondence, not runtime safety, protocol compliance or performance. |
-| TC-DOC-006 - Functional implementation readiness | CL-014-01, CL-014-02, CL-014-07 | Before a functional CR writes code, an independent reviewer examines its approved source contract, corresponding model slice and pinned normative references. Trace each required behavior, interface/data/state/timing/error decision and independent test oracle; list the implementation choices explicitly left free. Repeat with a required decision unresolved. | Readiness is granted only when an implementing agent can implement the selected functional slice without guessing product behavior. An unresolved decision refuses readiness and names its owning CR; views cannot supply missing semantics. Level 2: manual offline contract review on the Windows development workspace, because syntax/connectivity automation cannot determine whether all product decisions are sufficient for implementation. This repair does not claim the full product passes readiness. |
+| TC-DOC-006 - Functional implementation readiness | CL-014-01, CL-014-02, CL-014-07, CL-014-08 | Before a functional CR writes code, an independent reviewer compares its Markdown requirements/test definitions with the SysML slice and pinned references for equivalent meaning. Trace every required behavior, interface/data/state/timing/error decision and independent test oracle; list choices explicitly left free. Confirm that implementation uses the reconciled model and verification retains the original Markdown expectations. Repeat with a required decision unresolved or an expected result derived only from the new code/model. | Readiness requires an implementation-sufficient model consistent with Markdown and independent Markdown-based verification. An unresolved decision, disagreement or shared-only implementation/test oracle refuses readiness and identifies the missing decision; views cannot supply missing semantics. Level 2: manual offline contract review on the Windows development workspace, because syntax/connectivity automation cannot determine whether all product decisions are sufficient for implementation. This repair does not claim the full product passes readiness. |
 
 Executable traces are the scoped tests under `tools/sysml/tests/`, the synchronization
 entrypoint `tools/sysml.py` and full-validator adapter `tools/sysml/Validate.java`;
