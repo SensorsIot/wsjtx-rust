@@ -455,7 +455,8 @@ establish FT4 correctness. This is a planned milestone, not an implemented decod
 This is the authorized minimal first-version contract, with independent cases in6.4
 and its communication extension in12.6. Source compatibility has been checked against
 the 22 pinned mono 12kHz PCM16 FT8 reference recordings and three retained FT4 candidates.
-The recorded-input/spectrum functionality described below is delivered. Review,
+The original recorded-input/Thin spectrum functionality is delivered. The crisp
+Detailed display refinement below is the implementation contract pending implementation. Review,
 validation and acceptance evidence is recorded on issue #6; the wider offline decoder
 milestone remains planned.
 
@@ -463,7 +464,7 @@ milestone remains planned.
 |---|---|---|---|
 | CL-006-01 | FR-003, FR-018 | Import only the bounded WAV capability below; preserve original bytes and expose immutable, explicitly timed samples without a codec or implicit resampler. | TC-018-001; TC-018-002 |
 | CL-006-02 | FR-018, FR-019 | Profile-owned import/replay/cancellation have explicit pending, terminal and recoverable error states; replacement never destroys the previous committed source before commit. | TC-018-001; TC-018-002; TC-018-003 |
-| CL-006-03 | FR-010, FR-019, FR-021 | Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded optional thin display. | TC-010-001; TC-010-002; TC-010-003 |
+| CL-006-03 | FR-010, FR-019, FR-021 | Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded selectable Detailed/Thin/Off display. | TC-010-001; TC-010-002; TC-010-003; TC-010-004; TC-010-005 |
 | CL-006-04 | FR-021 | Bound import, sample, worker and visualization resources; refuse excess work explicitly, discard obsolete display work, preserve status service and invalidate late receive output on cancellation/replacement. | TC-018-002; TC-018-003; TC-010-002 |
 
 **Input capability.** RIFF/WAVE little-endian integer PCM format tag 1,
@@ -570,7 +571,7 @@ within 250 ms after cancellation is accepted, measured on the recorded Windows t
 with four profile processes and one active worker each. No hardware/global CPU-count
 auto-allocation is introduced. The UI reports the one-worker-per-station budget.
 
-**Independent display definition.** For 12 kHz input, use 2,048 real samples per
+**Independent display definition (Thin, unchanged).** For 12 kHz input, use 2,048 real samples per
 window, hop 256 source frames, periodic Hann `w[n]=(1-cos(2*pi*n/2048))/2`; windows start
 at source frames 0,256,... while their start is before EOS. Right-pad the final partial
 windows with zeros, retaining actual source end in metadata. DFT convention is
@@ -585,7 +586,7 @@ scaling. Use CPU `FftPlanner<f32>` for the normal path; retain an independently 
 `FftPlannerScalar<f32>` portable path. A worker copies/window-converts source data into
 its own complex buffer, obtains `get_inplace_scratch_len()` for the plan and reuses
 worker-owned scratch with `process_with_scratch`; neither mutable buffer aliases the
-original immutable samples. #6 fixes N=2048; #7 owns its supported transform sizes and
+original immutable samples. #6 uses N=2048 for Thin and N=4096 for Detailed; #7 owns its supported transform sizes and
 bounded modem working history. Plan once per needed size/worker, never per display row;
 check lengths before processing so invalid input cannot reach a panic precondition.
 No generic FFT wrapper or additional RealFFT dependency is needed. This is the central
@@ -607,6 +608,56 @@ dBFS before PCM quantization, not a code-generated golden value. Silence is -120
 Label frequency in Hz, time relative to recording start in seconds and level in dBFS.
 Show gaps on skipped row sequences; never interpolate a missing row as observed signal.
 Browser retains at most 120 rows of 128 values; replacing the source/job clears history.
+
+**Detailed display definition.** Detailed is a fast-link profile with 1,024 native
+frequency bins, not a sharpened/resampled Thin image. For 12 kHz input use N=4096,
+hop256, periodic Hann with denominator4096 and the same DFT sign, amplitude/DC rule,
+dBFS floor/clipping and integer quantization as Thin with N substituted throughout.
+Expose k=0..1023 at center frequency k*2.9296875 Hz, covering [0,3000) Hz without
+frequency pooling. The displayed bin's frequency cell is [k*2.9296875,(k+1)*2.9296875)
+Hz; this is display geometry, not a claim that the Hann response has rectangular support.
+A row j covers source frames [2400*j,min(2400*(j+1),source_frames)); take per-bin
+maximum amplitude of windows whose start (0,256,...) is in this interval, then quantize.
+Right-pad partial windows at EOS; window support is 4096/12000 seconds, can cross row
+boundaries and MUST be stated in the legend alongside 2.9296875 Hz bins and 0.2 s rows.
+The spectrum shows the latest row's levels. Row sequence starts0 and advances even
+when output is skipped; send at most5 rows/s/peer, paced against the source clock.
+Thin continues its exact N2048/four-bin/one-second definition and event schema.
+
+One replay/source reader and one existing station-owned worker produce both profiles
+concurrently; selecting Detailed never starts another job or reparses/reloads the file.
+Reuse RustFFT6.4.1 with one plan/buffer/scratch per needed size, the existing sample
+parser/immutable boundary, identities and cancellation checks. Keep at most two source
+blocks plus one rolling4096-sample window, the two bounded FFT workspaces, per-profile
+peak accumulators and one latest immutable frame per profile in station state. No
+subscriber-specific FFT or unbounded queue. Starting/replacing/cancelling clears both
+latest frames; publication checks the existing complete current job tuple. Browser keeps
+at most600 Detailed rows (120s, 614400 level bytes), or120 Thin rows (15360 level bytes),
+including explicit gap slots, and one pending repaint. These are application retention
+bounds, not total RSS promises.
+
+**Crisp canvas geometry.** Render every frequency/time cell using integer device-pixel
+edges with a DPR-sized backing bitmap, image smoothing disabled and pixelated CSS image
+rendering; no blur/filter or interpolation of measured values. Each Detailed bin occupies
+at least one device pixel: use a signal-local horizontal scroll viewport and a canvas
+width of max(available width,1024/DPR CSS px), shared by spectrum/frequency scale/waterfall.
+Show a horizontal-scroll cue when clipped; keyboard bin selection scrolls the selected
+bin into view. Thin
+fits the available width. For either profile, bin k spans device pixels
+[floor(k*W/B),floor((k+1)*W/B)), B=1024 or128; do not turn native bins into grouped
+maxima when fitting the screen. Horizontal scroll stays inside the upper pane with
+reachable controls and no page overflow. A pointer/focusable readout exposes selected
+bin index, center Hz, q-120 dBFS and row source interval; keyboard Left/Right moves one
+bin and Up/Down one retained row, clamped to available data. Gaps report no measurement.
+
+Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the bottom.
+Draw the most recent rows that fit, bottom-aligned; unused space is background. Older
+retained rows can be selected by the keyboard readout without stretching the canvas.
+Missing sequences occupy the same height in grey. Resize/splitter drag/zoom repaints
+from retained values with these same edges and fixed height; receiving the first or
+second row MUST NOT stretch them to fill the pane. Label the visible source-time range,
+frequency units, profile and measured dBFS; selected readout remains accessible without
+hover. Profile changes clear browser history and discard frames of the previous profile.
 
 **Integrated UI.** One browser window/page per station. Spectrum and waterfall
 occupy the upper pane; profile/status/import/replay/controls and future decoded messages
@@ -1216,6 +1267,8 @@ IDs from #6 are preserved.
 | TC-010-001 | CL-006-03 | Independently synthesize silence, DC, coherent tones at 750/1500/2250 Hz at amplitudes 0.5/0.25, two simultaneous tones, a noncoherent tone, clipped input and a burst with specified source-frame start/end. Compute selected windows using a direct DFT test oracle; replay through real browser. | Direct DFT uses published formula without candidate FFT/provider helpers; peak group equals floor(k/4) for coherent bins and row interval follows window-start rule. Half-amplitude change is -6.0206 dB within 0.05 dB prequantization; quantized levels add <=0.5 dB. Silence equals floor; DC uses one-sided exception. Require normal and portable scalar FFT paths against the same direct DFT oracle, then compare full selected rows, axes/legend/row gaps in DOM/canvas sampling and source metadata, not screenshot resemblance alone. |
 | TC-010-002 | CL-006-03, CL-006-04 | Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing. | Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. |
 | TC-010-003 | CL-006-03 | Real browser at 1100x850 and 360x640: import actual recording, verify one station page, drag divider beyond both extremes, use keyboard/touch/zoom and resize during replay. Repeat four independent station windows. | Measured pane bounds meet 160/200 px minima, separator is 12 px and accessible, keyboard steps16px/Home/End clamp, small-height page scrolls, no horizontal page overflow, controls and axes remain reachable. Pointer/keyboard actions change only that station's pane, no second waterfall window appears and data/source identity survives resize. Browser assertions plus desktop/narrow screenshots verify actual layout. |
+| TC-010-004 | CL-006-03, CL-006-04 | Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames2304/2400/2560 with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected peak-held rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement. | Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB above -100dBFS; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses exact window-start membership, not assumed10 hops/row; intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, two latest frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. |
+| TC-010-005 | CL-006-03, CL-006-04 | Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; retain actual recording desktop/mobile screenshots. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off. | Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed row height from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, with grey gaps and background above early rows; no blended colors. Bin count/scroll width, native readout centers/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses same crisp geometry with128 bins. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. |
 
 ### 6.5 Documentation-tool checks
 
@@ -1972,7 +2025,8 @@ no station data and can be loaded before login. Authentication failures do not r
 
 ### 12.2. Messages and validation
 
-Messages MUST be UTF-8 JSON text, at most 1,024 bytes per message and per frame.
+Messages MUST be UTF-8 JSON text, at most 1,024 bytes per incoming message/frame and
+outbound control/Thin event. The opt-in Detailed event exception is defined in12.6.
 Requests have exactly `v`, `type`, `id`; other fields are rejected. IDs are integers
 from zero through 9,007,199,254,740,991. Duplicate IDs are permitted for read-only
 requests; responses echo them on the requesting connection. Ordering follows request
@@ -2030,7 +2084,8 @@ open within five seconds is abandoned and retried through the same bounded backo
 
 At most 16 WebSockets are active; further upgrades return 503. Each peer processes
 one request and response at a time, with no application output queue. The WebSocket
-write buffer is capped at 2,048 bytes; each send has a two-second deadline. Socket/kernel
+write buffer is capped at4,096 bytes under12.6, retaining explicit control headroom;
+each send has a two-second deadline. Socket/kernel
 buffers are additional OS-managed bounds. A blocked peer is disconnected; it does not
 block another peer's task. These limits bound application queuing, not total process
 memory independently of HTTP/TLS connections managed by the runtime.
@@ -2074,7 +2129,7 @@ Execution procedures are defined in the project-specific harness.
 **Status: delivered CR #5 profile interface.** Review, validation and acceptance evidence
 remains on issue #5. Applies
 only to explicit `--profile` startup. The environment-only CR #3 mode, existing
-`station.get`/`station.status` payloads, `wstx.v1`, 1,024-byte WebSocket limits and
+`station.get`/`station.status` payloads, `wstx.v1`, 1,024-byte control/incoming WebSocket limits and
 liveness/rate/connection limits remain unchanged. There is no new WebSocket command
 or version in this target. Profile identity/settings use a separate bounded HTTP
 interface, without serializing internal station objects wholesale.
@@ -2260,17 +2315,27 @@ well-formed UUIDs are404 except explicit profile_id mismatch. Errors do not echo
 Input progress is bytes received/declared Content-Range total while receiving; before
 the first chunk show awaiting upload rather than a fabricated percent. Validation/commit states are distinct from completed.
 
-**Opt-in WebSocket extension.** Keep `wstx.v1`, 1024-byte request/frame/message limits,
-2048-byte write buffer, existing station.get/status/error envelopes, validation order,
+**Opt-in WebSocket extension.** Keep `wstx.v1`, 1024-byte incoming request/frame/message
+limits; outbound Thin/control payloads remain <=1024 bytes. Set the outbound write
+buffer cap to4096 bytes to admit a <=2048-byte Detailed event while reserving a full
+1024-byte control payload and two conservative14-byte framing allowances. Preserve existing station.get/status/error envelopes, validation order,
 binary1003, heartbeats and liveness unchanged. Add exact three-field requests
-`{v:1,type:"recording.get"|"spectrum.thin"|"spectrum.off",id}`. `recording.get` returns
+`{v:1,type:"recording.get"|"spectrum.thin"|"spectrum.detail"|"spectrum.off",id}`. `recording.get` returns
 `{v:1,type:"recording.state",id,data:{generation,source_id,job_id,state}}` with nullable
-IDs/state; full snapshot stays HTTP. Thin/off acknowledge
-`{v:1,type:"spectrum.subscription",id,data:{profile:"thin"|"off"}}`. Selected-profile
+IDs/state; full snapshot stays HTTP. Thin/detail/off acknowledge
+`{v:1,type:"spectrum.subscription",id,data:{profile:"thin"|"detail"|"off"}}`. Selected-profile
 absence returns recoverable `unavailable` for these commands. Every new connection starts
 off; legacy peers receive only existing status/heartbeat messages. New browser obtains
-status/profile/recording HTTP snapshots before opting into thin and showing current
+status/profile/recording HTTP snapshots before opting into the selected profile and showing current
 recording data; unknown_command from an older server visibly disables recording display.
+Default browser selection is Detailed only on cleartext HTTP loopback (localhost,
+127.0.0.1 or [::1]); HTTPS, including HTTPS localhost, defaults Thin. The selector offers
+"Detailed (fast link, up to 10 KiB/s per viewer)", "Thin (32 kbit/s link)" and Off.
+Detailed is explicitly selectable on HTTPS but carries no32 kbit/s promise. A server
+that supports recording/Thin but refuses spectrum.detail with unknown_command triggers
+one Thin subscription and visible "Detailed unavailable; using Thin" feedback. A server
+refusing recording.get/Thin disables recording display visibly as before. Never loop
+retries or replay a mutation. An environment-only server returns unavailable.
 No side effects occur through new WS requests apart from that connection's subscription.
 
 Only subscribed thin peers receive events
@@ -2283,9 +2348,26 @@ recording snapshot/status payload change or application compression. Incoming bi
 closes1003. Obsolete boot/source/job/generation events and callbacks from old sockets are
 ignored. Event loss cannot be used to infer missed decoder results.
 
-One replaceable pending display event per peer and <=1 send per second; no replay of old
+Detailed peers instead receive exactly
+`{v:1,type:"spectrum.detail.frame",data:{boot_id,source_id,job_id,generation,sequence,first_frame,end_frame,levels_b64}}`.
+The UUID/safe-integer identity rules are unchanged, first=2400*sequence,
+end=min(first+2400,source_frames), sequence0..599. levels_b64 is canonical RFC4648
+standard base64 with padding: exactly1368 ASCII characters decoding to1024 bytes,
+each0..120. Reject wrong alphabet/padding/length/noncanonical pad bits, values>120,
+unknown/missing fields, unsafe/out-of-range sequence/interval or stale identity/socket;
+never render partially accepted data. Every encoded Detailed event is<=2048 UTF-8
+bytes; no binary messages, lossy nibble packing or application compression.
+
+One replaceable pending display event per peer, of its selected profile, and <=1 Thin
+or <=5 Detailed sends per second; no replay of old
 frames after reconnect or off. Ready status replies and heartbeats take precedence;
-optional display output is skipped when send readiness/control headroom is unavailable.
+optional display output never waits in the connection loop and is skipped when send
+readiness/control headroom is unavailable. Its guard enforces event payload <=2048 and
+payload+1024+2*14<=4096; this intentionally replaces the previous996-byte guard, not
+bypasses it. A partially flushed optional write retains the original2s deadline;
+subsequent control output cannot reset or extend that deadline. Switching/off/reconnect
+forgets prior frame cursors and pending replacements; already buffered output remains
+bounded and is rejected by browser profile/identity guards. No old rows are replayed.
 Maintain existing two-second write deadline and bounded peer removal. Browser schedules
 at most one pending repaint and bounds history as in4.4. For two thin clients, steady
 60-second accounted traffic is<=3000 bytes/s each direction under12.4's unchanged link
