@@ -56,10 +56,28 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.reject("ref part station : StationProcess :> physicalStation.controller.stations;", "ref part station : StationProcess :> physicalStation.controller.mcpAttachments.station;", "invalid endpoint/resource/authority association")
 
     def test_wrong_requesting_resource_context(self):
-        self.reject("binding backendContext bind backend.control.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding backendContext bind backend.control.request.resourceContext = otherContext;", "missing required connection")
+        self.reject("binding backendContext bind backend.control.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding backendContext bind backend.control.request.resourceContext = otherContext;", "missing required binding")
 
     def test_wrong_waveform_direction(self):
         self.reject("in item waveform : Waveform;", "out item waveform : Waveform;", "wrong exchange direction")
+
+    def test_receive_modem_provider_conjugation(self):
+        self.reject("port receive : ~ReceiveProcessing;", "port receive : ReceiveProcessing;", "wrong exchange direction")
+
+    def test_authority_identity_binding_cannot_be_weakened_to_connection(self):
+        self.reject("binding authorizedContext bind authorized.request = requests.request;", "connection authorizedContext connect authorized.request to requests.request;", "missing required binding")
+
+    def test_request_context_binding_cannot_be_weakened_to_connection(self):
+        self.reject("binding requestContext bind authorityRequest.request.resourceContext = radioBinding;", "connection requestContext connect authorityRequest.request.resourceContext to radioBinding;", "missing required binding")
+
+    def test_radio_audio_provider_conjugation(self):
+        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def StationControllerComputer", "port audio : AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def StationControllerComputer", "wrong exchange direction physicalStation.radio.audio")
+
+    def test_radio_control_provider_conjugation(self):
+        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def StationControllerComputer", "port audio : ~AudioExchange;\n        port control : RadioControl;\n    }\n    part def StationControllerComputer", "wrong exchange direction physicalStation.radio.control")
+
+    def test_audio_playback_semantic_item_type(self):
+        self.reject("out item playback : SampleBlock;", "out item playback : Recording;", "wrong semantic item type")
 
     def test_disconnected_parallel_world(self):
         self.reject("part physicalStation {", "part detachedStations[*] : StationProcess; part physicalStation {", "one physical deployment")

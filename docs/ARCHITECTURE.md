@@ -397,6 +397,63 @@ Semantic exchange types describe requests, outcomes, samples and their direction
 They do not promise field encodings, deadlines, capacity, device availability or execution
 of safety behavior. Views select existing model elements and cannot create these paths.
 
+### Semantic exchange signatures and endpoint roles
+
+The following complete signatures define the semantic item kinds and directions at
+an initiating/producing endpoint. A provider/consuming endpoint conjugates the entire
+signature (swap in/out); it retains exactly the same item kinds. These are logical
+exchanges, not serialized fields, concrete APIs or a choice of sample representation.
+
+| Contract | Initiator/producer signature (item name: semantic kind, direction) |
+|---|---|
+| LocalInteraction | request: OperatorRequest out; presentation: Presentation in |
+| StationOperations | request: StationRequest out; outcome: StationOutcome in |
+| BrowserExchange | request: StationRequest out; outcome: StationOutcome in; upload: Recording out |
+| RecordingTransfer | recording: Recording out |
+| ProfileAccess | request: ProfileRequest out; outcome: ProfileOutcome in |
+| AudioExchange | playback: SampleBlock out; capture: SampleBlock in; outcome: AudioOutcome in |
+| AudioStatus | outcome: AudioOutcome out |
+| ReceiveSamples | samples: SampleBlock out; outcome: AudioOutcome out |
+| ReceiveProcessing | request: ProcessingRequest out; result: ProcessingResult in |
+| EncodeProcessing | request: EncodeRequest out; waveform: Waveform in |
+| RadioControl | request: ControlRequest out; outcome: ControlOutcome in |
+| SessionAccess | operation: NativeSessionOperation out; outcome: NativeSessionOutcome in |
+
+The role bindings are responsibility-based: the user initiates local interaction and
+the browser consumes it; browser/MCP clients initiate station operations, their adapters
+consume client requests and initiate operations to the station service. Station service
+initiates profile, receive, transmit, QSO and control operations; each corresponding
+provider consumes them. Upload moves from web adapter to station validation, from accepted
+recording output to profile storage, then from the stored source to the shared receive
+input. QSO initiates profile contact access. Receive and transmit initiate pure modem
+requests; modem providers return results and waveforms. Audio produces receive samples
+and status; receive processing and station status consume their respective products.
+
+The transmit service initiates playback; the audio interface consumes that transmit
+exchange and initiates its selected backend exchange. Both backend alternatives consume
+host audio/control exchanges and initiate exchanges toward the radio. Each device/driver
+consumes its host-facing exchange and initiates its radio-facing exchange. The physical
+radio is the provider: it consumes playback/control requests and produces capture,
+status and errors. Native audio/control initiate their session exchanges; the managed
+session consumes them. The station control boundary consumes station/TX requests and
+initiates authority requests; common authority consumes requests and initiates authorized
+backend control. Every station's authorized-control ingress is a provider endpoint.
+
+Outer boundary ports retain their delegated roles: viewer station link is initiating,
+controller viewer link is consuming; controller radio ports are initiating and the radio
+ports consuming. A client attachment boundary consumes the selected browser's exchange
+and delegates to the selected web adapter. Delegation can therefore connect equal
+signatures; it must not be checked using a blanket opposite-direction rule. Every
+required boundary, including inherited standard/native ports, has an independent role
+binding in the structural oracle.
+
+Identity promises use **binding connectors**, not ordinary connections: authorization
+preserves the original request, its returned outcome preserves request identity, station
+and backend requests bind to that station's resource context, and each control outcome
+references its original request. An ordinary connection between the same endpoints does
+not assert equality and cannot satisfy these promises. Channel/delegation paths use
+ordinary connections. Structural checks retain this connector-kind distinction.
+
 ## 10. Requirement coverage and remaining design owners
 
 All FSD requirements have a responsibility or an explicit unresolved extension boundary.

@@ -251,38 +251,101 @@ def architecture_integrity(output: str) -> dict[str, int]:
         expected[station + ".backend." + selection] = [("audio", "audioDevices.host"), ("audioDevices.radio", "radioAudio"),
             ("control", "controlDriver.authorized"), ("controlDriver.radio", "radioControl")]
     expected[station + ".backend.nativeFlex"] += [("audioDevices.session", "session.audio"), ("controlDriver.session", "session.control")]
-    for path, definition in ports.items():
-        if "WstxArchitecture::RadioControl" in definition:
+    # Independent role/contract bindings from ARCHITECTURE.md section 9. A leading
+    # ~ marks the provider/conjugate role. Do not infer expected roles from the model.
+    role_contracts = {}
+
+    def roles(owner, **bindings):
+        role_contracts.update({owner + "." + name: contract for name, contract in bindings.items()})
+
+    roles(p + ".user", interaction="LocalInteraction")
+    roles(p + ".viewer", operator="~LocalInteraction", stationLink="BrowserExchange")
+    roles(p + ".viewer.browsers", operator="~LocalInteraction", station="BrowserExchange")
+    roles(p + ".controller", viewerLink="~BrowserExchange", radioAudio="AudioExchange", radioControl="RadioControl")
+    roles(p + ".controller.mcpClients", station="StationOperations")
+    roles(p + ".radio", audio="~AudioExchange", control="~RadioControl")
+    roles(p + ".stationLink.attachments", clientBoundary="~BrowserExchange")
+    roles(p + ".controller.radioAuthority", requests="~RadioControl", authorized="RadioControl")
+    roles(station, authorityRequest="RadioControl", authorizedControl="~RadioControl")
+    roles(station + ".profile", context="~ProfileAccess", contacts="~ProfileAccess", upload="~RecordingTransfer", recordedSamples="ReceiveSamples")
+    roles(station + ".profile.recordings", upload="~RecordingTransfer", samples="ReceiveSamples")
+    roles(station + ".station", webOperations="~StationOperations", mcpOperations="~StationOperations", profile="ProfileAccess",
+          receive="StationOperations", transmit="StationOperations", qso="StationOperations", control="RadioControl",
+          upload="~RecordingTransfer", acceptedRecording="RecordingTransfer", audioStatus="~AudioStatus")
+    roles(station + ".web", client="~BrowserExchange", station="StationOperations", recording="RecordingTransfer")
+    roles(station + ".mcp", client="~StationOperations", station="StationOperations")
+    roles(station + ".receive", jobs="~StationOperations", audio="~ReceiveSamples", processing="ReceiveProcessing")
+    roles(station + ".modes", receive="~ReceiveProcessing", encode="~EncodeProcessing")
+    roles(station + ".audio", status="AudioStatus", recorded="~ReceiveSamples", receive="ReceiveSamples", transmit="~AudioExchange", backend="AudioExchange")
+    roles(station + ".radioControl", station="~RadioControl", transmit="~RadioControl", backend="RadioControl")
+    roles(station + ".transmit", operations="~StationOperations", encode="EncodeProcessing", audio="AudioExchange", control="RadioControl")
+    roles(station + ".qso", operations="~StationOperations", contacts="ProfileAccess")
+    for backend in (station + ".backend", station + ".backend.standardDevices", station + ".backend.nativeFlex"):
+        roles(backend, audio="~AudioExchange", control="~RadioControl", radioAudio="AudioExchange", radioControl="RadioControl")
+    for selection in ("standardDevices", "nativeFlex"):
+        backend = station + ".backend." + selection
+        roles(backend + ".audioDevices", host="~AudioExchange", radio="AudioExchange")
+        roles(backend + ".controlDriver", authorized="~RadioControl", radio="RadioControl")
+    roles(station + ".backend.nativeFlex.audioDevices", session="SessionAccess")
+    roles(station + ".backend.nativeFlex.controlDriver", session="SessionAccess")
+    roles(station + ".backend.nativeFlex.session", audio="~SessionAccess", control="~SessionAccess")
+    for path, contract in role_contracts.items():
+        if contract.lstrip("~") == "RadioControl":
             expected[path] = [("outcome.request", "request")]
-    expected_edges = {(owner, frozenset(pair)) for owner, pairs in expected.items() for pair in pairs}
-    actual_edges = {(owner, frozenset(endpoints.split("|"))) for owner, _name, endpoints in records.get("EDGE", [])}
+    required_bindings = {
+        (p + ".controller.radioAuthority", frozenset(("authorized.request", "requests.request"))),
+        (p + ".controller.radioAuthority", frozenset(("requests.outcome", "authorized.outcome"))),
+        (station, frozenset(("authorityRequest.request.resourceContext", "radioBinding"))),
+        (station, frozenset(("backend.control.request.resourceContext", "radioBinding"))),
+    }
+    required_bindings.update((path, frozenset(("outcome.request", "request")))
+                             for path, contract in role_contracts.items() if contract.lstrip("~") == "RadioControl")
+    expected_edges = {(owner, "binding" if (owner, frozenset(pair)) in required_bindings else "connection", frozenset(pair))
+                      for owner, pairs in expected.items() for pair in pairs}
+    actual_edges = {(owner, kind, frozenset(endpoints.split("|"))) for owner, _name, kind, endpoints in records.get("EDGE", [])}
     missing = expected_edges - actual_edges
     extra = actual_edges - expected_edges
     if missing:
-        owner, endpoints = sorted(missing, key=lambda entry: (entry[0], sorted(entry[1])))[0]
-        raise ValueError("Architecture integrity: missing required connection at " + owner + " " + " <-> ".join(sorted(endpoints)))
+        owner, kind, endpoints = sorted(missing, key=lambda entry: (entry[0], entry[1], sorted(entry[2])))[0]
+        raise ValueError("Architecture integrity: missing required " + kind + " at " + owner + " " + " <-> ".join(sorted(endpoints)))
     if extra:
-        owner, endpoints = sorted(extra, key=lambda entry: (entry[0], sorted(entry[1])))[0]
-        raise ValueError("Architecture integrity: unexpected connection/bypass at " + owner + " " + " <-> ".join(sorted(endpoints)))
+        owner, kind, endpoints = sorted(extra, key=lambda entry: (entry[0], entry[1], sorted(entry[2])))[0]
+        raise ValueError("Architecture integrity: unexpected " + kind + "/bypass at " + owner + " " + " <-> ".join(sorted(endpoints)))
     items = {}
     for path, name, direction, types in records.get("ITEM", []):
         items.setdefault(path, {})[name] = (direction, types)
-    for port in ports:
-        if port not in items or any(direction not in ("in", "out", "inout") or not types for direction, types in items[port].values()):
-            raise ValueError("Architecture integrity: port lacks directed semantic items " + port)
-    required_items = {
-        p + ".viewer.browsers.station": {"request": "out", "outcome": "in", "upload": "out"},
-        station + ".web.client": {"request": "in", "outcome": "out", "upload": "in"},
-        station + ".transmit.encode": {"request": "out", "waveform": "in"},
-        station + ".modes.encode": {"request": "in", "waveform": "out"},
-        station + ".audio.receive": {"samples": "out", "outcome": "out"},
-        station + ".station.audioStatus": {"outcome": "in"},
-        station + ".authorityRequest": {"request": "out", "outcome": "in"},
+    # Full item signatures, independently declared rather than copied from the AST.
+    # Delegation may join equal directions; each role is checked against its own
+    # contract instead of imposing a blanket opposite-directions rule on edges.
+    contracts = {
+        "LocalInteraction": {"request": ("out", "OperatorRequest"), "presentation": ("in", "Presentation")},
+        "StationOperations": {"request": ("out", "StationRequest"), "outcome": ("in", "StationOutcome")},
+        "BrowserExchange": {"request": ("out", "StationRequest"), "outcome": ("in", "StationOutcome"), "upload": ("out", "Recording")},
+        "RecordingTransfer": {"recording": ("out", "Recording")},
+        "ProfileAccess": {"request": ("out", "ProfileRequest"), "outcome": ("in", "ProfileOutcome")},
+        "AudioExchange": {"playback": ("out", "SampleBlock"), "capture": ("in", "SampleBlock"), "outcome": ("in", "AudioOutcome")},
+        "AudioStatus": {"outcome": ("out", "AudioOutcome")},
+        "ReceiveSamples": {"samples": ("out", "SampleBlock"), "outcome": ("out", "AudioOutcome")},
+        "ReceiveProcessing": {"request": ("out", "ProcessingRequest"), "result": ("in", "ProcessingResult")},
+        "EncodeProcessing": {"request": ("out", "EncodeRequest"), "waveform": ("in", "Waveform")},
+        "RadioControl": {"request": ("out", "ControlRequest"), "outcome": ("in", "ControlOutcome")},
+        "SessionAccess": {"operation": ("out", "NativeSessionOperation"), "outcome": ("in", "NativeSessionOutcome")},
     }
-    for path, exchanges in required_items.items():
-        for name, direction in exchanges.items():
-            if items.get(path, {}).get(name, (None,))[0] != direction:
-                raise ValueError("Architecture integrity: wrong exchange direction " + path + "." + name)
+    if set(ports) != set(role_contracts):
+        raise ValueError("Architecture integrity: missing or unexpected boundary port roles " + str(sorted(set(ports) ^ set(role_contracts))))
+    for path, role in role_contracts.items():
+        signature = contracts[role.lstrip("~")]
+        actual = items.get(path, {})
+        if set(actual) != set(signature):
+            raise ValueError("Architecture integrity: semantic exchange signature mismatch " + path)
+        for item, (direction, semantic_type) in signature.items():
+            if role.startswith("~"):
+                direction = {"in": "out", "out": "in"}[direction]
+            actual_direction, actual_type = actual[item]
+            if actual_direction != direction:
+                raise ValueError("Architecture integrity: wrong exchange direction " + path + "." + item)
+            if actual_type != "WstxArchitecture::" + semantic_type:
+                raise ValueError("Architecture integrity: wrong semantic item type " + path + "." + item)
     return {"parts": len(parts), "references": len(refs), "ports": len(ports), "connections": len(actual_edges)}
 
 

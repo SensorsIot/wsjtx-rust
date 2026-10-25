@@ -1,4 +1,4 @@
-// Canonical architecture SHA256: 2cbe4f8bdf7b77d636583260b8c9cfcbbfa5acff71f09d1ed9f7c6c82bbe4af5
+// Canonical architecture SHA256: 51bd47fb9c8cb09f2b406bd9ca2767a04402609450805c4e93d2746f4b02c9bb
 package WstxArchitecture {
     doc /* Target architecture from docs/ARCHITECTURE.md, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.

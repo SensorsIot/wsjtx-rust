@@ -97,7 +97,7 @@ public class Validate {
             if (!project(feature)) continue;
             if (feature instanceof Connector connector) {
                 var ends = connector.getRelatedFeature();
-                row("EDGE", path, name(connector), String.join("|", ends.stream().map(Validate::chain).toList()));
+                row("EDGE", path, name(connector), connector instanceof BindingConnector ? "binding" : "connection", String.join("|", ends.stream().map(Validate::chain).toList()));
                 if (connector instanceof ConnectionUsage connection) inspect(connection, path + "." + name(connection), depth + 1);
             } else if (feature instanceof PortUsage port) {
                 var portPath = path + "." + name(port);
@@ -107,7 +107,7 @@ public class Validate {
                     var original = conjugated ? ((ConjugatedPortDefinition)definition).getOriginalPortDefinition() : definition;
                     for (var item : original.getFeature()) {
                         if (item instanceof Connector connector && project(item)) {
-                            row("EDGE", portPath, name(connector), String.join("|", connector.getRelatedFeature().stream().map(Validate::chain).toList()));
+                            row("EDGE", portPath, name(connector), connector instanceof BindingConnector ? "binding" : "connection", String.join("|", connector.getRelatedFeature().stream().map(Validate::chain).toList()));
                         }
                         if (item instanceof ItemUsage && project(item)) {
                             var direction = String.valueOf(item.getDirection());
