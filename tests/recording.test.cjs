@@ -144,6 +144,20 @@ test('TC-018-003 review: recording JSON media whitespace parity and malformed pa
     const s=await f.snapshot();const r=await f.req('/recording/imports','POST',f.body(s),{'Content-Type':type});assert.equal(r.status,415,type);
   }
 });
+
+// Proves: CL-006-03/04; TC-010-002/003, bootstrap after station-ready preceded the deferred recording asset.
+test('TC-010-003 late recording asset bootstraps an already connected station once',{timeout:12000},async t=>{
+  const f=await fixture(t),p=await f.context.newPage();let release,snapshots=0,subscriptions=0;
+  const held=new Promise(r=>release=r);t.after(()=>release());
+  p.on('request',r=>{if(new URL(r.url()).pathname==='/recording')snapshots++;});
+  p.on('websocket',ws=>ws.on('framesent',event=>{try{if(JSON.parse(event.payload).type==='spectrum.thin')subscriptions++;}catch{}}));
+  await p.route('**/recording.js',async route=>{await held;await route.continue();});
+  const navigation=p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:5000});
+  assert.equal(snapshots,0,'status/profile is ready while the recording module is still unavailable');release();await navigation;
+  await p.locator('#signal-status').filter({hasText:'No recording imported'}).waitFor({timeout:2000});assert.equal(await p.locator('#recording-import').isEnabled(),true);
+  await p.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});
+  await p.waitForTimeout(100);assert.equal(snapshots,1);assert.equal(subscriptions,1);
+});
 // Proves: CL-006-03; TC-010-001/003, real browser canvas data and desktop/narrow accessible layout.
 test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitter',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(2));const p=await page(f);const frames=[];

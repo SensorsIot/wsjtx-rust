@@ -134,3 +134,4 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
   try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown · ${error.message}`;await sync();}
 });
 document.querySelector('#display-profile').addEventListener('change',event=>{if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({v:1,type:`spectrum.${event.target.value}`,id:nextId++}));});
+if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
