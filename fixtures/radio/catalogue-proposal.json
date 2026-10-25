@@ -1,0 +1,596 @@
+{
+  "proposal_version": 1,
+  "status": "candidate_non_normative_design",
+  "purpose": "Reviewable datastore/execution separation proposal for issue #8. No application API, schema migration or implementation readiness is approved by this file.",
+  "issue": "https://github.com/SensorsIot/wsjtx-rust/issues/8",
+  "catalogue_owner": "issue-8; one shared catalogue and ingestion path for all consumers",
+  "sources": [
+    {
+      "id": "icom-12a",
+      "url": "https://icomuk.co.uk/files/icom/PDF/advancedManuals/IC-7300_ENG_FM_12a.pdf",
+      "document_id": "A7292-4EX-12a",
+      "revision": "2024-08",
+      "publisher": "Icom Inc.",
+      "copyright_notice": "Copyright 2016-2024 Icom Inc.",
+      "license_or_terms": "Publisher manual terms; no open-content license established. References and short independently recorded protocol facts only; no manual copied."
+    },
+    {
+      "id": "hamlib-ids",
+      "url": "https://github.com/Hamlib/Hamlib/blob/075b78cb0560e892c81bc73890d633cc11f23f59/include/hamlib/riglist.h",
+      "commit": "075b78cb0560e892c81bc73890d633cc11f23f59",
+      "path": "include/hamlib/riglist.h",
+      "source_license": "LGPL-2.1-or-later",
+      "copyright_provenance": "Copyright 2000-2003 Frank Singleton; 2000-2015 Stephane Fillod",
+      "reuse": "Factual cross-reference, not copied C source or bulk table; source license is not a legal determination of the output license."
+    },
+    {
+      "id": "hamlib-icom-defs",
+      "url": "https://github.com/Hamlib/Hamlib/blob/075b78cb0560e892c81bc73890d633cc11f23f59/rigs/icom/icom_defs.h",
+      "commit": "075b78cb0560e892c81bc73890d633cc11f23f59",
+      "path": "rigs/icom/icom_defs.h",
+      "source_license": "LGPL-2.1-or-later",
+      "copyright_provenance": "Copyright 2000-2016 Stephane Fillod",
+      "reuse": "Factual cross-reference, not copied C source or bulk table; source license is not a legal determination of the output license."
+    },
+    {
+      "id": "hamlib-ic7300",
+      "url": "https://github.com/Hamlib/Hamlib/blob/075b78cb0560e892c81bc73890d633cc11f23f59/rigs/icom/ic7300.c",
+      "commit": "075b78cb0560e892c81bc73890d633cc11f23f59",
+      "path": "rigs/icom/ic7300.c",
+      "source_license": "LGPL-2.1-or-later",
+      "copyright_provenance": "Adapted by J. Watson from IC-7000 code, copyright 2004 Stephane Fillod; adapted from IC-7200, copyright 2016 Michael Black W9MDB",
+      "reuse": "Factual cross-reference, not copied C source or bulk table; source license is not a legal determination of the output license."
+    }
+  ],
+  "structure_sketch": {
+    "not_json_schema": true,
+    "catalogue_required": [
+      "catalogue_version",
+      "sources",
+      "models",
+      "protocol_families",
+      "command_definitions"
+    ],
+    "model_required": [
+      "stable_id",
+      "external_ids",
+      "manufacturer",
+      "model_name",
+      "reported_capabilities",
+      "coverage"
+    ],
+    "command_required": [
+      "id",
+      "model_ids",
+      "protocol_family_id",
+      "parameters",
+      "result_fields",
+      "side_effect",
+      "provenance",
+      "model_firmware_coverage",
+      "implementation_status"
+    ],
+    "per_field_evidence_required": [
+      "value",
+      "sources",
+      "confidence",
+      "target_observed"
+    ],
+    "evidence_states": [
+      "source_reported",
+      "vendor_documented",
+      "independently_fixture_checked",
+      "runtime_observed",
+      "conflicting",
+      "unknown"
+    ],
+    "unknown_is_not_false": true,
+    "frequency_representation_scope": "Integer Hz fields in this candidate apply to the initial IC-7300 subset only. No global integer-Hz assumption for all radios: future fractional-step precision, range and representation require a separately reviewed type decision."
+  },
+  "catalogue_version": "0.0.0-candidate",
+  "models": [
+    {
+      "stable_id": "icom.ic-7300",
+      "external_ids": [
+        {
+          "system": "Hamlib",
+          "symbol": "RIG_MODEL_IC7300",
+          "id": 3073,
+          "source_id": "hamlib-ids",
+          "source_commit": "075b78cb0560e892c81bc73890d633cc11f23f59"
+        }
+      ],
+      "manufacturer": {
+        "value": "Icom",
+        "sources": [
+          "hamlib-ic7300"
+        ],
+        "confidence": "vendor_documented_and_hamlib_reported",
+        "target_observed": false
+      },
+      "model_name": {
+        "value": "IC-7300",
+        "sources": [
+          "icom-12a",
+          "hamlib-ic7300"
+        ],
+        "confidence": "vendor_documented_and_hamlib_reported",
+        "target_observed": false
+      },
+      "default_civ_address": {
+        "value": "94",
+        "sources": [
+          "icom-12a",
+          "hamlib-ic7300"
+        ],
+        "confidence": "vendor_documented_and_hamlib_reported",
+        "target_observed": false
+      },
+      "default_address_configurable": true,
+      "reported_capabilities": {
+        "serial_bounds_baud": {
+          "value": {
+            "min": 4800,
+            "max": 115200
+          },
+          "sources": [
+            "hamlib-ic7300"
+          ],
+          "confidence": "source_reported_not_all_intermediate_rates_guaranteed",
+          "target_observed": false
+        },
+        "serial_format": {
+          "value": {
+            "data_bits": 8,
+            "parity": "none",
+            "stop_bits": 1,
+            "handshake": "none"
+          },
+          "sources": [
+            "hamlib-ic7300"
+          ],
+          "confidence": "source_reported",
+          "target_observed": false
+        },
+        "frequency_read": {
+          "value": true,
+          "sources": [
+            "icom-12a",
+            "hamlib-icom-defs"
+          ],
+          "confidence": "vendor_documented_and_hamlib_reported",
+          "target_observed": false
+        },
+        "mode_read": {
+          "value": true,
+          "sources": [
+            "icom-12a",
+            "hamlib-icom-defs"
+          ],
+          "confidence": "vendor_documented_and_hamlib_reported",
+          "target_observed": false
+        }
+      },
+      "coverage": {
+        "all_models": "unknown; catalogue prototype contains one model only",
+        "all_cat_commands": "incomplete; six descriptors only",
+        "firmware": "unknown",
+        "target_pc": "unknown",
+        "usb_transport": "unconfirmed",
+        "audio_formats_rates_channels": "unknown; serial metadata cannot establish audio support",
+        "collision_jammer_retry_spec": "unverified",
+        "runtime_observations": null
+      }
+    }
+  ],
+  "protocol_families": [
+    {
+      "id": "icom.civ.ic7300-subset",
+      "status": "candidate",
+      "framing": {
+        "preamble_hex": "FE FE",
+        "address_order": [
+          "destination",
+          "source"
+        ],
+        "terminator_hex": "FD",
+        "controller_example_address_hex": "E0",
+        "radio_address_from_configuration": true
+      },
+      "acknowledgement_codes": {
+        "FB": "OK",
+        "FA": "NG"
+      },
+      "field_sources": [
+        "icom-12a",
+        "hamlib-icom-defs"
+      ],
+      "printed_pages": [
+        "19-2"
+      ],
+      "templates_are_documentation_only": true,
+      "complete_family_coverage": false
+    }
+  ],
+  "command_definitions": [
+    {
+      "id": "ic7300.frequency.read",
+      "normalized_operation": "ReadFrequency",
+      "model_ids": [
+        "icom.ic-7300"
+      ],
+      "protocol_family_id": "icom.civ.ic7300-subset",
+      "opcode_hex": "03",
+      "request_description": "No payload.",
+      "response_description": "03 followed by five packed BCD bytes, least significant digit pair first.",
+      "parameters": [],
+      "result_fields": [
+        {
+          "name": "frequency_hz",
+          "type": "u64",
+          "unit": "Hz",
+          "encoding": "five-byte packed BCD; validate each decimal nibble and model-specific fixed upper digits"
+        }
+      ],
+      "side_effect": "read",
+      "knowledge_status": "candidate",
+      "runtime_enabled_by_catalogue_entry": false,
+      "implementation_status": "not_implemented",
+      "execution_scope": "proposed_initial_receive_query",
+      "model_firmware_coverage": {
+        "model": "Original IC-7300 only; excludes IC-7300MK2",
+        "firmware": "Unverified; manual revision is bibliographic evidence, not a minimum firmware guarantee",
+        "region": "Target region unverified"
+      },
+      "provenance": [
+        {
+          "source_id": "icom-12a",
+          "printed_pages": [
+            "19-2",
+            "19-3",
+            "19-9"
+          ],
+          "confidence": "vendor_documented_not_hardware_observed"
+        },
+        {
+          "source_id": "hamlib-icom-defs",
+          "locator": "C_RD_FREQ",
+          "confidence": "reported_constant_mapping_not_full_handler_semantics"
+        }
+      ],
+      "coverage": "Only stated fields captured; not a complete command/variant specification."
+    },
+    {
+      "id": "ic7300.mode_filter.read",
+      "normalized_operation": "ReadModeAndFilter",
+      "model_ids": [
+        "icom.ic-7300"
+      ],
+      "protocol_family_id": "icom.civ.ic7300-subset",
+      "opcode_hex": "04",
+      "request_description": "No payload.",
+      "response_description": "04 followed by documented mode and filter codes.",
+      "parameters": [],
+      "result_fields": [
+        {
+          "name": "mode",
+          "type": "documented mode code; USB=01",
+          "unit": null
+        },
+        {
+          "name": "filter",
+          "type": "enum FIL1=01, FIL2=02, FIL3=03",
+          "unit": null
+        }
+      ],
+      "side_effect": "read",
+      "knowledge_status": "candidate",
+      "runtime_enabled_by_catalogue_entry": false,
+      "implementation_status": "not_implemented",
+      "execution_scope": "proposed_initial_receive_query",
+      "model_firmware_coverage": {
+        "model": "Original IC-7300 only; excludes IC-7300MK2",
+        "firmware": "Unverified; manual revision is bibliographic evidence, not a minimum firmware guarantee",
+        "region": "Target region unverified"
+      },
+      "provenance": [
+        {
+          "source_id": "icom-12a",
+          "printed_pages": [
+            "19-2",
+            "19-3",
+            "19-9"
+          ],
+          "confidence": "vendor_documented_not_hardware_observed"
+        },
+        {
+          "source_id": "hamlib-icom-defs",
+          "locator": "C_RD_MODE",
+          "confidence": "reported_constant_mapping_not_full_handler_semantics"
+        }
+      ],
+      "coverage": "Only stated fields captured; not a complete command/variant specification."
+    },
+    {
+      "id": "ic7300.data_filter.read",
+      "normalized_operation": "ReadDataModeAndFilter",
+      "model_ids": [
+        "icom.ic-7300"
+      ],
+      "protocol_family_id": "icom.civ.ic7300-subset",
+      "opcode_hex": "1A 06",
+      "request_description": "Subcommand 06, no data payload.",
+      "response_description": "1A 06 followed by DATA state and filter fields.",
+      "parameters": [],
+      "result_fields": [
+        {
+          "name": "data_mode",
+          "type": "bool; 00=OFF, 01=ON",
+          "unit": null
+        },
+        {
+          "name": "filter",
+          "type": "00 with DATA OFF; 01/02/03 when ON",
+          "unit": null
+        }
+      ],
+      "side_effect": "read",
+      "knowledge_status": "candidate",
+      "runtime_enabled_by_catalogue_entry": false,
+      "implementation_status": "not_implemented",
+      "execution_scope": "proposed_initial_receive_query",
+      "model_firmware_coverage": {
+        "model": "Original IC-7300 only; excludes IC-7300MK2",
+        "firmware": "Unverified; manual revision is bibliographic evidence, not a minimum firmware guarantee",
+        "region": "Target region unverified"
+      },
+      "provenance": [
+        {
+          "source_id": "icom-12a",
+          "printed_pages": [
+            "19-2",
+            "19-7",
+            "19-10"
+          ],
+          "confidence": "vendor_documented_not_hardware_observed"
+        },
+        {
+          "source_id": "hamlib-icom-defs",
+          "locator": "C_CTL_MEM + S_MEM_DATA_MODE",
+          "confidence": "reported_constant_mapping_not_full_handler_semantics"
+        }
+      ],
+      "coverage": "Only stated fields captured; not a complete command/variant specification."
+    },
+    {
+      "id": "ic7300.rx_tx.read",
+      "normalized_operation": "ReadRxTxStatus",
+      "model_ids": [
+        "icom.ic-7300"
+      ],
+      "protocol_family_id": "icom.civ.ic7300-subset",
+      "opcode_hex": "1C 00",
+      "request_description": "Subcommand 00, no data payload.",
+      "response_description": "1C 00 followed by 00=RX or 01=TX.",
+      "parameters": [],
+      "result_fields": [
+        {
+          "name": "radio_state",
+          "type": "enum RX|TX",
+          "unit": null
+        }
+      ],
+      "side_effect": "read",
+      "knowledge_status": "candidate",
+      "runtime_enabled_by_catalogue_entry": false,
+      "implementation_status": "not_implemented",
+      "execution_scope": "proposed_initial_receive_query; no data-bearing TX setter exposed",
+      "model_firmware_coverage": {
+        "model": "Original IC-7300 only; excludes IC-7300MK2",
+        "firmware": "Unverified; manual revision is bibliographic evidence, not a minimum firmware guarantee",
+        "region": "Target region unverified"
+      },
+      "provenance": [
+        {
+          "source_id": "icom-12a",
+          "printed_pages": [
+            "19-2",
+            "19-7"
+          ],
+          "confidence": "vendor_documented_not_hardware_observed"
+        },
+        {
+          "source_id": "hamlib-icom-defs",
+          "locator": "C_CTL_PTT + S_PTT",
+          "confidence": "reported_constant_mapping_not_full_handler_semantics"
+        }
+      ],
+      "coverage": "Only stated fields captured; not a complete command/variant specification."
+    },
+    {
+      "id": "ic7300.frequency.set",
+      "normalized_operation": "SetFrequency",
+      "model_ids": [
+        "icom.ic-7300"
+      ],
+      "protocol_family_id": "icom.civ.ic7300-subset",
+      "opcode_hex": "05",
+      "request_description": "Five-byte packed BCD frequency payload.",
+      "response_description": "FB acknowledgement or FA rejection; subsequent independent 03 readback proposed.",
+      "parameters": [
+        {
+          "name": "frequency_hz",
+          "type": "u64",
+          "unit": "Hz",
+          "range": "Validated against reviewed model/region receive constraints before encoding; target bounds not approved"
+        }
+      ],
+      "result_fields": [
+        {
+          "name": "readback_frequency_hz",
+          "type": "u64",
+          "unit": "Hz"
+        }
+      ],
+      "side_effect": "write_frequency",
+      "knowledge_status": "candidate",
+      "runtime_enabled_by_catalogue_entry": false,
+      "implementation_status": "not_implemented",
+      "execution_scope": "conditional_future; explicit functional approval required; offline metadata only",
+      "model_firmware_coverage": {
+        "model": "Original IC-7300 only; excludes IC-7300MK2",
+        "firmware": "Unverified; manual revision is bibliographic evidence, not a minimum firmware guarantee",
+        "region": "Target region unverified"
+      },
+      "provenance": [
+        {
+          "source_id": "icom-12a",
+          "printed_pages": [
+            "19-2",
+            "19-3",
+            "19-9"
+          ],
+          "confidence": "vendor_documented_not_hardware_observed"
+        },
+        {
+          "source_id": "hamlib-icom-defs",
+          "locator": "C_SET_FREQ",
+          "confidence": "reported_constant_mapping_not_full_handler_semantics"
+        }
+      ],
+      "coverage": "Only stated fields captured; not a complete command/variant specification."
+    },
+    {
+      "id": "ic7300.mode_filter.set",
+      "normalized_operation": "SetModeAndFilter",
+      "model_ids": [
+        "icom.ic-7300"
+      ],
+      "protocol_family_id": "icom.civ.ic7300-subset",
+      "opcode_hex": "06",
+      "request_description": "Explicit documented mode and filter fields; proposal does not use optional omitted-filter form.",
+      "response_description": "FB acknowledgement or FA rejection; independent 04 readback proposed.",
+      "parameters": [
+        {
+          "name": "mode",
+          "type": "reviewed supported mode enum; initial write subset unsettled",
+          "unit": null
+        },
+        {
+          "name": "filter",
+          "type": "enum FIL1|FIL2|FIL3",
+          "unit": null
+        }
+      ],
+      "result_fields": [
+        {
+          "name": "readback_mode",
+          "type": "mode enum",
+          "unit": null
+        },
+        {
+          "name": "readback_filter",
+          "type": "filter enum",
+          "unit": null
+        }
+      ],
+      "side_effect": "write_mode_filter",
+      "knowledge_status": "candidate",
+      "runtime_enabled_by_catalogue_entry": false,
+      "implementation_status": "not_implemented",
+      "execution_scope": "deferred_not_approved; does not set DATA state",
+      "model_firmware_coverage": {
+        "model": "Original IC-7300 only; excludes IC-7300MK2",
+        "firmware": "Unverified; manual revision is bibliographic evidence, not a minimum firmware guarantee",
+        "region": "Target region unverified"
+      },
+      "provenance": [
+        {
+          "source_id": "icom-12a",
+          "printed_pages": [
+            "19-2",
+            "19-3",
+            "19-9"
+          ],
+          "confidence": "vendor_documented_not_hardware_observed"
+        },
+        {
+          "source_id": "hamlib-icom-defs",
+          "locator": "C_SET_MODE",
+          "confidence": "reported_constant_mapping_not_full_handler_semantics"
+        }
+      ],
+      "coverage": "Only stated fields captured; not a complete command/variant specification."
+    }
+  ],
+  "execution_contract_proposal": {
+    "normalized_request_fields": [
+      "station/profile context from existing authority",
+      "local operation ID",
+      "connection generation",
+      "typed operation",
+      "typed parameters",
+      "monotonic deadline",
+      "cancellation token"
+    ],
+    "validation_order": [
+      "existing station authority",
+      "radio resource ownership",
+      "our implemented operation registry",
+      "reviewed capability and model/firmware constraints",
+      "typed parameter limits",
+      "deadline/cancellation",
+      "family codec and selected transport"
+    ],
+    "catalogue_is_not_authority": true,
+    "generic_raw_cat_execution": false,
+    "result_fields": [
+      "local operation and connection generation",
+      "typed observation or explicit error",
+      "observation monotonic time",
+      "pending/completed/rejected/cancelled distinction",
+      "confirmed/readback or unknown outcome"
+    ],
+    "errors": [
+      "unsupported",
+      "invalid_parameter",
+      "unauthorized",
+      "resource_busy",
+      "not_connected",
+      "negative_ack",
+      "malformed_response",
+      "timeout",
+      "cancelled",
+      "indeterminate_after_write"
+    ],
+    "one_outstanding_query_per_owned_transport": true,
+    "echo_unsolicited_late_data": "Separate address/command classification. Echo and transceive updates do not complete a solicited query. No on-wire transaction ID exists; identical late replies remain a correlation limitation, not solved by local generation tags.",
+    "cancellation": "Before send: no bytes. After send: discard cancelled consumer output while retaining ownership until response/deadline; never infer rollback of a completed write.",
+    "write_policy": "No blind setter retry; ACK alone does not confirm state. Reconnection never replays old writes.",
+    "timing_and_frame_limits": "Next FSD/model window must approve exact bounds; no new normative limits introduced here.",
+    "opening_control_lines": "No hardware opening authorized. Target USB SEND/CW/RTTY keying mappings must be inspected. Explicit DTR/RTS inactive intent and no flow control require backend verification; no glitch-free-open claim.",
+    "transmit_boundary": "TX command knowledge may be catalogued later, but transmit execution/authority/halt belongs to #9. This proposal exposes no PTT setter.",
+    "receive_boundary": "Consume #6 sample/source/profile/job identity and #7 common preprocessing; no new audio jobs, resampler, FFT or authentication.",
+    "runtime_scope": "Implement only reviewed operations actually needed by the application first; broader catalogue knowledge does not expand runtime operation scope."
+  },
+  "storage_boundaries": {
+    "catalogue": "Immutable versioned shared knowledge, provenance and completeness; no station handles/secrets/live state. JSON first; no SQL dependency selected.",
+    "station_configuration": "Stable catalogue model ID/revision reference plus selected transport/address/settings intent. Stable-ID migration policy TBD; unknown IDs must not silently retarget another radio.",
+    "runtime_state": "Connection identity, observed radio state, negotiated/observed capabilities and failures; never written back as universal catalogue truth.",
+    "implementation_registry": "Our reviewed typed operations/codecs and verification evidence, distinct from Hamlib-reported capability."
+  },
+  "compatibility_proof_plan": {
+    "status": "proposed_not_run",
+    "vendor_fixtures": "Use independent manual-derived bytes from ic7300-manifest.json; no oracle produced by the codec under test.",
+    "hamlib_reference": "If pinned Hamlib binary becomes available, compare its observable normalized results against the same isolated scripted serial emulator; no physical device or network radio. Audit initialization/open side effects before execution.",
+    "comparison": "Compare frequency Hz, USB/LSB plus separately observed DATA state, RX/TX observations and explicit rejection/failure semantics; record intentional differences. Do not equate FIL1 with a fixed Hz bandwidth or assume Hamlib packet-mode names map without DATA evidence.",
+    "not_required_equivalence": "Internal design, exact polling sequence, cache behavior and retry algorithms need not match; user-visible subset must have an explicit behavior oracle.",
+    "coverage": "Enumerate compared operations/variants and unknown firmware cases; neither catalogue membership nor Hamlib stable status is our acceptance result."
+  },
+  "ingestion_proposal": {
+    "method": "One pinned-source offline metadata export path, plus reviewed vendor/family command knowledge records. No source algorithm translation.",
+    "initial_scope": "IC-7300 proof, then incremental protocol families; do not bulk-copy curated tables under an assumption of unrestricted reuse.",
+    "license_review": "Keep source notices/licenses and extraction provenance; determine redistribution obligations for copied/derived material before publication. Tool output is not an automatic licensing exemption.",
+    "implementation_gate": "Next single-owner FSD/model integration and independent semantic/readiness review required before implementing catalogue, executor or adapters."
+  }
+}
