@@ -60,6 +60,11 @@ fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
     assert_eq!(peer.starts, 0);
     peer.ready = true;
     assert_eq!(
+        optional_write(&mut peer, Message::Text("x".repeat(997).into())).unwrap(),
+        None
+    );
+    assert_eq!(peer.starts, 0);
+    assert_eq!(
         optional_write(&mut peer, Message::Text("optional".into())).unwrap(),
         Some(false)
     );

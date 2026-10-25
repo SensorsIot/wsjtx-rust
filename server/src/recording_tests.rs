@@ -473,6 +473,41 @@ fn parser_preserves_non_eof_os_read_errors() {
     );
 }
 
+// Proves: CL-006-02; TC-018-003 review regression, absent manifest never authorizes guessing which UUID original to delete.
+#[test]
+fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
+    let f = Fixture::new();
+    let empty = f.recording();
+    assert_eq!(empty.snapshot()["source_error"], Value::Null);
+    assert_eq!(empty.snapshot()["recording"], Value::Null);
+    // These bytes are indistinguishable from a pre-commit crash or loss of a previously committed manifest.
+    let id = profile::new_uuid().unwrap();
+    let bytes = wav(&[1]);
+    fs::write(empty.path(&id, "wav"), &bytes).unwrap();
+    write_json(
+        &empty.path(&id, "json"),
+        &Metadata {
+            schema_version: 1,
+            recording_id: id.clone(),
+            file_bytes: bytes.len() as u64,
+            frames: 1,
+            rate_hz: 12000,
+        },
+    )
+    .unwrap();
+    let recovered = f.recording();
+    assert_eq!(
+        recovered.snapshot()["source_error"],
+        "recording_unavailable"
+    );
+    assert_eq!(fs::read(recovered.path(&id, "wav")).unwrap(), bytes);
+    assert!(recovered.path(&id, "json").exists());
+    let replacement = import(&recovered, &wav(&[2])).unwrap();
+    assert_eq!(recovered.snapshot()["source_error"], Value::Null);
+    assert_eq!(recovered.snapshot()["recording"]["id"], replacement);
+    assert!(!recovered.path(&id, "wav").exists());
+}
+
 // Proves: CL-006-02/04; TC-018-003 review regression; worker preempted across a pacing deadline releases the slot.
 #[test]
 fn crossing_pacing_deadline_completes_and_releases_worker_slot() {

@@ -574,7 +574,8 @@ async fn send_control(socket: &mut WebSocket, message: Message, pending: Option<
 }
 
 // Optional writes never wait in the connection loop. Readiness flushes prior buffered
-// output; a <=1024-byte event then leaves >=1024 bytes of the 2048-byte buffer for control.
+// output. Reserve a full 1024-byte control payload plus both WebSocket headers
+// inside the existing 2048-byte buffer (14 bytes/header is conservative for server frames).
 fn optional_write<S: futures_sink::Sink<Message> + Unpin>(
     socket: &mut S,
     message: Message,
@@ -583,6 +584,9 @@ fn optional_write<S: futures_sink::Sink<Message> + Unpin>(
         pin::Pin,
         task::{Context, Poll, Waker},
     };
+    if !matches!(&message,Message::Text(text) if text.len()<=2048-1024-2*14) {
+        return Ok(None);
+    }
     let mut cx = Context::from_waker(Waker::noop());
     match Pin::new(&mut *socket).poll_ready(&mut cx) {
         Poll::Pending => return Ok(None),

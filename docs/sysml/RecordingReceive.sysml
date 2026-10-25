@@ -1,8 +1,8 @@
-// Canonical recorded receive contract SHA256: 548f2f9a36e03b169722644b5278c6b3ee8bc6b77455756d4ec8e07ff204bb9c
+// Canonical recorded receive contract SHA256: 7dcb243dbff3ad3e85831c623736f75ba8fb5b673bdaa023dffd7504eb73c24b
 package WstxRecordingReceive {
     private import ScalarValues::*;
-    doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Independent
-         candidate recording/spectrum modules and executable verification companions exist;
+    doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Candidate
+         recording/spectrum modules and executable verification companions exist;
          actual run/review/acceptance evidence belongs to issue #6. Existing
          usages only, no new deployment/universal job manager/TX authority.
          Shared RustFFT6.4.1 primary API https://docs.rs/rustfft/6.4.1/rustfft/,
@@ -398,8 +398,8 @@ package WstxRecordingReceive {
              bounded modem working history. Plan once per needed size/worker, never per display row;
              check lengths before processing so invalid input cannot reach a panic precondition.
              No generic FFT wrapper or additional RealFFT dependency is needed. This is the central
-             owned dependency contract; future crate adoption is implementation work, not performed
-             by this document. Normative primary API: [RustFFT6.4.1 normalization/output order](https://docs.rs/rustfft/6.4.1/rustfft/),
+             owned dependency contract; the candidate declares RustFFT once in the server crate.
+             Candidate presence is not an acceptance result. Normative primary API: [RustFFT6.4.1 normalization/output order](https://docs.rs/rustfft/6.4.1/rustfft/),
              [`Fft` scratch/buffer contract](https://docs.rs/rustfft/6.4.1/rustfft/trait.Fft.html) and
              [`FftPlannerScalar`](https://docs.rs/rustfft/6.4.1/rustfft/struct.FftPlannerScalar.html).
              The explicit DFT formula above fixes sign/scaling independently of the provider.

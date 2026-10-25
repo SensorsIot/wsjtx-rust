@@ -351,6 +351,26 @@ impl Recording {
                     state.unknown_commit = state.committed_id.is_none();
                 }
             }
+        } else {
+            match fs::read_dir(&dir) {
+                Ok(entries) => {
+                    for entry in entries {
+                        let Ok(entry) = entry else {
+                            state.storage_error = Some("storage_unavailable");
+                            break;
+                        };
+                        let name = entry.file_name();
+                        let name = name.to_string_lossy();
+                        if name.rsplit_once('.').is_some_and(|(id, extension)| {
+                            profile::valid_uuid(id) && matches!(extension, "wav" | "json")
+                        }) {
+                            state.unknown_commit = true;
+                            state.source_error = Some("recording_unavailable");
+                        }
+                    }
+                }
+                Err(_) => state.storage_error = Some("storage_unavailable"),
+            }
         }
         let this = Arc::new(Self {
             state: Mutex::new(state),

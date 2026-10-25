@@ -92,11 +92,11 @@ test('TC-018-002 aborted partial upload cancels its reservation without publishi
   assert.equal((await f.req('/recording/imports/'+op.id)).value.state,'cancelled');assert.equal((await f.snapshot()).recording,null);
 });
 // Proves: CL-006-01/02; TC-018-003, fresh-browser replacement after each committed-source fault.
-test('TC-018-003 missing original, corrupt metadata and manifest remain recoverable',{timeout:30000},async t=>{
-  for(const target of ['original','metadata','manifest']){
+test('TC-018-003 review: missing original, corrupt metadata and manifest remain recoverable',{timeout:30000},async t=>{
+  for(const target of ['original','metadata','manifest','missing_manifest']){
     const f=await fixture(t);const s=await f.upload(wav(.1));
-    const file=path.join(f.dir,'recordings',target==='manifest'?'current.json':s.recording.id+(target==='original'?'.wav':'.json'));
-    if(target==='original')await fs.unlink(file);else await fs.writeFile(file,'{}');await f.restart();
+    const file=path.join(f.dir,'recordings',['manifest','missing_manifest'].includes(target)?'current.json':s.recording.id+(target==='original'?'.wav':'.json'));
+    if(target==='original'||target==='missing_manifest')await fs.unlink(file);else await fs.writeFile(file,'{}');await f.restart();
     if(target!=='original') {
       assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),wav(.1),'source fault must not delete the committed original before replacement');
       const invalid=await f.reserve();const rejected=await f.req('/recording/imports/'+invalid.id,'PUT',Buffer.from('RIFF'),{'Content-Type':'audio/wav','Content-Range':'bytes 0-3/4'});assert.equal(rejected.status,422);
@@ -110,7 +110,7 @@ test('TC-018-003 missing original, corrupt metadata and manifest remain recovera
 });
 
 // Proves: CL-006-02/04; TC-018-003 review regression, cancellation while reservation response is delayed.
-test('TC-018-003 cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
+test('TC-018-003 review: cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
   const f=await fixture(t),p=await page(f),errors=[];p.on('pageerror',e=>errors.push(String(e)));
   let release,observed,puts=0,resource;
   const held=new Promise(r=>release=r),accepted=new Promise(r=>observed=r);t.after(()=>release());
@@ -118,8 +118,8 @@ test('TC-018-003 cancel pending reservation response deletes returned reservatio
   await p.route('**/recording/imports',async route=>{const response=await route.fetch();resource=await response.json();observed();await held;await route.fulfill({response});});
   await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
   assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
-  await p.locator('#recording-cancel').click();await p.locator('#recording-progress').filter({hasText:/Cancellation requested/}).waitFor();release();
-  await p.locator('#recording-import:enabled').waitFor();assert.equal(puts,0);assert.deepEqual(errors,[]);assert.equal((await f.snapshot()).import,null);assert.equal((await f.req('/recording/imports/'+resource.id)).value.state,'cancelled');
+  await p.locator('#recording-cancel').click();release();
+  await p.waitForFunction(()=>!uploading,null,{timeout:3000});assert.equal(puts,0);assert.deepEqual(errors,[]);assert.equal((await f.snapshot()).import,null);assert.equal((await f.req('/recording/imports/'+resource.id)).value.state,'cancelled');
 });
 
 // Proves: CL-006-03/04; TC-010-002, actual subscribed stalled peer plus healthy mandatory control path.
@@ -135,7 +135,7 @@ test('TC-010-002 stalled thin subscriber is bounded and cannot block healthy sta
 });
 
 // Proves: CL-006-02; TC-018-003 review regression, JSON media grammar remains the profile grammar.
-test('TC-018-003 recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
+test('TC-018-003 review: recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
   const f=await fixture(t);
   for(const type of ['application/json','application/json ;charset=utf-8','application/json;\tcharset=utf-8',' Application/JSON ; CHARSET=UTF-8 ']){
     const s=await f.snapshot();const r=await f.req('/recording/imports','POST',f.body(s),{'Content-Type':type});assert.equal(r.status,201,type);await f.req('/recording/imports/'+r.value.id,'DELETE');

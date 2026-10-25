@@ -6,16 +6,17 @@ const crypto=require('node:crypto');
 const {execFileSync}=require('node:child_process');
 const repository=path.resolve(__dirname,'..');
 const limit=4*1024*1024;
-function safeName(name){return typeof name==='string'&&name.split('/').every(p=>/^[a-zA-Z0-9_.-]+$/.test(p)&&p!=='.'&&p!=='..');}
+function safeName(name){return typeof name==='string'&&name.split('/').every(p=>p.length<=128&&/^[a-zA-Z0-9_.-]+$/.test(p)&&!p.endsWith('.')&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(p));}
 async function cachePath(directory){
   if(!directory||!path.isAbsolute(directory))throw Error('Choose an absolute cache directory outside a Git working tree.');
   const target=path.resolve(directory);if(path.dirname(target)===target)throw Error('Filesystem root is not a fixture cache.');
+  if(target===repository||target.startsWith(repository+path.sep))throw Error('Audio cache must be outside a Git working tree.');
   let existing=target;
   while(true){try{const s=await fs.lstat(existing);if(s.isSymbolicLink()||!s.isDirectory())throw Error('Cache path must contain only ordinary directories.');}catch(e){if(e.code!=='ENOENT')throw e;}
     if(path.dirname(existing)===existing)break;existing=path.dirname(existing);
   }
   existing=target;while(true){try{await fs.stat(existing);break;}catch(e){if(e.code!=='ENOENT')throw e;existing=path.dirname(existing);}}
-  let inside=false;try{inside=execFileSync('git',['-C',existing,'rev-parse','--is-inside-work-tree'],{encoding:'utf8',stdio:['ignore','pipe','ignore'],windowsHide:true}).trim()==='true';}catch{}
+  let inside=false;try{inside=execFileSync('git',['-C',existing,'rev-parse','--is-inside-work-tree'],{encoding:'utf8',stdio:['ignore','pipe','ignore'],windowsHide:true}).trim()==='true';}catch(error){if(error.code==='ENOENT')throw Error('Git is required to verify the cache is outside working trees.');}
   if(inside)throw Error('Audio cache must be outside a Git working tree.');return target;
 }
 function verify(entry,bytes){
@@ -39,13 +40,14 @@ async function plan(){
   const [ft8,ft4]=files.map(b=>JSON.parse(b));
   if(ft8.schema_version!==1||ft4.schema_version!==1)throw Error('Unsupported fixture manifest.');
   const entries=[...ft8.files.filter(f=>f.path.endsWith('.wav')).map(f=>({...f,name:path.posix.basename(f.path),url:f.source_url})),...ft4.files.map(f=>({...f,name:'ft4/'+f.relative_download_path,url:f.source_url})),...ft4.documentation_files.filter(f=>f.file.startsWith('official-')).map(f=>({...f,name:'ft4/'+f.file})),
-    {name:'ft8_lib-LICENSE.txt',url:ft8.source_license_url,bytes:1069,sha256:'4c816505e73feef31f1ffafcf70d51e2aae65a88296e77d6c37715f31ce63230'},
+    {name:'ft8_lib-LICENSE.txt',url:`https://raw.githubusercontent.com/kgoba/ft8_lib/${ft8.source_commit}/LICENSE`,bytes:1069,sha256:'4c816505e73feef31f1ffafcf70d51e2aae65a88296e77d6c37715f31ce63230'},
     ...files.map((bytes,n)=>({name:`provenance/${n?'ft4':'ft8'}-manifest.json`,bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),content:bytes}))];
   if(entries.filter(e=>e.frames).length!==25)throw Error('Expected 25 pinned WAV fixtures.');return entries;
 }
 async function download(entry){
   const url=new URL(entry.url);if(url.protocol!=='https:'||url.username||url.password)throw Error('Fixture URL must be public HTTPS.');
   const response=await fetch(url,{signal:AbortSignal.timeout(30000)});if(!response.ok)throw Error(`Fixture HTTP ${response.status}: ${entry.name}`);
+  if(new URL(response.url).protocol!=='https:')throw Error('Fixture redirects must remain HTTPS.');
   const chunks=[];let length=0;
   for await(const chunk of response.body){length+=chunk.length;if(length>entry.bytes||length>limit)throw Error(`Oversized download: ${entry.name}`);chunks.push(chunk);}
   return Buffer.concat(chunks,length);
@@ -69,7 +71,7 @@ async function provision(directory,{verifyOnly=false,entries,fetchFile=download}
   }
   return entries.length;
 }
-module.exports={cachePath,verify,plan,provision};
+module.exports={cachePath,verify,plan,provision,download};
 if(require.main===module){
   const args=process.argv.slice(2),verifyOnly=args.includes('--verify');const clean=args.filter(a=>a!=='--verify');
   if(clean.length!==2||clean[0]!=='--directory'){console.error('Usage: node tools/recording-fixtures.cjs --directory <absolute-cache-directory> [--verify]');process.exitCode=1;}
