@@ -1,4 +1,4 @@
-// Canonical architecture SHA256: 8ea0293df09258af2c787eb6457fd1f8f66fec237fc69ad38090df89ad8cb698
+// Canonical architecture SHA256: 9912ffa58350490184796d7b7449ac85a52be5f44fa1119627293b8a257b8e0a
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
@@ -339,8 +339,9 @@ package WstxArchitecture {
     dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
     package ImplementedStatusSlice {
-        doc /* Current status/TLS server and embedded client only. Target deployment above
-             is not an assertion of implemented profiles, radio, modem or MCP support. */
+        doc /* Legacy status/TLS subset retained alongside Profiles.sysml's implemented
+             CR #5 candidate. Target deployment above is not an assertion of implemented
+             radio, modem or MCP support. */
         part def StatusServer;
         dependency statusScope from StatusServer to WstxRequirements::'CL-003-01';
         dependency statusProtocol from StatusServer to WstxRequirements::'CL-003-02';

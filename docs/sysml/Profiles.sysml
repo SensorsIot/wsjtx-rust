@@ -1,9 +1,9 @@
-// Canonical profile contract SHA256: 8ea0293df09258af2c787eb6457fd1f8f66fec237fc69ad38090df89ad8cb698
+// Canonical profile contract SHA256: 9912ffa58350490184796d7b7449ac85a52be5f44fa1119627293b8a257b8e0a
 package WstxProfiles {
     private import ScalarValues::*;
 
-    doc /* Approved TARGET implementation contract for CR #5; no product implementation
-         or verification verdict is asserted. Markdown remains authoritative:
+    doc /* Approved implementation contract for the CR #5 candidate. Product source/test
+         companions now exist; no acceptance or modeled verification verdict is asserted. Markdown remains authoritative:
          docs/WSTX Rust FSD.md 4.2 (selection/schema/ownership), 6.2 (independent cases),
          12.5 (HTTP/session); existing 12.1..12.4 remain the legacy/status contract.
          UUID: RFC 9562 section 5.4, https://www.rfc-editor.org/rfc/rfc9562.html#section-5.4.
@@ -339,6 +339,8 @@ package WstxProfiles {
              Native FlexRadio reserved/disabled. All selections Saved; not activated;
              radio stays unconfigured; audio/control selection availability independent.
              PUT validates exact body shape/JSON/UTF8, media type/size before applying.
+             Disable form controls while saving, preserving their read-only state;
+             edits typed after submission cannot be clobbered by its acknowledgement.
              Invalid field preserves typed input with error, never Saved. Successful save
              updates revision only on durable 200. On 409 prompt reload before another
              save. Refresh/reconnect reload authoritative settings; preserve in-progress
@@ -392,6 +394,8 @@ package WstxProfiles {
     action authenticate : AuthenticateProfile;
     action presentAndEdit : PresentAndEditProfile;
 
+    attribute serverSource : String = "server/src/main.rs; server/src/profile.rs";
+    attribute browserSource : String = "client/index.html; client/app.js; client/style.css";
     // Allocation references EXISTING actual deployment usages, never a duplicate part.
     dependency launchOwner from launchProfile to WstxArchitecture::physicalStation::controller::stations::profile;
     dependency saveOwner from saveProfile to WstxArchitecture::physicalStation::controller::stations::profile;
@@ -412,11 +416,16 @@ package WstxProfiles {
         doc /* Case identities remain WstxRequirements::TC-022-001..004, projected
              from authoritative Markdown 6.2. No cases/verdicts are regenerated from
              action calculations. These declarations refine their subjects/oracles.
-             All planned/unimplemented, level 2 isolated automated Windows PC tests;
+             Implemented candidate companions, level 2 isolated automated Windows PC tests;
              FOUR real candidate processes, distinct saved ports/profiles, four real
              Chromium windows sharing ONE context/cookie store; no radio/device/live
              account/external-service/duplicate hosted run. Rust profile tests in
-             server/ and communication browser/process tests in tests/, not yet written.
+             server/src/profile_tests.rs and server/src/auth_tests.rs; communication browser/
+             process cases in tests/profiles.test.cjs, registered beside the legacy suite.
+             Case names are TC-022-001..004; run node --test --test-concurrency=1
+             tests/profiles.test.cjs after cargo build --locked. Rust companions run with
+             cargo test --workspace --locked --all-targets. Execution evidence remains
+             on issue #5; model declarations are not run results.
              Fixture expects UUID 00000000-0000-4000-8000-00000000000i for i=1..4,
              Station i, TESTi, JN47AA, revision0, standard, fixture-input-i/output-i,
              disabled/null/disabled control. Ports reserved+recorded independently.
@@ -461,7 +470,12 @@ package WstxProfiles {
                  Exact startup categories per LaunchSelectedProfile and Markdown table;
                  independent pre/post hashes unchanged. Restore bytes and restart.
                  Deny write/replace deterministically:503/no revision advance/old state.
-                 Crash before/after replacement:complete old/new, never partial; lost
+                 Crash before/after replacement:complete old/new, never partial. Test-build-only
+                 checkpoints execute the real save/write/sync/replace path with write,
+                 flush and replace errors and interruptions before/after replacement;
+                 reopen independently checks old/new JSON and retained revision. No
+                 runtime fault knobs. Browser route fetches a real successful PUT then
+                 aborts delivery; one PUT only and subsequent GET recovers commit. Lost
                  response GET, no replay. Relative path from different CWD, aliases,
                  absent parent/existing empty/nonempty create target, invalid CLI and
                  forbidden env all have mapped errors. No migration/power-loss claim. */
@@ -497,7 +511,10 @@ package WstxProfiles {
                  UUID403, WS numeric correlation IDs retain existing local meaning.
                  Check 12.1 login body/rate independently per process, cookie attributes,
                  no secrets except required HttpOnly cookie in permitted store; no
-                 local/sessionStorage/profileJSON/retained form/URL/log/report leakage.
+                 local/sessionStorage/profileJSON/retained form/URL/log/report leakage. Failed
+                 network login also clears DOM token immediately on submission; password
+                 autocomplete is disabled. Repeated Cookie headers are checked in the
+                 separate auth_tests.rs vector, not only a single cookie string.
                  Oracle: original cookie/error/identity table and independent inputs;
                  trusted same-host processes only, not hostile-host isolation proof. */
         }

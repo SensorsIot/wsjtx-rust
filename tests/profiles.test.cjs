@@ -1,0 +1,278 @@
+'use strict';
+// Independent oracle: approved FSD 4.2/6.2/12.5, NOT the product/model serializers.
+const {test, before, after} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const net = require('node:net');
+const http = require('node:http');
+const https = require('node:https');
+const {spawn, execFileSync} = require('node:child_process');
+const {once} = require('node:events');
+const crypto = require('node:crypto');
+const {chromium} = require('playwright');
+const selfsigned = require('selfsigned');
+const WebSocket = require('ws');
+const {receive} = require('./peer.cjs');
+let root, browser, tls;
+const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
+const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: `fixture-input-${i}`, output_device: `fixture-output-${i}`}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
+before(async () => {
+  assert.ok(await fs.stat(exe), 'compiled candidate is required');
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-profile-tests-'));
+  const cert = await selfsigned.generate([{name: 'commonName', value: 'localhost'}], {days: 1, keySize: 2048, extensions: [{name: 'subjectAltName', altNames: [{type: 2, value: 'localhost'}, {type: 7, ip: '127.0.0.1'}]}]});
+  const certPath = path.join(root, 'cert.pem'), keyPath = path.join(root, 'key.pem');
+  await fs.writeFile(certPath, cert.cert); await fs.writeFile(keyPath, cert.private, {mode: 0o600});
+  tls = {WSTX_TLS_CERT: certPath, WSTX_TLS_KEY: keyPath};
+  browser = await chromium.launch();
+});
+after(async () => {await browser?.close(); if (root) await fs.rm(root, {recursive: true, force: true});});
+async function ports(n) {
+  const held = [];
+  try {for (let i = 0; i < n; i++) {const s = net.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening'); held.push(s);} return held.map(s => s.address().port);}
+  finally {await Promise.all(held.map(s => new Promise(resolve => s.close(resolve))));}
+}
+function launch(args, env = {}, cwd) {
+  const clean = {...process.env}; for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
+  const child = spawn(exe, args, {cwd, env: {...clean, ...env}, windowsHide: true});
+  let output = ''; child.stdout.on('data', b => {output = (output + b).slice(-4096);}); child.stderr.on('data', b => {output = (output + b).slice(-4096);});
+  const done = once(child, 'exit');
+  return {child, get output() {return output;}, done, async close() {if (child.exitCode === null && child.signalCode === null) {child.kill(); await done;}}};
+}
+async function start(profile, env = {}, cwd) {
+  const app = launch(['--profile', profile.dir], env, cwd);
+  const deadline = Date.now() + 10000;
+  while (!app.output.includes(`WSTX listening ${profile.origin}`)) {
+    if (app.child.exitCode !== null || app.child.signalCode !== null || Date.now() > deadline) {await app.close(); assert.fail('Profile readiness failed: ' + app.output);}
+    await new Promise(r => setTimeout(r, 20));
+  }
+  return app;
+}
+async function refusal(args, category, env = {}, cwd) {
+  const app = launch(args, env, cwd); const timer = setTimeout(() => app.child.kill(), 10000);
+  try {const [code, signal] = await app.done; assert.equal(signal, null, 'must fail explicitly, not time out'); assert.notEqual(code, 0); assert.match(app.output, new RegExp(`\\b${category}\\b`)); assert.doesNotMatch(app.output, /WSTX listening/);}
+  finally {clearTimeout(timer); await app.close();}
+}
+async function fixture(t, secured = false) {
+  const base = await fs.mkdtemp(path.join(root, 'case-')), selectedPorts = await ports(4);
+  const profiles = [];
+  for (let i = 1; i <= 4; i++) {
+    const port = selectedPorts[i - 1], dir = path.join(base, `profile-${i}`), origin = `${secured ? 'https://localhost' : 'http://127.0.0.1'}:${port}`;
+    const document = {schema_version: 1, profile_id: uuid(i), revision: 0, ...settings(i), endpoint: {bind: `127.0.0.1:${port}`, origin: secured ? origin : null}, connection_type: 'standard'};
+    await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
+    const env = secured ? {...tls, WSTX_TOKEN: crypto.randomBytes(32).toString('hex')} : {};
+    profiles.push({dir, origin, document, env});
+  }
+  const apps = []; t.after(async () => {await Promise.all(apps.map(app => app.close())); for (const p of profiles) if (p.env.WSTX_TOKEN && p.app) {assert.equal(p.app.output.includes(p.env.WSTX_TOKEN), false); assert.equal((await fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')).includes(p.env.WSTX_TOKEN), false);}});
+  for (const p of profiles) {const app = await start(p, p.env); apps.push(app); p.app = app;}
+  return {profiles, apps, base};
+}
+function request(origin, method = 'GET', body, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = (origin.startsWith('https') ? https : http).request(origin + '/profile', {method, rejectUnauthorized: false, agent: false, headers: {Origin: origin, ...(body !== undefined ? {'Content-Type': 'application/json'} : {}), ...headers}}, res => {
+      let data = ''; res.on('data', b => {data += b;}); res.on('end', () => resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, headers: res.headers}));
+    }); req.on('error', reject); if (body !== undefined) req.write(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); req.end();
+  });
+}
+const edit = (i, revision, value = settings(i), id = uuid(i)) => ({profile_id: id, revision, settings: value});
+async function browserWindows(t, profiles) {
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const launcher = await context.newPage(), pages = [];
+  for (const p of profiles) {const opened = context.waitForEvent('page'); await launcher.evaluate(({url, name}) => {window.open(url, name, 'popup,width=1100,height=850');}, {url: p.origin, name: p.document.profile_id}); pages.push(await opened);}
+  await launcher.close(); return {context, pages};
+}
+async function connected(page) {await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});}
+async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
+
+// Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.
+test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
+  const {profiles} = await fixture(t), beforeBytes = await savedBytes(profiles);
+  const {pages, context} = await browserWindows(t, profiles);
+  await Promise.all(pages.map(connected));
+  const boots = new Set();
+  for (let i = 0; i < 4; i++) {
+    const snapshot = (await request(profiles[i].origin)).body;
+    assert.deepEqual(Object.keys(snapshot).sort(), ['boot_id','connection_type','endpoint','profile_id','revision','settings']); assert.equal(snapshot.profile_id, uuid(i + 1)); assert.deepEqual(snapshot.settings, settings(i + 1)); assert.equal(snapshot.endpoint, profiles[i].origin); boots.add(snapshot.boot_id);
+    assert.equal(await pages[i].locator('#profile-id').textContent(), uuid(i + 1)); assert.match(await pages[i].title(), new RegExp(`Station ${i + 1}`));
+  }
+  assert.equal(boots.size, 4);
+  const page = pages[0];
+  await page.locator('#display-name').fill('Edited station 1'); await page.locator('#audio-input').fill('changed-input-1'); await page.locator('#control-mode').selectOption('cat'); await page.locator('#control-endpoint').fill('fixture-cat-1');
+  await page.locator('#settings-save').click(); await page.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
+  const second = await context.newPage(); await second.goto(profiles[0].origin); await connected(second); assert.equal(await second.locator('#display-name').inputValue(), 'Edited station 1'); await second.close();
+  for (let i = 1; i < 4; i++) assert.equal((await savedBytes(profiles))[i], beforeBytes[i]);
+  assert.equal(await page.locator('#native-option').isDisabled(), true); assert.equal(await page.locator('#native-reserved').isVisible(), true);
+  assert.equal(await page.locator('#radio').textContent(), 'Radio not configured');
+  let revision = 1;
+  async function invalid(body, status = 400, code = 'invalid_settings', headers) {const before = await savedBytes(profiles); const r = await request(profiles[0].origin, 'PUT', body, headers); assert.equal(r.status, status); assert.equal(r.body.error.code, code); assert.deepEqual(await savedBytes(profiles), before);}
+  for (const [field, badValues] of Object.entries({display_name: ['', 'X'.repeat(65), ' leading', 'trailing ', 'bad\nname', 1], callsign: ['AB', 'A'.repeat(13), 'abc1', 'ABC', '123', '<BAD>'], locator: ['JN4', 'SN47', 'JN47YY', 'JN47AA9', 1]})) {
+    for (const value of badValues) {const values = settings(1); values[field] = value; await invalid(edit(1, revision, values));}
+  }
+  for (const bad of [{audio: {input_device: '', output_device: null}}, {audio: {input_device: 'X'.repeat(257), output_device: null}}, {audio: {input_device: 'bad\u0085', output_device: null}}, {control: {mode: 'disabled', endpoint: null, ptt: 'cat'}}, {control: {mode: 'cat', endpoint: null, ptt: 'disabled'}}, {control: {mode: 'native_flex', endpoint: null, ptt: 'disabled'}}]) await invalid(edit(1, revision, {...settings(1), ...bad}));
+  for (const body of ['{', '[]', {...edit(1, revision), extra: true}, {revision, settings: settings(1)}, {...edit(1, revision), revision: '1'}, JSON.stringify(edit(1, revision)).replace('"revision":1', '"revision":1,"revision":1')]) await invalid(body);
+  const missingAudio = edit(1, revision); delete missingAudio.settings.audio.input_device;
+  const missingOutput = edit(1, revision); delete missingOutput.settings.audio.output_device;
+  const missingControl = edit(1, revision); delete missingControl.settings.control.endpoint;
+  for (const value of [missingAudio, missingOutput, missingControl, {...edit(1, revision), profile_id: 'bad'}, {...edit(1, revision), revision: -1}, {...edit(1, revision), revision: 1.5}, {...edit(1, revision), revision: Number.MAX_SAFE_INTEGER + 1}, {...edit(1, revision), connection_type: 'native_flex'}, {...edit(1, revision), settings: {...settings(1), native: true}}, Buffer.from([0xff])]) await invalid(value);
+  await invalid(edit(1, revision, settings(1), uuid(2)), 403, 'wrong_profile');
+  await invalid(edit(1, 0), 409, 'revision_conflict'); await invalid(edit(1, revision), 415, 'unsupported_media_type', {'Content-Type': 'text/plain'});
+  await invalid(JSON.stringify(edit(1, revision)).padEnd(8193, ' '), 413, 'request_too_large');
+  const maximum = settings(1); maximum.display_name = 'X'.repeat(64); maximum.callsign = 'A12345678901'; maximum.locator = 'RR99XX99'; maximum.audio = {input_device: 'X'.repeat(256), output_device: null};
+  assert.equal((await request(profiles[0].origin, 'PUT', JSON.stringify(edit(1, revision, maximum)).padEnd(8192, ' '))).status, 200); revision++;
+  for (const patch of [{display_name: 'X', callsign: '', locator: '', audio: {input_device: null, output_device: null}}, {callsign: 'A1B', locator: 'JN47'}, {locator: 'JN47AA', audio: {input_device: null, output_device: 'X'.repeat(256)}}, {control: {mode: 'cat', endpoint: 'X'.repeat(256), ptt: 'cat'}}]) {
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, {...settings(1), ...patch}))).status, 200); revision++;
+  }
+  assert.equal((await request(profiles[0].origin, 'DELETE')).status, 405);
+  assert.equal((await request(profiles[0].origin, 'GET', undefined, {Origin: 'http://unrelated.invalid'})).status, 403);
+  await page.reload(); await connected(page); await page.setViewportSize({width: 360, height: 900});
+  await page.locator('#display-name').fill('X'.repeat(64)); await page.locator('#audio-output').fill('Y'.repeat(256));
+  await page.locator('#settings-save').click(); await page.locator('#settings-result').filter({hasText: `Saved revision ${revision + 1}`}).waitFor(); revision++;
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum name and identifiers wrap or remain within inputs');
+  await fs.mkdir('test-results', {recursive: true}); await page.screenshot({path: 'test-results/profile-boundary-mobile.png', fullPage: true});
+  const competing = await Promise.all([request(profiles[0].origin, 'PUT', edit(1, revision)), request(profiles[0].origin, 'PUT', edit(1, revision))]); assert.deepEqual(competing.map(r => r.status).sort(), [200, 409]); revision++;
+  await page.reload(); await connected(page); await page.locator('#callsign').fill('bad'); await page.locator('#settings-save').click();
+  await page.locator('#settings-result').filter({hasText: 'Invalid callsign'}).waitFor(); assert.equal(await page.locator('#callsign').inputValue(), 'bad');
+  await page.locator('#refresh').click(); await connected(page); assert.equal(await page.locator('#callsign').inputValue(), 'bad', 'refresh preserves unsaved input');
+  await page.locator('#settings-reload').click(); await page.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor();
+  const staleWindow = await context.newPage(); await staleWindow.goto(profiles[0].origin); await connected(staleWindow);
+  await staleWindow.locator('#display-name').fill('Unsaved concurrent edit');
+  assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision))).status, 200); revision++;
+  await staleWindow.locator('#settings-save').click(); await staleWindow.locator('#settings-result').filter({hasText: 'Reload saved settings before saving.'}).waitFor();
+  assert.equal(await staleWindow.locator('#settings-save').isDisabled(), true); assert.equal(await staleWindow.locator('#display-name').inputValue(), 'Unsaved concurrent edit');
+  await staleWindow.locator('#settings-reload').click(); await staleWindow.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor(); assert.equal(await staleWindow.locator('#settings-save').isEnabled(), true); await staleWindow.close();
+  const literal = {...settings(1), display_name: '<img src=x onerror=alert(1)>', audio: {input_device: '<script>alert(1)</script>', output_device: null}};
+  assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, literal))).status, 200);
+  let dialog = false; page.on('dialog', d => {dialog = true; d.dismiss();}); await page.reload(); await connected(page);
+  assert.equal(await page.locator('#display-name').inputValue(), literal.display_name); assert.equal(await page.locator('#audio-input').inputValue(), literal.audio.input_device); assert.equal(await page.locator('#profile-name').textContent(), literal.display_name); assert.equal(await page.locator('img').count(), 0); assert.equal(dialog, false);
+  await fs.mkdir('test-results', {recursive: true});
+  await page.setViewportSize({width: 1100, height: 850});
+  await page.screenshot({path: 'test-results/profile-desktop.png', fullPage: true});
+  await page.setViewportSize({width: 360, height: 900}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); assert.equal(await page.locator('#settings-save').isVisible(), true);
+  await page.screenshot({path: 'test-results/profile-mobile.png', fullPage: true});
+});
+
+// Proves: FR-001, FR-016, FR-022; CL-005-02/04/05; TC-022-002.
+test('TC-022-002: acknowledged persistence, defaults, strict files and recovery', {timeout: 60000}, async t => {
+  const {profiles, apps, base} = await fixture(t);
+  const created = path.join(base, 'created'), creating = launch(['--create-profile', created]); assert.equal((await creating.done)[0], 0); assert.doesNotMatch(creating.output, /WSTX listening/);
+  const defaults = JSON.parse(await fs.readFile(path.join(created, 'profile.json'), 'utf8')); assert.match(defaults.profile_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.deepEqual({...defaults, profile_id: 'identity'}, {schema_version: 1, profile_id: 'identity', revision: 0, display_name: 'New station', callsign: '', locator: '', endpoint: {bind: '127.0.0.1:8080', origin: null}, connection_type: 'standard', audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
+  const originalBoots = [];
+  for (let i = 0; i < 4; i++) {originalBoots.push((await request(profiles[i].origin)).body.boot_id); assert.equal((await request(profiles[i].origin, 'PUT', edit(i + 1, 0, {...settings(i + 1), display_name: `Persisted ${i + 1}`}))).status, 200);}
+  const {pages} = await browserWindows(t, profiles); await Promise.all(pages.map(connected));
+  let putCount = 0, releasePut, observedPut;
+  const heldPut = new Promise(resolve => {releasePut = resolve;}), putStarted = new Promise(resolve => {observedPut = resolve;});
+  await pages[0].route('**/profile', async route => {
+    if (route.request().method() === 'PUT') {putCount++; observedPut(); await heldPut; const result = await route.fetch(); assert.equal(result.status(), 200); await route.abort();}
+    else await route.continue();
+  });
+  await pages[0].locator('#display-name').fill('Committed despite lost response'); await pages[0].locator('#settings-save').click();
+  await putStarted; try {assert.equal(await pages[0].locator('#display-name').isDisabled(), true); assert.equal(await pages[0].locator('#settings-reload').isDisabled(), true);} finally {releasePut();}
+  await pages[0].locator('#settings-result').filter({hasText: 'Save outcome unknown'}).waitFor();
+  assert.equal((await request(profiles[0].origin)).body.revision, 2); assert.equal(putCount, 1);
+  await pages[0].locator('#settings-reload').click(); await pages[0].locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor();
+  assert.equal(await pages[0].locator('#display-name').inputValue(), 'Committed despite lost response'); assert.equal(putCount, 1, 'reload must not replay the lost-response save');
+  await pages[0].unroute('**/profile');
+  const persisted = await savedBytes(profiles); await Promise.all(apps.map(a => a.close()));
+  for (let i = 0; i < 4; i++) {const app = await start(profiles[i]); apps.push(app); profiles[i].app = app; const snapshot = (await request(profiles[i].origin)).body; assert.equal(snapshot.revision, i === 0 ? 2 : 1); assert.equal(snapshot.settings.display_name, i === 0 ? 'Committed despite lost response' : `Persisted ${i + 1}`); assert.notEqual(snapshot.boot_id, originalBoots[i]);}
+  assert.deepEqual(await savedBytes(profiles), persisted);
+  await profiles[0].app.close(); const file = path.join(profiles[0].dir, 'profile.json');
+  await fs.writeFile(path.join(profiles[0].dir, '.orphan.tmp'), 'invalid');
+  const invalid = [
+    ['{', 'invalid_profile'], [Buffer.from([0xff]), 'invalid_profile'], [{...profiles[0].document, schema_version: -1}, 'unsupported_schema'], [{...profiles[0].document, schema_version: 0}, 'unsupported_schema'], [{...profiles[0].document, schema_version: 2}, 'unsupported_schema'],
+    [{...profiles[0].document, profile_id: 'bad'}, 'invalid_profile'], [{...profiles[0].document, extra: 1}, 'invalid_profile'], [{...profiles[0].document, connection_type: 'native_flex'}, 'unsupported_connection_type'],
+    [{...profiles[0].document, endpoint: {bind: '127.0.0.1:0', origin: null}}, 'invalid_profile'], [{...profiles[0].document, endpoint: {bind: '127.0.0.1:65536', origin: null}}, 'invalid_profile'],
+    [JSON.stringify(profiles[0].document).replace('"revision":0', '"revision":0,"revision":0'), 'invalid_profile'], [JSON.stringify(profiles[0].document).padEnd(16385, ' '), 'invalid_profile']
+  ];
+  for (const [value, category] of invalid) {const raw = Buffer.isBuffer(value) || typeof value === 'string' ? value : JSON.stringify(value); await fs.writeFile(file, raw); const before = await fs.readFile(file); await refusal(['--profile', profiles[0].dir], category); assert.deepEqual(await fs.readFile(file), before);}
+  await fs.unlink(file); await refusal(['--profile', profiles[0].dir], 'resource_unavailable');
+  await fs.writeFile(file, persisted[0].padEnd(16384, ' ')); const recovered = await start(profiles[0]); apps.push(recovered); assert.equal((await request(profiles[0].origin)).body.revision, 2); await recovered.close();
+  await fs.writeFile(file, persisted[0]); const fromOtherCwd = await start({...profiles[0], dir: path.relative(base, profiles[0].dir)}, {}, base); apps.push(fromOtherCwd); await fromOtherCwd.close();
+  const exhausted = {...JSON.parse(persisted[0]), revision: Number.MAX_SAFE_INTEGER}; await fs.writeFile(file, JSON.stringify(exhausted)); const last = await start(profiles[0]); apps.push(last); assert.equal((await request(profiles[0].origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER))).body.error.code, 'revision_exhausted'); await last.close();
+  await fs.writeFile(file, persisted[0]);
+  await refusal(['--create-profile', created], 'resource_unavailable'); const empty = path.join(base, 'empty'); await fs.mkdir(empty); await refusal(['--create-profile', empty], 'resource_unavailable'); await refusal(['--create-profile', path.join(base, 'absent', 'nested')], 'resource_unavailable');
+  for (const args of [['--unknown'], ['--profile', profiles[0].dir, '--profile', profiles[0].dir], ['--create-profile', created, '--profile', profiles[0].dir]]) await refusal(args, 'invalid_runtime_configuration');
+  for (const env of [{WSTX_BIND: '127.0.0.1:0'}, {WSTX_ORIGIN: 'http://localhost:8080'}]) await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration', env);
+});
+
+// Proves: FR-021, FR-022; CL-005-03/04; TC-022-003.
+test('TC-022-003: lifecycle, ownership aliases/copies, ports and unavailable resources', {timeout: 60000}, async t => {
+  const {profiles, apps, base} = await fixture(t), before = await savedBytes(profiles);
+  const {pages} = await browserWindows(t, profiles); await Promise.all(pages.map(connected));
+  for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
+  await profiles[0].app.close(); await pages[0].locator('#connection[data-state="stale"]').waitFor();
+  for (const page of pages.slice(1)) {const old = await page.locator('#updated').textContent(); const start = Date.now(); await page.locator('#refresh').click(); await page.waitForFunction(value => document.querySelector('#updated').textContent !== value, old, {timeout: 2000}); assert.ok(Date.now() - start <= 2000);}
+  for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
+  profiles[0].app = await start(profiles[0]); apps.push(profiles[0].app); await connected(pages[0]);
+  await refusal(['--profile', profiles[0].dir], 'profile_in_use');
+  const alias = path.join(base, 'alias'); await fs.symlink(profiles[0].dir, alias, 'junction'); await refusal(['--profile', alias], 'profile_in_use');
+  const copy = path.join(base, 'copy'); await fs.cp(profiles[0].dir, copy, {recursive: true}); await refusal(['--profile', copy], 'profile_in_use');
+  const copyFile = path.join(copy, 'profile.json'); await fs.writeFile(copyFile, JSON.stringify({...profiles[0].document, profile_id: uuid(99)})); await refusal(['--profile', copy], 'endpoint_in_use');
+  await profiles[0].app.close();
+  for (const env of [{WSTX_TLS_CERT: tls.WSTX_TLS_CERT}, {...tls}, {WSTX_TOKEN: 'X'.repeat(32)}, {...tls, WSTX_TOKEN: 'short'}, {...tls, WSTX_TOKEN: 'X'.repeat(129)}, {...tls, WSTX_TOKEN: 'X'.repeat(31) + '!'}]) await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration', env);
+  await refusal(['--profile', profiles[0].dir], 'resource_unavailable', {...tls, WSTX_TLS_CERT: path.join(base, 'missing'), WSTX_TOKEN: 'X'.repeat(32)});
+  const file = path.join(profiles[0].dir, 'profile.json');
+  // Git Bash also ships whoami; this fixture needs the Windows SID/ACL tools.
+  const system32 = path.join(process.env.SystemRoot, 'System32');
+  const whoami = path.join(system32, 'whoami.exe'), icacls = path.join(system32, 'icacls.exe');
+  const sid = execFileSync(whoami, ['/user', '/fo', 'csv', '/nh'], {encoding: 'utf8'}).match(/S-1-[0-9-]+/)[0];
+  execFileSync(icacls, [file, '/deny', `*${sid}:(R)`], {stdio: 'pipe'});
+  try {await refusal(['--profile', profiles[0].dir], 'resource_unavailable');}
+  finally {execFileSync(icacls, [file, '/remove:d', `*${sid}`], {stdio: 'pipe'});}
+  const port = new URL(profiles[0].origin).port;
+  await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: `127.0.0.1:${port}`, origin: `http://localhost:${Number(port) + 1}`}})); await refusal(['--profile', profiles[0].dir], 'invalid_profile');
+  await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: `127.0.0.1:${port}`, origin: `https://localhost:${port}`}})); await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration');
+  await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: '0.0.0.0:' + new URL(profiles[0].origin).port, origin: null}})); await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration'); await fs.writeFile(file, before[0]);
+  profiles[0].app = await start(profiles[0]); apps.push(profiles[0].app);
+  await fs.chmod(file, 0o444); const failed = await request(profiles[0].origin, 'PUT', edit(1, 0)); await fs.chmod(file, 0o666); assert.equal(failed.status, 503); assert.equal(failed.body.error.code, 'storage_unavailable'); assert.equal((await request(profiles[0].origin)).body.revision, 0);
+  assert.deepEqual(await savedBytes(profiles), before);
+  await profiles[0].app.close();
+  await fs.copyFile(tls.WSTX_TLS_CERT, path.join(base, 'cert.pem')); await fs.copyFile(tls.WSTX_TLS_KEY, path.join(base, 'key.pem'));
+  const secured = {...profiles[0], origin: profiles[0].origin.replace('http:', 'https:')};
+  const relativeTls = await start(secured, {WSTX_TLS_CERT: 'cert.pem', WSTX_TLS_KEY: 'key.pem', WSTX_TOKEN: 'X'.repeat(128)}, base); apps.push(relativeTls);
+  assert.equal((await request(secured.origin)).status, 401);
+});
+
+async function login(p, value = p.env.WSTX_TOKEN, origin = p.origin) {
+  return new Promise((resolve, reject) => {const req = https.request(p.origin + '/session', {method: 'POST', rejectUnauthorized: false, agent: false, headers: origin ? {Origin: origin} : {}}, res => {res.resume(); res.on('end', () => resolve({status: res.statusCode, cookie: res.headers['set-cookie']?.[0].split(';')[0], setCookie: res.headers['set-cookie']?.[0]}));}); req.on('error', reject); req.end(value);});
+}
+async function upgradeStatus(p, cookie, origin = p.origin) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(p.origin.replace('https', 'wss') + '/ws', 'wstx.v1', {origin, rejectUnauthorized: false, headers: cookie ? {Cookie: cookie} : {}});
+    const timer = setTimeout(() => {ws.terminate(); reject(new Error('Upgrade timeout'));}, 5000);
+    const finish = status => {clearTimeout(timer); ws.terminate(); resolve(status);};
+    ws.on('error', () => {});
+    ws.on('unexpected-response', (_req, res) => {res.on('error', () => {}); res.resume(); finish(res.statusCode);});
+    ws.on('open', () => finish(101));
+  });
+}
+// Proves: FR-019, FR-021, FR-022; CL-005-03/04; TC-022-004.
+test('TC-022-004: same-host four-port TLS cookies, reconnect, negatives and rotation', {timeout: 60000}, async t => {
+  const {profiles, apps} = await fixture(t, true); const {context, pages} = await browserWindows(t, profiles);
+  for (let i = 0; i < 4; i++) {const p = profiles[i]; assert.equal((await request(p.origin)).status, 401); assert.equal((await request(p.origin, 'PUT', edit(i + 1, 0))).status, 401); assert.equal(await upgradeStatus(p), 401); if (i === 0) {await pages[i].route('**/session', route => route.abort()); await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await pages[i].locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor(); assert.equal(await pages[i].locator('#token').inputValue(), ''); await pages[i].unroute('**/session');} await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await connected(pages[i]);}
+  for (let i = 3; i >= 0; i--) {const loggedIn = await login(profiles[i]); assert.equal(loggedIn.status, 204); assert.equal(/(?:^|;)\s*Domain=/i.test(loggedIn.setCookie), false); await pages[i].reload(); await connected(pages[i]); assert.equal(await pages[i].evaluate(async () => (await fetch('/profile')).status), 200);}
+  const cookies = await context.cookies(); assert.equal(cookies.filter(c => c.name.startsWith('wstx_session_')).length, 4);
+  for (const c of cookies) {assert.equal(c.secure, true); assert.equal(c.httpOnly, true); assert.equal(c.sameSite, 'Strict'); assert.equal(c.path, '/'); assert.equal(c.domain, 'localhost'); assert.ok(c.expires > Date.now() / 1000 + 28700);}
+  const a = profiles[0], b = profiles[1], ca = cookies.find(c => c.name.endsWith(uuid(1))), cb = cookies.find(c => c.name.endsWith(uuid(2)));
+  assert.equal((await login(b, a.env.WSTX_TOKEN)).status, 401);
+  for (const bad of [`${ca.name}=${ca.value}`, `${cb.name}=${ca.value}`, `wstx_session=${b.env.WSTX_TOKEN}`, `${cb.name}=${cb.value}; ${cb.name}=${cb.value}`]) {assert.equal(await upgradeStatus(b, bad), 401); assert.equal((await request(b.origin, 'GET', undefined, {Cookie: bad})).status, 401); assert.equal((await request(b.origin, 'PUT', edit(2, 0), {Cookie: bad})).status, 401);}
+  for (const origin of [a.origin, 'https://unrelated.invalid', null]) {assert.equal((await login(b, b.env.WSTX_TOKEN, origin)).status, 403); assert.equal((await request(b.origin, 'PUT', edit(2, 0), {Cookie: `${cb.name}=${cb.value}`, Origin: origin || ''})).status, 403); assert.equal(await upgradeStatus(b, `${cb.name}=${cb.value}`, origin || ''), 403);}
+  assert.equal((await request(b.origin, 'PUT', edit(2, 0, settings(2), uuid(1)), {Cookie: `${cb.name}=${cb.value}`})).status, 403);
+  const expired = {...ca, expires: Math.floor(Date.now() / 1000) - 10}; await context.addCookies([expired]);
+  await pages[0].reload(); await pages[0].locator('#token').fill(a.env.WSTX_TOKEN); await pages[0].locator('#login button').click(); await connected(pages[0]);
+  assert.equal((await context.cookies()).filter(c => c.name.startsWith('wstx_session_')).length, 4);
+  const c = profiles[2], d = profiles[3];
+  assert.equal((await login(c, 'X'.repeat(1024))).status, 401); assert.equal((await login(c, 'X'.repeat(1025))).status, 413);
+  for (let i = 0; i < 8; i++) assert.equal((await login(d, 'W'.repeat(32))).status, 401);
+  assert.equal((await login(d)).status, 429); assert.equal((await login(c)).status, 204, 'rate budgets belong to their profiles');
+  const own = cookies.find(cookie => cookie.name.endsWith(uuid(3)));
+  const ws = new WebSocket(c.origin.replace('https', 'wss') + '/ws', 'wstx.v1', {origin: c.origin, rejectUnauthorized: false, headers: {Cookie: `${own.name}=${own.value}`}}); ws.on('error', () => {}); await once(ws, 'open');
+  const status = receive(ws); ws.send('{"v":1,"type":"station.get","id":17}'); assert.equal((await status).id, 17); ws.terminate();
+  const oldToken = a.env.WSTX_TOKEN;
+  await a.app.close(); a.env.WSTX_TOKEN = crypto.randomBytes(32).toString('hex'); a.app = await start(a, a.env); apps.push(a.app);
+  assert.equal(await upgradeStatus(a, `${ca.name}=${ca.value}`), 401); assert.equal((await login(a, oldToken)).status, 401); await pages[0].locator('#token').fill(a.env.WSTX_TOKEN); await pages[0].locator('#login button').click(); await connected(pages[0]);
+  for (let i = 1; i < 4; i++) {await pages[i].reload(); await connected(pages[i]);}
+  for (const page of pages) {assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]); assert.equal(await page.locator('#token').inputValue(), '');}
+});

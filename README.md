@@ -2,7 +2,13 @@
 
 A planned, simplified Rust implementation of WSJT-family radio functionality. Requirements will be extracted from documented and observable behavior, with WSJT-X v3.3.0-beta4 as the initial experimental reference. The existing implementation will not be translated line by line or copied into the Rust project. WSTX Rust is a working name; final release branding remains undecided.
 
-The project has a Rust station server, a lightweight browser status interface and a Windows/MSVC build workflow. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
+The project has a Rust station server, a browser status/settings interface and a Windows/MSVC build workflow. Saved profiles support independently configured server processes and browser windows on distinct ports. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
+
+Create a profile with `wstx-rust --create-profile <directory>`, then start it with
+`wstx-rust --profile <directory>` and open the reported URL. Each simultaneous server
+uses its own profile directory and port. The [profile contract](docs/WSTX%20Rust%20FSD.md#42-concurrent-persisted-station-profiles--target-fr-022)
+defines configuration, locking, recovery and access; device selections are saved intent
+and do not activate hardware. No-argument startup retains the original status mode.
 
 The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
 
@@ -14,8 +20,8 @@ internal contract ownership and how the queued functional CRs fit together.
 
 | Path | Contents |
 | --- | --- |
-| `server/` | Rust station server, WebSocket protocol and optional native TLS. |
-| `client/` | HTML/CSS/JavaScript status interface, embedded into the server executable. |
+| `server/` | Rust station server, persisted profiles, WebSocket/HTTP settings and optional native TLS. |
+| `client/` | HTML/CSS/JavaScript status/settings interface, embedded into the server executable. |
 | `docs/` | One functional specification document and its synchronized SysML model. |
 | `docs/harness/` | Project-specific harness bindings and development instructions. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |

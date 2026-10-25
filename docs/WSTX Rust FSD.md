@@ -85,7 +85,7 @@ The [target architecture in chapter 11](#11-target-product-architecture) defines
 component boundaries, data/state ownership, interface responsibilities and the mapping
 of functional CRs to those components. This FSD owns functional promises, test-case
 definitions and the [implemented wire contract in chapter 12](#12-station-communication-contract).
-The architecture distinguishes the existing status-only implementation from planned
+The architecture distinguishes the existing status/profile implementation from planned
 receive, transmit, device and automation components.
 
 | Application | Responsibilities |
@@ -108,8 +108,10 @@ client is the initial interface direction; a Tauri or other desktop wrapper has 
 
 ### 3.6 Additional targets: configured instances and direct FlexRadio access
 
-The following targets extend the status-only communication slice. They are **specified,
-not implemented or accepted by CR #3**. Their phase numbers describe the requested
+The following extensions build on the status-only communication slice. CR #5 now has
+a phase-1 implementation candidate, pending code review, the local gate and live
+acceptance. Phase 2 remains specified future work. Neither was delivered by CR #3.
+Their phase numbers describe the requested
 sequence for this extension, not completion of the broader delivery milestones.
 
 - **Phase 1:** a variable number of independent station-server instances on the same
@@ -164,7 +166,7 @@ the other functional areas retain their proposed scope until settled.
 | FR-019 | Browser operator interface | Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. |
 | FR-020 | MCP automation | Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. |
 | FR-021 | Station server and remote operation | Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. |
-| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. Specified target; not implemented or accepted by CR #3. |
+| FR-022 | Concurrent persisted station profiles — phase 1 target | Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. CR #5 candidate implements phase 1; review, the local gate and live acceptance remain pending. CR #3 did not implement profiles. |
 | FR-023 | Optional direct FlexRadio integration — phase 2 target | Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Specified target; not implemented or accepted by CR #3. |
 
 ### 4.1 Browser–server status functions
@@ -201,7 +203,7 @@ discard obsolete frames; it is outside the status profile specified here.
 
 ### 4.2 Concurrent persisted station profiles — target FR-022
 
-These are additional target clauses. The current environment-variable configuration and
+These are the profile clauses. The legacy environment-variable configuration and
 single-instance status contract do not establish profile persistence or secure concurrent
 four-instance operation.
 
@@ -235,16 +237,17 @@ four-instance operation.
 
 HTTP cookies are not isolated by port; see
 [RFC 6265, section 8.5](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5).
-The current status server uses the same cookie name/path across ports. A future
-multi-instance session design must address that shared-browser collision; the current
-single-instance authentication tests do not verify FR-022 clause 4.
+The legacy status-only mode uses the same cookie name/path across ports. Profile mode
+addresses that shared-browser collision through 12.5; the original single-instance
+authentication tests alone do not verify FR-022 clause 4.
 
-#### CR #5 detailed contract — approved target, not implemented
+#### CR #5 detailed contract — implemented candidate, acceptance pending
 
 This approved target refines the five numbered clauses above and the approved roadmap
 issue [#5](https://github.com/SensorsIot/wsjtx-rust/issues/5). The operator approved this
-contract with four concurrent servers sufficient for acceptance. It is **not delivered
-behavior**. Preparation proceeds Markdown requirements/tests
+contract with four concurrent servers sufficient for acceptance. The implementation
+candidate follows it; **code review, the local gate and live acceptance remain pending**.
+Preparation proceeds Markdown requirements/tests
 first, then SysML, a meaning comparison, code from the reconciled model, and verification
 against these original Markdown expectations. Product code starts only after independent
 Markdown/model readiness review passes. FR-001, FR-016, FR-019, FR-021 and FR-022 remain
@@ -252,7 +255,7 @@ the owning requirements; full station setup and legacy WSJT-X migration are late
 
 | Stable clause | Requirements | Approved target refinement | Cases |
 |---|---|---|---|
-| CL-005-01 | FR-022 | A selected profile owns one process/listener; N is variable and storage, process and browser collections MUST NOT assume four entries. Four concurrent servers are sufficient for CR #5 acceptance; the implementation has no four-instance ceiling. | TC-022-001 |
+| CL-005-01 | FR-022 | A selected profile owns one process/listener; N is variable and storage, process and browser collections MUST NOT assume four entries. Four concurrent servers are sufficient for CR #5 acceptance; the implementation has no four-instance ceiling. | `TC-022-001` |
 | CL-005-02 | FR-001, FR-016, FR-019, FR-022 | Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. | TC-022-001; TC-022-002 |
 | CL-005-03 | FR-019, FR-021, FR-022 | Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. | TC-022-001; TC-022-003; TC-022-004 |
 | CL-005-04 | FR-016, FR-021, FR-022 | Ownership, invalid storage, occupied endpoints and unavailable startup resources MUST fail explicitly without replacing saved configuration or disrupting a running instance. | TC-022-002; TC-022-003 |
@@ -696,10 +699,11 @@ or constitute new radio functions. **Level:** 2 — Isolated automated tests.
 | `peer helper: heartbeat interleaving preserves response and total deadline`; [peer.cjs](../tests/peer.cjs) | Emit an exact protocol heartbeat before a known response, then feed unsupported/unexpected events; repeatedly emit valid heartbeats without a response. | The helper returns the known response, exposes other events to the caller's oracle and times out on one unchanged total deadline; listeners are cleaned up. Supports TC-021-005/008. |
 | `link simulator: shared bulk throughput and RTT`; [support.cjs](../tests/support.cjs) | Send concurrent known-size echo transfers through one shared bottleneck, followed by a one-byte round trip. | Independent wall-clock checks reject a link that is either too fast or improperly serialized by propagation delay, and verify the minimum RTT. Supports TC-021-008. |
 
-### 6.2 Planned tests for concurrent persisted profiles
+### 6.2 Tests for concurrent persisted profiles
 
-**Status: approved target definitions for CR #5; not implemented or executed.** These are definitions,
-not executed results or delivered behavior. They prove CL-005-01..05 and the approved target
+**Status: implemented candidate companions for CR #5; acceptance pending.** These are
+durable test definitions, not execution results. Dated results and acceptance stay on
+issue #5. They prove CL-005-01..05 and the approved
 contracts in 4.2/12.5. All four cases are **Level 2 — isolated automated tests on the
 Windows development PC**, with disposable directories, real candidate processes and
 real Chromium windows. No radio, sound device, station account, live external service
@@ -733,9 +737,20 @@ seconds on unshaped loopback; reconnect follows 12.3's existing ten-second recov
 bound after loss detection. These are test deadlines, not a hardware-capacity promise.
 Retain the existing thin-link tests/budgets; they are not multiplied into N simultaneous
 32-kbit/s station guarantees. Missing prerequisites, fewer than N processes/windows or
-zero checked fixtures is a failure. Planned executable placement: Rust profile tests
-under `server/` in `wstx-rust`, plus `tests/` real-process/browser cases in `communication`;
-additive launcher support belongs to #5. Existing suites/coverage stay intact.
+zero checked fixtures is a failure. Executable companions are the four named cases in
+[tests/profiles.test.cjs](../tests/profiles.test.cjs), registered alongside existing tests
+in `communication`, plus the separated Rust cases below in `wstx-rust`. They use the
+original Markdown/domain tables as oracles; implementation and expected results are not
+both generated from the model. Run all four browser/process cases with
+`node --test --test-concurrency=1 tests/profiles.test.cjs` after the candidate build;
+run the Rust companions with `cargo test --workspace --locked --all-targets`.
+
+| Stable case | Additional executable companion / scope |
+|---|---|
+| `TC-022-001` | [profile_tests.rs](../server/src/profile_tests.rs): `exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys`, `settings_validation_uses_utf8_bytes_and_independent_audio_control_domains`; browser case includes concurrent/stale edits, literal rendering and desktop/360px screenshots. |
+| `TC-022-002` | [profile_tests.rs](../server/src/profile_tests.rs): `storage_commit_point_and_os_ownership_survive_reopen`, `save_failures_and_interruptions_preserve_the_defined_commit_point`; test-build-only checkpoints exercise the real save/write/sync/replace path with write/flush/replace errors and interruptions immediately before/after replacement. Browser case aborts delivery after a successful real PUT, then GET recovers its revision with exactly one PUT. No runtime fault switches exist. |
+| `TC-022-003` | Browser/process case stops/reconnects one of four windows, checks the other three, real junction/copied-UUID/port conflicts, disposable Windows ACL/read-only failures and exact startup categories. Rust ownership/reopen case supplements it. |
+| `TC-022-004` | [auth_tests.rs](../server/src/auth_tests.rs): `profile_credentials_require_one_selected_cookie_across_all_header_fields` adds repeated Cookie/Origin header vectors. Browser case uses one cookie store, four TLS ports, expiry/re-login, rotation, network-failed token submission, body/rate limits and cross-profile negatives. |
 
 #### TC-022-001 — Variable independent servers and browser windows
 
@@ -1065,7 +1080,7 @@ Audio and radio control are separate logical interfaces at the controller/radio
 boundary, even when they share a USB cable or network transport. Audio can operate with
 CAT disabled and manual tuning; control can operate without opening audio. The thin-link
 target applies to the viewer/controller link, not to an assumed radio audio stream. It
-is a design target, not a claim that the current status-only implementation proves
+is a design target, not a claim that the current status/profile implementation proves
 integrated audio/DSP performance. Section 5 retains the independently selected standard
 interfaces and the optional Phase 2 native backend.
 
@@ -1195,16 +1210,17 @@ server filesystem paths.
 #### Profiles and persistence
 
 A profile owns its configuration, station identity, access configuration and contact/
-recording metadata. #5 settles the schema/version, paths, recovery rules and atomic
-write behavior before implementation. A held operating-system-backed ownership lock
+recording metadata. CR #5 defines the schema/version, paths, recovery rules and atomic
+write behavior in 4.2. A held operating-system-backed ownership lock
 prevents incompatible processes writing the same profile; stale-file existence alone
 is not proof that a profile is still owned.
 
 The approved #5 target is in [4.2](#42-concurrent-persisted-station-profiles--target-fr-022)
 and [12.5](#125-profile-interface-for-cr-5), with independent cases in
-[6.2](#62-planned-tests-for-concurrent-persisted-profiles). It is an approved contract,
-approved as a target and pending independent model correspondence review; these ownership rules
-do not imply that saved profiles or their settings interface are already implemented.
+[6.2](#62-tests-for-concurrent-persisted-profiles). Its Markdown/model preparation is
+reconciled and the profile/settings candidate is implemented; independent code review,
+the local gate and live acceptance remain pending. The wider target architecture
+does not assert hardware or mode implementation.
 
 The profile is selected explicitly at startup and its effective identity is visible in
 the browser. Starting a second profile does not mutate the first. Missing devices,
@@ -1212,8 +1228,8 @@ occupied ports or invalid configuration produce explicit failure without overwri
 another profile. Private credentials are never copied into status messages or browser
 storage as part of a configuration snapshot.
 
-Different TCP ports do not isolate cookies. #5 must define per-instance session routing
-and credential verification for one shared browser cookie store; namespacing avoids
+Different TCP ports do not isolate cookies. CR #5 defines per-instance session routing
+and credential verification in 12.5 for one shared browser cookie store; namespacing avoids
 accidental collision but does not make same-host ports a trust boundary between hostile
 services. The same-host multi-instance requirement assumes station processes under the
 same operator's trust. Mutually distrusting deployments require a stronger origin/host
@@ -1382,12 +1398,15 @@ this product map does not change that process.
 
 ### 11.8. Implementation state and design gates
 
-The current source has a status-only Axum/Tokio server in
-[server/src/main.rs](../server/src/main.rs), embedded
-[client files](../client/index.html), native TLS and the existing status protocol/tests.
+The current source has an Axum/Tokio status/profile server in
+[server/src/main.rs](../server/src/main.rs), profile validation/persistence/OS ownership in
+[server/src/profile.rs](../server/src/profile.rs), embedded
+[client files](../client/index.html), native TLS and the status/profile test companions.
+CR #5 remains a candidate pending code review, the local gate and live acceptance;
+no radio, decoder, transmit or MCP behavior is implemented.
 The planned modules and contracts above are introduced by their owning CRs.
 
-Concrete profile schema and session names (#5), audio formats/sample representation and
+Profile schema/session names are settled in 4.2/12.5. Audio formats/sample representation and
 display encoding (#6), decoder variants/quality budgets (#7), independent audio/control support matrices
 (#8), transmit ownership/deadlines (#9), QSO/log format (#10), MCP tools/policy (#12) and
 native FlexRadio coordination/capabilities (#13) are preparation gates. Their named
@@ -1540,9 +1559,9 @@ communication-contract chapters. A rendered diagram is not additional architectu
 |---|---|
 | `Requirements.sysml` | Stable product FR/CL/TC identities and prose from the FSD; generated structured projection. |
 | `Architecture.sysml` | Deployment, parts, semantic interfaces, connections, identity associations and the standard `physicalInterconnection` view described here. |
-| `Profiles.sysml` | Approved CR #5 implementation contract from 4.2, 6.2 and 12.5: typed configuration/HTTP data, ordered validation, lifecycle/save/session behavior, ownership and independent verification. Allocated to the existing profile, station, web and browser usages; not another deployment. Target only until implementation and independent readiness review. |
+| `Profiles.sysml` | Approved CR #5 implementation contract from 4.2, 6.2 and 12.5: typed configuration/HTTP data, ordered validation, lifecycle/save/session behavior, ownership and independent verification. Allocated to the existing profile, station, web and browser usages; not another deployment. Candidate source/test bindings are recorded; code review, the local gate and live acceptance remain separate. |
 
-Only the accepted status slice is implemented. The target structure covers the queued
+The status slice and CR #5 profile candidate are implemented. The target structure covers the queued
 CRs and remaining functional ownership in section 11.10. Full implementation readiness
 requires each CR's behavioral/data/state/timing/error contracts and independent oracles;
 structural validation does not establish those facts. Authoring, tool installation and
@@ -1582,7 +1601,8 @@ Definitions describe reusable types; usages and identity references describe thi
 deployment. A general type/dependency graph can omit internal port connections. An
 interconnection view can expose nested usages/connections or keep the physical context
 collapsed. Viewer layout/expansion does not change the model, and is not a validation
-oracle. Current Rust remains the separately labeled status-only subset.
+oracle. Current Rust remains the status/profile subset; target hardware/modem paths are
+not a claim of implementation.
 
 #### Source-arrow and semantic-path coverage
 
@@ -1766,7 +1786,7 @@ Execution procedures are defined in the project-specific harness.
 
 ### 12.5. Profile interface for CR #5
 
-**Status: approved target for CR #5; not implemented or accepted as delivered.** Applies
+**Status: CR #5 implementation contract and candidate; live acceptance pending.** Applies
 only to explicit `--profile` startup. The environment-only CR #3 mode, existing
 `station.get`/`station.status` payloads, `wstx.v1`, 1,024-byte WebSocket limits and
 liveness/rate/connection limits remain unchanged. There is no new WebSocket command

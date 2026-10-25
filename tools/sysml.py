@@ -92,7 +92,7 @@ def render(text: str) -> str:
         "package WstxRequirements {",
         "    doc /* Markdown FSD is authoritative. Prose requirements and verification",
         "         definitions are projected here; validation does not execute tests.",
-        "         Coverage flags describe the accepted status slice, not whole-project parity. */",
+        "         Coverage flags describe implemented source slices, not acceptance or whole-project parity. */",
         "    enum def ImplementationState { enum target; enum partial; enum implemented; }",
         "    enum def AutomationState { enum planned; enum implemented; }",
     ]
@@ -101,10 +101,10 @@ def render(text: str) -> str:
         result.append(f"    {kind} '{identifier}' {{")
         result.append("        doc /* " + entry["text"].replace("\n", "\n             ") + " */")
         if kind == "requirement":
-            state = "implemented" if entry["kind"] == "clause" and identifier.startswith("CL-003-") else "partial" if identifier in ("FR-019", "FR-021") else "target"
+            state = "implemented" if entry["kind"] == "clause" and identifier.startswith(("CL-003-", "CL-005-")) else "implemented" if identifier == "FR-022" else "partial" if identifier in ("FR-001", "FR-016", "FR-019", "FR-021") else "target"
             result.append(f"        attribute coverage : ImplementationState = ImplementationState::{state};")
         else:
-            automated = {f"TC-021-{i:03}" for i in range(5, 10)}
+            automated = {f"TC-021-{i:03}" for i in range(5, 10)} | {f"TC-022-{i:03}" for i in range(1, 5)}
             state = "implemented" if identifier in automated else "planned"
             result.append(f"        attribute automation : AutomationState = AutomationState::{state};")
             result.append("        objective {")
