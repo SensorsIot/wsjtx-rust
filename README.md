@@ -16,18 +16,20 @@ internal contract ownership and how the queued functional CRs fit together.
 | --- | --- |
 | `server/` | Rust station server, WebSocket protocol and optional native TLS. |
 | `client/` | HTML/CSS/JavaScript status interface, embedded into the server executable. |
-| `docs/` | Functional specification, build instructions, and source references. |
+| `docs/` | Functional specification, architecture, communication contract and sample references. |
+| `docs/harness/` | Project-specific harness bindings and development instructions. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
 | `harness/`, `.harness/` | Pinned development harness and project bindings. |
 
-Run Cargo commands from the repository root. The workspace builds its server member and keeps output under the root `target/` directory. A packaged desktop webview is an optional future client distribution, not a requirement for using the browser interface.
+Build, test and packaging instructions are in the [project-specific harness](docs/harness/Project-Specifics.md). A packaged desktop webview is an optional future client distribution, not a requirement for using the browser interface.
 
 ## Documentation
 
 - [Functional specification](docs/WSTX%20Rust%20FSD.md)
 - [Target architecture and issue mapping](docs/ARCHITECTURE.md)
-- [Upstream baseline and attribution](docs/UPSTREAM.md)
-- [Windows build environment](docs/BUILDING.md)
+- [Functional behavior baseline](docs/WSTX%20Rust%20FSD.md#behavior-reference)
+- [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)
+- [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
 - [Station communication contract](docs/COMMUNICATION.md)
 - [Sample recordings and provenance](docs/SAMPLES.md)
 
@@ -40,6 +42,43 @@ The original Fortran, C, C++, Qt, and CMake implementation has been removed from
 
 ## License and attribution
 
-The Rust port will be distributed under GPLv3. See [COPYING](COPYING), [AUTHORS](AUTHORS), [THANKS](THANKS), and the [upstream reference record](docs/UPSTREAM.md).
+The Rust port will be distributed under GPLv3. See [COPYING](COPYING), [AUTHORS](AUTHORS), [THANKS](THANKS), and the retained notices below.
 
 WSJT-X, MAP65, QMAP, and their program icons are subject to the upstream [trademark policy](TRADEMARK.md). This is an independent project and does not claim endorsement by the WSJT Development Team. Relevant third-party notices must be retained as components are ported or reused.
+
+### Retained upstream credits
+
+The original license, authors list, acknowledgments and trademark policy are retained
+unchanged as `COPYING`, `AUTHORS`, `THANKS` and `TRADEMARK.md`. These credits describe
+the archived upstream project; they do not identify authors of new Rust code.
+
+The WSJT-X About dialog at the baseline credits copyright 2001-2026 to:
+
+- Joe Taylor, K1JT
+- Bill Somerville, G4WJS
+- Steve Franke, K9AN
+- Nico Palermo, IV3NWV
+- Uwe Risse, DG2YCB
+- Brian Moran, N9ADG
+- Roger Rehr, W3SZ
+- John Nelson, G4KLA
+- Charlie Suckling, DL3WDG
+- Terrell Deppe, KJ5HST
+
+It acknowledges contributions from AC6SL, AE4JY, DF2ET, DJ0OT, DL3WDG, EA4AC, G4KLA, IW3RAB, JA7UDE, K3WYC, KA1GT, KA6MAL, KA9Q, KB1ZMX, KD6EKQ, KG4IYS, KI7MT, KK1D, ND0B, PY1ZRJ, PY2SDR, VE1SKY, VK3ACF, VK4BDJ, VK7MO, VR2UPU, W3DJS, W4TI, W4TV, and W9MDB.
+
+The MAP65 and QMAP About dialogs credit copyright 2001-2026 to Joe Taylor, K1JT, and the WSJT Development Group.
+
+The reference to `about.cpp` in the retained `AUTHORS` file refers to the original application source. See the pinned baseline files:
+
+- [WSJT-X credits](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/widgets/about.cpp)
+- [MAP65 credits](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/map65/about.cpp)
+- [QMAP credits](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/qmap/about.cpp)
+
+These summary credits are not an exhaustive inventory of file-level copyrights or third-party licenses. Record component provenance and carry forward the applicable notices as implementation proceeds.
+
+Translation into Rust does not remove applicable copyright or license obligations.
+Distributed binaries must provide access to complete corresponding source under the
+applicable GPL requirements. Bundled components and assets may have separate terms;
+record their provenance and retain applicable notices. The initial license check
+was not a complete dependency audit. Licensing and trademarks remain separate.

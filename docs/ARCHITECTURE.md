@@ -487,3 +487,98 @@ hardware policy or authoritative state into clients.
 | FR-021 | Physical viewer/controller carrier with station-scoped attachments | Accepted status protocol/budget only; #5/#6 extend routing, resync and workload measurements |
 | FR-022 | Variable controller-hosted processes, one selected profile/backend each | #5 isolation, exclusive storage ownership and explicit endpoints; four is a reference workload |
 | FR-023 | Exclusive optional native backend behind the same audio/control boundaries | #13 Phase 2 session/resource reconciliation and cross-process coordination; no hardware capacity assumption |
+
+## 11. Functional model and views
+
+The product model contains only functional product requirements and their structural,
+behavioral and verification companions. The authoritative Markdown remains this document,
+the FSD and COMMUNICATION.md. A rendered diagram is not additional architecture.
+
+| Artifact in `docs/sysml/` | Functional source and responsibility |
+|---|---|
+| `Requirements.sysml` | Stable product FR/CL/TC identities and prose from the FSD; generated structured projection. |
+| `Architecture.sysml` | Deployment, parts, semantic interfaces, connections, identity associations and the standard `physicalInterconnection` view described here. |
+
+Only the accepted status slice is implemented. The target structure covers the queued
+CRs and remaining functional ownership in section 10. Full implementation readiness
+requires each CR's behavioral/data/state/timing/error contracts and independent oracles;
+structural validation does not establish those facts. Authoring, tool installation and
+validation procedures are in the [project-specific harness](harness/Project-Specifics.md#product-model-maintenance),
+which links the reusable SysML instruction.
+
+### Inspecting the same model
+
+The ordinary `physicalInterconnection` view in `Architecture.sysml` exposes the immediate
+members of the existing `physicalStation` usage. The four physical roles are `user`,
+`viewer`, `controller` and `radio`; their four connections are local interaction, the IP
+station link, radio audio and optional radio control. A view is a presentation selection;
+it neither creates the underlying architecture nor repairs missing semantic connections.
+No separate entry model, image or viewer helper is required by the architecture.
+
+Expand the same deployment to inspect its software: `viewer.browsers[*]`,
+`controller.stations[*]` and each station's single profile and backend variation. The
+physical station-link connection owns its per-client `attachments[*]`; these reference
+one browser and one actual station, with the operational connectors between those
+selected endpoints. MCP has analogous controller-level attachment associations. Physical
+radio connections own station-bound `channels[*]` whose endpoints use that station's
+selected backend and radio binding. These relationships distinguish aggregate carriers
+from routing every operation to every member of a population. Profiles remain isolated.
+
+Every station references `controller.radioAuthority`; it does not compose a private
+replacement. Request context binds to the station-owned radio binding, authorization
+preserves the original request, and an outcome references that request. This is semantic
+correlation, not serialized ID fields or a settled coordination implementation. #8/#13
+must determine actual cross-process placement, resource claims, leases and radio limits.
+
+`stations.backend` is one variation with standard-device and optional Phase 2 native
+variants. Variants are alternatives, not concurrent running backends. Native audio/control
+can share a managed session; both control paths still use the common authority. Logical
+presence of a driver does not assert CAT availability or transmit readiness.
+
+Definitions describe reusable types; usages and identity references describe this target
+deployment. A general type/dependency graph can omit internal port connections. An
+interconnection view can expose nested usages/connections or keep the physical context
+collapsed. Viewer layout/expansion does not change the model, and is not a validation
+oracle. Current Rust remains the separately labeled status-only subset.
+
+## Source-arrow and semantic-path coverage
+
+The model's role names bind the following Markdown arrows to actual exchanges. Paths
+below are relative to one `controller.stations` usage unless identified as physical or
+attachment paths. Multi-step paths preserve authority/delegation rather than replacing
+them with a direct bypass. This inventory is reviewed against ARCHITECTURE.md; executable
+expectations are authored independently in `architecture_integrity` in `tools/sysml.py`.
+
+| Markdown software arrow | Model endpoint path / responsibility |
+|---|---|
+| Browser <-> Web | Physical `stationLink.attachments`: selected `browser.station` <-> `clientBoundary` <-> selected `station.web.client` |
+| MCP <-> MA | `controller.mcpAttachments`: selected `client.station` <-> selected `station.mcp.client` |
+| Web <-> Station | `web.station` <-> `station.webOperations`; `web.recording` <-> `station.upload` validates upload |
+| MA <-> Station | `mcp.station` <-> `station.mcpOperations` |
+| Station <-> Profile | `station.profile` <-> `profile.context`; accepted recording <-> `profile.upload` |
+| Station <-> RX | `station.receive` <-> `receive.jobs` |
+| Station <-> TX | `station.transmit` <-> `transmit.operations` |
+| Station <-> QSO | `station.qso` <-> `qso.operations` |
+| Station <-> Control | `station.control` <-> `radioControl.station` |
+| RX <-> Audio | `audio.receive` <-> `receive.audio`, with samples and audio outcomes |
+| TX <-> Audio | `transmit.audio` <-> `audio.transmit` |
+| TX <-> Control | `transmit.control` <-> `radioControl.transmit` |
+| Audio <-> Devices | `audio.backend` <-> selected `backend.audio` <-> standard `audioDevices.host`; device radio port via station-bound physical audio channel |
+| Control <-> Authority | `radioControl.backend` <-> `authorityRequest` <-> referenced common `authority.requests` |
+| Authority <-> CAT | Common `authority.authorized` <-> `authorizedControl` <-> selected `backend.control` <-> standard `controlDriver.authorized`; driver radio port via station-bound physical control channel |
+| Audio <-> Flex | Same selected audio boundary, native variant's `audioDevices` and optional shared `session` |
+| Authority <-> Flex | Same authorized control boundary, native variant's `controlDriver` and optional shared `session` |
+| RX <-> Modes | `receive.processing` <-> `modes.receive`, request/result directions |
+| TX <-> Modes | `transmit.encode` <-> `modes.encode`, encode request/waveform return |
+| Profile <-> Recording | `profile.upload` <-> owned `recordings.upload`; `recordings.samples` <-> `profile.recordedSamples` |
+| Recording <-> Audio | `profile.recordedSamples` <-> `audio.recorded`; no live-device prerequisite |
+| QSO <-> Profile | `qso.contacts` <-> `profile.contacts` |
+| Station <-> Audio | `audio.status` <-> `station.audioStatus`, independent availability/error reporting |
+
+The physical four-arrow inventory is `user.interaction` <-> `viewer.operator`,
+`viewer.stationLink` <-> `controller.viewerLink`, `controller.radioAudio` <-> `radio.audio`,
+and `controller.radioControl` <-> `radio.control`. Local interaction delegates to actual
+viewer browsers. IP/radio connections own the scoped attachments/channels above.
+Control-request resource bindings and request/outcome identity are also explicit binding
+connectors. The integrity check covers both standard/native branches and these bindings;
+it does not execute timing, cancellation, authorization or hardware behavior.

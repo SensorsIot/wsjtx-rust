@@ -25,15 +25,21 @@ This is a starting specification, not a claim of implemented functionality. Conf
 - The experimental behavior baseline is pinned to WSJT-X `v3.3.0-beta4`; newer betas require an explicit baseline update.
 - Prefer a small application with shared modules. Add processes, crates, dependencies, or compatibility layers only when a concrete requirement justifies them.
 - The `original` branch preserves the imported upstream source and history as a reference.
-- The `master` branch is the development branch for the Rust port.
-- Project documentation is stored in `docs/`.
-- The upstream project is licensed under GPLv3. The port must meet applicable license and attribution requirements when distributed.
 
 The imported upstream implementation remains on `original` and in Git history. The Rust
 station server serves a browser status interface; radio functionality is outside the
 initial communication slice. Development checks, the full automated suite and Windows
 packaging run on the development PC. Hosted execution is an explicitly selected
-alternative, not a second automatic run; see [Windows builds](BUILDING.md).
+alternative, not a second automatic run; see [project-specific harness instructions](harness/Project-Specifics.md).
+
+### Behavior reference
+
+The functional behavior reference is [WSJT-X v3.3.0-beta4](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4),
+commit `0f7d5928449ec747c3d1f6da1306f8c94404c3a9`. The imported snapshot
+`967c85a6119110788b0df3782cf796485b2cee14` on `original` is an archive, not the
+current behavior target. Extract requirements from documented and observed behavior
+and implement them independently in Rust. Attribution, distribution licensing and
+branding notices are recorded in [the README](../README.md#license-and-attribution).
 
 ## 3. Scope
 
@@ -305,30 +311,15 @@ transport/session management does not merge their sample and control responsibil
 | TC-009-003 — Control without audio | FR-002, FR-009 | Connect an independent CAT protocol fixture with audio closed/unavailable; exercise only selected supported queries/settings. | Expected control exchanges/status succeed without opening audio; unsupported functions and timeouts follow the defined capability/error contract. | 2 — Isolated automated tests; Windows PC, Rust control module and protocol emulator. |
 | TC-009-004 — Independent failure and coordination | FR-002, FR-008, FR-009 | Lose each interface separately; observe the other; use simulated active transmission and halt. | Separate availability is preserved, failed control is never shown ready, and transmit failure/halt releases through the configured control path according to the agreed policy. No real RF transmission. | 2 — Isolated automated tests; Windows PC, independent audio and radio-control emulators. |
 
-### 4.6 Parallel SysML v2 representation
+### 4.6 Functional model
 
-Markdown remains authoritative initially. The FSD owns functional requirements and
-test definitions, ARCHITECTURE.md owns its declared component/interface responsibilities,
-and COMMUNICATION.md owns detailed implemented wire contracts. A synchronized SysML v2
-representation supports structured review without changing this authority or renumbering
-the existing identities. This section specifies documentation behavior, not radio behavior.
-Only product functional documentation is represented in SysML. Harness/process/skill
-rules and these CL-014/TC-DOC method definitions remain Markdown-only.
-
-| Clause | Area | Required behavior | Verification |
-|---|---|---|---|
-| CL-014-01 | Documentation authority | The parallel model MUST preserve the authoritative Markdown sources and stable FR/CL/TC identities. Model syntax or tool conventions MUST NOT silently migrate authority or replace a requirement with an implementation deviation. | TC-DOC-001 |
-| CL-014-02 | Model coverage | The model MUST declare its covered source slices and distinguish target architecture, partial requirements and implemented status-slice/test elements. It MUST NOT claim that prose projection or successful semantic validation proves full behavior or implementation conformance. | TC-DOC-001; review |
-| CL-014-03 | Architecture boundaries | The structured architecture MUST retain separate audio and radio-control interfaces, variable station processes and optional native FlexRadio implementations behind those interfaces. It MUST retain the scoped Rust control implementation rather than imply a complete Hamlib replacement or a mandatory Hamlib dependency. | TC-DOC-001; semantic validation and review |
-| CL-014-04 | Validation | Reproducible checks MUST compare the covered Markdown projection and run a pinned full SysML parser/name resolver/semantic validator. Missing/invalid tools, model libraries or model files MUST fail; lightweight synchronization/lint checks MUST NOT masquerade as semantic proof or runtime test verdicts. | TC-DOC-002; TC-DOC-003; TC-DOC-004 |
-| CL-014-05 | Synchronization | Changes to a covered Markdown source and its model MUST be reconciled in the same change. Generated content MUST be regenerated and checked; manually modeled architecture MUST be reviewed against its source. Unsupported or unmodeled detail MUST remain explicit. | TC-DOC-001; TC-DOC-002 |
-| CL-014-06 | Architecture integrity | The structured architecture MUST represent one coherent physical deployment and its connected software decomposition. Physical links MUST delegate to the same browser/station/backend usages; receive and transmit modem paths and profile-owned recording input MUST remain connected. Per-station backend selection MUST be exclusive, station count variable, and control paths for a shared radio MUST use one effective authority rather than independent per-station authorities. Directed semantic exchanges MUST retain independent audio/control responsibilities without inventing wire schemas. | TC-DOC-005 |
-| CL-014-07 | Implementation sufficiency | The product SysML companion is intended to support AI implementation of the complete functional product. Before code for a functional CR, its approved model slice MUST settle the behavior, interfaces, data ownership, states, timing, errors and independent verification oracles required to implement that slice, with pinned normative external protocol references. An implementing agent MAY choose only declared implementation freedoms and MUST NOT guess unresolved functional decisions. Views only present existing model facts and are not required inputs for code generation. Markdown remains authoritative; unresolved slices MUST be marked not implementation-ready, and structural validation MUST NOT imply complete code-generation readiness. | TC-DOC-006; manual preparation review |
-
-[SysML representation and validation](SYSML.md) defines the model root, coverage,
-source-generation relationship and pinned tool entrypoints. The initial model projects
-defined requirement/clause/test identities and selected architecture boundaries; it does
-not formalize every protocol rule, numerical constraint, state machine or radio waveform.
+The functional SysML companion represents the product requirements, architecture and
+verification intent. Its purpose is a sufficient functional contract for AI implementation
+of each approved slice. Current coverage and unresolved design ownership are in the
+[architecture](ARCHITECTURE.md#11-functional-model-and-views).
+Model-authoring and maintenance procedures are defined in the
+[project-specific harness](harness/Project-Specifics.md#project-model-documentation-contract),
+which links the general SysML instruction. Harness procedures are not part of the product model.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -382,7 +373,7 @@ communication suite, including the full bandwidth measurement, and the Rust test
 The same cases can run on a GitHub Actions Windows runner only when hosted execution
 is explicitly chosen as the alternative mode. Local and hosted runs are not both
 routine requirements. Execution procedures and mode enforcement belong to
-[Building](BUILDING.md) and the [harness binding](harness/Harness-Overview.md#bindings).
+[Project specifics](harness/Project-Specifics.md) and the [harness binding](harness/Harness-Overview.md#bindings).
 
 #### TC-021-005 — Message exchange and invalid-input handling
 
@@ -738,28 +729,11 @@ reference outputs and quantitative budgets before coding.
 | TC-004-002 — Offline FT8 | FR-003, FR-004, FR-018 | Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
 | TC-004-003 — Invalid and nonmatching input | FR-003, FR-004, FR-018 | Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run. | Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures. | 2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. |
 
-### 6.5 Documentation-model test definitions
+### 6.5 Documentation-tool checks
 
-These checks verify CL-014-01 through CL-014-07; they do not test radio functionality.
-TC-DOC-006 is the explicitly manual preparation/readiness review; the remaining cases
-combine automated model checks with the stated source-correspondence review.
-**Level: 2 - isolated local verification, automated unless declared manual. Where they run:** the Windows development PC,
-local Markdown/model fixtures and the pinned portable OMG reference validator. They
-require no radio, live service, Jupyter server or global Java installation.
-
-| ID | Clauses | Inputs/actions | Expected results |
-|---|---|---|---|
-| TC-DOC-001 — Projection and identities | CL-014-01, CL-014-02, CL-014-03, CL-014-05 | Generate the declared FSD projection, compare stable IDs/trace relationships and inspect the selected architecture against its Markdown source. | Existing identities/prose remain intact; canonical Markdown is not mutated; the generated representation is current. Audio/control separation, variable station instances and optional native backends remain explicit. Semantic/model review remains distinct from behavior execution. |
-| TC-DOC-002 — Source/model drift | CL-014-04, CL-014-05 | In disposable fixtures, change a covered source or remove/corrupt its generated representation; change the architecture source without reconciling its model. | Synchronization fails and identifies the stale/missing artifact. Regeneration alone cannot claim a manually modeled architecture has been reviewed. |
-| TC-DOC-003 — Full-tool positive and negative models | CL-014-04 | Run the actual pinned validator on a legal model, unmatched syntax and an unresolved type/reference. | The legal model is accepted; malformed syntax and unresolved references return nonzero semantic-validation outcomes with diagnostics. This does not execute modeled verification cases or prove application behavior. |
-| TC-DOC-004 — Unavailable validation | CL-014-04 | Invoke required validation with a missing/invalid Java/validator/library path or absent model file. | The command fails nonzero and never reports semantic PASS. There is no regex-only fallback. |
-| TC-DOC-005 - Connected architecture integrity | CL-014-03, CL-014-06 | Load the complete target architecture with the pinned Pilot on the Windows development PC. Extract resolved usage/port/connector chains from its semantic AST and compare with the independent physical and end-to-end path oracle in ARCHITECTURE.md. In isolated copies remove a required connection/delegation, reroute an endpoint to bypass authority, duplicate a selected backend, split shared authority, reverse a provider direction, change a semantic item kind, or weaken an identity binding to an ordinary connection. | The accepted model has one connected physical/software deployment, variable stations, profile-owned recording and TX/modem paths, directed semantic port exchanges, one backend variation per station, and one shared authority. Each negative fixture fails semantic validation or an explicit integrity diagnostic. A view-only edit cannot repair a failed underlying path. Level 2: local isolated automated model checks; no radio, service, viewer or network access. This establishes structural correspondence, not runtime safety, protocol compliance or performance. |
-| TC-DOC-006 - Functional implementation readiness | CL-014-01, CL-014-02, CL-014-07 | Before a functional CR writes code, an independent reviewer examines its approved source contract, corresponding model slice and pinned normative references. Trace each required behavior, interface/data/state/timing/error decision and independent test oracle; list the implementation choices explicitly left free. Repeat with a required decision unresolved. | Readiness is granted only when an implementing agent can implement the selected functional slice without guessing product behavior. An unresolved decision refuses readiness and names its owning CR; views cannot supply missing semantics. Level 2: manual offline contract review on the Windows development workspace, because syntax/connectivity automation cannot determine whether all product decisions are sufficient for implementation. This repair does not claim the full product passes readiness. |
-
-Executable traces are the scoped tests under `tools/sysml/tests/`, the synchronization
-entrypoint `tools/sysml.py` and full-validator adapter `tools/sysml/Validate.java`;
-their usage and coverage are defined in [SYSML.md](SYSML.md). Execution evidence belongs
-to the documentation CR, not a fabricated modeled verdict.
+Documentation-maintenance tests are specified in the
+[project-specific harness](harness/Project-Specifics.md#documentation-tool-test-definitions).
+They are separate from the application acceptance cases above.
 
 ## 7. Proposed delivery milestones
 
@@ -774,14 +748,11 @@ to the documentation CR, not a fabricated modeled verdict.
 
 The first Windows release may occur before full-suite coverage at M3 or M4. Its exact feature set is still to be selected; Windows-first does not mean every upstream feature must be finished before any release. A possible microcontroller edition has no committed milestone. No delivery dates or effort estimates have been agreed.
 
-## 8. Licensing, attribution, and branding
+## 8. Distribution notices
 
-- A distributed port derived from the upstream implementation must comply with GPLv3, including retaining relevant notices, marking modifications and their dates, and providing the complete corresponding source and necessary build files for distributed binaries.
-- Translation into Rust does not itself remove the upstream copyright or license obligations.
-- Bundled components and assets may have separate terms. Record their provenance and applicable notices as they are reused or translated; the initial license check was not a full dependency audit.
-- The upstream trademark policy covers its names and program icons separately from the software license. Select distinct release branding consistent with that policy.
-- `WSTX Rust` is the requested working title for this document; it has not been cleared as a product name.
-- Private development does not by itself require publishing the repository.
+See [README licensing and attribution](../README.md#license-and-attribution).
+Product behavior for showing help/notices remains FR-017; legal notices are not
+duplicated as functional specifications here.
 
 ## 9. Open decisions
 
