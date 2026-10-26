@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 2ce2577e2dce89a44d91a22e351cff73560366367ce954fec6b7e66365f48e9b
+// Canonical recorded receive contract SHA256: 08713134a4a5457913e8b455e1f67c69294fcb21fd6912127df2162f5bfa3fcf
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording implementation exists; Detailed refinement and its new
@@ -507,16 +507,22 @@ package WstxRecordingReceive {
 
              **Crisp canvas geometry.** Render every frequency/time cell using integer device-pixel
              edges with a DPR-sized backing bitmap, image smoothing disabled and pixelated CSS image
-             rendering; no blur/filter or interpolation of measured values. Each Detailed bin occupies
-             at least one device pixel: use a signal-local horizontal scroll viewport and a canvas
-             width of max(available width,1024/DPR CSS px), shared by spectrum/frequency scale/waterfall.
-             Show a horizontal-scroll cue when clipped; keyboard bin selection scrolls the selected
-             bin into view. Thin
-             fits the available width. For either profile, bin k spans device pixels
-             [floor(k*W/B),floor((k+1)*W/B)), B=1024 or128; do not turn native bins into grouped
-             maxima when fitting the screen. Horizontal scroll stays inside the upper pane with
-             reachable controls and no page overflow. A pointer/focusable readout exposes selected
-             bin index, center Hz, q-120 dBFS and row source interval; keyboard Left/Right moves one
+             rendering; no blur/filter or interpolation of measured values. The whole fixed[0,3000)Hz span always fits the plot width; frequency mapping is f/3000*W,
+             0Hz at left and3000Hz at right. Resize/DPR/zoom changes geometry only, not frequency
+             span, FFT dimensions or native data. No horizontal frequency scrolling or minimum1024
+             pixel canvas width. Let B be1024 Detailed or128 Thin and W the integer backing width.
+             When W>=B, bin k spans[floor(k*W/B),floor((k+1)*W/B)) device pixels. When W<B,
+             assign every native bin k to column floor(k*W/B); that column displays the maximum
+             original q of its assigned bins, exactly once each, with no interpolation, frequency
+             resampling of the retained array or skipped zero-width cells. This display-only maximum
+             projection preserves narrow strong signals; it cannot show1024 separate bins in fewer
+             than1024 physical columns. The complete original native array remains unchanged.
+             Readout names the projected column's native-bin range and its maximum, and separately
+             identifies the nearest native bin to the pointer frequency (clamped, ties upward) or the
+             exact keyboard-selected bin. Native keyboard stepping never edits/aggregates the data.
+             Axis labels/controls stay reachable with no horizontal page or frequency plot overflow.
+             A pointer/focusable readout exposes selected
+             native bin index, center Hz, original q-120 dBFS and row source interval; keyboard Left/Right moves one
              bin and Up/Down one retained row, clamped to available data. Gaps report no measurement.
 
              Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the top.
@@ -649,16 +655,22 @@ package WstxRecordingReceive {
         attribute levels : DisplayLevels;
         doc /* **Crisp canvas geometry.** Render every frequency/time cell using integer device-pixel
              edges with a DPR-sized backing bitmap, image smoothing disabled and pixelated CSS image
-             rendering; no blur/filter or interpolation of measured values. Each Detailed bin occupies
-             at least one device pixel: use a signal-local horizontal scroll viewport and a canvas
-             width of max(available width,1024/DPR CSS px), shared by spectrum/frequency scale/waterfall.
-             Show a horizontal-scroll cue when clipped; keyboard bin selection scrolls the selected
-             bin into view. Thin
-             fits the available width. For either profile, bin k spans device pixels
-             [floor(k*W/B),floor((k+1)*W/B)), B=1024 or128; do not turn native bins into grouped
-             maxima when fitting the screen. Horizontal scroll stays inside the upper pane with
-             reachable controls and no page overflow. A pointer/focusable readout exposes selected
-             bin index, center Hz, q-120 dBFS and row source interval; keyboard Left/Right moves one
+             rendering; no blur/filter or interpolation of measured values. The whole fixed[0,3000)Hz span always fits the plot width; frequency mapping is f/3000*W,
+             0Hz at left and3000Hz at right. Resize/DPR/zoom changes geometry only, not frequency
+             span, FFT dimensions or native data. No horizontal frequency scrolling or minimum1024
+             pixel canvas width. Let B be1024 Detailed or128 Thin and W the integer backing width.
+             When W>=B, bin k spans[floor(k*W/B),floor((k+1)*W/B)) device pixels. When W<B,
+             assign every native bin k to column floor(k*W/B); that column displays the maximum
+             original q of its assigned bins, exactly once each, with no interpolation, frequency
+             resampling of the retained array or skipped zero-width cells. This display-only maximum
+             projection preserves narrow strong signals; it cannot show1024 separate bins in fewer
+             than1024 physical columns. The complete original native array remains unchanged.
+             Readout names the projected column's native-bin range and its maximum, and separately
+             identifies the nearest native bin to the pointer frequency (clamped, ties upward) or the
+             exact keyboard-selected bin. Native keyboard stepping never edits/aggregates the data.
+             Axis labels/controls stay reachable with no horizontal page or frequency plot overflow.
+             A pointer/focusable readout exposes selected
+             native bin index, center Hz, original q-120 dBFS and row source interval; keyboard Left/Right moves one
              bin and Up/Down one retained row, clamped to available data. Gaps report no measurement.
 
              Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the top.
@@ -854,7 +866,7 @@ package WstxRecordingReceive {
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-005: planned executable companion, cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed row height from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and background below early rows; no blended spatial colors. New rows enter at top and history shifts down; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Bin count/scroll width, native readout centers/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses same crisp geometry with128 bins. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
+                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed row height from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and background below early rows; no blended spatial colors. New rows enter at top and history shifts down; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
         }
         dependency tracecrispDetailTransport from crispDetailTransport to WstxRequirements::'TC-010-005';
     }
