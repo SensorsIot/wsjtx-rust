@@ -617,6 +617,16 @@ fn optional_flush<S: futures_sink::Sink<Message> + Unpin>(
     }
 }
 
+// A late interval tick must not keep the old grid and send the next frame early.
+fn arm_detail(
+    tick: &mut tokio::time::Interval,
+    accepted: tokio::time::Instant,
+) -> tokio::time::Instant {
+    let next = accepted + Duration::from_millis(200);
+    tick.reset_at(next);
+    next
+}
+
 async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Recording>>) {
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.tick().await;
@@ -625,6 +635,7 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
     display.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut detail_tick = interval(Duration::from_millis(200));
     detail_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut next_detail = arm_detail(&mut detail_tick, tokio::time::Instant::now());
     let mut display_profile = "off";
     let mut seen = None;
     let mut last_display = Instant::now() - Duration::from_secs(1);
@@ -652,6 +663,7 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                                     value = json!({"v":1,"type":"recording.state","id":request["id"],"data":{"generation":s["generation"],"source_id":s["recording"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"]}});
                                 } else {
                                     display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
+                                    if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now()); }
                                     let state=r.state.lock().unwrap();
                                     let frame=if display_profile=="detail" {&state.detail_frame} else {&state.frame};
                                     seen=frame.as_ref().map(|f|(f["data"]["job_id"].clone(),f["data"]["sequence"].clone()));
@@ -673,6 +685,7 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                     match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(1) {continue;}
+                if display_profile=="detail" && tokio::time::Instant::now()<next_detail {detail_tick.reset_at(next_detail);continue;}
                 let frame = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {s.detail_frame.clone()} else {s.frame.clone()}});
                 if let Some(frame) = frame {
                     let identity = (frame["data"]["job_id"].clone(),frame["data"]["sequence"].clone());
@@ -681,7 +694,8 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                         if text.len()>if display_profile=="detail" {2048} else {1024} { continue; }
                         match optional_write(&mut socket,Message::Text(text.into())) {
                             Ok(None)=>{},
-                            Ok(Some(flushed))=>{seen=Some(identity);last_display=Instant::now();if !flushed {optional_since=Some(Instant::now());}},
+                            Ok(Some(flushed))=>{seen=Some(identity);last_display=Instant::now();if display_profile=="detail" {next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now());}
+                            if !flushed {optional_since=Some(Instant::now());}},
                             Err(_)=>break,
                         }
                     }

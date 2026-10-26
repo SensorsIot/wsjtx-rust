@@ -345,3 +345,37 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   }
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
+
+// Proves: CL-006-03/04; TC-010-005 pointer native bin and projected column are independent.
+test('TC-010-005 review pointer column boundary uses actual projected pixels',{timeout:10000},async t=>{
+  const f=await fixture(t);await f.upload(wav(4));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
+  const text=await p.evaluate(async s=>{
+    profileSelect.value='detail';rows=[];const levels=new Uint8Array(1024);levels[4]=120;
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence:0,first_frame:0,end_frame:2400,levels_b64:btoa(String.fromCharCode(...levels))}}}}));
+    waterfall.style.setProperty('width','300px','important');paint();await new Promise(requestAnimationFrame);
+    const b=waterfall.getBoundingClientRect();waterfall.dispatchEvent(new PointerEvent('pointermove',{clientX:b.left+1.01,clientY:b.top+.5}));return document.querySelector('#bin-readout').textContent;
+  },s);
+  assert.match(text,/Native bin 3 /);assert.match(text,/projected bins 4-6: 0 dBFS/);await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});
+// Proves: CL-006-03/04; TC-010-005 a bounded sequence beyond a short source is still invalid.
+test('TC-010-005 review short source rejects inverted out-of-source interval',{timeout:10000},async t=>{
+  const f=await fixture(t);await f.upload(wav(4));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
+  const count=await p.evaluate(async s=>{
+    profileSelect.value='detail';rows=[];
+    const data={boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence:0,first_frame:0,end_frame:2400,levels_b64:btoa(String.fromCharCode(...new Uint8Array(1024)))};
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data}}}));
+    if(rows.length!==1)throw Error('valid frame must be accepted before negative case');
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence:100,first_frame:240000,end_frame:s.recording.frames,levels_b64:btoa(String.fromCharCode(...new Uint8Array(1024)))}}}}));
+    await new Promise(requestAnimationFrame);return rows.length;
+  },s);assert.equal(count,1);await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});
+// Proves: CL-006-03/04; TC-010-005 actual Detailed cadence and independent control responsiveness.
+test('TC-010-005 review real Detailed peer cadence and control priority',{timeout:10000},async t=>{
+  const f=await fixture(t);await f.upload(wav(3));
+  const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());
+  const stamps=[];ws.on('message',raw=>{const m=JSON.parse(String(raw));if(m.type==='spectrum.detail.frame')stamps.push(performance.now());});
+  let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.detail',id:1}));assert.equal((await pending).data.profile,'detail');await f.replay();
+  await sleep(1700);const started=performance.now();pending=receive(ws);ws.send(JSON.stringify({v:1,type:'station.get',id:2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-started<2000);
+  assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=195,JSON.stringify(stamps));
+  const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});

@@ -16,14 +16,14 @@ panel.append(localLevels,document.querySelector('#signal-meta'));
 controls.insertBefore(panel,document.querySelector('#profile-panel'));
 const profileSelect=document.querySelector('#display-profile');
 profileSelect.value=location.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(location.hostname)?'detail':'thin';
-let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, fallbackText='', detailRequest;
+let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, fallbackText='', detailRequest;
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,255,255]]];
 function color(q) {
   const t=Math.max(0,Math.min(1,(q-120-displayBlack)/displayRange));
   const i=Math.max(1,palette.findIndex(([p])=>p>=t)),[lo,a]=palette[i-1],[hi,b]=palette[i];
   return `rgb(${a.map((v,k)=>Math.floor(v+(b[k]-v)*(t-lo)/(hi-lo)+.5)).join(' ')})`;
 }
-function resetLevels(){displayBlack=-120;displayRange=30;autoBlack=true;estimateFrozen=false;selectedBin=0;selectedRow=0;updateLevels();}
+function resetLevels(){displayBlack=-120;displayRange=30;autoBlack=true;estimateFrozen=false;selectedBin=0;selectedRow=0;pointerColumn=null;updateLevels();}
 function updateLevels(){
   document.querySelector('#display-black').value=displayBlack;document.querySelector('#display-black').max=-displayRange;
   document.querySelector('#display-range').value=displayRange;document.querySelector('#display-auto').checked=autoBlack;
@@ -69,7 +69,7 @@ function readout(){
   selectedBin=Math.max(0,Math.min(B-1,selectedBin));selectedRow=Math.max(0,Math.min(rows.length-1,selectedRow));
   const text=document.querySelector('#bin-readout');
   if(!row?.levels){text.textContent='Gap: no measurement';return;}
-  const W=document.querySelector('#waterfall').width,x=Math.floor(selectedBin*W/B);
+  const W=document.querySelector('#waterfall').width,x=pointerColumn===null?Math.floor(selectedBin*W/B):Math.max(0,Math.min(W-1,pointerColumn));
   const first=W<B?Math.ceil(x*B/W):selectedBin,last=W<B?Math.min(B-1,Math.ceil((x+1)*B/W)-1):selectedBin;
   const peak=Math.max(...row.levels.slice(first,last+1));
   text.textContent=`Native bin ${selectedBin} | ${(selectedBin*3000/B).toFixed(4)} Hz | ${row.levels[selectedBin]-120} dBFS | source ${(row.first_frame/12000).toFixed(1)}-${(row.end_frame/12000).toFixed(3)} s${W<B?` | projected bins ${first}-${last}: ${peak-120} dBFS`:''}`;
@@ -78,10 +78,11 @@ const waterfall=document.querySelector('#waterfall');
 waterfall.addEventListener('pointermove',e=>{
   const box=waterfall.getBoundingClientRect(),B=profileSelect.value==='detail'?1024:128,h=Math.max(1,Math.round(2*devicePixelRatio));
   selectedBin=Math.min(B-1,Math.max(0,Math.floor((e.clientX-box.left)/box.width*B+.5)));
+  pointerColumn=Math.floor((e.clientX-box.left)/box.width*waterfall.width);
   selectedRow=Math.min(rows.length-1,Math.max(0,Math.floor((e.clientY-box.top)*devicePixelRatio/h)));readout();
 });
 waterfall.addEventListener('keydown',e=>{
-  if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();
+  if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();pointerColumn=null;
   if(e.key==='ArrowLeft')selectedBin--;if(e.key==='ArrowRight')selectedBin++;
   if(e.key==='ArrowUp')selectedRow--;if(e.key==='ArrowDown')selectedRow++;
   selectedRow=Math.max(0,Math.min(rows.length-1,selectedRow));readout();
@@ -182,7 +183,7 @@ addEventListener('station-message',event => {
   if(!f||!snapshot||!['running','completed'].includes(snapshot.job?.state)||f.boot_id!==snapshot.boot_id||f.generation!==snapshot.generation||f.job_id!==snapshot.job?.id||f.source_id!==snapshot.job?.source_id)return;
   if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1)return;
   const keys=['boot_id','source_id','job_id','generation','sequence','first_frame','end_frame',detail?'levels_b64':'levels'].sort().join(',');
-  if(Object.keys(f).sort().join(',')!==keys||!Number.isSafeInteger(f.sequence)||f.sequence<0||f.sequence>=cap||f.first_frame!==f.sequence*interval||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording?.frames))return;
+  if(Object.keys(f).sort().join(',')!==keys||!Number.isSafeInteger(f.sequence)||f.sequence<0||f.sequence>=cap||f.first_frame!==f.sequence*interval||f.first_frame>=snapshot.recording.frames||f.end_frame<=f.first_frame||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording?.frames))return;
   let values=f.levels;
   if(detail){
     if(typeof f.levels_b64!=='string'||f.levels_b64.length!==1368||!/^[A-Za-z0-9+/]{1366}==$/.test(f.levels_b64))return;

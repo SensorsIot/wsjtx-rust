@@ -119,3 +119,26 @@ fn protocol_returns_specified_response_and_errors() {
         assert_eq!(reply(input)["data"]["code"], code, "{input}");
     }
 }
+
+// Proves: CL-006-03/04; TC-010-005 delayed tick cannot produce an early accepted successor.
+#[tokio::test(start_paused = true)]
+async fn detailed_late_tick_rearms_from_actual_acceptance() {
+    use std::time::Duration;
+    let mut tick = tokio::time::interval(Duration::from_millis(200));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let origin = tokio::time::Instant::now();
+    tick.tick().await;
+    tokio::time::advance(Duration::from_millis(999)).await;
+    tick.tick().await;
+    let next = super::arm_detail(&mut tick, tokio::time::Instant::now());
+    assert_eq!(next - origin, Duration::from_millis(1199));
+    // An old Skip grid would tick again at1000ms, only1ms after the delayed tick.
+    tokio::time::advance(Duration::from_millis(1)).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(197), tick.tick())
+            .await
+            .is_err()
+    );
+    tick.tick().await;
+    assert!(tokio::time::Instant::now() - origin >= Duration::from_millis(1199));
+}

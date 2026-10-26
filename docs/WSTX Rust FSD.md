@@ -455,8 +455,8 @@ establish FT4 correctness. This is a planned milestone, not an implemented decod
 This is the authorized minimal first-version contract, with independent cases in6.4
 and its communication extension in12.6. Source compatibility has been checked against
 the 22 pinned mono 12kHz PCM16 FT8 reference recordings and three retained FT4 candidates.
-The original recorded-input/Thin spectrum functionality is delivered. The crisp
-Detailed display refinement below is the implementation contract pending implementation. Review,
+The recorded-input/Thin functionality and crisp Detailed refinement below are implemented.
+Review,
 validation and acceptance evidence is recorded on issue #6; the wider offline decoder
 milestone remains planned.
 
