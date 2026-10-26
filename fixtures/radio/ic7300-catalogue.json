@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "revision": "icom7300-civ-receive-1",
+  "models": [{
+    "id": "icom.ic7300",
+    "protocol": "icom.civ",
+    "hamlib_model": 3073,
+    "commands": ["read_frequency", "read_mode", "read_data", "read_rx_tx", "read_split", "set_frequency", "set_mode", "set_data"]
+  }],
+  "commands": [
+    {"id":"read_frequency","request_prefix":[3],"unit":"Hz","minimum":30000,"maximum":74800000,"sources":["icom-12a"]},
+    {"id":"set_frequency","request_prefix":[5],"unit":"Hz","minimum":30000,"maximum":74800000,"sources":["icom-12a"]},
+    {"id":"read_mode","request_prefix":[4],"unit":"mode","minimum":0,"maximum":255,"sources":["icom-12a"]},
+    {"id":"set_mode","request_prefix":[6],"unit":"mode","minimum":0,"maximum":1,"sources":["icom-12a"]},
+    {"id":"read_data","request_prefix":[26,6],"unit":"boolean","minimum":0,"maximum":1,"sources":["icom-12a"]},
+    {"id":"set_data","request_prefix":[26,6],"unit":"boolean","minimum":0,"maximum":1,"sources":["icom-12a"]},
+    {"id":"read_rx_tx","request_prefix":[28,0],"unit":"boolean","minimum":0,"maximum":1,"sources":["icom-12a"]},
+    {"id":"read_split","request_prefix":[15],"unit":"boolean","minimum":0,"maximum":1,"sources":["icom-12a"]}
+  ],
+  "sources": [
+    {"id":"icom-12a","publisher":"Icom Inc.","url":"https://icomuk.co.uk/files/icom/PDF/advancedManuals/IC-7300_ENG_FM_12a.pdf","revision":"A7292-4EX-12a, 2024-08, printed 19-2/3/7/9/10","licence":"Publisher manual; independently recorded protocol facts only"},
+    {"id":"hamlib-model-id","publisher":"Hamlib contributors","url":"https://github.com/Hamlib/Hamlib/blob/075b78cb0560e892c81bc73890d633cc11f23f59/include/hamlib/riglist.h","revision":"075b78cb0560e892c81bc73890d633cc11f23f59","licence":"LGPL-2.1-or-later source cross-reference; no driver code copied"}
+  ]
+}
