@@ -220,6 +220,9 @@ function show() {
   if(active) progress.textContent = snapshot.import ? `${active.state} · ${active.total_bytes === null ? 'awaiting upload' : `${active.received_bytes} / ${active.total_bytes} bytes`}` : `${active.state} · ${active.processed_frames} frames`;
   else if(importOutcome && importOutcome.generation===snapshot?.generation) progress.textContent=`Import ${importOutcome.state}${importOutcome.error ? ` · ${importOutcome.error}` : ''}`;
   else if(snapshot?.job) progress.textContent = `${snapshot.job.state}${snapshot.job.error ? ` · ${snapshot.job.error}` : ''} · ${snapshot.job.processed_frames} frames`;
+  signal.querySelector('h2').textContent=live?.job?'Live receive':'Recorded receive';
+  signal.setAttribute('aria-label',live?.job?'Live spectrum and waterfall':'Recorded spectrum and waterfall');
+  if(live?.job){statusText.textContent=`Live ${live.job.mode.toUpperCase()} · ${live.audio.state} · ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`;}
 }
 async function request(path,options={}) {
   const response=await fetch(path,{...options,signal:options.signal || AbortSignal.timeout(10000)});
@@ -231,6 +234,7 @@ async function sync(current=socket) {
     const data=await request('/recording');if(current!==socket) return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
     if(identity(data)!==identity(snapshot)){rows=[];resetLevels();paint();}snapshot=data;
+    if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
       try{const outcome=await request(`/recording/imports/${previousImport}`);if(current!==socket)return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
     }
@@ -244,7 +248,7 @@ addEventListener('station-message',event => {
   const {message,current}=event.detail;
   if(current!==socket)return;
   if(message.type==='recording.state') {
-    if(snapshot && (message.data.generation!==snapshot.generation || message.data.state!==(snapshot.job?.state??null) || message.data.source_id!==(snapshot.recording?.id??null) || message.data.job_id!==(snapshot.job?.id??null))) sync(current);
+    if(snapshot && (message.data.generation!==snapshot.generation || message.data.state!==(snapshot.job?.state??null) || message.data.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || message.data.job_id!==(snapshot.job?.id??null))) sync(current);
     return;
   }
   if(message.type==='error'&&message.data.code==='unknown_command'){
@@ -254,10 +258,15 @@ addEventListener('station-message',event => {
   const detail=profileSelect.value==='detail';
   if(message.type!==(detail?'spectrum.detail.frame':'spectrum.frame')||profileSelect.value==='off')return;
   const f=message.data, B=detail?1024:128,interval=detail?2400:12000,cap=detail?600:120;
-  if(!f||!snapshot||!['running','completed'].includes(snapshot.job?.state)||f.boot_id!==snapshot.boot_id||f.generation!==snapshot.generation||f.job_id!==snapshot.job?.id||f.source_id!==snapshot.job?.source_id)return;
+  const currentLive=!!live?.job && !!live?.source;
+  if(live?.job&&!live.source)return;
+  if(snapshot?.job?.kind==='live'&&!currentLive)return;
+  const context=currentLive?{boot_id:live.boot_id,generation:live.generation,job:{...live.job,source_id:live.source.id}}:snapshot;
+  if(!f||!context||!['running','completed'].includes(context.job?.state)||f.boot_id!==context.boot_id||f.generation!==context.generation||f.job_id!==context.job?.id||f.source_id!==context.job?.source_id)return;
   if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1)return;
   const keys=['boot_id','source_id','job_id','generation','sequence','first_frame','end_frame',detail?'levels_b64':'levels'].sort().join(',');
-  if(Object.keys(f).sort().join(',')!==keys||!Number.isSafeInteger(f.sequence)||f.sequence<0||f.sequence>=cap||f.first_frame!==f.sequence*interval||f.first_frame>=snapshot.recording.frames||f.end_frame<=f.first_frame||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording?.frames))return;
+  if(Object.keys(f).sort().join(',')!==keys||!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
+  if(currentLive ? f.end_frame!==f.first_frame+interval : (!snapshot.recording||f.first_frame>=snapshot.recording.frames||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording.frames)))return;
   let values=f.levels;
   if(detail){
     if(typeof f.levels_b64!=='string'||f.levels_b64.length!==1368||!/^[A-Za-z0-9+/]{1366}==$/.test(f.levels_b64))return;
@@ -265,7 +274,7 @@ addEventListener('station-message',event => {
   }
   if((!detail&&!Array.isArray(values))||values.length!==B||!values.every(q=>Number.isInteger(q)&&q>=0&&q<=120))return;
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
-  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:null});
+  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:null});
   const row={...f,levels:Uint8Array.from(values)};rows.push(row);rows=rows.slice(-cap);estimate(row);paint();
 
   snapshot.job.processed_frames=f.end_frame;show();
@@ -302,3 +311,127 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 });
 profileSelect.addEventListener('change',()=>{rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
+
+const receiveControls=document.createElement('div');receiveControls.id='live-receive-controls';
+receiveControls.innerHTML='<label>Next receive mode<select id="receive-mode"><option value="ft8">FT8</option><option value="ft4">FT4</option><option value="spectrum">Spectrum only</option></select></label><button id="receive-start" disabled>Start receive</button><button id="receive-stop" disabled>Stop receive</button><button id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output><p id="receive-status" role="status">Live receive unavailable until station snapshot</p>';
+document.querySelector('.operating-controls').append(receiveControls);
+let live,livePending=false,liveAgain=false,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
+const receiveStatus=document.querySelector('#receive-status');
+function validLiveSnapshot(s){
+  const shape=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===keys;
+  const counter=n=>Number.isSafeInteger(n)&&n>=0;
+  const nullableText=v=>v===null||(typeof v==='string'&&v.length>0&&new TextEncoder().encode(v).length<=256);
+  const uuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
+  if(!shape(s,'audio,boot_id,clock,generation,job,profile_id,source,v')||s.v!==1||!uuid(s.profile_id)||!uuid(s.boot_id)||!counter(s.generation))return false;
+  const a=s.audio,c=s.clock,j=s.job,source=s.source;
+  if(!shape(a,'device_id,device_name,error,retry_after_ms,state')||!['closed','opening','running','closing','unavailable'].includes(a.state)||![a.device_id,a.device_name,a.error].every(nullableText)||(a.retry_after_ms!==null&&(!counter(a.retry_after_ms)||a.retry_after_ms>8000)))return false;
+  if(source!==null&&(!shape(source,'channels,id,kind,next_frame,sample_rate,segment')||!uuid(source.id)||source.kind!=='live'||source.sample_rate!==12000||source.channels!==1||!counter(source.next_frame)||!counter(source.segment)))return false;
+  if(j!==null){
+    if(!shape(j,'available_count,error,first_sequence,id,last_overrun,mode,next_sequence,processed_frames,state')||!uuid(j.id)||!['spectrum','ft4','ft8'].includes(j.mode)||!['running','cancelling','completed','cancelled','failed'].includes(j.state)||!nullableText(j.error)||!['first_sequence','next_sequence','available_count','processed_frames'].every(key=>counter(j[key]))||j.available_count!==j.next_sequence-j.first_sequence||j.available_count>2048)return false;
+    const o=j.last_overrun;
+    if(o!==null&&(!source||!shape(o,'end_frame,first_frame')||!counter(o.first_frame)||!counter(o.end_frame)||o.first_frame>=o.end_frame||o.end_frame>source.next_frame))return false;
+  }
+  return shape(c,'basis,canonical_anchor_frame,correlated,external_accuracy,uncertainty_ns,utc_anchor')&&c.basis==='system_utc'&&typeof c.correlated==='boolean'&&c.external_accuracy==='unknown'&&(c.canonical_anchor_frame===null||counter(c.canonical_anchor_frame))&&(c.correlated?typeof c.utc_anchor==='string'&&Number.isFinite(Date.parse(c.utc_anchor))&&counter(c.uncertainty_ns)&&c.uncertainty_ns<=2000000:c.utc_anchor===null&&c.uncertainty_ns===null);
+}
+function receiveShow(){
+  const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
+  document.querySelector('#receive-start').disabled=!connected||!live||!!active||mutationPending||uncertainMutation||!profileData?.settings.audio.input_device;
+  document.querySelector('#receive-stop').disabled=!connected||!active||mutationPending||uncertainMutation||live.job.state==='cancelling';
+  if(live){
+    receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
+    const capabilities=document.querySelectorAll('#operating-capabilities dd');
+    capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
+    capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
+    const focus=document.querySelector('#rx-focus .empty-messages');
+    if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
+    else{focus.querySelector('strong').textContent='Decoder unavailable';focus.querySelector('span').textContent='No station selected. Contact selection requires decoded results.';}
+  }
+}
+async function receiveSync(current=socket){
+  if(current!==socket||connection.dataset.state!=='connected')return;
+  if(livePending){liveAgain=true;return;}livePending=true;
+  try{
+    const data=await request('/receive');
+    if(current!==socket)return;
+    if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
+    if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
+    if(liveIdentity(data)!==liveIdentity(live)){
+      resultRows=[];resultCursor=data.job?.first_sequence??0;historyIncomplete=false;
+      if(data.job||live?.job){rows=[];resetLevels();paint();}
+      renderResults();
+    }
+    live=data;uncertainMutation=false;receiveFailure='';receiveShow();show();
+  }catch(error){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}
+  finally{livePending=false;if(liveAgain){liveAgain=false;receiveSync(socket);}}
+}
+function renderResults(){
+  const body=document.querySelector('#band-activity tbody');
+  document.querySelector('#band-activity .count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
+  if(!resultRows.length){
+    body.innerHTML='<tr><td colspan="5" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr>';return;
+  }
+  body.replaceChildren();
+  for(const record of resultRows){
+    const row=document.createElement('tr');row.dataset.resultId=`${liveIdentity(live)}/${record.sequence}`;row.dataset.sequence=String(record.sequence);
+    for(const text of [`${(record.start_frame/12000).toFixed(3)} s`,record.snr_db===null?'—':record.snr_db.toFixed(1),'—',record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`]){
+      const cell=document.createElement('td');cell.textContent=text;row.append(cell);
+    }
+    body.append(row);
+  }
+}
+function validRecord(r){
+  return r&&Object.keys(r).sort().join(',')==='fields,frequency_hz,i3,n3,payload77,sequence,snr_db,start_frame,status,text'&&
+    Number.isSafeInteger(r.sequence)&&r.sequence>=0&&Number.isSafeInteger(r.start_frame)&&r.start_frame>=0&&
+    Number.isFinite(r.frequency_hz)&&r.frequency_hz>=200&&r.frequency_hz<=3500&&
+    (r.snr_db===null||(Number.isFinite(r.snr_db)&&r.snr_db>=-60&&r.snr_db<=60))&&
+    typeof r.payload77==='string'&&/^[01]{77}$/.test(r.payload77)&&Number.isInteger(r.i3)&&r.i3>=0&&r.i3<=7&&
+    (r.i3===0?Number.isInteger(r.n3)&&r.n3>=0&&r.n3<=7:r.n3===null)&&
+    (r.status==='decoded'?typeof r.text==='string'&&/^[\x20-\x7e]{1,80}$/.test(r.text)&&r.fields&&typeof r.fields==='object'&&!Array.isArray(r.fields):['unsupported','invalid_payload'].includes(r.status)&&r.text===null&&r.fields===null);
+}
+async function receiveResults(){
+  if(resultPending||livePending||mutationPending||uncertainMutation||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
+  const now=performance.now();if(now-lastResultStart<4000)return;
+  resultPending=true;lastResultStart=now;
+  const context=liveIdentity(live),current=socket,cursor=resultCursor;
+  const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
+  try{
+    const response=await fetch(`/receive/results?${query}`,{signal:AbortSignal.timeout(10000)}),page=await response.json();
+    if(current!==socket||context!==liveIdentity(live))return;
+    if(response.status===410){
+      if(page.error?.code!=='cursor_expired'||!Number.isSafeInteger(page.first_sequence)||!Number.isSafeInteger(page.next_sequence)||page.first_sequence<0||page.first_sequence>page.next_sequence)throw new Error('Invalid expired cursor');
+      historyIncomplete=true;resultCursor=page.first_sequence;receiveShow();return;
+    }
+    if(!response.ok)throw new Error(page.error?.code??'Result request failed');
+    const keys='available_count,boot_id,error,first_sequence,generation,job_id,mode,more,next,next_sequence,profile_id,records,search_limited,source_id,state,v';
+    if(Object.keys(page).sort().join(',')!==keys||page.v!==1||page.profile_id!==live.profile_id||page.boot_id!==live.boot_id||page.source_id!==live.source.id||page.job_id!==live.job.id||page.generation!==live.generation||page.mode!==live.job.mode||typeof page.search_limited!=='boolean'||!Array.isArray(page.records)||page.records.length>(profileSelect.value==='thin'?1:16))throw new Error('Invalid result page');
+    for(const key of ['first_sequence','next_sequence','available_count','next'])if(!Number.isSafeInteger(page[key])||page[key]<0)throw new Error('Invalid result counter');
+    if(page.available_count!==page.next_sequence-page.first_sequence||page.available_count>2048||page.next!==cursor+page.records.length||page.next>page.next_sequence||page.more!==(page.next<page.next_sequence)||cursor<page.first_sequence)throw new Error('Invalid result window');
+    for(let i=0;i<page.records.length;i++)if(!validRecord(page.records[i])||page.records[i].sequence!==cursor+i)throw new Error('Invalid decoded record');
+    resultCursor=page.next;resultRows.push(...page.records);resultRows=resultRows.slice(-2048);
+    live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
+  }catch(error){receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
+  finally{resultPending=false;}
+}
+document.querySelector('#receive-start').addEventListener('click',async()=>{
+  if(!live||mutationPending)return;mutationPending=true;receiveShow();
+  try{await request('/receive/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,profile_revision:profileData.revision,mode:document.querySelector('#receive-mode').value})});await sync();await receiveSync();}
+  catch(error){uncertainMutation=true;receiveFailure=`Start outcome unknown · ${error.message} · refresh before another action`;}
+  finally{mutationPending=false;receiveShow();}
+});
+document.querySelector('#receive-stop').addEventListener('click',async()=>{
+  if(!live?.job||mutationPending)return;mutationPending=true;receiveShow();
+  try{await request('/receive/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,job_id:live.job.id})});await receiveSync();await sync();}
+  catch(error){uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
+  finally{mutationPending=false;receiveShow();}
+});
+document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
+  const output=document.querySelector('#audio-inputs');
+  try{const data=await request('/audio/devices');output.textContent=data.devices.map(d=>`${d.name} [${d.id}]`).join('\n')||'No audio inputs available';}
+  catch(error){output.textContent=`Audio inputs unavailable · ${error.message}`;}
+});
+addEventListener('station-ready',event=>receiveSync(event.detail));
+addEventListener('station-stale',()=>{receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
+addEventListener('station-message',event=>{if(event.detail.current===socket&&event.detail.message.type==='receive.state')receiveSync(event.detail.current);});
+setInterval(receiveResults,250);
+if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);

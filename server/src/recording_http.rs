@@ -36,7 +36,7 @@ pub fn error(code: &str) -> Response {
     };
     profile_error(status, code, None)
 }
-fn authorize(
+pub(crate) fn authorize(
     app: &App,
     headers: &HeaderMap,
     mutation: bool,
@@ -86,7 +86,7 @@ pub async fn snapshot(
         Err(_) => error("request_too_large"),
     }
 }
-fn parse<T: serde::de::DeserializeOwned>(
+pub(crate) fn parse<T: serde::de::DeserializeOwned>(
     headers: &HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Result<T, &'static str> {
@@ -99,7 +99,12 @@ fn parse<T: serde::de::DeserializeOwned>(
     }
     serde_json::from_slice(&bytes).map_err(|_| "invalid_request")
 }
-fn syntax(v: u64, profile: &str, boot: &str, generation: u64) -> Result<(), &'static str> {
+pub(crate) fn syntax(
+    v: u64,
+    profile: &str,
+    boot: &str,
+    generation: u64,
+) -> Result<(), &'static str> {
     if !profile::valid_uuid(profile)
         || !profile::valid_uuid(boot)
         || generation > profile::MAX_REVISION

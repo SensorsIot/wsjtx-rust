@@ -1,7 +1,10 @@
+pub use crate::source::{SampleBlock, SourceDescriptor};
+use crate::{audio, decoder, receive, source};
 use crate::{profile, spectrum};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use source::{SampleSource, SourcePoll};
 use std::collections::VecDeque;
 use std::{
     fs::{self, File},
@@ -27,24 +30,6 @@ fn checkpoint(stage: &'static str) -> Result<()> {
 
 pub const FILE_LIMIT: u64 = 3_145_728;
 pub type Result<T> = std::result::Result<T, &'static str>;
-#[derive(Clone, Serialize)]
-pub struct SourceDescriptor {
-    pub schema_version: u8,
-    pub profile_id: String,
-    pub boot_id: String,
-    pub source_id: String,
-    pub rate_hz: u32,
-    pub channel: &'static str,
-    pub total_frames: Option<u64>,
-    pub utc_anchor: Option<String>,
-}
-pub struct SampleBlock {
-    pub source: Arc<SourceDescriptor>,
-    pub first_frame: u64,
-    pub samples: Arc<[f32]>,
-    pub discontinuity: bool,
-    pub end_of_stream: bool,
-}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Metadata {
@@ -213,6 +198,7 @@ impl SourceFile {
             samples,
             discontinuity: false,
             end_of_stream: self.position == self.frames,
+            timing: None,
         }))
     }
 }
@@ -236,7 +222,7 @@ pub struct Import {
 #[derive(Clone, Serialize)]
 pub struct Job {
     pub id: String,
-    pub source_id: String,
+    pub source_id: Option<String>,
     pub generation: u64,
     pub kind: &'static str,
     pub state: &'static str,
@@ -256,6 +242,7 @@ pub struct State {
     pub job: Option<Job>,
     pub frame: Option<Value>,
     pub detail_frame: Option<Value>,
+    live: Option<LiveState>,
 }
 pub struct Recording {
     pub state: Mutex<State>,
@@ -265,6 +252,959 @@ pub struct Recording {
     #[cfg(test)]
     resources: Mutex<Resources>,
 }
+
+struct LiveState {
+    mode: &'static str,
+    audio: audio::AudioStatus,
+    device_id: String,
+    source: Option<Arc<SourceDescriptor>>,
+    timing: Option<source::SourceTiming>,
+    next_frame: u64,
+    records: VecDeque<(Value, usize)>,
+    record_bytes: usize,
+    first_sequence: u64,
+    next_sequence: u64,
+    search_limited: bool,
+    last_overrun: Option<(u64, u64)>,
+    publication_error: Option<&'static str>,
+}
+impl LiveState {
+    fn clear_context(&mut self) {
+        self.source = None;
+        self.timing = None;
+        self.next_frame = 0;
+        self.records.clear();
+        self.record_bytes = 0;
+        self.first_sequence = 0;
+        self.next_sequence = 0;
+        self.search_limited = false;
+        self.last_overrun = None;
+        self.publication_error = None;
+    }
+}
+
+/// Native resource ownership stays with the existing receive worker. Tests supply the
+/// actual queue/converter here; there is no production fixture endpoint.
+pub(crate) trait LiveInput: SampleSource + Send {
+    fn start(&mut self) -> std::result::Result<(), source::SourceError>;
+    fn request_stop(&mut self);
+    fn status(&self) -> audio::AudioStatus;
+}
+#[cfg(windows)]
+impl LiveInput for audio::AudioController {
+    fn start(&mut self) -> std::result::Result<(), source::SourceError> {
+        self.start()
+    }
+    fn request_stop(&mut self) {
+        self.request_stop();
+    }
+    fn status(&self) -> audio::AudioStatus {
+        self.status()
+    }
+}
+
+fn audio_error(error: source::SourceError) -> &'static str {
+    match error {
+        source::SourceError::Unavailable => "audio_unavailable",
+        source::SourceError::UnsupportedFormat => "unsupported_audio",
+        source::SourceError::FailedClose => "audio_close_failed",
+        source::SourceError::CounterExhausted => "counter_exhausted",
+        source::SourceError::Cancelled => "cancelled",
+        _ => "audio_failed",
+    }
+}
+fn window_error(error: receive::WindowError) -> &'static str {
+    match error {
+        receive::WindowError::CounterExhausted => "counter_exhausted",
+        receive::WindowError::DecodeLimit => "decode_limit",
+        _ => "audio_failed",
+    }
+}
+
+impl Recording {
+    fn live_view(&self, s: &State) -> Value {
+        let live = s.live.as_ref();
+        let audio = live.map(|l| {
+            let state = match l.audio.state {
+                audio::AudioState::Closed => "closed",
+                audio::AudioState::Opening => "opening",
+                audio::AudioState::Running => "running",
+                audio::AudioState::Closing => "closing",
+                audio::AudioState::Unavailable => "unavailable",
+            };
+            json!({"state":state,"device_id":l.device_id,"device_name":null,
+                "error":l.audio.error.map(audio_error),"retry_after_ms":l.audio.retry_after_ms})
+        }).unwrap_or_else(|| json!({"state":"closed","device_id":null,"device_name":null,"error":null,"retry_after_ms":null}));
+        let source = live.and_then(|l| l.source.as_ref().map(|source|
+            json!({"id":source.source_id,"kind":"live","sample_rate":12000,"channels":1,
+                "next_frame":l.next_frame,"segment":l.timing.as_ref().map(|t|t.segment).unwrap_or(0)})));
+        let job = live.and_then(|l| s.job.as_ref().map(|j|
+            json!({"id":j.id,"mode":l.mode,"state":j.state,"error":j.error,
+                "processed_frames":j.processed_frames,"first_sequence":l.first_sequence,
+                "next_sequence":l.next_sequence,"available_count":l.records.len(),
+                "last_overrun":l.last_overrun.map(|(first,end)|json!({"first_frame":first,"end_frame":end}))})));
+        let timing = live.and_then(|l| l.timing.as_ref());
+        json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,
+            "audio":audio,"source":source,"job":job,"clock":{"basis":"system_utc",
+            "correlated":timing.is_some_and(|t|t.correlated),"utc_anchor":timing.and_then(|t|t.system_utc_anchor.as_ref()),
+            "canonical_anchor_frame":timing.map(|t|t.canonical_anchor_frame),
+            "uncertainty_ns":timing.and_then(|t|t.uncertainty_ns),"external_accuracy":"unknown"}})
+    }
+    pub fn receive_snapshot(&self) -> Value {
+        self.live_view(&self.state.lock().unwrap())
+    }
+    pub(crate) fn receive_context(&self, profile: &str, boot: &str, generation: u64) -> Result<()> {
+        if profile != self.profile {
+            return Err("wrong_profile");
+        }
+        let s = self.state.lock().unwrap();
+        if boot != self.boot || generation != s.generation {
+            return Err("state_conflict");
+        }
+        Ok(())
+    }
+    pub fn receive_start(
+        self: &Arc<Self>,
+        profile: &str,
+        boot: &str,
+        generation: u64,
+        device: String,
+        mode: &'static str,
+    ) -> Result<Value> {
+        #[cfg(test)]
+        {
+            let input = self.resources.lock().unwrap().live_input.take();
+            if let Some(input) = input {
+                return self.receive_start_input(profile, boot, generation, device, mode, input);
+            }
+        }
+        #[cfg(windows)]
+        let input = audio::AudioController::new(device.clone()).map_err(audio_error)?;
+        #[cfg(not(windows))]
+        {
+            let _ = (profile, boot, generation, device, mode);
+            return Err("audio_unavailable");
+        }
+        #[cfg(windows)]
+        self.receive_start_input(profile, boot, generation, device, mode, Box::new(input))
+    }
+    #[cfg(all(test, not(debug_assertions)))]
+    pub(crate) fn fixture_input(&self, input: Box<dyn LiveInput>) {
+        self.resources.lock().unwrap().live_input = Some(input);
+    }
+    pub(crate) fn receive_start_input(
+        self: &Arc<Self>,
+        profile: &str,
+        boot: &str,
+        generation: u64,
+        device: String,
+        mode: &'static str,
+        mut input: Box<dyn LiveInput>,
+    ) -> Result<Value> {
+        let job;
+        {
+            let mut s = self.state.lock().unwrap();
+            if profile != self.profile {
+                return Err("wrong_profile");
+            }
+            if boot != self.boot || generation != s.generation {
+                return Err("state_conflict");
+            }
+            let id = profile::new_uuid().map_err(|_| "storage_unavailable")?;
+            let generation = Self::admit(&mut s)?;
+            job = Job {
+                id,
+                source_id: None,
+                generation,
+                kind: "live",
+                state: "running",
+                processed_frames: 0,
+                error: None,
+                cancel: Arc::new(AtomicBool::new(false)),
+            };
+            s.job = Some(job.clone());
+            s.live = Some(LiveState {
+                mode,
+                audio: audio::AudioStatus {
+                    state: audio::AudioState::Opening,
+                    error: None,
+                    retry_after_ms: None,
+                },
+                device_id: device,
+                source: None,
+                timing: None,
+                next_frame: 0,
+                records: VecDeque::new(),
+                record_bytes: 0,
+                first_sequence: 0,
+                next_sequence: 0,
+                search_limited: false,
+                last_overrun: None,
+                publication_error: None,
+            });
+        }
+        let this = self.clone();
+        let worker_job = job.clone();
+        if self
+            .spawn_receive(move || {
+                let started = input.start().map_err(audio_error);
+                LiveWorker::new(this, worker_job, input, mode).run(started);
+            })
+            .is_err()
+        {
+            let mut s = self.state.lock().unwrap();
+            if let Some(j) = s
+                .job
+                .as_mut()
+                .filter(|j| j.id == job.id && j.generation == job.generation)
+            {
+                j.state = "failed";
+                j.error = Some("audio_unavailable");
+            }
+            if let Some(l) = s.live.as_mut() {
+                l.audio = audio::AudioStatus {
+                    state: audio::AudioState::Closed,
+                    error: Some(source::SourceError::Unavailable),
+                    retry_after_ms: None,
+                };
+            }
+            return Err("audio_unavailable");
+        }
+        Ok(self.receive_snapshot())
+    }
+    fn spawn_receive(&self, run: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.resources.lock().unwrap().fail_live_spawn) {
+            return Err(std::io::Error::other("injected receive spawn failure"));
+        }
+        std::thread::Builder::new()
+            .name("station-receive".into())
+            .spawn(run)
+            .map(|_| ())
+    }
+    fn live_source_uuid(&self) -> Result<String> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.resources.lock().unwrap().fail_source_uuid) {
+            return Err("storage_unavailable");
+        }
+        profile::new_uuid().map_err(|_| "storage_unavailable")
+    }
+    pub fn receive_stop(
+        &self,
+        profile: &str,
+        boot: &str,
+        generation: u64,
+        id: &str,
+    ) -> Result<Value> {
+        {
+            let mut s = self.state.lock().unwrap();
+            if profile != self.profile {
+                return Err("wrong_profile");
+            }
+            if boot != self.boot || generation != s.generation {
+                return Err("state_conflict");
+            }
+            if s.live.is_none() {
+                return Err("not_found");
+            }
+            let j = s.job.as_mut().filter(|j| j.id == id).ok_or("not_found")?;
+            if !terminal(j.state) {
+                j.cancel.store(true, Ordering::Release);
+                j.state = "cancelling";
+            }
+            s.frame = None;
+            s.detail_frame = None;
+        }
+        Ok(self.receive_snapshot())
+    }
+    pub fn receive_results(
+        &self,
+        source: &str,
+        job: &str,
+        generation: u64,
+        cursor: u64,
+        limit: usize,
+    ) -> Result<Value> {
+        let s = self.state.lock().unwrap();
+        let j = s
+            .job
+            .as_ref()
+            .filter(|j| {
+                j.id == job && j.generation == generation && j.source_id.as_deref() == Some(source)
+            })
+            .ok_or("not_found")?;
+        let l = s.live.as_ref().ok_or("not_found")?;
+        if l.source.as_ref().is_none_or(|s| s.source_id != source) {
+            return Err("not_found");
+        }
+        if l.mode == "spectrum" {
+            return Err("invalid_request");
+        }
+        if cursor < l.first_sequence {
+            return Ok(
+                json!({"v":1,"error":{"code":"cursor_expired","message":"Result history expired"},"first_sequence":l.first_sequence,"next_sequence":l.next_sequence}),
+            );
+        }
+        if cursor > l.next_sequence {
+            return Err("invalid_request");
+        }
+        let mut records = Vec::new();
+        let mut next = cursor;
+        for (record, _) in l
+            .records
+            .iter()
+            .skip((cursor - l.first_sequence) as usize)
+            .take(limit)
+        {
+            records.push(record.clone());
+            next += 1;
+        }
+        let page = |records: &Vec<Value>, next| {
+            json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,
+            "source_id":source,"job_id":job,"generation":generation,"mode":l.mode,"state":j.state,
+            "error":j.error,"search_limited":l.search_limited,"first_sequence":l.first_sequence,
+            "next_sequence":l.next_sequence,"available_count":l.records.len(),"next":next,
+            "more":next<l.next_sequence,"records":records})
+        };
+        while serde_json::to_vec(&page(&records, next))
+            .map_err(|_| "decode_limit")?
+            .len()
+            > 16384
+        {
+            records.pop();
+            next -= 1;
+        }
+        Ok(page(&records, next))
+    }
+    fn publish_decode(
+        &self,
+        context: &Job,
+        decode: &decoder::Decode,
+    ) -> std::result::Result<(), decoder::DecodeError> {
+        let mut s = self.state.lock().unwrap();
+        if context.cancel.load(Ordering::Acquire)
+            || !s.job.as_ref().is_some_and(|j| {
+                j.id == context.id
+                    && j.generation == context.generation
+                    && j.source_id == context.source_id
+                    && j.state == "running"
+            })
+        {
+            return Err(decoder::DecodeError::Cancelled);
+        }
+        let l = s.live.as_mut().ok_or(decoder::DecodeError::Cancelled)?;
+        if l.source.as_ref().map(|s| &s.source_id) != context.source_id.as_ref() {
+            return Err(decoder::DecodeError::Cancelled);
+        }
+        if l.publication_error.is_some() {
+            return Err(decoder::DecodeError::DecodeLimit);
+        }
+        if l.next_sequence == source::MAX_COUNTER {
+            l.publication_error = Some("counter_exhausted");
+            return Err(decoder::DecodeError::DecodeLimit);
+        }
+        if decode.start_frame >= l.next_frame
+            || !decode.frequency_hz.is_finite()
+            || !(200.0..=3500.0).contains(&decode.frequency_hz)
+            || decode
+                .snr_db
+                .is_some_and(|v| !v.is_finite() || !(-60.0..=60.0).contains(&v))
+        {
+            l.publication_error = Some("decode_limit");
+            return Err(decoder::DecodeError::DecodeLimit);
+        }
+        let mut value =
+            serde_json::to_value(decode).map_err(|_| decoder::DecodeError::DecodeLimit)?;
+        value
+            .as_object_mut()
+            .ok_or(decoder::DecodeError::DecodeLimit)?
+            .insert("sequence".into(), json!(l.next_sequence));
+        let size = serde_json::to_vec(&value)
+            .map_err(|_| decoder::DecodeError::DecodeLimit)?
+            .len();
+        if size > 2048 {
+            return Err(decoder::DecodeError::DecodeLimit);
+        }
+        while l.records.len() >= 2048 || l.record_bytes + size > 2 * 1024 * 1024 {
+            let (_, bytes) = l
+                .records
+                .pop_front()
+                .ok_or(decoder::DecodeError::DecodeLimit)?;
+            l.record_bytes -= bytes;
+            l.first_sequence += 1;
+        }
+        l.records.push_back((value, size));
+        l.record_bytes += size;
+        l.next_sequence += 1;
+        Ok(())
+    }
+}
+
+struct LiveWorker {
+    owner: Arc<Recording>,
+    job: Job,
+    input: Box<dyn LiveInput>,
+    mode: Option<decoder::Mode>,
+    window: Option<receive::WindowBuffer>,
+    modem: Option<decoder::DecodeState>,
+    reset: bool,
+    epoch_seen: bool,
+    spectrum: LiveSpectrum,
+}
+impl LiveWorker {
+    fn new(owner: Arc<Recording>, job: Job, input: Box<dyn LiveInput>, mode: &str) -> Self {
+        let mode = match mode {
+            "ft8" => Some(decoder::Mode::Ft8),
+            "ft4" => Some(decoder::Mode::Ft4),
+            _ => None,
+        };
+        Self {
+            owner,
+            job,
+            input,
+            mode,
+            window: None,
+            modem: mode.map(decoder::DecodeState::new_live),
+            reset: false,
+            epoch_seen: false,
+            spectrum: LiveSpectrum::new(),
+        }
+    }
+    fn current(&self) -> bool {
+        !self.job.cancel.load(Ordering::Acquire)
+    }
+    fn run(mut self, mut result: Result<()>) {
+        while result.is_ok() && self.current() {
+            match self.step() {
+                Ok(Some(window)) => result = self.analyze(window),
+                Ok(None) => std::thread::sleep(Duration::from_millis(2)),
+                Err(error) => result = Err(error),
+            }
+        }
+        self.input.request_stop();
+        loop {
+            let _ = self.input.poll();
+            let status = self.input.status();
+            {
+                let mut s = self.owner.state.lock().unwrap();
+                if let Some(l) = s.live.as_mut() {
+                    l.audio = status;
+                }
+            }
+            if status.state == audio::AudioState::Closed {
+                break;
+            }
+            // FailedClose retains the native owner and receiver admission until release.
+            if status.error == Some(source::SourceError::FailedClose) {
+                result = Err("audio_close_failed");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Closed acknowledges the device, then all receive-owned processing and
+        // wrapper resources must leave scope before another worker is admitted.
+        let Self {
+            owner,
+            job,
+            input,
+            window,
+            modem,
+            spectrum,
+            ..
+        } = self;
+        drop((input, window, modem, spectrum));
+        let mut s = owner.state.lock().unwrap();
+        if let Some(j) = s
+            .job
+            .as_mut()
+            .filter(|j| j.id == job.id && j.generation == job.generation)
+        {
+            if job.cancel.load(Ordering::Acquire) {
+                j.state = "cancelled";
+                j.error = None;
+            } else {
+                j.state = "failed";
+                j.error = result.err();
+            }
+        }
+    }
+    fn epoch(&mut self, p: source::EpochProposal) -> Result<()> {
+        self.window = None;
+        self.modem = None;
+        self.spectrum.reset(0);
+        self.reset = true;
+        let mut s = self.owner.state.lock().unwrap();
+        if !self.current() {
+            return Err("cancelled");
+        }
+        self.job.source_id = None;
+        if let Some(j) = s.job.as_mut() {
+            j.source_id = None;
+        }
+        s.frame = None;
+        s.detail_frame = None;
+        s.live.as_mut().ok_or("state_conflict")?.clear_context();
+        let replacement = if self.epoch_seen {
+            let generation = s
+                .generation
+                .checked_add(1)
+                .filter(|g| *g <= source::MAX_COUNTER)
+                .ok_or("generation_exhausted")?;
+            Some((
+                profile::new_uuid().map_err(|_| "storage_unavailable")?,
+                generation,
+            ))
+        } else {
+            None
+        };
+        let source_id = self.owner.live_source_uuid()?;
+        let mut descriptor = Arc::new(SourceDescriptor {
+            schema_version: 1,
+            profile_id: self.owner.profile.clone(),
+            boot_id: self.owner.boot.clone(),
+            source_id,
+            rate_hz: 12000,
+            channel: "mono_real",
+            total_frames: None,
+            utc_anchor: None,
+        });
+        let mut timing = source::SourceTiming {
+            source_id: descriptor.source_id.clone(),
+            segment: 0,
+            native_rate: p.native_rate,
+            native_anchor_frame: p.first_device_frame as f64 + p.converter_delay_native_frames,
+            canonical_anchor_frame: 0,
+            converter_delay_native_frames: p.converter_delay_native_frames,
+            qpc_anchor_100ns: p.packet_qpc_100ns,
+            system_utc_anchor: None,
+            uncertainty_ns: None,
+            correlated: false,
+            external_accuracy: source::ExternalAccuracy::Unknown,
+        };
+        #[cfg(windows)]
+        if let (Some(packet), Some(clock)) = (p.packet_qpc_100ns, audio::system_clock()) {
+            let delay =
+                (p.converter_delay_native_frames * 10_000_000.0 / f64::from(p.native_rate)).round();
+            if delay.is_finite()
+                && delay >= 0.0
+                && let Some(center) = packet.checked_add(delay as u64)
+                && let Some(utc) = clock.utc_at(center).and_then(utc_from_filetime)
+            {
+                timing.qpc_anchor_100ns = Some(center);
+                timing.system_utc_anchor = Some(utc.clone());
+                timing.uncertainty_ns = Some(clock.uncertainty_ns);
+                timing.correlated = true;
+                Arc::get_mut(&mut descriptor).unwrap().utc_anchor = Some(utc);
+            }
+        }
+        if let Some((id, generation)) = replacement {
+            self.job.id = id;
+            self.job.generation = generation;
+            self.job.processed_frames = 0;
+            s.generation = generation;
+        }
+        s.job = Some(self.job.clone());
+        // ACK is a synchronous provider memory operation. Keeping the owner lock
+        // through it prevents a pre-ACK source from appearing in any snapshot.
+        self.input
+            .acknowledge_epoch(p.proposal_counter, descriptor.clone(), timing.clone())
+            .map_err(audio_error)?;
+        self.job.source_id = Some(descriptor.source_id.clone());
+        s.job = Some(self.job.clone());
+        s.frame = None;
+        s.detail_frame = None;
+        let l = s.live.as_mut().ok_or("state_conflict")?;
+        l.source = Some(descriptor.clone());
+        l.timing = Some(timing.clone());
+        drop(s);
+        self.window = Some(
+            receive::WindowBuffer::new(self.mode.unwrap_or(decoder::Mode::Ft8), descriptor)
+                .map_err(window_error)?,
+        );
+        self.spectrum.reset(0);
+        self.reset = true;
+        self.epoch_seen = true;
+        Ok(())
+    }
+    fn step(&mut self) -> Result<Option<receive::AnalysisWindow>> {
+        let event = self.input.poll();
+        {
+            let mut s = self.owner.state.lock().unwrap();
+            if let Some(l) = s.live.as_mut() {
+                l.audio = self.input.status();
+            }
+        }
+        match event {
+            SourcePoll::EpochChanged(p) => {
+                self.epoch(p)?;
+                Ok(None)
+            }
+            SourcePoll::Block(block) => {
+                let outcome = self
+                    .window
+                    .as_mut()
+                    .map(|w| w.push(&block))
+                    .transpose()
+                    .map_err(window_error)?;
+                let frames = self.spectrum.push(&block)?;
+                let mut s = self.owner.state.lock().unwrap();
+                if !self.current() {
+                    return Err("cancelled");
+                }
+                let j = s
+                    .job
+                    .as_mut()
+                    .filter(|j| j.id == self.job.id && j.generation == self.job.generation)
+                    .ok_or("state_conflict")?;
+                j.processed_frames = outcome
+                    .as_ref()
+                    .map(|o| o.captured_next_frame)
+                    .unwrap_or(block.first_frame + block.samples.len() as u64);
+                let next = j.processed_frames;
+                let l = s.live.as_mut().ok_or("state_conflict")?;
+                l.next_frame = next;
+                self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
+                if self.reset {
+                    self.modem = None;
+                }
+                for SpectrumRow {
+                    first,
+                    end,
+                    levels,
+                    detailed,
+                } in frames.into_iter().flatten()
+                {
+                    let sequence = first / if detailed { 2400 } else { 12000 };
+                    let kind = if detailed {
+                        "spectrum.detail.frame"
+                    } else {
+                        "spectrum.frame"
+                    };
+                    let frame = json!({"v":1,"type":kind,"data":{"boot_id":self.owner.boot,
+                        "source_id":self.job.source_id,"job_id":self.job.id,"generation":self.job.generation,
+                        "sequence":sequence,"first_frame":first,"end_frame":end,"levels_b64":STANDARD.encode(&levels)}});
+                    if detailed {
+                        s.detail_frame = Some(frame);
+                    } else {
+                        let mut frame = frame;
+                        frame["data"].as_object_mut().unwrap().remove("levels_b64");
+                        frame["data"]["levels"] = json!(levels);
+                        s.frame = Some(frame);
+                    }
+                }
+                Ok(if self.mode.is_some() {
+                    outcome.and_then(|o| o.window)
+                } else {
+                    None
+                })
+            }
+            SourcePoll::Failed(source::SourceError::Unavailable) => {
+                self.window = None;
+                self.modem = None;
+                self.reset = true;
+                let mut s = self.owner.state.lock().unwrap();
+                if !self.current() {
+                    return Err("cancelled");
+                }
+                if self.job.source_id.is_some() {
+                    let generation = s
+                        .generation
+                        .checked_add(1)
+                        .filter(|g| *g <= source::MAX_COUNTER)
+                        .ok_or("generation_exhausted")?;
+                    self.job.id = profile::new_uuid().map_err(|_| "storage_unavailable")?;
+                    self.job.generation = generation;
+                    self.job.source_id = None;
+                    self.job.processed_frames = 0;
+                    s.generation = generation;
+                    s.job = Some(self.job.clone());
+                    self.epoch_seen = false;
+                }
+                s.frame = None;
+                s.detail_frame = None;
+                if let Some(l) = s.live.as_mut() {
+                    l.clear_context();
+                }
+                Ok(None)
+            }
+            SourcePoll::Failed(e) => Err(audio_error(e)),
+            SourcePoll::End => Err("audio_unavailable"),
+            SourcePoll::Pending => Ok(None),
+        }
+    }
+    fn analyze(&mut self, mut window: receive::AnalysisWindow) -> Result<()> {
+        use std::{
+            future::Future,
+            task::{Context, Poll, Waker},
+        };
+        loop {
+            let mode = self.mode.ok_or("state_conflict")?;
+            let mut state = if self.reset {
+                self.modem = None;
+                decoder::DecodeState::new_live(mode)
+            } else {
+                self.modem.take().ok_or("state_conflict")?
+            };
+            self.reset = false;
+            let decoder = decoder::Decoder::new();
+            let cancel = self.job.cancel.clone();
+            let job = self.job.clone();
+            let owner = self.owner.clone();
+            let cancelled = || cancel.load(Ordering::Acquire);
+            let mut publish = |decoded: &decoder::Decode| owner.publish_decode(&job, decoded);
+            let interval = (window.origin, window.origin + window.samples.len() as u64);
+            let mut future = Box::pin(decoder.decode_window_into_async(
+                window.samples,
+                window.origin,
+                &mut state,
+                &cancelled,
+                &mut publish,
+            ));
+            let mut context = Context::from_waker(Waker::noop());
+            let mut replacement = None;
+            let result = loop {
+                if !self.current() {
+                    break Err("cancelled");
+                }
+                match future.as_mut().poll(&mut context) {
+                    Poll::Ready(result) => {
+                        break match result {
+                            Ok(()) => Ok(()),
+                            Err(decoder::DecodeError::Cancelled) => Err("cancelled"),
+                            Err(decoder::DecodeError::SearchLimited) => {
+                                if let Some(l) = self.owner.state.lock().unwrap().live.as_mut() {
+                                    l.search_limited = true;
+                                }
+                                Err("decode_limit")
+                            }
+                            Err(_) => Err(self
+                                .owner
+                                .state
+                                .lock()
+                                .unwrap()
+                                .live
+                                .as_ref()
+                                .and_then(|l| l.publication_error)
+                                .unwrap_or("decode_limit")),
+                        };
+                    }
+                    Poll::Pending => {}
+                }
+                // Drain the real capture queue between cooperative numerical yields.
+                for _ in 0..128 {
+                    match self.step() {
+                        Ok(Some(next)) => {
+                            replacement = Some(next);
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            drop(future);
+                            return Err(error);
+                        }
+                    }
+                    if self.reset {
+                        break;
+                    }
+                }
+                if replacement.is_some() || self.reset {
+                    if replacement.is_some()
+                        && let Some(l) = self.owner.state.lock().unwrap().live.as_mut()
+                    {
+                        l.last_overrun = Some(interval);
+                    }
+                    break Ok(());
+                }
+            };
+            drop(future);
+            self.modem = if self.reset { None } else { Some(state) };
+            result?;
+            if let Some(next) = replacement {
+                window = next;
+            } else {
+                return Ok(());
+            }
+        }
+    }
+}
+
+fn utc_from_filetime(ticks: u64) -> Option<String> {
+    let seconds = ticks.checked_div(10_000_000)?.checked_sub(11_644_473_600)?;
+    let mut days = seconds / 86400;
+    let mut year = 1970u64;
+    let leap = |year: u64| {
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+    };
+    while year <= 9999 {
+        let count = if leap(year) { 366 } else { 365 };
+        if days < count {
+            break;
+        }
+        days -= count;
+        year += 1;
+    }
+    if year > 9999 {
+        return None;
+    }
+    let months = [
+        31,
+        if leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    let mut month = 1;
+    for count in months {
+        if days < count {
+            break;
+        }
+        days -= count;
+        month += 1;
+    }
+    let time = seconds % 86400;
+    Some(format!(
+        "{year:04}-{month:02}-{:02}T{:02}:{:02}:{:02}.{:07}Z",
+        days + 1,
+        time / 3600,
+        time % 3600 / 60,
+        time % 60,
+        ticks % 10_000_000
+    ))
+}
+
+struct SpectrumRow {
+    first: u64,
+    end: u64,
+    levels: Vec<u8>,
+    detailed: bool,
+}
+struct LiveSpectrum {
+    samples: VecDeque<f32>,
+    first: u64,
+    next: u64,
+    thin_start: u64,
+    detail_start: u64,
+    thin: spectrum::Spectrum,
+    detail: spectrum::Spectrum,
+    peak: [f32; 128],
+    powers: [f32; 1024],
+    count: u32,
+}
+impl LiveSpectrum {
+    fn new() -> Self {
+        Self {
+            samples: VecDeque::with_capacity(8192),
+            first: 0,
+            next: 0,
+            thin_start: 0,
+            detail_start: 0,
+            thin: spectrum::Spectrum::new(false),
+            detail: spectrum::Spectrum::detailed(false),
+            peak: [0.; 128],
+            powers: [0.; 1024],
+            count: 0,
+        }
+    }
+    fn reset(&mut self, first: u64) {
+        self.samples.clear();
+        self.first = first;
+        self.next = first;
+        self.thin_start = first.div_ceil(12000) * 12000;
+        self.detail_start = first.div_ceil(2400) * 2400;
+        self.peak.fill(0.);
+        self.powers.fill(0.);
+        self.count = 0;
+    }
+    fn push(&mut self, block: &SampleBlock) -> Result<[Option<SpectrumRow>; 2]> {
+        if block.discontinuity {
+            self.reset(block.first_frame);
+        }
+        if block.first_frame != self.next || block.samples.iter().any(|s| !s.is_finite()) {
+            return Err("audio_failed");
+        }
+        self.next = self
+            .next
+            .checked_add(block.samples.len() as u64)
+            .filter(|n| *n <= source::MAX_COUNTER)
+            .ok_or("counter_exhausted")?;
+        self.samples.extend(block.samples.iter().copied());
+        let mut frames = [None, None];
+        while self.thin_start + 2048 <= self.next {
+            let offset = (self.thin_start - self.first) as usize;
+            let x: Vec<_> = self
+                .samples
+                .iter()
+                .skip(offset)
+                .take(2048)
+                .copied()
+                .collect();
+            for (peak, power) in self.peak.iter_mut().zip(self.thin.amplitudes(&x)?) {
+                *peak = peak.max(power);
+            }
+            let first = self.thin_start / 12000 * 12000;
+            self.thin_start += spectrum::HOP;
+            if self.thin_start >= first + 12000 {
+                frames[0] = Some(SpectrumRow {
+                    first,
+                    end: first + 12000,
+                    levels: self.peak.into_iter().map(spectrum::quantize).collect(),
+                    detailed: false,
+                });
+                self.peak.fill(0.);
+            }
+        }
+        while self.detail_start + 4096 <= self.next {
+            let offset = (self.detail_start - self.first) as usize;
+            let x: Vec<_> = self
+                .samples
+                .iter()
+                .skip(offset)
+                .take(4096)
+                .copied()
+                .collect();
+            for (power, a) in self
+                .powers
+                .iter_mut()
+                .zip(self.detail.native_amplitudes(&x)?)
+            {
+                *power += a * a;
+            }
+            self.count += 1;
+            let first = self.detail_start / 2400 * 2400;
+            self.detail_start += 480;
+            if self.detail_start >= first + 2400 {
+                let levels = self
+                    .powers
+                    .iter()
+                    .map(|p| spectrum::quantize((p / self.count as f32).sqrt()))
+                    .collect();
+                frames[1] = Some(SpectrumRow {
+                    first,
+                    end: first + 2400,
+                    levels,
+                    detailed: true,
+                });
+                self.powers.fill(0.);
+                self.count = 0;
+            }
+        }
+        let retain = self.thin_start.min(self.detail_start);
+        while self.first < retain && !self.samples.is_empty() {
+            self.samples.pop_front();
+            self.first += 1;
+        }
+        if self.samples.len() > 8192 {
+            return Err("decode_limit");
+        }
+        Ok(frames)
+    }
+}
 #[cfg(test)]
 #[derive(Default)]
 struct Resources {
@@ -273,6 +1213,9 @@ struct Resources {
     peak_blocks: usize,
     cross_deadline: bool,
     deadline_crossings: usize,
+    live_input: Option<Box<dyn LiveInput>>,
+    fail_live_spawn: bool,
+    fail_source_uuid: bool,
 }
 fn io<T>(value: std::io::Result<T>) -> Result<T> {
     value.map_err(|_| "storage_unavailable")
@@ -308,6 +1251,7 @@ impl Recording {
             job: None,
             frame: None,
             detail_frame: None,
+            live: None,
         };
         let confined = fs::create_dir_all(&dir).is_ok()
             && base
@@ -464,6 +1408,7 @@ impl Recording {
         s.generation += 1;
         s.frame = None;
         s.detail_frame = None;
+        s.live = None;
         Ok(s.generation)
     }
     pub fn reserve(self: &Arc<Self>, profile: &str, boot: &str, generation: u64) -> Result<Value> {
@@ -745,7 +1690,7 @@ impl Recording {
             let generation = Self::admit(&mut s)?;
             job = Job {
                 id,
-                source_id: source.to_owned(),
+                source_id: Some(source.to_owned()),
                 generation,
                 kind: "spectrum",
                 state: "running",
@@ -828,7 +1773,7 @@ impl Recording {
         let mut block = input.next()?.ok_or("recording_unavailable")?;
         #[cfg(test)]
         self.observe_blocks(&[&block]);
-        if block.source.source_id != job.source_id
+        if Some(&block.source.source_id) != job.source_id.as_ref()
             || block.discontinuity
             || block.end_of_stream != (block.samples.len() as u64 == meta.frames)
         {

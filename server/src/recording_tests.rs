@@ -2,6 +2,358 @@
 use super::*;
 use std::cell::Cell;
 thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
+
+fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
+    let source = Arc::new(SourceDescriptor {
+        schema_version: 1,
+        profile_id: r.profile.clone(),
+        boot_id: r.boot.clone(),
+        source_id: profile::new_uuid().unwrap(),
+        rate_hz: 12000,
+        channel: "mono_real",
+        total_frames: None,
+        utc_anchor: None,
+    });
+    let job = Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(source.source_id.clone()),
+        generation: 1,
+        kind: "live",
+        state: "running",
+        processed_frames: 180000,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    };
+    let mut s = r.state.lock().unwrap();
+    s.generation = 1;
+    s.job = Some(job.clone());
+    s.live = Some(LiveState {
+        mode: "ft8",
+        audio: audio::AudioStatus {
+            state: audio::AudioState::Running,
+            error: None,
+            retry_after_ms: None,
+        },
+        device_id: "isolated-test".into(),
+        source: Some(source),
+        timing: None,
+        next_frame: 180000,
+        records: VecDeque::new(),
+        record_bytes: 0,
+        first_sequence: 0,
+        next_sequence: 0,
+        search_limited: false,
+        last_overrun: None,
+        publication_error: None,
+    });
+    let decoded = decoder::Decode {
+        payload: decoder::unpack(&[0; 77]),
+        start_frame: 6000,
+        frequency_hz: 1000.0,
+        snr_db: None,
+    };
+    (job, decoded)
+}
+
+// Proves: CL-008-03; TC-009-004 live ring2047/2048/2049 and explicit cursors.
+#[test]
+fn live_results_evict_oldest_and_never_restart_sequence() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, decoded) = live_ring(&r);
+    for sequence in 0..2054 {
+        r.publish_decode(&job, &decoded).unwrap();
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        assert_eq!(l.next_sequence, sequence + 1);
+        assert_eq!(l.records.len(), ((sequence + 1) as usize).min(2048));
+        assert_eq!(l.first_sequence, (sequence + 1).saturating_sub(2048));
+    }
+    let source = job.source_id.as_deref().unwrap();
+    let expired = r.receive_results(source, &job.id, 1, 5, 1).unwrap();
+    assert_eq!(
+        expired,
+        json!({"v":1,"error":{"code":"cursor_expired","message":"Result history expired"},"first_sequence":6,"next_sequence":2054})
+    );
+    let page = r.receive_results(source, &job.id, 1, 7, 1).unwrap();
+    assert_eq!(page["records"][0]["sequence"], 7);
+    assert_eq!(page["next"], 8);
+    assert_eq!(page["more"], true);
+    assert!(serde_json::to_vec(&page).unwrap().len() <= 3072);
+    let end = r.receive_results(source, &job.id, 1, 2054, 16).unwrap();
+    assert_eq!(end["records"], json!([]));
+    assert_eq!(end["more"], false);
+    assert_eq!(
+        r.receive_results(source, &job.id, 1, 2055, 1),
+        Err("invalid_request")
+    );
+    r.state.lock().unwrap().live.as_mut().unwrap().source = None;
+    assert_eq!(
+        r.receive_results(source, &job.id, 1, 7, 1),
+        Err("not_found")
+    );
+}
+
+// Proves: CL-008-03; TC-009-004 seeded byte/safe-counter bounds and invalid/stale publication.
+#[test]
+fn live_publication_is_atomic_at_byte_counter_and_context_boundaries() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, mut decoded) = live_ring(&r);
+    r.publish_decode(&job, &decoded).unwrap();
+    {
+        let mut s = r.state.lock().unwrap();
+        let l = s.live.as_mut().unwrap();
+        // Seed the charged retained history at its exact byte cap.
+        l.records.front_mut().unwrap().1 = 2 * 1024 * 1024;
+        l.record_bytes = 2 * 1024 * 1024;
+    }
+    r.publish_decode(&job, &decoded).unwrap();
+    {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        assert_eq!(l.first_sequence, 1);
+        assert_eq!(l.next_sequence, 2);
+        assert_eq!(l.records.len(), 1);
+        assert_eq!(l.record_bytes, l.records[0].1);
+    }
+    decoded.frequency_hz = f64::NAN;
+    assert_eq!(
+        r.publish_decode(&job, &decoded),
+        Err(decoder::DecodeError::DecodeLimit)
+    );
+    assert_eq!(
+        r.state.lock().unwrap().live.as_ref().unwrap().next_sequence,
+        2
+    );
+    let (job, decoded) = live_ring(&r);
+    {
+        let mut s = r.state.lock().unwrap();
+        let l = s.live.as_mut().unwrap();
+        l.first_sequence = source::MAX_COUNTER;
+        l.next_sequence = source::MAX_COUNTER;
+    }
+    assert_eq!(
+        r.publish_decode(&job, &decoded),
+        Err(decoder::DecodeError::DecodeLimit)
+    );
+    assert_eq!(
+        r.state
+            .lock()
+            .unwrap()
+            .live
+            .as_ref()
+            .unwrap()
+            .publication_error,
+        Some("counter_exhausted")
+    );
+    let (job, decoded) = live_ring(&r);
+    r.state.lock().unwrap().job.as_mut().unwrap().id = profile::new_uuid().unwrap();
+    assert_eq!(
+        r.publish_decode(&job, &decoded),
+        Err(decoder::DecodeError::Cancelled)
+    );
+    assert_eq!(
+        r.state.lock().unwrap().live.as_ref().unwrap().next_sequence,
+        0
+    );
+}
+
+// Proves: CL-008-02; TC-009-004 source clock metadata never invents external accuracy.
+#[test]
+fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
+    assert_eq!(
+        utc_from_filetime(116444736000000000).as_deref(),
+        Some("1970-01-01T00:00:00.0000000Z")
+    );
+    assert_eq!(
+        utc_from_filetime(132274080001234567).as_deref(),
+        Some("2020-02-29T00:00:00.1234567Z")
+    );
+    assert!(utc_from_filetime(0).is_none());
+    assert!(utc_from_filetime(u64::MAX).is_none());
+}
+
+// Proves: CL-008-02/03/05; TC-009-004 actual provider epoch and owner identity.
+#[test]
+fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, decoded) = live_ring(&r);
+    let (mut input, queue) = crate::receive_http_tests::Input::queued();
+    input.start().unwrap();
+    let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+    // Initial provider ACK keeps the admitted job/gen; no made-up source ID.
+    worker.epoch_seen = false;
+    assert!(queue.push(&[], 1024, 0, 0, audio::SILENT));
+    assert!(worker.step().unwrap().is_none());
+    let first_job = worker.job.clone();
+    assert!(worker.window.is_some());
+    assert!(worker.reset);
+    worker.reset = false;
+    for _ in 0..4 {
+        worker.step().unwrap();
+    }
+    let old_source = first_job.source_id.clone().unwrap();
+    r.publish_decode(
+        &first_job,
+        &decoder::Decode {
+            start_frame: 0,
+            ..decoded.clone()
+        },
+    )
+    .unwrap();
+    // A marked measured gap resets private analysis but keeps source/job/gen.
+    assert!(queue.push(
+        &[],
+        1024,
+        48000,
+        0,
+        audio::SILENT | audio::DATA_DISCONTINUITY
+    ));
+    worker.step().unwrap();
+    assert!(worker.reset);
+    assert_eq!(worker.job.id, first_job.id);
+    assert_eq!(worker.job.generation, first_job.generation);
+    assert_eq!(
+        r.state.lock().unwrap().live.as_ref().unwrap().records.len(),
+        1
+    );
+    // An invalid packet is an actual unknown-loss epoch in PacketQueue/LiveSource.
+    assert!(!queue.push(&[], 8193, 49024, 0, audio::SILENT));
+    assert!(queue.push(&[], 1024, 49024, 0, audio::SILENT));
+    worker.step().unwrap();
+    assert_ne!(worker.job.id, first_job.id);
+    assert_ne!(worker.job.source_id, first_job.source_id);
+    assert_eq!(worker.job.generation, first_job.generation + 1);
+    assert_eq!(
+        r.state.lock().unwrap().live.as_ref().unwrap().next_sequence,
+        0
+    );
+    assert_eq!(
+        r.receive_results(&old_source, &first_job.id, first_job.generation, 0, 1),
+        Err("not_found")
+    );
+    assert_eq!(
+        r.receive_stop(&r.profile, &r.boot, first_job.generation, &first_job.id),
+        Err("state_conflict")
+    );
+    assert_eq!(
+        r.publish_decode(&first_job, &decoded),
+        Err(decoder::DecodeError::Cancelled)
+    );
+    worker.input.request_stop();
+    assert_eq!(worker.input.status().state, audio::AudioState::Closed);
+}
+
+// Proves: CL-008-03; TC-009-004 resource release precedes terminal publication.
+#[test]
+fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (mut input, _) = crate::receive_http_tests::Input::queued();
+    let (entered, released) = input.block_release();
+    let snapshot = r
+        .receive_start_input(
+            &r.profile,
+            &r.boot,
+            0,
+            "native-queue-fixture".into(),
+            "ft8",
+            Box::new(input),
+        )
+        .unwrap();
+    let generation = snapshot["generation"].as_u64().unwrap();
+    let id = snapshot["job"]["id"].as_str().unwrap();
+    r.receive_stop(&r.profile, &r.boot, generation, id).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !entered.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let observed = r.receive_snapshot();
+    let admission = r.reserve(&r.profile, &r.boot, generation);
+    // Release before assertions so even a red candidate cannot strand the fixture.
+    released.store(true, Ordering::Release);
+    assert!(entered.load(Ordering::Acquire));
+    assert_eq!(observed["job"]["state"], "cancelling");
+    assert_eq!(admission, Err("busy"));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while r.receive_snapshot()["job"]["state"] != "cancelled" && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(r.receive_snapshot()["job"]["state"], "cancelled");
+}
+
+// Proves: CL-008-03; TC-009-004 a refused OS worker cannot strand station admission.
+#[test]
+fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    r.resources.lock().unwrap().fail_live_spawn = true;
+    let (input, _) = crate::receive_http_tests::Input::queued();
+    assert_eq!(
+        r.receive_start_input(
+            &r.profile,
+            &r.boot,
+            0,
+            "native-queue-fixture".into(),
+            "ft8",
+            Box::new(input)
+        ),
+        Err("audio_unavailable")
+    );
+    let snapshot = r.receive_snapshot();
+    assert_eq!(snapshot["generation"], 1);
+    assert_eq!(snapshot["job"]["state"], "failed");
+    assert_eq!(snapshot["audio"]["state"], "closed");
+    assert_eq!(
+        r.receive_context(&r.profile, &r.boot, 0),
+        Err("state_conflict")
+    );
+    let reservation = r.reserve(&r.profile, &r.boot, 1).unwrap();
+    assert_eq!(reservation["generation"], 2);
+}
+
+// Proves: CL-008-03; TC-009-004 a failed fresh source identity cannot orphan the old owner.
+#[test]
+fn live_second_epoch_source_uuid_failure_releases_original_admission() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (input, queue) = crate::receive_http_tests::Input::queued();
+    r.receive_start_input(
+        &r.profile,
+        &r.boot,
+        0,
+        "native-queue-fixture".into(),
+        "ft8",
+        Box::new(input),
+    )
+    .unwrap();
+    assert!(queue.push(&[], 1024, 0, 0, audio::SILENT));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while r.receive_snapshot()["source"].is_null() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let first = r.receive_snapshot();
+    assert!(!first["source"].is_null());
+    r.resources.lock().unwrap().fail_source_uuid = true;
+    assert!(!queue.push(&[], 8193, 1024, 0, audio::SILENT));
+    assert!(queue.push(&[], 1024, 1024, 0, audio::SILENT));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while r.receive_snapshot()["job"]["state"] != "failed" && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let failed = r.receive_snapshot();
+    assert_eq!(failed["audio"]["state"], "closed");
+    assert_eq!(failed["job"]["state"], "failed");
+    assert_eq!(failed["job"]["id"], first["job"]["id"]);
+    assert_eq!(failed["generation"], first["generation"]);
+    assert_eq!(failed["job"]["error"], "storage_unavailable");
+    assert!(
+        r.reserve(&r.profile, &r.boot, failed["generation"].as_u64().unwrap())
+            .is_ok()
+    );
+}
 pub(super) fn checkpoint(stage: &'static str) -> Result<()> {
     if FAULT.get() == Some(stage) {
         Err("storage_unavailable")
@@ -224,7 +576,7 @@ fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     let meta = r.state.lock().unwrap().recording.clone().unwrap();
     let job = Job {
         id: profile::new_uuid().unwrap(),
-        source_id: id,
+        source_id: Some(id),
         generation: 2,
         kind: "spectrum",
         state: "running",
@@ -247,7 +599,7 @@ fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     let current = r.snapshot()["job"].clone();
     let obsolete = Job {
         id: profile::new_uuid().unwrap(),
-        source_id: profile::new_uuid().unwrap(),
+        source_id: Some(profile::new_uuid().unwrap()),
         generation: 1,
         kind: "spectrum",
         state: "running",
@@ -257,7 +609,7 @@ fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     };
     let metadata = Metadata {
         schema_version: 1,
-        recording_id: obsolete.source_id.clone(),
+        recording_id: obsolete.source_id.clone().unwrap(),
         file_bytes: 44,
         frames: 1,
         rate_hz: 12000,
