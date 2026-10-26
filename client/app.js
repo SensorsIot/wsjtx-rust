@@ -27,6 +27,7 @@ function connect() {
   clearTimeout(timer);
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, 'wstx.v1');
   const current = socket;
+  const profileRefresh = {initialized: false, running: null, again: false};
   const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) disconnect(current);}, 5000);
   current.onopen = () => {
     clearTimeout(openingTimer);
@@ -41,7 +42,16 @@ function connect() {
       lastMessage = Date.now();
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
-        if (profileMode && !await loadProfile(false, current)) return;
+        if (profileMode) {
+          if (!profileRefresh.initialized) {
+            if (!await refreshProfile(current, profileRefresh)) return;
+            if (current !== socket || current.readyState !== WebSocket.OPEN) return;
+            profileRefresh.initialized = true;
+          } else {
+            refreshProfile(current, profileRefresh).catch(() => disconnect(current));
+          }
+        }
+        if (current !== socket || current.readyState !== WebSocket.OPEN) return;
         version.textContent = message.data.version; radio.textContent = 'Radio not configured';
         connection.textContent = 'Connected'; connection.dataset.state = 'connected';
         document.querySelector('#updated').textContent = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
@@ -76,11 +86,34 @@ function formSettings() {
     audio: {input_device: value('#audio-input') || null, output_device: value('#audio-output') || null},
     control: {mode: value('#control-mode'), endpoint: value('#control-endpoint') || null, ptt: value('#ptt-mode')}};
 }
+// Status refreshes share one request and retain only one follow-up while HTTP is
+// busy. Each socket owns its own queue, so old completions cannot clear a new queue.
+function refreshProfile(current, state) {
+  if (state.running) {state.again = true; return state.running;}
+  state.running = (async () => {
+    do {
+      state.again = false;
+      if (!await loadProfile(false, current)) return false;
+      if (current !== socket || current.readyState !== WebSocket.OPEN) return false;
+      if (state.initialized) window.dispatchEvent(new CustomEvent('station-ready', {detail: current}));
+    } while (state.again);
+    return true;
+  })().catch(error => {
+    if (current === socket && current.readyState === WebSocket.OPEN) {
+      settingsResult.textContent = 'Could not load saved settings.';
+      disconnect(current);
+      connection.textContent = 'Disconnected ? could not load saved settings.';
+    }
+    return false;
+  }).finally(() => {state.running = null;});
+  return state.running;
+}
 async function loadProfile(reload, current) {
   const response = await fetch('/profile', {signal: AbortSignal.timeout(10000)});
+  if (current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
   if (!response.ok) {settingsResult.textContent = 'Could not load saved settings.'; throw new Error('Profile unavailable');}
   const data = await response.json();
-  if (current && current !== socket) return false;
+  if (current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
   if (typeof data.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return true;
   profileData = data; document.querySelector('#profile-panel').hidden = false;

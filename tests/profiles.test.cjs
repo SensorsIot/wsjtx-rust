@@ -367,3 +367,90 @@ test('TC-022-002 review regression: admit the complete worst-case response budge
   }
   for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
 });
+// Proves: FR-022; CL-005-02, CL-005-03, CL-006-04; TC-022-005.
+test('TC-022-005: status readiness survives held settings HTTP with bounded refresh', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t), {pages, context} = await browserWindows(t, profiles);
+  await Promise.all(pages.map(connected)); const page = pages[0];
+  let release, entered, gets = 0;
+  const held = new Promise(r => {release = r;}), started = new Promise(r => {entered = r;});
+  await page.route('**/profile', async route => {
+    gets++;
+    if (gets === 1) {const response = await route.fetch(); entered(); await held; await route.fulfill({response});}
+    else await route.continue();
+  });
+  // Existing socket was opened before the observer; observe its actual messages in
+  // the browser too, independently of HTTP and the updated-label assertion.
+  await page.evaluate(() => {window.statusReplies = 0; addEventListener('station-message', e => {if (e.detail.message.type === 'station.status') window.statusReplies++;});});
+  async function refreshWithinBound() {
+    const previous = await page.locator('#updated').textContent(), replies = await page.evaluate(() => window.statusReplies);
+    await page.locator('#refresh').click();
+    await page.waitForFunction(({previous, replies}) => window.statusReplies > replies && document.querySelector('#updated').textContent !== previous && !document.querySelector('#refresh').disabled, {previous, replies}, {timeout: 2000});
+  }
+  try {
+    await page.locator('#callsign').fill('DIRTY');
+    await refreshWithinBound(); await started;
+    await refreshWithinBound(); await refreshWithinBound();
+    assert.equal(gets, 1, 'held HTTP must coalesce concurrent Refresh requests');
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 0, {...settings(1), display_name: 'New revision'}))).status, 200);
+    release();
+    await page.locator('#profile-name').filter({hasText: 'New revision'}).waitFor();
+    assert.equal(gets, 2, 'exactly one queued follow-up obtains latest saved profile');
+    assert.equal(await page.locator('#callsign').inputValue(), 'DIRTY');
+  } finally {release();}
+  await page.unroute('**/profile');
+
+  // A closed old socket's late successful HTTP must not replace the new boot/form.
+  let releaseOld, oldEntered;
+  const oldHeld = new Promise(r => {releaseOld = r;}), oldStarted = new Promise(r => {oldEntered = r;});
+  let oldGet = true;
+  await page.route('**/profile', async route => {
+    if (oldGet) {oldGet = false; const response = await route.fetch(); oldEntered(); await oldHeld; await route.fulfill({response});}
+    else await route.continue();
+  });
+  try {
+    await refreshWithinBound(); await oldStarted;
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 1, {...settings(1), display_name: 'Newest socket'}))).status, 200);
+    await page.evaluate(() => socket.close());
+    await page.locator('#connection[data-state="stale"]').waitFor();
+    await connected(page); await page.locator('#profile-name').filter({hasText: 'Newest socket'}).waitFor();
+    await page.locator('#callsign').fill('NEWERDIRTY');
+    releaseOld(); await page.waitForTimeout(100);
+    assert.equal(await page.locator('#profile-name').textContent(), 'Newest socket');
+    assert.equal(await page.locator('#callsign').inputValue(), 'NEWERDIRTY');
+    assert.equal(await page.locator('#connection').getAttribute('data-state'), 'connected');
+  } finally {releaseOld();}
+  await page.unroute('**/profile');
+
+  const initial = await context.newPage(); let releaseInitial, initialEntered;
+  const initialHeld = new Promise(r => {releaseInitial = r;}), initialStarted = new Promise(r => {initialEntered = r;});
+  let releaseReplacement, replacementEntered, initialGets = 0;
+  const replacementHeld = new Promise(r => {releaseReplacement = r;}), replacementStarted = new Promise(r => {replacementEntered = r;});
+  await initial.addInitScript(() => {window.readyEvents = 0; addEventListener('station-ready', () => {window.readyEvents++;});});
+  await initial.route('**/profile', async route => {
+    const first = ++initialGets === 1, response = await route.fetch();
+    if (first) {initialEntered(); await initialHeld;} else {replacementEntered(); await replacementHeld;}
+    await route.fulfill({response});
+  });
+  try {
+    await initial.goto(profiles[0].origin); await initialStarted;
+    assert.notEqual(await initial.locator('#connection').getAttribute('data-state'), 'connected');
+    assert.equal(await initial.evaluate(() => window.readyEvents), 0);
+    assert.equal(await initial.locator('#signal-status').textContent(), 'Waiting for station snapshot');
+    await initial.evaluate(() => socket.close()); await replacementStarted;
+    releaseInitial(); await initial.waitForTimeout(100);
+    assert.notEqual(await initial.locator('#connection').getAttribute('data-state'), 'connected', 'late old-socket HTTP cannot initialize a replacement');
+    assert.equal(await initial.locator('#profile-panel').isHidden(), true);
+    assert.equal(await initial.evaluate(() => window.readyEvents), 0);
+    releaseReplacement(); await connected(initial); assert.equal(await initial.evaluate(() => window.readyEvents), 1);
+  } finally {releaseInitial(); releaseReplacement();}
+  await initial.close();
+  await page.route('**/profile', route => route.fulfill({status: 503, contentType: 'application/json', body: '{}'}));
+  await page.locator('#refresh').click();
+  await page.locator('#settings-result').filter({hasText: 'Could not load saved settings.'}).waitFor();
+  await page.locator('#connection[data-state="stale"]').waitFor();
+  const failed = await context.newPage();
+  await failed.route('**/profile', route => route.fulfill({status: 503, contentType: 'application/json', body: '{}'}));
+  await failed.goto(profiles[0].origin);
+  await failed.locator('#connection').filter({hasText: 'could not load saved settings.'}).waitFor();
+  assert.notEqual(await failed.locator('#connection').getAttribute('data-state'), 'connected');
+});
