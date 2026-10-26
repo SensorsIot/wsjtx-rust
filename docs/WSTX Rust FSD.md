@@ -1008,12 +1008,19 @@ publication. One integration owner changes shared manifests/bootstrap/browser wi
 Reuse RustFFT6.4.1 and the existing immutable `SampleBlock`; no second FFT provider,
 resampler, sample reader, job manager or configuration database. The shared source
 boundary is `SampleSource::descriptor()` plus nonblocking `poll()` returning Pending,
-Block(SampleBlock), EpochChanged(SourceDescriptor,SourceTiming), End or Failed(code).
-Pending is never EOS; only finite file sources return End. The file adapter keeps its
-existing reader; the live adapter normalizes/converts raw native packets on that same
-DSP worker. EpochChanged reaches the receive authority before any replacement block,
-which invalidates the old tuple and allocates the new source/job/generation. No other
-consumer invents identities. Normal polling/checkpoint work is bounded by50ms.
+Block(SampleBlock), EpochChanged(EpochProposal), End or Failed(code). An epoch proposal
+contains only a source-local proposal counter, reason, native rate/first frame/QPC and
+converter delay; it contains no station/source/job identity. Pending is never EOS; only
+finite files return End. The file adapter keeps its existing reader; the live adapter
+normalizes/converts raw native packets on that same DSP worker. Before any replacement
+block, the receive authority invalidates the old tuple and allocates the new descriptor,
+source/job/generation and SourceTiming. It calls
+`acknowledge_epoch(proposal_counter,SourceDescriptor,SourceTiming)`; the producer accepts
+only its current proposal and thereafter stamps immutable blocks with that supplied
+context. Until acknowledged, descriptor is absent and poll returns Pending (or a newer
+proposal/failure), never an old or producer-invented identity. Stale acknowledgement is
+rejected. No other consumer allocates identities. Normal polling/checkpoint work is
+bounded by50ms.
 The shared Windows API
 binding is target-Windows `windows =0.62.2`; capture and CAT share this dependency.
 macOS/Linux adapter implementations retain these contracts but are separate releases.

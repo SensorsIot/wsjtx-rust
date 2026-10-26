@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 437c8edbf5bdbc6bfec10a423f1d8eb5d958af6767067e281e1e502fae1b5881
+// Canonical offline decode contract SHA256: 6c8825acaa693e54405684652e84a717729deae702ef77824e8cda0479c8e0c6
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
