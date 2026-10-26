@@ -1,5 +1,6 @@
 use super::likelihood::{self, LikelihoodContext};
 use super::search::CpuBudget;
+use super::sequence::PairBank;
 use super::{Channel, ChannelWord, DecodeError, Mode};
 use rustfft::num_complex::Complex64;
 use std::f64::consts::PI;
@@ -9,6 +10,7 @@ pub(super) struct Observation {
 }
 pub(super) struct Demodulator {
     mode: Mode,
+    paired: Option<PairBank>,
     rectangle: Vec<Vec<Complex64>>,
     local: Vec<Vec<Complex64>>,
     neighbors: Vec<Vec<Vec<Complex64>>>,
@@ -70,6 +72,7 @@ impl Demodulator {
         }
         Self {
             mode,
+            paired: (mode == Mode::Ft4).then(PairBank::new),
             rectangle,
             local,
             neighbors,
@@ -139,6 +142,20 @@ impl Demodulator {
         let data = mode.data_symbols();
         let mut llr = [0.; 174];
         for iteration in 0..3 {
+            if iteration == 2
+                && context.peer.is_none()
+                && let Some(paired) = &self.paired
+            {
+                let llr = paired
+                    .observe(
+                        &samples[start..start + n * symbols],
+                        frequency,
+                        context.variance,
+                        budget,
+                    )
+                    .await?;
+                return Ok(Observation { llr, word: None });
+            }
             let old = tones.clone();
             for (i, &s) in data.iter().enumerate() {
                 budget.checkpoint().await?;
@@ -186,23 +203,7 @@ impl Demodulator {
                 } else {
                     scores = banks[0];
                 }
-                for bit in 0..width {
-                    let mut zero = [0.; 4];
-                    let mut one = [0.; 4];
-                    let (mut z, mut o) = (0, 0);
-                    for (value, &tone) in gray.iter().enumerate() {
-                        if (value >> (width - bit - 1)) & 1 == 0 {
-                            zero[z] = scores[tone];
-                            z += 1;
-                        } else {
-                            one[o] = scores[tone];
-                            o += 1;
-                        }
-                    }
-                    llr[i * width + bit] = (likelihood::logsum(&zero[..z])
-                        - likelihood::logsum(&one[..o]))
-                    .clamp(-12., 12.) as f32;
-                }
+                tone_llrs(mode, &scores[..q], &mut llr[i * width..(i + 1) * width]);
             }
             if iteration < 2 {
                 budget.checkpoint().await?;
@@ -261,22 +262,29 @@ fn dot(x: &[Complex64], template: &[Complex64]) -> Complex64 {
         .fold(Complex64::new(0., 0.), |sum, (&a, &b)| sum + a * b)
 }
 fn pulse_phases(mode: Mode) -> Vec<Vec<f64>> {
-    let n = mode.symbol_frames();
-    let bt = mode.gaussian_bt();
-    let k = PI * (2. / 2f64.ln()).sqrt();
     (-2isize..=2)
-        .map(|lag| {
-            let mut phase = 0.;
-            (0..n)
-                .map(|s| {
-                    let t = (s as f64 + 0.5 - (lag as f64 + 0.5) * n as f64) / n as f64;
-                    let pulse = (super::waveform::erf(k * bt * (t + 0.5))
-                        - super::waveform::erf(k * bt * (t - 0.5)))
-                        / 2.;
-                    phase += 2. * PI * pulse / n as f64;
-                    phase
-                })
-                .collect()
-        })
+        .map(|lag| super::waveform::pulse_phase(mode, lag, mode.symbol_frames()))
         .collect()
+}
+/// Physical-tone log scores use the same Gray map in every observation kernel.
+pub(super) fn tone_llrs(mode: Mode, scores: &[f64], output: &mut [f32]) {
+    let width = mode.bits_per_symbol();
+    debug_assert_eq!(scores.len(), mode.tone_count());
+    debug_assert_eq!(output.len(), width);
+    for (bit, llr) in output.iter_mut().enumerate() {
+        let mut zero = [0.; 4];
+        let mut one = [0.; 4];
+        let (mut z, mut o) = (0, 0);
+        for (value, &tone) in mode.gray_map().iter().enumerate() {
+            if (value >> (width - bit - 1)) & 1 == 0 {
+                zero[z] = scores[tone];
+                z += 1;
+            } else {
+                one[o] = scores[tone];
+                o += 1;
+            }
+        }
+        *llr = (likelihood::logsum(&zero[..z]) - likelihood::logsum(&one[..o])).clamp(-12., 12.)
+            as f32;
+    }
 }

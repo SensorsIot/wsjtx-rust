@@ -6,6 +6,7 @@ mod fit;
 mod likelihood;
 mod payload;
 mod search;
+mod sequence;
 mod synchronization;
 mod waveform;
 pub use channel::{Channel, ChannelWord};

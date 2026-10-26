@@ -16,6 +16,22 @@ pub(super) fn erf(x: f64) -> f64 {
     }
     x.signum() * (2. * a / PI.sqrt() * (-a * a).exp() * s).min(1.)
 }
+fn gaussian_pulse(mode: Mode, t: f64) -> f64 {
+    let k = PI * (2. / 2f64.ln()).sqrt() * mode.gaussian_bt();
+    (erf(k * (t + 0.5)) - erf(k * (t - 0.5))) / 2.
+}
+/// Relative unit-tone phase accumulated from the observation's first sample.
+pub(super) fn pulse_phase(mode: Mode, lag: isize, frames: usize) -> Vec<f64> {
+    let n = mode.symbol_frames();
+    let mut phase = 0.;
+    (0..frames)
+        .map(|s| {
+            let t = (s as f64 + 0.5 - (lag as f64 + 0.5) * n as f64) / n as f64;
+            phase += 2. * PI * gaussian_pulse(mode, t) / n as f64;
+            phase
+        })
+        .collect()
+}
 /// Gaussian-smoothed continuous-phase unit quadratures, including pulse and amplitude ramps.
 /// The origin is the start of the first symbol; phase advances before the first sample.
 pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32; 2]>> {
@@ -28,12 +44,10 @@ pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32;
     }
     let n = mode.symbol_frames();
     let len = n * tones.len();
-    let bt = mode.gaussian_bt();
-    let k = PI * (2. / 2f64.ln()).sqrt();
     let pulse = (0..4 * n)
         .map(|j| {
             let t = (j as f64 + 0.5 - 2. * n as f64) / n as f64;
-            mode.spacing() * (erf(k * bt * (t + 0.5)) - erf(k * bt * (t - 0.5))) / 2.
+            mode.spacing() * gaussian_pulse(mode, t)
         })
         .collect::<Vec<_>>();
     let mut frequency_offset = vec![0.; len];
