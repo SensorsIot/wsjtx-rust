@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 4aaf46378538f96c72b4233014e0f1982e3ec0569f31db8b3db7591170783ee2
+// Canonical recorded receive contract SHA256: 5690c51187b004eb1a8fd0992832788202a6317c3394a895caa30732bb8e1bf9
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
