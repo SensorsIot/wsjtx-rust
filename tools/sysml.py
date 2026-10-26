@@ -36,7 +36,7 @@ def library_digest(directory: Path) -> str:
     return fingerprint.hexdigest()
 
 
-def catalog(text: str) -> dict[str, dict]:
+def legacy_catalog(text: str) -> dict[str, dict]:
     """Read only defined table rows/headings, never incidental ID mentions."""
     entries: dict[str, dict] = {}
     lines = text.splitlines()
@@ -84,6 +84,165 @@ def catalog(text: str) -> dict[str, dict]:
     return entries
 
 
+PROJECTION_V2 = "<!-- sysml-projection: 2 -->"
+
+
+def projection_v2(text: str) -> bool:
+    markers = re.findall(r"<!--\s*sysml-projection:[^>]*-->", text)
+    if markers and markers != [PROJECTION_V2]:
+        raise ValueError("Expected one exact sysml-projection: 2 marker")
+    return bool(markers)
+
+
+def references(text: str) -> list[str]:
+    """Expand complete identities and same-prefix numeric suffix shorthand."""
+    for candidate in re.findall(r"\b(?:FR|CL|TC)-[A-Za-z0-9-]+", text):
+        if not ID.fullmatch(candidate):
+            raise ValueError("Malformed reference identity: " + candidate)
+    found = []
+    pattern = re.compile(ID.pattern + r"(?P<tail>(?:(?:/|,\s*|\.\.|[\u2013])\d+(?![\w-]))*)")
+    for match in pattern.finditer(text):
+        remainder = text[match.end():]
+        if re.match(r"/(?!" + ID.pattern + r")|\.\.|,\s*\d|\u2013\d", remainder):
+            raise ValueError("Ambiguous reference shorthand after: " + match[0])
+        first = ID.match(match[0])[0]
+        found.append(first)
+        prefix, number = first.rsplit("-", 1)
+        previous = int(number)
+        for separator, suffix in re.findall(r"(/|,\s*|\.\.|[\u2013])(\d+)", match["tail"]):
+            if len(suffix) != len(number):
+                raise ValueError("Ambiguous reference shorthand: " + match[0])
+            value = int(suffix)
+            if separator in ("..", "\u2013"):
+                if value <= previous or value - previous > 100:
+                    raise ValueError("Invalid reference range: " + match[0])
+                found.extend(f"{prefix}-{item:0{len(number)}d}" for item in range(previous + 1, value + 1))
+            else:
+                found.append(prefix + "-" + suffix)
+            previous = value
+    return sorted(set(found))
+
+
+def declared_metadata(text: str, entries: dict[str, dict]) -> tuple[dict[str, str], dict[str, list[str]]]:
+    states, companions = {}, {}
+    table = None
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            table = None
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells == ["Model identity", "Declared state"]:
+            table = "states"
+            continue
+        if cells == ["Manual companion", "FSD sections"]:
+            table = "companions"
+            continue
+        if not table or all(re.fullmatch(r"[-:]+", cell) for cell in cells):
+            continue
+        if not re.fullmatch(r"`[^`]+`", cells[0]):
+            raise ValueError("Expected backticked metadata identity: " + cells[0])
+        key = cells[0][1:-1]
+        if table == "states":
+            if len(cells) != 2 or key not in entries or key in states:
+                raise ValueError("Invalid/duplicate/undefined declared metadata: " + key)
+            allowed = {"planned", "partial", "implemented"} if entries[key]["kind"] == "verification" else {"target", "partial", "implemented"}
+            if cells[1] not in allowed:
+                raise ValueError("Invalid declared state: " + key)
+            states[key] = cells[1]
+        elif table == "companions":
+            if len(cells) != 2 or not key.endswith(".sysml") or Path(key).name != key or "/" in key or "\\" in key or key == "Requirements.sysml" or key in companions:
+                raise ValueError("Invalid/duplicate manual companion: " + key)
+            sections = [section.strip() for section in cells[1].split(",")]
+            if any(not re.fullmatch(r"\d+(?:\.\d+)*", section) for section in sections):
+                raise ValueError("Invalid FSD section selection: " + key)
+            companions[key] = sections
+    if set(states) != set(entries):
+        raise ValueError("Missing declared metadata: " + ", ".join(sorted(set(entries) - set(states))))
+    return states, companions
+
+
+def section_digest(text: str, sections: list[str]) -> str:
+    """Hash selected numbered heading subtrees, once, with exact UTF-8 text."""
+    lines = text.splitlines(keepends=True)
+    headings = {}
+    for index, line in enumerate(lines):
+        match = re.match(r"(#{1,6}) (\d+(?:\.\d+)*)\.?\s+", line)
+        if match:
+            key = match[2]
+            if key in headings:
+                raise ValueError("Duplicate numbered FSD heading: " + key)
+            headings[key] = (index, len(match[1]))
+    ranges = []
+    for section in sections:
+        if section not in headings:
+            raise ValueError("Missing FSD section: " + section)
+        start, depth = headings[section]
+        end = next((i for i in range(start + 1, len(lines)) if re.match(r"#{1," + str(depth) + r"} ", lines[i])), len(lines))
+        ranges.append((start, end, section))
+    ranges.sort()
+    if any(left[1] > right[0] for left, right in zip(ranges, ranges[1:])):
+        raise ValueError("Overlapping or repeated FSD sections")
+    payload = "".join(section + "\0" + "".join(lines[start:end]) + "\0" for start, end, section in ranges)
+    return digest(payload)
+
+
+def catalog(text: str) -> dict[str, dict]:
+    entries = legacy_catalog(text)
+    if not projection_v2(text):
+        return entries
+    clause_tests = {}
+    for line in text.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if line.startswith("|") and re.fullmatch(r"CL-\d{3}-\d{2}", cells[0]) and cells[0] in entries:
+            entries[cells[0]]["refs"] = references(cells[1])
+            if any(not ref.startswith("FR-") for ref in entries[cells[0]]["refs"]):
+                raise ValueError("Clause requirement reference must name FR: " + cells[0])
+            clause_tests[cells[0]] = references(cells[3])
+    for identifier, entry in entries.items():
+        if entry["kind"] == "verification":
+            entry["refs"] = [ref for ref in references(entry["text"]) if ref != identifier and not ref.startswith("TC-")]
+        for ref in entry["refs"]:
+            if ref not in entries:
+                raise ValueError(f"{identifier} refers to undefined {ref}")
+    for clause, tests in clause_tests.items():
+        if not tests:
+            raise ValueError("Missing linked verification: " + clause)
+        for test in tests:
+            if test not in entries or entries[test]["kind"] != "verification":
+                raise ValueError(f"{clause} refers to undefined verification {test}")
+            if clause not in entries[test]["refs"]:
+                raise ValueError(f"Verification mismatch: {clause} lists {test}, which does not verify it")
+    for test, entry in entries.items():
+        if entry["kind"] == "verification":
+            if not entry["refs"]:
+                raise ValueError("Missing verification objective: " + test)
+            for clause in (ref for ref in entry["refs"] if ref.startswith("CL-")):
+                if test not in clause_tests.get(clause, []):
+                    raise ValueError(f"Verification mismatch: {test} verifies {clause}, whose table omits it")
+    states, _ = declared_metadata(text, entries)
+    for identifier, state in states.items():
+        entries[identifier]["state"] = state
+    return entries
+
+
+def companion_fingerprints(text: str) -> dict[str, str]:
+    _, companions = declared_metadata(text, catalog(text))
+    if not companions:
+        raise ValueError("Missing manual companion declarations")
+    return {name: section_digest(text, sections) for name, sections in companions.items()}
+
+
+def check_companions(text: str, directory: Path):
+    expected = companion_fingerprints(text)
+    actual = {path.name for path in directory.glob("*.sysml") if path.name != "Requirements.sysml"}
+    if actual != set(expected):
+        raise ValueError("Manual companion declaration/file mismatch: " + ", ".join(sorted(actual ^ set(expected))))
+    for name, fingerprint in expected.items():
+        model = (directory / name).read_text(encoding="utf-8")
+        markers = re.findall(r"^// Canonical FSD slices SHA256: ([a-f0-9]{64})$", model, re.MULTILINE)
+        if markers != [fingerprint]:
+            raise ValueError("Manual companion source slices changed: " + name + "; reconcile meaning before renewing its marker")
+
 def render(text: str) -> str:
     entries = catalog(text)
     result = [
@@ -94,7 +253,7 @@ def render(text: str) -> str:
         "         definitions are projected here; validation does not execute tests.",
         "         Coverage flags describe implemented source slices, not acceptance or whole-project parity. */",
         "    enum def ImplementationState { enum target; enum partial; enum implemented; }",
-        "    enum def AutomationState { enum planned; enum implemented; }",
+        ("    enum def AutomationState { enum planned; enum partial; enum implemented; }" if projection_v2(text) else "    enum def AutomationState { enum planned; enum implemented; }"),
     ]
     for identifier, entry in entries.items():
         kind = "verification" if entry["kind"] == "verification" else "requirement"
@@ -102,10 +261,12 @@ def render(text: str) -> str:
         result.append("        doc /* " + entry["text"].replace("\n", "\n             ") + " */")
         if kind == "requirement":
             state = "implemented" if entry["kind"] == "clause" and identifier.startswith(("CL-003-", "CL-005-", "CL-006-")) else "implemented" if identifier in ("FR-018", "FR-022") else "partial" if identifier in ("FR-001", "FR-010", "FR-016", "FR-019", "FR-021") else "target"
+            state = entry.get("state", state)
             result.append(f"        attribute coverage : ImplementationState = ImplementationState::{state};")
         else:
             automated = {f"TC-021-{i:03}" for i in range(5, 10)} | {f"TC-022-{i:03}" for i in range(1, 6)} | {f"TC-018-{i:03}" for i in range(1, 4)} | {f"TC-010-{i:03}" for i in range(1, 8)}
             state = "implemented" if identifier in automated else "planned"
+            state = entry.get("state", state)
             result.append(f"        attribute automation : AutomationState = AutomationState::{state};")
             result.append("        objective {")
             result.extend(f"            verify '{ref}';" for ref in entry["refs"])
@@ -370,6 +531,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Download and verify pinned portable tools; no global installation")
     commands.add_parser("sync", help="Regenerate the FSD projection only; not semantic validation")
+    commands.add_parser("fingerprints", help="Print declared v2 companion slice digests; never updates models")
     commands.add_parser("check", help="Check Markdown synchronization and run real semantic validation")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
@@ -377,6 +539,9 @@ def main(argv=None):
     try:
         if args.command == "setup":
             setup(args.cache_dir)
+            return 0
+        if args.command == "fingerprints":
+            print(json.dumps(companion_fingerprints(FSD.read_text(encoding="utf-8")), indent=2))
             return 0
         if args.command in ("sync", "check"):
             expected = render(FSD.read_text(encoding="utf-8"))
@@ -387,10 +552,15 @@ def main(argv=None):
                 return 0
             if not generated.exists() or generated.read_text(encoding="utf-8") != expected:
                 raise ValueError("FSD projection is stale; run python tools/sysml.py sync")
-            architecture = MODELS / "Architecture.sysml"
-            check_architecture(architecture.read_text(encoding="utf-8"), FSD.read_text(encoding="utf-8"))
-            profiles = MODELS / "Profiles.sysml"
-            check_profiles_contract(profiles.read_text(encoding="utf-8"), FSD.read_text(encoding="utf-8"))
+            source = FSD.read_text(encoding="utf-8")
+            if projection_v2(source):
+                check_companions(source, MODELS)
+            else:
+                print("WARNING: legacy projection uses fixed status lists and whole-source markers; v2 fidelity is NOT active.", file=sys.stderr)
+                architecture = MODELS / "Architecture.sysml"
+                check_architecture(architecture.read_text(encoding="utf-8"), source)
+                profiles = MODELS / "Profiles.sysml"
+                check_profiles_contract(profiles.read_text(encoding="utf-8"), source)
             paths = [generated, *sorted(path for path in MODELS.glob("*.sysml") if path != generated)]
             print("Markdown synchronization passed; this alone is not semantic validation.")
         else:

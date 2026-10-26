@@ -65,6 +65,7 @@ The paths a harness change may touch; everything else is product:
 - `docs/harness/`, `AGENTS.md`, `CLAUDE.md`
 - `.github/ISSUE_TEMPLATE/`
 - `.github/workflows/` (the CI build)
+- `tools/sysml.py`, `tools/sysml/` (project-specific model projection, semantic validation and their tests)
 
 ## Documentation is current-state
 
