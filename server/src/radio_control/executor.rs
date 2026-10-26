@@ -14,6 +14,9 @@ use std::{
 
 /// Transport calls must finish at the absolute deadline and check cancellation at <=50 ms intervals.
 pub trait Transport {
+    fn physical_identity(&self) -> Option<&str> {
+        None
+    }
     fn configure(&mut self, baud: u32) -> Result<()>;
     fn write(&mut self, bytes: &[u8], deadline: Instant, cancel: &AtomicBool) -> Result<usize>;
     fn read(&mut self, bytes: &mut [u8], deadline: Instant, cancel: &AtomicBool) -> Result<usize>;
@@ -33,11 +36,28 @@ pub struct Executor<T: Transport> {
 }
 impl<T: Transport> Executor<T> {
     pub fn connect(
+        transport: T,
+        configuration: Configuration,
+        authority: Authority,
+        catalogue: Catalogue,
+        cancel: &AtomicBool,
+    ) -> Result<Self> {
+        Self::connect_until(
+            transport,
+            configuration,
+            authority,
+            catalogue,
+            cancel,
+            Instant::now() + Duration::from_secs(5),
+        )
+    }
+    pub fn connect_until(
         mut transport: T,
         configuration: Configuration,
         authority: Authority,
         catalogue: Catalogue,
         cancel: &AtomicBool,
+        overall: Instant,
     ) -> Result<Self> {
         if let Err(error) = configuration.validate() {
             let _ = transport.close();
@@ -57,7 +77,6 @@ impl<T: Transport> Executor<T> {
             let _ = transport.close();
             return Err(Error::InvalidRequest);
         }
-        let overall = Instant::now() + Duration::from_secs(5);
         let automatic = configuration.baud == Baud::Auto;
         let rates = match configuration.baud {
             Baud::Auto => vec![9600, 19200, 4800, 115200, 57600, 38400],
@@ -152,6 +171,11 @@ impl<T: Transport> Executor<T> {
             .map(|s| s.clone())
             .map_err(|_| Error::Unavailable)
     }
+    pub(super) fn attach_snapshot(&mut self, shared: Arc<Mutex<Snapshot>>) -> Result<()> {
+        *shared.lock().map_err(|_| Error::Unavailable)? = self.snapshot()?;
+        self.snapshot = shared;
+        Ok(())
+    }
     pub fn execute(&self, request: Request) -> Result<Observation> {
         request.operation.validate()?;
         if request.authority != self.authority {
@@ -226,16 +250,20 @@ impl<T: Transport> Executor<T> {
         }
         inner.last_poll = Some(now);
         let overall = std::cmp::min(deadline, now + Duration::from_secs(5));
-        for operation in [
+        let operations = [
             Operation::ReadFrequency,
             Operation::ReadMode,
             Operation::ReadData,
             Operation::ReadRxTx,
             Operation::ReadSplit,
-        ] {
-            if !self.catalogue.supports(&operation) {
-                return Err(Error::Unsupported);
-            }
+        ];
+        if !operations
+            .iter()
+            .all(|operation| self.catalogue.supports(operation))
+        {
+            return Err(Error::Unsupported);
+        }
+        for operation in operations {
             if let Err(error) = self.run(&mut inner, &operation, overall, &cancel) {
                 self.set_state(State::Closing, Some(error))?;
                 if inner.transport.close().is_err() {
@@ -366,6 +394,9 @@ impl<T: Transport> Executor<T> {
                 }
             })?;
             self.update(&read)?;
+            if read == Reply::Rejected {
+                return Err(Error::Indeterminate);
+            }
             let matched = match (operation, read) {
                 (Operation::SetFrequency { frequency_hz }, Reply::Frequency(actual)) => {
                     *frequency_hz == actual

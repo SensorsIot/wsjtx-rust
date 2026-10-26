@@ -1,4 +1,5 @@
 //! Typed receive-only radio control. Catalogue facts never grant raw-byte execution.
+pub mod actor;
 pub mod catalogue;
 pub mod codec;
 pub mod executor;

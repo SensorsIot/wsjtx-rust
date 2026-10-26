@@ -24,6 +24,7 @@ enum Action {
     Timeout,
     Partial,
     Cancel(Vec<u8>),
+    Block(Vec<u8>, Arc<AtomicBool>, Arc<AtomicBool>),
 }
 #[derive(Default)]
 struct Script {
@@ -37,6 +38,7 @@ struct Script {
     cancel_read: bool,
     fragment: usize,
     close_error: bool,
+    block: Option<(Arc<AtomicBool>, Arc<AtomicBool>)>,
 }
 struct Fake(Arc<Mutex<Script>>);
 impl Transport for Fake {
@@ -56,10 +58,27 @@ impl Transport for Fake {
             }
             Action::Timeout => return Err(Error::Timeout),
             Action::Partial => return Ok(1),
+            Action::Block(bytes, entered, release) => {
+                s.pending.extend(bytes);
+                s.block = Some((entered, release));
+            }
         }
         Ok(bytes.len())
     }
     fn read(&mut self, bytes: &mut [u8], deadline: Instant, cancel: &AtomicBool) -> Result<usize> {
+        let block = self.0.lock().unwrap().block.take();
+        if let Some((entered, release)) = block {
+            entered.store(true, Ordering::Release);
+            while !release.load(Ordering::Acquire) {
+                if cancel.load(Ordering::Acquire) {
+                    return Err(Error::Cancelled);
+                }
+                if Instant::now() >= deadline {
+                    return Err(Error::Timeout);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
         let mut s = self.0.lock().unwrap();
         s.deadlines.push(deadline);
         if s.cancel_read {
@@ -95,6 +114,95 @@ impl Transport for Fake {
             Ok(())
         }
     }
+}
+
+// Proves: CL-008-03, CL-008-05; TC-009-001, TC-009-003, TC-009-004.
+#[test]
+fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
+    use radio_control::actor::Actor;
+    let entered = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let state = Arc::new(Mutex::new(Script {
+        actions: VecDeque::from([
+            Action::Bytes(FREQUENCY.to_vec()),
+            Action::Block(MODE.to_vec(), entered.clone(), release),
+        ]),
+        ..Script::default()
+    }));
+    let owned = state.clone();
+    let actor = Arc::new(
+        Actor::begin(
+            Configuration::parse("COM3").unwrap(),
+            authority(),
+            Catalogue::builtin().unwrap(),
+            move |_, _| Ok(Fake(owned)),
+        )
+        .unwrap(),
+    );
+    let limit = Instant::now() + Duration::from_secs(2);
+    while actor.snapshot().unwrap().state == State::Connecting && Instant::now() < limit {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(actor.snapshot().unwrap().state, State::Ready);
+    let operation = actor.clone();
+    let worker = std::thread::spawn(move || operation.execute(req(Operation::ReadMode)));
+    while !entered.load(Ordering::Acquire) && Instant::now() < limit {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(entered.load(Ordering::Acquire));
+    assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
+    assert_eq!(state.lock().unwrap().writes.len(), 2);
+    let before = Instant::now();
+    actor.request_close();
+    assert_eq!(worker.join().unwrap(), Err(Error::Cancelled));
+    while !actor.close_complete() && before.elapsed() < Duration::from_millis(250) {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(actor.close_complete());
+    assert!(before.elapsed() < Duration::from_millis(250));
+    assert!(state.lock().unwrap().closed >= 1);
+}
+
+// Proves: CL-008-03, CL-008-05; TC-009-001, TC-009-003.
+#[test]
+fn actor_constructs_non_send_native_values_inside_its_io_thread() {
+    use radio_control::actor::Actor;
+    struct ThreadOnly(Fake, std::rc::Rc<()>);
+    impl Transport for ThreadOnly {
+        fn configure(&mut self, baud: u32) -> Result<()> {
+            assert_eq!(std::rc::Rc::strong_count(&self.1), 1);
+            self.0.configure(baud)
+        }
+        fn write(&mut self, b: &[u8], d: Instant, c: &AtomicBool) -> Result<usize> {
+            self.0.write(b, d, c)
+        }
+        fn read(&mut self, b: &mut [u8], d: Instant, c: &AtomicBool) -> Result<usize> {
+            self.0.read(b, d, c)
+        }
+        fn quiet(&mut self, d: Instant, c: &AtomicBool) -> Result<()> {
+            self.0.quiet(d, c)
+        }
+        fn close(&mut self) -> Result<()> {
+            self.0.close()
+        }
+    }
+    let state = Arc::new(Mutex::new(Script {
+        actions: VecDeque::from([Action::Bytes(FREQUENCY.to_vec())]),
+        ..Script::default()
+    }));
+    let actor = Actor::begin(
+        Configuration::parse("COM3").unwrap(),
+        authority(),
+        Catalogue::builtin().unwrap(),
+        move |_, _| Ok(ThreadOnly(Fake(state), std::rc::Rc::new(()))),
+    )
+    .unwrap();
+    let limit = Instant::now() + Duration::from_secs(2);
+    while actor.snapshot().unwrap().state == State::Connecting && Instant::now() < limit {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(actor.snapshot().unwrap().state, State::Ready);
+    actor.request_close();
 }
 fn authority() -> Authority {
     Authority {
@@ -181,6 +289,62 @@ fn configuration_and_catalogue_cannot_admit_raw_or_transmit_operations() {
 #[test]
 fn civ_frames_match_independently_recorded_icom_bytes() {
     let cfg = Configuration::parse("COM3").unwrap();
+    for (operation, body) in [
+        (Operation::ReadFrequency, vec![3]),
+        (Operation::ReadMode, vec![4]),
+        (Operation::ReadData, vec![0x1a, 6]),
+        (Operation::ReadRxTx, vec![0x1c, 0]),
+        (Operation::ReadSplit, vec![0x0f]),
+        (
+            Operation::SetMode {
+                mode: Sideband::Usb,
+                filter: 3,
+            },
+            vec![6, 1, 3],
+        ),
+        (
+            Operation::SetData {
+                data: true,
+                filter: 1,
+            },
+            vec![0x1a, 6, 1, 1],
+        ),
+    ] {
+        let mut expected = vec![0xfe, 0xfe, 0x94, 0xe0];
+        expected.extend(body);
+        expected.push(0xfd);
+        assert_eq!(codec::request(&cfg, &operation).unwrap(), expected);
+    }
+    for operation in [
+        Operation::SetFrequency {
+            frequency_hz: 29999,
+        },
+        Operation::SetFrequency {
+            frequency_hz: 74800001,
+        },
+        Operation::SetMode {
+            mode: Sideband::Usb,
+            filter: 0,
+        },
+        Operation::SetMode {
+            mode: Sideband::Lsb,
+            filter: 4,
+        },
+        Operation::SetData {
+            data: false,
+            filter: 1,
+        },
+        Operation::SetData {
+            data: true,
+            filter: 0,
+        },
+        Operation::SetData {
+            data: true,
+            filter: 4,
+        },
+    ] {
+        assert_eq!(codec::request(&cfg, &operation), Err(Error::InvalidRequest));
+    }
     assert_eq!(
         codec::encode_frequency(14_074_000).unwrap(),
         [0, 0x40, 7, 0x14, 0]
