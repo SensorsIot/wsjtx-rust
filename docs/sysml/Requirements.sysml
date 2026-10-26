@@ -650,7 +650,7 @@ package WstxRequirements {
              initial/background GET separately: visible failure/stale, no false configuration success.
              Oracles are these Markdown timing/identity rules, real WS traffic and independently
              prepared profile revisions; barrier release happens only after the status assertion. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-005-02';
             verify 'CL-006-04';
