@@ -163,8 +163,8 @@ impl CaptureHandle {
         let thread = thread::Builder::new()
             .name("radio-capture".into())
             .spawn(move || {
-                let result = capture(&id, started_tx, thread_cancel, thread_wake);
-                let _ = done_tx.send(result);
+                let result = capture(&id, started_tx, thread_cancel, thread_wake, &done_tx);
+                let _ = done_tx.try_send(result);
             })
             .map_err(|_| SourceError::Unavailable)?;
         Ok(Self {
@@ -216,7 +216,9 @@ impl CaptureHandle {
         {
             self.finished = Some(Err(SourceError::FailedClose));
         }
-        if self.thread.is_some() {
+        if self.finished == Some(Err(SourceError::FailedClose)) {
+            self.finished
+        } else if self.thread.is_some() {
             None
         } else {
             self.finished
@@ -401,11 +403,21 @@ impl SampleSource for AudioController {
             .acknowledge_epoch(counter, descriptor, timing)
     }
 }
+// Field drop order releases interfaces and event before the owning COM apartment.
+struct NativeCaptureOwner {
+    reader: IAudioCaptureClient,
+    client: IAudioClient,
+    event: Event,
+    _device: IMMDevice,
+    _enumerator: IMMDeviceEnumerator,
+    _apartment: Apartment,
+}
 fn capture(
     id: &str,
     started: mpsc::SyncSender<Result<(Arc<PacketQueue>, NativeFormat), SourceError>>,
     cancel: Arc<AtomicBool>,
     wake: Arc<Mutex<Option<usize>>>,
+    closed: &mpsc::SyncSender<Result<(), SourceError>>,
 ) -> Result<(), SourceError> {
     let mut published = None;
     let result = (|| {
@@ -457,21 +469,32 @@ fn capture(
                 .map_err(|_| SourceError::Unavailable)?;
             let reader: IAudioCaptureClient =
                 client.GetService().map_err(|_| SourceError::Unavailable)?;
+            drop(mix);
             let queue = PacketQueue::new(format)?;
             published = Some(queue.clone());
             if cancel.load(Ordering::Acquire) {
                 return Err(SourceError::Cancelled);
             }
             client.Start().map_err(|_| SourceError::Unavailable)?;
-            if started.send(Ok((queue.clone(), format))).is_err() {
-                let _ = client.Stop();
-                return Err(SourceError::Cancelled);
-            }
+            let owner = NativeCaptureOwner {
+                reader,
+                client,
+                event,
+                _device: device,
+                _enumerator: enumerator,
+                _apartment,
+            };
+            let mut failure = started
+                .send(Ok((queue.clone(), format)))
+                .err()
+                .map(|_| SourceError::Cancelled);
             let mut last_clock = system_clock();
             let mut checked = Instant::now();
-            let mut failure = None;
-            while !cancel.load(Ordering::Acquire) && !queue.cancelled.load(Ordering::Acquire) {
-                if WaitForSingleObject(event.handle, 20) == WAIT_FAILED {
+            while failure.is_none()
+                && !cancel.load(Ordering::Acquire)
+                && !queue.cancelled.load(Ordering::Acquire)
+            {
+                if WaitForSingleObject(owner.event.handle, 20) == WAIT_FAILED {
                     failure = Some(SourceError::Unavailable);
                     break;
                 }
@@ -486,7 +509,7 @@ fn capture(
                     if cancel.load(Ordering::Acquire) || queue.cancelled.load(Ordering::Acquire) {
                         break;
                     }
-                    let size = match reader.GetNextPacketSize() {
+                    let size = match owner.reader.GetNextPacketSize() {
                         Ok(n) => n,
                         Err(_) => {
                             failure = Some(SourceError::Unavailable);
@@ -498,7 +521,8 @@ fn capture(
                     }
                     let (mut ptr, mut frames, mut flags, mut frame, mut qpc) =
                         (std::ptr::null_mut(), 0, 0, 0, 0);
-                    if reader
+                    if owner
+                        .reader
                         .GetBuffer(
                             &mut ptr,
                             &mut frames,
@@ -523,7 +547,7 @@ fn capture(
                         };
                         queue.push(bytes, frames as usize, frame, qpc, flags);
                     }
-                    if reader.ReleaseBuffer(frames).is_err() {
+                    if owner.reader.ReleaseBuffer(frames).is_err() {
                         failure = Some(SourceError::Unavailable);
                         break;
                     }
@@ -532,11 +556,16 @@ fn capture(
                     break;
                 }
             }
-            let stopped = client.Stop().map_err(|_| SourceError::FailedClose);
-            if let Some(error) = failure {
-                return Err(error);
-            }
-            stopped
+            finish_capture_owner(
+                owner,
+                failure.map_or(Ok(()), Err),
+                |owner| owner.client.Stop().map_err(|_| SourceError::FailedClose),
+                || {
+                    queue.fail(SourceError::FailedClose);
+                    let _ = closed.try_send(Err(SourceError::FailedClose));
+                },
+                || thread::sleep(Duration::from_millis(250)),
+            )
         }
     })();
     if let Err(error) = result {
@@ -551,10 +580,15 @@ fn capture(
 
 #[cfg(test)]
 impl AudioController {
-    /// Software-only driver boundary: no Windows endpoint is opened.
-    pub fn packet_fixture(
+    fn worker_fixture(
         endpoint_id: String,
         format: NativeFormat,
+        worker: impl FnOnce(
+            Arc<PacketQueue>,
+            Arc<AtomicBool>,
+            mpsc::SyncSender<Result<(), SourceError>>,
+        ) + Send
+        + 'static,
     ) -> Result<(Self, Arc<PacketQueue>), SourceError> {
         let queue = PacketQueue::new(format)?;
         let (opened_tx, opened) = mpsc::sync_channel(1);
@@ -563,24 +597,59 @@ impl AudioController {
         let worker_cancel = cancel.clone();
         let worker_queue = queue.clone();
         let thread = thread::spawn(move || {
-            let _ = opened_tx.send(Ok((worker_queue, format)));
-            while !worker_cancel.load(Ordering::Acquire) {
-                thread::sleep(Duration::from_millis(1));
-            }
-            let _ = done_tx.send(Ok(()));
+            let _ = opened_tx.send(Ok((worker_queue.clone(), format)));
+            worker(worker_queue, worker_cancel, done_tx);
         });
         let mut controller = Self::new(endpoint_id)?;
         controller.lifecycle.request_start();
-        let wake = Arc::new(Mutex::new(None));
         controller.handle = Some(CaptureHandle {
             queue: Some(queue.clone()),
             thread: Some(thread),
             opened,
             done,
             cancel,
-            wake,
+            wake: Arc::new(Mutex::new(None)),
             finished: None,
         });
         Ok((controller, queue))
+    }
+    /// Software packet boundary; no endpoint is activated.
+    pub fn packet_fixture(
+        endpoint_id: String,
+        format: NativeFormat,
+    ) -> Result<(Self, Arc<PacketQueue>), SourceError> {
+        Self::worker_fixture(endpoint_id, format, |_, cancel, done| {
+            while !cancel.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            let _ = done.try_send(Ok(()));
+        })
+    }
+    /// Injects Stop and native-owner lifetime into the same finalizer used by WASAPI.
+    pub fn capture_close_fixture<O: Send + 'static>(
+        format: NativeFormat,
+        owner: O,
+        prior: Result<(), SourceError>,
+        stop: impl FnMut(&mut O) -> Result<(), SourceError> + Send + 'static,
+        wait: impl FnMut() + Send + 'static,
+    ) -> Result<Self, SourceError> {
+        let (controller, _) = Self::worker_fixture(
+            "close-boundary-fixture".into(),
+            format,
+            move |queue, _, done| {
+                let result = finish_capture_owner(
+                    owner,
+                    prior,
+                    stop,
+                    || {
+                        queue.fail(SourceError::FailedClose);
+                        let _ = done.try_send(Err(SourceError::FailedClose));
+                    },
+                    wait,
+                );
+                let _ = done.try_send(result);
+            },
+        )?;
+        Ok(controller)
     }
 }

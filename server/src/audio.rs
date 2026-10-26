@@ -16,6 +16,28 @@ pub use windows::{AudioController, CaptureHandle, InputDevice, enumerate_inputs,
 pub const MAX_NATIVE_PACKET: usize = 8192;
 pub const FILTER_TAPS: usize = 257;
 pub const FILTER_DELAY: usize = (FILTER_TAPS - 1) / 2;
+
+/// Retain the complete native owner until Stop acknowledges release. A failure is terminal
+/// for this accepted capture even if a later close retry succeeds.
+#[cfg(any(windows, test))]
+pub(crate) fn finish_capture_owner<O>(
+    mut owner: O,
+    prior: Result<(), SourceError>,
+    mut stop: impl FnMut(&mut O) -> Result<(), SourceError>,
+    failed_close: impl FnOnce(),
+    mut wait: impl FnMut(),
+) -> Result<(), SourceError> {
+    if stop(&mut owner).is_ok() {
+        return prior;
+    }
+    failed_close();
+    loop {
+        wait();
+        if stop(&mut owner).is_ok() {
+            return Err(SourceError::FailedClose);
+        }
+    }
+}
 pub const SILENT: u32 = 2;
 pub const DATA_DISCONTINUITY: u32 = 1;
 pub const TIMESTAMP_ERROR: u32 = 4;

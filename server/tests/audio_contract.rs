@@ -449,3 +449,120 @@ fn audio_clock_rejected_bracket_preserves_reference() {
     assert_eq!(previous, Some(b));
     assert!(!ClockCorrelation::observe(&mut previous, Some(b)));
 }
+
+// Proves: CL-008-02/04; TC-002-003. Failed Stop dominates read/cancel errors and
+// retains every native owner plus its apartment until Stop acknowledges release.
+#[cfg(windows)]
+#[test]
+fn audio_failed_stop_quarantines_owner_and_apartment_without_reopen() {
+    use std::sync::{
+        Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::time::{Duration, Instant};
+    struct Guard(&'static str, Arc<Mutex<Vec<&'static str>>>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            self.1.lock().unwrap().push(self.0);
+        }
+    }
+    struct Owner {
+        _native: Guard,
+        _apartment: Guard,
+    }
+    for prior in [
+        Err(SourceError::Unavailable),
+        Ok(()),
+        Err(SourceError::Cancelled),
+    ] {
+        let dropped = Arc::new(Mutex::new(Vec::new()));
+        let owner = Owner {
+            _native: Guard("native", dropped.clone()),
+            _apartment: Guard("apartment", dropped.clone()),
+        };
+        let released = Arc::new(AtomicBool::new(false));
+        let stop_gate = released.clone();
+        let wait = Arc::new((Mutex::new(()), Condvar::new()));
+        let wait_worker = wait.clone();
+        let mut controller = AudioController::capture_close_fixture(
+            format(48000),
+            owner,
+            prior,
+            move |_| {
+                if stop_gate.load(Ordering::Acquire) {
+                    Ok(())
+                } else {
+                    Err(SourceError::Unavailable)
+                }
+            },
+            move || {
+                let (lock, changed) = &*wait_worker;
+                drop(
+                    changed
+                        .wait_timeout(lock.lock().unwrap(), Duration::from_millis(10))
+                        .unwrap(),
+                );
+            },
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if matches!(
+                controller.poll(),
+                SourcePoll::Failed(SourceError::FailedClose)
+            ) {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(dropped.lock().unwrap().is_empty());
+        assert_eq!(controller.status().error, Some(SourceError::FailedClose));
+        assert_eq!(controller.status().retry_after_ms, None);
+        assert!(controller.descriptor().is_none());
+        assert_eq!(controller.start(), Err(SourceError::Unavailable));
+        for _ in 0..10 {
+            assert!(matches!(controller.poll(), SourcePoll::Pending));
+        }
+        assert!(dropped.lock().unwrap().is_empty());
+        released.store(true, Ordering::Release);
+        wait.1.notify_all();
+        while dropped.lock().unwrap().len() != 2 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(*dropped.lock().unwrap(), vec!["native", "apartment"]);
+        for _ in 0..10 {
+            assert!(matches!(controller.poll(), SourcePoll::Pending));
+        }
+        assert_eq!(controller.status().error, Some(SourceError::FailedClose));
+        assert_eq!(controller.status().retry_after_ms, None);
+    }
+}
+
+// Proves: CL-008-02; TC-002-003. Successful Stop releases normally and preserves the read outcome.
+#[test]
+fn audio_successful_stop_preserves_prior_outcome_without_quarantine() {
+    for prior in [
+        Ok(()),
+        Err(SourceError::Unavailable),
+        Err(SourceError::Cancelled),
+    ] {
+        let released = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        struct Owner(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for Owner {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let result = audio::finish_capture_owner(
+            Owner(released.clone()),
+            prior,
+            |_| Ok(()),
+            || panic!("successful Stop cannot report FailedClose"),
+            || panic!("successful Stop cannot enter quarantine"),
+        );
+        assert_eq!(result, prior);
+        assert!(released.load(std::sync::atomic::Ordering::Acquire));
+    }
+}
