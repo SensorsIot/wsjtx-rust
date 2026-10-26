@@ -988,7 +988,10 @@ free information bits. An earlier min-sum success may finish without recovery.
 
 **Recovered-codeword waveform verification.** Before publication or subtraction, verify
 local phase consistency of the recovered codeword at its refined time/frequency. Use
-its full unit real/sine GFSK templates u,w, including the envelope. For each symbol s,
+its full unit real/sine GFSK templates u,w, including the envelope. Observation x is
+the complete current subtraction-pass observation/residual that produced this candidate,
+evaluated at its refined support. The same x supplies both symbol and group fits;
+all79FT8/105FT4symbols, including sync and ramps, participate. For each symbol s,
 form the 2x2 Gram matrix Gs=[[u.u,u.w],[u.w,w.w]] and vector bs=[u.x,w.x] over that
 symbol. Its independently fitted explained energy is Es=bs^T*inverse(Gs)*bs. Partition
 the frame into consecutive groups of seven symbols for FT8 or four for FT4; the final

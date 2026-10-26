@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 3a42371a9b292ca9ef6c9fe24dc3ae8707252fec7903f4dbf6ae146c44915621
+// Canonical offline decode contract SHA256: 73537317dc9a726d127429a9ee47be95d4b3473f092074256c51237c2171caf7
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -317,16 +317,24 @@ package WstxOfflineDecode {
              candidate, tiesfrequency/time. No unbounded optimizer or amplitude earlystop. */
     }
     calc def EncodedGroupPhaseAgreement {
+        in currentPassSamples : Real[0..360000];
+        in refinedStartFrame : Integer;
+        in mode : Mode;
         in groupExplainedEnergy : Real;
         in symbolExplainedEnergy : Real;
         return fraction : Real = groupExplainedEnergy / symbolExplainedEnergy;
         doc /* After bounded known-codeword time/frequency refinement and before publication
-             OR subtraction, full unit real/sine GFSK u,w include the envelope. Per symbol:
+             OR subtraction, full unit real/sine GFSK u,w include the envelope.
+             x is complete support atrefinedStartFrame in currentPassSamples: the SAME
+             current subtraction-pass observation/residual that producedthecandidate.
+             All79FT8/105FT4symbols INCLUDINGsyncandramps supply BOTH symbol/group energies.
+             Per symbol:
              Gs=[[u.u,u.w],[u.w,w.w]],bs=[u.x,w.x],Es=bs^T*inverse(Gs)*bs.
              Consecutive groups7FT8/4FT4, finalshortgroup allowed; sumGs/bs then same
              2x2solvepergroup. Require sumEgroup/sumEs>=.5, positive denominator,
              finite fits, relativeGramdet>1e-12; otherwise rejectwaveform.
-             Independent phase pergroup preservesordinarydrift; no whole-frame lock.
+             Independent phase pergroup imposes no phase tie between groups; drift
+             fixture acceptance remains mandatory, no whole-frame lock.
              Linear sample work, <=105symbol/27group solves, no new search/FEC/candidate;
              storage within existing64MiB. Unsupported/invalid sources still publish
              when their actual CRC-valid waveform passes, never status-based filtering. */

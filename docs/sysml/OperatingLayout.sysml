@@ -1,4 +1,4 @@
-// Canonical operating layout SHA256: 3a42371a9b292ca9ef6c9fe24dc3ae8707252fec7903f4dbf6ae146c44915621
+// Canonical operating layout SHA256: 73537317dc9a726d127429a9ee47be95d4b3473f092074256c51237c2171caf7
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
