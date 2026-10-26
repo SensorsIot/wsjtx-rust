@@ -1,6 +1,6 @@
 use super::Mode;
 use std::f64::consts::PI;
-fn erf(x: f64) -> f64 {
+pub(super) fn erf(x: f64) -> f64 {
     let a = x.abs();
     if a >= 6. {
         return x.signum();

@@ -1,9 +1,11 @@
 //! Pure FT4/FT8 modem kernels. Samples use the canonical 12 kHz clock.
 mod channel;
 mod payload;
+mod search;
 mod waveform;
 pub use channel::{Channel, ChannelWord};
 pub use payload::{Call, Exchange, Fields, Payload, PayloadStatus, unpack};
+pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
 pub use waveform::quadratures;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
