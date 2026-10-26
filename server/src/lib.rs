@@ -1,1 +1,2 @@
-﻿pub mod decoder;
+#![forbid(unsafe_code)]
+pub mod decoder;

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use serde_json::Value;
 use wstx_rust::decoder::{Channel, Mode, unpack};
 fn bits(s: &str) -> [u8; 77] {
