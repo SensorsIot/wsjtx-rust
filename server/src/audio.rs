@@ -842,13 +842,7 @@ impl Lifecycle {
     pub fn failed(&mut self, error: SourceError, now_ms: u64) {
         self.state = AudioState::Unavailable;
         self.error = Some(error);
-        self.retry_at = if self.wanted
-            && !matches!(
-                error,
-                SourceError::UnsupportedFormat
-                    | SourceError::CounterExhausted
-                    | SourceError::FailedClose
-            ) {
+        self.retry_at = if self.wanted && error == SourceError::Unavailable {
             let delay = 1000_u64 << self.attempt.min(3);
             self.attempt = self.attempt.saturating_add(1);
             Some(now_ms.saturating_add(delay))

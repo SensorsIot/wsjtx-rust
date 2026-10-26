@@ -373,6 +373,10 @@ fn audio_lifecycle_retries() {
         SourceError::UnsupportedFormat,
         SourceError::CounterExhausted,
         SourceError::FailedClose,
+        SourceError::InvalidBlock,
+        SourceError::InvalidContext,
+        SourceError::StaleAcknowledgement,
+        SourceError::Cancelled,
     ] {
         lifecycle.request_start();
         lifecycle.failed(error, now);
