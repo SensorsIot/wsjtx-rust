@@ -385,8 +385,9 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
 // Proves: CL-006-03; TC-010-006 independent palette endpoints before any slider-dependent assertion.
 test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},async t=>{
   const f=await fixture(t),p=await page(f);
-  const actual=await p.evaluate(async()=>{paint();await new Promise(requestAnimationFrame);const bar=document.querySelector('#level-bar'),ctx=bar.getContext('2d');return {colors:[color(120),color(0)],first:[...ctx.getImageData(0,0,1,1).data],last:[...ctx.getImageData(bar.width-1,0,1,1).data]};});
-  assert.deepEqual(actual.colors,['rgb(255 0 0)','rgb(0 0 12)']);assert.deepEqual(actual.first,[0,0,12,255]);assert.deepEqual(actual.last,[255,0,0,255]);
+  const colors=await p.evaluate(()=>[color(120),color(0)]);assert.deepEqual(colors,['rgb(255 0 0)','rgb(0 0 12)']);
+  const actual=await p.evaluate(async()=>{paint();await new Promise(requestAnimationFrame);const bar=document.querySelector('#level-bar'),ctx=bar.getContext('2d');return {first:[...ctx.getImageData(0,0,1,1).data],last:[...ctx.getImageData(bar.width-1,0,1,1).data]};});
+  assert.deepEqual(actual.first,[0,0,12,255]);assert.deepEqual(actual.last,[255,0,0,255]);
 });
 // Proves: CL-006-03/04; TC-010-006 fills entire actual canvas from observed history, not fixed-height rows.
 test('TC-010-006 complete height, speed projection, gaps and geometry',{timeout:30000},async t=>{
