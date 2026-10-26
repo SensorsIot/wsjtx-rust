@@ -906,30 +906,100 @@ N=1920/hop480; FT4 N=576/hop144. Coarse starts advance N/4, frequencies
 grid; use direct sine/cosine quadrature power at the exact off-grid endpoint. Refine
 within the inclusive search bounds; do not round the3500 Hz FT4 endpoint out of reach. For K sync symbols
 and Q tones, sum expected-tone power A and other-tone power B; Costas score is
-(Q-1)*A/B, qualification >=2.7. A=B=0 rejects; B=0,A>0 outranks finite scores.
-FT8 sync indices are 0..6,36..42,72..78; FT4 1..4,34..37,67..70,100..103.
-Keep local maxima separated by half a symbol/half a tone, ties by descending score,
-ascending frequency/time. At most 256 candidates/window/pass; remaining qualified work
-sets `search_limited`, which fails required-corpus completeness acceptance.
-Refine times ±N/8 in N/16 steps and frequency ±spacing/4 in spacing/16 steps within
-source/search bounds, choosing the same score/tie order. No unbounded optimizer.
+(Q-1)*A/B, with preliminary qualification >=2.7. A=B=0 rejects; B=0,A>0 outranks
+finite scores. FT8 sync indices are 0..6,36..42,72..78; FT4 1..4,34..37,67..70,100..103.
+Retain complex symbol transforms as well as powers. Visit local maxima in descending
+score, ascending frequency/time, suppressing within half a symbol AND half a tone.
+Use bounded grid/heap storage and constant-size suppression neighborhoods, with
+cancellation/service checkpoints while visiting maxima.
 
-Initial neighboring tones use maximum symbol power. Each target-tone hypothesis uses
-the published local GFSK template with those fixed neighbors and sine/cosine quadrature
-correlation over the symbol. Normalize squared magnitude by template energy and noise
-energy (positive floor 1e-20); log-sum-exp across Gray bit-zero hypotheses minus bit-one
-gives positive-for-zero LLR, clamped [-12,12] after calibration. Normalized matched
-energy divides by real noise variance PSD*12000/2 (floor1e-20); require mean absolute
-LLR>=1 and <=24 codeword disagreements with the channel hard decisions before
-publication, in addition to CRC/parity/source validation. At most two neighbor
-refinements use posterior hard decisions. FEC uses the published H, normalized min-sum
-alpha 0.8 and <=50 iterations. Success requires zero syndrome, correct CRC and valid
-fields; unsupported tags have their separate result classification. Recovery tests
-<=137 order-0/1/2 flips among 16 least-reliable independent information-basis bits after
-GF(2) reliability-ordered elimination, choosing lowest weighted channel cost among
-CRC-valid codewords. No AP semantic hints. Up to three subtraction passes and 32
-verified subtractions/window may fit reconstructed GFSK sine/cosine amplitudes by 2x2
-least squares and reanalyze a worker-owned residual. Original samples stay immutable.
+**Phase-consistent synchronization.** Before the 256-candidate cap, qualify every
+repeated Costas block independently. The five timing offsets are dt=-N/8..N/8 in
+N/16 steps, and nine frequency offsets df=-spacing/4..spacing/4 in spacing/16 steps;
+only complete supports within the inclusive frequency bounds are eligible. Precompute
+five coefficient tables from the pure unit analytic GFSK sync waveform h (data and
+ramp tones zero, actual amplitude envelope). For sync symbol j with expected tone tj,
+Hj(dt)=sum[m=0..N-1] h(jN+m-dt)*exp(-i*2*pi*tj*m/N), with zero outside its support.
+Let Zj be the complex coarse symbol transform at the candidate base plus tj*spacing.
+For each block b calculate
+Cb=abs(sum[j in b] Zj*conj(Hj)*exp(-i*2*pi*(fbase+df)*j*N/12000))^2 /
+(sum[j in b]abs(Zj)^2 * sum[j in b]abs(Hj)^2). A zero denominator rejects that grid
+point. One grid point MUST have Cb>=0.25 for EVERY block. Block phases are independent;
+no single phase across the entire FT8/FT4 frame is a qualification condition.
+This uses only K existing transform coefficients per grid point, not N new sample
+correlations per coefficient. At most 45*K complex products per visited raw maximum;
+raw maxima cannot exceed the finite start-row/frequency grid. The fine sample-domain
+Costas ratio is evaluated only for phase-qualified candidates, at the same <=45 grid
+points that meet the phase constraint, choosing descending ratio then ascending
+frequency/time. At most 256 phase-qualified candidates/window/pass; a 257th sets
+`search_limited`, which fails required-corpus completeness acceptance. No cap increase,
+absolute sample-amplitude floor or relative whole-window energy stop excludes a weak
+frame after subtraction. Up to three passes may stop when no new verified frame remains.
+
+**Soft channel observations.** Correlate each local GFSK target hypothesis over N real
+samples with a unit analytic template. Its complex energy is E=abs(z)^2/N; N is the
+sum of squared analytic-template magnitudes. The calibrated real noise variance is
+v=PSD*12000/2, floored at 1e-20. With no qualified overlapping peer use score(t)=Et/v.
+FT8 starts with maximum-symbol-power neighboring tones and uses posterior hard
+neighbors for at most two refinements. FT4 marginalizes the two nearest neighboring
+tones: enumerate Q^2=16 left/right pairs for each of Q=4 target tones (64 cached local
+templates per symbol), holding the two more distant neighbors at their current hard
+values. Data-neighbor priors start uniform; sync/ramp priors select their known tone.
+After each FEC round, form the next data-neighbor prior from its two posterior bit
+LLRs L: logP(bits)=-sum log(1+exp(-sign(bit)*L)), sign(0)=+1, sign(1)=-1, L clamped
+[-12,12], then normalize over the four tones. Marginalize pair scores plus both log
+priors with log-sum-exp. At most two posterior refinements follow the initial round.
+No message meaning, callsign cache or AP hint supplies a tone or prior.
+
+**Bounded overlapping-peer likelihood.** A candidate may use one strongest distinct
+phase-qualified peer whose start differs by <=N/2 and whose tone band overlaps. Base
+separation MUST be >=0.75*spacing to avoid modeling the same sync peak as a second
+station. Estimate each candidate's signal energy S=N*(a^2+b^2)/4 from independent
+2x2 sine/cosine fits to the interiors of its known Costas blocks (trim N/2 at each
+block end); subtract the noise bias N*v/blockFrames, clamp nonnegative, and take the
+median across blocks. Select a peer only when its I>=v AND I>=S/16. A zero/nonfinite
+estimate supplies no peer. The comparison visits at most 256^2 candidate pairs and
+uses no external station identity or decoder result.
+
+For a peer, d=floor((fpeer-fbase)/spacing+0.5). Its Q equiprobable possible tones map
+to u=d+j, j=0..Q-1; a tone outside 0..Q-1 contributes no in-band nuisance. For target
+tone t and nuisance u define V(k,t,u)=v+S*[k=t]+I*[k=u], omitting the last term when
+u is outside. The hypothesis score is logsumexp[u](-sum[k](log V(k,t,u)+Ek/V(k,t,u)))
+-log Q. Compute common-term-subtracted equivalents before log-sum-exp so low noise
+cannot erase finite likelihood differences. This is a specified bounded nuisance
+model, not a claim that symbol-template noises are statistically independent.
+For FT4 evaluate this likelihood inside each of the 16 neighbor-pair hypotheses and
+marginalize with the neighbor priors. For FT8 use its fixed-neighbor energies. No peer
+means the isolated Et/v score; no extra peer combinations or unbounded searches exist.
+
+Gray bit-zero log-sum-exp minus bit-one gives positive-for-zero LLR, clamped [-12,12].
+Publication requires mean absolute LLR>=1 and <=24 disagreements with channel hard
+decisions, in addition to CRC/parity/source classification. A CRC-valid tentative word
+that fails those gates does not terminate the permitted neighbor refinements. FEC uses
+the published H, normalized min-sum alpha0.8 and <=50 iterations per observation round.
+Success requires zero syndrome and correct CRC; source fields determine decoded,
+unsupported or invalid-payload status. Only the final observation round may use OSD:
+compose the 77 payload-unit vectors through CRC14 and the published (174,91) generator
+to obtain the rank-77 valid-channel subcode. Reliability-ordered GF(2) elimination
+selects 77 independent information-basis columns. Test <=137 order-0/1/2 flips among
+its 16 least-reliable basis bits, choosing the lowest weighted CHANNEL-LLR disagreement
+cost among CRC/parity-valid words. The CRC bits are constrained, not 14 additional
+free information bits. An earlier min-sum success may finish without recovery.
+
+Up to three subtraction passes and 32 verified subtractions/window may fit reconstructed
+GFSK sine/cosine amplitudes by 2x2 least squares and reanalyze a worker-owned residual.
+Refine a verified codeword's measurement with three fixed correlation grids. Let
+F=waveformFrames and df1=6000/F. The first grid uses time+/-N/4 in N/16 steps and
+frequency+/-spacing/2 in df1 steps, including off-grid endpoints. Around its maximum,
+the second uses time+/-N/16 in max(1,floor(N/128)) steps and frequency+/-df1/2 in
+df1/8 steps. The third uses time+/-max(1,floor(N/128)) in one-frame steps at the
+second grid's frequency. Every point stays within complete source and frequency
+bounds. Correlate known analytic GFSK at every fourth sample after trimming N/2 from
+both waveform ends; choose maximum normalized complex energy, ties frequency/time.
+Final amplitude/SNR/subtraction fits use every sample. Retain no whole-frame phase
+rejection that excludes ordinary +/-2 Hz/min frequency drift.
+Original samples stay immutable. Planned/scalar paths share the same pure kernels,
+and all cached templates, coefficient grids, history and scratch remain within64MiB.
 One pure reconstruction waveform kernel is owned by #7 and reused by #9 if needed;
 it grants no TX/device authority. This is a bounded independent design, not a claim of
 reference-algorithm equivalence or proof that quality targets have already passed.
@@ -955,6 +1025,15 @@ two-tone-spacing overlap cases at -10 dB each require both in >=18; twenty one-s
 cases with the weaker six dB below a -10 dB stronger require stronger >=18, weaker >=10.
 Every result must correspond to an injected frame; false or unsupported/invalid frame
 publications in empty-source tests are false alarms, not exempted successes.
+
+Additional independent synchronization/likelihood regressions MUST preserve a fixed
+payload under initial phase0.7 andpi/2, drift+/-1/30Hz/s (2Hz/min), and canonical
+float gains1e-4 and8. A second signal80dB below a stronger signal MUST remain decodable
+when its sample amplitude is below a PCM16 quantum; repeat after scaling canonical
+float samples. Quantization-only reconstruction residuals contain zero frames and
+MUST publish none without `search_limited`. These additive recipes do not replace or
+reduce any of the2286 fixed quality cases. Exact recipe/PCM-or-float hashes and their
+independent composer are retained with fixtures; missing/changed inputs fail.
 
 Per mode, 1000 fixed noise-only slots split across RMS .001/.01/.05/.1, plus silence,
 wrong-mode and parity-valid/CRC-invalid signals require zero published frames. This
@@ -1754,6 +1833,7 @@ the communication/recording companions; none require hardware consent.
 | Both modes: complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
 | Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
 | Both modes: overlap | Twenty equal-level pairs at two tone spacings and twenty pairs at one spacing with six dB difference/mode, fixed seeds/fields/source positions. | Both >=18/20 for equal pairs; stronger>=18 and weaker>=10 for unequal; no fabricated payload. Independent source mixture is the truth, even when the external reference misses weaker content. |
+| Both modes: phase-likelihood-scale | Independent initial phase0.7/pi/2, drift+/-1/30Hz/s, canonical gains1e-4/8; two stations80dB apart including sub-PCM16-quantum samples and scaled float repeat; pure quantization residuals. | Exact original payloads and start/frequency tolerances, both stations retained; zero frames/no search_limited on residuals. All original2286case thresholds and256candidatecap remain. Verify bounded5*9*K coefficient qualification, independent Costas-block phase, rank77CRC+LDPC recovery and64MiB workspace. |
 | Both modes: recordings | Import pinned official modern FT4 and FT8 plus all22 historical FT8 WAVs unchanged; decode explicit selected modes. | >=16/19 modern FT4 and >=12/14 official FT8 baseline matches; report all misses/new frames and validate their channel/fields independently. Historical text is supplementary, never exhaustive truth; legacyFT4zero is not a modern negative. |
 | Rejection | 1000 full-slot fixed noise inputs/mode at four RMS levels, silence, DC/tones/impulses, wrong mode, truncated support, nonfinite/wrong-rate/discontinuous pure samples, invalid WAV, unsupported tags, invalid source fields, good FEC/bad CRC. | Zero published frames in empty/noise/CRC/wrong-mode corpus, explicit unsupported/invalid classification only for injected CRC-valid frames; defined input errors, no panic, no ordinary-text fallback. Invalid WAV remains the existing import error. Canonical report aliases above32505 remain invalid despite permissive reference output. |
 | Lifecycle/limits | Repeat, cancel during detection/FEC/recovery/subtraction; replace source/start another job/restart; four profiles; history/result/candidate/work/memory ceilings and injected failures. | Same payload multiset and numeric repeat tolerances; publication invalid before cancel ack, terminal after worker release<=250ms, failed processing cannot complete, no stale append, partial outcomes visible, explicit decode_limit/search_limited; no queue or unbounded buffers. |

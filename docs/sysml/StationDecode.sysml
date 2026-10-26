@@ -1,4 +1,5 @@
-// Canonical offline decode contract SHA256: cc3413ce479daa750db69e9bafedd32e1902a344f19a0bf87aec5707d8b4a1ad
+// Canonical offline decode contract SHA256: 3885d576405e31608f02f345693b7867c7e2760d7dc0b82e5c615a41b42487cc
+// Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
@@ -33,6 +34,14 @@ package WstxOfflineDecode {
         attribute cancelReleaseMs : Integer = 250;
         attribute statusDisplayMs : Integer = 2000;
         attribute candidateCap : Integer = 256;
+        attribute rawMaximumBound : Integer = 661758;
+        attribute complexTransformBound : Integer = 838992;
+        attribute phaseTimePoints : Integer = 5;
+        attribute phaseFrequencyPoints : Integer = 9;
+        attribute minBlockPhaseFraction : Real = 0.25;
+        attribute ft4NeighborPairs : Integer = 16;
+        attribute ft4LocalTemplates : Integer = 64;
+        attribute recoveryInformationRank : Integer = 77;
         attribute fecIterations : Integer = 50;
         attribute recoveryTrials : Integer = 137;
         attribute subtractionPasses : Integer = 3;
@@ -229,6 +238,83 @@ package WstxOfflineDecode {
              Require>=2.7; zero-basedFT8sync0..6/36..42/72..78,FT4sync1..4/34..37/67..70/100..103.
              Localmaxhalf-symbol/half-tone, ties scoredesc/freqasc/timeasc. */
     }
+    attribute def ComplexCoefficient {
+        attribute re : Real;
+        attribute im : Real;
+        doc /* Runtime complex-f32, eight bytes, shared Fourier convention. */
+    }
+    item def SymbolTransformGrid {
+        attribute coefficients : ComplexCoefficient[0..838992];
+        doc /* Same1920/576 transforms and two shifted frequency grids retain complex values.
+             Complete30swindow:747*1080FT8 or2497*336FT4 coefficients. Raw start/frequency
+             grid <=435*1057FT8 or2081*318FT4=661758. Priority heap and suppression bitmap,
+             checkpoint visits; no quadratic all-pairs suppression. All storage inside64MiB. */
+    }
+    calc def SyncBlockCoherence {
+        in matchedMagnitudeSquared : Real;
+        in observedEnergy : Real;
+        in templateEnergy : Real;
+        return fraction : Real = matchedMagnitudeSquared / (observedEnergy * templateEnergy);
+        doc /* Positive denominators only, otherwise reject grid point. Five coefficient tables:
+             Hj(dt)=sum_m h(jN+m-dt)*exp(-i2pi*tj*m/N), m0..N-1, outsideh=0.
+             h is unit analytic sync-only GFSK, actual envelope, zero data/ramp tones.
+             Zj is coarse coefficient at expected tone. matchedMagnitudeSquared equals
+             abs(sum_j Zj*conj(Hj)*exp(-i2pi*(fbase+df)*jN/12000))^2 within ONE Costas block.
+             observedEnergy=sumabsZj^2; templateEnergy=sumabsHj^2. EVERY repeated block
+             needsfraction>=.25 at SAME complete/in-band5time*9frequency point. Block phase
+             independent; no whole-frame phase lock or absolute/relative amplitude floor. */
+    }
+    attribute def ToneLikelihoodContext {
+        attribute toneCount : Integer;
+        attribute noiseVariance : Real;
+        attribute targetEnergy : Real;
+        attribute nuisanceEnergy : Real;
+        attribute nuisanceOffset : Integer;
+        attribute peerPresent : Boolean;
+        assert constraint boundedVariance {
+            (toneCount == 4 or toneCount == 8) and noiseVariance >= 0.00000000000000000001 and
+            targetEnergy >= 0.0 and nuisanceEnergy >= 0.0
+        }
+        doc /* E=abs(local analytic quadrature z)^2/N; v=PSD*12000/2, floor1e-20.
+             SignalS=N*(a^2+b^2)/4 from independent block-interior2x2Costas fits, trimN/2ends;
+             subtractNv/blockFrames noise bias, clampnonnegative, median across3/4blocks.
+             One strongest distinct phase-qualified overlapping peer, startdelta<=N/2,
+             basefrequencydelta>=.75spacing, I>=v and I>=S/16, finite estimates only.
+             d=floor((fpeer-fbase)/spacing+.5). Selection<=256^2 candidate comparisons. */
+    }
+    calc def MarginalToneLikelihood {
+        in context : ToneLikelihoodContext;
+        in energies : Real[4..8];
+        in targetTone : Integer;
+        return logLikelihood : Real;
+        doc /* No peer:Et/v. Peer:j0..Q-1 mapsu=d+j, weight1/Q; out-of-band u addsno nuisance.
+             V(k,t,u)=v+S*[k=t]+I*[k=u]. Returnlogsumexp_u(-sum_k(logV+Ek/V))-logQ.
+             Subtract common terms BEFORE logsumexp, retaining finite low-noise differences.
+             One peer only, <=Q^2 components/fixed-neighbor symbol, nosemantic/AP prior. */
+    }
+    calc def Ft4NeighborMarginalization {
+        in context : ToneLikelihoodContext;
+        in leftLogPrior : Real[4];
+        in rightLogPrior : Real[4];
+        return toneScores : Real[4];
+        doc /* Enumerate4left*4target*4right local templates (64*576complex-f32=294912bytes).
+             More distant neighbors fixed hard. For each target,logsumexp16pair likelihoods
+             plusleft/right logpriors. Initial data uniform, knownsync/ramp delta priors.
+             Two posterior refinements:GraybitL clipped+-12,logP=-sumlog(1+exp(-sign(bit)*L)),
+             sign0=+1/sign1=-1; normalize across4tones. FT8 hard-neighbor templates/two
+             posterior refinements. No additional source, thread, encoder or AP hint. */
+    }
+    action def QualifySynchronization {
+        in grid : SymbolTransformGrid;
+        out qualifiedCount : Integer;
+        out searchLimited : Boolean;
+        assert constraint boundedQualified { qualifiedCount >= 0 and qualifiedCount <= 256 }
+        doc /* Costas>=2.7 first; local suppressionhalfsymbol ANDhalftone, scoredesc/freq/time.
+             Per rawmax:<=5*9*Kexisting-coefficient products, NOT5*9*K*Nsample correlations.
+             Requirephasefraction>=.25 in EVERY block atonepoint. A257thqualified candidate
+             setssearchLimited. Fine sample Costas only at<=45phase-valid points/admitted
+             candidate, tiesfrequency/time. No unbounded optimizer or amplitude earlystop. */
+    }
     action def AdmitDecode {
         in source : WstxRecordingReceive::SourceDescriptor;
         in settings : Settings;
@@ -253,14 +339,19 @@ package WstxOfflineDecode {
              localrefine5time*9freq points. SharedRustFFT6.4.1planned/scalar, checked worker
              buffers/scratch, no second provider/wrapper. <=50msquantum/cancelcheck, service
              pendingconversion/spectrumbetweenquanta; one worker/noqueue, no transmit authority.
-             Score/cap above, search_limited on remaining qualified work. Neighbor-hard GFSK
-             quadrature hypothesis energies/templateenergy/noisevariance(PSD*12000/2,floor1e-20),
-             Gray logsumexp zero-minusone, clamp+-12,meanabs>=1,<=24harddisagreements.
-             <=2neighborrefinements, normalizedminsumalpha.8 <=50iterations,zeroH+CRC+fields;
-             order<=2among16basisflips <=137recoverytrials,lowestweightedchannelcost,noAP.
+             Phase qualification and likelihood calculations above own observation semantics.
+             Graylogsumexp zero-minusone,clamp+-12,meanabs>=1,<=24CHANNELharddisagreements.
+             ACRCword failing gates does notstop permitted refinements. <=50normalizedminsum
+             iterations/round,alpha.8,initial+<=2posterior refinements. OnlyfinalroundOSD:
+             77unitpayloads composedCRC14+published174,91generator formrank77subcode;
+             GF2reliabilityordered77basis; <=137order0/1/2 trials among16least-reliable basis
+             bits,lowestweightedCHANNELcost, finalzeroH+CRC+sourceclassification. CRCbits
+             constrained, nofreeCRCinformation/AP; earlierminsum success mayfinish.
              <=3SICpasses/32validsubtractions/window,fit2x2GFSKquadratureamplitudes,immutable
              originals. One pure reconstruction kernel owned7/futurereuse9, independent
-             fixture composer never productiondependency. All arrays within64MiB.
+             fixture composer never productiondependency. No relative window-energy stop may
+             hide a weaker signal; stop ifno new verifiedframe or3pass ceiling. All arrays
+             inside64MiB, including complex grids and64FT4 templates.
              Dedup mode/payload/startwithinhalfsymbol, keep later repeated transmissions.
              Actual runtime/sensitivity/falsepositives remain unmeasured, no test verdict. */
     }
@@ -273,6 +364,12 @@ package WstxOfflineDecode {
              Median/ln2 over>=128eligiblebins/>=8windows, SNR2500=10log10(P/(PSD*2500)).
              Insufficient/nonfinite/relative2x2det<=1e-12/PSD<=1e-20=>null; elseclamp+-60.
              Error<=240frames/1HzFT8,144frames/3HzFT4,<=3dBisolatedAWGN>=-15/-10.
+             Known-codeword fit3fixedgrids:df1=6000/waveformFrames; stage1time+-N/4stepN/16,
+             freq+-spacing/2stepdf1 includingoffgridendpoints; stage2time+-N/16stepmax(1,floor(N/128)),
+             freq+-df1/2stepdf1/8; stage3time+-max(1,floor(N/128))step1,frequencyfixed.
+             Complete/in-band only,every4thsamptrimN/2ends,maxnormalizedenergy,tiesfreq/time;
+             finalamplitude/SNR/subtractionallsamples. No whole-frame phase rejection,
+             ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
              No UTC/dBFS/noiseless/crowded reference-SNR inference. */
     }
     action def PublishResults {
@@ -341,6 +438,17 @@ package WstxOfflineDecode {
                  Futurejoint48kcapture+FFT+decode provesfairness, notlargerringassumption.
                  PlannedRust/fixture/HTTP/browser/linkcompanions; no execution verdict. */
         }
+        verification phaseLikelihoodAndScale {
+            subject decoder : AdvanceDecode;
+            objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+            doc /* Independent additional recipes:phase.7/pi/2,drift+-1/30Hz/s,canonicalgains1e-4/8,
+                 secondstation80dBbelowstronger with sub-PCM16-quantumamplitude andfloatrepeat;
+                 retainbothmessages. Quantization-only residuals:zeropublications,no search_limited.
+                 All2286originalcases/thresholds/256cap remain. Verifyrecipe/composer/audiohashes,
+                 per-blockphase,45*Kproducts/rawmax,256^2peercomparisons,rank77recovery,
+                 64MiBworkingstore. No externaldecoder oracle or skipped case pass. */
+        }
+        dependency phaseLikelihoodCase from phaseLikelihoodAndScale to WstxRequirements::'TC-004-003';
         dependency rejectionCase from rejectionLifecycleResources to WstxRequirements::'TC-004-003';
     }
 }
