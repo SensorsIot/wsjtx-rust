@@ -25,7 +25,13 @@ def recipes(kind):
     if kind == 'quality':
         document = json.loads((FIXTURES/'quality-cases.json').read_text(encoding='utf-8-sig'))
         assert document['generator_sha256'] == digest(COMPOSER)
-        return [(case['id'], case, None) for case in document['cases']]
+        hashes=json.loads((FIXTURES/'quality-audio-hashes.json').read_text(encoding='utf-8'))
+        assert hashes['recipe_sha256']==digest(FIXTURES/'quality-cases.json')
+        assert hashes['composer_sha256']==digest(COMPOSER)
+        assert hashes['generator_data_sha256']==digest(FIXTURES/'protocol-data/generator.dat')
+        assert hashes['parity_data_sha256']==digest(FIXTURES/'protocol-data/parity.dat')
+        assert len(hashes['cases'])==2286 and set(hashes['cases'])=={case['id'] for case in document['cases']}
+        return [(case['id'], case, hashes['cases'][case['id']]) for case in document['cases']]
     document = json.loads((FIXTURES/'independent-vectors/manifest.json').read_text(encoding='utf-8-sig'))
     result = []
     for vector in document['vectors']:

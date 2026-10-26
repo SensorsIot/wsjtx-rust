@@ -23,6 +23,9 @@ For a fixed vector, create a case with its waveform `frames`, `start_frame`, `fr
 `cache.py --kind quality --output CACHE` composes and verifies all2286cases with bounded
 workers; `--kind frozen` prepares the38fixedwaveforms. `--verify-only` checks every
 recipe, actual WAV SHA256, composer SHA256 and header without generating replacements.
+The tracked `../quality-audio-hashes.json` pins all2286independent WAV digests; changing
+a PCM file and its adjacent generated hash together is refused. `test_cache.py` proves
+that refusal, along with changed-recipe/composer refusal, against a positive fixture.
 Generated audio is published from per-case temporary directories into an external cache.
 An existing changed input fails instead of being accepted as new truth.
 
