@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "authors": [
+    "Steven J. Franke K9AN",
+    "Bill Somerville G4WJS",
+    "Joseph H. Taylor K1JT"
+  ],
+  "publication": "The FT4 and FT8 Communication Protocols, QEX July/August 2020, sections 2-5 and 9 / Appendix A",
+  "description_url": "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf",
+  "archive_url": "https://www.arrl.org/files/file/QEX%20Binaries/2020/ft4_ft8_protocols.tgz",
+  "archive_sha256": "19d680a2676490a829245b90d386b72c8f2ea857fcaff3c872a7bcd9ba784f84",
+  "reuse": "Only published matrix data and factual ordered lookup values; no Fortran algorithms or WSJT-X decoder implementation copied. Composer is independently authored repository work.",
+  "source_conditions": "Section 9 identifies protocol description/reference-14 material as public domain with conditions: protocol-conforming use of names; no robotic/unattended QSOs; DXpedition-like multistream use within its guidelines; unassigned types remain reserved; incompatible synchronization/names for nonconforming automated variants. Preserve the source statement; no claim that wider WSJT-X code is public domain.",
+  "tables": [
+    {
+      "archive_member": "ft4_ft8_public/generator.dat",
+      "member_sha256": "a803e478e99441043a50819470cbb3866cd72c28b63989792941211bf37a6dc5",
+      "path": "protocol-data/generator.dat",
+      "sha256": "9c87ad79b96d3ba07fa83875d44d777312b00e0a1a64243d2ae49b64ab90db19",
+      "transform": "Matrix text normalized to LF with trailing whitespace removed; numeric matrix unchanged"
+    },
+    {
+      "archive_member": "ft4_ft8_public/parity.dat",
+      "member_sha256": "a9a1e1cd67d3c83b078c16d2ad83807ce6f5a6aaf84839a2cf5875353909085e",
+      "path": "protocol-data/parity.dat",
+      "sha256": "bfee9dee04bb7b59a45c8ee61f0dd524dc85d4de777a631a3d66511948c1075a",
+      "transform": "Matrix text normalized to LF with trailing whitespace removed; numeric matrix unchanged"
+    },
+    {
+      "archive_member": "ft4_ft8_public/arrl_rac_sections.txt",
+      "member_sha256": "55cee2d6f4dbc06ac53acb931839beafff672e5d872e3878aa25137e84541d55",
+      "entries": 84,
+      "path": "protocol-data/arrl_rac_sections.json",
+      "sha256": "72c4196558537c6b50c8b2ae628ef4ef47106db315fdbe26b1ed83cfd5ffe457",
+      "transform": "Ordered quoted lookup values extracted to JSON; no Fortran statements retained"
+    },
+    {
+      "archive_member": "ft4_ft8_public/states_provinces.txt",
+      "member_sha256": "77fe41de5d83206820b69fe0dab4d911d8b8080309ce4906af2d4d4873d18a35",
+      "entries": 65,
+      "path": "protocol-data/states_provinces.json",
+      "sha256": "df1bfcb4f2f85589ff335ee2d3ec1c6d8a45c3d6c9215f5beca0229bcfe046fd",
+      "transform": "Ordered quoted lookup values extracted to JSON; no Fortran statements retained"
+    }
+  ],
+  "fixture_files": [
+    {
+      "path": "independent-vector-tool/boundary_cases.py",
+      "sha256": "247e3f4ec59d666d7b8a58daae3966f2140a6b392bb42734fe3694df8eaa2845"
+    },
+    {
+      "path": "independent-vector-tool/generate.py",
+      "sha256": "b808afa36ce00749c1a3e3db7062bd55c69d89e264fe5258b90f224c7fde02a4"
+    },
+    {
+      "path": "independent-vector-tool/README.md",
+      "sha256": "3ecb929761885367c977bb53ea329d35a0c7856ef11ab389fb328c90dfa3d00e"
+    },
+    {
+      "path": "independent-vectors/manifest.json",
+      "sha256": "e2d72aee5917d5218764aa904e31db44aa427c6a7bbad17d2673f09e3f26ce99"
+    },
+    {
+      "path": "payload-boundary-cases.json",
+      "sha256": "ac9d24393a42711b4b0ed84cbe71e2a5f1f005019e5ecabf3ecf90cbaa0b1c8d"
+    },
+    {
+      "path": "quality-cases.json",
+      "sha256": "b5a3c6c8c321843be0059fb12e99c52d2c8204b94d1c70ab7fd00d0413e6bd73"
+    }
+  ]
+}
