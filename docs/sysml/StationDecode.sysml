@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: b3dcb80392ffe3182c5f29140b6bfaccf328c93ea596268eb263a00e8dc0e5a9
+// Canonical offline decode contract SHA256: 3a42371a9b292ca9ef6c9fe24dc3ae8707252fec7903f4dbf6ae146c44915621
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -51,6 +51,7 @@ package WstxOfflineDecode {
         attribute maxFrequencyHz : Real = 3500.0;
         attribute costasThreshold : Real = 2.7;
         attribute minMeanAbsLlr : Real = 1.0;
+        attribute minCodewordPhaseFraction : Real = 0.5;
         attribute maxHardDisagreements : Integer = 24;
         attribute minSumAlpha : Real = 0.8;
         attribute llrBound : Real = 12.0;
@@ -315,6 +316,21 @@ package WstxOfflineDecode {
              setssearchLimited. Fine sample Costas only at<=45phase-valid points/admitted
              candidate, tiesfrequency/time. No unbounded optimizer or amplitude earlystop. */
     }
+    calc def EncodedGroupPhaseAgreement {
+        in groupExplainedEnergy : Real;
+        in symbolExplainedEnergy : Real;
+        return fraction : Real = groupExplainedEnergy / symbolExplainedEnergy;
+        doc /* After bounded known-codeword time/frequency refinement and before publication
+             OR subtraction, full unit real/sine GFSK u,w include the envelope. Per symbol:
+             Gs=[[u.u,u.w],[u.w,w.w]],bs=[u.x,w.x],Es=bs^T*inverse(Gs)*bs.
+             Consecutive groups7FT8/4FT4, finalshortgroup allowed; sumGs/bs then same
+             2x2solvepergroup. Require sumEgroup/sumEs>=.5, positive denominator,
+             finite fits, relativeGramdet>1e-12; otherwise rejectwaveform.
+             Independent phase pergroup preservesordinarydrift; no whole-frame lock.
+             Linear sample work, <=105symbol/27group solves, no new search/FEC/candidate;
+             storage within existing64MiB. Unsupported/invalid sources still publish
+             when their actual CRC-valid waveform passes, never status-based filtering. */
+    }
     action def AdmitDecode {
         in source : WstxRecordingReceive::SourceDescriptor;
         in settings : Settings;
@@ -347,6 +363,8 @@ package WstxOfflineDecode {
              GF2reliabilityordered77basis; <=137order0/1/2 trials among16least-reliable basis
              bits,lowestweightedCHANNELcost, finalzeroH+CRC+sourceclassification. CRCbits
              constrained, nofreeCRCinformation/AP; earlierminsum success mayfinish.
+             EncodedGroupPhaseAgreement>=.5 beforepublication/subtraction,independent7/4symbol
+             groupphases,<=105symbol/27group2x2solves, no extra search/FEC/candidates.
              <=3SICpasses/32validsubtractions/window,fit2x2GFSKquadratureamplitudes,immutable
              originals. One pure reconstruction kernel owned7/futurereuse9, independent
              fixture composer never productiondependency. No relative window-energy stop may
@@ -450,7 +468,8 @@ package WstxOfflineDecode {
                  Finitecaserequireszeropublications,no search_limited,neverproductionhelpers.
                  All2286originalcases/thresholds/256cap remain. Verifyrecipe/composer/audiohashes,
                  per-blockphase,45*Kproducts/rawmax,256^2peercomparisons,rank77recovery,
-                 64MiBworkingstore. No externaldecoder oracle or skipped case pass. */
+                 recoveredcodewordgroup-phasefraction>=.5,linearfitwork,64MiBworkingstore.
+                 No externaldecoder oracle or skipped case pass. */
         }
         dependency phaseLikelihoodCase from phaseLikelihoodAndScale to WstxRequirements::'TC-004-003';
         dependency rejectionCase from rejectionLifecycleResources to WstxRequirements::'TC-004-003';
