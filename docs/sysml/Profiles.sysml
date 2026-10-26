@@ -1,4 +1,4 @@
-// Canonical profile contract SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
+// Canonical profile contract SHA256: 048f193ca9c75f7fb605b2f43af637dd235aeff689e9f14cedd4ccceec6a51f7
 package WstxProfiles {
     private import ScalarValues::*;
 

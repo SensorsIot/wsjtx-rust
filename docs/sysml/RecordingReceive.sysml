@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
+// Canonical recorded receive contract SHA256: 048f193ca9c75f7fb605b2f43af637dd235aeff689e9f14cedd4ccceec6a51f7
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -12,7 +12,7 @@ package WstxRecordingReceive {
     enum def ImportState { enum reserved; enum receiving; enum validating; enum committing; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def DisplayProfile { enum off; enum thin; enum detail; }
-    enum def ReceiveKind { enum spectrum; enum decode; enum live; }
+    enum def ReceiveKind { enum spectrum; enum live; }
     enum def ErrorCode {
         enum forbidden_origin; enum unauthorized; enum unsupported_media_type;
         enum request_too_large; enum invalid_request; enum unsupported_version;
@@ -20,7 +20,7 @@ package WstxRecordingReceive {
         enum invalid_state; enum invalid_recording; enum unsupported_audio;
         enum recording_limit; enum storage_unavailable; enum upload_timeout;
         enum cancelled; enum no_recording; enum generation_exhausted;
-        enum recording_unavailable; enum unavailable;
+        enum recording_unavailable; enum unavailable; enum counter_exhausted;
         enum invalid_samples; enum decode_limit; enum decode_failed;
     }
     attribute def Limits {
@@ -103,6 +103,18 @@ package WstxRecordingReceive {
              before publication. New replay allocates job+generation,source unchanged. */
         assert constraint safeGeneration { generation >= 0 and generation <= (900719925 * 10000000 + 4740991) }
     }
+    attribute def ReceiveContext {
+        attribute profile_id : String;
+        attribute boot_id : String;
+        attribute source_id : String[0..1];
+        attribute job_id : String;
+        attribute generation : Integer;
+        assert constraint safeGeneration { generation >= 0 and generation <= (900719925 * 10000000 + 4740991) }
+        doc /* Opening live job may lack source only until initial provider epoch ACK.
+             Recorded spectrum and acknowledged live jobs require their source UUID.
+             This pending context never permits publication. Correlation remains the
+             REQUIRED full source/job/generation tuple for every frame/result page. */
+    }
     attribute def SourceDescriptor {
         attribute schema_version : Integer = 1;
         attribute profile_id : String;
@@ -170,27 +182,28 @@ package WstxRecordingReceive {
     }
     item def ReceiveJob :> WstxArchitecture::ProcessingRequest {
         attribute schema_version : Integer = 1;
-        attribute correlation : Correlation;
+        attribute correlation : ReceiveContext;
         attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
         attribute processed_frames : Integer;
         attribute error : ErrorCode[0..1];
         attribute cancelRequested : Boolean;
-        assert constraint progress { processed_frames >= 0 and processed_frames <= 1440000 }
-        doc /* Shared receive lifecycle: spectrum kind/settings below; target decode kind
-             and immutable mode in StationDecode.sysml. One import OR spectrum OR decode,
+        assert constraint progress { processed_frames >= 0 and ((kind == ReceiveKind::spectrum and processed_frames <= 1440000) or (kind == ReceiveKind::live and processed_frames <= (900719925 * 10000000 + 4740991))) }
+        doc /* Shared receive lifecycle: recorded spectrum below and continuous live mode
+             through RadioIO/StationDecode. One import OR recorded spectrum OR live receive,
              one worker/no pendingjobs; no CPU/file work holding state/profile lock. New
              generation on import/replay,refuse ceiling not wrap. Cancellation invalidates
              publication before ack;terminal progress remains until nextjob. No TX scope. */
     }
     attribute def JobView {
         attribute id : String;
-        attribute source_id : String;
+        attribute source_id : String[0..1];
         attribute generation : Integer;
         attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
         attribute processed_frames : Integer;
         attribute error : ErrorCode[0..1];
+        doc /* source_id null only for live opening before first ACK; recorded source and all publication tuples remain required UUIDs. */
     }
     attribute def RecordingSnapshot {
         attribute v : Integer = 1;
@@ -239,13 +252,19 @@ package WstxRecordingReceive {
         attribute first_frame : Integer;
         attribute end_frame : Integer;
         attribute levels_b64 : String;
-        assert constraint interval { sequence >= 0 and sequence < 600 and first_frame == 2400 * sequence and end_frame > first_frame and end_frame <= first_frame + 2400 }
+        assert constraint interval { sequence >= 0 and first_frame == 2400 * sequence and end_frame > first_frame and end_frame <= first_frame + 2400 and end_frame <= (900719925 * 10000000 + 4740991) }
         doc /* Exact spectrum.detail.frame envelope, <=2048 UTF8bytes; same current UUID/
              safe-integer tuple as Thin. Canonical padded standard RFC4648 base64 exactly
              1368chars decodes1024 bytes each0..120. Unknown/missing fields,
              noncanonical encoding, bad bounds/identities/socket are rejected atomically.
              Retain one latest immutable frame per profile in existing station state;
              per peer one replaceable selected frame, not two queues or another job. */
+    }
+
+    item def RecordedDetailedSpectrumFrame :> DetailedSpectrumFrame {
+        assert constraint recordedSequence { sequence < 600 }
+        doc /* Same wire shape. Finite recording-only bound; live uses safe common
+             frame domain and actual capture counters, not this finite subtype. */
     }
 
     attribute def StartImportBody {
@@ -391,7 +410,7 @@ package WstxRecordingReceive {
         in request : StartReplayBody;
         out job : ReceiveJob;
         out frames : SpectrumFrame[*];
-        out detailedFrames : DetailedSpectrumFrame[*];
+        out detailedFrames : RecordedDetailedSpectrumFrame[*];
         doc /* **Receive lifecycle.** One active import OR replay per station, one CPU worker,
              no pending job queue; concurrent start gets `busy`. State owner transitions and token
              checks serialize; CPU/file work does not hold the state owner or profile-settings lock.

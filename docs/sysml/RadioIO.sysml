@@ -1,4 +1,4 @@
-// Canonical radio and audio contract SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
+// Canonical radio and audio contract SHA256: 048f193ca9c75f7fb605b2f43af637dd235aeff689e9f14cedd4ccceec6a51f7
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
@@ -106,7 +106,16 @@ package WstxRadioIO {
              One converter only, no fake filter edges/silence, no gap-crossing window.
              Consumers retain<=2active references plus separately bounded FIFO. */
     }
+    attribute def AnalysisOverrun {
+        attribute first_frame : Integer;
+        attribute end_frame : Integer;
+        assert constraint boundedInterval { first_frame >= 0 and first_frame < end_frame and end_frame <= (900719925 * 10000000 + 4740991) }
+        doc /* Latest abandoned analysis window's half-open support, not missing audio.
+             end_frame<=capturedNextFrame. Null until overrun, replace on next,
+             clear on newjob/sourceepoch. ExactGET/receive.job key last_overrun. */
+    }
     attribute def LiveResultWindow {
+        attribute last_overrun : AnalysisOverrun[0..1];
         attribute first_sequence : Integer;
         attribute next_sequence : Integer;
         attribute available_count : Integer;
@@ -114,12 +123,12 @@ package WstxRadioIO {
         assert constraint retained { first_sequence >= 0 and next_sequence >= first_sequence and available_count == next_sequence - first_sequence and available_count <= 2048 }
         assert constraint safeCounters { next_sequence <= (900719925 * 10000000 + 4740991) and capturedNextFrame >= 0 and capturedNextFrame <= (900719925 * 10000000 + 4740991) }
         doc /* Live ONLY: sequence/start_frame safe nonnegative integers below lifetime
-             next_sequence/capturedNextFrame, not offline2047/finite-source bounds.
+             next_sequence/capturedNextFrame, using safe lifetime domains rather than finite fixture bounds.
              Oldest eviction advancesfirst_sequence,2048records/2MiB, no counter reuse.
              Counterexhaustion fails beforeoverflow. Exact live page keys12.8; cursor<first
              gives410cursor_expired, cursor>next400, cursor==nextempty/morefalse.
              first6/next2054/count2048,cursor7limit1=>record7,next8,moretrue;cursor5=>410.
-             Tests2047/2048/2049 andsafeintboundaries; offline12.7 constraints unchanged. */
+             Tests2047/2048/2049 andsafeintboundaries; Live record domains use safe lifetime counters and actual captured bounds. */
     }
     attribute def RadioObservation {
         attribute frequencyHz : Integer[0..1];
@@ -168,7 +177,9 @@ package WstxRadioIO {
              partition invariance2e-5; delay<=20ms/<=1024native support. No second
              conversion or AGC. Known gaps reset FIR/FFT/decoder without invented samples.
              FT8trailing30s/advance15s, FT4trailing15s/advance7.5s; no queued analyses.
-             Missed boundary reports overrun/skipped interval; never claims completeness.
+             Missed boundary drops outstanding future and records latest abandoned
+             window support in last_overrun; partials retained, no fabricated audio gap.
+             Newest supported window replaces obsolete work, never claims complete history.
              Existing receive owner mutually excludes imports/file jobs/live; CPU50ms
              quanta service conversion/spectrum. Software backlog<=200ms, normalcancel250ms.
              Retain2048records/2MiB; livefirst_sequence eviction and410cursor_expired.
@@ -233,7 +244,7 @@ interface owns a second profile store, receive job authority, decoder or transmi
 | CL-008-06 | FR-009 | Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. | TC-009-001; TC-009-003 |
 
 **Ownership and implementation boundary.** The station `recording` receive owner
-keeps its single source/job/generation lifecycle for file spectrum, offline decode or
+keeps its single source/job/generation lifecycle for recorded spectrum or
 live receive; these are mutually exclusive per profile with no pending-job queue.
 The #7 pure `decoder` functions own source decoding, FEC, waveform reconstruction and
 mode analysis. The #8 `audio` module owns capture and the only native-to-canonical
@@ -319,7 +330,7 @@ Bracket GetSystemTimePreciseAsFileTime with two QPC reads, use midpoint correlat
 and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC anchor.
 Recheck once/second. A change exceeding20 ms invalidates that timing segment rather
 than warping sample indices. QPC/system correlation does not prove externally accurate
-UTC: label this basis system_utc with external_accuracy_unknown. Offline decoding and
+UTC: label this basis system_utc with external_accuracy_unknown. Internal numerical fixtures and
 live spectrum/source-relative decoding work without UTC; no slot/DT or future transmit
 clock-readiness claim follows from an unverified system clock.
 
@@ -330,10 +341,12 @@ up-to15 s windows every7.5 s for FT4, including initial shorter complete support
 Reuse #7 kernels/records, preserving global canonical start_frame across known gaps.
 No queued analysis windows: if processing misses the next boundary, report overrun and
 the skipped interval, abandon obsolete work and use the latest supported window.
+The reported last_overrun interval is the half-open support of the most recently
+abandoned analysis window. It reports skipped analysis, not missing audio or fabricated
+source gaps. Retain clearly partial verified results from that window.
 No unbounded backlog or claimed complete history after loss. Retain at most2048 results
 and2 MiB encoded content; live eviction advances first_sequence explicitly, with
-cursor_expired instead of silently claiming reliable complete delivery. Offline #7
-retains its existing finite-job limit behavior. The spectrum uses existing fixed
+cursor_expired instead of silently claiming reliable complete delivery. Finite numerical fixtures retain their test-context limits; production uses bounded live modem history. The spectrum uses existing fixed
 0..3000 Hz wire products and rendering, independently of the decoder's200..3500 Hz search.
 
 Audio states are closed/opening/running/closing/unavailable. Explicit stop invalidates
@@ -431,9 +444,11 @@ Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states
 nullable strings and retry integer0..8000/null. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
-`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count}` with UUID id,
+`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun}` with UUID id,
 mode spectrum/ft4/ft8, existing receive states and safe counters. available_count is
 next_sequence-first_sequence (0..2048 retained records), not lifetime publication count.
+last_overrun is null or the latest abandoned analysis half-open
+`{first_frame,end_frame}`, safe counters and end<=capturednext; cleared on newcontext.
 Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
@@ -445,14 +460,16 @@ receive owner; busy/import/replay/decode cannot start another capture. Success20
 the new snapshot. `POST /receive/stop` requires exactly
 `{v,profile_id,boot_id,generation,job_id}` and returns202/current snapshot after publication
 invalidation; terminal state follows actual release. IDs and generation are not caller
-selected. A new start/gap epoch cannot accept an older stop or append old output.
+selected. Initialstart allocatesjob/gen and firstsourceACK reusesthatjob/gen. Subsequent
+unknown epoch invalidates oldpublication/ring, allocatesfreshsource/job/gen beforeACK,
+retainingcontinuousintent. Older stop/DELETE and callbacks cannot affect newcontext.
+Knownmarkedgaps keepcontext/globalframes but resetanalysis/private modem state.
 
 `GET /receive/results` requires source_id,job_id,generation,cursor and optional limit1..16
 (default16) query keys; mode must be ft4/ft8. Exact page keys are
 `{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records}`.
-UUID identities, mode, state, error, search_limited and record payload/field/text/SNR/
-frequency shapes follow12.7. Only the live counter domains below replace its finite
-recording/sequence bounds; offline12.7 remains unchanged.
+UUID identities, mode, state, error, search_limited and shared record
+payload/field/text/SNR/frequency shapes follow12.7. Live counter/retained domains follow12.8.
 
 For live pages, first_sequence and next_sequence are nonnegative safe integers up to
 9007199254740991. first_sequence is the oldest retained sequence; next_sequence is

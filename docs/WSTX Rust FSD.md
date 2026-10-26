@@ -437,18 +437,18 @@ starting points, not a promise that every model/firmware offers identical resour
    hardware or native-profile fields. A mixed set of instances MUST preserve each
    profile's selected path, configuration and routing independently.
 
-### 4.4 Offline FT4 and FT8 receive milestone — target FR-003/FR-004/FR-018
+### 4.4 Live FT4/FT8 modem and recorded-signal diagnostics
 
-The offline receive milestone MUST cover both FT4 and FT8. It MUST load supported
-recorded audio, allow explicit mode selection and display decoded messages with the
-mode-appropriate measurements. It MUST run without a physical radio, audio device or
-real-time reception schedule. Both modes use the common receive pipeline and browser
-presentation, with their own protocol-specific processing and acceptance vectors.
+Production decoding consumes live canonical audio through the common receive pipeline
+and browser result service. Explicit mode selection chooses FT4 or FT8 for the next
+receive job. Recorded WAVs supply internal numerical/integration test inputs with
+independent expected results; there is no file-decoding application operation or UI.
+The existing bounded recorded-input spectrum/waterfall diagnostic remains available.
 
-The recorded input capability below and the CR #7 contract in this section define the
-formats, message variants, numerical tolerances and budgets. Both modes require
-independent expected results and traceable recordings; FT8 fixtures do not establish
-FT4 correctness. The decoder remains a target, not an implemented capability.
+Both modes have their own message variants, numerical tolerances, budgets and traceable
+test vectors. The pure modem is independent of physical devices so automated tests can
+verify actual processing without a radio. Test-fixture execution is not a second
+production receive service.
 
 #### CR #6 recorded-input and display contract
 
@@ -457,8 +457,8 @@ and its communication extension in12.6. Source compatibility has been checked ag
 the 22 pinned mono 12kHz PCM16 FT8 reference recordings and three retained FT4 candidates.
 The recorded-input/Thin functionality and crisp Detailed refinement below are implemented.
 Review,
-validation and acceptance evidence is recorded on issue #6; the wider offline decoder
-milestone remains planned.
+validation and acceptance evidence is recorded on issue #6. Live modem behavior and
+its independent fixtures follow the common receive contract below.
 
 | Clause | Requirements | Promise | Verification |
 |---|---|---|---|
@@ -790,11 +790,11 @@ on viewport changes; no server persistence of pane size. Verify 1100x850 and 360
 keyboard-only use, touch input, 200% zoom and literal rendering of source/status text.
 No horizontal page overflow; axis labels and primary controls remain reachable.
 
-#### CR #7 offline decode contract — target, not implemented
+#### CR #7 pure modem contract for live receive and internal fixtures
 
 | Clause | Requirements | Promise | Verification |
 |---|---|---|---|
-| CL-007-01 | FR-003, FR-004, FR-018 | Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz recorded source through the existing receive-job authority without a radio or audio device. | TC-004-001; TC-004-002; TC-004-003 |
+| CL-007-01 | FR-003, FR-004, FR-018 | Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz live source through the existing receive-job authority. Independent recorded fixtures MUST exercise the same pure modem without a physical radio; no file-decoding product operation is provided. | TC-004-001; TC-004-002; TC-004-003 |
 | CL-007-02 | FR-003, FR-004, FR-019 | The common browser MUST show exact supported payload fields, unresolved hash identities, source-relative time, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. | TC-004-001; TC-004-002; TC-004-003 |
 | CL-007-03 | FR-003, FR-004, FR-018 | Each mode MUST satisfy independent payload/channel/waveform oracles; reference decoder output alone MUST NOT define exhaustive truth or make a hash reversible. | TC-004-001; TC-004-002; TC-004-003 |
 | CL-007-04 | FR-003, FR-004, FR-019, FR-021 | CPU-only decoding MUST meet the per-mode quality, rejection, runtime, memory, repeatability, cancellation and link budgets below, with explicit bounded-work failure. | TC-004-001; TC-004-002; TC-004-003 |
@@ -858,36 +858,31 @@ Fixed vectors carry source, exact fields/payload/CRC/codeword/tones, source-fram
 frequency, amplitude/noise/seed, generation parameters and WAV hash. Cross-math waveform
 comparison permits at most one PCM LSB; retained file identity uses its exact hash.
 
-**Ownership, scheduling and lifetime.** Consume the existing schema-1 finite mono-real
-12 kHz `SourceDescriptor`/immutable `SampleBlock` boundary and original-WAV capability.
-Reuse the profile-owned receive state, identity/generation, source reader, validation,
-auth/transport and RustFFT 6.4.1 dependency; no second file reader, FFT wrapper/provider,
-resampler, profile authority or job queue. #8 owns the single common conversion stage
-for native live formats; pure #7 modem functions consume canonical 12 kHz only. Native
-capture counters/UTC/converter delay remain a source timing sidecar. Decoder start_frame
-always indexes canonical samples; do not bridge explicit gaps or renumber segments.
+**Ownership, scheduling and lifetime.** Consume the existing schema-1 mono-real
+12 kHz SourceDescriptor/immutable SampleBlock boundary. Reuse the profile-owned receive
+state, identity/generation, validation, authentication/transport and RustFFT6.4.1;
+no second converter, FFT provider, profile authority or receive-job queue. Native capture
+counters/UTC/converter delay remain source timing metadata. Decoder start_frame indexes
+canonical samples; no waveform bridges an explicit gap or renumbers source segments.
 
-One import OR spectrum replay OR decode worker per station, no queued job. Decode runs
-as fast as bounded processing permits, without source-time pacing. Settings and selected
-mode are immutable per job; changing the browser selector affects only the next job.
-Workers copy active samples into <=360000-frame (30-second) history, holding at most
-two current source blocks and releasing their references after copying. Modem working
-allocations including history, FFT plans/scratch, candidates, recovery and subtraction
-MUST be <=64 MiB; private process-memory increase above idle <=96 MiB. At most 2048
-result records and 2 MiB encoded record content are retained. Exhaustion fails
-`decode_limit`, retaining clearly partial output; never silently drop results.
+One import OR recorded-spectrum replay OR continuous live receive owns the processing
+worker. Settings/mode are immutable per job. Copy active samples into at most360000
+frames of history, retaining at most two current source blocks and releasing references
+after copying. Live FT8 uses trailing up-to30seconds every15seconds, FT4 trailing
+up-to15seconds every7.5seconds, including initial shorter complete supports. The shared
+worker services conversion/spectrum between cooperative numerical quanta; no second
+decoder task substitutes for fairness. Live scheduling, overruns and result eviction
+follow4.5/12.8. Internal recorded numerical fixtures may advance bounded windows as fast
+as computation permits; they introduce no production file job or receive route.
 
-Use 30-second analysis windows advancing 15 seconds, including all complete waveform
-supports and a final shorter window; no complete edge frame is skipped. Incomplete
-frames alone may complete with zero results, visibly identified. Base-frequency search
-is inclusive 200..3500 Hz, independently of the waterfall's fixed 0..3000 Hz axis.
-Decoded results such as 3159 or3337Hz remain in the result table without auto-scaling,
-panning or extending that view. The shared8192-sample display history and2048/4096
-display FFT workspaces are spectrum-path resources, not the decoder's mode history
-or transform sizes. Deduplicate
-same mode/payload within half a symbol of estimated start, retaining repeated messages
-in later transmissions. Results are ordered by publication sequence, not presumed UTC.
-Recording filenames never establish UTC; source-relative seconds are start_frame/12000.
+All modem working allocations, including history, FFT plans/scratch, candidates,
+recovery and subtraction, remain <=64MiB; private process increase above idle <=96MiB.
+Base-frequency search is inclusive200..3500Hz, independent of the fixed0..3000Hz
+waterfall. Do not extend the waterfall to conceal higher decoded frequencies. Existing
+8192-sample display history and2048/4096 FFT workspaces remain spectrum-only resources.
+Deduplicate the same mode/payload within half a symbol of estimated start, retaining
+later repeated transmissions. Result order is publication sequence. Source-relative
+seconds equal start_frame/12000; fixture filenames never establish UTC.
 
 **Modem context lifetime.** `DecodeState::new(mode)` is a finite numerical-test utility:
 its2048-key/2MiB publication limits apply for that entire context. Production continuous
@@ -1175,7 +1170,7 @@ interface owns a second profile store, receive job authority, decoder or transmi
 | CL-008-06 | FR-009 | Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. | TC-009-001; TC-009-003 |
 
 **Ownership and implementation boundary.** The station `recording` receive owner
-keeps its single source/job/generation lifecycle for file spectrum, offline decode or
+keeps its single source/job/generation lifecycle for recorded spectrum or
 live receive; these are mutually exclusive per profile with no pending-job queue.
 The #7 pure `decoder` functions own source decoding, FEC, waveform reconstruction and
 mode analysis. The #8 `audio` module owns capture and the only native-to-canonical
@@ -1261,7 +1256,7 @@ Bracket GetSystemTimePreciseAsFileTime with two QPC reads, use midpoint correlat
 and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC anchor.
 Recheck once/second. A change exceeding20 ms invalidates that timing segment rather
 than warping sample indices. QPC/system correlation does not prove externally accurate
-UTC: label this basis system_utc with external_accuracy_unknown. Offline decoding and
+UTC: label this basis system_utc with external_accuracy_unknown. Internal numerical fixtures and
 live spectrum/source-relative decoding work without UTC; no slot/DT or future transmit
 clock-readiness claim follows from an unverified system clock.
 
@@ -1272,10 +1267,12 @@ up-to15 s windows every7.5 s for FT4, including initial shorter complete support
 Reuse #7 kernels/records, preserving global canonical start_frame across known gaps.
 No queued analysis windows: if processing misses the next boundary, report overrun and
 the skipped interval, abandon obsolete work and use the latest supported window.
+The reported last_overrun interval is the half-open support of the most recently
+abandoned analysis window. It reports skipped analysis, not missing audio or fabricated
+source gaps. Retain clearly partial verified results from that window.
 No unbounded backlog or claimed complete history after loss. Retain at most2048 results
 and2 MiB encoded content; live eviction advances first_sequence explicitly, with
-cursor_expired instead of silently claiming reliable complete delivery. Offline #7
-retains its existing finite-job limit behavior. The spectrum uses existing fixed
+cursor_expired instead of silently claiming reliable complete delivery. Finite numerical fixtures retain their test-context limits; production uses bounded live modem history. The spectrum uses existing fixed
 0..3000 Hz wire products and rendering, independently of the decoder's200..3500 Hz search.
 
 Audio states are closed/opening/running/closing/unavailable. Explicit stop invalidates
@@ -3158,46 +3155,21 @@ Report upload and cold-page bytes/timing separately; fixtures are uploaded befor
 steady-state display measurement. Reconnection resets subscription and refreshes snapshots,
 never resumes or retries a mutation implicitly.
 
-### 12.7. Offline decoder extension for CR #7 — target interface
+### 12.7. Shared FT4/FT8 decoded-record schema
 
-This is the planned CR #7 extension, not a declaration that decoder routes exist in the
-delivered status/recording server. Apply12.6's selected-profile mode, exact Origin/TLS
-authentication, strict JSON/UUID/safe-integer validation, <=1024-byte control requests,
-no-store/no-CORS, fixed errors and validation order. GET permits absent Origin, rejects
-wrong/repeated Origin, and requires the existing TLS profile session. Mutations require
-exact single Origin including loopback. No route accepts a server path/URL/client
-filename or gives another profile authority. Unsupported methods405; environment-only
-mode404. Existing wstx.v1 status/spectrum payloads remain unchanged; no result event is
-carried only by lossy WebSocket display output.
-
-| Route/method | Exact input | Exact successful result |
-|---|---|---|
-| GET /recording/decoder | No body/query |200 `{v:1,profile_id,boot_id,generation,modes:["ft4","ft8"],job}`; job null or `{id,source_id,generation,mode,state,processed_frames,available_count,error,search_limited}` for the retained current decode job. Snapshot<=1536UTF8bytes. A current nondecode job gives job:null. |
-| POST /recording/decode | `{v:1,profile_id,boot_id,generation,recording_id,mode}`; mode exactly lowercase`ft4|ft8` |202 `{v:1,id,generation,state:"running"}`; allocate jobUUID and fresh station generation, immutable mode/settings, frame0 progress. Existing import/replay/decode activity returns409busy; no queue. |
-| GET /recording/jobs/{id}/decodes?after=N | No body; missing after means0; exactly one canonical decimal nonnegative safe-integer cursor, no leading zeros except0, no unknown query keys |200 `{v:1,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,available_count,next,more,records}`. At mostone record, body<=1536UTF8bytes. next is next unread index; more means another record is already available. Running empty page is distinguished from terminal empty by state. |
-| DELETE /recording/jobs/{id} | Existing no-body cancellation route | Existing response/lifecycle applies to kind`decode` as well as`spectrum`; invalidation before ack, terminal only after release. Terminal repeat does not delete results or cancel another job. |
-
-The12.6 snapshot additionally permits job.kind=`decode` with its existing job fields;
-its detailed immutable mode/results are on the decoder snapshot, not new status fields.
-Existing spectrum jobs retain their exact representation. Unknown syntactic mode/keys,
-duplicate/invalid cursor or cursor>available_count400invalid_request; wrong profile403;
-boot/generation conflict409state_conflict; absent source409no_recording; unavailable
-source409recording_unavailable; busy409busy; unknown/wrong selected source or old/foreign
-job404not_found; generation ceiling409generation_exhausted. Source/read failure uses
-recording_unavailable; invalid pure samples fail invalid_samples; memory/result budget
-exhaustion fail decode_limit; unexpected modem failure fail decode_failed. These last
-three are stable job errors, not leaked exception strings. HTTP storage failures retain
-the existing503storage_unavailable/degraded-worker policy. Failure never reports a
-completed job. Existing validation order wins when several barriers fail.
+This is the common decoded payload/result representation used by the live receive
+service in12.8 and internal numerical test fixtures. It defines no file-decode job,
+recording-decode route, decoder snapshot or offline browser action. Production start,
+stop, authentication, identity, pagination and error behavior are exclusively12.8.
+No raw-audio/test-source/client-path command is exposed to production clients.
 
 Each result has exactly `{sequence,status,payload77,i3,n3,text,fields,start_frame,
-frequency_hz,snr_db}`: sequence0..2047; status`decoded|unsupported|invalid_payload`;
+frequency_hz,snr_db}`: sequence is a nonnegative safe integer below the live next_sequence; status`decoded|unsupported|invalid_payload`;
 payload77 exactly77ASCIIbinary digits; i30..7; n3null unlessi3=0 then0..7;
 text null unlessdecoded then<=80canonicalASCIIcharacters; fields null unlessdecoded;
-start_frame0..source_frames-1; finitefrequency_hz200..3500; snr_dbnull or finite[-60,60]
-under4.4's estimator. A record serializes to<=1024UTF8bytes. Retain atmost2048records
-and2MiBencodedrecordcontent; oversize/exhaustion failsdecode_limit with partial output.
-No unbounded server/query history; atmost2048nonempty pages plus one empty end page.
+start_frame is a nonnegative safe integer below the actually captured next_frame; finitefrequency_hz200..3500; snr_dbnull or finite[-60,60]
+under4.4's estimator. A live record serializes to<=2048UTF8bytes; numerical modem state retains its stricter1024-byte reserved-record budget. The live2048-record/2MiB retained ring evicts explicitly under12.8; an individual oversized record failsdecode_limit with retained partial output.
+The reliable live result-window/cursor rules and page budgets are defined in12.8.
 
 Call values have exactly `{kind,text,hash_bits,hash_value}`. kind`call` has concrete
 uppercase text1..13characters (nonstandard full call<=11) and nullhash fields;
@@ -3217,25 +3189,12 @@ unknown fields rejected; i3/n3 disambiguates their protocol family:
 |4|`{type:"nonstandard",full_call,hashed_call,hash_second,cq,roger}`; concrete fullCall and hash12Call, Booleanshash_second/cq, rogernull/RRR/RR73/73. CQ ignores hash for display while preserving payload bits/typed raw hash.|
 |5|`{type:"vhf",to,from,ack,report,serial,grid}`; hash12Call to/hash22Call from, ackBoolean, report52..59, serial0..2047, grid6.|
 
-Results append in sequence, carry all identities and remain only for the latest job
-until another job/source or restart. Cancellation retains marked partial results;
-browser closure does not cancel. Another browser can observe/cancel the station-owned
-job. New source/job invalidates prior pages immediately. Snapshot/page queries have no
-side effects and can be repeated; no automatic mutation retry or replay after reconnect.
-Browser obtains the decoder snapshot before enabling controls; older-server404 visibly
-disables decoding. Mode selection is local next-job intent, not a persisted profile edit.
-
-One pending page request/browser, starts>=2000ms apart, none begins while thatbrowser's
-explicit status refresh is pending. Show loaded/available count and terminal state
-separately; do not label a partially drained completed job as fully displayed. All text
-is literal. Stale boot/source/job/generation or old socket callbacks cannot overwrite
-current results. Max-sized two-client page traffic and concurrent status must meet the
-existing32kbit/s accounting model, <=3000bytes/s/direction over60steadyseconds and
-every status refresh<=2s. Cold assets and page-drain duration are reported separately;
-no bulk completion deadline. Future joint live capture/FFT/decode profile limits optional
-spectrum tooneevent/2s and resultpolls toone/4s, retaining explicit row gaps and reliable
-pages; the same combined traffic/latency promises require independent integrated testing.
-Optional display cadence may decrease to preserve control; result loss is never implicit.
+The receive owner assigns actual lifetime result sequences and enforces the live
+2048-record/2MiB ring independently of modem private history. Results are retained
+through stop/failure as marked partial output until a new job/source/restart invalidates
+them. A live SearchLimited outcome fails the job with error decode_limit and
+search_limited=true while preserving accepted records; accepted cancellation has
+priority. No exception string or incomplete run is presented as successful decoding.
 
 ### 12.8. Live audio and CAT extension — target interface
 
@@ -3255,9 +3214,13 @@ Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states
 nullable strings and retry integer0..8000/null. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
-`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count}` with UUID id,
+`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun}` with UUID id,
 mode spectrum/ft4/ft8, existing receive states and safe counters. available_count is
 next_sequence-first_sequence (0..2048 retained records), not lifetime publication count.
+last_overrun is null until an analysis overrun, otherwise exactly
+`{first_frame,end_frame}` with nonnegative safe canonical counters, first_frame <
+end_frame <= actually captured next_frame. Replace it on each later abandoned
+analysis window and clear it on a new job/source epoch.
 Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
@@ -3269,14 +3232,19 @@ receive owner; busy/import/replay/decode cannot start another capture. Success20
 the new snapshot. `POST /receive/stop` requires exactly
 `{v,profile_id,boot_id,generation,job_id}` and returns202/current snapshot after publication
 invalidation; terminal state follows actual release. IDs and generation are not caller
-selected. A new start/gap epoch cannot accept an older stop or append old output.
+selected. The initial start allocates its job UUID and generation; its first source proposal
+uses that job/generation with a fresh source UUID. Every subsequent unknown-loss/reopen
+epoch invalidates old publication/results and allocates fresh source UUID, job UUID and
+generation before acknowledging the provider proposal. Continuous receive intent keeps
+the one owner through this transition. An older stop/DELETE or result callback cannot
+cancel or append to the new context. Known marked gaps preserve source/job/generation
+and canonical positions while resetting analysis and private modem history.
 
 `GET /receive/results` requires source_id,job_id,generation,cursor and optional limit1..16
 (default16) query keys; mode must be ft4/ft8. Exact page keys are
 `{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records}`.
 UUID identities, mode, state, error, search_limited and record payload/field/text/SNR/
-frequency shapes follow12.7. Only the live counter domains below replace its finite
-recording/sequence bounds; offline12.7 remains unchanged.
+frequency shapes follow12.7. The live counter and retained-result domains below apply.
 
 For live pages, first_sequence and next_sequence are nonnegative safe integers up to
 9007199254740991. first_sequence is the oldest retained sequence; next_sequence is
@@ -3302,7 +3270,10 @@ seeded state rather than waiting for a physical stream to reach the boundary.
 
 A live job uses shared kind live; GET /recording retains the imported-file metadata
 and reports that active live job without relabeling live samples as file data.
-Admission for import/replay/decode still sees busy through the single receive owner.
+Before the first provider epoch ACK its live job source_id is null; recorded-spectrum
+jobs retain their required source UUID. Results and spectrum frames always require
+the full acknowledged source/job/generation tuple, never a placeholder source ID.
+Admission for import/replay still sees busy through the single receive owner.
 
 Live spectrum reuses the exact12.6 frame messages and subscriptions, with the live
 source/job identity; no native PCM crosses the browser link. For a live source the
