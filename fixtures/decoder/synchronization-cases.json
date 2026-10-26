@@ -394,7 +394,7 @@
       "decode_mode": "ft8",
       "rate_hz": 12000,
       "frames": 180000,
-      "quantization": "pcm16_residual",
+      "quantization": "pcm16_best_fit_residual",
       "canonical_gain": 1,
       "drift_hz_per_second": 0,
       "noise_std": 0,
@@ -410,7 +410,7 @@
         }
       ],
       "expected": [],
-      "samples_sha256": "9412e81f7e4acd799bd8e9846433eefb3e7425573ed56c6687c5bae221e9364a"
+      "samples_sha256": "21ecc106e85a5d4f0df69189b3e175510b954abd80cda993b9fdadaee121fa33"
     },
     {
       "id": "ft4-phase-0p7-gain-1e-4",
@@ -801,7 +801,7 @@
       "decode_mode": "ft4",
       "rate_hz": 12000,
       "frames": 180000,
-      "quantization": "pcm16_residual",
+      "quantization": "pcm16_best_fit_residual",
       "canonical_gain": 1,
       "drift_hz_per_second": 0,
       "noise_std": 0,
@@ -817,8 +817,8 @@
         }
       ],
       "expected": [],
-      "samples_sha256": "ae058f993d1ab4425852555d47c951d1952ae7c16a9d3c5fb7de289585f7e621"
+      "samples_sha256": "4b26c52cc6e1a74a7cc524724ade55a05990504f6ec55b60b969618263d7209d"
     }
   ],
-  "generator_sha256": "b148f5f441606ec8810413146235468b12441484575e38908d8b2a1984ba1b7a"
+  "generator_sha256": "4eb7e85528035066da754680a55e06bb1199a9445c4434da34cb983d4902b563"
 }

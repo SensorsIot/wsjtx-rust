@@ -35,7 +35,10 @@ little-endian canonical floats and refuses a changed source/composer/sample hash
 The independent base composer supplies channel tones and real/90degree quadratures;
 linear drift adds phase pi*drift*(time since waveform start)^2. PCM16 cases use the
 same round(real*32767)/32768 conversion; gain is applied to canonical samples afterward.
-Residual cases contain only that conversion error after subtracting the exact source.
+Residual cases independently solve the full-support2x2Gram system for unit real/90degree
+GFSK templates and subtract the best-fit reconstruction from the quantized source.
+Their two inner products satisfy the FSD's double/float orthogonality bounds before
+and after canonical gain/storage; no production fitting helper supplies the residual.
 The `--pin-hashes` preparation command writes independently computed input hashes before
 candidate execution. It is never part of candidate tests, decoder runtime or an oracle
 update based on decoder output. All original2286cases and thresholds remain separate.

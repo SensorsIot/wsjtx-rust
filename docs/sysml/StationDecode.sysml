@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 3885d576405e31608f02f345693b7867c7e2760d7dc0b82e5c615a41b42487cc
+// Canonical offline decode contract SHA256: 974696e062d2e239b3122612d266fe4ff1573857db14779cd83558d9f491c982
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -443,7 +443,11 @@ package WstxOfflineDecode {
             objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
             doc /* Independent additional recipes:phase.7/pi/2,drift+-1/30Hz/s,canonicalgains1e-4/8,
                  secondstation80dBbelowstronger with sub-PCM16-quantumamplitude andfloatrepeat;
-                 retainbothmessages. Quantization-only residuals:zeropublications,no search_limited.
+                 retainbothmessages. Quantizationresiduals afterindependent best-fit subtraction:
+                 q=round(x*32767)/32768,unitreal/90degreeu,w,fullsupport2x2Gramfit[a,b],
+                 r=q-a*u-b*w beforegain/floatstorage. Innerproducts<=128epsilon64*sqrt(max(u.u,w.w)*q.q)
+                 beforestorage,<=4epsilon32*sqrt(max(u.u,w.w)*rStored.rStored)afterward.
+                 Finitecaserequireszeropublications,no search_limited,neverproductionhelpers.
                  All2286originalcases/thresholds/256cap remain. Verifyrecipe/composer/audiohashes,
                  per-blockphase,45*Kproducts/rawmax,256^2peercomparisons,rank77recovery,
                  64MiBworkingstore. No externaldecoder oracle or skipped case pass. */

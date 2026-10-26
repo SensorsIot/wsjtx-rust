@@ -41,17 +41,45 @@ def generate(case, output, composer, tables):
     if sigma:
         samples = [x+sigma*rng.gaussian() for x in samples]
     assert max(map(abs,samples))<1, 'no clipping permitted'
+    fit = None
     quantization = case['quantization']
     if quantization == 'pcm16':
         samples = [round(x*32767)/32768 for x in samples]
-    elif quantization == 'pcm16_residual':
-        assert sigma == 0 and case['drift_hz_per_second'] == 0
-        samples = [round(x*32767)/32768-x*32767/32768 for x in samples]
+    elif quantization == 'pcm16_best_fit_residual':
+        assert sigma == 0 and case['drift_hz_per_second'] == 0 and len(case['signals']) == 1
+        source = dict(case['signals'][0], amplitude=0.5, phase_radians=0)
+        u = [2*x for x in composer.signal(source, channels[0], len(samples))]
+        source['phase_radians'] = math.pi/2
+        w = [2*x for x in composer.signal(source, channels[0], len(samples))]
+        quantized = [round(x*32767)/32768 for x in samples]
+        start=source['start_frame']
+        end=start+len(channels[0]['tones'])*(1920 if source['mode']=='ft8' else 576)
+        dot=lambda x,y: math.fsum(a*b for a,b in zip(x[start:end],y[start:end]))
+        cc,ss,cs=dot(u,u),dot(w,w),dot(u,w)
+        xc,xs=dot(u,quantized),dot(w,quantized)
+        determinant=cc*ss-cs*cs
+        assert determinant>1e-12*cc*ss
+        a=(xc*ss-xs*cs)/determinant
+        b=(xs*cc-xc*cs)/determinant
+        samples=[x-a*c-b*d for x,c,d in zip(quantized,u,w)]
+        tolerance=128*math.ulp(1.0)*math.sqrt(max(cc,ss)*dot(quantized,quantized))
+        ru,rw=dot(samples,u),dot(samples,w)
+        assert max(abs(ru),abs(rw))<=tolerance
+        fit=dict(a=a,b=b,real_inner_product=ru,quadrature_inner_product=rw,double_tolerance=tolerance)
+
     else:
         assert quantization == 'float32'
     samples = array.array('f',(x*case['canonical_gain'] for x in samples))
     if sys.byteorder != 'little':
         samples.byteswap()
+    if fit is not None:
+        stored=list(samples)
+        if sys.byteorder!='little':
+            decoded=array.array('f'); decoded.frombytes(samples.tobytes());decoded.byteswap();stored=list(decoded)
+        stored_tolerance=4*(2**-23)*math.sqrt(max(cc,ss)*dot(stored,stored))
+        ru,rw=dot(stored,u),dot(stored,w)
+        assert max(abs(ru),abs(rw))<=stored_tolerance
+        fit.update(stored_real_inner_product=ru,stored_quadrature_inner_product=rw,float_tolerance=stored_tolerance)
     raw = samples.tobytes()
     digest = hashlib.sha256(raw).hexdigest()
     if 'samples_sha256' in case:
@@ -65,12 +93,12 @@ def generate(case, output, composer, tables):
         pending.write_bytes(raw)
         os.replace(pending,file)
     recipe={key:value for key,value in case.items() if key!='samples_sha256'}
-    metadata = dict(case=recipe, samples_sha256=digest, composer_sha256=sha(Path(__file__)), base_composer_sha256=sha(BASE), channels=channels, format='finite mono f32 little-endian canonical12kHz', expected='fixed manifest only; not decoder output')
+    metadata = dict(case=recipe, samples_sha256=digest, composer_sha256=sha(Path(__file__)), base_composer_sha256=sha(BASE), channels=channels, best_fit=fit, format='finite mono f32 little-endian canonical12kHz', expected='fixed manifest only; not decoder output')
     record=output/'fixture.json'
     if record.exists():
         assert json.loads(record.read_text(encoding='utf-8'))==metadata, 'cached fixture metadata changed'
     else:
-        record.write_text(json.dumps(metadata,indent=2)+'\n',encoding='utf-8')
+        record.write_bytes((json.dumps(metadata,indent=2)+'\n').encode('utf-8'))
     return digest
 
 
@@ -97,7 +125,7 @@ def main():
             case['samples_sha256']=digest
     if args.pin_hashes:
         document['generator_sha256']=sha(Path(__file__))
-        manifest.write_text(json.dumps(document,indent=2)+'\n',encoding='utf-8')
+        manifest.write_bytes((json.dumps(document,indent=2)+'\n').encode('utf-8'))
     print(json.dumps(dict(cases=14,manifest_sha256=sha(manifest),composer_sha256=sha(Path(__file__)),status='independent canonical inputs; no decoder execution')))
 
 
