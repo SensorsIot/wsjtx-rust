@@ -67,15 +67,11 @@ impl<T: Transport> Executor<T> {
             let _ = transport.close();
             return Err(Error::Unsupported);
         }
-        if authority.profile_id.is_empty()
-            || authority.boot_id.is_empty()
-            || authority.resource_id.is_empty()
-            || authority.connection_generation == 0
-            || authority.connection_generation > 9_007_199_254_740_991
-            || authority.profile_revision > 9_007_199_254_740_991
-        {
-            let _ = transport.close();
-            return Err(Error::InvalidRequest);
+        if let Err(error) = authority.validate() {
+            if transport.close().is_err() {
+                return Err(Error::FailedClose);
+            }
+            return Err(error);
         }
         let automatic = configuration.baud == Baud::Auto;
         let rates = match configuration.baud {

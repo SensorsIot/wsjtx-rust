@@ -46,6 +46,10 @@ impl Actor {
         F: FnOnce(Instant, &AtomicBool) -> Result<T> + Send + 'static,
     {
         configuration.validate()?;
+        authority.validate()?;
+        if !catalogue.supports(&super::Operation::ReadFrequency) {
+            return Err(Error::Unsupported);
+        }
         let deadline = Instant::now() + Duration::from_secs(5);
         let snapshot = Arc::new(Mutex::new(Snapshot {
             state: State::Connecting,

@@ -192,7 +192,7 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
     }
     Err(Error::Limit)
 }
-fn claim_identity(identity: &str, lock_root: &Path) -> Result<File> {
+pub(crate) fn claim_identity(identity: &str, lock_root: &Path) -> Result<File> {
     if identity.is_empty() || identity.len() > 1024 {
         return Err(Error::InvalidConfiguration);
     }
@@ -223,6 +223,21 @@ fn claim_identity(identity: &str, lock_root: &Path) -> Result<File> {
     Ok(file)
 }
 impl SerialTransport {
+    #[cfg(test)]
+    #[allow(
+        dead_code,
+        reason = "Only the native fixture target consumes this private test constructor"
+    )]
+    pub(crate) fn from_owned_test_handle(handle: std::os::windows::io::OwnedHandle) -> Self {
+        use std::os::windows::io::IntoRawHandle;
+        Self {
+            handle: Some(HANDLE(handle.into_raw_handle())),
+            pending: None,
+            identity: "owned-test-pipe".into(),
+            ownership: None,
+        }
+    }
+
     /// Resolve the selected endpoint and open its immutable OS interface path.
     pub fn open(
         configuration: &Configuration,
@@ -258,7 +273,9 @@ impl SerialTransport {
             ownership: Some(ownership),
         };
         if let Err(error) = check(deadline, cancel).and_then(|_| result.configure(9600)) {
-            let _ = result.close();
+            if result.close().is_err() {
+                return Err(Error::FailedClose);
+            }
             return Err(error);
         }
         Ok(result)
@@ -488,173 +505,5 @@ fn map(error: ::windows::core::Error) -> Error {
         Error::ResourceInUse
     } else {
         Error::Unavailable
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ::windows::Win32::System::Pipes::*;
-    use std::sync::{Arc, atomic::AtomicU64};
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    #[test]
-    fn identity_lease_child_probe() {
-        if let Some(path) = std::env::var_os("WSTX_TEST_CAT_LOCK_ROOT") {
-            assert!(matches!(
-                claim_identity("usb\\vid_10c4&pid_ea60\\fixture", Path::new(&path)),
-                Err(Error::ResourceInUse)
-            ));
-        }
-    }
-    #[test]
-    fn physical_identity_lease_conflicts_across_processes_and_case_aliases() {
-        let root = std::env::temp_dir().join(format!(
-            "wstx-cat-lock-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let lease = claim_identity("USB\\VID_10C4&PID_EA60\\FIXTURE", &root).unwrap();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "radio_control::windows::tests::identity_lease_child_probe",
-            ])
-            .env("WSTX_TEST_CAT_LOCK_ROOT", &root)
-            .status()
-            .unwrap();
-        assert!(status.success());
-        drop(lease);
-        drop(claim_identity("usb\\vid_10c4&pid_ea60\\fixture", &root).unwrap());
-        std::fs::remove_dir_all(root).unwrap();
-        assert!(matches!(
-            resolve_endpoint(0),
-            Err(Error::InvalidConfiguration)
-        ));
-    }
-    #[test]
-    #[ignore = "Read-only OS discovery acceptance: explicitly select the test PC and port"]
-    fn read_only_selected_endpoint_discovery() {
-        let port = std::env::var("WSTX_TEST_SERIAL_PORT")
-            .unwrap()
-            .parse::<u16>()
-            .unwrap();
-        let endpoint = resolve_endpoint(port).unwrap();
-        println!("COM{} PNP {}", endpoint.port, endpoint.instance_id);
-        if let Ok(expected) = std::env::var("WSTX_TEST_SERIAL_PNP") {
-            assert_eq!(
-                endpoint.instance_id.to_ascii_uppercase(),
-                expected.to_ascii_uppercase()
-            )
-        }
-    }
-    fn pair() -> (SerialTransport, SerialTransport) {
-        let name: Vec<u16> = format!(
-            "\\\\.\\pipe\\wstx-cat-{}-{}\0",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        )
-        .encode_utf16()
-        .collect();
-        // SAFETY: unique local-only named pipe, no shared memory or external radio endpoints.
-        let server = unsafe {
-            CreateNamedPipeW(
-                PCWSTR(name.as_ptr()),
-                PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_REJECT_REMOTE_CLIENTS,
-                1,
-                256,
-                256,
-                0,
-                None,
-            )
-        };
-        assert!(!server.is_invalid());
-        let server = SerialTransport {
-            handle: Some(server),
-            pending: None,
-            identity: "test-pipe-server".into(),
-            ownership: None,
-        };
-        // SAFETY: unique pipe created above; asynchronous owned client handle.
-        let client = unsafe {
-            CreateFileW(
-                PCWSTR(name.as_ptr()),
-                GENERIC_READ.0 | GENERIC_WRITE.0,
-                FILE_SHARE_MODE(0),
-                None,
-                OPEN_EXISTING,
-                FILE_FLAG_OVERLAPPED,
-                None,
-            )
-        }
-        .unwrap();
-        // The client is already connected; do not leave a pending ConnectNamedPipe operation.
-        // SAFETY: server handle remains owned and live, no pending connect is requested.
-        let connected = unsafe { ConnectNamedPipe(server.handle.unwrap(), None) };
-        assert!(
-            connected.is_ok()
-                || connected.unwrap_err().code() == HRESULT::from_win32(ERROR_PIPE_CONNECTED.0)
-        );
-        (
-            server,
-            SerialTransport {
-                handle: Some(client),
-                pending: None,
-                identity: "test-pipe-client".into(),
-                ownership: None,
-            },
-        )
-    }
-    #[test]
-    fn native_overlapped_pipe_io_uses_actual_owned_buffers_and_close() {
-        let (mut receiver, mut sender) = pair();
-        let cancel = AtomicBool::new(false);
-        let end = Instant::now() + Duration::from_secs(2);
-        assert_eq!(sender.write(&[0xfe, 0xfe, 0xe0], end, &cancel), Ok(3));
-        let mut bytes = [0; 256];
-        assert_eq!(receiver.read(&mut bytes, end, &cancel), Ok(3));
-        assert_eq!(&bytes[..3], &[0xfe, 0xfe, 0xe0]);
-        assert!(receiver.pending.is_none());
-        assert!(sender.pending.is_none());
-        receiver.close().unwrap();
-        receiver.close().unwrap();
-        assert!(receiver.handle.is_none());
-        sender.close().unwrap();
-    }
-    #[test]
-    fn native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
-        let (mut receiver, _sender) = pair();
-        let mut bytes = [0; 256];
-        let no_cancel = AtomicBool::new(false);
-        let start = Instant::now();
-        assert_eq!(
-            receiver.read(&mut bytes, start + Duration::from_millis(40), &no_cancel),
-            Err(Error::Timeout)
-        );
-        assert!(start.elapsed() < Duration::from_millis(250));
-        assert!(receiver.pending.is_none());
-        let cancel = Arc::new(AtomicBool::new(false));
-        let signal = cancel.clone();
-        let cancel_thread = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(25));
-            signal.store(true, Ordering::Release)
-        });
-        let start = Instant::now();
-        assert_eq!(
-            receiver.read(&mut bytes, start + Duration::from_secs(2), &cancel),
-            Err(Error::Cancelled)
-        );
-        cancel_thread.join().unwrap();
-        assert!(start.elapsed() < Duration::from_millis(250));
-        assert!(receiver.pending.is_none());
-        receiver.close().unwrap();
-        assert_eq!(
-            receiver.read(
-                &mut bytes,
-                Instant::now() + Duration::from_secs(1),
-                &no_cancel
-            ),
-            Err(Error::Unavailable)
-        );
     }
 }

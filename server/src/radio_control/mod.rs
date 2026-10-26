@@ -287,6 +287,21 @@ pub struct Authority {
     pub resource_id: String,
     pub connection_generation: u64,
 }
+impl Authority {
+    pub fn validate(&self) -> Result<()> {
+        if self.profile_id.is_empty()
+            || self.boot_id.is_empty()
+            || self.resource_id.is_empty()
+            || self.connection_generation == 0
+            || self.connection_generation > 9_007_199_254_740_991
+            || self.profile_revision > 9_007_199_254_740_991
+        {
+            Err(Error::InvalidRequest)
+        } else {
+            Ok(())
+        }
+    }
+}
 pub struct Request {
     pub authority: Authority,
     pub request_id: String,

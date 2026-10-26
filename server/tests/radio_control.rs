@@ -222,6 +222,25 @@ fn req(operation: Operation) -> Request {
         cancelled: Arc::new(AtomicBool::new(false)),
     }
 }
+// Proves: CL-008-06; TC-009-001. Invalid authority cannot even activate a native transport.
+#[test]
+fn actor_rejects_invalid_authority_before_native_factory() {
+    let mut invalid = authority();
+    invalid.profile_id.clear();
+    let activated = Arc::new(AtomicBool::new(false));
+    let called = activated.clone();
+    let result = radio_control::actor::Actor::begin(
+        Configuration::parse("COM3").unwrap(),
+        invalid,
+        Catalogue::builtin().unwrap(),
+        move |_, _| {
+            called.store(true, Ordering::Release);
+            Ok(Fake(Arc::new(Mutex::new(Script::default()))))
+        },
+    );
+    assert!(matches!(result, Err(Error::InvalidRequest)));
+    assert!(!activated.load(Ordering::Acquire));
+}
 fn service(actions: Vec<Action>) -> (Executor<Fake>, Arc<Mutex<Script>>) {
     let state = Arc::new(Mutex::new(Script {
         actions: std::iter::once(Action::Bytes(FREQUENCY.to_vec()))
