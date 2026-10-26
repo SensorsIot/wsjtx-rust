@@ -277,7 +277,9 @@ addEventListener('station-message',event => {
   for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:null});
   const row={...f,levels:Uint8Array.from(values)};rows.push(row);rows=rows.slice(-cap);estimate(row);paint();
 
-  snapshot.job.processed_frames=f.end_frame;show();
+  if(currentLive){live.job.processed_frames=Math.max(live.job.processed_frames,f.end_frame);live.source.next_frame=Math.max(live.source.next_frame,f.end_frame);}
+  else snapshot.job.processed_frames=f.end_frame;
+  show();
 });
 setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot)socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
 setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot?.import && !uploading)sync();},5000);
@@ -315,7 +317,9 @@ if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.stat
 const receiveControls=document.createElement('div');receiveControls.id='live-receive-controls';
 receiveControls.innerHTML='<label>Next receive mode<select id="receive-mode"><option value="ft8">FT8</option><option value="ft4">FT4</option><option value="spectrum">Spectrum only</option></select></label><button id="receive-start" disabled>Start receive</button><button id="receive-stop" disabled>Stop receive</button><button id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output><p id="receive-status" role="status">Live receive unavailable until station snapshot</p>';
 document.querySelector('.operating-controls').append(receiveControls);
-let live,livePending=false,liveAgain=false,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+// Mutations supersede earlier reads; accepted snapshots supersede pending pages.
+let receiveMutationEpoch=0,liveRevision=0;
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
 const receiveStatus=document.querySelector('#receive-status');
 function validLiveSnapshot(s){
@@ -350,10 +354,11 @@ function receiveShow(){
 }
 async function receiveSync(current=socket){
   if(current!==socket||connection.dataset.state!=='connected')return;
-  if(livePending){liveAgain=true;return;}livePending=true;
+  if(livePending){liveAgain=receiveMutationEpoch;return;}livePending=true;
+  const epoch=receiveMutationEpoch;
   try{
     const data=await request('/receive');
-    if(current!==socket)return;
+    if(current!==socket||epoch!==receiveMutationEpoch)return;
     if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
@@ -361,9 +366,9 @@ async function receiveSync(current=socket){
       if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
-    live=data;uncertainMutation=false;receiveFailure='';receiveShow();show();
-  }catch(error){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}
-  finally{livePending=false;if(liveAgain){liveAgain=false;receiveSync(socket);}}
+    live=data;liveRevision++;uncertainMutation=false;receiveFailure='';receiveShow();show();
+  }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
+  finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
 }
 function renderResults(){
   const body=document.querySelector('#band-activity tbody');
@@ -393,11 +398,11 @@ async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
   const now=performance.now();if(now-lastResultStart<4000)return;
   resultPending=true;lastResultStart=now;
-  const context=liveIdentity(live),current=socket,cursor=resultCursor;
+  const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
   try{
     const response=await fetch(`/receive/results?${query}`,{signal:AbortSignal.timeout(10000)}),page=await response.json();
-    if(current!==socket||context!==liveIdentity(live))return;
+    if(current!==socket||context!==liveIdentity(live)||revision!==liveRevision||epoch!==receiveMutationEpoch)return;
     if(response.status===410){
       if(page.error?.code!=='cursor_expired'||!Number.isSafeInteger(page.first_sequence)||!Number.isSafeInteger(page.next_sequence)||page.first_sequence<0||page.first_sequence>page.next_sequence)throw new Error('Invalid expired cursor');
       historyIncomplete=true;resultCursor=page.first_sequence;receiveShow();return;
@@ -410,19 +415,19 @@ async function receiveResults(){
     for(let i=0;i<page.records.length;i++)if(!validRecord(page.records[i])||page.records[i].sequence!==cursor+i)throw new Error('Invalid decoded record');
     resultCursor=page.next;resultRows.push(...page.records);resultRows=resultRows.slice(-2048);
     live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
-  }catch(error){receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
+  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
   finally{resultPending=false;}
 }
 document.querySelector('#receive-start').addEventListener('click',async()=>{
-  if(!live||mutationPending)return;mutationPending=true;receiveShow();
+  if(!live||mutationPending)return;receiveMutationEpoch++;mutationPending=true;receiveShow();
   try{await request('/receive/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,profile_revision:profileData.revision,mode:document.querySelector('#receive-mode').value})});await sync();await receiveSync();}
-  catch(error){uncertainMutation=true;receiveFailure=`Start outcome unknown · ${error.message} · refresh before another action`;}
+  catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Start outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 });
 document.querySelector('#receive-stop').addEventListener('click',async()=>{
-  if(!live?.job||mutationPending)return;mutationPending=true;receiveShow();
+  if(!live?.job||mutationPending)return;receiveMutationEpoch++;mutationPending=true;receiveShow();
   try{await request('/receive/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,job_id:live.job.id})});await receiveSync();await sync();}
-  catch(error){uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
+  catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 });
 document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
