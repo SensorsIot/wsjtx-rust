@@ -20,6 +20,38 @@ use windows::{
 };
 static NEXT: AtomicU64 = AtomicU64::new(1);
 #[test]
+fn exact_registry_portname_fallback_never_uses_friendly_names_or_disagreement() {
+    use radio_control::windows::exact_port_name;
+    assert_eq!(
+        exact_port_name("COM3", Ok(None), Ok(Some("COM3".into()))),
+        Ok(true)
+    );
+    assert_eq!(
+        exact_port_name("COM3", Ok(Some("COM3".into())), Ok(Some("COM7".into()))),
+        Err(Error::Protocol)
+    );
+    assert_eq!(
+        exact_port_name("COM3", Err(Error::Unavailable), Ok(Some("COM3".into()))),
+        Err(Error::Unavailable)
+    );
+    assert_eq!(
+        exact_port_name("COM3", Ok(Some("COM3".into())), Err(Error::Unavailable)),
+        Err(Error::Unavailable)
+    );
+    assert_eq!(
+        exact_port_name("COM3", Ok(None), Ok(Some("Silicon Labs (COM3)".into()))),
+        Err(Error::Protocol)
+    );
+    assert_eq!(
+        exact_port_name("COM3", Ok(None), Ok(Some("COM7".into()))),
+        Ok(false)
+    );
+    assert_eq!(
+        exact_port_name("COM3", Ok(None), Ok(Some("com3".into()))),
+        Ok(true)
+    );
+}
+#[test]
 fn identity_lease_child_probe() {
     if let Some(path) = std::env::var_os("WSTX_TEST_CAT_LOCK_ROOT") {
         assert!(matches!(

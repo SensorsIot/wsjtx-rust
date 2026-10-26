@@ -53,6 +53,101 @@ pub struct SerialEndpoint {
     pub instance_id: String,
     interface_path: Vec<u16>,
 }
+pub(crate) fn exact_port_name(
+    expected: &str,
+    modern: Result<Option<String>>,
+    registry: Result<Option<String>>,
+) -> Result<bool> {
+    let modern = modern?;
+    let registry = registry?;
+    if let (Some(a), Some(b)) = (&modern, &registry)
+        && !a.eq_ignore_ascii_case(b)
+    {
+        return Err(Error::Protocol);
+    }
+    let Some(name) = modern.or(registry) else {
+        return Ok(false);
+    };
+    let upper = name.to_ascii_uppercase();
+    let number = upper
+        .strip_prefix("COM")
+        .and_then(|n| n.parse::<u16>().ok())
+        .filter(|n| *n > 0)
+        .ok_or(Error::Protocol)?;
+    if upper != format!("COM{number}") {
+        return Err(Error::Protocol);
+    }
+    Ok(upper == expected)
+}
+fn port_text(bytes: &[u8]) -> Result<String> {
+    if !(2..=64).contains(&bytes.len()) || !bytes.len().is_multiple_of(2) {
+        return Err(Error::Protocol);
+    }
+    let units: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|v| u16::from_le_bytes(*v))
+        .collect();
+    if units.last() != Some(&0) || units[..units.len() - 1].contains(&0) {
+        return Err(Error::Protocol);
+    }
+    String::from_utf16(&units[..units.len() - 1]).map_err(|_| Error::Protocol)
+}
+fn registry_port_name(
+    set: ::windows::Win32::Devices::DeviceAndDriverInstallation::HDEVINFO,
+    device: &::windows::Win32::Devices::DeviceAndDriverInstallation::SP_DEVINFO_DATA,
+) -> Result<Option<String>> {
+    use ::windows::Win32::{Devices::DeviceAndDriverInstallation::*, System::Registry::*};
+    struct Key(HKEY);
+    impl Drop for Key {
+        fn drop(&mut self) {
+            // SAFETY: this read-only registry handle has one owner.
+            let _ = unsafe { RegCloseKey(self.0) };
+        }
+    }
+    // SAFETY: exact SP_DEVINFO_DATA from this information set, read-only device hardware key.
+    let key = match unsafe {
+        SetupDiOpenDevRegKey(
+            set,
+            device,
+            DICS_FLAG_GLOBAL.0,
+            0,
+            DIREG_DEV,
+            KEY_QUERY_VALUE.0,
+        )
+    } {
+        Ok(key) => Key(key),
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_FILE_NOT_FOUND.0) => {
+            return Ok(None);
+        }
+        Err(error) => return Err(map(error)),
+    };
+    let mut bytes = [0u8; 64];
+    let mut size = bytes.len() as u32;
+    let mut kind = REG_SZ;
+    // SAFETY: bounded byte buffer, constant exact PortName value; no friendly-name lookup or writes.
+    let result = unsafe {
+        RegQueryValueExW(
+            key.0,
+            ::windows::core::w!("PortName"),
+            None,
+            Some(&mut kind),
+            Some(bytes.as_mut_ptr()),
+            Some(&mut size),
+        )
+    };
+    if result == ERROR_FILE_NOT_FOUND {
+        return Ok(None);
+    }
+    if result != ERROR_SUCCESS {
+        return Err(Error::Unavailable);
+    }
+    if kind != REG_SZ || size > bytes.len() as u32 {
+        return Err(Error::Protocol);
+    }
+    port_text(&bytes[..size as usize]).map(Some)
+}
 struct Devices(::windows::Win32::Devices::DeviceAndDriverInstallation::HDEVINFO);
 impl Drop for Devices {
     fn drop(&mut self) {
@@ -89,7 +184,7 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
     );
     let expected = format!("COM{port}");
     let mut selected = None;
-    for index in 0..256 {
+    for index in 0..=256 {
         let mut interface = SP_DEVICE_INTERFACE_DATA {
             cbSize: std::mem::size_of::<SP_DEVICE_INTERFACE_DATA>() as u32,
             ..Default::default()
@@ -103,44 +198,8 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
             }
             return Err(map(error));
         }
-        let mut kind = DEVPROP_TYPE_STRING;
-        let mut property = [0u8; 64];
-        let mut required = 0;
-        // SAFETY: bounded property buffer; exact serial PortName key, never friendly-name matching.
-        if unsafe {
-            SetupDiGetDeviceInterfacePropertyW(
-                set.0,
-                &interface,
-                &DEVPKEY_DeviceInterface_Serial_PortName,
-                &mut kind,
-                Some(&mut property),
-                Some(&mut required),
-                0,
-            )
-        }
-        .is_err()
-        {
-            continue;
-        }
-        if kind != DEVPROP_TYPE_STRING || !(2..=64).contains(&required) || required % 2 != 0 {
-            continue;
-        }
-        let units: Vec<u16> = property[..required as usize]
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|v| u16::from_le_bytes([v[0], v[1]]))
-            .collect();
-        if units.last() != Some(&0)
-            || String::from_utf16(&units[..units.len() - 1])
-                .ok()
-                .as_deref()
-                != Some(expected.as_str())
-        {
-            continue;
-        }
-        if selected.is_some() {
-            return Err(Error::ResourceInUse);
+        if index == 256 {
+            return Err(Error::Limit);
         }
         let mut required = 0;
         // SAFETY: size query only; returned size is bounded before allocation.
@@ -170,6 +229,35 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
                 Some(&mut device),
             )
             .map_err(map)?;
+        }
+        let mut kind = DEVPROP_TYPE_STRING;
+        let mut property = [0u8; 64];
+        let mut property_required = 0;
+        // SAFETY: exact serial PortName property on this interface; bounded initialized buffer.
+        let modern = match unsafe {
+            SetupDiGetDeviceInterfacePropertyW(
+                set.0,
+                &interface,
+                &DEVPKEY_DeviceInterface_Serial_PortName,
+                &mut kind,
+                Some(&mut property),
+                Some(&mut property_required),
+                0,
+            )
+        } {
+            Ok(()) if kind == DEVPROP_TYPE_STRING && property_required <= property.len() as u32 => {
+                port_text(&property[..property_required as usize]).map(Some)
+            }
+            Ok(()) => Err(Error::Protocol),
+            Err(error) if error.code() == HRESULT::from_win32(ERROR_NOT_FOUND.0) => Ok(None),
+            Err(error) => Err(map(error)),
+        };
+        let registry = registry_port_name(set.0, &device);
+        if !exact_port_name(&expected, modern, registry)? {
+            continue;
+        }
+        if selected.is_some() {
+            return Err(Error::ResourceInUse);
         }
         let mut id = [0u16; 1024];
         // SAFETY: bounded initialized ID buffer and device record obtained from this set.
