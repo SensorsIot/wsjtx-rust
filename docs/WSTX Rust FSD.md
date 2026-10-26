@@ -1175,7 +1175,7 @@ transmit authority and halt. Optional native FlexRadio remains the later #13 ada
 | TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
 | TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
 | TC-009-003 — Control without audio | CL-008-05, CL-008-06 | Exercise every supported query and receive setter while audio is closed/unavailable. | Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations. | 2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. |
-| TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; simulate later TX/halt ownership. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
+| TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
 
 
 ### 4.6 Functional model
@@ -3012,8 +3012,10 @@ Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states
 nullable strings and retry integer0..8000/null. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
-`{id,mode,state,error,processed_frames,first_sequence,next_sequence}` with UUID id,
-mode spectrum/ft4/ft8, existing receive states and safe counters. Clock is
+`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count}` with UUID id,
+mode spectrum/ft4/ft8, existing receive states and safe counters. available_count is
+next_sequence-first_sequence (0..2048 retained records), not lifetime publication count.
+Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
 nonnegative integer uncertainty/null and external_accuracy unknown. Snapshot<=8192 bytes.
@@ -3027,12 +3029,33 @@ invalidation; terminal state follows actual release. IDs and generation are not 
 selected. A new start/gap epoch cannot accept an older stop or append old output.
 
 `GET /receive/results` requires source_id,job_id,generation,cursor and optional limit1..16
-(default16) query keys. Return the12.7 record/page semantics plus first_sequence; mode
-must be ft4/ft8. At most16 records/16384 encoded bytes, at most2048 encoded bytes per
-record. first_sequence is the oldest retained sequence; next is the continuation cursor.
-Cursor below first gives410 cursor_expired with first_sequence, never an apparently
-complete empty page. The client visibly marks incomplete history before continuing.
-Cursor above next_sequence is400. A replaced source/job is404, not a different stream.
+(default16) query keys; mode must be ft4/ft8. Exact page keys are
+`{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records}`.
+UUID identities, mode, state, error, search_limited and record payload/field/text/SNR/
+frequency shapes follow12.7. Only the live counter domains below replace its finite
+recording/sequence bounds; offline12.7 remains unchanged.
+
+For live pages, first_sequence and next_sequence are nonnegative safe integers up to
+9007199254740991. first_sequence is the oldest retained sequence; next_sequence is
+one past the lifetime latest publication. available_count=next_sequence-first_sequence
+is retained count0..2048, also bounded by2 MiB encoded records. Eviction removes oldest
+records and advances first_sequence; sequence never wraps or restarts within an epoch.
+Live record sequence and start_frame are nonnegative safe integers; sequence is below
+next_sequence and start_frame below the actually captured canonical next_frame, not a
+finite source_frames value. Before incrementing any counter beyond the safe maximum,
+fail counter_exhausted visibly and invalidate publication; never reuse an old sequence.
+
+Pages contain at most16 records/16384 encoded bytes, at most2048 encoded bytes/record.
+next is the first unreturned continuation cursor and more=(next<next_sequence), with
+an immutable counter/window snapshot per response. Cursor=next_sequence returns an empty
+page, next unchanged, more false. Cursor below first returns410 exactly
+`{v:1,error:{code:"cursor_expired",message:"Result history expired"},first_sequence,next_sequence}`;
+client visibly marks incomplete history before fetching the available oldest record.
+Cursor above next_sequence is400. Replaced source/job is404, never a different stream.
+For example first6/next2054/count2048 accepts cursor7,limit1 and returns record7,next8,
+more true; cursor5 returns410 with first6/next2054. Tests cover sequence2047/2048/2049,
+empty/one/full retained windows, byte-driven eviction and safe-counter exhaustion using
+seeded state rather than waiting for a physical stream to reach the boundary.
 
 A live job uses shared kind live; GET /recording retains the imported-file metadata
 and reports that active live job without relabeling live samples as file data.
