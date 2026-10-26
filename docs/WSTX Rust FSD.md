@@ -948,8 +948,53 @@ values. Data-neighbor priors start uniform; sync/ramp priors select their known 
 After each FEC round, form the next data-neighbor prior from its two posterior bit
 LLRs L: logP(bits)=-sum log(1+exp(-sign(bit)*L)), sign(0)=+1, sign(1)=-1, L clamped
 [-12,12], then normalize over the four tones. Marginalize pair scores plus both log
-priors with log-sum-exp. At most two posterior refinements follow the initial round.
-No message meaning, callsign cache or AP hint supplies a tone or prior.
+priors with log-sum-exp. At most two observation refinements follow the initial round.
+The final FT4 round without a qualified peer uses the paired observation below instead
+of another single-symbol marginalization. With a peer it retains the single-symbol
+nuisance-aware observation. An earlier H+CRC word satisfying the channel gates may
+finish before that final round. No message meaning, callsign cache or AP hint supplies
+a tone or prior.
+
+**FT4 paired observation.** The final no-peer observation uses phase continuity within
+two adjacent symbols, with an independent unknown complex gain for each pair. It adds
+no FEC round, candidate, source, worker or AP information. Set N=576 and G=52 pairs
+covering symbols0..103; the final ramp tone104 and exterior tone-1 are known zero.
+The four local tones (L,T,U,R) occupy relative symbols-1,0,1,2. Use the same unit GFSK
+pulse primitive as reconstruction, with BT=1 and
+p(t)=(erf(c*(t+0.5))-erf(c*(t-0.5)))/2, c=pi*sqrt(2/ln2).
+For lag a in {-1,0,1,2}, psi_a(k)=(2*pi/N)*sum[m=0..k]
+p((m+0.5)/N-a-0.5), k=0..2N-1. Cache the256 complex-f64 unit templates
+h(L,T,U,R,k)=exp(i*(L*psi_-1+T*psi_0+U*psi_1+R*psi_2)); outside local tones are zero.
+The per-pair unknown phase absorbs each template's constant prefix phase. Only the
+first pair contains an amplitude ramp; its four tones are fixed by ramp/sync masks,
+so its likelihood is a common path constant and contributes no unknown-tone evidence.
+
+For pair g, use the current-pass source samples x[2gN+k] and the selected frequency f:
+z_g(L,T,U,R)=sum[k=0..2N-1] x[2gN+k]*conj(h)*exp(-i*2*pi*f*k/12000).
+The factor F_g(L,T,U,R)=abs(z_g)^2/(2N*v) uses the same analytic-quadrature likelihood
+convention and calibrated v as single-symbol power. Subtract a common maximum from
+all256 factors in each pair before sequence inference. Sync/ramp masks allow only
+their known physical tone; data variables have uniform priors, with no FEC-posterior
+or received-message prior in this paired round. State index is4*left+current, and
+factor index is((L*4+T)*4+U)*4+R.
+
+Compute forward/backward log-sum-exp on16 states. alpha_0(L,T)=0 for L=0 and -infinity
+otherwise. alpha_(g+1)(U,R)=LSE_(L,T)(alpha_g(L,T)+F_g(L,T,U,R)), omitting transitions
+whose T at2g or U at2g+1 violates its mask. beta_G(U,R)=0 for R=0 and -infinity
+otherwise; beta_g(L,T)=LSE_(U,R)(F_g(L,T,U,R)+beta_(g+1)(U,R)), with the same masks.
+Subtract a common finite maximum from every forward/backward state row. The joint
+transition log mass is alpha_g(L,T)+F_g(L,T,U,R)+beta_(g+1)(U,R). Sum it over L,U,R
+for the marginal of T, and over L,T,R for U, then normalize each four-tone marginal.
+The final boundary marginal is[0,-infinity,-infinity,-infinity]. Gray-bit log-sum-exp
+and clipping to[-12,12] produce the174 channel LLRs for the existing final FEC/OSD.
+
+The pure sequence kernel accepts1..52 groups, exactly2G+1 nonempty four-tone masks
+with the final mask[true,false,false,false], and finite factors. Invalid dimensions,
+nonfinite arithmetic or no finite path reject the observation. At most52*256*1152
+(15,335,424) complex sample products,52*256 factors and two53*16 state arrays are
+retained; the template bank is4,718,592bytes. These share the existing64MiB workspace.
+Check cancellation/service before each pair correlation bank and before/after the
+bounded trellis. There is no phase tie between separate pairs.
 
 **Bounded overlapping-peer likelihood.** A candidate may use one strongest distinct
 phase-qualified peer whose start differs by <=N/2 and whose tone band overlaps. Base
@@ -1900,6 +1945,7 @@ the communication/recording companions; none require hardware consent.
 |---|---|---|
 | Both modes: payload-channel | Every supported i3/n3 family; exact fields/77 bits; call/CQ/grid/report/free-text/telemetry/contest/hash boundaries, first/max/invalid values; generate CRC/FEC and both tone frames independently. | Fixed expected fields/CRC/codeword/79 or 105 tones; separate CRC recurrence and published H syndrome agree. Hashes retain numeric width/value and `<...>`; source identity, received text and reference observations remain distinct. Include K1ABC=10214965, W9XYZ=12751800, FN42=10342, type3 WI=8049, type4 PJ2/W1AW with hash12=579 and current VHF hashes2662/3931158, report59/serial2047/gridRR99XX. |
 | Both modes: known-word fit metric | Generate independent analytic quadratures with phase=2*pi*f*(k+1)/12000+0.4*sin(2*pi*((k+1)/12000)/0.048), x=0.6*u-0.8*w,60480frames; take k=288..60191 every4 at f=1499,1499.9,1500,1500.1,1501,2999,3000,3001Hz. | Independent scalar Gram calculation recovers coefficients0.6/-0.8 and explained energy sum(x*x); candidate metric agrees within5e-7relative after f32storage. Both1500/3000carrier cases reject a mere scalar correction of the nonorthogonal complex-energy approximation. |
+| FT4: paired sequence scalar kernel | Use all8 fixed cases in `fixtures/decoder/pair-chain/inputs.json` with1..3 groups, uniform/asymmetric/known-symbol/coupled/extreme factors and two+1,000,000common-shift pairs. | Complete path enumeration at100decimal digits in the standalone producer supplies fixed log marginals for every variable and final boundary; candidate agrees within1e-9absolute, impossible tones are negative infinity. Masks, normalization and both common-shift invariances hold. Missing/empty/nonfinite/bad-boundary dimensions reject. The existing2286waveforms and14phase/scale/drift/dynamic-range cases retain their exact inputs and acceptance thresholds. |
 | Both modes: complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
 | Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
 | Both modes: overlap | Twenty equal-level pairs at two tone spacings and twenty pairs at one spacing with six dB difference/mode, fixed seeds/fields/source positions. | Both >=18/20 for equal pairs; stronger>=18 and weaker>=10 for unequal; no fabricated payload. Independent source mixture is the truth, even when the external reference misses weaker content. |

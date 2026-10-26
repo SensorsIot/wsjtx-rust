@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 968be09987138d2931b999e546ec859b080e6e8727a358918f71d5ace1b55ad8
+// Canonical offline decode contract SHA256: da99e43389dc3bdbd5021ab635c7a51e902f30c618af330e6269b0dacfddaaf1
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -298,12 +298,54 @@ package WstxOfflineDecode {
         in leftLogPrior : Real[4];
         in rightLogPrior : Real[4];
         return toneScores : Real[4];
-        doc /* Enumerate4left*4target*4right local templates (64*576complex-f32=294912bytes).
+        doc /* Enumerate4left*4target*4right local templates (64*576complex-f64=589824bytes).
              More distant neighbors fixed hard. For each target,logsumexp16pair likelihoods
              plusleft/right logpriors. Initial data uniform, knownsync/ramp delta priors.
-             Two posterior refinements:GraybitL clipped+-12,logP=-sumlog(1+exp(-sign(bit)*L)),
+             Atmosttwoobservationrefinements; finalFT4nopeer round usesFt4PairSequence
+             instead of anotherlocalmarginal. Withpeer retainlocalmarginal. GraybitL clipped+-12,logP=-sumlog(1+exp(-sign(bit)*L)),
              sign0=+1/sign1=-1; normalize across4tones. FT8 hard-neighbor templates/two
              posterior refinements. No additional source, thread, encoder or AP hint. */
+    }
+    calc def Ft4PairMetric {
+        in samples : Real[1152];
+        in localTones : Integer[4];
+        in baseFrequencyHz : Real;
+        in noiseVariance : Real;
+        return logFactor : Real;
+        doc /* N576,256cachedcomplex-f64templates oflength2N;4,718,592bytes.
+             L,T,U,R atrelative symbols-1,0,1,2. SharedreconstructionunitGaussianpulseBT1:
+             p(t)=(erf(c*(t+.5))-erf(c*(t-.5)))/2,c=pi*sqrt(2/ln2).
+             psi_a(k)=(2pi/N)*sum_m0..k p((m+.5)/N-a-.5),a=-1..2,k0..2N-1.
+             h=exp(i*(Lpsi_-1+Tpsi_0+Upsi_1+Rpsi_2));otherslocaltoneszero.
+             Eachpairindependentcomplexgain absorbsconstantprefixphase.
+             z=sum_k x[2gN+k]*conj(h)*exp(-i2pi*f*k/12000), F=abs(z)^2/(2N*v).
+             Sameanalytic-quadraturelikelihoodconventionaslocalpower; variancefloor1e-20.
+             Index((L*4+T)*4+U)*4+R; subtractcommonmaxoverall256factors/pair. */
+    }
+    calc def Ft4PairSequence {
+        in factorGroups : Integer;
+        in pairFactors : Real[256..13312];
+        in allowedTones : Boolean[12..420];
+        return toneLogMarginals : Real[12..420];
+        doc /* Purebounded16stateforward/backward. PhysicalFT4G52coverssymbols0..103;
+             exteriorz[-1]=0,finalramptonez[104]=0. GenericmathG1..52, exact2G+1masks,
+             eachnonempty; finalmask[true,false,false,false]. Allfactorsfinite, exactG*256.
+             Sync/ramp knownphysicaltonemasks; datauniform,noFECposterior/AP/messageprior.
+             Firstpairramp'sfourtonesfixedbysync/ramp, so itsweightiscommonpathconstant.
+             state(L,T)=4L+T. alpha0(L,T)=0ifL0elsenegInfinity.
+             alpha_(g+1)(U,R)=LSE_(L,T)(alpha_g(L,T)+F_g(L,T,U,R)).
+             betaG(U,R)=0ifR0elsenegInfinity;
+             beta_g(L,T)=LSE_(U,R)(F_g(L,T,U,R)+beta_(g+1)(U,R)).
+             OmittransitionsifT@2g/U@2g+1violatemasks,normalizefinitealphabeta rowsbymax.
+             Transitionmass=alpha+F+beta; LSEoverLURgivesT,andLTRgivesU; normalizetones.
+             Finalboundarylogmarginal[0,negInfinity,negInfinity,negInfinity].
+             GrayLSE/clamp+-12 yields174channelLLRs forEXISTINGfinalFEC/OSDround.
+             FinalFT4nopeeronly, replaceslastlocalround; earlyH+CRC/channelgatesmayfinish.
+             Noadditionalround/candidate/source/worker, nouniversalphasebetweenseparatepairs.
+             Invaliddimensions/nonfinitearithmetic/nofinitepathrejectobservation.
+             <=52*256*1152=15335424complexsampleproducts,52*256factors,two53*16statearrays.
+             Templates/factors/statesinsideexisting64MiB; checkpointsbeforeeachpairbank
+             andbefore/afterboundedtrellis. */
     }
     action def QualifySynchronization {
         in grid : SymbolTransformGrid;
@@ -440,6 +482,10 @@ package WstxOfflineDecode {
             doc /* FT4exactpayload/CRC/H/105tones/GFSKallfamilies+boundaries; strong36/40@-10,
                  weak20/40@-13; overlapsboth18/20at2spacings,strong18/weak10at1spacing6dB;
                  official>=16/19matches notexhaustivetruth. Error144frames/3Hz,3dBstrongAWGN.
+                 Pairsequence8scalarcasesG1..3: standaloneDecimal100completeenumeration,
+                 uniform/asymmetric/knownmask/coupled/extremefactors,two+1000000shiftpairs.
+                 Allvariable/boundarylogmarginalswithin1e-9absolute,impossibletonesnegInfinity;
+                 dimensions/empty/nonfinite/badboundaryreject; full2286/14inputsunchanged.
                  SeparateCRCrecurrence/publishedtables/fixedvectors/independentsynthesis.
                  Stride4Gramoracle:60480frames,k288..60191step4;
                  phase=2pi*f*(k+1)/12000+.4sin(2pi*((k+1)/12000)/.048),x=.6u-.8w.
