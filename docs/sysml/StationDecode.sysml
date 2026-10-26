@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 197de242b45d00d4421f28cfe3ff0dcea05851cc7a5c8bf304d11242f5c7ec33
+// Canonical offline decode contract SHA256: 4aaf46378538f96c72b4233014e0f1982e3ec0569f31db8b3db7591170783ee2
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -364,10 +364,12 @@ package WstxOfflineDecode {
              TrimN/2eachCostasblockend; stride4current-passsamples, unitanalyticGFSK,
              per-block real/quadratureG,b; maximize sum(b^T*inverse(G)*b), independent phases.
              Reject nonfinite orrelative det<=1e-12. NineCartesian dt={-N/16,0,N/16},
-             df={-spacing/16,0,spacing/16}, complete supports and200..3500only.
-             AxiscenterlineqMinus,qZero,qPlus proposev=h*(qMinus-qPlus)/
+             df={-spacing/16,0,spacing/16}. Omitout-of-bounds trials; neverclamp/dedupnodes.
+             Originalequallyspacedaxispoints only: complete supports and200..3500only.
+             Timeh=N/16frames,frequencyh=spacing/16Hz;axiscenterlineqMinus,qZero,qPlus proposev=h*(qMinus-qPlus)/
              (2*(qMinus-2*qZero+qPlus)) onlyallvalid,negativecurvature,abs(v)<=h;
-             otherwisev=0. Neareststartframe,tieslower; evaluatejointproposalonce.
+             otherwisev=0. Neareststartframe,tieslower; omitout-of-boundsjointproposal,
+             otherwiseevaluatejointproposalonce.
              Selecthighestof<=10scores,tieslowerfrequency/start. <=86400FT8 or17280FT4
              sampleterms/candidate, checkpoints,noadditionalcandidate/FECtrials.
              SharedRustFFT6.4.1planned/scalar, checked worker

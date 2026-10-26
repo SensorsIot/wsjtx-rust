@@ -938,11 +938,14 @@ sync waveform at that trial frequency. For each block form the two-column real/q
 Gram matrix G and projection b, and maximize the sum of b^T G^-1 b across blocks;
 block phases remain independent. Reject nonfinite or relative-determinant <=1e-12 fits.
 Evaluate at most nine Cartesian offsets dt in {-N/16,0,N/16} and df in
-{-spacing/16,0,spacing/16} from the discrete choice, clipped to complete supports and
-200..3500Hz. For each axis, use its three center-line scores q-,q0,q+ to propose
+{-spacing/16,0,spacing/16} from the discrete choice. Omit trials outside complete
+supports or200..3500Hz; never clamp a trial into a duplicate or unequally spaced node.
+For each axis (h=N/16 frames for time, h=spacing/16Hz for frequency), use its
+three original equally spaced center-line scores q-,q0,q+ to propose
 v=h*(q--q+)/(2*(q--2*q0+q+)) only when all are valid, curvature is negative and
 abs(v)<=h; otherwise use zero offset. Round the proposed start to the nearest frame,
-ties to the lower frame. Evaluate that joint proposal once, then select the highest
+ties to the lower frame. Omit an out-of-bounds joint proposal; otherwise evaluate it
+once, then select the highest
 score of at most ten trials, ties ascending frequency/time. This adds no candidate or
 FEC trial. Its at-most 10*(K-block_count)*N/4 sample terms are bounded at86400 for
 FT8 and17280 forFT4 per phase-qualified candidate, with existing cooperative checkpoints.
