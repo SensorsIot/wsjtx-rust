@@ -391,3 +391,56 @@ Candidate recordings and oracle limitations are specified in
 - Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - Keep original WAV files and expected-output texts unchanged, with hashes and source URLs recorded in a fixture manifest when imported.
 - For the selected WSJT-X `v3.3.0-beta4` behavior reference, generate a separate output set and record the exact binary, settings, command, and audio input. Do not overwrite the historical references.
+
+### Declared model projection and slice freshness
+
+The optional exact marker `<!-- sysml-projection: 2 -->` in the authoritative FSD
+selects declared projection metadata. Without it the tool retains the legacy projection
+and prints a warning that declared fidelity is inactive. Legacy fixed state lists are
+not evidence of implementation or test execution. Product integration requiring the
+new fidelity checks uses version 2.
+
+Version 2 uses two visible tables, with exact headers. Each projected requirement,
+clause and test has exactly one declared state; the identity cell is backticked:
+
+| Model identity | Declared state |
+|---|---|
+| `FR-001` | partial |
+| `CL-005-01` | target |
+| `TC-022-001` | planned |
+
+These rows illustrate the format, not the project's current coverage. Requirement
+and clause states are `target`, `partial`, `implemented`; verification states are
+`planned`, `partial`, `implemented`. They describe declared companion implementation,
+never execution results, independent review or live acceptance. Missing, duplicate,
+unknown or invalid metadata fails generation. Method-only CL-014 and TC-DOC elements
+remain outside product projection.
+
+Clause Verification cells and verification definitions name reciprocal stable IDs.
+The parser expands same-prefix numeric suffixes (`CL-005-02/03`, `CL-005-02,03`),
+ascending suffix ranges (`CL-005-01..03` or en-dash suffix ranges) and full IDs separated
+by punctuation. Width, undefined references and mismatched reciprocal links fail.
+Numbered normative clauses needing independent traceability receive explicit stable
+CL definitions in the FSD; the generator does not invent identities for prose.
+
+Every manual `.sysml` companion has exactly one row in the second table:
+
+| Manual companion | FSD sections |
+|---|---|
+| `Architecture.sysml` | 11 |
+| `Profiles.sysml` | 4.2, 6.2, 12.5 |
+
+The product author declares all relevant source dependencies; these rows illustrate
+the format. Each selection contains the numbered heading and its entire subtree,
+ending before the next heading at the same or shallower depth. Selected sections
+must exist and be unique and nonoverlapping; duplicate numbered headings fail.
+Source order and exact LF-normalized UTF-8 text define the digest, including the
+selected section keys. Unrelated sections do not invalidate a companion. Generated
+Requirements.sysml is excluded because it already fingerprints the entire source.
+
+`python tools/sysml.py fingerprints` prints the declared per-companion hashes and
+never edits models. After independent meaning comparison, each manual companion
+carries exactly one `// Canonical FSD slices SHA256: <64 lowercase hex digits>` line.
+`check` requires every declared companion file and rejects undeclared files or stale
+markers before the unchanged Pilot semantic and architecture checks. A renewed hash
+only records source freshness; it does not prove meaning parity or execute behavior.
