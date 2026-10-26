@@ -2,6 +2,9 @@
 // Production safe interfaces only. Native controller lifecycle and OS ownership are
 // exercised by audio_contract/audio_hardware; this target needs no FFI exception.
 pub use wstx_rust::{decoder, source};
+#[cfg(not(debug_assertions))]
+#[path = "../../fixtures/radio/native_ft8_fixture.rs"]
+mod native_ft8_fixture;
 #[path = "../src/receive.rs"]
 mod receive;
 
@@ -263,59 +266,17 @@ fn live_provider_unknown_loss_requires_ack_and_rejects_old_window_context() {
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "current_thread")]
 async fn live_native_provider_decodes_independent_ft8_callsign() {
-    use std::{fs, path::PathBuf, process::Command};
-    let root =
-        PathBuf::from(std::env::var_os("WSTX_DECODER_VECTORS").expect("verified vector cache"));
-    let tool = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../fixtures/decoder/independent-vector-tool/cache.py");
-    let verified = Command::new(if cfg!(windows) { "python" } else { "python3" })
-        .arg(tool)
-        .args(["--kind", "frozen", "--output"])
-        .arg(&root)
-        .arg("--verify-only")
-        .output()
-        .expect("independent fixture verification executes");
-    assert!(
-        verified.status.success(),
-        "{}",
-        String::from_utf8_lossy(&verified.stderr)
-    );
-    let manifest: serde_json::Value = serde_json::from_str(include_str!(
-        "../../fixtures/decoder/independent-vectors/manifest.json"
-    ))
-    .unwrap();
-    let vector = manifest["vectors"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|v| v["mode"] == "ft8" && v["id"] == "cq")
-        .unwrap();
-    let wav = fs::read(root.join("ft8-cq/000000_000000.wav")).unwrap();
-    assert_eq!(&wav[..4], b"RIFF");
-    assert_eq!(&wav[8..12], b"WAVE");
-    assert_eq!(&wav[36..40], b"data");
-    assert_eq!(wav.len(), 360_044);
-    let samples: Vec<f32> = wav[44..]
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|bytes| f32::from(i16::from_le_bytes(*bytes)) / 32768.0)
-        .collect();
+    use native_ft8_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
+    let fixture = NativeFt8Fixture::load();
+    let vector = &fixture.expected;
     let mut provider = Provider::new();
     let mut buffer = None;
     let mut windows = Vec::new();
     let mut first = 0;
     let mut packet = 0;
-    while first < 720_000 {
-        let count = [441, 1024, 8192, 37][packet % 4].min(720_000 - first);
-        // Explicit TEST-ONLY zero-order hold from the verified waveform to48kHz.
-        // Channel1 is negated, so accidental channel summation erases the signal.
-        let mut bytes = Vec::with_capacity(count * 8);
-        for n in first..first + count {
-            let value = samples[n / 4];
-            bytes.extend_from_slice(&value.to_le_bytes());
-            bytes.extend_from_slice(&(-value).to_le_bytes());
-        }
+    while first < NATIVE_FRAMES {
+        let count = [441, 1024, 8192, 37][packet % 4].min(NATIVE_FRAMES - first);
+        let bytes = fixture.native_stereo(first, count);
         assert!(provider.queue.push(&bytes, count, first as u64, 0, 0));
         ingest_provider(&mut provider, &mut buffer, &mut windows);
         first += count;
@@ -324,7 +285,12 @@ async fn live_native_provider_decodes_independent_ft8_callsign() {
     // Explicit extra measured native SILENT interval permits FIR support beyond
     // the15-second boundary. The converter never pads unsupported waveform edges.
     assert_eq!(
-        ingest(&mut buffer, provider.silent(720_000, 480, 0), &mut windows).0,
+        ingest(
+            &mut buffer,
+            provider.silent(NATIVE_FRAMES as u64, TRAILING_SILENT_FRAMES, 0),
+            &mut windows
+        )
+        .0,
         180_056
     );
     assert_eq!(provider.epochs, 1);
