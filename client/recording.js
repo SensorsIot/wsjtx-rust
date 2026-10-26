@@ -8,12 +8,28 @@ signal.innerHTML = '<h2>Recorded receive</h2><p id="signal-status" role="status"
 const splitter = document.createElement('div'); splitter.id = 'splitter'; splitter.tabIndex = 0;
 for (const [key,value] of Object.entries({role:'separator','aria-orientation':'horizontal','aria-label':'Resize spectrum and controls','aria-controls':'signal controls'})) splitter.setAttribute(key,value);
 main.append(signal,splitter,controls);
+const stationBar=controls.querySelector('header');stationBar.id='station-bar';
+const stationIdentity=document.createElement('div');stationIdentity.className='station-identity';
+stationIdentity.innerHTML='<span class="eyebrow">WSTX / REMOTE STATION</span><strong id="operating-station">Waiting for station</strong>';
+stationBar.querySelector('.eyebrow').replaceWith(stationIdentity);
+stationBar.append(document.querySelector('#refresh'));
+const halt=document.createElement('button');halt.id='halt-tx';halt.disabled=true;halt.textContent='Halt Tx';halt.setAttribute('aria-describedby','transmit-unavailable');stationBar.append(halt);
+main.prepend(stationBar);
+const workspace=document.createElement('div');workspace.id='operating-workspace';
+workspace.innerHTML='<div class="workspace-heading"><h2>Operating desk</h2><span>Receive workspace</span></div><div class="operating-grid"><section id="band-activity" class="message-pane" aria-labelledby="activity-heading"><header><h3 id="activity-heading">Band Activity</h3><span class="count">0 messages</span></header><table><thead><tr><th>Time</th><th>dB</th><th>DT</th><th>Hz</th><th>Message</th></tr></thead><tbody><tr><td colspan="5" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></section><section id="rx-focus" class="message-pane" aria-labelledby="focus-heading"><header><h3 id="focus-heading">Selected contact / Rx focus</h3></header><table><thead><tr><th>Time</th><th>dB</th><th>DT</th><th>Hz</th><th>Message</th></tr></thead><tbody><tr><td colspan="5" class="empty-messages"><strong>Decoder unavailable</strong><span>No station selected. Contact selection requires decoded results.</span></td></tr></tbody></table></section><section class="operating-controls" aria-labelledby="operating-heading"><h3 id="operating-heading">Station controls</h3><div class="radio-fields"><label>Dial frequency<input disabled placeholder="Unavailable" aria-label="Dial frequency unavailable"></label><label>Mode<select disabled aria-label="Operating mode unavailable"><option>Unavailable</option></select></label><label>Rx audio · Hz<input disabled placeholder="Unavailable"></label><label>Tx audio · Hz<input disabled placeholder="Unavailable"></label></div><div class="operating-actions"><button disabled aria-describedby="transmit-unavailable">Enable Tx</button><button disabled aria-describedby="transmit-unavailable">Auto Seq</button><button disabled aria-describedby="contact-unavailable">Log contact</button></div><p id="transmit-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable">No active contact. Contact workflow and logging are unavailable.</p></section></div><dl id="operating-capabilities"><div><dt>Audio</dt><dd>Unavailable · capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable · radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable · results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable · control not offered</dd></div></dl>';
+controls.prepend(workspace);
+function secondary(id,title,element){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);controls.append(detail);return detail;}
+secondary('station-settings','Station settings',document.querySelector('#profile-panel'));
+secondary('connection-details','Connection details',controls.querySelector('section[aria-label="Station status"]'));
+const profileHeading=document.querySelector('#profile-name');
+const updateIdentity=()=>{document.querySelector('#operating-station').textContent=profileData?.settings.display_name??'Waiting for station';};
+new MutationObserver(updateIdentity).observe(profileHeading,{childList:true,subtree:true,characterData:true});updateIdentity();
 const panel = document.createElement('section'); panel.id = 'recording-controls'; panel.setAttribute('aria-label','Recording controls');
 panel.innerHTML = '<label>Import mono 12 kHz PCM16 WAV (up to 120 seconds)<input id="recording-file" type="file" accept=".wav,audio/wav"></label><button id="recording-import">Import recording</button><button id="recording-replay" disabled>Replay spectrum</button><button id="recording-cancel" disabled>Cancel operation</button><label>Display <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><p>One processing worker per station · no speaker playback</p><p id="recording-progress" role="status"></p>';
 const localLevels=document.createElement('div');localLevels.id='display-levels';
 localLevels.innerHTML='<label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output>';
 panel.append(localLevels,document.querySelector('#signal-meta'));
-controls.insertBefore(panel,document.querySelector('#profile-panel'));
+secondary('recorded-input','Recorded input',panel);
 const sliders=document.createElement('div');sliders.id='presentation-sliders';
 sliders.innerHTML='<label>Sensitivity <output id="sensitivity-value">+0 dB</output><input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"></label><label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <output id="speed-value">20 px/s</output><input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"></label>';
 signal.insertBefore(sliders,document.querySelector('#spectrum'));
@@ -66,18 +82,19 @@ const statusText = document.querySelector('#signal-status'), progress = document
 let upper, snapshot, importOutcome, rows = [], drawPending = false, syncPending = false, syncAgain = false, uploading = false, uploadId, uploadAbort, stopped = false, subscribedSocket;
 const identity = s => s ? `${s.boot_id}/${s.job?.source_id}/${s.job?.id}/${s.generation}` : '';
 function split(value) {
-  const available = Math.max(372,innerHeight)-12, maximum = available-200;
+  main.style.minHeight=`${372+stationBar.offsetHeight}px`;
+  const available = Math.max(372,main.clientHeight-stationBar.offsetHeight)-splitter.offsetHeight, maximum = available-200;
   upper = Math.max(160,Math.min(maximum,value ?? available/2));
   signal.style.height = `${upper}px`;
   for (const [name,value] of [['min',160],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
 }
 splitter.addEventListener('keydown',event => {
-  const values = {ArrowUp:upper-16,ArrowDown:upper+16,Home:160,End:Math.max(372,innerHeight)-212};
+  const values = {ArrowUp:upper-16,ArrowDown:upper+16,Home:160,End:Number(splitter.getAttribute('aria-valuemax'))};
   if (event.key in values) {event.preventDefault();split(values[event.key]);}
 });
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
-splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)) split(event.clientY);});
+splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top)/(box.height/signal.offsetHeight));}});
 addEventListener('resize',() => split(upper)); split();
 function timeProjection(H=waterfall.height,C=waterfall.getBoundingClientRect().height){
   const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1);
