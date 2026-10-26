@@ -50,7 +50,7 @@
     },
     {
       "path": "independent-vector-tool/generate.py",
-      "sha256": "b808afa36ce00749c1a3e3db7062bd55c69d89e264fe5258b90f224c7fde02a4"
+      "sha256": "6564cc8f5c1c87f767f0c0003efb3aff0d1a8ea88633f68edb5b64b6086eae79"
     },
     {
       "path": "independent-vector-tool/README.md",
@@ -66,7 +66,7 @@
     },
     {
       "path": "quality-cases.json",
-      "sha256": "b5a3c6c8c321843be0059fb12e99c52d2c8204b94d1c70ab7fd00d0413e6bd73"
+      "sha256": "90bbc204f2a3838ce0e3d85f6f1e94ef537cdba773decf89fd04027fa218153f"
     }
   ]
 }

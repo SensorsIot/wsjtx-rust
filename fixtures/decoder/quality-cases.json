@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "Specified executable fixture cases, not candidate results; generator only composes independent inputs",
   "generator": "independent-vector-tool/generate.py",
-  "generator_sha256": "b808afa36ce00749c1a3e3db7062bd55c69d89e264fe5258b90f224c7fde02a4",
+  "generator_sha256": "6564cc8f5c1c87f767f0c0003efb3aff0d1a8ea88633f68edb5b64b6086eae79",
   "cases": [
     {
       "id": "ft8-strong-00",

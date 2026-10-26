@@ -1,5 +1,5 @@
-Ã¯Â»Â¿"""Independent preparation-only FT4/FT8 channel/PCM fixture composer.
-Protocol: Franke/Somerville/Taylor, QEX July/August 2020 Ã‚Â§Ã‚Â§3Ã¢â‚¬â€œ5, Appendix A.
+"""Independent preparation-only FT4/FT8 channel/PCM fixture composer.
+Protocol: Franke/Somerville/Taylor, QEX July/August 2020 §§3–5, Appendix A.
 Input is fixed independently reviewed payload77, NOT production encoder output.
 No WSJT-X/Hamlib source algorithms are imported. Python stdlib implementation.
 Use: python generate.py --case case.json --out CASE_DIRECTORY --protocol-data DIR
