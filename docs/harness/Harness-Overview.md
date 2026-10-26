@@ -30,13 +30,17 @@ environment, build and model-maintenance instructions are in [Project specifics]
 
 - **Main branch:** `master`; the push gate compares against `origin/master`.
 - **Execution mode:** local. The Windows PC is authoritative for compiler checks,
-  the full automated suite including the 60-second bandwidth measurement, and release
+  selected functional groups including their required bandwidth measurements, and release
   packaging. The local pre-push hook enforces the ordinary gate. GitHub Actions has
   only a manual trigger and is an explicit alternative when requested, not a second
   automatic build after a local pass.
 - **Configuration:** `execution_mode: local` in `.harness/config.yaml` selects local
   gate execution. The manual-only hosted workflow supplies the alternative location
   when explicitly selected; it does not add a routine second run.
+- **Test selection:** explicit file owners and downstream functional dependencies in
+  `.harness/suites.yaml`; see [functional test selection](Project-Specifics.md#functional-test-selection).
+  Shared or unmapped changes select broader checks. `--plan` explains the selection;
+  `--full` executes every eligible group without memo reuse.
 - **Deploy:** a locally built Windows release executable ([Project specifics](Project-Specifics.md));
   the dry run uses that candidate on this PC. The manual hosted alternative can provide
   the same evidence when explicitly chosen instead.

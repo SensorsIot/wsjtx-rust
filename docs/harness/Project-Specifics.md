@@ -37,11 +37,67 @@ The local pre-push gate is the authoritative check:
 python harness/core/tools/gate.py
 ```
 
-It selects the affected compiler checks and automated suites, including the full
-communication suite with its 60-second bandwidth measurement. The ordinary push hook
-uses the same gate and its valid memoized results. Do not repeat the individual checks
+It selects affected compiler checks and functional test groups from the declared
+change owners and downstream dependencies in `.harness/suites.yaml`. The ordinary
+push hook uses the same gate and its valid memoized results. Do not repeat the checks
 below when the gate has already supplied their evidence for the same candidate.
 Release packaging also runs on this PC; start the packaged candidate for the dry run.
+
+### Functional test selection
+
+`paths` lists a group's complete inputs for evidence fingerprints and dirty-input
+checks. `select` lists the files whose edits directly select it. `depends_on` names
+producer groups whose changes can affect this group; these edges select downstream
+regressions and inherit producer inputs, rather than ordering test commands.
+
+| Group | Functional coverage | Direct change owners |
+|---|---|---|
+| `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
+| `protocol` | Status messages, sessions, reconnect and protocol thin-link budget | Server code, shared status client, protocol tests/helpers and runtime dependencies |
+| `profiles` | Saved settings, independent stations, profile lifecycle and pending-status behavior | Profile tests and recording client/layout, which owns the shared controls container |
+| `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Shared recording test file; also affected by profile and fixture producers |
+| `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Shared recording test file; also affected by recording source/job producers |
+| `recording-thin` | Optional display pacing, bounded subscribers and the full 32 kbit/s display/status regression | Shared recording test file; also affected by display rendering |
+| `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
+| `sysml-documentation` | FSD/model synchronization, semantic and architecture checks, model/tool tests | FSD, SysML and model tooling |
+
+All existing test files remain registered. The recording test file is partitioned by
+names: `^TC-018-` goes to storage, `^TC-010-002` to thin-link checks, and the complement
+to display. The complement includes future names instead of silently omitting them.
+The unchanged standalone fixture tests have their own group. No test assertion or
+test case is removed by selection.
+
+The FSD and model have an explicit documentation owner. Their edits select model
+validation; runtime oracles are selected by changed implementation and executable
+tests. The required independent contract comparison still checks that executable
+tests cover changed promises. Full input fingerprints retain the FSD, so changed
+contract input invalidates previous evidence when a runtime group is selected.
+
+Selection is conservative at shared-file boundaries: a recording client edit also
+selects profile regressions because that client moves and sizes the shared controls
+container; server edits select protocol and every downstream browser group. An edit
+to the shared recording test file selects all three recording groups. The selector
+does not infer changed functions from a file or guess dependencies from an agent's
+description. Unmapped inputs select every group that declares them; entirely unknown
+paths and selection-policy changes cause a full fallback. The workflow is a shared
+unmapped input of every group, so workflow edits also select them all.
+
+Preview the selected commands and reasons without running checks or recording a pass:
+
+```powershell
+python harness/core/tools/gate.py --plan --base <base-commit>
+```
+
+Run all eligible groups and compiler checks without memo reuse when a full validation
+is required:
+
+```powershell
+python harness/core/tools/gate.py --full
+```
+
+The first product CR after harness adoption uses an empty run ledger, as required by
+the harness rollout process. Test networking remains isolated cost 2; this selection
+does not authorize hardware or external-service tests.
 
 From the repository root:
 

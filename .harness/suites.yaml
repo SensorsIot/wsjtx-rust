@@ -1,7 +1,7 @@
-# Test registry (harness core/docs/standards/testing.md, "Cost levels").
-#   cost: 1 compiler or syntax check, 2 offline with fixtures or stubs, 3 live read-only,
-#         4 live with the test account, 5 live with effects outside the system
-# cargo fmt, check and clippy run on every push as the rust pack's cost-1 checks.
+# Cost 1: compiler/syntax; 2: isolated fixtures; 3: live read-only;
+# 4: live test account; 5: outside effects. The Rust pack keeps its compiler checks.
+# paths declares full inputs; select declares direct change ownership. depends_on
+# follows downstream impact, not command prerequisites. See Project-Specifics.md.
 - suite: wstx-rust
   cost: 2
   run: cargo test --workspace --locked --all-targets
@@ -15,34 +15,22 @@
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
-  needs: The toolchain of rust-toolchain.toml. No radio or live station.
-- suite: communication
-  cost: 2
-  run: cargo build --workspace --locked && npm test
-  paths:
+  - .github/workflows/windows-rust.yml
+  select:
   - server/
-  - client/
-  - tests/
-  - docs/WSTX Rust FSD.md
+  - src/
+  - benches/
+  - examples/
+  - build.rs
   - Cargo.toml
   - Cargo.lock
-  - package.json
-  - package-lock.json
-  needs: Node 24, npm ci, npx playwright install chromium. Disposable local server, browser and link simulator; no external services.
-- suite: sysml-documentation
-  cost: 2
-  run: python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -q
-  paths:
-  - docs/WSTX Rust FSD.md
-  - docs/sysml/
-  - tools/sysml.py
-  - tools/sysml/
-  needs: Python 3.12 and python tools/sysml.py setup once. Portable pinned Java/OMG Pilot in the user cache; no radio, live station or Jupyter service.
+  - rust-toolchain.toml
+  needs: Pinned Rust toolchain. Windows PC; no radio or live station.
 
-- suite: recording
+- suite: protocol
   cost: 2
-  run: cargo build --workspace --locked && npm run test:recording
-  paths:
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/communication.test.cjs
+  paths: &browser-inputs
   - server/
   - client/
   - tests/
@@ -52,6 +40,92 @@
   - .github/workflows/windows-rust.yml
   - Cargo.toml
   - Cargo.lock
+  - rust-toolchain.toml
   - package.json
   - package-lock.json
-  needs: Node 24, npm ci, Playwright Chromium; Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> explicitly, then set WSTX_SAMPLE_DIR there. Offline gate never downloads fixtures. On this Windows development clone the existing parallel resources/issue-7/downloads directory supplies them. Disposable servers and calibrated TLS link; no hardware.
+  select:
+  - server/
+  - client/app.js
+  - client/index.html
+  - client/style.css
+  - tests/communication.test.cjs
+  - tests/support.cjs
+  - tests/peer.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  needs: Node 24, npm ci, Playwright Chromium. Windows PC; disposable server/browser/TLS/link simulator.
+
+- suite: profiles
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/profiles.test.cjs
+  paths: *browser-inputs
+  select:
+  - client/recording.js
+  - client/recording.css
+  - tests/profiles.test.cjs
+  depends_on: [protocol]
+  needs: Node 24, npm ci, Playwright Chromium. Windows PC; four disposable station profiles and real browser windows.
+
+- suite: recording-storage
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-018-" tests/recording.test.cjs
+  paths: *browser-inputs
+  select:
+  - tests/recording.test.cjs
+  depends_on: [profiles, recording-fixtures]
+  needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR with verified original recordings. Windows PC; isolated import/job/storage tests.
+
+- suite: recording-display
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^TC-010-002" tests/recording.test.cjs
+  paths: *browser-inputs
+  select:
+  - tests/recording.test.cjs
+  depends_on: [recording-storage]
+  needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; actual server/browser, spectrum/waterfall and desktop/mobile geometry.
+
+- suite: recording-thin
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-010-002" tests/recording.test.cjs
+  paths: *browser-inputs
+  select:
+  - tests/recording.test.cjs
+  depends_on: [recording-display]
+  needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; actual TLS/browser and calibrated 32 kbit/s simulator, including full 60-second measurements.
+
+- suite: recording-fixtures
+  cost: 2
+  run: node --test --test-concurrency=1 tests/recording-fixtures.test.cjs
+  paths:
+  - tests/recording-fixtures.test.cjs
+  - tools/recording-fixtures.cjs
+  - fixtures/decoder/
+  - package.json
+  - package-lock.json
+  - .github/workflows/windows-rust.yml
+  select:
+  - tests/recording-fixtures.test.cjs
+  - tools/recording-fixtures.cjs
+  - fixtures/decoder/
+  - package.json
+  - package-lock.json
+  needs: Node 24. Windows PC; offline pinned fixture setup/refusal tests. No download in the gate.
+
+- suite: sysml-documentation
+  cost: 2
+  run: python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -q
+  paths:
+  - docs/WSTX Rust FSD.md
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  - .github/workflows/windows-rust.yml
+  select:
+  - docs/WSTX Rust FSD.md
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  needs: Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; synchronization, semantics, architecture integrity and model/tool tests; no radio or live service.
