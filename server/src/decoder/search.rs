@@ -1,5 +1,6 @@
 use super::demodulation::{Demodulator, channel_gates};
 use super::fit::{fit_coefficients, fit_signal, phase_agreement};
+use super::history::DecodeState;
 use super::likelihood::{LikelihoodContext, PeerNoise};
 use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
@@ -60,41 +61,6 @@ pub enum DecodeError {
     InvalidSamples,
     SearchLimited,
     DecodeLimit,
-}
-struct PublicationKey {
-    payload: String,
-    start: u64,
-    frequency: f64,
-}
-/// Job-local modem observations only. Station/source identity and worker authority stay with the caller.
-pub struct DecodeState {
-    mode: Mode,
-    published: Vec<PublicationKey>,
-    encoded_bytes: usize,
-}
-impl DecodeState {
-    pub fn new(mode: Mode) -> Self {
-        Self {
-            mode,
-            published: vec![],
-            encoded_bytes: 0,
-        }
-    }
-    pub fn mode(&self) -> Mode {
-        self.mode
-    }
-    pub fn available_count(&self) -> usize {
-        self.published.len()
-    }
-    pub fn encoded_bytes(&self) -> usize {
-        self.encoded_bytes
-    }
-    fn contains(&self, payload: &str, start: u64) -> bool {
-        self.published.iter().any(|key| {
-            key.payload == payload
-                && key.start.abs_diff(start) <= (self.mode.symbol_frames() / 2) as u64
-        })
-    }
 }
 struct Prepared {
     candidate: Candidate,
@@ -208,13 +174,14 @@ impl Decoder {
         {
             return Err(DecodeError::InvalidSamples);
         }
+        state.prepare_window(origin)?;
         let mut budget = CpuBudget {
             cancel,
             deadline: Instant::now() + Duration::from_millis(10),
             resume: false,
         };
         budget.checkpoint().await?;
-        let mode = state.mode;
+        let mode = state.mode();
         let n = mode.symbol_frames();
         let frame = n * mode.symbol_count();
         if samples.len() < frame {
@@ -225,12 +192,7 @@ impl Decoder {
         for _pass in 0..3 {
             let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
             let coarse = spectrum.candidates(samples.len(), &mut budget).await?;
-            let accepted = state
-                .published
-                .iter()
-                .filter(|key| key.start >= origin && key.start < origin + samples.len() as u64)
-                .map(|key| key.frequency)
-                .collect::<Vec<_>>();
+            let accepted = state.active_frequencies(origin, samples.len());
             let mut prepared = vec![];
             for c in coarse {
                 let c = super::synchronization::refine(&samples, mode, c, &mut budget).await?;
@@ -341,39 +303,13 @@ impl Decoder {
                     .map(|x| x.clamp(-60., 60.));
                 window_seen.push((payload.payload77.clone(), absolute));
                 verified += 1;
-                if !state.contains(&payload.payload77, absolute) {
-                    let record = Decode {
-                        payload,
-                        start_frame: absolute,
-                        frequency_hz: fitted.frequency,
-                        snr_db: snr,
-                    };
-                    #[derive(Serialize)]
-                    struct Numbered<'a> {
-                        sequence: usize,
-                        #[serde(flatten)]
-                        record: &'a Decode,
-                    }
-                    let bytes = serde_json::to_vec(&Numbered {
-                        sequence: state.published.len(),
-                        record: &record,
-                    })
-                    .map_err(|_| DecodeError::DecodeLimit)?
-                    .len();
-                    if state.published.len() >= 2048
-                        || bytes > 1024
-                        || state.encoded_bytes + bytes > 2097152
-                    {
-                        return Err(DecodeError::DecodeLimit);
-                    }
-                    publish(&record)?;
-                    state.encoded_bytes += bytes;
-                    state.published.push(PublicationKey {
-                        payload: record.payload.payload77.clone(),
-                        start: record.start_frame,
-                        frequency: record.frequency_hz,
-                    });
-                }
+                let record = Decode {
+                    payload,
+                    start_frame: absolute,
+                    frequency_hz: fitted.frequency,
+                    snr_db: snr,
+                };
+                state.publish_if_new(&record, publish)?;
                 if pending.len() + subtractions < 32 {
                     pending.push(Subtraction {
                         start: fitted.start,

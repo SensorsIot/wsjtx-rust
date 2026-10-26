@@ -3,6 +3,7 @@
 mod channel;
 mod demodulation;
 mod fit;
+mod history;
 mod likelihood;
 mod payload;
 mod search;
@@ -10,8 +11,9 @@ mod sequence;
 mod synchronization;
 mod waveform;
 pub use channel::{Channel, ChannelWord};
+pub use history::DecodeState;
 pub use payload::{Call, CallKind, Exchange, Fields, Payload, PayloadStatus, unpack};
-pub use search::{Decode, DecodeError, DecodeState, Decoder};
+pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
 pub use waveform::quadratures;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
