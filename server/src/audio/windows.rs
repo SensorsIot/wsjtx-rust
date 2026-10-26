@@ -501,7 +501,7 @@ fn capture(
                 if checked.elapsed() >= Duration::from_secs(1) {
                     let next = system_clock();
                     if ClockCorrelation::observe(&mut last_clock, next) {
-                        queue.loss.store(true, Ordering::Release);
+                        queue.mark_loss(CaptureEvent::ClockStep);
                     }
                     checked = Instant::now();
                 }
@@ -538,7 +538,7 @@ fn capture(
                     // SAFETY: buffer valid until ReleaseBuffer; SILENT permits a null pointer and is never dereferenced.
                     if frames as usize > MAX_NATIVE_PACKET || (ptr.is_null() && flags & SILENT == 0)
                     {
-                        queue.loss.store(true, Ordering::Release);
+                        queue.mark_loss(CaptureEvent::InvalidPacket);
                     } else {
                         let bytes = if flags & SILENT != 0 {
                             &[][..]

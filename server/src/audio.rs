@@ -4,7 +4,7 @@ use crate::source::{
     SourceDescriptor, SourceError, SourcePoll, SourceTiming,
 };
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[cfg(windows)]
@@ -41,6 +41,34 @@ pub(crate) fn finish_capture_owner<O>(
 pub const SILENT: u32 = 2;
 pub const DATA_DISCONTINUITY: u32 = 1;
 pub const TIMESTAMP_ERROR: u32 = 4;
+
+#[derive(Clone, Copy)]
+pub(crate) enum CaptureEvent {
+    QueueContention,
+    QueueFull,
+    PoolExhausted,
+    InvalidPacket,
+    ClockStep,
+    TimestampError,
+    NativeDiscontinuity,
+    FrameBackstep,
+}
+
+/// Diagnostic event counts only; they do not allocate identities or alter epoch policy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CaptureDiagnostics {
+    pub queue_contention: u64,
+    pub queue_full: u64,
+    pub pool_exhausted: u64,
+    pub invalid_packet: u64,
+    pub clock_step: u64,
+    pub timestamp_error: u64,
+    pub native_discontinuity: u64,
+    pub frame_backstep: u64,
+    pub native_channel_zero_samples: u64,
+    pub native_channel_zero_full_scale: u64,
+    pub native_channel_zero_peak_bits: u32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Encoding {
@@ -200,6 +228,10 @@ pub struct PacketQueue {
     capacity: usize,
     pub(crate) loss: AtomicBool,
     pub(crate) cancelled: AtomicBool,
+    events: [AtomicU64; 8],
+    native_samples: AtomicU64,
+    native_full_scale: AtomicU64,
+    native_peak: AtomicU32,
 }
 impl PacketQueue {
     pub fn new(format: NativeFormat) -> Result<Arc<Self>, SourceError> {
@@ -216,7 +248,52 @@ impl PacketQueue {
             capacity: format.rate as usize / 2,
             loss: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
+            events: std::array::from_fn(|_| AtomicU64::new(0)),
+            native_samples: AtomicU64::new(0),
+            native_full_scale: AtomicU64::new(0),
+            native_peak: AtomicU32::new(0),
         }))
+    }
+    pub(crate) fn record_event(&self, event: CaptureEvent) {
+        let _ = self.events[event as usize].try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+            Some(n.saturating_add(1))
+        });
+    }
+    pub(crate) fn mark_loss(&self, event: CaptureEvent) {
+        self.record_event(event);
+        self.loss.store(true, Ordering::Release);
+    }
+    pub fn diagnostics(&self) -> CaptureDiagnostics {
+        let values = self.events.each_ref().map(|v| v.load(Ordering::Relaxed));
+        CaptureDiagnostics {
+            queue_contention: values[0],
+            queue_full: values[1],
+            pool_exhausted: values[2],
+            invalid_packet: values[3],
+            clock_step: values[4],
+            timestamp_error: values[5],
+            native_discontinuity: values[6],
+            frame_backstep: values[7],
+            native_channel_zero_samples: self.native_samples.load(Ordering::Relaxed),
+            native_channel_zero_full_scale: self.native_full_scale.load(Ordering::Relaxed),
+            native_channel_zero_peak_bits: self.native_peak.load(Ordering::Relaxed),
+        }
+    }
+    fn record_native_levels(&self, samples: &[f32]) {
+        let peak = samples.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
+        self.native_peak
+            .fetch_max(peak.to_bits(), Ordering::Relaxed);
+        let _ = self
+            .native_samples
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                Some(n.saturating_add(samples.len() as u64))
+            });
+        let full_scale = samples.iter().filter(|v| v.abs() >= 1.0).count() as u64;
+        let _ = self
+            .native_full_scale
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                Some(n.saturating_add(full_scale))
+            });
     }
     pub fn push(
         &self,
@@ -230,24 +307,24 @@ impl PacketQueue {
             return false;
         }
         let Ok(mut state) = self.state.try_lock() else {
-            self.loss.store(true, Ordering::Release);
+            self.mark_loss(CaptureEvent::QueueContention);
             return false;
         };
-        if frames == 0
-            || frames > MAX_NATIVE_PACKET
-            || state.frames.saturating_add(frames) > self.capacity
-            || state.packets.len() == 64
-        {
-            self.loss.store(true, Ordering::Release);
+        if frames == 0 || frames > MAX_NATIVE_PACKET {
+            self.mark_loss(CaptureEvent::InvalidPacket);
+            return false;
+        }
+        if state.frames.saturating_add(frames) > self.capacity || state.packets.len() == 64 {
+            self.mark_loss(CaptureEvent::QueueFull);
             return false;
         }
         let Some(mut data) = state.free.pop() else {
-            self.loss.store(true, Ordering::Release);
+            self.mark_loss(CaptureEvent::PoolExhausted);
             return false;
         };
         if bytes.len() > data.capacity() {
             state.free.push(data);
-            self.loss.store(true, Ordering::Release);
+            self.mark_loss(CaptureEvent::InvalidPacket);
             return false;
         }
         data.clear();
@@ -501,6 +578,15 @@ impl LiveSource {
         packet: &NativePacket,
     ) -> Result<Option<crate::source::EpochProposal>, SourceError> {
         let loss = self.queue.loss.swap(false, Ordering::AcqRel);
+        if packet.flags & TIMESTAMP_ERROR != 0 {
+            self.queue.record_event(CaptureEvent::TimestampError);
+        }
+        if packet.flags & DATA_DISCONTINUITY != 0 {
+            self.queue.record_event(CaptureEvent::NativeDiscontinuity);
+        }
+        if self.expected.is_some_and(|n| packet.first_frame < n) {
+            self.queue.record_event(CaptureEvent::FrameBackstep);
+        }
         let unknown = loss
             || packet.flags & TIMESTAMP_ERROR != 0
             || self.expected.is_some_and(|n| packet.first_frame < n)
@@ -538,6 +624,7 @@ impl LiveSource {
         let samples =
             self.format
                 .channel_zero(&packet.bytes, packet.frames, packet.flags & SILENT != 0)?;
+        self.queue.record_native_levels(&samples);
         let (first, output) = self.converter.convert(&samples)?;
         for (i, chunk) in output.chunks(LIVE_BLOCK_FRAMES).enumerate() {
             self.ready
