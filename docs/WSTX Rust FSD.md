@@ -1012,7 +1012,11 @@ the second uses time+/-N/16 in max(1,floor(N/128)) steps and frequency+/-df1/2 i
 df1/8 steps. The third uses time+/-max(1,floor(N/128)) in one-frame steps at the
 second grid's frequency. Every point stays within complete source and frequency
 bounds. Correlate known analytic GFSK at every fourth sample after trimming N/2 from
-both waveform ends; choose maximum normalized complex energy, ties frequency/time.
+both waveform ends. At each grid point form the actual real/quadrature sample Gram
+G=[[u.u,u.w],[u.w,w.w]] and b=[u.x,w.x] on exactly those strided samples. Choose
+maximum explained energy b^T G^-1 b, ties frequency/time. Reject nonfinite or
+relative-determinant <=1e-12 grid fits. Do not assume equal/orthogonal quadratures:
+stride-four sampling can alias a real carrier with its conjugate near1500/3000Hz.
 Final amplitude/SNR/subtraction fits use every sample. Retain no whole-frame phase
 rejection that excludes ordinary +/-2 Hz/min frequency drift.
 Original samples stay immutable. Planned/scalar paths share the same pure kernels,
@@ -1895,6 +1899,7 @@ the communication/recording companions; none require hardware consent.
 | Case/subcase | Setup and action | Independent expected observation |
 |---|---|---|
 | Both modes: payload-channel | Every supported i3/n3 family; exact fields/77 bits; call/CQ/grid/report/free-text/telemetry/contest/hash boundaries, first/max/invalid values; generate CRC/FEC and both tone frames independently. | Fixed expected fields/CRC/codeword/79 or 105 tones; separate CRC recurrence and published H syndrome agree. Hashes retain numeric width/value and `<...>`; source identity, received text and reference observations remain distinct. Include K1ABC=10214965, W9XYZ=12751800, FN42=10342, type3 WI=8049, type4 PJ2/W1AW with hash12=579 and current VHF hashes2662/3931158, report59/serial2047/gridRR99XX. |
+| Both modes: known-word fit metric | Generate independent analytic quadratures with phase=2*pi*f*(k+1)/12000+0.4*sin(2*pi*((k+1)/12000)/0.048), x=0.6*u-0.8*w,60480frames; take k=288..60191 every4 at f=1499,1499.9,1500,1500.1,1501,2999,3000,3001Hz. | Independent scalar Gram calculation recovers coefficients0.6/-0.8 and explained energy sum(x*x); candidate metric agrees within5e-7relative after f32storage. Both1500/3000carrier cases reject a mere scalar correction of the nonorthogonal complex-energy approximation. |
 | Both modes: complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
 | Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
 | Both modes: overlap | Twenty equal-level pairs at two tone spacings and twenty pairs at one spacing with six dB difference/mode, fixed seeds/fields/source positions. | Both >=18/20 for equal pairs; stronger>=18 and weaker>=10 for unequal; no fabricated payload. Independent source mixture is the truth, even when the external reference misses weaker content. |

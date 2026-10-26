@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 5690c51187b004eb1a8fd0992832788202a6317c3394a895caa30732bb8e1bf9
+// Canonical offline decode contract SHA256: 968be09987138d2931b999e546ec859b080e6e8727a358918f71d5ace1b55ad8
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -393,7 +393,9 @@ package WstxOfflineDecode {
              Known-codeword fit3fixedgrids:df1=6000/waveformFrames; stage1time+-N/4stepN/16,
              freq+-spacing/2stepdf1 includingoffgridendpoints; stage2time+-N/16stepmax(1,floor(N/128)),
              freq+-df1/2stepdf1/8; stage3time+-max(1,floor(N/128))step1,frequencyfixed.
-             Complete/in-band only,every4thsamptrimN/2ends,maxnormalizedenergy,tiesfreq/time;
+             Complete/in-band only,every4thsamptrimN/2ends. Actualstridedreal/quadratureGramG,
+             b=[u.x,w.x],maximizeb^T*inverse(G)*b,tiesfreq/time. Rejectnonfiniteorrelative
+             determinant<=1e-12; noquadratureorthogonalityassumptionnear1500/3000alias.
              finalamplitude/SNR/subtractionallsamples. No whole-frame phase rejection,
              ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
              No UTC/dBFS/noiseless/crowded reference-SNR inference. */
@@ -439,6 +441,10 @@ package WstxOfflineDecode {
                  weak20/40@-13; overlapsboth18/20at2spacings,strong18/weak10at1spacing6dB;
                  official>=16/19matches notexhaustivetruth. Error144frames/3Hz,3dBstrongAWGN.
                  SeparateCRCrecurrence/publishedtables/fixedvectors/independentsynthesis.
+                 Stride4Gramoracle:60480frames,k288..60191step4;
+                 phase=2pi*f*(k+1)/12000+.4sin(2pi*((k+1)/12000)/.048),x=.6u-.8w.
+                 f1499/1499.9/1500/1500.1/1501/2999/3000/3001Hz; independentf64Gram
+                 yieldscoefficients.6/-.8,explained=sumx*x; candidatef32relativeerror<=5e-7.
                  Planned Rust/decoderfixture suite bindings; no production encoder oracle. */
         }
         dependency ft4Case from ft4 to WstxRequirements::'TC-004-001';
