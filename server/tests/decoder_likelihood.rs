@@ -3,6 +3,7 @@ use serde_json::Value;
 use wstx_rust::decoder::DecodeError;
 #[path = "../src/decoder/likelihood.rs"]
 mod likelihood;
+// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn independent_hundred_digit_mixture_oracles() {
     let fixture: Value =
@@ -53,6 +54,7 @@ fn independent_hundred_digit_mixture_oracles() {
         }
     }
 }
+// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn undefined_likelihood_inputs_are_rejected() {
     let context = likelihood::LikelihoodContext {
