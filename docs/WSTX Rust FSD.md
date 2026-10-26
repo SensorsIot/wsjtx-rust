@@ -901,7 +901,10 @@ append. Restart does not persist results or fabricate replacement jobs.
 **Bounded processing design.** Use RustFFT planned and portable scalar paths with
 worker-owned checked buffers/scratch and CR6's transform convention. FT8 symbol FFT
 N=1920/hop480; FT4 N=576/hop144. Coarse starts advance N/4, frequencies
-200+j*(12000/N)/2 through 3500, using two shifted frequency grids. For K sync symbols
+200+j*(12000/N)/2 through 3500, using two shifted frequency grids. Include both
+200 and3500 Hz explicitly as coarse candidates when an endpoint is off that uniform
+grid; use direct sine/cosine quadrature power at the exact off-grid endpoint. Refine
+within the inclusive search bounds; do not round the3500 Hz FT4 endpoint out of reach. For K sync symbols
 and Q tones, sum expected-tone power A and other-tone power B; Costas score is
 (Q-1)*A/B, qualification >=2.7. A=B=0 rejects; B=0,A>0 outranks finite scores.
 FT8 sync indices are 0..6,36..42,72..78; FT4 1..4,34..37,67..70,100..103.
@@ -1003,7 +1006,15 @@ converter; `radio_control` owns catalogue validation, CI-V encoding and serial e
 The existing station/web/profile services own admission, cancellation, persistence and
 publication. One integration owner changes shared manifests/bootstrap/browser wiring.
 Reuse RustFFT6.4.1 and the existing immutable `SampleBlock`; no second FFT provider,
-resampler, sample reader, job manager or configuration database. The shared Windows API
+resampler, sample reader, job manager or configuration database. The shared source
+boundary is `SampleSource::descriptor()` plus nonblocking `poll()` returning Pending,
+Block(SampleBlock), EpochChanged(SourceDescriptor,SourceTiming), End or Failed(code).
+Pending is never EOS; only finite file sources return End. The file adapter keeps its
+existing reader; the live adapter normalizes/converts raw native packets on that same
+DSP worker. EpochChanged reaches the receive authority before any replacement block,
+which invalidates the old tuple and allocates the new source/job/generation. No other
+consumer invents identities. Normal polling/checkpoint work is bounded by50ms.
+The shared Windows API
 binding is target-Windows `windows =0.62.2`; capture and CAT share this dependency.
 macOS/Linux adapter implementations retain these contracts but are separate releases.
 

@@ -1,4 +1,4 @@
-// Canonical radio and audio contract SHA256: aba5526db63c9faa91ddeadde33adf0267956e34055f6ed93225c970198175fe
+// Canonical radio and audio contract SHA256: 8f412e30b6808b31ff6272848562bab3cf002b1c0a8b172847415e8c4a24f5fc
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
@@ -206,7 +206,15 @@ converter; `radio_control` owns catalogue validation, CI-V encoding and serial e
 The existing station/web/profile services own admission, cancellation, persistence and
 publication. One integration owner changes shared manifests/bootstrap/browser wiring.
 Reuse RustFFT6.4.1 and the existing immutable `SampleBlock`; no second FFT provider,
-resampler, sample reader, job manager or configuration database. The shared Windows API
+resampler, sample reader, job manager or configuration database. The shared source
+boundary is `SampleSource::descriptor()` plus nonblocking `poll()` returning Pending,
+Block(SampleBlock), EpochChanged(SourceDescriptor,SourceTiming), End or Failed(code).
+Pending is never EOS; only finite file sources return End. The file adapter keeps its
+existing reader; the live adapter normalizes/converts raw native packets on that same
+DSP worker. EpochChanged reaches the receive authority before any replacement block,
+which invalidates the old tuple and allocates the new source/job/generation. No other
+consumer invents identities. Normal polling/checkpoint work is bounded by50ms.
+The shared Windows API
 binding is target-Windows `windows =0.62.2`; capture and CAT share this dependency.
 macOS/Linux adapter implementations retain these contracts but are separate releases.
 

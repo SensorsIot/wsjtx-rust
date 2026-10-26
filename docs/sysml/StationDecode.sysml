@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: aba5526db63c9faa91ddeadde33adf0267956e34055f6ed93225c970198175fe
+// Canonical offline decode contract SHA256: 8f412e30b6808b31ff6272848562bab3cf002b1c0a8b172847415e8c4a24f5fc
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
@@ -238,6 +238,9 @@ package WstxOfflineDecode {
              v/profile_id/boot_id/generation/recording_id/mode <=1024bytes. 202newUUID/gen.
              Existing storage/degraded state applies. Mode immutable, no persisted profile edit. */
     }
+    doc /* Coarse search explicitly includes both200 and3500Hz even when off the uniform
+         half-tone FFT grid. Evaluate exact off-grid endpoint power by direct quadrature;
+         refine clipped to inclusive bounds. FT4mustnotround3500awayorrelax3Hzoracle. */
     action def AdvanceDecode {
         in block : WstxRecordingReceive::SampleBlock;
         in job : DecodeJob;
