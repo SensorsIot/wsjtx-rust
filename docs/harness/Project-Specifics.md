@@ -27,6 +27,32 @@ No radio, sound device, third-party decoder or repository secrets are required. 
 
 The workflow has read-only repository permissions and pins its checkout and artifact actions to specific commits. It does not publish GitHub releases or packages.
 
+## Native Windows FFI boundary
+
+The `wstx-rust` library crate may contain the Windows audio and CAT adapters. Its
+crate root uses `#![deny(unsafe_code)]`; the binary crate retains
+`#![forbid(unsafe_code)]`. Only the `audio::windows` and `radio_control::windows`
+module declarations may use `#[allow(unsafe_code)]`. Public interfaces crossing
+those boundaries are safe Rust. The decoder and canonical source-value modules
+retain `forbid(unsafe_code)`; portable processing and protocol code have no exception.
+
+The `audio_contract`, `audio_hardware`, `audio_listen`, `radio_control`,
+`radio_native` and `radio_hardware` integration-test targets may use
+`#![deny(unsafe_code)]` when they import those actual adapters. They inherit the
+same two narrowly scoped adapter exceptions. Only `radio_native` additionally
+permits an explicitly named Windows fixture module containing the owned-handle
+and local named-pipe FFI calls. Test setup, assertions and protocol logic remain
+outside that fixture exception. Test targets using only safe library APIs retain
+`#![forbid(unsafe_code)]`.
+
+Every unsafe block states its preconditions in a `// SAFETY:` comment. Tests cover
+handle and buffer ownership, initialization, cancellation, failure ordering and
+acknowledged release. Failed native close retains its owning resources rather
+than granting another owner access. Independent review checks changes to these
+boundaries. Crate-wide `allow(unsafe_code)`, an exception on the whole audio/CAT
+module, new exceptions outside these locations, and compiler or gate bypasses
+are prohibited.
+
 ## Local Windows development
 
 Install Rust through [rustup](https://rustup.rs/) and the Visual Studio C++ Build Tools with the Desktop development with C++ workload and a Windows SDK. The toolchain file selects the compiler version automatically.
