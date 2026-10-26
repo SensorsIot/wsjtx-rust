@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: da99e43389dc3bdbd5021ab635c7a51e902f30c618af330e6269b0dacfddaaf1
+// Canonical offline decode contract SHA256: ecc962d32c84b04eb40f4792d803afa6f86bd8b3ab73e8bd33faa53f9459a913
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -318,7 +318,10 @@ package WstxOfflineDecode {
              psi_a(k)=(2pi/N)*sum_m0..k p((m+.5)/N-a-.5),a=-1..2,k0..2N-1.
              h=exp(i*(Lpsi_-1+Tpsi_0+Upsi_1+Rpsi_2));otherslocaltoneszero.
              Eachpairindependentcomplexgain absorbsconstantprefixphase.
-             z=sum_k x[2gN+k]*conj(h)*exp(-i2pi*f*k/12000), F=abs(z)^2/(2N*v).
+             Requirecomplete60480-frame supportin currentResidual atcandidateStart.
+             x[j]=currentResidual[candidateStart+j],j0..60479.
+             Bindthismetric'ssamples[k]=x[2gN+k],k0..1151.
+             z=sum_k samples[k]*conj(h)*exp(-i2pi*f*k/12000), F=abs(z)^2/(2N*v).
              Sameanalytic-quadraturelikelihoodconventionaslocalpower; variancefloor1e-20.
              Index((L*4+T)*4+U)*4+R; subtractcommonmaxoverall256factors/pair. */
     }
@@ -328,6 +331,8 @@ package WstxOfflineDecode {
         in allowedTones : Boolean[12..420];
         return toneLogMarginals : Real[12..420];
         doc /* Purebounded16stateforward/backward. PhysicalFT4G52coverssymbols0..103;
+             PairmetricsconsumeanchoredcurrentResidual[candidateStart..candidateStart+60480],
+             each1152-sampleinput boundatcandidateStart+2gN asdefinedbyFt4PairMetric;
              exteriorz[-1]=0,finalramptonez[104]=0. GenericmathG1..52, exact2G+1masks,
              eachnonempty; finalmask[true,false,false,false]. Allfactorsfinite, exactG*256.
              Sync/ramp knownphysicaltonemasks; datauniform,noFECposterior/AP/messageprior.
@@ -408,7 +413,9 @@ package WstxOfflineDecode {
              Phase qualification and likelihood calculations above own observation semantics.
              Graylogsumexp zero-minusone,clamp+-12,meanabs>=1,<=24CHANNELharddisagreements.
              ACRCword failing gates does notstop permitted refinements. <=50normalizedminsum
-             iterations/round,alpha.8,initial+<=2posterior refinements. OnlyfinalroundOSD:
+             iterations/round,alpha.8,initial+<=2observationrefinements.
+             FinalFT4nopeerobservation usesFt4PairSequence insteadofanotherlocalmarginal;
+             withpeer retainlocalnuisanceawareobservation. OnlyfinalroundOSD:
              77unitpayloads composedCRC14+published174,91generator formrank77subcode;
              GF2reliabilityordered77basis; <=137order0/1/2 trials among16least-reliable basis
              bits,lowestweightedCHANNELcost, finalzeroH+CRC+sourceclassification. CRCbits

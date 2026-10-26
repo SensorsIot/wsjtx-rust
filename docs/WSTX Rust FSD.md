@@ -969,8 +969,10 @@ The per-pair unknown phase absorbs each template's constant prefix phase. Only t
 first pair contains an amplitude ramp; its four tones are fixed by ramp/sync masks,
 so its likelihood is a common path constant and contributes no unknown-tone evidence.
 
-For pair g, use the current-pass source samples x[2gN+k] and the selected frequency f:
-z_g(L,T,U,R)=sum[k=0..2N-1] x[2gN+k]*conj(h)*exp(-i*2*pi*f*k/12000).
+Require the complete60480-frame candidate support in the current-pass residual and
+anchor x[j]=currentResidual[candidateStart+j], j=0..60479. For pair g, bind its
+1152-sample metric input as samples[k]=x[2gN+k], k=0..2N-1. At selected frequency f:
+z_g(L,T,U,R)=sum[k=0..2N-1] samples[k]*conj(h)*exp(-i*2*pi*f*k/12000).
 The factor F_g(L,T,U,R)=abs(z_g)^2/(2N*v) uses the same analytic-quadrature likelihood
 convention and calibrated v as single-symbol power. Subtract a common maximum from
 all256 factors in each pair before sequence inference. Sync/ramp masks allow only
