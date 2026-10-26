@@ -931,7 +931,22 @@ correlations per coefficient. At most 45*K complex products per visited raw maxi
 raw maxima cannot exceed the finite start-row/frequency grid. The fine sample-domain
 Costas ratio is evaluated only for phase-qualified candidates, at the same <=45 grid
 points that meet the phase constraint, choosing descending ratio then ascending
-frequency/time. At most 256 phase-qualified candidates/window/pass; a 257th sets
+frequency/time. After that discrete choice, refine the selected coordinates with only
+known sync-block interiors, trimming N/2 frames from each block end. For each complete
+trial support, take every fourth sample of the current-pass residual and analytic unit
+sync waveform at that trial frequency. For each block form the two-column real/quadrature
+Gram matrix G and projection b, and maximize the sum of b^T G^-1 b across blocks;
+block phases remain independent. Reject nonfinite or relative-determinant <=1e-12 fits.
+Evaluate at most nine Cartesian offsets dt in {-N/16,0,N/16} and df in
+{-spacing/16,0,spacing/16} from the discrete choice, clipped to complete supports and
+200..3500Hz. For each axis, use its three center-line scores q-,q0,q+ to propose
+v=h*(q--q+)/(2*(q--2*q0+q+)) only when all are valid, curvature is negative and
+abs(v)<=h; otherwise use zero offset. Round the proposed start to the nearest frame,
+ties to the lower frame. Evaluate that joint proposal once, then select the highest
+score of at most ten trials, ties ascending frequency/time. This adds no candidate or
+FEC trial. Its at-most 10*(K-block_count)*N/4 sample terms are bounded at86400 for
+FT8 and17280 forFT4 per phase-qualified candidate, with existing cooperative checkpoints.
+At most 256 phase-qualified candidates/window/pass; a 257th sets
 `search_limited`, which fails required-corpus completeness acceptance. No cap increase,
 absolute sample-amplitude floor or relative whole-window energy stop excludes a weak
 frame after subtraction. Up to three passes may stop when no new verified frame remains.
