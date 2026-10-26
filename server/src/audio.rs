@@ -4,7 +4,8 @@ use crate::source::{
     SourceDescriptor, SourceError, SourcePoll, SourceTiming,
 };
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 
 #[cfg(windows)]
@@ -217,14 +218,18 @@ pub struct NativePacket {
     pub flags: u32,
 }
 struct QueueState {
-    packets: VecDeque<NativePacket>,
-    free: Vec<Vec<u8>>,
-    frames: usize,
+    packets: Receiver<NativePacket>,
     error: Option<SourceError>,
 }
 /// Preallocated packet bytes; I/O drops instead of waiting for the DSP owner.
 pub struct PacketQueue {
     state: Mutex<QueueState>,
+    free: Mutex<Receiver<Vec<u8>>>,
+    filled: SyncSender<NativePacket>,
+    returned: SyncSender<Vec<u8>>,
+    frames: AtomicUsize,
+    packet_count: AtomicUsize,
+    failed: AtomicBool,
     capacity: usize,
     pub(crate) loss: AtomicBool,
     pub(crate) cancelled: AtomicBool,
@@ -236,15 +241,24 @@ pub struct PacketQueue {
 impl PacketQueue {
     pub fn new(format: NativeFormat) -> Result<Arc<Self>, SourceError> {
         format.validate()?;
+        let (filled, packets) = sync_channel(64);
+        let (returned, free) = sync_channel(64);
+        for _ in 0..64 {
+            returned
+                .try_send(Vec::with_capacity(MAX_NATIVE_PACKET * format.frame_bytes()))
+                .map_err(|_| SourceError::Unavailable)?;
+        }
         Ok(Arc::new(Self {
             state: Mutex::new(QueueState {
-                packets: VecDeque::with_capacity(64),
-                free: (0..64)
-                    .map(|_| Vec::with_capacity(MAX_NATIVE_PACKET * format.frame_bytes()))
-                    .collect(),
-                frames: 0,
+                packets,
                 error: None,
             }),
+            free: Mutex::new(free),
+            filled,
+            returned,
+            frames: AtomicUsize::new(0),
+            packet_count: AtomicUsize::new(0),
+            failed: AtomicBool::new(false),
             capacity: format.rate as usize / 2,
             loss: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
@@ -303,64 +317,112 @@ impl PacketQueue {
         qpc_100ns: u64,
         flags: u32,
     ) -> bool {
-        if self.cancelled.load(Ordering::Acquire) {
+        if self.cancelled.load(Ordering::Acquire) || self.failed.load(Ordering::Acquire) {
             return false;
         }
-        let Ok(mut state) = self.state.try_lock() else {
-            self.mark_loss(CaptureEvent::QueueContention);
-            return false;
-        };
         if frames == 0 || frames > MAX_NATIVE_PACKET {
             self.mark_loss(CaptureEvent::InvalidPacket);
             return false;
         }
-        if state.frames.saturating_add(frames) > self.capacity || state.packets.len() == 64 {
+        // Exactly one producer reserves; the consumer can only reduce this budget.
+        if self.packet_count.load(Ordering::Acquire) >= 64
+            || self.frames.load(Ordering::Acquire).saturating_add(frames) > self.capacity
+        {
             self.mark_loss(CaptureEvent::QueueFull);
             return false;
         }
-        let Some(mut data) = state.free.pop() else {
-            self.mark_loss(CaptureEvent::PoolExhausted);
-            return false;
+        let mut data = {
+            // The consumer never locks this receiver; it returns buffers through try_send.
+            let Ok(free) = self.free.try_lock() else {
+                self.mark_loss(CaptureEvent::QueueContention);
+                return false;
+            };
+            match free.try_recv() {
+                Ok(data) => data,
+                Err(TryRecvError::Empty) => {
+                    self.mark_loss(CaptureEvent::PoolExhausted);
+                    return false;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    drop(free);
+                    self.fail(SourceError::InvalidBlock);
+                    return false;
+                }
+            }
         };
         if bytes.len() > data.capacity() {
-            state.free.push(data);
+            self.return_buffer(data);
             self.mark_loss(CaptureEvent::InvalidPacket);
             return false;
         }
         data.clear();
         data.extend_from_slice(bytes);
-        state.frames += frames;
-        state.packets.push_back(NativePacket {
+        self.frames.fetch_add(frames, Ordering::AcqRel);
+        self.packet_count.fetch_add(1, Ordering::AcqRel);
+        let packet = NativePacket {
             bytes: data,
             frames,
             first_frame,
             qpc_100ns,
             flags,
-        });
-        true
+        };
+        match self.filled.try_send(packet) {
+            Ok(()) => true,
+            Err(error) => {
+                self.frames.fetch_sub(frames, Ordering::AcqRel);
+                self.packet_count.fetch_sub(1, Ordering::AcqRel);
+                let full = matches!(&error, TrySendError::Full(_));
+                let packet = match error {
+                    TrySendError::Full(packet) | TrySendError::Disconnected(packet) => packet,
+                };
+                self.return_buffer(packet.bytes);
+                if full {
+                    self.mark_loss(CaptureEvent::QueueFull)
+                } else {
+                    self.fail(SourceError::InvalidBlock)
+                }
+                false
+            }
+        }
     }
     fn pop(&self) -> Option<NativePacket> {
-        let mut s = self.state.try_lock().ok()?;
-        let p = s.packets.pop_front()?;
-        s.frames -= p.frames;
-        Some(p)
+        let state = self.state.try_lock().ok()?;
+        let packet = state.packets.try_recv().ok()?;
+        self.frames.fetch_sub(packet.frames, Ordering::AcqRel);
+        self.packet_count.fetch_sub(1, Ordering::AcqRel);
+        Some(packet)
     }
-    fn recycle(&self, mut packet: NativePacket) {
-        packet.bytes.clear();
-        if let Ok(mut s) = self.state.lock() {
-            s.free.push(packet.bytes);
+    fn return_buffer(&self, mut buffer: Vec<u8>) {
+        buffer.clear();
+        if let Err(error) = self.returned.try_send(buffer) {
+            // A valid64-buffer ownership cycle cannot overflow or disconnect. Abort
+            // the source explicitly; release this rejected buffer as terminal cleanup.
+            let buffer = match error {
+                TrySendError::Full(buffer) | TrySendError::Disconnected(buffer) => buffer,
+            };
+            drop(buffer);
+            self.fail(SourceError::InvalidBlock);
         }
+    }
+    fn recycle(&self, packet: NativePacket) {
+        self.return_buffer(packet.bytes)
     }
     pub fn fail(&self, error: SourceError) {
-        if let Ok(mut s) = self.state.lock() {
-            s.error = Some(error);
+        if let Ok(mut state) = self.state.lock() {
+            state.error = Some(error);
         }
+        self.failed.store(true, Ordering::Release);
     }
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
     }
     pub fn queued_frames(&self) -> usize {
-        self.state.lock().map_or(0, |s| s.frames)
+        self.frames.load(Ordering::Acquire)
+    }
+    #[cfg(test)]
+    pub fn with_consumer_bookkeeping<T>(&self, action: impl FnOnce() -> T) -> T {
+        let _consumer = self.state.lock().unwrap();
+        action()
     }
 }
 

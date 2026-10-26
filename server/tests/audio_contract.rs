@@ -191,6 +191,13 @@ fn audio_queue_and_clock_bounds() {
     assert!(!q.push(&[], 8193, 24001, 0, SILENT));
     q.cancel();
     assert!(!q.push(&[], 1, 0, 0, SILENT));
+    let packet_limited = PacketQueue::new(format(48000)).unwrap();
+    for first in 0..64 {
+        assert!(packet_limited.push(&[], 1, first, 0, SILENT));
+    }
+    assert!(!packet_limited.push(&[], 1, 64, 0, SILENT));
+    assert_eq!(packet_limited.queued_frames(), 64);
+    assert_eq!(packet_limited.diagnostics().queue_full, 1);
     let a = ClockCorrelation::bracket(100000, 1000000, 140000).unwrap();
     assert_eq!(a.uncertainty_ns, 2000000);
     assert!(ClockCorrelation::bracket(0, 0, 40001).is_none());
@@ -200,6 +207,78 @@ fn audio_queue_and_clock_bounds() {
     b.utc_filetime_100ns += 1;
     assert!(a.jumped(b));
     assert_eq!(a.utc_at(120001), Some(1000001));
+}
+
+// Proves: CL-008-02; TC-002-003. Available native FIFO capacity survives consumer bookkeeping.
+#[test]
+fn audio_consumer_bookkeeping_cannot_drop_an_admissible_native_packet() {
+    let queue = PacketQueue::new(format(48000)).unwrap();
+    let producer = queue.clone();
+    let (start, ready) = std::sync::mpsc::sync_channel(0);
+    let (done, result) = std::sync::mpsc::sync_channel(1);
+    let worker = std::thread::spawn(move || {
+        ready.recv().unwrap();
+        done.send(producer.push(&[], 480, 0, 0, SILENT)).unwrap();
+    });
+    queue.with_consumer_bookkeeping(|| {
+        start.send(()).unwrap();
+        assert_eq!(
+            result.recv_timeout(std::time::Duration::from_millis(250)),
+            Ok(true),
+            "consumer bookkeeping blocked/discarded an otherwise admissible native packet"
+        );
+    });
+    worker.join().unwrap();
+    assert_eq!(queue.queued_frames(), 480);
+    assert_eq!(queue.diagnostics().queue_contention, 0);
+    let mut source = LiveSource::new(queue, format(48000)).unwrap();
+    assert!(matches!(source.poll(), SourcePoll::EpochChanged(_)));
+}
+
+// Proves: CL-008-02; TC-002-003. Exact bounded packet ownership recycles across ring wraps.
+#[test]
+fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
+    let format = format(48000);
+    let queue = PacketQueue::new(format).unwrap();
+    let mut source = LiveSource::new(queue.clone(), format).unwrap();
+    let bytes = bytes(&[0.5; 4]);
+    let mut epochs = 0;
+    let mut count = 0;
+    let mut next = 0;
+    for batch in 0..20 {
+        for packet in 0..64 {
+            let first = (batch * 64 + packet) * 4;
+            if packet == 0 {
+                queue.with_consumer_bookkeeping(|| assert!(queue.push(&bytes, 4, first, 0, 0)));
+            } else {
+                assert!(queue.push(&bytes, 4, first, 0, 0));
+            }
+        }
+        assert_eq!(queue.queued_frames(), 256);
+        for _ in 0..64 {
+            match source.poll() {
+                SourcePoll::EpochChanged(proposal) => {
+                    epochs += 1;
+                    acknowledge(&mut source, proposal, "recycled");
+                }
+                SourcePoll::Block(block) => {
+                    assert_eq!(block.first_frame, next);
+                    assert!(block.samples.iter().all(|v| (*v - 0.5).abs() < 1e-6));
+                    count += block.samples.len() as u64;
+                    next = count;
+                }
+                SourcePoll::Pending => {}
+                _ => panic!("unexpected native source outcome"),
+            }
+        }
+        assert_eq!(queue.queued_frames(), 0);
+    }
+    assert_eq!(count, 1216);
+    assert_eq!(epochs, 1);
+    let diagnostic = queue.diagnostics();
+    assert_eq!(diagnostic.queue_contention, 0);
+    assert_eq!(diagnostic.queue_full, 0);
+    assert_eq!(diagnostic.pool_exhausted, 0);
 }
 
 // Proves: CL-008-02; TC-002-003. Impulse center and known-gap phase use an independent rational oracle.
