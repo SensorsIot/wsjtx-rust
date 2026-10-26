@@ -52,7 +52,7 @@ function wav(seconds=1,amplitude=.5,frequency=750){
   const count=Math.round(seconds*12000),b=Buffer.alloc(44+count*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(count*2,40);
   for(let n=0;n<count;n++)b.writeInt16LE(Math.max(-32768,Math.min(32767,Math.round(amplitude*32768*Math.sin(2*Math.PI*frequency*n/12000)))),44+n*2);return b;
 }
-async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});return p;}
+async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
 // Proves: CL-006-01/02/04; TC-018-001/003, level 2 actual server/browser.
