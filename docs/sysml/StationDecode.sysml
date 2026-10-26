@@ -453,7 +453,10 @@ package WstxOfflineDecode {
             objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
             doc /* FT8exactpayload/CRC/H/79tones/GFSKallfamilies+boundaries; strong36/40@-15,
                  weak20/40@-18; sameoverlapcounts; official>=12/14matches,22inheritedtexts
-                 supplementaryonly. Error240frames/1Hz,3dBstrongAWGN. Valid/RandTUvectors
+                 supplementaryonly. The shared known-wordfitkernel uses the SAME eight-frequency
+                 Stride4Gramoracle defined by ft4 above, with identical60480-frame phase/x formulas,
+                 expectedcoefficients.6/-.8 andexplained=sumx*x within5e-7f32relativeerror.
+                 Error240frames/1Hz,3dBstrongAWGN. Valid/RandTUvectors
                  retainedpositivesdespitereferencenondetection; no qualityscopeweakening. */
         }
         dependency ft8Case from ft8 to WstxRequirements::'TC-004-002';
