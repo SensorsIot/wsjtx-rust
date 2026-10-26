@@ -83,11 +83,18 @@ def compose(task):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kind', choices=['frozen', 'quality'], required=True)
-    parser.add_argument('--output', type=Path, required=True)
+    destination=parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument('--output',type=Path)
+    destination.add_argument('--cache-root',type=Path)
     parser.add_argument('--workers', type=int, default=4, choices=range(1, 9))
     parser.add_argument('--verify-only', action='store_true')
     args = parser.parse_args()
-    output = args.output.resolve()
+    if args.cache_root is not None:
+        manifest=FIXTURES/('quality-cases.json' if args.kind=='quality' else 'independent-vectors/manifest.json')
+        key=hashlib.sha256(manifest.read_bytes()+COMPOSER.read_bytes()).hexdigest()
+        output=(args.cache_root/(args.kind+'-'+key)).resolve()
+    else:
+        output = args.output.resolve()
     assert not output.is_relative_to(FIXTURES), 'generated audio belongs outside tracked fixtures'
     cases = recipes(args.kind)
     assert len(cases) == (38 if args.kind == 'frozen' else 2286)

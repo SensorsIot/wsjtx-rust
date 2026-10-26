@@ -1,11 +1,16 @@
+#![forbid(unsafe_code)]
 //! Pure FT4/FT8 modem kernels. Samples use the canonical 12 kHz clock.
 mod channel;
+mod demodulation;
+mod fit;
+mod likelihood;
 mod payload;
 mod search;
+mod synchronization;
 mod waveform;
 pub use channel::{Channel, ChannelWord};
-pub use payload::{Call, Exchange, Fields, Payload, PayloadStatus, unpack};
-pub use search::{Decode, DecodeError, Decoder};
+pub use payload::{Call, CallKind, Exchange, Fields, Payload, PayloadStatus, unpack};
+pub use search::{Decode, DecodeError, DecodeState, Decoder};
 use serde::{Deserialize, Serialize};
 pub use waveform::quadratures;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,27 +41,45 @@ impl Mode {
     pub fn spacing(self) -> f64 {
         12000.0 / self.symbol_frames() as f64
     }
-    pub fn sync(self) -> Vec<(usize, u8)> {
+    pub fn bits_per_symbol(self) -> usize {
+        if self == Self::Ft4 { 2 } else { 3 }
+    }
+    pub fn gray_map(self) -> &'static [usize] {
         match self {
-            Self::Ft8 => [0, 36, 72]
-                .into_iter()
-                .flat_map(|s| {
-                    [3, 1, 4, 0, 6, 5, 2]
-                        .into_iter()
-                        .enumerate()
-                        .map(move |(j, t)| (s + j, t))
-                })
-                .collect(),
-            Self::Ft4 => [
-                (1, [0, 1, 3, 2]),
-                (34, [1, 0, 2, 3]),
-                (67, [2, 3, 1, 0]),
-                (100, [3, 2, 0, 1]),
-            ]
-            .into_iter()
-            .flat_map(|(s, a)| a.into_iter().enumerate().map(move |(j, t)| (s + j, t)))
-            .collect(),
+            Self::Ft4 => &[0, 1, 3, 2],
+            Self::Ft8 => &[0, 1, 3, 2, 5, 6, 4, 7],
         }
+    }
+    pub fn gaussian_bt(self) -> f64 {
+        if self == Self::Ft4 { 1. } else { 2. }
+    }
+    pub fn ramp_frames(self) -> usize {
+        if self == Self::Ft4 {
+            self.symbol_frames()
+        } else {
+            self.symbol_frames() / 8
+        }
+    }
+    pub fn sync_blocks(self) -> &'static [(usize, &'static [u8])] {
+        match self {
+            Self::Ft8 => &[
+                (0, &[3, 1, 4, 0, 6, 5, 2]),
+                (36, &[3, 1, 4, 0, 6, 5, 2]),
+                (72, &[3, 1, 4, 0, 6, 5, 2]),
+            ],
+            Self::Ft4 => &[
+                (1, &[0, 1, 3, 2]),
+                (34, &[1, 0, 2, 3]),
+                (67, &[2, 3, 1, 0]),
+                (100, &[3, 2, 0, 1]),
+            ],
+        }
+    }
+    pub fn sync(self) -> Vec<(usize, u8)> {
+        self.sync_blocks()
+            .iter()
+            .flat_map(|&(s, tones)| tones.iter().enumerate().map(move |(j, &t)| (s + j, t)))
+            .collect()
     }
     pub fn data_symbols(self) -> Vec<usize> {
         let sync = self.sync();

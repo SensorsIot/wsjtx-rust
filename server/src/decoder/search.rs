@@ -1,7 +1,51 @@
+use super::demodulation::{Demodulator, channel_gates};
+use super::fit::{fit_signal, phase_agreement};
+use super::likelihood::{LikelihoodContext, PeerNoise};
+use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
-use rustfft::{FftPlanner, FftPlannerScalar, num_complex::Complex32};
 use serde::{Deserialize, Serialize};
-use std::f64::consts::PI;
+use std::{
+    f64::consts::PI,
+    future::{Future, poll_fn},
+    pin::pin,
+    task::{Context, Poll, Waker},
+    time::{Duration, Instant},
+};
+pub(super) struct CpuBudget<'a> {
+    pub(super) cancel: &'a dyn Fn() -> bool,
+    deadline: Instant,
+    resume: bool,
+}
+impl CpuBudget<'_> {
+    pub(super) async fn checkpoint(&mut self) -> Result<(), DecodeError> {
+        poll_fn(|cx| {
+            if (self.cancel)() {
+                return Poll::Ready(Err(DecodeError::Cancelled));
+            }
+            if self.resume {
+                self.resume = false;
+                self.deadline = Instant::now() + Duration::from_millis(10);
+            }
+            if Instant::now() >= self.deadline {
+                self.resume = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(Ok(()))
+            }
+        })
+        .await
+    }
+}
+fn complete<T>(future: impl Future<Output = T>) -> T {
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut future = pin!(future);
+    loop {
+        if let Poll::Ready(value) = future.as_mut().poll(&mut cx) {
+            return value;
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Decode {
     #[serde(flatten)]
@@ -17,121 +61,57 @@ pub enum DecodeError {
     SearchLimited,
     DecodeLimit,
 }
-#[derive(Clone, Copy)]
-struct Candidate {
+struct PublicationKey {
+    payload: String,
+    start: u64,
+    frequency: f64,
+}
+/// Job-local modem observations only. Station/source identity and worker authority stay with the caller.
+pub struct DecodeState {
+    mode: Mode,
+    published: Vec<PublicationKey>,
+    encoded_bytes: usize,
+}
+impl DecodeState {
+    pub fn new(mode: Mode) -> Self {
+        Self {
+            mode,
+            published: vec![],
+            encoded_bytes: 0,
+        }
+    }
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+    pub fn available_count(&self) -> usize {
+        self.published.len()
+    }
+    pub fn encoded_bytes(&self) -> usize {
+        self.encoded_bytes
+    }
+    fn contains(&self, payload: &str, start: u64) -> bool {
+        self.published.iter().any(|key| {
+            key.payload == payload
+                && key.start.abs_diff(start) <= (self.mode.symbol_frames() / 2) as u64
+        })
+    }
+}
+struct Prepared {
+    candidate: Candidate,
+    variance: f64,
+    signal: f64,
+}
+struct Subtraction {
     start: usize,
     frequency: f64,
-    score: f64,
+    tones: Vec<u8>,
 }
-struct Spectrum {
-    values: Vec<f32>,
-    width: usize,
-    regular: usize,
-    frequencies: Vec<f64>,
-    hop: usize,
-    noise: Option<f64>,
-}
-impl Spectrum {
-    fn at(&self, row: usize, f: usize, t: usize) -> f64 {
-        let col = if f == self.regular {
-            self.regular + 2 * 7 + 1 + t
-        } else {
-            f + 2 * t
-        };
-        self.values[row * self.width + col] as f64
-    }
-    fn candidates(
-        &self,
-        mode: Mode,
-        len: usize,
-        cancel: &impl Fn() -> bool,
-    ) -> Result<Vec<Candidate>, DecodeError> {
-        let frame = mode.symbol_count() * mode.symbol_frames();
-        if len < frame {
-            return Ok(vec![]);
-        }
-        let starts = (len - frame) / self.hop + 1;
-        let nf = self.frequencies.len();
-        let sync = mode.sync();
-        let q = mode.tone_count();
-        let mut scores = vec![0f32; starts * nf];
-        for r in 0..starts {
-            if cancel() {
-                return Err(DecodeError::Cancelled);
-            }
-            for f in 0..nf {
-                let (mut yes, mut other) = (0., 0.);
-                for &(s, t) in &sync {
-                    let row = r + 4 * s;
-                    let p = self.at(row, f, t as usize);
-                    yes += p;
-                    for tone in 0..q {
-                        if tone != t as usize {
-                            other += self.at(row, f, tone);
-                        }
-                    }
-                }
-                scores[r * nf + f] = if other > 0. {
-                    ((q - 1) as f64 * yes / other) as f32
-                } else if yes > 0. {
-                    f32::MAX
-                } else {
-                    0.
-                };
-            }
-        }
-        let mut out = vec![];
-        for r in 0..starts {
-            for f in 0..nf {
-                let s = scores[r * nf + f];
-                if s < 2.7 {
-                    continue;
-                }
-                let mut maximum = true;
-                for rr in r.saturating_sub(1)..=(r + 1).min(starts - 1) {
-                    for ff in f.saturating_sub(1)..=(f + 1).min(nf - 1) {
-                        if (rr, ff) != (r, f)
-                            && (scores[rr * nf + ff] > s
-                                || scores[rr * nf + ff] == s && (rr, ff) < (r, f))
-                        {
-                            maximum = false;
-                        }
-                    }
-                }
-                if maximum {
-                    out.push(Candidate {
-                        start: r * self.hop,
-                        frequency: self.frequencies[f],
-                        score: s as f64,
-                    });
-                }
-            }
-        }
-        out.sort_by(|a, b| {
-            b.score
-                .total_cmp(&a.score)
-                .then(a.frequency.total_cmp(&b.frequency))
-                .then(a.start.cmp(&b.start))
-        });
-        let mut selected: Vec<Candidate> = vec![];
-        for c in out {
-            if selected.iter().all(|p| {
-                p.start.abs_diff(c.start) > mode.symbol_frames() / 2
-                    || (p.frequency - c.frequency).abs() > mode.spacing() / 2. + 1e-7
-            }) {
-                selected.push(c);
-            }
-        }
-        if selected.len() > 256 {
-            return Err(DecodeError::SearchLimited);
-        }
-        Ok(selected)
-    }
-}
-/// A pure decoder instance has no source, job, profile, device or thread authority.
+/// Pure modem instance: no source, device, job, thread, network or transmit authority.
 pub struct Decoder {
     channel: Channel,
     scalar: bool,
+    ft4: Demodulator,
+    ft8: Demodulator,
 }
 impl Default for Decoder {
     fn default() -> Self {
@@ -143,375 +123,330 @@ impl Decoder {
         Self {
             channel: Channel::new(),
             scalar: false,
+            ft4: Demodulator::new(Mode::Ft4),
+            ft8: Demodulator::new(Mode::Ft8),
         }
     }
     pub fn with_scalar_transform() -> Self {
         Self {
-            channel: Channel::new(),
             scalar: true,
+            ..Self::new()
         }
     }
+    /// Blocking numerical convenience wrapper; station workers poll a cooperative future.
     pub fn decode(
         &self,
         samples: &[f32],
         mode: Mode,
         cancel: &impl Fn() -> bool,
     ) -> Result<Vec<Decode>, DecodeError> {
-        if samples.iter().any(|x| !x.is_finite()) {
-            return Err(DecodeError::InvalidSamples);
-        }
-        if cancel() {
-            return Err(DecodeError::Cancelled);
-        }
-        let mut results = vec![];
-        for window_start in (0..samples.len()).step_by(180000) {
-            let end = (window_start + 360000).min(samples.len());
-            let input = &samples[window_start..end];
-            if input.len() < mode.symbol_count() * mode.symbol_frames() {
-                continue;
-            }
-            let mut residual = input.to_vec();
-            let original_energy = input.iter().map(|&x| (x as f64).powi(2)).sum::<f64>();
-            let mut subtractions = 0;
-            for pass in 0..3 {
-                if pass > 0
-                    && residual.iter().map(|&x| (x as f64).powi(2)).sum::<f64>()
-                        <= original_energy * f32::EPSILON as f64
-                {
-                    break;
-                }
-                let spectrum = make_spectrum(&residual, mode, self.scalar, cancel)?;
-                let candidates = spectrum.candidates(mode, input.len(), cancel)?;
-                let mut added = 0;
-                for c in candidates {
-                    if cancel() {
-                        return Err(DecodeError::Cancelled);
-                    }
-                    let c = refine_sync(&residual, mode, c, cancel)?;
-                    let llr = self.soft_bits(
-                        &residual,
-                        mode,
-                        c,
-                        spectrum.noise.unwrap_or(1e-20),
-                        cancel,
-                    )?;
-                    let Some(word) = self.channel.decode(&llr, cancel) else {
-                        if cancel() {
-                            return Err(DecodeError::Cancelled);
-                        }
-                        continue;
-                    };
-                    let mean = llr.iter().map(|x| x.abs()).sum::<f32>() / 174.;
-                    let disagreements = word
-                        .iter()
-                        .zip(llr)
-                        .filter(|(b, l)| **b != u8::from(*l < 0.))
-                        .count();
-                    if mean < 1. || disagreements > 24 {
-                        continue;
-                    }
-                    let Some(payload) = self.channel.payload(&word, mode) else {
-                        continue;
-                    };
-                    let payload = unpack(&payload);
-                    let absolute = window_start + c.start;
-                    if results.iter().any(|r: &Decode| {
-                        r.payload.payload77 == payload.payload77
-                            && r.start_frame.abs_diff(absolute as u64)
-                                <= (mode.symbol_frames() / 2) as u64
-                    }) {
-                        continue;
-                    }
-                    let tones = self.channel.tones(&word, mode);
-                    let fitted = refine_known(&residual, mode, &tones, c, cancel)?;
-                    let wave = quadratures(mode, &tones, fitted.frequency)
-                        .ok_or(DecodeError::InvalidSamples)?;
-                    let fit = fit_signal(&residual, fitted.start, &wave);
-                    let symbol_fit = (0..mode.symbol_count())
-                        .filter_map(|j| {
-                            fit_signal(
-                                &residual,
-                                fitted.start + j * mode.symbol_frames(),
-                                &wave[j * mode.symbol_frames()..(j + 1) * mode.symbol_frames()],
-                            )
-                            .map(|f| f.2)
-                        })
-                        .sum::<f64>();
-                    if fit.is_none_or(|f| f.2 < 0.25 * symbol_fit) {
-                        continue;
-                    }
-                    let snr = fit
-                        .and_then(|(a, b, _)| {
-                            spectrum.noise.filter(|&n| n > 1e-20).map(|n| {
-                                10. * (((a * a + b * b) / 2.) / (n * 2500. / 6000.)).log10()
-                            })
-                        })
-                        .filter(|x| x.is_finite())
-                        .map(|x| x.clamp(-60., 60.));
-                    results.push(Decode {
-                        payload,
-                        start_frame: (window_start + fitted.start) as u64,
-                        frequency_hz: fitted.frequency,
-                        snr_db: snr,
-                    });
-                    if results.len() > 2048 {
-                        return Err(DecodeError::DecodeLimit);
-                    }
-                    added += 1;
-                    if subtractions < 32 {
-                        if let Some((a, b, _)) = fit {
-                            for (x, q) in residual[fitted.start..].iter_mut().zip(&wave) {
-                                *x -= (a * q[0] as f64 + b * q[1] as f64) as f32;
-                            }
-                            subtractions += 1;
-                        }
-                    }
-                }
-                if added == 0 || subtractions >= 32 {
-                    break;
-                }
-            }
-        }
-        results.sort_by(|a, b| {
-            a.start_frame
-                .cmp(&b.start_frame)
-                .then(a.frequency_hz.total_cmp(&b.frequency_hz))
-        });
-        Ok(results)
+        complete(self.decode_async(samples, mode, cancel))
     }
-    fn soft_bits(
+    pub async fn decode_async(
         &self,
         samples: &[f32],
         mode: Mode,
-        c: Candidate,
-        noise: f64,
         cancel: &impl Fn() -> bool,
-    ) -> Result<[f32; 174], DecodeError> {
-        let n = mode.symbol_frames();
-        let q = mode.tone_count();
-        let mut tones = vec![0; mode.symbol_count()];
-        let mut basis = vec![vec![[0f64; 2]; n]; q];
-        for (t, row) in basis.iter_mut().enumerate() {
-            let step = 2. * PI * (c.frequency + mode.spacing() * t as f64) / 12000.;
-            let (mut co, mut si) = (1., 0.);
-            let (dc, ds) = (step.cos(), step.sin());
-            for x in row {
-                *x = [co, si];
-                (co, si) = (co * dc - si * ds, si * dc + co * ds);
-            }
+    ) -> Result<Vec<Decode>, DecodeError> {
+        let mut output = vec![];
+        self.decode_into_async(samples, mode, cancel, &mut |record| {
+            output.push(record.clone());
+            Ok(())
+        })
+        .await?;
+        Ok(output)
+    }
+    /// Verified records reach the caller before any later cancellation/limit error.
+    pub async fn decode_into_async(
+        &self,
+        samples: &[f32],
+        mode: Mode,
+        cancel: &impl Fn() -> bool,
+        publish: &mut impl FnMut(&Decode) -> Result<(), DecodeError>,
+    ) -> Result<(), DecodeError> {
+        if samples.iter().any(|x| !x.is_finite()) {
+            return Err(DecodeError::InvalidSamples);
         }
-        for (s, tone) in tones.iter_mut().enumerate() {
+        let mut state = DecodeState::new(mode);
+        for origin in (0..samples.len()).step_by(180000) {
             if cancel() {
                 return Err(DecodeError::Cancelled);
             }
-            let mut best = 0.;
-            for (t, b) in basis.iter().enumerate() {
-                let mut z = [0., 0.];
-                for (&x, v) in samples[c.start + s * n..c.start + (s + 1) * n]
-                    .iter()
-                    .zip(b)
-                {
-                    z[0] += x as f64 * v[0];
-                    z[1] += x as f64 * v[1];
-                }
-                let e = z[0] * z[0] + z[1] * z[1];
-                if e > best {
-                    best = e;
-                    *tone = t as u8;
-                }
-            }
+            let end = (origin + 360000).min(samples.len());
+            self.decode_window_into_async(
+                samples[origin..end].to_vec(),
+                origin as u64,
+                &mut state,
+                cancel,
+                publish,
+            )
+            .await?;
         }
-        for (s, t) in mode.sync() {
-            tones[s] = t;
-        }
-        let phase = pulse_phases(mode);
-        let width = if mode == Mode::Ft4 { 2 } else { 3 };
-        let gray: &[usize] = if width == 2 {
-            &[0, 1, 3, 2]
+        if cancel() {
+            Err(DecodeError::Cancelled)
         } else {
-            &[0, 1, 3, 2, 5, 6, 4, 7]
+            Ok(())
+        }
+    }
+    /// Takes one worker-owned residual copy (<=30 s). The caller may keep accepting canonical
+    /// blocks into its own history while this future yields; no source-block references are held.
+    pub async fn decode_window_into_async(
+        &self,
+        mut samples: Vec<f32>,
+        origin: u64,
+        state: &mut DecodeState,
+        cancel: &impl Fn() -> bool,
+        publish: &mut impl FnMut(&Decode) -> Result<(), DecodeError>,
+    ) -> Result<(), DecodeError> {
+        if samples.len() > 360000 {
+            return Err(DecodeError::DecodeLimit);
+        }
+        if samples.iter().any(|x| !x.is_finite())
+            || origin
+                .checked_add(samples.len() as u64)
+                .is_none_or(|end| end > 9007199254740991)
+        {
+            return Err(DecodeError::InvalidSamples);
+        }
+        let mut budget = CpuBudget {
+            cancel,
+            deadline: Instant::now() + Duration::from_millis(10),
+            resume: false,
         };
-        let mut llr = [0.; 174];
-        for _ in 0..3 {
-            let old = tones.clone();
-            for (i, s) in mode.data_symbols().into_iter().enumerate() {
-                if cancel() {
-                    return Err(DecodeError::Cancelled);
-                }
-                let mut energy = vec![[0.; 2]; q];
-                for k in 0..n {
-                    let mut fixed = 2. * PI * c.frequency * k as f64 / 12000.;
-                    for lag in -2isize..=2 {
-                        let j = s as isize + lag;
-                        if lag != 0 && j >= 0 && (j as usize) < old.len() {
-                            fixed += old[j as usize] as f64 * phase[(lag + 2) as usize][k];
-                        }
-                    }
-                    let x = samples[c.start + s * n + k] as f64;
-                    for (tone, e) in energy.iter_mut().enumerate() {
-                        let angle = fixed + tone as f64 * phase[2][k];
-                        e[0] += x * angle.cos();
-                        e[1] += x * angle.sin();
-                    }
-                }
-                let powers = energy
+        budget.checkpoint().await?;
+        let mode = state.mode;
+        let n = mode.symbol_frames();
+        let frame = n * mode.symbol_count();
+        if samples.len() < frame {
+            return Ok(());
+        }
+        let mut subtractions = 0;
+        let mut window_seen = Vec::<(String, u64)>::new();
+        for _pass in 0..3 {
+            let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
+            let coarse = spectrum.candidates(samples.len(), &mut budget).await?;
+            let accepted = state
+                .published
+                .iter()
+                .filter(|key| key.start >= origin && key.start < origin + samples.len() as u64)
+                .map(|key| key.frequency)
+                .collect::<Vec<_>>();
+            let mut prepared = vec![];
+            for c in coarse {
+                let c = super::synchronization::refine(&samples, mode, c, &mut budget).await?;
+                let variance = spectrum
+                    .noise_variance(c.start, frame, c.frequency, &accepted)
+                    .unwrap_or(1e-20)
+                    .max(1e-20);
+                let signal = sync_signal_energy(&samples, mode, c, spectrum.sync_wave(), variance);
+                prepared.push(Prepared {
+                    candidate: c,
+                    variance,
+                    signal,
+                });
+            }
+            let mut pending = vec![];
+            let mut verified = 0;
+            for current in &prepared {
+                budget.checkpoint().await?;
+                let c = current.candidate;
+                let peer = prepared
                     .iter()
-                    .map(|v| ((v[0] * v[0] + v[1] * v[1]) / n as f64 / noise.max(1e-20)))
-                    .collect::<Vec<_>>();
-                tones[s] = powers
-                    .iter()
-                    .enumerate()
-                    .max_by(|a, b| a.1.total_cmp(b.1))
-                    .unwrap()
-                    .0 as u8;
-                for bit in 0..width {
-                    let mut a = vec![];
-                    let mut b = vec![];
-                    for (value, &tone) in gray.iter().enumerate() {
-                        if (value >> (width - bit - 1)) & 1 == 0 {
-                            a.push(powers[tone]);
-                        } else {
-                            b.push(powers[tone]);
-                        }
+                    .filter(|other| {
+                        let p = other.candidate;
+                        p.start.abs_diff(c.start) <= n / 2
+                            && (p.frequency - c.frequency).abs() >= 0.75 * mode.spacing()
+                            && (p.frequency - c.frequency).abs()
+                                <= (mode.tone_count() - 1) as f64 * mode.spacing()
+                            && other.signal >= current.variance
+                            && other.signal >= current.signal / 16.
+                    })
+                    .max_by(|a, b| {
+                        a.signal
+                            .total_cmp(&b.signal)
+                            .then(b.candidate.frequency.total_cmp(&a.candidate.frequency))
+                            .then(b.candidate.start.cmp(&a.candidate.start))
+                    })
+                    .map(|p| PeerNoise {
+                        energy: p.signal,
+                        offset: ((p.candidate.frequency - c.frequency) / mode.spacing() + 0.5)
+                            .floor() as i32,
+                    });
+                let context = LikelihoodContext {
+                    variance: current.variance,
+                    signal: current.signal,
+                    peer,
+                };
+                let demodulator = if mode == Mode::Ft4 {
+                    &self.ft4
+                } else {
+                    &self.ft8
+                };
+                let observation = demodulator
+                    .observe(
+                        &samples,
+                        c.start,
+                        c.frequency,
+                        context,
+                        &self.channel,
+                        &mut budget,
+                    )
+                    .await?;
+                let word = match observation.word {
+                    Some(word) => Some(word),
+                    None => self.channel.decode(&observation.llr, cancel),
+                };
+                budget.checkpoint().await?;
+                let Some(word) = word else {
+                    continue;
+                };
+                if !channel_gates(&word, &observation.llr) {
+                    continue;
+                }
+                let Some(payload) = self.channel.payload(&word, mode) else {
+                    continue;
+                };
+                let payload = unpack(&payload);
+                let absolute = origin + c.start as u64;
+                if window_seen.iter().any(|(bits, start)| {
+                    *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
+                }) {
+                    continue;
+                }
+                let tones = self.channel.tones(&word, mode);
+                let fitted = refine_known(&samples, mode, &tones, c, cancel, &mut budget).await?;
+                let absolute = origin + fitted.start as u64;
+                if window_seen.iter().any(|(bits, start)| {
+                    *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
+                }) {
+                    continue;
+                }
+                let wave = quadratures(mode, &tones, fitted.frequency)
+                    .ok_or(DecodeError::InvalidSamples)?;
+                if phase_agreement(&samples, fitted.start, &wave, mode)
+                    .is_none_or(|ratio| ratio < 0.5)
+                {
+                    continue;
+                }
+                let fit = fit_signal(&samples, fitted.start, &wave);
+                let variance =
+                    spectrum.noise_variance(fitted.start, frame, fitted.frequency, &accepted);
+                let snr = fit
+                    .and_then(|(a, b, _)| {
+                        variance
+                            .filter(|&v| v / 6000. > 1e-20)
+                            .map(|v| 10. * (((a * a + b * b) / 2.) / (v * 2500. / 6000.)).log10())
+                    })
+                    .filter(|x| x.is_finite())
+                    .map(|x| x.clamp(-60., 60.));
+                window_seen.push((payload.payload77.clone(), absolute));
+                verified += 1;
+                if !state.contains(&payload.payload77, absolute) {
+                    let record = Decode {
+                        payload,
+                        start_frame: absolute,
+                        frequency_hz: fitted.frequency,
+                        snr_db: snr,
+                    };
+                    #[derive(Serialize)]
+                    struct Numbered<'a> {
+                        sequence: usize,
+                        #[serde(flatten)]
+                        record: &'a Decode,
                     }
-                    llr[i * width + bit] = (logsum(&a) - logsum(&b)).clamp(-12., 12.) as f32;
+                    let bytes = serde_json::to_vec(&Numbered {
+                        sequence: state.published.len(),
+                        record: &record,
+                    })
+                    .map_err(|_| DecodeError::DecodeLimit)?
+                    .len();
+                    if state.published.len() >= 2048
+                        || bytes > 1024
+                        || state.encoded_bytes + bytes > 2097152
+                    {
+                        return Err(DecodeError::DecodeLimit);
+                    }
+                    publish(&record)?;
+                    state.encoded_bytes += bytes;
+                    state.published.push(PublicationKey {
+                        payload: record.payload.payload77.clone(),
+                        start: record.start_frame,
+                        frequency: record.frequency_hz,
+                    });
+                }
+                if pending.len() + subtractions < 32 {
+                    pending.push(Subtraction {
+                        start: fitted.start,
+                        frequency: fitted.frequency,
+                        tones,
+                    });
                 }
             }
+            for subtraction in pending {
+                budget.checkpoint().await?;
+                let wave = quadratures(mode, &subtraction.tones, subtraction.frequency)
+                    .ok_or(DecodeError::InvalidSamples)?;
+                if let Some((a, b, _)) = fit_signal(&samples, subtraction.start, &wave) {
+                    for (x, q) in samples[subtraction.start..].iter_mut().zip(&wave) {
+                        *x -= (a * q[0] as f64 + b * q[1] as f64) as f32;
+                    }
+                    subtractions += 1;
+                }
+            }
+            if verified == 0 || subtractions >= 32 {
+                break;
+            }
         }
-        Ok(llr)
+        budget.checkpoint().await?;
+        Ok(())
     }
 }
-fn logsum(a: &[f64]) -> f64 {
-    let m = a.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    m + a.iter().map(|&x| (x - m).exp()).sum::<f64>().ln()
-}
-fn pulse_phases(mode: Mode) -> Vec<Vec<f64>> {
-    let n = mode.symbol_frames();
-    let bt = if mode == Mode::Ft8 { 2. } else { 1. };
-    let k = PI * (2. / 2f64.ln()).sqrt();
-    (-2isize..=2)
-        .map(|lag| {
-            let mut phase = 0.;
-            (0..n)
-                .map(|s| {
-                    let t = (s as f64 + 0.5 - (lag as f64 + 0.5) * n as f64) / n as f64;
-                    let p = (super::waveform::erf(k * bt * (t + 0.5))
-                        - super::waveform::erf(k * bt * (t - 0.5)))
-                        / 2.;
-                    phase += 2. * PI * p / n as f64;
-                    phase
-                })
-                .collect()
-        })
-        .collect()
-}
-fn make_spectrum(
+fn sync_signal_energy(
     samples: &[f32],
     mode: Mode,
-    scalar: bool,
-    cancel: &impl Fn() -> bool,
-) -> Result<Spectrum, DecodeError> {
+    c: Candidate,
+    unit: &[[f32; 2]],
+    variance: f64,
+) -> f64 {
     let n = mode.symbol_frames();
-    let hop = n / 4;
-    let rows = (samples.len() - n) / hop + 1;
-    let regular = ((3500. - 200.) / (mode.spacing() / 2.)).floor() as usize + 1;
-    let width = regular + 2 * 7 + 1 + mode.tone_count();
-    let mut frequencies = (0..regular)
-        .map(|j| 200. + j as f64 * mode.spacing() / 2.)
-        .collect::<Vec<_>>();
-    let endpoint = (frequencies.last().copied().unwrap() - 3500.).abs() > 1e-7;
-    if endpoint {
-        frequencies.push(3500.);
-    }
-    let mut values = vec![0.; rows * width];
-    let fft = if scalar {
-        FftPlannerScalar::new().plan_fft_forward(n)
+    let starts: &[usize] = if mode == Mode::Ft8 {
+        &[0, 36, 72]
     } else {
-        FftPlanner::new().plan_fft_forward(n)
+        &[1, 34, 67, 100]
     };
-    let mut buffer = vec![Complex32::new(0., 0.); n];
-    let mut scratch = vec![Complex32::new(0., 0.); fft.get_inplace_scratch_len()];
-    let oscillators = (0..2)
-        .map(|half| {
-            (0..n)
-                .map(|j| {
-                    Complex32::from_polar(
-                        1.,
-                        (-2. * PI * (200. + half as f64 * mode.spacing() / 2.) * j as f64 / 12000.)
-                            as f32,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let mut noise = vec![];
-    for row in 0..rows {
-        if cancel() {
-            return Err(DecodeError::Cancelled);
+    let count = if mode == Mode::Ft8 { 7 } else { 4 };
+    let mut estimates = vec![];
+    for &first in starts {
+        let lo = first * n + n / 2;
+        let hi = (first + count) * n - n / 2;
+        let angle = 2. * PI * c.frequency / 12000.;
+        let rotation = rustfft::num_complex::Complex64::from_polar(1., angle);
+        let mut oscillator =
+            rustfft::num_complex::Complex64::from_polar(1., angle * (lo + 1) as f64);
+        let mut template = Vec::with_capacity(hi - lo);
+        for w in &unit[lo..hi] {
+            let z = rustfft::num_complex::Complex64::new(w[0] as f64, w[1] as f64) * oscillator;
+            template.push([z.re as f32, z.im as f32]);
+            oscillator *= rotation;
         }
-        for half in 0..2 {
-            for j in 0..n {
-                buffer[j] = oscillators[half][j] * samples[row * hop + j];
-            }
-            fft.process_with_scratch(&mut buffer, &mut scratch);
-            for j in (half..regular + 2 * 7 + 1).step_by(2) {
-                let power = buffer[j / 2].norm_sqr();
-                values[row * width + j] = power;
-                if row % 4 == 0 && half == 0 {
-                    noise.push(power);
-                }
-            }
-        }
-        if endpoint {
-            for tone in 0..mode.tone_count() {
-                let angle = 2. * PI * (3500. + tone as f64 * mode.spacing()) / 12000.;
-                let (dc, ds) = (angle.cos(), angle.sin());
-                let (mut co, mut si) = (1., 0.);
-                let (mut re, mut im) = (0., 0.);
-                for &x in &samples[row * hop..row * hop + n] {
-                    re += x as f64 * co;
-                    im += x as f64 * si;
-                    (co, si) = (co * dc - si * ds, si * dc + co * ds);
-                }
-                values[row * width + regular + 2 * 7 + 1 + tone] = (re * re + im * im) as f32;
+        if let Some((a, b, _)) = fit_signal(samples, c.start + lo, &template) {
+            let estimate =
+                (n as f64 * (a * a + b * b) / 4. - n as f64 * variance / (hi - lo) as f64).max(0.);
+            if estimate.is_finite() {
+                estimates.push(estimate);
             }
         }
     }
-    let noise = if noise.len() >= 128 && rows >= 29 {
-        let m = noise.len() / 2;
-        noise.select_nth_unstable_by(m, f32::total_cmp);
-        Some(noise[m] as f64 / (n as f64 * 2f64.ln()))
-    } else {
-        None
-    };
-    Ok(Spectrum {
-        values,
-        width,
-        regular,
-        frequencies,
-        hop,
-        noise,
-    })
-}
-fn sync_template(mode: Mode) -> (Vec<[f32; 2]>, Vec<(usize, usize)>) {
-    let mut tones = vec![0; mode.symbol_count()];
-    for (s, t) in mode.sync() {
-        tones[s] = t;
+    if estimates.len() != starts.len() {
+        return 0.;
     }
-    let n = mode.symbol_frames();
-    let ranges = if mode == Mode::Ft8 {
-        vec![
-            (n / 2, 7 * n - n / 2),
-            (36 * n + n / 2, 43 * n - n / 2),
-            (72 * n + n / 2, 79 * n - n / 2),
-        ]
+    estimates.sort_by(f64::total_cmp);
+    let middle = estimates.len() / 2;
+    if estimates.len() % 2 == 0 {
+        (estimates[middle - 1] + estimates[middle]) / 2.
     } else {
-        [1, 34, 67, 100]
-            .into_iter()
-            .map(|s| (s * n + n / 2, (s + 4) * n - n / 2))
-            .collect()
-    };
-    (quadratures(mode, &tones, 0.).unwrap(), ranges)
+        estimates[middle]
+    }
 }
 fn coherent(
     samples: &[f32],
@@ -528,85 +463,70 @@ fn coherent(
         let angle = 2. * PI * frequency * (lo + 1) as f64 / 12000.;
         let (mut co, mut si) = (angle.cos(), angle.sin());
         let (mut re, mut im) = (0., 0.);
+        let mut template_energy = 0.;
         for j in (lo..hi).step_by(stride) {
             let w = wave[j];
             let a = w[0] as f64 * co - w[1] as f64 * si;
             let b = w[0] as f64 * si + w[1] as f64 * co;
+            template_energy += a * a + b * b;
             let x = samples[start + j] as f64;
             re += x * a;
             im += x * b;
             (co, si) = (co * dc - si * ds, si * dc + co * ds);
         }
-        score += (re * re + im * im) / ((hi - lo) / stride) as f64;
+        if template_energy > 0. {
+            score += (re * re + im * im) / template_energy;
+        }
     }
     score
 }
-fn refine_sync(
-    samples: &[f32],
-    mode: Mode,
-    c: Candidate,
-    cancel: &impl Fn() -> bool,
-) -> Result<Candidate, DecodeError> {
-    let (wave, ranges) = sync_template(mode);
-    let n = mode.symbol_frames();
-    let mut best = Candidate { score: -1., ..c };
-    for dt in -2isize..=2 {
-        let start = c.start as isize + dt * (n / 16) as isize;
-        if start < 0 || start as usize + wave.len() > samples.len() {
-            continue;
-        }
-        for df in -4..=4 {
-            if cancel() {
-                return Err(DecodeError::Cancelled);
-            }
-            let frequency = c.frequency + df as f64 * mode.spacing() / 16.;
-            if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
-                continue;
-            }
-            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
-            if score > best.score {
-                best = Candidate {
-                    start: start as usize,
-                    frequency,
-                    score,
-                };
-            }
-        }
-    }
-    Ok(best)
-}
-fn refine_known(
+async fn refine_known(
     samples: &[f32],
     mode: Mode,
     tones: &[u8],
     c: Candidate,
     cancel: &impl Fn() -> bool,
+    budget: &mut CpuBudget<'_>,
 ) -> Result<Candidate, DecodeError> {
     let wave = quadratures(mode, tones, 0.).unwrap();
     let n = mode.symbol_frames();
     let ranges = [(n / 2, wave.len() - n / 2)];
     let step = 6000. / wave.len() as f64;
-    let count = (mode.spacing() / 2. / step).ceil() as i32 + 1;
+    let count = mode.symbol_count() as i32;
+    let lower = (c.frequency - mode.spacing() / 2.).max(200.);
+    let upper = (c.frequency + mode.spacing() / 2.).min(3500.);
+    let mut frequencies = (-count..=count)
+        .map(|df| c.frequency + df as f64 * step)
+        .filter(|&f| f >= lower && f <= upper)
+        .chain([lower, upper])
+        .collect::<Vec<_>>();
+    frequencies.sort_by(f64::total_cmp);
+    frequencies.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
     let mut best = Candidate { score: -1., ..c };
     for dt in -4isize..=4 {
         let start = c.start as isize + dt * (n / 16) as isize;
         if start < 0 || start as usize + wave.len() > samples.len() {
             continue;
         }
-        for df in -count..=count {
+        for &frequency in &frequencies {
+            budget.checkpoint().await?;
             if cancel() {
                 return Err(DecodeError::Cancelled);
             }
-            let frequency = c.frequency + df as f64 * step;
             if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
                 continue;
             }
             let score = coherent(samples, start as usize, &wave, &ranges, frequency, 4);
-            if score > best.score {
+            if score > best.score
+                || score == best.score
+                    && (frequency < best.frequency
+                        || frequency == best.frequency && (start as usize) < best.start)
+            {
                 best = Candidate {
                     start: start as usize,
                     frequency,
                     score,
+                    ..c
                 };
             }
         }
@@ -621,6 +541,7 @@ fn refine_known(
             continue;
         }
         for df in -4..=4 {
+            budget.checkpoint().await?;
             if cancel() {
                 return Err(DecodeError::Cancelled);
             }
@@ -629,11 +550,16 @@ fn refine_known(
                 continue;
             }
             let score = coherent(samples, start as usize, &wave, &ranges, frequency, 4);
-            if score > best.score {
+            if score > best.score
+                || score == best.score
+                    && (frequency < best.frequency
+                        || frequency == best.frequency && (start as usize) < best.start)
+            {
                 best = Candidate {
                     start: start as usize,
                     frequency,
                     score,
+                    ..c
                 };
             }
         }
@@ -645,35 +571,24 @@ fn refine_known(
         if start < 0 || start as usize + wave.len() > samples.len() {
             continue;
         }
+        budget.checkpoint().await?;
         if cancel() {
             return Err(DecodeError::Cancelled);
         }
-        let score = coherent(samples, start as usize, &wave, &ranges, fine.frequency, 4);
-        if score > best.score {
+        let frequency = fine.frequency;
+        let score = coherent(samples, start as usize, &wave, &ranges, frequency, 4);
+        if score > best.score
+            || score == best.score
+                && (frequency < best.frequency
+                    || frequency == best.frequency && (start as usize) < best.start)
+        {
             best = Candidate {
                 start: start as usize,
                 frequency: fine.frequency,
                 score,
+                ..c
             };
         }
     }
     Ok(best)
-}
-fn fit_signal(samples: &[f32], start: usize, wave: &[[f32; 2]]) -> Option<(f64, f64, f64)> {
-    let (mut cc, mut ss, mut cs, mut xc, mut xs) = (0., 0., 0., 0., 0.);
-    for (&x, q) in samples.get(start..start + wave.len())?.iter().zip(wave) {
-        let (c, s) = (q[0] as f64, q[1] as f64);
-        cc += c * c;
-        ss += s * s;
-        cs += c * s;
-        xc += x as f64 * c;
-        xs += x as f64 * s;
-    }
-    let det = cc * ss - cs * cs;
-    if !det.is_finite() || det <= 1e-12 * cc * ss {
-        return None;
-    }
-    let a = (xc * ss - xs * cs) / det;
-    let b = (xs * cc - xc * cs) / det;
-    Some((a, b, a * xc + b * xs))
 }

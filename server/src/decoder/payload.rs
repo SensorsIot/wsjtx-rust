@@ -1,7 +1,14 @@
 use serde::{Deserialize, Serialize};
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallKind {
+    Call,
+    Token,
+    Hash,
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Call {
-    pub kind: String,
+    pub kind: CallKind,
     pub text: Option<String>,
     pub hash_bits: Option<u8>,
     pub hash_value: Option<u32>,
@@ -9,7 +16,11 @@ pub struct Call {
 impl Call {
     fn named(text: String, token: bool) -> Self {
         Self {
-            kind: if token { "token" } else { "call" }.into(),
+            kind: if token {
+                CallKind::Token
+            } else {
+                CallKind::Call
+            },
             text: Some(text),
             hash_bits: None,
             hash_value: None,
@@ -17,7 +28,7 @@ impl Call {
     }
     fn hashed(bits: u8, n: u32) -> Self {
         Self {
-            kind: "hash".into(),
+            kind: CallKind::Hash,
             text: None,
             hash_bits: Some(bits),
             hash_value: Some(n),
@@ -190,7 +201,7 @@ fn lists(text: &str, index: u32) -> Option<String> {
 }
 fn suffix(c: &mut Call, on: bool, s: &str) -> Option<()> {
     if on {
-        if c.kind != "call" {
+        if c.kind != CallKind::Call {
             return None;
         }
         c.text.as_mut()?.push_str(s);

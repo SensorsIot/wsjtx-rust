@@ -1,4 +1,4 @@
-// Canonical radio and audio contract SHA256: cc3413ce479daa750db69e9bafedd32e1902a344f19a0bf87aec5707d8b4a1ad
+// Canonical radio and audio contract SHA256: 5690c51187b004eb1a8fd0992832788202a6317c3394a895caa30732bb8e1bf9
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.

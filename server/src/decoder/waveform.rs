@@ -22,13 +22,20 @@ pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32;
     if tones.len() != mode.symbol_count()
         || tones.iter().any(|&t| t as usize >= mode.tone_count())
         || !frequency.is_finite()
+        || frequency.abs() > 6000.
     {
         return None;
     }
     let n = mode.symbol_frames();
     let len = n * tones.len();
-    let bt = if mode == Mode::Ft8 { 2. } else { 1. };
+    let bt = mode.gaussian_bt();
     let k = PI * (2. / 2f64.ln()).sqrt();
+    let pulse = (0..4 * n)
+        .map(|j| {
+            let t = (j as f64 + 0.5 - 2. * n as f64) / n as f64;
+            mode.spacing() * (erf(k * bt * (t + 0.5)) - erf(k * bt * (t - 0.5))) / 2.
+        })
+        .collect::<Vec<_>>();
     let mut frequency_offset = vec![0.; len];
     for (j, &tone) in tones.iter().enumerate() {
         if tone == 0 {
@@ -38,13 +45,10 @@ pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32;
         let lo = (center - 2 * n as isize).max(0) as usize;
         let hi = (center + 2 * n as isize).min(len as isize) as usize;
         for (s, f) in frequency_offset.iter_mut().enumerate().take(hi).skip(lo) {
-            let t = (s as f64 + 0.5 - center as f64) / n as f64;
-            *f +=
-                tone as f64 * mode.spacing() * (erf(k * bt * (t + 0.5)) - erf(k * bt * (t - 0.5)))
-                    / 2.;
+            *f += tone as f64 * pulse[(s as isize - center + 2 * n as isize) as usize];
         }
     }
-    let ramp = if mode == Mode::Ft8 { n / 8 } else { n };
+    let ramp = mode.ramp_frames();
     let mut phase = 0.;
     let mut out = Vec::with_capacity(len);
     for (i, off) in frequency_offset.into_iter().enumerate() {

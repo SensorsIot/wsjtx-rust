@@ -5,6 +5,7 @@ const MASK: &[u8; 77] =
 pub struct Channel {
     generator: Vec<[u8; 91]>,
     checks: Vec<Vec<usize>>,
+    source_generator: Vec<ChannelWord>,
 }
 impl Default for Channel {
     fn default() -> Self {
@@ -26,18 +27,36 @@ impl Channel {
                 .split_whitespace()
                 .map(str::parse::<usize>)
                 .collect::<Result<Vec<_>, _>>();
-            if let Ok(n) = numbers {
-                if n.len() == 3 {
-                    assert!(column < 174);
-                    for row in n {
-                        checks[row - 1].push(column);
-                    }
-                    column += 1;
+            if let Ok(n) = numbers
+                && n.len() == 3
+            {
+                assert!(column < 174);
+                for row in n {
+                    checks[row - 1].push(column);
                 }
+                column += 1;
             }
         }
         assert_eq!(column, 174);
-        Self { generator, checks }
+        let mut channel = Self {
+            generator,
+            checks,
+            source_generator: vec![],
+        };
+        channel.source_generator = (0..77)
+            .map(|i| {
+                let mut p = [0; 77];
+                p[i] = 1;
+                channel.encode(&p, Mode::Ft8)
+            })
+            .collect();
+        debug_assert!(
+            channel
+                .source_generator
+                .iter()
+                .all(|word| channel.valid(word))
+        );
+        channel
     }
     pub fn crc(bits: &[u8; 77]) -> u16 {
         let mut r = 0u16;
@@ -91,17 +110,13 @@ impl Channel {
         for (i, t) in mode.sync() {
             tones[i] = t;
         }
-        let width = if mode == Mode::Ft4 { 2 } else { 3 };
-        let gray: &[u8] = if width == 2 {
-            &[0, 1, 3, 2]
-        } else {
-            &[0, 1, 3, 2, 5, 6, 4, 7]
-        };
+        let width = mode.bits_per_symbol();
+        let gray = mode.gray_map();
         for (i, s) in mode.data_symbols().into_iter().enumerate() {
             let v = word[i * width..(i + 1) * width]
                 .iter()
                 .fold(0, |a, &b| a * 2 + b as usize);
-            tones[s] = gray[v];
+            tones[s] = gray[v] as u8;
         }
         tones
     }
@@ -109,6 +124,17 @@ impl Channel {
     pub fn decode(&self, llr: &[f32; 174], cancel: &impl Fn() -> bool) -> Option<ChannelWord> {
         if llr.iter().any(|x| !x.is_finite()) || cancel() {
             return None;
+        }
+        let (word, posterior) = self.beliefs(llr, cancel);
+        word.or_else(|| self.osd(llr, &posterior, cancel))
+    }
+    pub(super) fn beliefs(
+        &self,
+        llr: &[f32; 174],
+        cancel: &impl Fn() -> bool,
+    ) -> (Option<ChannelWord>, [f32; 174]) {
+        if llr.iter().any(|x| !x.is_finite()) || cancel() {
+            return (None, *llr);
         }
         let mut messages = self
             .checks
@@ -122,7 +148,7 @@ impl Channel {
         let mut posterior = *llr;
         for _ in 0..50 {
             if cancel() {
-                return None;
+                return (None, *llr);
             }
             let mut sum = *llr;
             let mut outgoing = messages.clone();
@@ -145,7 +171,7 @@ impl Channel {
             }
             let hard = std::array::from_fn(|i| u8::from(sum[i] < 0.));
             if self.valid(&hard) {
-                return Some(hard);
+                return (Some(hard), sum);
             }
             for (c, row) in self.checks.iter().enumerate() {
                 for (k, &j) in row.iter().enumerate() {
@@ -154,7 +180,7 @@ impl Channel {
             }
             posterior = sum;
         }
-        self.osd(llr, &posterior, cancel)
+        (None, posterior)
     }
     fn osd(
         &self,
@@ -170,42 +196,37 @@ impl Channel {
                 .total_cmp(&posterior[a].abs())
                 .then(a.cmp(&b))
         });
-        let mut rows = vec![[0u8; 174]; 91];
-        for (i, row) in rows.iter_mut().enumerate() {
-            row[i] = 1;
-            for j in 0..83 {
-                row[91 + j] = self.generator[j][i];
-            }
-        }
+        let mut rows = self.source_generator.clone();
         let mut basis = vec![];
         for c in columns {
             let r = basis.len();
-            if let Some(p) = (r..91).find(|&k| rows[k][c] != 0) {
+            if let Some(p) = (r..77).find(|&k| rows[k][c] != 0) {
                 rows.swap(r, p);
-                for k in 0..91 {
-                    if k != r && rows[k][c] != 0 {
-                        for j in 0..174 {
-                            rows[k][j] ^= rows[r][j];
+                let pivot = rows[r];
+                for (k, row) in rows.iter_mut().enumerate() {
+                    if k != r && row[c] != 0 {
+                        for (dst, bit) in row.iter_mut().zip(pivot) {
+                            *dst ^= bit;
                         }
                     }
                 }
                 basis.push(c);
-                if basis.len() == 91 {
+                if basis.len() == 77 {
                     break;
                 }
             }
         }
-        if basis.len() != 91 {
+        if basis.len() != 77 {
             return None;
         }
-        let mut least = (0..91).collect::<Vec<_>>();
+        let mut least = (0..77).collect::<Vec<_>>();
         least.sort_by(|&a, &b| {
             posterior[basis[a]]
                 .abs()
                 .total_cmp(&posterior[basis[b]].abs())
         });
         least.truncate(16);
-        let initial = std::array::from_fn::<_, 91, _>(|i| u8::from(posterior[basis[i]] < 0.));
+        let initial = std::array::from_fn::<_, 77, _>(|i| u8::from(posterior[basis[i]] < 0.));
         let mut trials = vec![vec![]];
         for &a in &least {
             trials.push(vec![a]);
@@ -226,7 +247,7 @@ impl Channel {
                 bits[i] ^= 1;
             }
             let mut word = [0; 174];
-            for i in 0..91 {
+            for i in 0..77 {
                 if bits[i] != 0 {
                     for j in 0..174 {
                         word[j] ^= rows[i][j];
