@@ -168,7 +168,7 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   assert.equal(frame.data.levels.length,128);assert.equal(frame.data.levels[32],114);assert.equal(frame.data.first_frame,frame.data.sequence*12000);assert.ok(frame.data.end_frame<=24000);assert.ok(Buffer.byteLength(JSON.stringify(frame))<=1024);
   await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>0,{timeout:8000});
   assert.ok(await p.locator('#signal').innerText().then(s=>s.includes('Hz')&&s.includes('dBFS')));
-  const separator=p.getByRole('separator',{name:'Resize spectrum and controls'});await separator.focus();await p.keyboard.press('Home');assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);await p.keyboard.press('ArrowDown');assert.equal(Number(await separator.getAttribute('aria-valuenow')),176);await p.keyboard.press('End');assert.equal(Number(await separator.getAttribute('aria-valuenow')),638);
+  const separator=p.getByRole('separator',{name:'Resize spectrum and controls'});await separator.focus();await p.keyboard.press('Home');assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);await p.keyboard.press('ArrowDown');assert.equal(Number(await separator.getAttribute('aria-valuenow')),176);await p.keyboard.press('End');const expectedMaximum=await p.evaluate(()=>innerHeight-document.querySelector('#station-bar').getBoundingClientRect().height-12-200);assert.equal(Number(await separator.getAttribute('aria-valuenow')),expectedMaximum);
   const box=await separator.boundingBox();await p.mouse.move(box.x+10,box.y+6);await p.mouse.down();await p.mouse.move(box.x+10,0);await p.mouse.up();assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);
   await fs.mkdir('test-results',{recursive:true});await p.screenshot({path:'test-results/recording-desktop.png',fullPage:true});
   await p.setViewportSize({width:360,height:640});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.ok((await p.locator('#signal').boundingBox()).height>=160);assert.ok((await p.locator('#controls').boundingBox()).height>=200);assert.equal((await separator.boundingBox()).height,12);
@@ -176,7 +176,7 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox();
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:180,y:handle.y+6}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:180,y:300}]});
-  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});assert.ok(Number(await separator.getAttribute('aria-valuenow'))>=280);
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});const resizedSignal=await p.locator('#signal').boundingBox();assert.ok(Math.abs(resizedSignal.y+resizedSignal.height-300)<=10,'touch drag follows its viewport coordinate below the station bar');
   await p.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
 
