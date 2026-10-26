@@ -72,8 +72,10 @@ fn wav(path: &Path) -> Vec<f32> {
             }
             b"data" => {
                 result = Some(
-                    data.chunks_exact(2)
-                        .map(|b| i16::from_le_bytes(b.try_into().unwrap()) as f32 / 32768.)
+                    data.as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|&b| i16::from_le_bytes(b) as f32 / 32768.)
                         .collect(),
                 );
             }
@@ -502,8 +504,10 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
         let bytes = fs::read(root.join(id).join("samples.f32")).unwrap();
         assert_eq!(bytes.len(), case["frames"].as_u64().unwrap() as usize * 4);
         let samples = bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&b| f32::from_le_bytes(b))
             .collect::<Vec<_>>();
         assert!(samples.iter().all(|x| x.is_finite()));
         let mode = if case["decode_mode"] == "ft4" {
@@ -565,4 +569,173 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
         checked += 1;
     }
     assert_eq!(checked, 14);
+}
+
+#[test]
+fn official_modern_recording_baselines() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../fixtures/decoder/recording-baselines.json"
+    ))
+    .unwrap();
+    let samples = PathBuf::from(
+        std::env::var_os("WSTX_SAMPLE_DIR").expect("WSTX_SAMPLE_DIR recording cache required"),
+    );
+    let decoder = Decoder::new();
+    let mut failures = vec![];
+    for case in cases["cases"].as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        let mode = if case["mode"] == "ft4" {
+            Mode::Ft4
+        } else {
+            Mode::Ft8
+        };
+        let file = if mode == Mode::Ft4 {
+            samples
+                .join("ft4/modern-candidates")
+                .join(case["input_filename"].as_str().unwrap())
+        } else {
+            PathBuf::from(
+                std::env::var_os("WSTX_DECODER_OFFICIAL_FT8")
+                    .expect("WSTX_DECODER_OFFICIAL_FT8 pinned recording required"),
+            )
+        };
+        let check=std::process::Command::new(if cfg!(windows) {"python"}else{"python3"})
+            .args(["-c","import hashlib,pathlib,sys;assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]"])
+            .arg(&file).arg(case["input_sha256"].as_str().unwrap()).output().unwrap();
+        assert!(
+            check.status.success(),
+            "{id}: original recording hash changed: {}",
+            String::from_utf8_lossy(&check.stderr)
+        );
+        let input = wav(&file);
+        let start = Instant::now();
+        let decoded = decoder.decode(&input, mode, &|| false).unwrap();
+        eprintln!(
+            "RECORDING {id} {:?} {} results: {}",
+            start.elapsed(),
+            decoded.len(),
+            serde_json::to_string(&decoded).unwrap()
+        );
+        // A separate R before a signed numerical report has the same standard-message fields.
+        let canonical = |text: &str| text.replace(" R -", " R-").replace(" R +", " R+");
+        let observations = case["observations"].as_array().unwrap();
+        let matches = observations
+            .iter()
+            .filter(|r| {
+                decoded.iter().any(|d| {
+                    d.payload
+                        .text
+                        .as_ref()
+                        .is_some_and(|t| canonical(t) == canonical(r["text"].as_str().unwrap()))
+                        && (d.frequency_hz - r["frequency_hz"].as_f64().unwrap()).abs() <= 5.
+                })
+            })
+            .count();
+        let missing = observations
+            .iter()
+            .filter(|r| {
+                !decoded.iter().any(|d| {
+                    d.payload
+                        .text
+                        .as_ref()
+                        .is_some_and(|t| canonical(t) == canonical(r["text"].as_str().unwrap()))
+                })
+            })
+            .collect::<Vec<_>>();
+        eprintln!(
+            "BASELINE {id}: {matches}/{}; missing {missing:?}",
+            observations.len()
+        );
+        if matches < case["minimum_matches"].as_u64().unwrap() as usize {
+            failures.push((id, matches));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "baseline thresholds not reached: {failures:?}"
+    );
+}
+
+#[test]
+fn release_runtime_and_overlapping_window_history() {
+    let root = prepared("quality");
+    for scalar in [false, true] {
+        let initialize = || {
+            if scalar {
+                Decoder::with_scalar_transform()
+            } else {
+                Decoder::new()
+            }
+        };
+        for (mode, id, ceiling, transmissions) in [
+            (Mode::Ft8, "ft8-strong-00", 5., 8usize),
+            (Mode::Ft4, "ft4-strong-00", 3., 16usize),
+        ] {
+            let samples = wav(&root.join(id).join("000000_000000.wav"));
+            let cold = Instant::now();
+            let decoder = initialize();
+            let expected = decoder.decode(&samples, mode, &|| false).unwrap();
+            assert_eq!(expected.len(), 1);
+            assert!(
+                cold.elapsed().as_secs_f64() <= ceiling + 2.,
+                "{mode:?} cold startup"
+            );
+            // Warmup is excluded from the ten recorded repeat measurements.
+            decoder.decode(&samples, mode, &|| false).unwrap();
+            let mut timings = vec![];
+            for _ in 0..10 {
+                let start = Instant::now();
+                let actual = decoder.decode(&samples, mode, &|| false).unwrap();
+                timings.push(start.elapsed().as_secs_f64());
+                assert_eq!(actual.len(), expected.len());
+                for (a, b) in actual.iter().zip(&expected) {
+                    assert_eq!(a.payload, b.payload);
+                    assert!(a.start_frame.abs_diff(b.start_frame) <= 1);
+                    assert!(
+                        (a.frequency_hz - b.frequency_hz).abs()
+                            <= if mode == Mode::Ft8 { 0.2 } else { 0.5 }
+                    );
+                }
+            }
+            timings.sort_by(f64::total_cmp);
+            eprintln!(
+                "RUNTIME {mode:?} scalar{scalar} ten runs min{} median{} p95{} max{}",
+                timings[0],
+                (timings[4] + timings[5]) / 2.,
+                timings[9],
+                timings[9]
+            );
+            assert!(
+                timings[9] <= ceiling,
+                "{mode:?} release runtime exceeded {ceiling}s"
+            );
+            let long = samples.repeat(transmissions);
+            assert_eq!(long.len(), 1_440_000);
+            let start = Instant::now();
+            let actual = decoder.decode(&long, mode, &|| false).unwrap();
+            let elapsed = start.elapsed();
+            assert_eq!(
+                actual.len(),
+                transmissions,
+                "overlapping windows must neither lose edge frames nor duplicate the same transmission"
+            );
+            for index in 0..transmissions {
+                assert!(
+                    actual.iter().any(|d| d.payload == expected[0].payload
+                        && d.start_frame
+                            .abs_diff(expected[0].start_frame + (index * samples.len()) as u64)
+                            <= if mode == Mode::Ft8 { 240 } else { 144 }),
+                    "missing transmission {index}"
+                );
+            }
+            assert!(
+                elapsed.as_secs_f64() <= 40.,
+                "{mode:?}120s source runtime{elapsed:?}"
+            );
+            eprintln!(
+                "RUNTIME {mode:?} scalar{scalar}120s source {elapsed:?}; {} distinct transmissions",
+                actual.len()
+            );
+        }
+    }
 }
