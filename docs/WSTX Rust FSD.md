@@ -924,7 +924,7 @@ Let Zj be the complex coarse symbol transform at the candidate base plus tj*spac
 For each block b calculate
 Cb=abs(sum[j in b] Zj*conj(Hj)*exp(-i*2*pi*(fbase+df)*j*N/12000))^2 /
 (sum[j in b]abs(Zj)^2 * sum[j in b]abs(Hj)^2). A zero denominator rejects that grid
-point. One grid point MUST have Cb>=0.25 for EVERY block. Block phases are independent;
+point. One grid point MUST have Cb>=0.5 for EVERY block. Block phases are independent;
 no single phase across the entire FT8/FT4 frame is a qualification condition.
 This uses only K existing transform coefficients per grid point, not N new sample
 correlations per coefficient. At most 45*K complex products per visited raw maximum;

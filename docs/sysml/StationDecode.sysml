@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 73537317dc9a726d127429a9ee47be95d4b3473f092074256c51237c2171caf7
+// Canonical offline decode contract SHA256: 5690c51187b004eb1a8fd0992832788202a6317c3394a895caa30732bb8e1bf9
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -38,7 +38,7 @@ package WstxOfflineDecode {
         attribute complexTransformBound : Integer = 838992;
         attribute phaseTimePoints : Integer = 5;
         attribute phaseFrequencyPoints : Integer = 9;
-        attribute minBlockPhaseFraction : Real = 0.25;
+        attribute minBlockPhaseFraction : Real = 0.5;
         attribute ft4NeighborPairs : Integer = 16;
         attribute ft4LocalTemplates : Integer = 64;
         attribute recoveryInformationRank : Integer = 77;
@@ -262,7 +262,7 @@ package WstxOfflineDecode {
              Zj is coarse coefficient at expected tone. matchedMagnitudeSquared equals
              abs(sum_j Zj*conj(Hj)*exp(-i2pi*(fbase+df)*jN/12000))^2 within ONE Costas block.
              observedEnergy=sumabsZj^2; templateEnergy=sumabsHj^2. EVERY repeated block
-             needsfraction>=.25 at SAME complete/in-band5time*9frequency point. Block phase
+             needsfraction>=.5 at SAME complete/in-band5time*9frequency point. Block phase
              independent; no whole-frame phase lock or absolute/relative amplitude floor. */
     }
     attribute def ToneLikelihoodContext {
@@ -312,7 +312,7 @@ package WstxOfflineDecode {
         assert constraint boundedQualified { qualifiedCount >= 0 and qualifiedCount <= 256 }
         doc /* Costas>=2.7 first; local suppressionhalfsymbol ANDhalftone, scoredesc/freq/time.
              Per rawmax:<=5*9*Kexisting-coefficient products, NOT5*9*K*Nsample correlations.
-             Requirephasefraction>=.25 in EVERY block atonepoint. A257thqualified candidate
+             Requirephasefraction>=.5 in EVERY block atonepoint. A257thqualified candidate
              setssearchLimited. Fine sample Costas only at<=45phase-valid points/admitted
              candidate, tiesfrequency/time. No unbounded optimizer or amplitude earlystop. */
     }
