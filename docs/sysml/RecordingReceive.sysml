@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: d01cf80490607a4006bff7029148935e84b3504d4603a03ca46ef251a671d8c4
+// Canonical recorded receive contract SHA256: 0484a394c9f223026a301180f32d2d69a93bc391988ca3168cc2a3b1d2b1beca
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -74,9 +74,16 @@ package WstxRecordingReceive {
         attribute rangeDb : Integer = 30;
         attribute autoBlack : Boolean = true;
         attribute estimateFrozen : Boolean = false;
+        attribute sensitivityDb : Integer = 0;
+        attribute speedMultiplier : Integer = 1;
+        assert constraint localSliders { sensitivityDb >= -30 and sensitivityDb <= 30 and speedMultiplier >= 1 and speedMultiplier <= 8 }
         assert constraint displayRange { rangeDb >= 10 and rangeDb <= 80 and blackDbfs >= -120 and blackDbfs <= -rangeDb }
         doc /* Browser-local per job/profile state, no station-service mutation.
-             Reset on job/source/profile: B=-120,R=30,Auto=true,frozen=false.
+             Reset on job/source/profile: B=-120,R=30,Auto=true,frozen=false;
+             preserve sensitivityDb/speedMultiplier until new page load. Effective
+             waterfall black=clamp(B-sensitivityDb,-120,-R), curve retains baseB.
+             Speed selects newest ceil(retainedRows/speedMultiplier), fills complete
+             canvas height with integer max projection; no source/network-rate change.
              First lower-median q>0 row sets clamp(q-123,-120,-R), freezes.
              Median0/gap waits; manual B/R disables Auto. Re-enable uses latest
              qualifying retained row or waits. Original calibrated levels unchanged.
@@ -525,53 +532,96 @@ package WstxRecordingReceive {
              native bin index, center Hz, original q-120 dBFS and row source interval; keyboard Left/Right moves one
              bin and Up/Down one retained row, clamped to available data. Gaps report no measurement.
 
-             Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the top.
-             Draw the most recent rows that fit, newest first and top-aligned; unused space below
-             is background. Each arrival shifts older rows downward by exactly one row cell. Older
-             retained rows can be selected by the keyboard readout without stretching the canvas.
-             Missing sequences occupy the same height in grey. Resize/splitter drag/zoom repaints
-             from retained values with these same edges and fixed height; receiving the first or
-             second row MUST NOT stretch them to fill the pane. Label the visible source-time range,
-             frequency units, profile and calibrated bin dBFS; selected readout remains accessible
-             without hover. Profile changes clear browser history and discard frames of the previous
-             profile. Place spectrum above the shared frequency ruler and waterfall. Frequency ruler
-             has labeled major ticks every500Hz and minor ticks every100Hz, positioned by f/3000*W;
-             0 and3000Hz delimit the displayed span, not an extra bin. A separate visible time ruler
-             beside the waterfall labels the newest row's source start and then every5s of source
-             time in the visible range, at the corresponding row top; omit colliding labels closer
-             than16CSSpx. Label elapsed source seconds; neither synthetic UTC nor RF frequency/dBm.
-             Only visible rows determine the displayed time range, not all retained history.
+             **Waterfall space and Speed.** Newest observed history enters at the top. Whenever
+             history is nonempty, its selected view MUST fill the complete waterfall canvas height H:
+             no fixed two-pixel row height and no unused band below an available short recording.
+             The Speed slider is integer v=1..8, default1, with Slow/Fast ends and numeric1x..8x
+             output. It controls only vertical history magnification, not source replay, decoder,
+             network cadence or sample clock. With N retained rows, select the newest
+             R=max(1,ceil(N/v)) rows, including explicit gap slots; at1x all retained history is
+             visible, at8x only its newest approximate eighth. Increasing speed shortens the visible
+             source-time window and increases vertical travel per received row. State this effect in
+             the slider label/tooltip and display the current visible source-time span/duration.
+             Do not delete history or fabricate measurements, repeat a recording or backfill absent
+             observations. With no history, paint the dark background only.
+
+             Index the R visible rows newest-first by r=0..R-1. When H>=R, row r occupies integer
+             pixel edges[floor(r*H/R),floor((r+1)*H/R)); magnified pixel rows represent that same
+             observed source interval, without spatial smoothing. When H<R, assign EVERY visible
+             row to device-pixel row floor(r*H/R). Reduce all assigned measured levels by per-bin
+             maximum before the existing frequency projection. If ANY assigned row is a gap, that
+             entire projected time group is grey/unknown, rather than claiming an observed signal.
+             Native row arrays/identities/timing remain unchanged; max projection is presentation
+             only. The mapping covers all H pixels for nonempty history at every speed and geometry.
+
+             Pointer and keyboard row selection clamp to these R visible rows. For a pointer at
+             device-pixel y, its projected time group is exactly the contributing native row range;
+             when H<R choose its newest native row as the initial native selection, otherwise select
+             the unique row occupying y. Up/Down steps one visible native row. The readout separates
+             the original selected native bin/row level and source interval from the projected
+             frequency/time ranges and maximum, or unknown when any projected row is a gap. Native
+             measurement and projected presentation MUST never be confused. Missing native rows
+             report no measurement. Left/Right still steps original frequency bins. Speed changes
+             or resize clamp selection and recompute projection without mutating any native values.
+
+             Keep spectrum above the fixed0..3000Hz ruler and waterfall. Allocate the remaining plot
+             budget after headings/rulers/legend approximately1:5 to spectrum:waterfall, using explicit
+             zero flex bases and min-height0 so intrinsic canvas bitmap heights cannot feed back into
+             layout. Each backing bitmap is round(its actual CSS box * DPR), minimum1, and each
+             canvas fills its allotted box exactly after drag, resize and zoom. Plot areas therefore
+             use approximately17%/83% of their combined height, subject only to integer rounding.
+             Headers, rulers and controls remain reachable at the existing pane minima and360px.
+             No horizontal page/frequency scrolling or changed frequency span.
+
+             Frequency ruler retains major500Hz/minor100Hz ticks with positions f/3000*W. Time ruler
+             labels the newest visible source start and then every5s in the visible source interval,
+             using the same native-row-to-full-height pixel mapping; omit colliding labels less than
+             16CSSpx apart. Visible range/duration describe only selected R history rows, not all
+             retained rows. Label elapsed source seconds, never synthetic UTC/RF frequency/dBm.
+             Profile changes still clear browser history/old-profile frames; existing bounded history,
+             source identities and one pending repaint remain unchanged.
 
              **Display levels and palette.** The display is a local presentation of calibrated
              levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
              and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
-             and Auto black controls in the station page; no server persistence/new WS commands.
+             and Auto black controls in the station page, plus labeled keyboard-operable Sensitivity
+             and Speed range sliders. Sliders repaint on every input event with an adjacent current
+             numeric output; no server persistence/new WS commands. Sensitivity g is integer-30..+30
+             dB, default0. Speed is the local history-view multiplier defined above. Both slider
+             values persist through source/job/profile-display changes and resize within this page;
+             only a new page load resets defaults. Existing Black/Range/Auto reset behavior remains.
              Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
              until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
              nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
-             down to -R if necessary. The displayed mapping span is exactly[B,B+R] and the legend
-             shows both ends in dBFS. Spectrum vertical positions and color mapping use this same
-             span, clipping only presentation; original q-120 stays available in every bin readout.
+             down to -R if necessary. The spectrum curve continues to use base[B,B+R] for its vertical scale. Sensitivity
+             changes waterfall colors only: effective black E=clamp(B-g,-120,-R), with waterfall
+             mapping span exactly[E,E+R]. Its color legend shows both effective ends in dBFS,
+             Sensitivity output shows the signed dB offset, and the curve scale title identifies its
+             base range. Neither curve data/scale nor original q-120 bin readouts are changed by
+             Sensitivity. Clipping affects presentation only; the native values remain available.
 
              Auto black defaults on after each new source/job or display profile change, resetting
-             R=30 and B=-120. Sort a valid row's Bins quantized values and take the lower median
+             R=30 and B=-120, without resetting Sensitivity or Speed. Sort a valid row's Bins quantized values and take the lower median
              qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
              floor); continue waiting instead of locking a false noise floor. On the first accepted
              row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
              manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
-             turns Auto off. Turning Auto on clears its frozen estimate and derives it from the latest
+             turns Auto off. Moving Sensitivity leaves Auto enabled/frozen state unchanged: it is
+             an offset applied after base noise estimation, not a new noise estimate. Turning Auto on clears its frozen estimate and derives it from the latest
              qualifying retained row, or waits for the next one if none exists. Repaint all retained
              rows when presentation controls change; samples/wire data never change or restart.
 
-             For an original quantized level q, t=clamp(((q-120)-B)/R,0,1). Map t to this project's
+             For an original quantized level q, t=clamp(((q-120)-E)/R,0,1). Map t to this project's
              own RGB anchors, interpolating each channel linearly between adjacent anchors and
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
-             .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,255,255).
-             Gaps are RGB(96,96,96); unused canvas is RGB(0,0,12). This continuous level-to-color
+             .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
+             Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
+             is RGB(0,0,12); gaps are RGB(96,96,96). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
-             outside waterfall measured cell interiors. A narrow labeled color legend displays the
-             current mapping. No flattening, palette editor, gain normalization or new framework.
+             outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
+             channel interpolation/rounding, ending in the same saturated red; it displays the
+             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. No flattening, palette editor, gain normalization or new framework.
 
              Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
              bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)
@@ -673,53 +723,96 @@ package WstxRecordingReceive {
              native bin index, center Hz, original q-120 dBFS and row source interval; keyboard Left/Right moves one
              bin and Up/Down one retained row, clamped to available data. Gaps report no measurement.
 
-             Time rows have a fixed height max(1,round(2*DPR)) device pixels, newest row at the top.
-             Draw the most recent rows that fit, newest first and top-aligned; unused space below
-             is background. Each arrival shifts older rows downward by exactly one row cell. Older
-             retained rows can be selected by the keyboard readout without stretching the canvas.
-             Missing sequences occupy the same height in grey. Resize/splitter drag/zoom repaints
-             from retained values with these same edges and fixed height; receiving the first or
-             second row MUST NOT stretch them to fill the pane. Label the visible source-time range,
-             frequency units, profile and calibrated bin dBFS; selected readout remains accessible
-             without hover. Profile changes clear browser history and discard frames of the previous
-             profile. Place spectrum above the shared frequency ruler and waterfall. Frequency ruler
-             has labeled major ticks every500Hz and minor ticks every100Hz, positioned by f/3000*W;
-             0 and3000Hz delimit the displayed span, not an extra bin. A separate visible time ruler
-             beside the waterfall labels the newest row's source start and then every5s of source
-             time in the visible range, at the corresponding row top; omit colliding labels closer
-             than16CSSpx. Label elapsed source seconds; neither synthetic UTC nor RF frequency/dBm.
-             Only visible rows determine the displayed time range, not all retained history.
+             **Waterfall space and Speed.** Newest observed history enters at the top. Whenever
+             history is nonempty, its selected view MUST fill the complete waterfall canvas height H:
+             no fixed two-pixel row height and no unused band below an available short recording.
+             The Speed slider is integer v=1..8, default1, with Slow/Fast ends and numeric1x..8x
+             output. It controls only vertical history magnification, not source replay, decoder,
+             network cadence or sample clock. With N retained rows, select the newest
+             R=max(1,ceil(N/v)) rows, including explicit gap slots; at1x all retained history is
+             visible, at8x only its newest approximate eighth. Increasing speed shortens the visible
+             source-time window and increases vertical travel per received row. State this effect in
+             the slider label/tooltip and display the current visible source-time span/duration.
+             Do not delete history or fabricate measurements, repeat a recording or backfill absent
+             observations. With no history, paint the dark background only.
+
+             Index the R visible rows newest-first by r=0..R-1. When H>=R, row r occupies integer
+             pixel edges[floor(r*H/R),floor((r+1)*H/R)); magnified pixel rows represent that same
+             observed source interval, without spatial smoothing. When H<R, assign EVERY visible
+             row to device-pixel row floor(r*H/R). Reduce all assigned measured levels by per-bin
+             maximum before the existing frequency projection. If ANY assigned row is a gap, that
+             entire projected time group is grey/unknown, rather than claiming an observed signal.
+             Native row arrays/identities/timing remain unchanged; max projection is presentation
+             only. The mapping covers all H pixels for nonempty history at every speed and geometry.
+
+             Pointer and keyboard row selection clamp to these R visible rows. For a pointer at
+             device-pixel y, its projected time group is exactly the contributing native row range;
+             when H<R choose its newest native row as the initial native selection, otherwise select
+             the unique row occupying y. Up/Down steps one visible native row. The readout separates
+             the original selected native bin/row level and source interval from the projected
+             frequency/time ranges and maximum, or unknown when any projected row is a gap. Native
+             measurement and projected presentation MUST never be confused. Missing native rows
+             report no measurement. Left/Right still steps original frequency bins. Speed changes
+             or resize clamp selection and recompute projection without mutating any native values.
+
+             Keep spectrum above the fixed0..3000Hz ruler and waterfall. Allocate the remaining plot
+             budget after headings/rulers/legend approximately1:5 to spectrum:waterfall, using explicit
+             zero flex bases and min-height0 so intrinsic canvas bitmap heights cannot feed back into
+             layout. Each backing bitmap is round(its actual CSS box * DPR), minimum1, and each
+             canvas fills its allotted box exactly after drag, resize and zoom. Plot areas therefore
+             use approximately17%/83% of their combined height, subject only to integer rounding.
+             Headers, rulers and controls remain reachable at the existing pane minima and360px.
+             No horizontal page/frequency scrolling or changed frequency span.
+
+             Frequency ruler retains major500Hz/minor100Hz ticks with positions f/3000*W. Time ruler
+             labels the newest visible source start and then every5s in the visible source interval,
+             using the same native-row-to-full-height pixel mapping; omit colliding labels less than
+             16CSSpx apart. Visible range/duration describe only selected R history rows, not all
+             retained rows. Label elapsed source seconds, never synthetic UTC/RF frequency/dBm.
+             Profile changes still clear browser history/old-profile frames; existing bounded history,
+             source identities and one pending repaint remain unchanged.
 
              **Display levels and palette.** The display is a local presentation of calibrated
              levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
              and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
-             and Auto black controls in the station page; no server persistence/new WS commands.
+             and Auto black controls in the station page, plus labeled keyboard-operable Sensitivity
+             and Speed range sliders. Sliders repaint on every input event with an adjacent current
+             numeric output; no server persistence/new WS commands. Sensitivity g is integer-30..+30
+             dB, default0. Speed is the local history-view multiplier defined above. Both slider
+             values persist through source/job/profile-display changes and resize within this page;
+             only a new page load resets defaults. Existing Black/Range/Auto reset behavior remains.
              Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
              until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
              nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
-             down to -R if necessary. The displayed mapping span is exactly[B,B+R] and the legend
-             shows both ends in dBFS. Spectrum vertical positions and color mapping use this same
-             span, clipping only presentation; original q-120 stays available in every bin readout.
+             down to -R if necessary. The spectrum curve continues to use base[B,B+R] for its vertical scale. Sensitivity
+             changes waterfall colors only: effective black E=clamp(B-g,-120,-R), with waterfall
+             mapping span exactly[E,E+R]. Its color legend shows both effective ends in dBFS,
+             Sensitivity output shows the signed dB offset, and the curve scale title identifies its
+             base range. Neither curve data/scale nor original q-120 bin readouts are changed by
+             Sensitivity. Clipping affects presentation only; the native values remain available.
 
              Auto black defaults on after each new source/job or display profile change, resetting
-             R=30 and B=-120. Sort a valid row's Bins quantized values and take the lower median
+             R=30 and B=-120, without resetting Sensitivity or Speed. Sort a valid row's Bins quantized values and take the lower median
              qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
              floor); continue waiting instead of locking a false noise floor. On the first accepted
              row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
              manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
-             turns Auto off. Turning Auto on clears its frozen estimate and derives it from the latest
+             turns Auto off. Moving Sensitivity leaves Auto enabled/frozen state unchanged: it is
+             an offset applied after base noise estimation, not a new noise estimate. Turning Auto on clears its frozen estimate and derives it from the latest
              qualifying retained row, or waits for the next one if none exists. Repaint all retained
              rows when presentation controls change; samples/wire data never change or restart.
 
-             For an original quantized level q, t=clamp(((q-120)-B)/R,0,1). Map t to this project's
+             For an original quantized level q, t=clamp(((q-120)-E)/R,0,1). Map t to this project's
              own RGB anchors, interpolating each channel linearly between adjacent anchors and
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
-             .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,255,255).
-             Gaps are RGB(96,96,96); unused canvas is RGB(0,0,12). This continuous level-to-color
+             .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
+             Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
+             is RGB(0,0,12); gaps are RGB(96,96,96). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
-             outside waterfall measured cell interiors. A narrow labeled color legend displays the
-             current mapping. No flattening, palette editor, gain normalization or new framework.
+             outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
+             channel interpolation/rounding, ending in the same saturated red; it displays the
+             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. No flattening, palette editor, gain normalization or new framework.
 
              Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
              bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)
@@ -866,9 +959,17 @@ package WstxRecordingReceive {
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-005: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed row height from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and background below early rows; no blended spatial colors. New rows enter at top and history shifts down; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
+                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/full-height time-cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and the selected observed history filling the whole height; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
         }
         dependency tracecrispDetailTransport from crispDetailTransport to WstxRequirements::'TC-010-005';
+        verification fullHeightSliderPresentation {
+            subject operation : PresentStation;
+            objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
+            doc /* TC-010-006: planned executable companion in tests/recording.test.cjs.
+                 Setup/actions: Cost2 automated Windows real browser/candidate fixtures. Inject independently known native rows of2,75,600 Detailed or120 Thin values with contrasting bins/rows and gaps; inspect actual RGBA/backing and CSS box dimensions at desktop1100x850/mobile360x640, DPR1/2,200% zoom and splitter bounds. Exercise Sensitivity-30/0/+30 and Speed1/2/8 via input, keyboard and numeric outputs, manual Black/Range, Auto silence/noise/freeze/reset, new jobs/profiles and resize. Replay actual busy FT8 with a red saturated carrier, capture desktop/mobile screenshots and move both live sliders.
+                 Independent expected oracle: Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With base B=-83,R=30, g=+10 yields E=-93 and g=-30 yields E=-53, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. Sensitivity does not disable/re-estimate Auto; manual Black/Range does, new-job/profile resets only existing base/Auto settings and preserves both slider values. View R=ceil(N/v): e.g75 rows shows75/38/10 at1x/2x/8x,600 shows600/300/75; all H pixels are filled from actual selected history with edges floor(rH/R). H<R assigns every row once to floor(rH/R), per-bin maximum preserves brief strong observations, and any gap makes its time group unknown grey. Independent native/projected interval/bin-range readouts and rulers agree with that mapping, including pointer boundaries and visible-row keyboard clamp. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a large completely occupied waterfall, dark floor, red strongest traces and working live sliders; original numeric/wire/security/Thin32k assertions remain. */
+        }
+        dependency traceFullHeightSliders from fullHeightSliderPresentation to WstxRequirements::'TC-010-006';
     }
     doc /* Implementation freedoms: Rust file layout; existing-library/std storage
          commit primitives preserving the declared commit point; small bounded parser
