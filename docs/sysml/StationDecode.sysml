@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 974696e062d2e239b3122612d266fe4ff1573857db14779cd83558d9f491c982
+// Canonical offline decode contract SHA256: b3dcb80392ffe3182c5f29140b6bfaccf328c93ea596268eb263a00e8dc0e5a9
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;

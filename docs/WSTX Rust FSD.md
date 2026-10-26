@@ -1273,6 +1273,48 @@ Model-authoring and maintenance procedures are defined in the
 [project-specific harness](harness/Project-Specifics.md#project-model-documentation-contract),
 which links the general SysML instruction. Harness procedures are not part of the product model.
 
+### 4.7 Browser operating composition
+
+| Clause | Requirement | Required behavior | Verification |
+|---|---|---|---|
+| CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002 |
+| CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002 |
+| CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002 |
+
+### 4.7.1 Read-only operating composition
+
+The profile-mode browser presents one station in one page. A persistent station bar
+identifies the selected server/profile and the existing status-link state using text.
+Below it, the existing signal section presents the fixed 0–3000 Hz spectrum/waterfall
+and its Sensitivity and Speed controls. A mouse-draggable and keyboard-adjustable
+horizontal separator resizes the signal section above the operating workspace.
+The existing signal colour, calibrated bin, row movement and source-time contracts
+remain unchanged. Non-profile status-only mode retains its existing page.
+
+The operating workspace contains Band Activity, selected-contact/Rx focus and compact
+operating controls. Without a supported decoder result interface both message views
+contain an explicit unavailable state and no message rows. They do not invent UTC,
+frequency, SNR, contacts, capabilities, successful operations or live radio state.
+Dial frequency and mode are labelled unavailable when the server does not provide
+them. Audio, CAT, decoding and transmission have independent unavailable explanations;
+a connected status link is not evidence that any radio capability is available.
+Enable Tx, Halt Tx, Auto Seq, contact selection and logging controls are visibly
+disabled with adjacent reasons while unsupported. No new station commands are sent.
+This slice neither implements a second radio/QSO authority nor supplies a fake service.
+
+Saved settings, station connection details and recorded-file import/replay remain
+available in secondary in-page regions. Opening a region does not open another window
+or replace the waterfall/operating workspace. Login remains usable when required.
+All existing forms, profile identity/revision rules and recording operations are reused.
+The persistent station bar and disabled Halt Tx remain accessible while regions are open.
+
+At desktop width, Band Activity and selected-contact views appear beside compact
+operating controls. At 360 CSS pixels and 200% browser zoom they stack without
+horizontal page overflow. The lower workspace scrolls when needed; text is not hidden
+solely to fit. The separator supports ArrowUp/ArrowDown, Home and End with updated
+ARIA min/max/current values. Settings disclosure and all supported controls remain
+keyboard accessible. Profile/user fields render literally via textContent.
+
 ## 5. Proposed quality and compatibility requirements
 
 - **On-air compatibility:** Preserve the protocol definitions and interoperability of the selected upstream baseline. A language rewrite must not silently change message encoding or waveform conventions.
@@ -1884,6 +1926,26 @@ IDs from #6 are preserved.
 Documentation-maintenance tests are specified in the
 [project-specific harness](harness/Project-Specifics.md#documentation-tool-test-definitions).
 They are separate from the application acceptance cases above.
+
+### 6.6 Read-only browser operating composition
+
+#### TC-007-002 — Read-only operating layout slice
+
+Proves CL-010-05, CL-010-07, CL-010-08. Cost level 2: offline integration tests on
+the development PC, using the actual server and headless Chromium; no radio or
+external network. Create an isolated saved profile whose display name includes HTML
+metacharacters and connect the browser. At 1440×900 and 360×800 CSS pixels, and a
+desktop 200% zoom-equivalent CSS viewport, verify station identity and truthful status,
+signal above separator above workspace, no document horizontal overflow, empty
+Band Activity/contact tables and explicit unsupported explanations. Verify unsupported
+controls are disabled and produce no requests. Open/close saved settings and recording
+regions with keyboard; verify existing controls remain reachable in the same page.
+Use separator ArrowUp/Down/Home/End and pointer dragging; verify actual height changes,
+ARIA value changes and the signal remains above the workspace. Disconnect the server
+and verify the global state becomes stale without enabling unsupported controls.
+Independent oracles: the specified layout/order/capability rules and existing server
+status contract; a screenshot alone is not an acceptance oracle. Existing TC-010-005,
+TC-010-006 and TC-010-007 remain the waveform/palette/geometry regressions.
 
 ## 7. Proposed delivery milestones
 
