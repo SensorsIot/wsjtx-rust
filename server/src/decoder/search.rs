@@ -1,5 +1,5 @@
 use super::demodulation::{Demodulator, channel_gates};
-use super::fit::{fit_signal, phase_agreement};
+use super::fit::{fit_coefficients, fit_signal, phase_agreement};
 use super::likelihood::{LikelihoodContext, PeerNoise};
 use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
@@ -463,20 +463,23 @@ fn coherent(
         let angle = 2. * PI * frequency * (lo + 1) as f64 / 12000.;
         let (mut co, mut si) = (angle.cos(), angle.sin());
         let (mut re, mut im) = (0., 0.);
-        let mut template_energy = 0.;
+        let (mut cc, mut ss, mut cs) = (0., 0., 0.);
         for j in (lo..hi).step_by(stride) {
             let w = wave[j];
             let a = w[0] as f64 * co - w[1] as f64 * si;
             let b = w[0] as f64 * si + w[1] as f64 * co;
-            template_energy += a * a + b * b;
+            cc += a * a;
+            ss += b * b;
+            cs += a * b;
             let x = samples[start + j] as f64;
             re += x * a;
             im += x * b;
             (co, si) = (co * dc - si * ds, si * dc + co * ds);
         }
-        if template_energy > 0. {
-            score += (re * re + im * im) / template_energy;
-        }
+        let Some((_, _, explained)) = fit_coefficients(cc, ss, cs, re, im) else {
+            return f64::NEG_INFINITY;
+        };
+        score += explained;
     }
     score
 }
@@ -591,4 +594,37 @@ async fn refine_known(
         }
     }
     Ok(best)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sampled_gram_projection_matches_independent_alias_oracles() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/decoder/fit-metric-cases.json"
+        ))
+        .unwrap();
+        let frames = fixture["support_frames"].as_u64().unwrap() as usize;
+        let rows = fixture["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        for row in rows {
+            let frequency = row["frequency_hz"].as_f64().unwrap();
+            let mut wave = Vec::with_capacity(frames);
+            let mut samples = Vec::with_capacity(frames);
+            for k in 0..frames {
+                let t = (k + 1) as f64 / 12000.;
+                let modulation = 0.4 * (2. * PI * t / 0.048).sin();
+                wave.push([modulation.cos() as f32, modulation.sin() as f32]);
+                let phase = 2. * PI * frequency * t + modulation;
+                samples.push((0.6 * phase.cos() - 0.8 * phase.sin()) as f32);
+            }
+            let actual = coherent(&samples, 0, &wave, &[(288, frames - 288)], frequency, 4);
+            let expected = row["expected_explained_energy"].as_f64().unwrap();
+            assert!(
+                (actual - expected).abs() <= expected * 5e-7,
+                "{frequency}Hz: actual{actual}, independent{expected}"
+            );
+        }
+    }
 }

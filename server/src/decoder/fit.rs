@@ -49,6 +49,15 @@ pub(super) fn fit_signal(
     let end = start.checked_add(wave.len())?;
     Gram::from(samples.get(start..end)?, wave).solve()
 }
+pub(super) fn fit_coefficients(
+    cc: f64,
+    ss: f64,
+    cs: f64,
+    xc: f64,
+    xs: f64,
+) -> Option<(f64, f64, f64)> {
+    Gram { cc, ss, cs, xc, xs }.solve()
+}
 /// Both projections use exactly the same current-pass samples and refined full support.
 pub(super) fn phase_agreement(
     samples: &[f32],
