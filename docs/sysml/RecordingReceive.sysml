@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 8bbbb297e06fedde8e6d23fdea2322019ffb249da2823fcc15695bebb726ff4b
+// Canonical recorded receive contract SHA256: aba5526db63c9faa91ddeadde33adf0267956e34055f6ed93225c970198175fe
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -12,7 +12,7 @@ package WstxRecordingReceive {
     enum def ImportState { enum reserved; enum receiving; enum validating; enum committing; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def DisplayProfile { enum off; enum thin; enum detail; }
-    enum def ReceiveKind { enum spectrum; enum decode; }
+    enum def ReceiveKind { enum spectrum; enum decode; enum live; }
     enum def ErrorCode {
         enum forbidden_origin; enum unauthorized; enum unsupported_media_type;
         enum request_too_large; enum invalid_request; enum unsupported_version;

@@ -3015,6 +3015,10 @@ Cursor below first gives410 cursor_expired with first_sequence, never an apparen
 complete empty page. The client visibly marks incomplete history before continuing.
 Cursor above next_sequence is400. A replaced source/job is404, not a different stream.
 
+A live job uses shared kind live; GET /recording retains the imported-file metadata
+and reports that active live job without relabeling live samples as file data.
+Admission for import/replay/decode still sees busy through the single receive owner.
+
 Live spectrum reuses the exact12.6 frame messages and subscriptions, with the live
 source/job identity; no native PCM crosses the browser link. For a live source the
 receiver checks safe monotonically increasing canonical frame counters and nominal
