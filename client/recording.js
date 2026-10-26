@@ -15,11 +15,11 @@ localLevels.innerHTML='<label>Black level (dBFS)<input id="display-black" type="
 panel.append(localLevels,document.querySelector('#signal-meta'));
 controls.insertBefore(panel,document.querySelector('#profile-panel'));
 const sliders=document.createElement('div');sliders.id='presentation-sliders';
-sliders.innerHTML='<label>Sensitivity <output id="sensitivity-value">+0 dB</output><input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"></label><label title="Vertical history magnification: Faster shows a shorter source-time window. Replay and received rows per second do not change.">Speed (history view) <output id="speed-value">1x</output><input id="display-speed" type="range" min="1" max="8" step="1" value="1" aria-label="Waterfall speed, Slow to Fast"></label>';
+sliders.innerHTML='<label>Sensitivity <output id="sensitivity-value">+0 dB</output><input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"></label><label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <output id="speed-value">20 px/s</output><input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"></label>';
 signal.insertBefore(sliders,document.querySelector('#spectrum'));
 const profileSelect=document.querySelector('#display-profile');
 profileSelect.value=location.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(location.hostname)?'detail':'thin';
-let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
+let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=2, fallbackText='', detailRequest;
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
 function paletteRGB(t){
   t=Math.max(0,Math.min(1,t));
@@ -30,11 +30,11 @@ function effectiveBlack(){return Math.max(-120,Math.min(-displayRange,displayBla
 function color(q){return `rgb(${paletteRGB((q-120-effectiveBlack())/displayRange).join(' ')})`;}
 function updateSliders(){
   document.querySelector('#display-sensitivity').value=sensitivity;document.querySelector('#sensitivity-value').textContent=`${sensitivity>=0?'+':''}${sensitivity} dB`;
-  document.querySelector('#display-speed').value=speed;document.querySelector('#speed-value').textContent=`${speed}x`;
+  document.querySelector('#display-speed').value=speed;document.querySelector('#speed-value').textContent=`${10*speed} px/s`;
 }
 for(const id of ['display-sensitivity','display-speed'])document.querySelector(`#${id}`).addEventListener('input',event=>{
   const value=Number(event.target.value);if(!Number.isFinite(value))return;
-  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else speed=Math.max(1,Math.min(8,Math.floor(value+.5)));
+  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));
   selectedRow=Math.max(0,Math.min(visibleCount()-1,selectedRow));pointerTime=null;updateSliders();paint();
 });
 
@@ -79,12 +79,19 @@ splitter.addEventListener('keydown',event => {
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
 splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)) split(event.clientY);});
 addEventListener('resize',() => split(upper)); split();
-function visibleCount(){return rows.length?Math.max(1,Math.ceil(rows.length/speed)):0;}
-function timeGroup(y,H,R=visibleCount()){
-  y=Math.max(0,Math.min(H-1,y));
-  if(H<R)return [Math.ceil(y*R/H),Math.min(R-1,Math.ceil((y+1)*R/H)-1)];
-  const r=Math.min(R-1,Math.ceil((y+1)*R/H)-1);return [r,r];
+function timeProjection(H=waterfall.height,C=waterfall.getBoundingClientRect().height){
+  const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1);
+  let count=0;
+  for(let r=0;r<rows.length;r++){
+    const row=rows.at(-1-r),top=Math.floor((T-row.end_frame/12000)*scale),bottom=Math.floor((T-row.first_frame/12000)*scale);
+    if(top>=H)break;
+    for(let y=Math.max(0,top);y<Math.min(H,Math.max(top+1,bottom));y++){
+      if(groups[y])groups[y][1]=r;else groups[y]=[r,r];count=Math.max(count,r+1);
+    }
+  }
+  return {groups,count,T,capacity:C/(10*speed)};
 }
+function visibleCount(){return timeProjection().count;}
 function groupLevels(first,last,B){
   const q=new Uint8Array(B);
   for(let r=first;r<=last;r++){
@@ -99,7 +106,9 @@ function readout(){
   const row=rows.at(-1-selectedRow);if(!row){text.textContent='No measurement';return;}
   const W=waterfall.width,H=waterfall.height,x=pointerColumn===null?Math.floor(selectedBin*W/B):Math.max(0,Math.min(W-1,pointerColumn));
   const first=W<B?Math.ceil(x*B/W):selectedBin,last=W<B?Math.min(B-1,Math.ceil((x+1)*B/W)-1):selectedBin;
-  const [newest,oldest]=timeGroup(pointerTime===null?Math.floor(selectedRow*H/R):pointerTime,H,R),projected=groupLevels(newest,oldest,B);
+  const projection=timeProjection(),nativeY=Math.floor((projection.T-row.end_frame/12000)*10*speed*H/Math.max(waterfall.getBoundingClientRect().height,1)),group=projection.groups[pointerTime===null?Math.max(0,Math.min(H-1,nativeY)):pointerTime];
+  if(!group){text.textContent='No measurement (unobserved source time)';return;}
+  const [newest,oldest]=group,projected=groupLevels(newest,oldest,B);
   const value=row.levels?`${row.levels[selectedBin]-120} dBFS`:'no measurement (gap)';
   const peak=projected?`${Math.max(...projected.slice(first,last+1))-120} dBFS`:'unknown (gap)';
   const low=rows.at(-1-oldest).first_frame/12000,high=rows.at(-1-newest).end_frame/12000;
@@ -111,7 +120,7 @@ waterfall.addEventListener('pointermove',event=>{
   selectedBin=Math.min(B-1,Math.max(0,Math.floor((event.clientX-box.left)/box.width*B+.5)));
   pointerColumn=Math.floor((event.clientX-box.left)/box.width*waterfall.width);
   pointerTime=Math.max(0,Math.min(waterfall.height-1,Math.floor((event.clientY-box.top)/box.height*waterfall.height)));
-  selectedRow=timeGroup(pointerTime,waterfall.height,R)[0];readout();
+  const group=timeProjection().groups[pointerTime];if(group)selectedRow=group[0];readout();
 });
 waterfall.addEventListener('keydown',event=>{
   if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();pointerColumn=null;pointerTime=null;
@@ -138,15 +147,15 @@ function paint() {
         ctx.strokeStyle='rgb(180 245 220)';ctx.lineWidth=Math.max(1,devicePixelRatio);ctx.beginPath();
         values.forEach((q,k)=>{const x=Math.floor(k*c.width/values.length),y=Math.max(0,Math.min(c.height-1,(displayBlack+displayRange-(q-120))*c.height/displayRange));k?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
       }else{
-        const R=visibleCount(),W=c.width,H=c.height;
+        const W=c.width,H=c.height,projection=timeProjection(H,box.height),R=projection.count;
         if(R){
           const image=ctx.createImageData(W,H),lut=Array.from({length:121},(_,q)=>[...paletteRGB((q-120-effectiveBlack())/displayRange),255]);
-          let previous=-1,line;
+          let previous='',line;
           for(let y=0;y<H;y++){
-            const [first,last]=timeGroup(y,H,R);
-            if(first!==previous){
-              previous=first;line=new Uint8ClampedArray(W*4);const native=groupLevels(first,last,B),values=native?project(native):null;
-              if(!values){for(let x=0;x<W;x++)line.set([96,96,96,255],x*4);}
+            const group=projection.groups[y],key=group?group.join(','):'none';
+            if(key!==previous){
+              previous=key;line=new Uint8ClampedArray(W*4);const native=group?groupLevels(...group,B):null,values=native?project(native):null;
+              if(!values){for(let x=0;x<W;x++)line.set(group?[96,96,96,255]:[0,0,12,255],x*4);}
               else for(let k=0;k<values.length;k++){
                 const left=Math.floor(k*W/values.length),right=Math.floor((k+1)*W/values.length),rgb=lut[values[k]];
                 for(let x=left;x<right;x++)line.set(rgb,x*4);
@@ -161,17 +170,17 @@ function paint() {
         c.setAttribute('aria-label',`Waterfall, visible source time ${R?`${low.toFixed(1)} to ${high.toFixed(1)} seconds`:''}; newest top, grey groups are unknown; arrow keys select native bins and rows`);
         const ruler=document.querySelector('#time-ruler');ruler.replaceChildren();
         if(last){
-          const latest=last.first_frame/12000,step=B===1024?.2:1,times=[latest];let previousY=0;
-          for(let t=Math.floor(latest/5)*5;t>=low;t-=5){const y=Math.floor(Math.round((latest-t)/step)*H/R)/devicePixelRatio;if(y-previousY>=16){times.push(t);previousY=y;}}
-          for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${Math.floor(Math.round((latest-t)/step)*H/R)/devicePixelRatio}px`;ruler.append(label);}
+          const latest=projection.T,times=[latest];let previousY=0;
+          for(let t=Math.floor(latest/5)*5;t>=Math.max(0,latest-projection.capacity);t-=5){const y=Math.floor((latest-t)*10*speed*H/box.height)/devicePixelRatio;if(y-previousY>=16){times.push(t);previousY=y;}}
+          for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${Math.floor((latest-t)*10*speed*H/box.height)/devicePixelRatio}px`;ruler.append(label);}
         }
-        document.querySelector('#speed-value').title=R?`Visible source ${low.toFixed(1)}-${high.toFixed(1)} s (${(high-low).toFixed(1)} s); replay/network rate unchanged`:'No observed history';
+        document.querySelector('#speed-value').title=`${projection.capacity.toFixed(1)} s viewport capacity; ${R?`observed source ${low.toFixed(1)}-${high.toFixed(1)} s`:'no observed history'}; replay/network rate unchanged`;
       }
     }
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
     for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f%500===0)tick.textContent=String(f);ruler.append(tick);}
     const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
-    legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | View ${(high-low).toFixed(1)} s`;
+    legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
     legend.setAttribute('aria-label',`${legend.textContent}; ${legend.title}`);
     document.querySelector('#spectrum').title=`Curve base scale ${displayBlack} to ${displayBlack+displayRange} dBFS; Sensitivity changes waterfall colors only`;

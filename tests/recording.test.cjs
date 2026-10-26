@@ -274,10 +274,10 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
     const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
     for(const field of ['boot_id','source_id','job_id','generation']){const m=make(0);m.data[field]=field==='generation'?s.generation-1:'00000000-0000-4000-8000-000000000000';deliver(m);}
     await new Promise(requestAnimationFrame);const ignored=Number(document.querySelector('#waterfall').dataset.rows);
-    for(let n=0;n<120;n++)if(n!==1)deliver(make(n));
+    for(let n=0;n<120;n++)if(n!==118)deliver(make(n));
     deliver(make(120));deliver(make(119));
     await new Promise(requestAnimationFrame);
-    const c=document.querySelector('#waterfall'),pixel=[...c.getContext('2d').getImageData(0,Math.floor(c.height*118/120),1,1).data];
+    const c=document.querySelector('#waterfall'),pixel=[...c.getContext('2d').getImageData(0,Math.floor(20*c.height/c.getBoundingClientRect().height),1,1).data];
     return {ignored,count:Number(c.dataset.rows),sequences:c.dataset.sequences,pixel,label:c.getAttribute('aria-label')};
   },s);
   assert.equal(observation.ignored,0);assert.equal(observation.count,120);assert.equal(observation.sequences,Array.from({length:120},(_,n)=>n).join(','));assert.deepEqual(observation.pixel,[96,96,96,255]);assert.match(observation.label,/visible source time/);
@@ -302,7 +302,7 @@ test('TC-010-005 detailed native wire, fixed span, projection, palette and top-e
       rows=[];displayBlack=-120;displayRange=80;autoBlack=false;
       const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
       deliver(frame(0));deliver(frame(2));await new Promise(requestAnimationFrame);
-      const c=document.querySelector('#waterfall'),ctx=c.getContext('2d'),h=Math.floor(c.height/3),pix=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
+      const c=document.querySelector('#waterfall'),ctx=c.getContext('2d'),h=Math.floor(.2*20*c.height/c.getBoundingClientRect().height),pix=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
       const expected=Array(c.width).fill(0);for(let k=0;k<1024;k++)if(c.width<1024)expected[Math.floor(k*c.width/1024)]=Math.max(expected[Math.floor(k*c.width/1024)],values[k]);else for(let x=Math.floor(k*c.width/1024);x<Math.floor((k+1)*c.width/1024);x++)expected[x]=values[k];
       const cells=expected.every((q,x)=>JSON.stringify(pix(x,0))===JSON.stringify(q?[255,0,0,255]:[0,0,12,255]));
       const before=c.dataset.rows;
@@ -310,7 +310,7 @@ test('TC-010-005 detailed native wire, fixed span, projection, palette and top-e
       await new Promise(requestAnimationFrame);
       return {cells,gap:pix(0,h),bottom:pix(0,c.height-1),narrow:c.width<1024,before,after:c.dataset.rows,unmodified:rows.at(-1).levels.every((q,k)=>q===values[k]),overflow:document.documentElement.scrollWidth>innerWidth,axis:document.querySelector('#frequency-ruler').textContent};
     },s);
-    assert.ok(result.cells);assert.deepEqual(result.gap,[96,96,96,255]);assert.deepEqual(result.bottom,result.narrow?[255,0,0,255]:[0,0,12,255]);assert.equal(result.before,result.after);assert.ok(result.unmodified);assert.equal(result.overflow,false);assert.match(result.axis,/3000/);assert.match(result.axis,/0/);
+    assert.ok(result.cells);assert.deepEqual(result.gap,[96,96,96,255]);assert.deepEqual(result.bottom,[0,0,12,255]);assert.equal(result.before,result.after);assert.ok(result.unmodified);assert.equal(result.overflow,false);assert.match(result.axis,/3000/);assert.match(result.axis,/0/);
   }
   await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
@@ -389,8 +389,45 @@ test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},as
   const actual=await p.evaluate(async()=>{paint();await new Promise(requestAnimationFrame);const bar=document.querySelector('#level-bar'),ctx=bar.getContext('2d');return {first:[...ctx.getImageData(0,0,1,1).data],last:[...ctx.getImageData(bar.width-1,0,1,1).data]};});
   assert.deepEqual(actual.first,[0,0,12,255]);assert.deepEqual(actual.last,[255,0,0,255]);
 });
-// Proves: CL-006-03/04; TC-010-006 fills entire actual canvas from observed history, not fixed-height rows.
-test('TC-010-006 complete height, speed projection, gaps and geometry',{timeout:30000},async t=>{
+// Proves: CL-006-03/04; TC-010-007 independent source-time movement, clipping and unobserved pixels.
+test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom',{timeout:30000},async t=>{
+  const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
+  const result=await p.evaluate(async s=>{
+    profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;
+    const frame=sequence=>{const detail=profileSelect.value==='detail',interval=detail?2400:12000,levels=new Uint8Array(detail?1024:128).fill(sequence===0?120:0);return {v:1,type:detail?'spectrum.detail.frame':'spectrum.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*interval,end_frame:(sequence+1)*interval,...(detail?{levels_b64:btoa(String.fromCharCode(...levels))}:{levels:[...levels]})}};};
+    const send=sequence=>dispatchEvent(new CustomEvent('station-message',{detail:{message:frame(sequence),current:socket}}));
+    const draw=async()=>{paint();await new Promise(requestAnimationFrame);};
+    const pixel=y=>[...waterfall.getContext('2d').getImageData(0,y,1,1).data];
+    const checks=[];
+    for(const profile of ['detail','thin'])for(const v of [.5,1,2,8]){
+      profileSelect.value=profile;const dt=profile==='detail'?.2:1;
+      rows=[];const input=document.querySelector('#display-speed');input.value=v;input.dispatchEvent(new Event('input'));send(0);await draw();
+      const H=waterfall.height,C=waterfall.getBoundingClientRect().height,scale=10*v*H/C,positions=[];
+      for(let seq=0;seq<3;seq++){
+        if(seq){send(seq);await draw();}
+        const T=(seq+1)*(profile==='detail'?2400:12000)/12000,top=Math.floor((T-dt)*scale),bottom=Math.max(top+1,Math.floor(T*scale));
+        positions.push({top,bottom,red:pixel(top),after:bottom<H?pixel(bottom):null});
+      }
+      const exit=Math.ceil(C/(10*v*dt))+1;for(let seq=3;seq<=exit;seq++)send(seq);await draw();
+      const data=[...waterfall.getContext('2d').getImageData(0,0,1,H).data];
+      checks.push({profile,v,actual:Number(input.value),positions,exited:!data.some((q,k)=>k%4===0&&q===255)});
+    }
+    profileSelect.value='detail';rows=[];speed=.5;send(0);await draw();const b=waterfall.getBoundingClientRect();waterfall.dispatchEvent(new PointerEvent('pointermove',{clientX:b.left+1,clientY:b.bottom-1}));
+    const emptyReadout=document.querySelector('#bin-readout').textContent;
+    const frozen=[...waterfall.getContext('2d').getImageData(0,0,1,waterfall.height).data];await new Promise(r=>setTimeout(r,100));await draw();
+    const unchanged=frozen.every((q,k)=>q===waterfall.getContext('2d').getImageData(0,0,1,waterfall.height).data[k]);
+    waterfall.parentElement.style.flex='none';waterfall.parentElement.style.height='30.4px';rows=[];send(0);send(1);await draw();
+    waterfall.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft'}));const alias=document.querySelector('#bin-readout').textContent;
+    rows[1].levels=null;await draw();const gap=pixel(0);
+    return {checks,emptyReadout,unchanged,alias,gap};
+  },s);
+  for(const check of result.checks){for(const pos of check.positions){assert.deepEqual(pos.red,[255,0,0,255],JSON.stringify(check));if(pos.after)assert.deepEqual(pos.after,[0,0,12,255],JSON.stringify(check));}assert.equal(check.actual,check.v);assert.ok(check.exited,JSON.stringify(check));}
+  assert.match(result.emptyReadout,/No measurement/i);assert.ok(result.unchanged);
+  assert.match(result.alias,/Native bin 0 .* -120 dBFS/);assert.match(result.alias,/projected bins 0-0: 0 dBFS/);assert.match(result.alias,/projected source 0.0-0.400 s/);assert.deepEqual(result.gap,[96,96,96,255]);
+  await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});
+// Proves: CL-006-03/04; TC-010-006 full canvas geometry with fixed source-time rows.
+test('TC-010-006 complete canvas, speed projection, gaps and geometry',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
   const result=await p.evaluate(async s=>{
     profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;
@@ -399,7 +436,7 @@ test('TC-010-006 complete height, speed projection, gaps and geometry',{timeout:
     const c=waterfall,ctx=c.getContext('2d'),pixel=y=>[...ctx.getImageData(0,y,1,1).data];
     return {top:pixel(0),bottom:pixel(c.height-1),box:c.getBoundingClientRect().height,height:c.height};
   },s);
-  assert.deepEqual(result.top,[0,0,12,255]);assert.deepEqual(result.bottom,[255,0,0,255]);
+  assert.deepEqual(result.top,[0,0,12,255]);assert.deepEqual(result.bottom,[0,0,12,255]);
   const matrix=await p.evaluate(async s=>{
     window.presentationFrame=async(N,gap=-1)=>{
       rows=[];
@@ -409,28 +446,26 @@ test('TC-010-006 complete height, speed projection, gaps and geometry',{timeout:
     const observations=[];
     for(const N of [2,75,600])for(const v of [1,2,8]){
       await presentationFrame(N);document.querySelector('#display-speed').value=v;document.querySelector('#display-speed').dispatchEvent(new Event('input'));await new Promise(requestAnimationFrame);
-      const c=waterfall,H=c.height,R=Math.ceil(N/v),data=c.getContext('2d').getImageData(0,0,1,H).data;
-      let correct=true;
+      const c=waterfall,H=c.height,C=c.getBoundingClientRect().height,scale=10*v*H/C,T=N*2400/12000,data=c.getContext('2d').getImageData(0,0,1,H).data;
+      let correct=true;const visible=new Set();
       for(let y=0;y<H;y++){
-        let newest,oldest;
-        if(H<R){newest=Math.ceil(y*R/H);oldest=Math.ceil((y+1)*R/H)-1;}else{newest=oldest=Math.ceil((y+1)*R/H)-1;}
-        let strong=false;for(let r=newest;r<=oldest;r++)if((N-1-r)%2===0)strong=true;
+        let strong=false;for(let seq=0;seq<N;seq++){const top=Math.floor((T-(seq+1)*2400/12000)*scale),bottom=Math.max(top+1,Math.floor((T-seq*2400/12000)*scale));if(y>=top&&y<bottom){visible.add(seq);if(seq%2===0)strong=true;}}
         const expected=strong?[255,0,0,255]:[0,0,12,255];if(expected.some((q,k)=>data[y*4+k]!==q))correct=false;
       }
-      observations.push({N,v,R,actual:Number(c.dataset.visibleRows),correct});
+      observations.push({N,v,R:visible.size,actual:Number(c.dataset.visibleRows),correct});
     }
     document.querySelector('#display-speed').value=1;document.querySelector('#display-speed').dispatchEvent(new Event('input'));
     waterfall.parentElement.style.setProperty('flex','none');waterfall.parentElement.style.height='10px';
     await presentationFrame(75,70);
     const c=waterfall,H=c.height,data=c.getContext('2d').getImageData(0,0,1,H).data;
-    const greyY=Math.floor((74-70)*H/75),grey=[...data.slice(greyY*4,greyY*4+4)];
+    const greyY=Math.floor((15-14.2)*10*H/c.getBoundingClientRect().height),grey=[...data.slice(greyY*4,greyY*4+4)];
     waterfall.parentElement.style.height='30px';rows=Array.from({length:75},(_,sequence)=>({sequence,first_frame:sequence*2400,end_frame:(sequence+1)*2400,levels:new Uint8Array(1024)}));rows[71].levels.fill(120);paint();await new Promise(requestAnimationFrame);
-    const b=waterfall.getBoundingClientRect();waterfall.dispatchEvent(new PointerEvent('pointermove',{clientX:b.left+.1,clientY:b.top+1.01*b.height/waterfall.height}));
-    const boundary={native:selectedRow,pixel:[...waterfall.getContext('2d').getImageData(0,1,1,1).data],text:document.querySelector('#bin-readout').textContent};
+    const b=waterfall.getBoundingClientRect();waterfall.dispatchEvent(new PointerEvent('pointermove',{clientX:b.left+.1,clientY:b.top+6.01*b.height/waterfall.height}));
+    const boundary={native:selectedRow,pixel:[...waterfall.getContext('2d').getImageData(0,6,1,1).data],text:document.querySelector('#bin-readout').textContent};
     document.querySelector('#display-speed').value=8;document.querySelector('#display-speed').dispatchEvent(new Event('input'));for(let k=0;k<15;k++)waterfall.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown'}));
     return {observations,grey,boundary,clamped:selectedRow};
   },s);
-  for(const o of matrix.observations){assert.equal(o.actual,o.R,JSON.stringify(o));assert.ok(o.correct,JSON.stringify(o));}assert.deepEqual(matrix.grey,[96,96,96,255]);assert.equal(matrix.boundary.native,3);assert.deepEqual(matrix.boundary.pixel,[255,0,0,255]);assert.match(matrix.boundary.text,/source 14.2-14.400 s/);assert.match(matrix.boundary.text,/projected source 14.0-14.400 s/);assert.equal(matrix.clamped,9);
+  for(const o of matrix.observations){assert.equal(o.actual,o.R,JSON.stringify(o));assert.ok(o.correct,JSON.stringify(o));}assert.deepEqual(matrix.grey,[96,96,96,255]);assert.equal(matrix.boundary.native,3);assert.deepEqual(matrix.boundary.pixel,[255,0,0,255]);assert.match(matrix.boundary.text,/source 14.2-14.400 s/);assert.match(matrix.boundary.text,/projected source 14.2-14.400 s/);assert.equal(matrix.clamped,1);
   await p.evaluate(()=>{waterfall.parentElement.style.removeProperty('flex');waterfall.parentElement.style.removeProperty('height');dispatchEvent(new Event('resize'));});
   for(const viewport of [{width:1100,height:850},{width:360,height:640}]){
     await p.setViewportSize(viewport);await p.waitForTimeout(40);
@@ -453,7 +488,7 @@ test('TC-010-006 live sensitivity and speed sliders preserve original data and r
     return {results,persist:[sensitivity,speed],reset:[displayBlack,displayRange,autoBlack],speedLabel:document.querySelector('#speed-value').textContent};
   });
   for(const o of observations.results){assert.equal(o.E,Math.max(-120,Math.min(-30,-83-o.g)));assert.ok(o.auto&&o.frozen&&o.unchanged&&o.curve);assert.match(o.label,/dB/);}
-  assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-120,30,true]);assert.equal(observations.speedLabel,'8x');
+  assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-120,30,true]);assert.equal(observations.speedLabel,'80 px/s');
   await p.selectOption('#display-profile','thin');assert.equal(await p.inputValue('#display-sensitivity'),'30');assert.equal(await p.inputValue('#display-speed'),'8');
   await p.locator('#display-sensitivity').focus();await p.keyboard.press('Home');assert.equal(await p.inputValue('#display-sensitivity'),'-30');await p.keyboard.press('End');assert.equal(await p.inputValue('#display-sensitivity'),'30');
 });

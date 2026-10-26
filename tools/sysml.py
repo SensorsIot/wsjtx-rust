@@ -104,7 +104,7 @@ def render(text: str) -> str:
             state = "implemented" if entry["kind"] == "clause" and identifier.startswith(("CL-003-", "CL-005-", "CL-006-")) else "implemented" if identifier in ("FR-018", "FR-022") else "partial" if identifier in ("FR-001", "FR-010", "FR-016", "FR-019", "FR-021") else "target"
             result.append(f"        attribute coverage : ImplementationState = ImplementationState::{state};")
         else:
-            automated = {f"TC-021-{i:03}" for i in range(5, 10)} | {f"TC-022-{i:03}" for i in range(1, 6)} | {f"TC-018-{i:03}" for i in range(1, 4)} | {f"TC-010-{i:03}" for i in range(1, 7)}
+            automated = {f"TC-021-{i:03}" for i in range(5, 10)} | {f"TC-022-{i:03}" for i in range(1, 6)} | {f"TC-018-{i:03}" for i in range(1, 4)} | {f"TC-010-{i:03}" for i in range(1, 8)}
             state = "implemented" if identifier in automated else "planned"
             result.append(f"        attribute automation : AutomationState = AutomationState::{state};")
             result.append("        objective {")
