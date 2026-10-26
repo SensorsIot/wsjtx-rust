@@ -1,0 +1,2696 @@
+{
+  "purpose": "Frozen independently derived payload/channel/waveform expectations, not candidate outcomes",
+  "protocol_source": "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf",
+  "upstream_test_vector_url": "https://api.github.com/repos/WSJTX/wsjtx/contents/tests/unit/packjt77/test_packjt77_protocol_vectors.f90?ref=0f7d5928449ec747c3d1f6da1306f8c94404c3a9",
+  "vectors": [
+    {
+      "id": "free",
+      "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000000000",
+      "field_basis": "QEX base42 alphabet/13 chars",
+      "fields": {
+        "type": "free_text",
+        "value": "TNX BOB 73 GL"
+      },
+      "mode": "ft8",
+      "channel_payload77": "01100011111011011100111011100010101001001010111000000111111101010000000000000",
+      "crc14": "11111110001011",
+      "codeword174": "011000111110110111001110111000101010010010101110000001111111010100000000000001111111000101110101110011111010000101100110101000111011110110000100000010101111000001010000100010",
+      "tones": "3140652207447147063336401773500017703140652646427306546072440503670130533140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "7785e21418fe9f584a08e64bdcd6e0ff7b52f9f58775d8675ce0f29385b912e1",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "TNX BOB 73 GL",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "TNX BOB 73 GL",
+        "fields": {
+          "type": "free_text",
+          "value": "TNX BOB 73 GL"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "free",
+      "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000000000",
+      "field_basis": "QEX base42 alphabet/13 chars",
+      "fields": {
+        "type": "free_text",
+        "value": "TNX BOB 73 GL"
+      },
+      "mode": "ft4",
+      "channel_payload77": "00101001101100110100011101010110000101000010010001111110101000001011111000101",
+      "crc14": "00111011000001",
+      "codeword174": "001010011011001101000111010101100001010000100100011111101010000010111110001010011101100000111101000010001000111001010000001110000100011100110010000111011000001010110111101100",
+      "tones": "001320331320210121113011003101223310233003223033121300221003030231123100002301012020301213003321232032010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "bcb34be3ced3c43c059cd16632227ef6548394b86ea9f1a49b4599b9fa3927f0",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "TNX BOB 73 GL",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "TNX BOB 73 GL",
+        "fields": {
+          "type": "free_text",
+          "value": "TNX BOB 73 GL"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "telemetry",
+      "payload77": "00000000000000000000000000000000000000000000000000000000000000000000001101000",
+      "field_basis": "QEX 71bits+n3=5+i3=0",
+      "fields": {
+        "type": "telemetry",
+        "value": "000000000000000001"
+      },
+      "mode": "ft8",
+      "channel_payload77": "00000000000000000000000000000000000000000000000000000000000000000000001101000",
+      "crc14": "10011011111010",
+      "codeword174": "000000000000000000000000000000000000000000000000000000000000000000000011010001001101111101011001100111100010011001010110101110110000010001110010011001010010011001100010010111",
+      "tones": "3140652000000000000000000000002311673140652621575321346440314321332153373140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "2c88bc322c03877c7d2ccf5a49e273eddecb1a6465df463342132362dc131820",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "000000000000000001",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "000000000000000001",
+        "fields": {
+          "type": "telemetry",
+          "value": "000000000000000001"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "telemetry",
+      "payload77": "00000000000000000000000000000000000000000000000000000000000000000000001101000",
+      "field_basis": "QEX 71bits+n3=5+i3=0",
+      "fields": {
+        "type": "telemetry",
+        "value": "000000000000000001"
+      },
+      "mode": "ft4",
+      "channel_payload77": "01001010010111101000100110110100101100001000101001111001010101011011110101101",
+      "crc14": "01011110110000",
+      "codeword174": "010010100101111010001001101101001011000010001010011110010101010110111101011010101111011000010001010110010000100101100000001000001111111011000100011100100101010010000101011001",
+      "tones": "001321033112330313210320030331231110231113221133322130101113100311323100003002223201012031110301113132010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "4690ae6a770546a1c712cd86a0c4225bd585f7d02efc03452a3e8da575e73241",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "000000000000000001",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "000000000000000001",
+        "fields": {
+          "type": "telemetry",
+          "value": "000000000000000001"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "cq",
+      "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+      "field_basis": "QEX Table1/7; manual mixed radix; FN42=10342",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "token",
+          "text": "CQ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+      "crc14": "00101100101110",
+      "codeword174": "000000000000000000000000001000000100110111101111000110101000101000011001100010010110010111010101000001001000110111100001111000000111010010110111110100110100100001010010100110",
+      "tones": "3140652000000001005476704606021533433140652736011047517007334745455133543140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "4f9e053db8d8182378c5cc4f757fb9793a5a529f1446a9fdc470e6684bc481ee",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "CQ K1ABC FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "CQ K1ABC FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "token",
+            "text": "CQ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "cq",
+      "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+      "field_basis": "QEX Table1/7; manual mixed radix; FN42=10342",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "token",
+          "text": "CQ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01001010010111101000100110010100111111010110010101100011110111111010011110100",
+      "crc14": "11101001100100",
+      "codeword174": "010010100101111010001001100101001111110101100101011000111101111110100111101001110100110010011101110000111010001011010111011110111000111000000001110001000011101010110101101000",
+      "tones": "001321033112330313110222113111302210231223312331210203121200233032123101212323023000120100233321133032010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "69e36c4c02a8d938d8464e3894d1b6394cc6e4734505634a9ab259109afd22c1",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "CQ K1ABC FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "CQ K1ABC FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "token",
+            "text": "CQ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rover",
+      "payload77": "00001001101111011110001101011000011000010100100111011100011010100001100110001",
+      "field_basis": "QEX Table1 standard /R flags and R flag",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC/R",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ/R",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001001101111011110001101011000011000010100100111011100011010100001100110001",
+      "crc14": "11001100110011",
+      "codeword174": "000010011011110111100011010110000110000101001001110111000110101000011001100011100110011001110000100001011111110110000000011111110000110110100001011110111001110101101010000011",
+      "tones": "3140652032247523404061147046021525423140652140512744002740445124714663023140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "f9f90272397b25ec9b41ac1b33756e2a0f6b67bafd5c60f309e89254d8a1134d",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC/R W9XYZ/R R FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC/R W9XYZ/R R FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC/R",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ/R",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rover",
+      "payload77": "00001001101111011110001101011000011000010100100111011100011010100001100110001",
+      "field_basis": "QEX Table1 standard /R flags and R flag",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC/R",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ/R",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000011111000110110101011101100110100011100001110100101001111111010011110100",
+      "crc14": "00001001111001",
+      "codeword174": "010000111110001101101010111011001101000111000011101001010011111110100111101000000100111100111000010000101101001010110110111001001111011100010111011011001110111110001101001101",
+      "tones": "001321002230213332320210120023311010232223312330010220230100321033223101323102212011213202322302102132010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "007fe69ac9d67dc6f702fed568d6ba6b7f9ad3285dea52277b268b92196d8c45",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC/R W9XYZ/R R FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC/R W9XYZ/R R FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC/R",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ/R",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "portable",
+      "payload77": "00001001101111011110001101011000011000010100100111011100011010100001100110010",
+      "field_basis": "QEX Table1 type2 /P flags",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC/P",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ/P",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001001101111011110001101011000011000010100100111011100011010100001100110010",
+      "crc14": "01110011111000",
+      "codeword174": "000010011011110111100011010110000110000101001001110111000110101000011001100100111001111100001111010010100110000100000000111001100001111001001001001010000001110100101010011111",
+      "tones": "3140652032247523404061147046021557173140652517335405007151711113014563273140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "f11d0da8f4b2ced83bc3841f68037a5b30c776226f54e01f29ca2142b18edd96",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC/P W9XYZ/P R FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC/P W9XYZ/P R FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC/P",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ/P",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "portable",
+      "payload77": "00001001101111011110001101011000011000010100100111011100011010100001100110010",
+      "field_basis": "QEX Table1 type2 /P flags",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC/P",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ/P",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000011111000110110101011101100110100011100001110100101001111111010011110111",
+      "crc14": "10110110110010",
+      "codeword174": "010000111110001101101010111011001101000111000011101001010011111110100111101111011011011001000111100011010100111000110110011111011110010011111111001111110110111111001101010001",
+      "tones": "001321002230213332320210120023311010232223312322132131012302110230223101312212310222202221322202110132010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "8a97ad1e9a696fc320b458ef11fad9ff096e7c13a2e6f62197e237c891aa1770",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC/P W9XYZ/P R FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC/P W9XYZ/P R FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC/P",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ/P",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rtty-state",
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111101110001011",
+      "field_basis": "QEX type3: report5 ->579; states table WI index48 ->8049",
+      "fields": {
+        "type": "rtty",
+        "tu": false,
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "report": 579,
+        "exchange": {
+          "kind": "state",
+          "value": "WI"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00000100110111101111000110101000011000010100100111011100011011111101110001011",
+      "crc14": "01001101111100",
+      "codeword174": "000001001101111011110001101010000110000101001001110111000110111111011100010110100110111110000101001011011100100110011110010101010110101001010101000011100001100011001011111101",
+      "tones": "3140652011672416304061147047725345473140652406122554243634613602515212763140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "cda9d3d37b0b4948eab75f3b6970d4f38087fad3f4c53f2983d00cfa87985c40",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ R 579 WI",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ R 579 WI",
+        "fields": {
+          "type": "rtty",
+          "tu": false,
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "report": 579,
+          "exchange": {
+            "kind": "state",
+            "value": "WI"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rtty-state",
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111101110001011",
+      "field_basis": "QEX type3: report5 ->579; states table WI index48 ->8049",
+      "fields": {
+        "type": "rtty",
+        "tu": false,
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "report": 579,
+        "exchange": {
+          "kind": "state",
+          "value": "WI"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01001110100000000111100000011100110100011100001110100101001110100110001001110",
+      "crc14": "10001000110110",
+      "codeword174": "010011101000000001111000000111001101000111000011101001010011101001100010011101000100011011001101111010101110011010101000110011101001000011100011000110010110101000101100110011",
+      "tones": "001321023300012300120210120023311010232331303121010132021233323133323103020233100230201311333032020232010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "ee32d6814e3c34bbe3908ce0dbc95b6704eed79fc5c013125d53f2ca0153313a",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ R 579 WI",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ R 579 WI",
+        "fields": {
+          "type": "rtty",
+          "tu": false,
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "report": 579,
+          "exchange": {
+            "kind": "state",
+            "value": "WI"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rtty-serial",
+      "payload77": "10000100110111101111000110101000011000010100100111011100010110000000001101011",
+      "field_basis": "QEX type3 TU/report3/serial13",
+      "fields": {
+        "type": "rtty",
+        "tu": true,
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "report": 559,
+        "exchange": {
+          "kind": "serial",
+          "value": 13
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "10000100110111101111000110101000011000010100100111011100010110000000001101011",
+      "crc14": "10111111111001",
+      "codeword174": "100001001101111011110001101010000110000101001001110111000101100000000011010111011111111100101111101100010101011111001111000110110110011000111101000010010011101000111101100011",
+      "tones": "3140652511672416304061147065002372773140652567653627170444207603326076523140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "017d1137b7fd370cc91d2453e64f84016584a5e5dcf773914dd2ba551b5de6e2",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "TU; K1ABC W9XYZ R 559 0013",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "TU; K1ABC W9XYZ R 559 0013",
+        "fields": {
+          "type": "rtty",
+          "tu": true,
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "report": 559,
+          "exchange": {
+            "kind": "serial",
+            "value": 13
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rtty-serial",
+      "payload77": "10000100110111101111000110101000011000010100100111011100010110000000001101011",
+      "field_basis": "QEX type3 TU/report3/serial13",
+      "fields": {
+        "type": "rtty",
+        "tu": true,
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "report": 559,
+        "exchange": {
+          "kind": "serial",
+          "value": 13
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "11001110100000000111100000011100110100011100001110100101000011011011110101110",
+      "crc14": "01111010110011",
+      "codeword174": "110011101000000001111000000111001101000111000011101001010000110110111101011100111101011001100111011101100111100011111001100000001001110010001011000111100100100011011010101101",
+      "tones": "001322023300012300120210120023311010230213221120221131312121312302223103130003120303201231030213332132010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "13171a4ed2e62d7fdbcabd9daba705537d5cd26eeadc7f4f0f5e096a72f20c0b",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "TU; K1ABC W9XYZ R 559 0013",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "TU; K1ABC W9XYZ R 559 0013",
+        "fields": {
+          "type": "rtty",
+          "tu": true,
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "report": 559,
+          "exchange": {
+            "kind": "serial",
+            "value": 13
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "standard-fixed",
+      "payload77": "00001001101111011110001101010000011000010100100111011100000010100001100110001",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001001101111011110001101010000011000010100100111011100000010100001100110001",
+      "crc14": "00010101101000",
+      "codeword174": "000010011011110111100011010100000110000101001001110111000000101000011001100010001010110100010001101010101001110000001010010100010111111101001110011000110010101001000000100001",
+      "tones": "3140652032247523504061147006021531343140652531636140133537761420436100513140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "7d3ec0503361c45b56ec1dc2f6eb1c231a18017354ccdd259de5bfffdd7e6c2a",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "standard-fixed",
+      "payload77": "00001001101111011110001101010000011000010100100111011100000010100001100110001",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000011111000110110101011100100110100011100001110100101010111111010011110100",
+      "crc14": "11010000100010",
+      "codeword174": "010000111110001101101010111001001101000111000011101001010101111110100111101001101000010001011001011011011011001100111100110010101000010111111000011101000101100010100111101111",
+      "tones": "001321002230213332310210120023311110231223312331330101131132132020223102020333011223012101130331232232010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "d472c34796a891d11a367149d987354184ad91e59fe074c182e917604a3e4d04",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ FN42",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rr73-fixed",
+      "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "W1AW",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "roger",
+          "value": "RR73"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+      "crc14": "11101100001101",
+      "codeword174": "000010111111111010101101000100000100110111101111000110101001111110100100110011110110000110100100110010111000001101100100011100110001001000011001011110001110001101000110101000",
+      "tones": "3140652037773660505476704617455424403140652455437016552541102124141604603140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "47565c0a32e8850320f9f42b3d3619c74b6f63572284ddc21936cffb8e5a3f0f",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "W1AW K1ABC RR73",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "W1AW K1ABC RR73",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "W1AW",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "roger",
+            "value": "RR73"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rr73-fixed",
+      "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "W1AW",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "roger",
+          "value": "RR73"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000001101000000010010010100100111111010110010101100011110010100001101011100",
+      "crc14": "00101001000111",
+      "codeword174": "010000011010000000100100101001001111110101100101011000111100101000011010111000010100100011101100000011001010110001010010111010001110100010101111011011111001000110100001100110",
+      "tones": "001321001330003103310222113111302210230330133230110302320002033201123100323302330332213223101330131332010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "1e5df400fe14803129efda9eb14943d9b77d5781439c786c749532eb3cea7618",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "W1AW K1ABC RR73",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "W1AW K1ABC RR73",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "W1AW",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "roger",
+            "value": "RR73"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "hash22-fixed",
+      "payload77": "00000011010100101011000010100000011000010100100111011100000111111010010011001",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 22,
+          "hash_value": 1420834
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "roger",
+          "value": "RR73"
+        }
+      },
+      "mode": "ft8",
+      "channel_payload77": "00000011010100101011000010100000011000010100100111011100000111111010010011001",
+      "crc14": "11100101000001",
+      "codeword174": "000000110101001010110000101000000110000101001001110111000001111110100100110011110010100000111111101010111000001011101001111110111010001110111001111001101101011001111111111010",
+      "tones": "3140652004613406004061147017455424353140652077637012617473147171662177733140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "7afbe25c038e6f790fc703ab11fae298cf29134fe7c3cfeafa9de12d006bc257",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "<PJ4/K1ABC> W9XYZ RR73",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "<...> W9XYZ RR73",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 22,
+            "hash_value": 1420834
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "roger",
+            "value": "RR73"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "hash22-fixed",
+      "payload77": "00000011010100101011000010100000011000010100100111011100000111111010010011001",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 22,
+          "hash_value": 1420834
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "exchange": {
+          "kind": "roger",
+          "value": "RR73"
+        }
+      },
+      "mode": "ft4",
+      "channel_payload77": "01001001000011000011100100010100110100011100001110100101010010100001101011100",
+      "crc14": "00100000001011",
+      "codeword174": "010010010000110000111001000101001101000111000011101001010100101000011010111000010000000101110111011011001010110111011111011000000101100100001111111100011010010010011000110100",
+      "tones": "001321031002002310110210120023311110230330133230100011212132033212123102213001131002222013310313021032010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "595432cbdedc3db3d0e328e3231ebb2f41136afafd8df6afdeee73785cae59be",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "<PJ4/K1ABC> W9XYZ RR73",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "<...> W9XYZ RR73",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 22,
+            "hash_value": 1420834
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "exchange": {
+            "kind": "roger",
+            "value": "RR73"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "dxpedition-fixed",
+      "payload77": "00001001101111011110001101010000110000101001001110111000001100100101001001000",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "dxpedition",
+        "first": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "second": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "hashed": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 10,
+          "hash_value": 201
+        },
+        "report": -12
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001001101111011110001101010000110000101001001110111000001100100101001001000",
+      "crc14": "11010100110001",
+      "codeword174": "000010011011110111100011010100001100001010010011101110000011001001010010010001101010011000100000100010110101000100000010011110111000100011011010000100000100011111000001111110",
+      "tones": "3140652032247523515133264021133316323140652050534605032470522305052701743140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "b07b20e7343cb95a2d28bb2deeff42218049d41191346ca16d485703ac399d33",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC RR73; W9XYZ <KH1/KH7Z> -12",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC RR73; W9XYZ <...> -12",
+        "fields": {
+          "type": "dxpedition",
+          "first": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "second": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "hashed": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 10,
+            "hash_value": 201
+          },
+          "report": -12
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "dxpedition-fixed",
+      "payload77": "00001001101111011110001101010000110000101001001110111000001100100101001001000",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "dxpedition",
+        "first": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "second": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "hashed": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 10,
+          "hash_value": 201
+        },
+        "report": -12
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000011111000110110101011100100011100100001100111000001011001111110110001101",
+      "crc14": "00010001111011",
+      "codeword174": "010000111110001101101010111001000111001000011001110000010110011111101100011010001000111101101000010011000111111000110100111000000111001001101100000001110011010100100110110000",
+      "tones": "001321002230213332310120301312001110233122320133030221330102012230223101023001203132000120211031320032010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "b694959a693805b0a790d0e905c90516dc7abc506492871de4f17d2ed4d3e1ad",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC RR73; W9XYZ <KH1/KH7Z> -12",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC RR73; W9XYZ <...> -12",
+        "fields": {
+          "type": "dxpedition",
+          "first": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "second": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "hashed": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 10,
+            "hash_value": 201
+          },
+          "report": -12
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "nonstd-fixed",
+      "payload77": "00100100001100000000000000001011000010101110000110010100011010110100111100100",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "nonstandard",
+        "full_call": {
+          "kind": "call",
+          "text": "PJ2/W1AW",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "hashed_call": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 12,
+          "hash_value": 579
+        },
+        "hash_second": true,
+        "cq": false,
+        "roger": "RR73"
+      },
+      "mode": "ft8",
+      "channel_payload77": "00100100001100000000000000001011000010101110000110010100011010110100111100100",
+      "crc14": "01100100101110",
+      "codeword174": "001001000011000000000000000010110000101011100001100101000110101101001111001000110010010111010001001001101001111000101001000110101000110001001110101110000010100110001110001111",
+      "tones": "3140652110200000340625156046617104333140652731116170610460411464035414173140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "da090394ed56d87b5e27738e8219952c59ec0bb31a4f4af0d4bfcc73e96ebd60",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "PJ2/W1AW <W7ABC> RR73",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "PJ2/W1AW <...> RR73",
+        "fields": {
+          "type": "nonstandard",
+          "full_call": {
+            "kind": "call",
+            "text": "PJ2/W1AW",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "hashed_call": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 12,
+            "hash_value": 579
+          },
+          "hash_second": true,
+          "cq": false,
+          "roger": "RR73"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "nonstd-fixed",
+      "payload77": "00100100001100000000000000001011000010101110000110010100011010110100111100100",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "nonstandard",
+        "full_call": {
+          "kind": "call",
+          "text": "PJ2/W1AW",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "hashed_call": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 12,
+          "hash_value": 579
+        },
+        "hash_second": true,
+        "cq": false,
+        "roger": "RR73"
+      },
+      "mode": "ft4",
+      "channel_payload77": "01101110011011101000100110111111101110100110101111101101001111101111000100001",
+      "crc14": "10100001100100",
+      "codeword174": "011011100110111010001001101111111011101001101011111011010011111011110001000011010000110010011001111000011011000100011111100000010111011011111000101011110101101101101001000001",
+      "tones": "001321323132330313222323313322321010232232201002100203131230132010123102230011213223033221132133100132010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "e117c65de00682733cf823a7198304a77a1cd417becffdba2dd90241978011f3",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "PJ2/W1AW <W7ABC> RR73",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "PJ2/W1AW <...> RR73",
+        "fields": {
+          "type": "nonstandard",
+          "full_call": {
+            "kind": "call",
+            "text": "PJ2/W1AW",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "hashed_call": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 12,
+            "hash_value": 579
+          },
+          "hash_second": true,
+          "cq": false,
+          "roger": "RR73"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "vhf-fixed",
+      "payload77": "10100110011011101111111100000101100111111111111111000111001100001111111111101",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "vhf",
+        "to": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 12,
+          "hash_value": 2662
+        },
+        "from": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 22,
+          "hash_value": 3931158
+        },
+        "ack": false,
+        "report": 59,
+        "serial": 2047,
+        "grid": "RR99XX"
+      },
+      "mode": "ft8",
+      "channel_payload77": "10100110011011101111111100000101100111111111111111000111001100001111111111101",
+      "crc14": "01101110101010",
+      "codeword174": "101001100110111011111111000001011001111111111111110001110011000011111111111010110111010101000000111101011100110100101101111000101001000011100100011111101000001000000111010100",
+      "tones": "3140652615472770121777741420277734733140652600762545667061025527601007353140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "f7ad0b591e86a487ad9acc7669e625c1d41cc4fb9a05d7d5b65a5df28f1c7a1b",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "<W3CCX> <K1JT/P> 592047 RR99XX",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "<...> <...> 592047 RR99XX",
+        "fields": {
+          "type": "vhf",
+          "to": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 12,
+            "hash_value": 2662
+          },
+          "from": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 22,
+            "hash_value": 3931158
+          },
+          "ack": false,
+          "report": 59,
+          "serial": 2047,
+          "grid": "RR99XX"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "vhf-fixed",
+      "payload77": "10100110011011101111111100000101100111111111111111000111001100001111111111101",
+      "field_basis": "Pinned upstream test fixed vector only; no implementation algorithm imported",
+      "fields": {
+        "type": "vhf",
+        "to": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 12,
+          "hash_value": 2662
+        },
+        "from": {
+          "kind": "hash",
+          "text": null,
+          "hash_bits": 22,
+          "hash_value": 3931158
+        },
+        "ack": false,
+        "report": 59,
+        "serial": 2047,
+        "grid": "RR99XX"
+      },
+      "mode": "ft4",
+      "channel_payload77": "11101100001100000111011010110001001011110111010110111110011001010100000111000",
+      "crc14": "10101011100000",
+      "codeword174": "111011000011000001110110101100010010111101110101101111100110010101000001110001010101110000001000001100101110001000011011011110010110101001010010011010011111000011100000011010",
+      "tones": "001322320020012133201032212113223110233111001201111200030020323030123103212311333110313312200230013332010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "2d081f9c37d2b6b8a677c38bacbec45021920c6f6db085086b0a343095dd46b6",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "<W3CCX> <K1JT/P> 592047 RR99XX",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "<...> <...> 592047 RR99XX",
+        "fields": {
+          "type": "vhf",
+          "to": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 12,
+            "hash_value": 2662
+          },
+          "from": {
+            "kind": "hash",
+            "text": null,
+            "hash_bits": 22,
+            "hash_value": 3931158
+          },
+          "ack": false,
+          "report": 59,
+          "serial": 2047,
+          "grid": "RR99XX"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday6",
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001011011000",
+      "field_basis": "QEX Table1 n4/k3/S7; published ARRL sections data",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 6,
+        "class": "A",
+        "section": "WCF"
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001001101111011110001101010000110000101001001110111000001010001001011011000",
+      "crc14": "11110001000010",
+      "codeword174": "000010011011110111100011010100001100001010010011101110000010100010010110110001111000100001010011111001110101001111111100110110001001100011010111000011111110010100100110111111",
+      "tones": "3140652032247523515133264035334417053140652132714617754411523702743554773140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "088f100341cc8c2061870f27d216e70ed213794d983851a60ff5f1ae5d9bf989",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 6A WI",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 6A WCF",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 6,
+          "class": "A",
+          "section": "WCF"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday6",
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001011011000",
+      "field_basis": "QEX Table1 n4/k3/S7; published ARRL sections data",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 6,
+        "class": "A",
+        "section": "WCF"
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000011111000110110101011100100011100100001100111000001011111010010100011101",
+      "crc14": "00110100001000",
+      "codeword174": "010000111110001101101010111001000111001000011001110000010111110100101000111010011010000100011011001000000111110011001010010000110110001001100001000110001001011111000001110001",
+      "tones": "001321002230213332310120301312001110232210330233133010132030012202023103310021303130101303112200120132010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "f83e98012ec009badd6cf35f1b30ae659338723c19f5895dd5b1d2ee9f4fd6be",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 6A WI",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 6A WCF",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 6,
+          "class": "A",
+          "section": "WCF"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday17",
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001011100000",
+      "field_basis": "QEX Table1 n4/k3/S7; published ARRL sections data",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 17,
+        "class": "A",
+        "section": "WCF"
+      },
+      "mode": "ft8",
+      "channel_payload77": "00001001101111011110001101010000110000101001001110111000000000001001011100000",
+      "crc14": "11111011100111",
+      "codeword174": "000010011011110111100011010100001100001010010011101110000000000010010111000001111101110011110111000100011010110110110100010110101101010000111010000011101111100011111100010101",
+      "tones": "3140652032247523515133264000337017643140652247052344453466307302675275363140652",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "ea26e9fea8b3fcf6a4984e2cc66e7ad526a95da963fdcb66bc920c03459005d2",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 17A WI",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 17A WCF",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 17,
+          "class": "A",
+          "section": "WCF"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday17",
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001011100000",
+      "field_basis": "QEX Table1 n4/k3/S7; published ARRL sections data",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 17,
+        "class": "A",
+        "section": "WCF"
+      },
+      "mode": "ft4",
+      "channel_payload77": "01000011111000110110101011100100011100100001100111000001010101010010100100101",
+      "crc14": "00111110101101",
+      "codeword174": "010000111110001101101010111001000111001000011001110000010101010100101001001010011111010110111111110101101000001010000010110000010010111010001100000110011000101000011011011011",
+      "tones": "001321002230213332310120301312001110231110331033122113222211330033023100320010323302001313033013213232010",
+      "syndrome_zero": true,
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "76df4a3c93c4cdd55ea9e1b8b18e39e2c18cca2cfca6a999fa787839a5689127",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 17A WI",
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 17A WCF",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 17,
+          "class": "A",
+          "section": "WCF"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rover-single",
+      "mode": "ft8",
+      "field_basis": "One suffix bit cleared; QEX direct flags",
+      "payload77": "00001001101111011110001101011000011000010100100111011100001010100001100110001",
+      "channel_payload77": "00001001101111011110001101011000011000010100100111011100001010100001100110001",
+      "crc14": "11111001111011",
+      "codeword174": "000010011011110111100011010110000110000101001001110111000010101000011001100011111100111101110000001011011101111010101110011100100000011000111001001000101100000010101001101011",
+      "tones": "3140652032247523404061147036021527573140652640122673642550207110650361623140652",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "882c50314c626e9f3a655b99cb15dd09be8feebee90df4d31a8ec8b129957506",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC/R W9XYZ R FN42",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC/R",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC/R W9XYZ R FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC/R",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rover-single",
+      "mode": "ft4",
+      "field_basis": "One suffix bit cleared; QEX direct flags",
+      "payload77": "00001001101111011110001101011000011000010100100111011100001010100001100110001",
+      "channel_payload77": "01000011111000110110101011101100110100011100001110100101011111111010011110100",
+      "crc14": "00111100110001",
+      "codeword174": "010000111110001101101010111011001101000111000011101001010111111110100111101000011110011000111000111010101111000110011000111010011111110010001111001101011011001001001110100101",
+      "tones": "001321002230213332320210120023311110232223312330123130230233322013123103023312220302202113203102331132010",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "27d1d16d3ce1482ac7c4e1f7ade82ce74add24a5d0dbbfe2098a2b15eb6fd37c",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC/R W9XYZ R FN42",
+      "fields": {
+        "type": "standard",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC/R",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "exchange": {
+          "kind": "grid",
+          "value": "FN42"
+        }
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC/R W9XYZ R FN42",
+        "fields": {
+          "type": "standard",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC/R",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "exchange": {
+            "kind": "grid",
+            "value": "FN42"
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rtty-serial-notu",
+      "mode": "ft8",
+      "field_basis": "TU flag cleared; QEX direct flag",
+      "payload77": "00000100110111101111000110101000011000010100100111011100010110000000001101011",
+      "channel_payload77": "00000100110111101111000110101000011000010100100111011100010110000000001101011",
+      "crc14": "00010000000001",
+      "codeword174": "000001001101111011110001101010000110000101001001110111000101100000000011010110001000000000101001100001000100100010000110000011001111001011001111101110110101001110000010010010",
+      "tones": "3140652011672416304061147065002341003140652061510553040217121764461403333140652",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "2d1f4f26307fa45249792a908eb68baba6d2dee3c2972b009c9392bfc3e51bd0",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ R 559 0013",
+      "fields": {
+        "type": "rtty",
+        "tu": false,
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "report": 559,
+        "exchange": {
+          "kind": "serial",
+          "value": 13
+        }
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ R 559 0013",
+        "fields": {
+          "type": "rtty",
+          "tu": false,
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "report": 559,
+          "exchange": {
+            "kind": "serial",
+            "value": 13
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "rtty-serial-notu",
+      "mode": "ft4",
+      "field_basis": "TU flag cleared; QEX direct flag",
+      "payload77": "00000100110111101111000110101000011000010100100111011100010110000000001101011",
+      "channel_payload77": "01001110100000000111100000011100110100011100001110100101000011011011110101110",
+      "crc14": "11010101001011",
+      "codeword174": "010011101000000001111000000111001101000111000011101001010000110110111101011101101010100101100001010000110110011110110000100101110000100001111001101011000010000101100101011100",
+      "tones": "001321023300012300120210120023311010230213221121333311301100213123223100031120030123133200301131112032010",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "32e50da6ebed4e591e65db56e244233db719e1321fc7f2d66e59624a87c42ecc",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ R 559 0013",
+      "fields": {
+        "type": "rtty",
+        "tu": false,
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": true,
+        "report": 559,
+        "exchange": {
+          "kind": "serial",
+          "value": 13
+        }
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ R 559 0013",
+        "fields": {
+          "type": "rtty",
+          "tu": false,
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": true,
+          "report": 559,
+          "exchange": {
+            "kind": "serial",
+            "value": 13
+          }
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday6-section-plus1",
+      "mode": "ft8",
+      "field_basis": "One-based section correction hypothesis; original QEX interpretation retained.",
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001100011000",
+      "channel_payload77": "00001001101111011110001101010000110000101001001110111000001010001001100011000",
+      "crc14": "01000100000010",
+      "codeword174": "000010011011110111100011010100001100001010010011101110000010100010011000110000100010000001000001000011000001101101111000000000011101100100110100000100000111111111011000101011",
+      "tones": "3140652032247523515133264035320405303140652101020166700026554505077720623140652",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "cef35a8ac87a6e84de5831419987c7823ff4a20fea5f05ea949106ffd8f9f148",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 6A WI",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 6,
+        "class": "A",
+        "section": "WI"
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 6A WI",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 6,
+          "class": "A",
+          "section": "WI"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday6-section-plus1",
+      "mode": "ft4",
+      "field_basis": "One-based section correction hypothesis; original QEX interpretation retained.",
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001100011000",
+      "channel_payload77": "01000011111000110110101011100100011100100001100111000001011111010010011011101",
+      "crc14": "10000001001000",
+      "codeword174": "010000111110001101101010111001000111001000011001110000010111110100100110111011000000100100001001110010110011010001001110100110100010001110000010000001110000110100111111100101",
+      "tones": "001321002230213332310120301312001110232210313232000310031203202101023102331330302300300120021022231132010",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "2cf8dee6b581689f64d520d45574e88bf1be90fa60ce40d24eb4579542fec825",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 6A WI",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 6,
+        "class": "A",
+        "section": "WI"
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 6A WI",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 6,
+          "class": "A",
+          "section": "WI"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday17-section-plus1",
+      "mode": "ft8",
+      "field_basis": "One-based section correction hypothesis; original QEX interpretation retained.",
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001100100000",
+      "channel_payload77": "00001001101111011110001101010000110000101001001110111000000000001001100100000",
+      "crc14": "01001110100111",
+      "codeword174": "000010011011110111100011010100001100001010010011101110000000000010011001000000100111010011100101111110101110010100110000100000111001010111011001000100010110001000000010000001",
+      "tones": "3140652032247523515133264000321005733140652256746435405071372105341003013140652",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 1920,
+        "BT": 2,
+        "sha256": "27feb59a56a2aa0dd1db83f04bef0840aa2601f64bdd79f2db5b3df3f4b8bece",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 17A WI",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 17,
+        "class": "A",
+        "section": "WI"
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 17A WI",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 17,
+          "class": "A",
+          "section": "WI"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 240,
+        "frequency_tolerance_hz": 1,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    },
+    {
+      "id": "fieldday17-section-plus1",
+      "mode": "ft4",
+      "field_basis": "One-based section correction hypothesis; original QEX interpretation retained.",
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001100100000",
+      "channel_payload77": "01000011111000110110101011100100011100100001100111000001010101010010011100101",
+      "crc14": "10001011101101",
+      "codeword174": "010000111110001101101010111001000111001000011001110000010101010100100111001011000101110110101101001111011100101000000110000110000110111101101111000001100001000011100101001111",
+      "tones": "001321002230213332310120301312001110231110312032011213321022120330023101301301322132200130100231102232010",
+      "waveform": {
+        "rate": 12000,
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "amplitude": 0.15,
+        "noise": 0,
+        "symbol_frames": 576,
+        "BT": 1,
+        "sha256": "cc4bf324cb0236f387a3ce2b879505bdbf911128d412f7b66bba5525f817960f",
+        "frames": 180000,
+        "phase_radians": 0
+      },
+      "source_message": "K1ABC W9XYZ 17A WI",
+      "fields": {
+        "type": "field_day",
+        "to": {
+          "kind": "call",
+          "text": "K1ABC",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "from": {
+          "kind": "call",
+          "text": "W9XYZ",
+          "hash_bits": null,
+          "hash_value": null
+        },
+        "ack": false,
+        "transmitters": 17,
+        "class": "A",
+        "section": "WI"
+      },
+      "expected_receive": {
+        "status": "decoded",
+        "text": "K1ABC W9XYZ 17A WI",
+        "fields": {
+          "type": "field_day",
+          "to": {
+            "kind": "call",
+            "text": "K1ABC",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "from": {
+            "kind": "call",
+            "text": "W9XYZ",
+            "hash_bits": null,
+            "hash_value": null
+          },
+          "ack": false,
+          "transmitters": 17,
+          "class": "A",
+          "section": "WI"
+        },
+        "start_frame": 6000,
+        "frequency_hz": 1000,
+        "time_tolerance_frames": 144,
+        "frequency_tolerance_hz": 3,
+        "snr_db": null,
+        "snr_oracle": "undefined noiseless injected AWGN; reference SNR is not ground truth"
+      }
+    }
+  ],
+  "schema_version": 2,
+  "normalization": "source_message is the selected identity; expected_receive preserves unresolved numeric hashes; external execution observations are separate issue evidence",
+  "counts": {
+    "total": 38,
+    "per_mode": {
+      "ft4": 19,
+      "ft8": 19
+    }
+  }
+}

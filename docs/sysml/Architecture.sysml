@@ -1,4 +1,4 @@
-// Canonical architecture SHA256: 85fd41fa3c86f76137342d0fe4d72f0adf6a30a21401c4118d30e48e383f3c02
+// Canonical architecture SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
@@ -53,14 +53,16 @@ package WstxArchitecture {
         doc /* FSD 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
              source, job and generation correlate immutable settings and results;
              concrete recorded spectrum types/lifetimes/bounds/cancellation are defined
-             in RecordingReceive.sysml; #7 mode settings remain separately gated.
+             in RecordingReceive.sysml; #7 target mode settings/results refine that same
+             lifecycle in StationDecode.sysml, pending independent readiness review.
              Receive jobs do not own transmit lifecycle or independent halt. */
     }
     item def ProcessingResult {
         doc /* FSD 11.3: #7 owns mode-specific decoded payload/units/oracles and required
              result delivery/retention; #6 owns spectrum frame units/identity/bounds and
              replaceable display delivery. Concrete spectrum schema/lifetimes are WstxRecordingReceive::SpectrumFrame;
-             #7 decode result payload/retention remain preparation gates. */
+             #7 target decoded payload/retention is WstxOfflineDecode::ResultRecord and
+             ResultPage, FSD4.4/6.4/12.7; implementation/readiness not asserted. */
     }
     item def EncodeRequest;
     item def Waveform;
@@ -228,14 +230,15 @@ package WstxArchitecture {
     }
     part def ReceivePipeline {
         doc /* FSD 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
-             #7 delivers common receive preprocessing/rate conversion if needed for both
-             recorded (#6) and live (#8) sources. PCM unit mapping is distinct from AGC
+             #8 owns one common native-format/rate conversion stage; #7 consumes canonical
+             12k samples. PCM unit mapping is distinct from AGC
              or modem normalization. No source-specific modem resamplers. #6/#7 settle
              one shared FFT provider, ordering/scaling, buffer policy and independent
              oracles before either writes FFT code; no speculative wrapper is required.
              FSD4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
              delivered recorded spectrum contract; review and acceptance evidence remains on issue #6.
-             #7 modem sizes/history and #8 live adapter contracts remain separate gates. */
+             #7 target sizes/history/decoderquanta are in StationDecode.sysml; its independent
+             readiness review and #8 live adapter contract remain separate gates. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
         port processing : ReceiveProcessing;

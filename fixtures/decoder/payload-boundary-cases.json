@@ -1,0 +1,1448 @@
+{
+  "schema_version": 1,
+  "status": "Reviewable independent expectations; unexecuted against candidate; canonical aliases differ from permissive reference",
+  "cases": [
+    {
+      "id": "standard-fixed-59-15-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000000000000000000001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "grid AA00",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32399",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010001111001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32399,
+      "expected_status": "decoded",
+      "expected_changed_field": "grid RR99",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32400",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010010000001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32400,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32401",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010010001001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32401,
+      "expected_status": "decoded",
+      "expected_changed_field": "blank",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32402",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010010010001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32402,
+      "expected_status": "decoded",
+      "expected_changed_field": "RRR",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32403",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010010011001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32403,
+      "expected_status": "decoded",
+      "expected_changed_field": "RR73",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32404",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010010100001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32404,
+      "expected_status": "decoded",
+      "expected_changed_field": "73",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32405",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010010101001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32405,
+      "expected_status": "decoded",
+      "expected_changed_field": "report -30",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32435",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111010110011001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32435,
+      "expected_status": "decoded",
+      "expected_changed_field": "report 0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32484",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111011100100001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32484,
+      "expected_status": "decoded",
+      "expected_changed_field": "report +49",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32485",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111011100101001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32485,
+      "expected_status": "decoded",
+      "expected_changed_field": "report +50",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32486",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111011100110001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32486,
+      "expected_status": "decoded",
+      "expected_changed_field": "report -50",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32505",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111011111001001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32505,
+      "expected_status": "decoded",
+      "expected_changed_field": "report -31",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32506",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111011111010001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32506,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "noncanonical alias",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-59-15-32767",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000111111111111111001",
+      "field_offset": 59,
+      "field_width": 15,
+      "raw_value": 32767,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "noncanonical report",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000000000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "DE",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000010000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1,
+      "expected_status": "decoded",
+      "expected_changed_field": "QRZ",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-2",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 2,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-3",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 3,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ 000",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1002",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000011111010100000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1002,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ 999",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1003",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000011111010110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1003,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "empty CQ modifier",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1004",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000011111011000000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1004,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ A",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1029",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000100000001010000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1029,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ Z",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1030",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000100000001100000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1030,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "CQ modifier hole",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1031",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000100000001110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1031,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ AA",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-1510",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000101111001100000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 1510,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ RU",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-532443",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000100000011111110110110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 532443,
+      "expected_status": "decoded",
+      "expected_changed_field": "CQ ZZZZ",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-532444",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000100000011111110111000000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 532444,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved c28",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-2063591",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000001111101111100111001110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 2063591,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved c28",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-2063592",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000001111101111100111010000000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 2063592,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash22=0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-6257895",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000101111101111100111001110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 6257895,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash22=4194303",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-6257896",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000101111101111100111010000000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 6257896,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "base call has no prefix letter",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "cq-0-28-268435455",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "11111111111111111111111111110000010011011110111100011010100010100001100110001",
+      "field_offset": 0,
+      "field_width": 28,
+      "raw_value": 268435455,
+      "expected_status": "decoded",
+      "expected_changed_field": "ZZ9ZZZ",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-0-71-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "field_offset": 0,
+      "field_width": 71,
+      "raw_value": 0,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "all blank",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-0-71-1265437718438866624511",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10001001001100101111001111001000101100000000001011011001001111111111111000000",
+      "field_offset": 0,
+      "field_width": 71,
+      "raw_value": 1265437718438866624511,
+      "expected_status": "decoded",
+      "expected_changed_field": "?????????????",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-0-71-1265437718438866624512",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10001001001100101111001111001000101100000000001011011001010000000000000000000",
+      "field_offset": 0,
+      "field_width": 71,
+      "raw_value": 1265437718438866624512,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside base42 domain",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-0-71-2361183241434822606847",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "11111111111111111111111111111111111111111111111111111111111111111111111000000",
+      "field_offset": 0,
+      "field_width": 71,
+      "raw_value": 2361183241434822606847,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside base42 domain",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "telemetry-0-71-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000000000000000000000000000000000000000000000000101000",
+      "field_offset": 0,
+      "field_width": 71,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "000000000000000000",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "telemetry-0-71-2361183241434822606847",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "11111111111111111111111111111111111111111111111111111111111111111111111101000",
+      "field_offset": 0,
+      "field_width": 71,
+      "raw_value": 2361183241434822606847,
+      "expected_status": "decoded",
+      "expected_changed_field": "7FFFFFFFFFFFFFFFFF",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011010000000000000011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "serial0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-7999",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111100111111011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 7999,
+      "expected_status": "decoded",
+      "expected_changed_field": "serial7999",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-8000",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111101000000011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 8000,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-8001",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111101000001011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 8001,
+      "expected_status": "decoded",
+      "expected_changed_field": "AL",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-8049",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111101110001011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 8049,
+      "expected_status": "decoded",
+      "expected_changed_field": "WI",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-8065",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111110000001011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 8065,
+      "expected_status": "decoded",
+      "expected_changed_field": "DC",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-8066",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111110000010011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 8066,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside state table",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-61-13-8191",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011011111111111111011",
+      "field_offset": 61,
+      "field_width": 13,
+      "raw_value": 8191,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside exchange domain",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-58-3-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100010001111101110001011",
+      "field_offset": 58,
+      "field_width": 3,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "report529",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "rtty-state-58-3-7",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000100110111101111000110101000011000010100100111011100011111111101110001011",
+      "field_offset": 58,
+      "field_width": 3,
+      "raw_value": 7,
+      "expected_status": "decoded",
+      "expected_changed_field": "report599",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010000000000011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 0,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "one-based section",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-1",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010000000001011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 1,
+      "expected_status": "decoded",
+      "expected_changed_field": "AB",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-75",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001011011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 75,
+      "expected_status": "decoded",
+      "expected_changed_field": "WCF",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-76",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001100011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 76,
+      "expected_status": "decoded",
+      "expected_changed_field": "WI",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-83",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001010011011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 83,
+      "expected_status": "decoded",
+      "expected_changed_field": "WY",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-84",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001010100011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 84,
+      "expected_status": "decoded",
+      "expected_changed_field": "DX",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-85",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001010101011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 85,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside84 sections",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-64-7-127",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001111111011000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 127,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside sections",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-61-3-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001010001001011011000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "class A",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-61-3-5",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001011011001011011000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 5,
+      "expected_status": "decoded",
+      "expected_changed_field": "class F",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-61-3-6",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001011101001011011000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 6,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved class",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-61-3-7",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001011111001011011000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 7,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved class",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-57-4-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001011011000",
+      "field_offset": 57,
+      "field_width": 4,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "transmitters1",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday6-57-4-15",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000011110001001011011000",
+      "field_offset": 57,
+      "field_width": 4,
+      "raw_value": 15,
+      "expected_status": "decoded",
+      "expected_changed_field": "transmitters16",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000000000000100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 0,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "one-based section",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-1",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000000000001100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 1,
+      "expected_status": "decoded",
+      "expected_changed_field": "AB",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-75",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001011100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 75,
+      "expected_status": "decoded",
+      "expected_changed_field": "WCF",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-76",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001100100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 76,
+      "expected_status": "decoded",
+      "expected_changed_field": "WI",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-83",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001010011100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 83,
+      "expected_status": "decoded",
+      "expected_changed_field": "WY",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-84",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001010100100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 84,
+      "expected_status": "decoded",
+      "expected_changed_field": "DX",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-85",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001010101100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 85,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside84 sections",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-64-7-127",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001111111100000",
+      "field_offset": 64,
+      "field_width": 7,
+      "raw_value": 127,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside sections",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-61-3-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001011100000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "class A",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-61-3-5",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000001011001011100000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 5,
+      "expected_status": "decoded",
+      "expected_changed_field": "class F",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-61-3-6",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000001101001011100000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 6,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved class",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-61-3-7",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000001111001011100000",
+      "field_offset": 61,
+      "field_width": 3,
+      "raw_value": 7,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "reserved class",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-57-4-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000001001011100000",
+      "field_offset": 57,
+      "field_width": 4,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "transmitters17",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "fieldday17-57-4-15",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000011110001001011100000",
+      "field_offset": 57,
+      "field_width": 4,
+      "raw_value": 15,
+      "expected_status": "decoded",
+      "expected_changed_field": "transmitters32",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "nonstd-fixed-0-12-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000000000000000000001011000010101110000110010100011010110100111100100",
+      "field_offset": 0,
+      "field_width": 12,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash12=0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "nonstd-fixed-0-12-4095",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "11111111111100000000000000001011000010101110000110010100011010110100111100100",
+      "field_offset": 0,
+      "field_width": 12,
+      "raw_value": 4095,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash12=4095",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "nonstd-fixed-12-58-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00100100001100000000000000000000000000000000000000000000000000000000001100100",
+      "field_offset": 12,
+      "field_width": 58,
+      "raw_value": 0,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "empty full call",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "nonstd-fixed-12-58-238572050223552512",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00100100001111010011111001010000000100000000101110100101011000000000001100100",
+      "field_offset": 12,
+      "field_width": 58,
+      "raw_value": 238572050223552512,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside11-character base38 domain",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "nonstd-fixed-12-58-288230376151711743",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00100100001111111111111111111111111111111111111111111111111111111111111100100",
+      "field_offset": 12,
+      "field_width": 58,
+      "raw_value": 288230376151711743,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside base38 domain",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "dxpedition-fixed-56-10-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000000000000001001001000",
+      "field_offset": 56,
+      "field_width": 10,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash10=0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "dxpedition-fixed-56-10-1023",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000111111111101001001000",
+      "field_offset": 56,
+      "field_width": 10,
+      "raw_value": 1023,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash10=1023",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "dxpedition-fixed-66-5-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001100100100000001000",
+      "field_offset": 66,
+      "field_width": 5,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "report-30",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "dxpedition-fixed-66-5-31",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000110000101001001110111000001100100111111001000",
+      "field_offset": 66,
+      "field_width": 5,
+      "raw_value": 31,
+      "expected_status": "decoded",
+      "expected_changed_field": "report+32",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-49-25-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111111111111110000000000000000000000000101",
+      "field_offset": 49,
+      "field_width": 25,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "AA00AA",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-49-25-18662399",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111111111111111000111001100001111111111101",
+      "field_offset": 49,
+      "field_width": 25,
+      "raw_value": 18662399,
+      "expected_status": "decoded",
+      "expected_changed_field": "RR99XX",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-49-25-18662400",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111111111111111000111001100010000000000101",
+      "field_offset": 49,
+      "field_width": 25,
+      "raw_value": 18662400,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside grid6",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-49-25-33554431",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111111111111111111111111111111111111111101",
+      "field_offset": 49,
+      "field_width": 25,
+      "raw_value": 33554431,
+      "expected_status": "invalid_payload",
+      "expected_changed_field": "outside grid6",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-38-11-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111000000000001000111001100001111111111101",
+      "field_offset": 38,
+      "field_width": 11,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "serial0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-38-11-2047",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111111111111111000111001100001111111111101",
+      "field_offset": 38,
+      "field_width": 11,
+      "raw_value": 2047,
+      "expected_status": "decoded",
+      "expected_changed_field": "serial2047",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-35-3-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100000111111111111000111001100001111111111101",
+      "field_offset": 35,
+      "field_width": 3,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "report52",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-35-3-7",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011101111111100000101100111111111111111000111001100001111111111101",
+      "field_offset": 35,
+      "field_width": 3,
+      "raw_value": 7,
+      "expected_status": "decoded",
+      "expected_changed_field": "report59",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-0-12-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00000000000011101111111100000101100111111111111111000111001100001111111111101",
+      "field_offset": 0,
+      "field_width": 12,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash12=0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-0-12-4095",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "11111111111111101111111100000101100111111111111111000111001100001111111111101",
+      "field_offset": 0,
+      "field_width": 12,
+      "raw_value": 4095,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash12=4095",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-12-22-0",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011000000000000000000000000111111111111111000111001100001111111111101",
+      "field_offset": 12,
+      "field_width": 22,
+      "raw_value": 0,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash22=0",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "vhf-fixed-12-22-4194303",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "10100110011011111111111111111111110111111111111111000111001100001111111111101",
+      "field_offset": 12,
+      "field_width": 22,
+      "raw_value": 4194303,
+      "expected_status": "decoded",
+      "expected_changed_field": "hash22=4194303",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-71-3-2",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000010000",
+      "field_offset": 71,
+      "field_width": 3,
+      "raw_value": 2,
+      "expected_status": "unsupported",
+      "expected_changed_field": "n3=2",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-71-3-6",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000110000",
+      "field_offset": 71,
+      "field_width": 3,
+      "raw_value": 6,
+      "expected_status": "unsupported",
+      "expected_changed_field": "n3=6",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "free-71-3-7",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000111000",
+      "field_offset": 71,
+      "field_width": 3,
+      "raw_value": 7,
+      "expected_status": "unsupported",
+      "expected_changed_field": "n3=7",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-74-3-6",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000010100001100110110",
+      "field_offset": 74,
+      "field_width": 3,
+      "raw_value": 6,
+      "expected_status": "unsupported",
+      "expected_changed_field": "i3=6",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    },
+    {
+      "id": "standard-fixed-74-3-7",
+      "modes": [
+        "ft4",
+        "ft8"
+      ],
+      "payload77": "00001001101111011110001101010000011000010100100111011100000010100001100110111",
+      "field_offset": 74,
+      "field_width": 3,
+      "raw_value": 7,
+      "expected_status": "unsupported",
+      "expected_changed_field": "i3=7",
+      "oracle": "QEX field/table definition; current boundary observations where recorded"
+    }
+  ]
+}
