@@ -1,4 +1,4 @@
-// Canonical radio and audio contract SHA256: 8f412e30b6808b31ff6272848562bab3cf002b1c0a8b172847415e8c4a24f5fc
+// Canonical radio and audio contract SHA256: 437c8edbf5bdbc6bfec10a423f1d8eb5d958af6767067e281e1e502fae1b5881
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
@@ -89,7 +89,7 @@ package WstxRadioIO {
     attribute def RadioObservation {
         attribute frequencyHz : Integer[0..1];
         attribute mode : String[0..1];
-        attribute filter : Integer[0..1];
+        attribute 'filter' : Integer[0..1];
         attribute data : Boolean[0..1];
         attribute dataFilter : Integer[0..1];
         attribute split : Boolean[0..1];
@@ -103,7 +103,7 @@ package WstxRadioIO {
         attribute connectionGeneration : Integer;
         attribute frequencyHz : Integer[0..1];
         attribute mode : String[0..1];
-        attribute filter : Integer[0..1];
+        attribute 'filter' : Integer[0..1];
         attribute data : Boolean[0..1];
         attribute dataFilter : Integer[0..1];
         doc /* Compiled typed union exact per FSD12.8, not arbitrary optional combinations.

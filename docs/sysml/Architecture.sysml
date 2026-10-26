@@ -1,4 +1,4 @@
-// Canonical architecture SHA256: 8f412e30b6808b31ff6272848562bab3cf002b1c0a8b172847415e8c4a24f5fc
+// Canonical architecture SHA256: 437c8edbf5bdbc6bfec10a423f1d8eb5d958af6767067e281e1e502fae1b5881
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
