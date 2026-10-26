@@ -1391,6 +1391,30 @@ Enable Tx, Halt Tx, Auto Seq, contact selection and logging controls are visibly
 disabled with adjacent reasons while unsupported. No new station commands are sent.
 This slice neither implements a second radio/QSO authority nor supplies a fake service.
 
+When the server exposes the live receive contract in12.8, the same page offers
+explicit Start/Stop receive and spectrum/FT4/FT8 selection. Selection applies to the
+next job; displaying settings and selecting a mode never opens audio. Start uses
+the saved input and current profile revision. Stop invalidates publication before
+acknowledgement. Band Activity presents actual12.7 decoded records fetched through
+12.8, with source seconds, nullable SNR, audio frequency and literal message text.
+No UTC/DT or resolved call is invented. Each retained row preserves its source/job/
+generation and sequence; new identity clears rows, and stale pages cannot append.
+At most2048 displayed records are retained. Cursor expiry visibly marks incomplete
+history before reading the oldest available cursor. Partial output remains visibly
+partial after stop/failure. Unsupported payload text is labelled by its payload
+status without fabricating a message. Receive availability is separate from CAT,
+TX and status-link availability; contact selection and TX/log controls remain disabled.
+The single pending result request, Thin limit1/4-second cadence and status priority
+follow12.8. Device enumeration requires an explicit operator action.
+
+TC-009-004 includes an isolated real-server/browser case: independently verified
+native audio fixture passes through the actual source converter, sole receive manager
+and real modem; the returned call-sign record appears literally in Band Activity.
+Assert the full tuple/cursor, stop and partial-output presentation, old-context page
+rejection, unknown epoch reset, cursor expiry and the Thin pending/cadence rules.
+The unsupported/no-input TC-007-002 baseline keeps its empty message views.
+
+
 Saved settings, station connection details and recorded-file import/replay remain
 available in secondary in-page regions. Opening a region does not open another window
 or replace the waterfall/operating workspace. Login remains usable when required.
