@@ -3,7 +3,7 @@ const main = document.querySelector('main'), controls = document.createElement('
 controls.id = 'controls';
 while (main.firstChild) controls.append(main.firstChild);
 const signal = document.createElement('section'); signal.id = 'signal'; signal.setAttribute('aria-label','Recorded spectrum and waterfall');
-signal.innerHTML = '<h2>Recorded receive</h2><p id="signal-status" role="status">Waiting for station snapshot</p><p id="signal-meta"></p><canvas id="spectrum" aria-label="Spectrum in calibrated dBFS"></canvas><div id="frequency-ruler" aria-label="Fixed frequency span 0 to 3000 Hz"></div><div id="waterfall-wrap"><div id="time-ruler"></div><canvas id="waterfall" tabindex="0" aria-label="Waterfall in source seconds; arrow keys select native bins and rows"></canvas></div><div id="level-legend"></div>';
+signal.innerHTML = '<h2>Recorded receive</h2><p id="signal-status" role="status">Waiting for station snapshot</p><p id="signal-meta"></p><canvas id="spectrum" aria-label="Spectrum in calibrated dBFS"></canvas><div id="frequency-ruler" aria-label="Fixed frequency span 0 to 3000 Hz"></div><div id="waterfall-wrap"><div id="time-ruler"></div><canvas id="waterfall" tabindex="0" aria-label="Waterfall in source seconds; arrow keys select native bins and rows"></canvas></div><div id="level-legend"></div><canvas id="level-bar" aria-label="Waterfall color scale from navy to red"></canvas>';
 
 const splitter = document.createElement('div'); splitter.id = 'splitter'; splitter.tabIndex = 0;
 for (const [key,value] of Object.entries({role:'separator','aria-orientation':'horizontal','aria-label':'Resize spectrum and controls','aria-controls':'signal controls'})) splitter.setAttribute(key,value);
@@ -14,19 +14,34 @@ const localLevels=document.createElement('div');localLevels.id='display-levels';
 localLevels.innerHTML='<label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output>';
 panel.append(localLevels,document.querySelector('#signal-meta'));
 controls.insertBefore(panel,document.querySelector('#profile-panel'));
+const sliders=document.createElement('div');sliders.id='presentation-sliders';
+sliders.innerHTML='<label>Sensitivity <output id="sensitivity-value">+0 dB</output><input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"></label><label title="Vertical history magnification: Faster shows a shorter source-time window. Replay and received rows per second do not change.">Speed (history view) <output id="speed-value">1x</output><input id="display-speed" type="range" min="1" max="8" step="1" value="1" aria-label="Waterfall speed, Slow to Fast"></label>';
+signal.insertBefore(sliders,document.querySelector('#spectrum'));
 const profileSelect=document.querySelector('#display-profile');
 profileSelect.value=location.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(location.hostname)?'detail':'thin';
-let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, fallbackText='', detailRequest;
-const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,255,255]]];
-function color(q) {
-  const t=Math.max(0,Math.min(1,(q-120-displayBlack)/displayRange));
+let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
+const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
+function paletteRGB(t){
+  t=Math.max(0,Math.min(1,t));
   const i=Math.max(1,palette.findIndex(([p])=>p>=t)),[lo,a]=palette[i-1],[hi,b]=palette[i];
-  return `rgb(${a.map((v,k)=>Math.floor(v+(b[k]-v)*(t-lo)/(hi-lo)+.5)).join(' ')})`;
+  return a.map((v,k)=>Math.floor(v+(b[k]-v)*(t-lo)/(hi-lo)+.5));
 }
-function resetLevels(){displayBlack=-120;displayRange=30;autoBlack=true;estimateFrozen=false;selectedBin=0;selectedRow=0;pointerColumn=null;updateLevels();}
+function effectiveBlack(){return Math.max(-120,Math.min(-displayRange,displayBlack-sensitivity));}
+function color(q){return `rgb(${paletteRGB((q-120-effectiveBlack())/displayRange).join(' ')})`;}
+function updateSliders(){
+  document.querySelector('#display-sensitivity').value=sensitivity;document.querySelector('#sensitivity-value').textContent=`${sensitivity>=0?'+':''}${sensitivity} dB`;
+  document.querySelector('#display-speed').value=speed;document.querySelector('#speed-value').textContent=`${speed}x`;
+}
+for(const id of ['display-sensitivity','display-speed'])document.querySelector(`#${id}`).addEventListener('input',event=>{
+  const value=Number(event.target.value);if(!Number.isFinite(value))return;
+  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else speed=Math.max(1,Math.min(8,Math.floor(value+.5)));
+  selectedRow=Math.max(0,Math.min(visibleCount()-1,selectedRow));pointerTime=null;updateSliders();paint();
+});
+
+function resetLevels(){displayBlack=-120;displayRange=30;autoBlack=true;estimateFrozen=false;selectedBin=0;selectedRow=0;pointerColumn=null;pointerTime=null;updateLevels();}
 function updateLevels(){
   document.querySelector('#display-black').value=displayBlack;document.querySelector('#display-black').max=-displayRange;
-  document.querySelector('#display-range').value=displayRange;document.querySelector('#display-auto').checked=autoBlack;
+  document.querySelector('#display-range').value=displayRange;document.querySelector('#display-auto').checked=autoBlack;updateSliders();
 }
 function estimate(row){
   if(!autoBlack||estimateFrozen||!row?.levels)return;
@@ -64,34 +79,52 @@ splitter.addEventListener('keydown',event => {
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
 splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)) split(event.clientY);});
 addEventListener('resize',() => split(upper)); split();
+function visibleCount(){return rows.length?Math.max(1,Math.ceil(rows.length/speed)):0;}
+function timeGroup(y,H,R=visibleCount()){
+  y=Math.max(0,Math.min(H-1,y));
+  if(H<R)return [Math.ceil(y*R/H),Math.min(R-1,Math.ceil((y+1)*R/H)-1)];
+  const r=Math.min(R-1,Math.ceil((y+1)*R/H)-1);return [r,r];
+}
+function groupLevels(first,last,B){
+  const q=new Uint8Array(B);
+  for(let r=first;r<=last;r++){
+    const native=rows.at(-1-r)?.levels;if(!native)return null;
+    for(let k=0;k<B;k++)q[k]=Math.max(q[k],native[k]);
+  }
+  return q;
+}
 function readout(){
-  const row=rows.at(-1-selectedRow), B=profileSelect.value==='detail'?1024:128;
-  selectedBin=Math.max(0,Math.min(B-1,selectedBin));selectedRow=Math.max(0,Math.min(rows.length-1,selectedRow));
-  const text=document.querySelector('#bin-readout');
-  if(!row?.levels){text.textContent='Gap: no measurement';return;}
-  const W=document.querySelector('#waterfall').width,x=pointerColumn===null?Math.floor(selectedBin*W/B):Math.max(0,Math.min(W-1,pointerColumn));
+  const B=profileSelect.value==='detail'?1024:128,R=visibleCount(),text=document.querySelector('#bin-readout');
+  selectedBin=Math.max(0,Math.min(B-1,selectedBin));selectedRow=Math.max(0,Math.min(R-1,selectedRow));
+  const row=rows.at(-1-selectedRow);if(!row){text.textContent='No measurement';return;}
+  const W=waterfall.width,H=waterfall.height,x=pointerColumn===null?Math.floor(selectedBin*W/B):Math.max(0,Math.min(W-1,pointerColumn));
   const first=W<B?Math.ceil(x*B/W):selectedBin,last=W<B?Math.min(B-1,Math.ceil((x+1)*B/W)-1):selectedBin;
-  const peak=Math.max(...row.levels.slice(first,last+1));
-  text.textContent=`Native bin ${selectedBin} | ${(selectedBin*3000/B).toFixed(4)} Hz | ${row.levels[selectedBin]-120} dBFS | source ${(row.first_frame/12000).toFixed(1)}-${(row.end_frame/12000).toFixed(3)} s${W<B?` | projected bins ${first}-${last}: ${peak-120} dBFS`:''}`;
+  const [newest,oldest]=timeGroup(pointerTime===null?Math.floor(selectedRow*H/R):pointerTime,H,R),projected=groupLevels(newest,oldest,B);
+  const value=row.levels?`${row.levels[selectedBin]-120} dBFS`:'no measurement (gap)';
+  const peak=projected?`${Math.max(...projected.slice(first,last+1))-120} dBFS`:'unknown (gap)';
+  const low=rows.at(-1-oldest).first_frame/12000,high=rows.at(-1-newest).end_frame/12000;
+  text.textContent=`Native bin ${selectedBin} | ${(selectedBin*3000/B).toFixed(4)} Hz | ${value} | source ${(row.first_frame/12000).toFixed(1)}-${(row.end_frame/12000).toFixed(3)} s | projected bins ${first}-${last}: ${peak} | projected source ${low.toFixed(1)}-${high.toFixed(3)} s`;
 }
 const waterfall=document.querySelector('#waterfall');
-waterfall.addEventListener('pointermove',e=>{
-  const box=waterfall.getBoundingClientRect(),B=profileSelect.value==='detail'?1024:128,h=Math.max(1,Math.round(2*devicePixelRatio));
-  selectedBin=Math.min(B-1,Math.max(0,Math.floor((e.clientX-box.left)/box.width*B+.5)));
-  pointerColumn=Math.floor((e.clientX-box.left)/box.width*waterfall.width);
-  selectedRow=Math.min(rows.length-1,Math.max(0,Math.floor((e.clientY-box.top)*devicePixelRatio/h)));readout();
+waterfall.addEventListener('pointermove',event=>{
+  const box=waterfall.getBoundingClientRect(),B=profileSelect.value==='detail'?1024:128,R=visibleCount();if(!R)return;
+  selectedBin=Math.min(B-1,Math.max(0,Math.floor((event.clientX-box.left)/box.width*B+.5)));
+  pointerColumn=Math.floor((event.clientX-box.left)/box.width*waterfall.width);
+  pointerTime=Math.max(0,Math.min(waterfall.height-1,Math.floor((event.clientY-box.top)/box.height*waterfall.height)));
+  selectedRow=timeGroup(pointerTime,waterfall.height,R)[0];readout();
 });
-waterfall.addEventListener('keydown',e=>{
-  if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();pointerColumn=null;
-  if(e.key==='ArrowLeft')selectedBin--;if(e.key==='ArrowRight')selectedBin++;
-  if(e.key==='ArrowUp')selectedRow--;if(e.key==='ArrowDown')selectedRow++;
-  selectedRow=Math.max(0,Math.min(rows.length-1,selectedRow));readout();
+waterfall.addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();pointerColumn=null;pointerTime=null;
+  if(event.key==='ArrowLeft')selectedBin--;if(event.key==='ArrowRight')selectedBin++;
+  if(event.key==='ArrowUp')selectedRow--;if(event.key==='ArrowDown')selectedRow++;
+  selectedRow=Math.max(0,Math.min(visibleCount()-1,selectedRow));readout();
 });
+
 function paint() {
   if(drawPending)return;drawPending=true;
   requestAnimationFrame(()=>{
     drawPending=false;
-    const B=profileSelect.value==='detail'?1024:128,h=Math.max(1,Math.round(2*devicePixelRatio));
+    const B=profileSelect.value==='detail'?1024:128;
     for(const id of ['spectrum','waterfall']){
       const c=document.querySelector(`#${id}`),box=c.getBoundingClientRect();
       c.width=Math.max(1,Math.round(box.width*devicePixelRatio));c.height=Math.max(1,Math.round(box.height*devicePixelRatio));
@@ -105,31 +138,46 @@ function paint() {
         ctx.strokeStyle='rgb(180 245 220)';ctx.lineWidth=Math.max(1,devicePixelRatio);ctx.beginPath();
         values.forEach((q,k)=>{const x=Math.floor(k*c.width/values.length),y=Math.max(0,Math.min(c.height-1,(displayBlack+displayRange-(q-120))*c.height/displayRange));k?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
       }else{
-        const visible=Math.min(rows.length,Math.ceil(c.height/h));
-        for(let r=0;r<visible;r++){
-          const row=rows.at(-1-r),y=r*h;if(!row.levels){ctx.fillStyle='rgb(96 96 96)';ctx.fillRect(0,y,c.width,h);continue;}
-          const values=project(row.levels);values.forEach((q,k)=>{
-            const x=Math.floor(k*c.width/values.length),right=Math.floor((k+1)*c.width/values.length);
-            ctx.fillStyle=color(q);ctx.fillRect(x,y,right-x,h);
-          });
+        const R=visibleCount(),W=c.width,H=c.height;
+        if(R){
+          const image=ctx.createImageData(W,H),lut=Array.from({length:121},(_,q)=>[...paletteRGB((q-120-effectiveBlack())/displayRange),255]);
+          let previous=-1,line;
+          for(let y=0;y<H;y++){
+            const [first,last]=timeGroup(y,H,R);
+            if(first!==previous){
+              previous=first;line=new Uint8ClampedArray(W*4);const native=groupLevels(first,last,B),values=native?project(native):null;
+              if(!values){for(let x=0;x<W;x++)line.set([96,96,96,255],x*4);}
+              else for(let k=0;k<values.length;k++){
+                const left=Math.floor(k*W/values.length),right=Math.floor((k+1)*W/values.length),rgb=lut[values[k]];
+                for(let x=left;x<right;x++)line.set(rgb,x*4);
+              }
+            }
+            image.data.set(line,y*W*4);
+          }
+          ctx.putImageData(image,0,0);
         }
-        const last=rows.at(-1),oldest=rows.at(-visible),range=last?`${(oldest.first_frame/12000).toFixed(1)} to ${(last.end_frame/12000).toFixed(1)} seconds`:'';
-        c.dataset.rows=String(rows.length);c.dataset.sequences=rows.map(r=>r.sequence).join(',');c.dataset.bins=String(B);c.dataset.span='0,3000';
-        c.setAttribute('aria-label',`Waterfall, visible source time ${range}; newest top, grey rows are gaps; arrow keys select native bins and rows`);
+        const last=rows.at(-1),oldest=R?rows.at(-R):null,low=oldest?.first_frame/12000,high=last?.end_frame/12000;
+        c.dataset.rows=String(rows.length);c.dataset.visibleRows=String(R);c.dataset.sequences=rows.map(r=>r.sequence).join(',');c.dataset.bins=String(B);c.dataset.span='0,3000';
+        c.setAttribute('aria-label',`Waterfall, visible source time ${R?`${low.toFixed(1)} to ${high.toFixed(1)} seconds`:''}; newest top, grey groups are unknown; arrow keys select native bins and rows`);
         const ruler=document.querySelector('#time-ruler');ruler.replaceChildren();
         if(last){
-          const latest=last.first_frame/12000,step=B===1024?.2:1,times=[latest];
-          for(let t=Math.floor(latest/5)*5;t>=oldest.first_frame/12000;t-=5)if(latest-t>=16*devicePixelRatio/h*step)times.push(t);
-          for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${(latest-t)/step*h/devicePixelRatio}px`;ruler.append(label);}
+          const latest=last.first_frame/12000,step=B===1024?.2:1,times=[latest];let previousY=0;
+          for(let t=Math.floor(latest/5)*5;t>=low;t-=5){const y=Math.floor(Math.round((latest-t)/step)*H/R)/devicePixelRatio;if(y-previousY>=16){times.push(t);previousY=y;}}
+          for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${Math.floor(Math.round((latest-t)/step)*H/R)/devicePixelRatio}px`;ruler.append(label);}
         }
+        document.querySelector('#speed-value').title=R?`Visible source ${low.toFixed(1)}-${high.toFixed(1)} s (${(high-low).toFixed(1)} s); replay/network rate unchanged`:'No observed history';
       }
     }
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
     for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f%500===0)tick.textContent=String(f);ruler.append(tick);}
-    const legend=document.querySelector('#level-legend');
-    legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin | 5 rows/s':'23.44 Hz/group | 1 row/s'} | Display ${displayBlack} to ${displayBlack+displayRange} dBFS`;
-    legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 0.2 s rows; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 s rows; 2048/12000 s Hann window support';
+    const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
+    legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | View ${(high-low).toFixed(1)} s`;
+    legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
     legend.setAttribute('aria-label',`${legend.textContent}; ${legend.title}`);
+    document.querySelector('#spectrum').title=`Curve base scale ${displayBlack} to ${displayBlack+displayRange} dBFS; Sensitivity changes waterfall colors only`;
+    const bar=document.querySelector('#level-bar'),box=bar.getBoundingClientRect();bar.width=Math.max(1,Math.round(box.width*devicePixelRatio));bar.height=Math.max(1,Math.round(box.height*devicePixelRatio));
+    const context=bar.getContext('2d'),image=context.createImageData(bar.width,bar.height);
+    for(let x=0;x<bar.width;x++){const rgb=[...paletteRGB(x/Math.max(1,bar.width-1)),255];for(let y=0;y<bar.height;y++)image.data.set(rgb,(y*bar.width+x)*4);}context.putImageData(image,0,0);
     readout();
   });
 }

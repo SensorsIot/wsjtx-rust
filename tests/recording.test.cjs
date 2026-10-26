@@ -277,7 +277,7 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
     for(let n=0;n<120;n++)if(n!==1)deliver(make(n));
     deliver(make(120));deliver(make(119));
     await new Promise(requestAnimationFrame);
-    const c=document.querySelector('#waterfall'),pixel=[...c.getContext('2d').getImageData(0,(119-1)*Math.max(1,Math.round(2*devicePixelRatio)),1,1).data];
+    const c=document.querySelector('#waterfall'),pixel=[...c.getContext('2d').getImageData(0,Math.floor(c.height*118/120),1,1).data];
     return {ignored,count:Number(c.dataset.rows),sequences:c.dataset.sequences,pixel,label:c.getAttribute('aria-label')};
   },s);
   assert.equal(observation.ignored,0);assert.equal(observation.count,120);assert.equal(observation.sequences,Array.from({length:120},(_,n)=>n).join(','));assert.deepEqual(observation.pixel,[96,96,96,255]);assert.match(observation.label,/visible source time/);
@@ -302,15 +302,15 @@ test('TC-010-005 detailed native wire, fixed span, projection, palette and top-e
       rows=[];displayBlack=-120;displayRange=80;autoBlack=false;
       const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
       deliver(frame(0));deliver(frame(2));await new Promise(requestAnimationFrame);
-      const c=document.querySelector('#waterfall'),ctx=c.getContext('2d'),h=Math.max(1,Math.round(2*devicePixelRatio)),pix=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
+      const c=document.querySelector('#waterfall'),ctx=c.getContext('2d'),h=Math.floor(c.height/3),pix=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
       const expected=Array(c.width).fill(0);for(let k=0;k<1024;k++)if(c.width<1024)expected[Math.floor(k*c.width/1024)]=Math.max(expected[Math.floor(k*c.width/1024)],values[k]);else for(let x=Math.floor(k*c.width/1024);x<Math.floor((k+1)*c.width/1024);x++)expected[x]=values[k];
-      const cells=expected.every((q,x)=>JSON.stringify(pix(x,0))===JSON.stringify(q?[255,255,255,255]:[0,0,12,255]));
+      const cells=expected.every((q,x)=>JSON.stringify(pix(x,0))===JSON.stringify(q?[255,0,0,255]:[0,0,12,255]));
       const before=c.dataset.rows;
       for(const edit of [{levels_b64:'!'.repeat(1368)},{levels_b64:btoa(String.fromCharCode(...Array(1024).fill(121)))},{levels_b64:btoa('x')},{sequence:999},{extra:1},{generation:s.generation-1}]){const m=frame(3);Object.assign(m.data,edit);deliver(m);}
       await new Promise(requestAnimationFrame);
-      return {cells,gap:pix(0,h),blank:pix(0,h*3),before,after:c.dataset.rows,unmodified:rows.at(-1).levels.every((q,k)=>q===values[k]),overflow:document.documentElement.scrollWidth>innerWidth,axis:document.querySelector('#frequency-ruler').textContent};
+      return {cells,gap:pix(0,h),bottom:pix(0,c.height-1),narrow:c.width<1024,before,after:c.dataset.rows,unmodified:rows.at(-1).levels.every((q,k)=>q===values[k]),overflow:document.documentElement.scrollWidth>innerWidth,axis:document.querySelector('#frequency-ruler').textContent};
     },s);
-    assert.ok(result.cells);assert.deepEqual(result.gap,[96,96,96,255]);assert.deepEqual(result.blank,[0,0,12,255]);assert.equal(result.before,result.after);assert.ok(result.unmodified);assert.equal(result.overflow,false);assert.match(result.axis,/3000/);assert.match(result.axis,/0/);
+    assert.ok(result.cells);assert.deepEqual(result.gap,[96,96,96,255]);assert.deepEqual(result.bottom,result.narrow?[255,0,0,255]:[0,0,12,255]);assert.equal(result.before,result.after);assert.ok(result.unmodified);assert.equal(result.overflow,false);assert.match(result.axis,/3000/);assert.match(result.axis,/0/);
   }
   await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
@@ -326,10 +326,12 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   await desktop.locator('#recording-replay').click();
   for(const p of [desktop,mobile])await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>=45,{timeout:15000});
   await fs.mkdir('test-results',{recursive:true});
-  await desktop.screenshot({path:'test-results/cr6-crisp-ft8-desktop.png',fullPage:true});
-  await mobile.screenshot({path:'test-results/cr6-crisp-ft8-mobile-dpr2.png',fullPage:true});
+  for(const p of [desktop,mobile]){await p.locator('#display-sensitivity').fill('6');await p.locator('#display-sensitivity').dispatchEvent('input');await p.locator('#display-sensitivity').fill('0');await p.locator('#display-sensitivity').dispatchEvent('input');await p.locator('#display-speed').fill('2');await p.locator('#display-speed').dispatchEvent('input');}
+  await desktop.screenshot({path:'test-results/cr6-sliders-ft8-desktop.png',fullPage:true});
+  await mobile.screenshot({path:'test-results/cr6-sliders-ft8-mobile-dpr2.png',fullPage:true});
   for(const p of [desktop,mobile]){
     assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    for(const key of ['Home','End']){await p.getByRole('separator').focus();await p.keyboard.press(key);await p.waitForTimeout(30);const g=await p.evaluate(()=>{const a=document.querySelector('#spectrum').getBoundingClientRect(),b=waterfall.getBoundingClientRect();return {ratio:b.height-5*a.height,pixels:waterfall.height,expected:Math.round(b.height*devicePixelRatio)};});assert.ok(Math.abs(g.ratio)<=2,JSON.stringify(g));assert.equal(g.pixels,g.expected);}
     const before=await p.evaluate(()=>({black:displayBlack,range:displayRange,auto:autoBlack,frozen:estimateFrozen,copy:[...rows.at(-1).levels]}));
     assert.equal(before.auto,true);assert.equal(before.frozen,true);assert.equal(before.range,30);
     await p.locator('#display-black').fill('-90');await p.locator('#display-black').dispatchEvent('change');
@@ -378,4 +380,79 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
   await sleep(1700);const started=performance.now();pending=receive(ws);ws.send(JSON.stringify({v:1,type:'station.get',id:2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-started<2000);
   assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=195,JSON.stringify(stamps));
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});
+
+// Proves: CL-006-03; TC-010-006 independent palette endpoints before any slider-dependent assertion.
+test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},async t=>{
+  const f=await fixture(t),p=await page(f);
+  const actual=await p.evaluate(async()=>{paint();await new Promise(requestAnimationFrame);const bar=document.querySelector('#level-bar'),ctx=bar.getContext('2d');return {colors:[color(120),color(0)],first:[...ctx.getImageData(0,0,1,1).data],last:[...ctx.getImageData(bar.width-1,0,1,1).data]};});
+  assert.deepEqual(actual.colors,['rgb(255 0 0)','rgb(0 0 12)']);assert.deepEqual(actual.first,[0,0,12,255]);assert.deepEqual(actual.last,[255,0,0,255]);
+});
+// Proves: CL-006-03/04; TC-010-006 fills entire actual canvas from observed history, not fixed-height rows.
+test('TC-010-006 complete height, speed projection, gaps and geometry',{timeout:30000},async t=>{
+  const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
+  const result=await p.evaluate(async s=>{
+    profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;
+    const send=(sequence,q)=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*2400,end_frame:(sequence+1)*2400,levels_b64:btoa(String.fromCharCode(...new Uint8Array(1024).fill(q)))}}}}));
+    send(0,120);send(1,0);await new Promise(requestAnimationFrame);
+    const c=waterfall,ctx=c.getContext('2d'),pixel=y=>[...ctx.getImageData(0,y,1,1).data];
+    return {top:pixel(0),bottom:pixel(c.height-1),box:c.getBoundingClientRect().height,height:c.height};
+  },s);
+  assert.deepEqual(result.top,[0,0,12,255]);assert.deepEqual(result.bottom,[255,0,0,255]);
+  const matrix=await p.evaluate(async s=>{
+    window.presentationFrame=async(N,gap=-1)=>{
+      rows=[];
+      for(let seq=0;seq<N;seq++)rows.push({sequence:seq,first_frame:seq*2400,end_frame:(seq+1)*2400,levels:seq===gap?null:new Uint8Array(1024).fill(seq%2?0:120)});
+      paint();await new Promise(requestAnimationFrame);
+    };
+    const observations=[];
+    for(const N of [2,75,600])for(const v of [1,2,8]){
+      await presentationFrame(N);document.querySelector('#display-speed').value=v;document.querySelector('#display-speed').dispatchEvent(new Event('input'));await new Promise(requestAnimationFrame);
+      const c=waterfall,H=c.height,R=Math.ceil(N/v),data=c.getContext('2d').getImageData(0,0,1,H).data;
+      let correct=true;
+      for(let y=0;y<H;y++){
+        let newest,oldest;
+        if(H<R){newest=Math.ceil(y*R/H);oldest=Math.ceil((y+1)*R/H)-1;}else{newest=oldest=Math.ceil((y+1)*R/H)-1;}
+        let strong=false;for(let r=newest;r<=oldest;r++)if((N-1-r)%2===0)strong=true;
+        const expected=strong?[255,0,0,255]:[0,0,12,255];if(expected.some((q,k)=>data[y*4+k]!==q))correct=false;
+      }
+      observations.push({N,v,R,actual:Number(c.dataset.visibleRows),correct});
+    }
+    document.querySelector('#display-speed').value=1;document.querySelector('#display-speed').dispatchEvent(new Event('input'));
+    waterfall.parentElement.style.setProperty('flex','none');waterfall.parentElement.style.height='10px';
+    await presentationFrame(75,70);
+    const c=waterfall,H=c.height,data=c.getContext('2d').getImageData(0,0,1,H).data;
+    const greyY=Math.floor((74-70)*H/75),grey=[...data.slice(greyY*4,greyY*4+4)];
+    waterfall.parentElement.style.height='30px';rows=Array.from({length:75},(_,sequence)=>({sequence,first_frame:sequence*2400,end_frame:(sequence+1)*2400,levels:new Uint8Array(1024)}));rows[71].levels.fill(120);paint();await new Promise(requestAnimationFrame);
+    const b=waterfall.getBoundingClientRect();waterfall.dispatchEvent(new PointerEvent('pointermove',{clientX:b.left+.1,clientY:b.top+1.01*b.height/waterfall.height}));
+    const boundary={native:selectedRow,pixel:[...waterfall.getContext('2d').getImageData(0,1,1,1).data],text:document.querySelector('#bin-readout').textContent};
+    document.querySelector('#display-speed').value=8;document.querySelector('#display-speed').dispatchEvent(new Event('input'));for(let k=0;k<15;k++)waterfall.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown'}));
+    return {observations,grey,boundary,clamped:selectedRow};
+  },s);
+  for(const o of matrix.observations){assert.equal(o.actual,o.R,JSON.stringify(o));assert.ok(o.correct,JSON.stringify(o));}assert.deepEqual(matrix.grey,[96,96,96,255]);assert.equal(matrix.boundary.native,3);assert.deepEqual(matrix.boundary.pixel,[255,0,0,255]);assert.match(matrix.boundary.text,/source 14.2-14.400 s/);assert.match(matrix.boundary.text,/projected source 14.0-14.400 s/);assert.equal(matrix.clamped,9);
+  await p.evaluate(()=>{waterfall.parentElement.style.removeProperty('flex');waterfall.parentElement.style.removeProperty('height');dispatchEvent(new Event('resize'));});
+  for(const viewport of [{width:1100,height:850},{width:360,height:640}]){
+    await p.setViewportSize(viewport);await p.waitForTimeout(40);
+    const geometry=await p.evaluate(()=>{const a=document.querySelector('#spectrum').getBoundingClientRect(),b=waterfall.getBoundingClientRect();return {a:a.height,b:b.height,bitmap:waterfall.height,expected:Math.round(b.height*devicePixelRatio),overflow:document.documentElement.scrollWidth>innerWidth,span:waterfall.dataset.span};});
+    assert.ok(Math.abs(geometry.b-5*geometry.a)<=2,JSON.stringify(geometry));assert.equal(geometry.bitmap,geometry.expected);assert.equal(geometry.overflow,false);assert.equal(geometry.span,'0,3000');
+  }
+  await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});
+// Proves: CL-006-03/04; TC-010-006 live local sensitivity/speed do not change calibrated data, Auto or job.
+test('TC-010-006 live sensitivity and speed sliders preserve original data and reset semantics',{timeout:15000},async t=>{
+  const f=await fixture(t),p=await page(f);
+  assert.equal(await p.locator('#display-sensitivity[type=range]').count(),1);assert.equal(await p.locator('#display-speed[type=range]').count(),1);
+  const observations=await p.evaluate(async()=>{
+    rows=[{sequence:0,first_frame:0,end_frame:2400,levels:new Uint8Array(1024).fill(40)}];displayBlack=-83;displayRange=30;autoBlack=true;estimateFrozen=true;
+    const original=[...rows[0].levels],curve=()=>[...document.querySelector('#spectrum').getContext('2d').getImageData(0,0,document.querySelector('#spectrum').width,document.querySelector('#spectrum').height).data];
+    paint();await new Promise(requestAnimationFrame);const beforeCurve=curve();
+    const results=[];
+    for(const g of [-30,0,10,30]){const input=document.querySelector('#display-sensitivity');input.value=g;input.dispatchEvent(new Event('input'));await new Promise(requestAnimationFrame);results.push({g,E:effectiveBlack(),auto:autoBlack,frozen:estimateFrozen,label:document.querySelector('#sensitivity-value').textContent,unchanged:rows[0].levels.every((q,k)=>q===original[k]),curve:curve().every((q,k)=>q===beforeCurve[k])});}
+    document.querySelector('#display-speed').value=8;document.querySelector('#display-speed').dispatchEvent(new Event('input'));resetLevels();
+    return {results,persist:[sensitivity,speed],reset:[displayBlack,displayRange,autoBlack],speedLabel:document.querySelector('#speed-value').textContent};
+  });
+  for(const o of observations.results){assert.equal(o.E,Math.max(-120,Math.min(-30,-83-o.g)));assert.ok(o.auto&&o.frozen&&o.unchanged&&o.curve);assert.match(o.label,/dB/);}
+  assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-120,30,true]);assert.equal(observations.speedLabel,'8x');
+  await p.selectOption('#display-profile','thin');assert.equal(await p.inputValue('#display-sensitivity'),'30');assert.equal(await p.inputValue('#display-speed'),'8');
+  await p.locator('#display-sensitivity').focus();await p.keyboard.press('Home');assert.equal(await p.inputValue('#display-sensitivity'),'-30');await p.keyboard.press('End');assert.equal(await p.inputValue('#display-sensitivity'),'30');
 });
