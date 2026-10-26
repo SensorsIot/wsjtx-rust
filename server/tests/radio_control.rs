@@ -240,6 +240,87 @@ fn service(actions: Vec<Action>) -> (Executor<Fake>, Arc<Mutex<Script>>) {
     (executor, state)
 }
 
+// Proves: CL-008-06; TC-009-001. A workflow retains one lease and truthfully reports radio intervention.
+#[test]
+fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
+    let operation = Operation::ReceiveSetup {
+        frequency_hz: 14_074_000,
+        mode: Sideband::Usb,
+        filter: 2,
+        data: true,
+        data_filter: 2,
+    };
+    let replies = [ACK, MODE, ACK, DATA, ACK, FREQUENCY, MODE, DATA, FREQUENCY];
+    let (executor, state) = service(
+        replies
+            .into_iter()
+            .map(|v| Action::Bytes(v.to_vec()))
+            .collect(),
+    );
+    let observed = executor.execute(req(operation.clone())).unwrap();
+    assert_eq!(observed.frequency_hz, Some(14_074_000));
+    let bodies: Vec<Vec<u8>> = state
+        .lock()
+        .unwrap()
+        .writes
+        .iter()
+        .skip(1)
+        .map(|v| v[4..v.len() - 1].to_vec())
+        .collect();
+    assert_eq!(
+        bodies,
+        vec![
+            vec![6, 1, 2],
+            vec![4],
+            vec![0x1a, 6, 1, 2],
+            vec![0x1a, 6],
+            vec![5, 0, 0x40, 7, 0x14, 0],
+            vec![3],
+            vec![4],
+            vec![0x1a, 6],
+            vec![3]
+        ]
+    );
+    let mut changed = FREQUENCY.to_vec();
+    changed[5] = 1; // Manual intervention by one Hz before final verification.
+    let mut actions: Vec<_> = replies[..8]
+        .iter()
+        .map(|v| Action::Bytes(v.to_vec()))
+        .collect();
+    actions.push(Action::Bytes(changed));
+    let (executor, state) = service(actions);
+    assert_eq!(
+        executor.execute(req(operation)),
+        Err(Error::ReadbackMismatch)
+    );
+    assert_eq!(
+        executor.snapshot().unwrap().observation.frequency_hz,
+        Some(14_074_001)
+    );
+    assert_eq!(state.lock().unwrap().writes.len(), 10); // No rollback or retry.
+    let (executor, state) = service(vec![Action::Bytes(vec![
+        0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd,
+    ])]);
+    assert_eq!(
+        executor.execute(req(Operation::SetMode {
+            mode: Sideband::Usb,
+            filter: 2
+        })),
+        Err(Error::Rejected)
+    );
+    assert_eq!(state.lock().unwrap().writes.len(), 2);
+    let (executor, _) = service(vec![
+        Action::Bytes(ACK.to_vec()),
+        Action::Bytes(vec![0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd]),
+    ]);
+    assert_eq!(
+        executor.execute(req(Operation::SetFrequency {
+            frequency_hz: 14_074_000
+        })),
+        Err(Error::Indeterminate)
+    );
+}
+
 // Proves: CL-008-01, CL-008-06; TC-009-001.
 #[test]
 fn configuration_and_catalogue_cannot_admit_raw_or_transmit_operations() {

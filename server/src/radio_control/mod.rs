@@ -3,6 +3,8 @@ pub mod actor;
 pub mod catalogue;
 pub mod codec;
 pub mod executor;
+#[cfg(windows)]
+pub mod windows;
 
 use serde::{Deserialize, Serialize};
 use std::{
