@@ -1,4 +1,4 @@
-// Canonical profile contract SHA256: 0484a394c9f223026a301180f32d2d69a93bc391988ca3168cc2a3b1d2b1beca
+// Canonical profile contract SHA256: ca3fe096176094632b1920222cef19501df378d542f504ff4a265fc79148c496
 package WstxProfiles {
     private import ScalarValues::*;
 
@@ -358,12 +358,31 @@ package WstxProfiles {
         in runtime : RuntimeInputs;
         out cookieName : String;
     }
+    calc def StatusReady {
+        in currentOpen : Boolean;
+        in correlatedValidStatus : Boolean;
+        in initializedOnThisSocket : Boolean;
+        in validatedProfile : Boolean;
+        return ready : Boolean = currentOpen and correlatedValidStatus and
+            (initializedOnThisSocket or validatedProfile);
+    }
+    attribute statusProfileGetsInFlightMax : Integer = 1;
+    attribute statusProfileFollowupsMax : Integer = 1;
     action def PresentAndEditProfile {
         doc /* Existing browser on embedded profile-mode flag, never error-based mode
              guessing. One real window per endpoint; operator opens readiness origin.
              Display full UUID/name/effective endpoint/boot UUID/revision with legacy
              radio/link/version; title contains display name and port. Before Connected
-             require status snapshot AND successful authenticated GET /profile.
+             require correlated status snapshot AND successful validated authenticated GET
+             /profile on EACH new socket, before station-ready or optional display.
+             After every await captured socket must remain current and OPEN before
+             applying HTTP results. Established same-socket correlated status updates
+             version/radio/Connected/updated and enables Refresh immediately, independent
+             of settings HTTP. Still refresh saved settings asynchronously: at most one
+             status-triggered GET in flight and one pending follow-up per socket.
+             A repeated Refresh eventually fetches newest settings; no mutation replay.
+             Failed background GET visibly fails and marks socket stale. Old/disconnected
+             results cannot restore Connected or mutate newer snapshots/forms.
              GET body exactly ProfileRepresentation, no-store JSON <=8192 bytes.
              GET absent Origin is valid; supplied wrong Origin 403, no CORS permission.
              Form edits whole Settings only, expected revision and selected profile_id.
@@ -572,6 +591,21 @@ package WstxProfiles {
                  Oracle: original cookie/error/identity table and independent inputs;
                  trusted same-host processes only, not hostile-host isolation proof. */
         }
+        verification statusReadiness {
+            subject operation : PresentAndEditProfile;
+            objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-006-04'; }
+            doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
+                 Established socket: hold GET/profile; actual correlated WS response and
+                 changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
+                 Refresh: one in-flight GET plus one follow-up gets independently saved
+                 newer revision and retains dirty input. Fresh socket: held initial GET
+                 withholds Connected/station-ready/optional display until validated.
+                 Close old socket with GET held, establish replacement, release old:
+                 no reconnection or newer snapshot/form overwrite. Initial/background
+                 GET failure visibly fails/stales, never successful configuration.
+                 Oracle: original Markdown6.2/12.5, real WS and prepared revisions. */
+        }
+        dependency identity005 from statusReadiness to WstxRequirements::'TC-022-005';
         dependency identity001 from variableServers to WstxRequirements::'TC-022-001';
         dependency identity002 from persistence to WstxRequirements::'TC-022-002';
         dependency identity003 from lifecycleIsolation to WstxRequirements::'TC-022-003';

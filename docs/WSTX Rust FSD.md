@@ -1245,6 +1245,22 @@ connection-local meaning and are not profile identities. Verify 12.1's body
 and per-process rate limits independently of other profiles. Same-host cookie transport
 is explicitly observed; it is not proof against a hostile service on that hostname.
 
+#### TC-022-005 ? Status readiness independent of settings transport
+
+Proves CL-005-02/03 and CL-006-04. Level 2, automated Windows real Chromium/server
+fixture in tests/profiles.test.cjs, using the common four-process profile fixture.
+On an established socket hold GET /profile behind a controlled barrier, click Refresh,
+observe its actual correlated WebSocket status and require changed visible updated plus
+enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
+one GET is in flight and one follow-up eventually obtains an independently saved newer
+revision without overwriting dirty input. On a fresh socket hold initial GET: Connected,
+station-ready and optional display remain withheld until validated success. Close that
+socket with HTTP held, establish a replacement, then release the old response: it cannot
+restore Connected, replace the newer profile snapshot or overwrite its form. Fail the
+initial/background GET separately: visible failure/stale, no false configuration success.
+Oracles are these Markdown timing/identity rules, real WS traffic and independently
+prepared profile revisions; barrier release happens only after the status assertion.
+
 ### 6.3 Planned tests for direct FlexRadio integration
 
 **Status:** planned definitions for FR-023, not implemented tests or hardware results.
@@ -2309,8 +2325,18 @@ HTTP errors are `{ "error": { "code": "...", "field": null } }`; only
 paths, secrets or internal exceptions. A transport-level body rejection may precede
 application validation and still returns 413. Other endpoint methods return 405 without
 mutation. No partial update, automatic merge, implicit retry or command replay exists.
-The browser MUST obtain both the existing status snapshot and a successful profile GET
-before first displaying Connected for a profile-mode page. A failed profile load/save
+On each new WebSocket, the browser MUST obtain both its correlated status snapshot
+and a successful validated profile GET before displaying Connected, station-ready or
+starting optional recording display. A late HTTP completion may apply only while its
+captured socket remains the current OPEN socket, including after each asynchronous step.
+On an already initialized same socket, a valid correlated status MUST immediately update
+version/radio/Connected/updated and enable Refresh independently of pending profile HTTP.
+Each Refresh still requests authoritative saved settings asynchronously. Status-triggered
+profile GETs are coalesced per socket: at most one in flight and one pending follow-up;
+repeated Refresh during a held GET must eventually fetch the latest saved settings.
+A failed background load visibly reports failure and marks that socket stale; it never
+reports a successful settings update. Old/disconnected socket results cannot change
+snapshots/forms or restore Connected. Manual settings reload/save retain their semantics. A failed profile load/save
 is visibly identified and never presented as a successful configuration update. After
 reconnect or Refresh it reloads profile settings; edits in progress are retained until
 explicit reload or successful save, and a 409 prompts reload before another save.
