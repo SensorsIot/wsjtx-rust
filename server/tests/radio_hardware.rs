@@ -45,6 +45,20 @@ fn standalone_query_authority_preserves_truthful_keying_evidence() {
 #[test]
 #[ignore = "Coordinator explicitly selects operator-authorized receive-only hardware test"]
 fn authorized_ic7300_frequency_query_evidence() {
+    radio_query_evidence(&[("read_frequency", Operation::ReadFrequency)]);
+}
+#[test]
+#[ignore = "Explicit coordinator-selected sequential receive-only hardware checks"]
+fn authorized_ic7300_readonly_inventory_evidence() {
+    radio_query_evidence(&[
+        ("read_frequency", Operation::ReadFrequency),
+        ("read_mode", Operation::ReadMode),
+        ("read_data", Operation::ReadData),
+        ("read_rx_tx", Operation::ReadRxTx),
+        ("read_split", Operation::ReadSplit),
+    ]);
+}
+fn radio_query_evidence(operations: &[(&str, Operation)]) {
     let inhibit = std::env::var("WSTX_RX_ONLY_INHIBIT_VERIFIED").ok();
     let operator = std::env::var("WSTX_OPERATOR_AUTHORIZED_TRANSCEIVER").ok();
     let (authority_basis, keying_configuration) =
@@ -53,7 +67,7 @@ fn authorized_ic7300_frequency_query_evidence() {
         );
     println!(
         "{}",
-        serde_json::json!({"probe":"ic7300_receive_only_frequency","authority":authority_basis,"keying_configuration":keying_configuration,"planned_operations":"frequency query only; no frequency/mode/PTT setter or audio output"})
+        serde_json::json!({"probe":"ic7300_receive_only_frequency","authority":authority_basis,"keying_configuration":keying_configuration,"planned_operations":"typed read queries only; no frequency/mode/DATA/PTT setter or audio output"})
     );
     let selected = resolve_endpoint(3).expect("exact COM3 discovery");
     assert_eq!(
@@ -92,15 +106,36 @@ fn authorized_ic7300_frequency_query_evidence() {
                 _ => return Err(snapshot.last_error.unwrap_or(Error::Timeout)),
             }
         };
-        let observation = actor.execute(Request {
-            authority: ready.authority.clone(),
-            request_id: "frequency-probe".into(),
-            operation: Operation::ReadFrequency,
-            deadline: Instant::now() + Duration::from_secs(2),
-            cancelled: Arc::new(AtomicBool::new(false)),
-        })?;
+        let mut rows = Vec::new();
+        for (name, operation) in operations {
+            println!("CAT_QUERY_START {name}");
+            let measured = actor.execute(Request {
+                authority: ready.authority.clone(),
+                request_id: format!("probe-{name}"),
+                operation: operation.clone(),
+                deadline: Instant::now() + Duration::from_secs(2),
+                cancelled: Arc::new(AtomicBool::new(false)),
+            })?;
+            let value = match operation {
+                Operation::ReadFrequency => {
+                    serde_json::json!({"frequency_hz":measured.frequency_hz})
+                }
+                Operation::ReadMode => {
+                    serde_json::json!({"mode_code":measured.mode.map(|v|format!("{:02X}",v.code)),"filter":measured.mode.map(|v|v.filter)})
+                }
+                Operation::ReadData => {
+                    serde_json::json!({"data":measured.data.map(|v|v.enabled),"data_filter":measured.data.map(|v|v.filter)})
+                }
+                Operation::ReadRxTx => serde_json::json!({"transmitting":measured.transmitting}),
+                Operation::ReadSplit => serde_json::json!({"split":measured.split}),
+                _ => return Err(Error::InvalidRequest),
+            };
+            let row = serde_json::json!({"operation":name,"measured":value});
+            println!("{row}");
+            rows.push(row);
+        }
         Ok(
-            serde_json::json!({"probe":"ic7300_receive_only_frequency","authority":authority_basis,"keying_configuration":keying_configuration,"device_id":ready.authority.resource_id,"effective_baud":ready.effective_baud,"frequency_hz":observation.frequency_hz,"requested_operation":"read_frequency","setters_sent":false,"transmit_requested":false}),
+            serde_json::json!({"probe":"ic7300_receive_only_queries","authority":authority_basis,"keying_configuration":keying_configuration,"device_id":ready.authority.resource_id,"effective_baud":ready.effective_baud,"queries":rows,"setters_sent":false,"transmit_requested":false}),
         )
     })();
     actor.request_close();
@@ -117,9 +152,8 @@ fn authorized_ic7300_frequency_query_evidence() {
         actor.close_complete(),
         "native serial ownership release not acknowledged"
     );
-    assert!(
-        result.unwrap()["frequency_hz"]
-            .as_u64()
-            .is_some_and(|v| v > 0)
+    assert_eq!(
+        result.unwrap()["queries"].as_array().unwrap().len(),
+        operations.len()
     );
 }
