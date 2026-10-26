@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! The single CAT I/O owner. An admitted operation holds one lease; there is no backlog.
 use super::{
     Authority, Configuration, Error, Observation, Request, Result, Snapshot, State,

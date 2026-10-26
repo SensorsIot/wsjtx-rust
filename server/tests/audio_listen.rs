@@ -1,10 +1,7 @@
 #![cfg(windows)]
 #![deny(unsafe_code)]
-// The imported native capture module is the previously reviewed Windows FFI boundary.
-#[allow(unsafe_code)]
 #[path = "../src/audio.rs"]
 pub mod audio;
-#[forbid(unsafe_code)]
 #[path = "../src/source.rs"]
 pub mod source;
 

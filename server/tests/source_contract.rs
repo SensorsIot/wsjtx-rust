@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #[path = "../src/source.rs"]
 pub mod source;
 

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use super::{Configuration, DataValue, Error, ModeValue, Operation, Result, Sideband};
 
 pub const MAX_FRAME: usize = 32;

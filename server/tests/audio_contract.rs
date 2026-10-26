@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 // Integration imports exercise the production module and canonical source contract directly.
 #[path = "../src/audio.rs"]
 pub mod audio;

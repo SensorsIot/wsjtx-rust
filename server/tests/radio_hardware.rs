@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![cfg(windows)]
 #[path = "../src/radio_control/mod.rs"]
 pub mod radio_control;

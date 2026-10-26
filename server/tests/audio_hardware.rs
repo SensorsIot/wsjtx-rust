@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![cfg(windows)]
 #[path = "../src/audio.rs"]
 pub mod audio;

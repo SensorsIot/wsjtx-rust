@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Bounded live receive input. Identity and DSP scheduling belong to the receive owner.
 use crate::source::{
     CANONICAL_HZ, EpochLatch, LIVE_BLOCK_FRAMES, MAX_COUNTER, SampleBlock, SampleSource,
@@ -10,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(windows)]
 #[path = "audio/windows.rs"]
+#[allow(unsafe_code)]
 mod windows;
 #[cfg(windows)]
 pub use windows::{AudioController, CaptureHandle, InputDevice, enumerate_inputs, system_clock};

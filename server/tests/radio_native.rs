@@ -1,7 +1,7 @@
+#![deny(unsafe_code)]
 #![cfg(windows)]
 #[path = "../src/radio_control/mod.rs"]
 pub mod radio_control;
-use ::windows::Win32::System::Pipes::*;
 use radio_control::{
     Error,
     executor::Transport,
@@ -9,14 +9,9 @@ use radio_control::{
 };
 use std::sync::{Arc, atomic::AtomicU64};
 use std::{
-    os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
-};
-use windows::{
-    Win32::{Foundation::*, Storage::FileSystem::*},
-    core::{HRESULT, PCWSTR},
 };
 static NEXT: AtomicU64 = AtomicU64::new(1);
 #[test]
@@ -98,56 +93,73 @@ fn read_only_selected_endpoint_discovery() {
         )
     }
 }
-fn pair() -> (SerialTransport, SerialTransport) {
-    let name: Vec<u16> = format!(
-        "\\\\.\\pipe\\wstx-cat-{}-{}\0",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    )
-    .encode_utf16()
-    .collect();
-    // SAFETY: unique local-only named pipe, no shared memory or external radio endpoints.
-    let server = unsafe {
-        CreateNamedPipeW(
-            PCWSTR(name.as_ptr()),
-            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_REJECT_REMOTE_CLIENTS,
-            1,
-            256,
-            256,
-            0,
-            None,
-        )
+#[allow(unsafe_code)]
+mod windows_fixture {
+    use super::{NEXT, SerialTransport};
+    use ::windows::{
+        Win32::{Foundation::*, Storage::FileSystem::*, System::Pipes::*},
+        core::{HRESULT, PCWSTR},
     };
-    assert!(!server.is_invalid());
-    // SAFETY: successful CreateNamedPipe returned sole ownership to this fixture.
-    let server = unsafe { OwnedHandle::from_raw_handle(server.0) };
-    // SAFETY: unique pipe created above; asynchronous owned client handle.
-    let client = unsafe {
-        CreateFileW(
-            PCWSTR(name.as_ptr()),
-            GENERIC_READ.0 | GENERIC_WRITE.0,
-            FILE_SHARE_MODE(0),
-            None,
-            OPEN_EXISTING,
-            FILE_FLAG_OVERLAPPED,
-            None,
+    use std::{
+        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        sync::atomic::Ordering,
+    };
+
+    pub fn pair() -> ::windows::core::Result<(SerialTransport, SerialTransport)> {
+        let name: Vec<u16> = format!(
+            "\\\\.\\pipe\\wstx-cat-{}-{}\0",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         )
+        .encode_utf16()
+        .collect();
+        // SAFETY: unique local-only named pipe, no shared memory or external radio endpoints.
+        let server = unsafe {
+            CreateNamedPipeW(
+                PCWSTR(name.as_ptr()),
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_REJECT_REMOTE_CLIENTS,
+                1,
+                256,
+                256,
+                0,
+                None,
+            )
+        };
+        if server.is_invalid() {
+            return Err(::windows::core::Error::from_thread());
+        }
+        // SAFETY: successful CreateNamedPipe returned sole ownership to this fixture.
+        let server = unsafe { OwnedHandle::from_raw_handle(server.0) };
+        // SAFETY: unique pipe created above; asynchronous owned client handle.
+        let client = unsafe {
+            CreateFileW(
+                PCWSTR(name.as_ptr()),
+                GENERIC_READ.0 | GENERIC_WRITE.0,
+                FILE_SHARE_MODE(0),
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_OVERLAPPED,
+                None,
+            )
+        }?;
+        // SAFETY: CreateFile returned this fixture's sole client handle ownership.
+        let client = unsafe { OwnedHandle::from_raw_handle(client.0) };
+        // The client is already connected; do not leave a pending ConnectNamedPipe operation.
+        // SAFETY: server handle remains owned and live, no pending connect is requested.
+        if let Err(error) = unsafe { ConnectNamedPipe(HANDLE(server.as_raw_handle()), None) }
+            && error.code() != HRESULT::from_win32(ERROR_PIPE_CONNECTED.0)
+        {
+            return Err(error);
+        }
+        Ok((
+            SerialTransport::from_owned_test_handle(server),
+            SerialTransport::from_owned_test_handle(client),
+        ))
     }
-    .unwrap();
-    // The client is already connected; do not leave a pending ConnectNamedPipe operation.
-    // SAFETY: server handle remains owned and live, no pending connect is requested.
-    let connected = unsafe { ConnectNamedPipe(HANDLE(server.as_raw_handle()), None) };
-    assert!(
-        connected.is_ok()
-            || connected.unwrap_err().code() == HRESULT::from_win32(ERROR_PIPE_CONNECTED.0)
-    );
-    // SAFETY: CreateFile returned this fixture's sole client handle ownership.
-    let client = unsafe { OwnedHandle::from_raw_handle(client.0) };
-    (
-        SerialTransport::from_owned_test_handle(server),
-        SerialTransport::from_owned_test_handle(client),
-    )
+}
+fn pair() -> (SerialTransport, SerialTransport) {
+    windows_fixture::pair().expect("unique owned local-only overlapped pipe fixture opens")
 }
 #[test]
 fn native_overlapped_pipe_io_uses_actual_owned_buffers_and_close() {

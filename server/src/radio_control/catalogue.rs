@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use super::{Error, Operation, Result};
 use serde::Deserialize;
 use std::collections::HashSet;

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use super::{
     Authority, Baud, Configuration, DataValue, Error, Observation, Operation, Request, Result,
     Snapshot, State,

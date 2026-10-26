@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Canonical receive values. The receive manager, not a device adapter, owns identities.
 use serde::Serialize;
 use std::sync::Arc;
