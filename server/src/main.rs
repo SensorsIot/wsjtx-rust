@@ -512,7 +512,7 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         .max_message_size(1024)
         .max_frame_size(1024)
         .write_buffer_size(0)
-        .max_write_buffer_size(2048)
+        .max_write_buffer_size(4096)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
             connection(socket, app.profile.map(|p| p.recording.clone())).await
@@ -575,7 +575,7 @@ async fn send_control(socket: &mut WebSocket, message: Message, pending: Option<
 
 // Optional writes never wait in the connection loop. Readiness flushes prior buffered
 // output. Reserve a full 1024-byte control payload plus both WebSocket headers
-// inside the existing 2048-byte buffer (14 bytes/header is conservative for server frames).
+// inside the 4096-byte buffer (14 bytes/header is conservative for server frames).
 fn optional_write<S: futures_sink::Sink<Message> + Unpin>(
     socket: &mut S,
     message: Message,
@@ -584,7 +584,7 @@ fn optional_write<S: futures_sink::Sink<Message> + Unpin>(
         pin::Pin,
         task::{Context, Poll, Waker},
     };
-    if !matches!(&message,Message::Text(text) if text.len()<=2048-1024-2*14) {
+    if !matches!(&message,Message::Text(text) if text.len()<=2048 && text.len()+1024+2*14<=4096) {
         return Ok(None);
     }
     let mut cx = Context::from_waker(Waker::noop());
@@ -623,7 +623,9 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
     let mut last_pong = Instant::now();
     let mut display = interval(Duration::from_millis(100));
     display.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut thin = false;
+    let mut detail_tick = interval(Duration::from_millis(200));
+    detail_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut display_profile = "off";
     let mut seen = None;
     let mut last_display = Instant::now() - Duration::from_secs(1);
     let mut optional_since: Option<Instant> = None;
@@ -643,15 +645,17 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                     if value["data"]["code"] == "unknown_command" {
                         let request: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
                         let command = request["type"].as_str().unwrap_or("");
-                        if matches!(command,"recording.get"|"spectrum.thin"|"spectrum.off") {
+                        if matches!(command,"recording.get"|"spectrum.thin"|"spectrum.detail"|"spectrum.off") {
                             if let Some(r) = &recording {
                                 if command == "recording.get" {
                                     let s = r.snapshot();
                                     value = json!({"v":1,"type":"recording.state","id":request["id"],"data":{"generation":s["generation"],"source_id":s["recording"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"]}});
                                 } else {
-                                    thin = command == "spectrum.thin";
-                                    seen = r.state.lock().unwrap().frame.as_ref().map(|f| (f["data"]["job_id"].clone(),f["data"]["sequence"].clone()));
-                                    value = json!({"v":1,"type":"spectrum.subscription","id":request["id"],"data":{"profile":if thin {"thin"} else {"off"}}});
+                                    display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
+                                    let state=r.state.lock().unwrap();
+                                    let frame=if display_profile=="detail" {&state.detail_frame} else {&state.frame};
+                                    seen=frame.as_ref().map(|f|(f["data"]["job_id"].clone(),f["data"]["sequence"].clone()));
+                                    value = json!({"v":1,"type":"spectrum.subscription","id":request["id"],"data":{"profile":display_profile}});
                                 }
                             } else { value["data"]["code"] = json!("unavailable"); }
                         }
@@ -664,17 +668,17 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                 Some(Ok(Message::Ping(_))) => {},
                 _ => break,
             },
-            _ = display.tick(), if thin => {
+            _ = async { if display_profile=="detail" {detail_tick.tick().await} else {display.tick().await} }, if display_profile != "off" => {
                 if optional_since.is_some() {
                     match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
-                if last_display.elapsed() < Duration::from_secs(1) { continue; }
-                let frame = recording.as_ref().and_then(|r| r.state.lock().unwrap().frame.clone());
+                if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(1) {continue;}
+                let frame = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {s.detail_frame.clone()} else {s.frame.clone()}});
                 if let Some(frame) = frame {
                     let identity = (frame["data"]["job_id"].clone(),frame["data"]["sequence"].clone());
                     if seen.as_ref() != Some(&identity) {
                         let text=frame.to_string();
-                        if text.len()>1024 { continue; }
+                        if text.len()>if display_profile=="detail" {2048} else {1024} { continue; }
                         match optional_write(&mut socket,Message::Text(text.into())) {
                             Ok(None)=>{},
                             Ok(Some(flushed))=>{seen=Some(identity);last_display=Instant::now();if !flushed {optional_since=Some(Instant::now());}},

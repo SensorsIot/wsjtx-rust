@@ -529,3 +529,109 @@ fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     drop(resources);
     assert!(r.reserve(&r.profile, &r.boot, generation + 1).is_ok());
 }
+// Proves: CL-006-03/04; TC-010-004, independent f64 DFT, native bins and power/EOS rows.
+#[test]
+fn detailed_native_bins_and_power_rows_follow_independent_dft() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    fn direct(x: &[f32], k: usize) -> f64 {
+        let (mut re, mut im) = (0.0, 0.0);
+        for (n, &sample) in x.iter().enumerate() {
+            let w = (1.0 - (std::f64::consts::TAU * n as f64 / 4096.0).cos()) / 2.0;
+            let a = std::f64::consts::TAU * k as f64 * n as f64 / 4096.0;
+            re += f64::from(sample) * w * a.cos();
+            im -= f64::from(sample) * w * a.sin();
+        }
+        re.hypot(im) * if k == 0 { 1.0 } else { 2.0 } / 2048.0
+    }
+    for scalar in [false, true] {
+        let mut fft = spectrum::Spectrum::detailed(scalar);
+        for frequencies in [
+            &[750.0][..],
+            &[752.9296875][..],
+            &[750.0, 752.9296875][..],
+            &[750.0, 756.25][..],
+        ] {
+            let x: Vec<f32> = (0..4096)
+                .map(|n| {
+                    let v: f64 = frequencies
+                        .iter()
+                        .map(|f| 0.25 * (std::f64::consts::TAU * f * n as f64 / 12000.0).sin())
+                        .sum();
+                    (v * 32768.0).round() as f32 / 32768.0
+                })
+                .collect();
+            let observed = fft.native_amplitudes(&x).unwrap();
+            assert_eq!(observed.len(), 1024);
+            for (k, &observed_amplitude) in observed.iter().enumerate() {
+                let expected = direct(&x, k);
+                assert!(
+                    (f64::from(observed_amplitude) - expected).abs() < 2e-6,
+                    "scalar={scalar},bin={k}"
+                );
+                if expected > 1e-4 {
+                    assert!(
+                        (20.0 * (f64::from(observed_amplitude) / expected).log10()).abs() < 0.05
+                    );
+                }
+            }
+        }
+        assert!(fft.native_amplitudes(&vec![0.0; 4097]).is_err());
+        assert!(fft.native_amplitudes(&[f32::NAN]).is_err());
+    }
+    for length in [1, 2399, 2400, 2401, 2879, 2880, 2881, 6000] {
+        let f = Fixture::new();
+        let r = f.recording();
+        let pcm: Vec<i16> = (0..length)
+            .map(|n| {
+                if n < 1920 {
+                    0
+                } else {
+                    (12000.0 * (std::f64::consts::TAU * 756.25 * n as f64 / 12000.0).sin()).round()
+                        as i16
+                }
+            })
+            .collect();
+        let id = import(&r, &wav(&pcm)).unwrap();
+        let generation = r.state.lock().unwrap().generation;
+        r.replay(&r.profile, &r.boot, generation, &id).unwrap();
+        let began = Instant::now();
+        while r.snapshot()["job"]["state"] == "running" {
+            assert!(began.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(r.snapshot()["job"]["state"], "completed");
+        let frame = r.state.lock().unwrap().detail_frame.clone().unwrap();
+        assert_eq!(frame["type"], "spectrum.detail.frame");
+        assert!(frame.to_string().len() <= 2048);
+        let first = ((length - 1) / 2400) * 2400;
+        assert_eq!(frame["data"]["first_frame"], first);
+        assert_eq!(frame["data"]["end_frame"], length);
+        let encoded = frame["data"]["levels_b64"].as_str().unwrap();
+        assert_eq!(encoded.len(), 1368);
+        let levels = STANDARD.decode(encoded).unwrap();
+        assert_eq!(levels.len(), 1024);
+        let starts: Vec<usize> = (first..length).step_by(480).collect();
+        for k in [0, 1, 255, 256, 257, 258, 1023] {
+            let p = starts
+                .iter()
+                .map(|&start| {
+                    let end = (start + 4096).min(length);
+                    let x: Vec<f32> = pcm[start..end]
+                        .iter()
+                        .map(|&v| f32::from(v) / 32768.0)
+                        .collect();
+                    direct(&x, k).powi(2)
+                })
+                .sum::<f64>()
+                / starts.len() as f64;
+            let expected = (10.0 * p.max(1e-12).log10()).clamp(-120.0, 0.0) + 120.0;
+            assert!(
+                (f64::from(levels[k]) - expected.round()).abs() <= 1.0,
+                "length={length},bin={k}"
+            );
+        }
+        if length == 2401 {
+            assert!(levels.iter().all(|&q| q == 0));
+        }
+    }
+}

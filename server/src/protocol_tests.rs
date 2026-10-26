@@ -27,7 +27,7 @@ fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
         }
         fn start_send(mut self: Pin<&mut Self>, message: Message) -> Result<(), Self::Error> {
             assert_eq!(self.buffered, 0);
-            assert!(message.into_data().len() <= 1024);
+            assert!(message.into_data().len() <= 2048);
             self.buffered = 1;
             self.starts += 1;
             Ok(())
@@ -60,12 +60,12 @@ fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
     assert_eq!(peer.starts, 0);
     peer.ready = true;
     assert_eq!(
-        optional_write(&mut peer, Message::Text("x".repeat(997).into())).unwrap(),
+        optional_write(&mut peer, Message::Text("x".repeat(2049).into())).unwrap(),
         None
     );
     assert_eq!(peer.starts, 0);
     assert_eq!(
-        optional_write(&mut peer, Message::Text("optional".into())).unwrap(),
+        optional_write(&mut peer, Message::Text("x".repeat(2048).into())).unwrap(),
         Some(false)
     );
     assert_eq!(peer.buffered, 1);

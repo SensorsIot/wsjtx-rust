@@ -150,7 +150,7 @@ test('TC-010-003 late recording asset bootstraps an already connected station on
   const f=await fixture(t),p=await f.context.newPage();let release,snapshots=0,subscriptions=0;
   const held=new Promise(r=>release=r);t.after(()=>release());
   p.on('request',r=>{if(new URL(r.url()).pathname==='/recording')snapshots++;});
-  p.on('websocket',ws=>ws.on('framesent',event=>{try{if(JSON.parse(event.payload).type==='spectrum.thin')subscriptions++;}catch{}}));
+  p.on('websocket',ws=>ws.on('framesent',event=>{try{if(JSON.parse(event.payload).type==='spectrum.detail')subscriptions++;}catch{}}));
   await p.route('**/recording.js',async route=>{await held;await route.continue();});
   const navigation=p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:5000});
   assert.equal(snapshots,0,'status/profile is ready while the recording module is still unavailable');release();await navigation;
@@ -266,8 +266,9 @@ test('TC-010-002 optional output is opt-in, bounded, paced and invalidated by ca
 
 // Proves: CL-006-03/04; TC-010-002/003, browser event boundary under loss/late delivery.
 test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obsolete identities',{timeout:15000},async t=>{
-  const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();
+  const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.selectOption('#display-profile','off');await p.evaluate(()=>{document.querySelector('#display-profile').value='thin';});await p.locator('#recording-replay').click();
   await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
+  await p.getByRole('separator').focus();await p.keyboard.press('End');
   const observation=await p.evaluate(async s=>{
     const make=sequence=>({v:1,type:'spectrum.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*12000,end_frame:Math.min((sequence+1)*12000,s.recording.frames),levels:Array(128).fill(20)}});
     const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
@@ -276,9 +277,71 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
     for(let n=0;n<120;n++)if(n!==1)deliver(make(n));
     deliver(make(120));deliver(make(119));
     await new Promise(requestAnimationFrame);
-    const c=document.querySelector('#waterfall'),pixel=[...c.getContext('2d').getImageData(0,Math.floor(c.height/120),1,1).data];
+    const c=document.querySelector('#waterfall'),pixel=[...c.getContext('2d').getImageData(0,(119-1)*Math.max(1,Math.round(2*devicePixelRatio)),1,1).data];
     return {ignored,count:Number(c.dataset.rows),sequences:c.dataset.sequences,pixel,label:c.getAttribute('aria-label')};
   },s);
-  assert.equal(observation.ignored,0);assert.equal(observation.count,120);assert.equal(observation.sequences,Array.from({length:120},(_,n)=>n).join(','));assert.deepEqual(observation.pixel,[104,104,104,255]);assert.match(observation.label,/0 to 120 seconds/);
+  assert.equal(observation.ignored,0);assert.equal(observation.count,120);assert.equal(observation.sequences,Array.from({length:120},(_,n)=>n).join(','));assert.deepEqual(observation.pixel,[96,96,96,255]);assert.match(observation.label,/visible source time/);
   await f.req('/recording/jobs/'+s.job.id,'DELETE');await terminal(f);
+});
+
+// Proves: CL-006-03/04; TC-010-005, real native detail wire and independent pixel/geometry oracle.
+test('TC-010-005 detailed native wire, fixed span, projection, palette and top-entry cells',{timeout:30000},async t=>{
+  const f=await fixture(t);await f.upload(wav(4,.25,756.25));const p=await page(f);
+  assert.equal(await p.inputValue('#display-profile'),'detail');
+  await p.evaluate(()=>{window.testWire=[];addEventListener('station-message',e=>{if(e.detail.message.type==='spectrum.detail.frame')window.testWire.push(e.detail.message);});});
+  await p.locator('#recording-replay').click();await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>1,{timeout:5000});
+  const s=await f.snapshot(),wire=await p.evaluate(()=>window.testWire);assert.ok(wire.length);const m=wire[0];assert.ok(Buffer.byteLength(JSON.stringify(m))<=2048);assert.equal(m.data.levels_b64.length,1368);assert.equal(Buffer.from(m.data.levels_b64,'base64').length,1024);assert.equal(m.data.first_frame,m.data.sequence*2400);
+  await p.selectOption('#display-profile','off');
+  // Keep network Off while selecting the pure browser fixture profile; no fake data reaches the server.
+  await p.evaluate(()=>{document.querySelector('#display-profile').value='detail';rows=[];resetLevels();});
+  for(const width of [1100,360]){
+    await p.setViewportSize({width,height:850});
+    const result=await p.evaluate(async s=>{
+      const values=Array.from({length:1024},(_,k)=>k%2?120:0), bytes=String.fromCharCode(...values);
+      const frame=sequence=>({v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*2400,end_frame:Math.min((sequence+1)*2400,s.recording.frames),levels_b64:btoa(bytes)}});
+      rows=[];displayBlack=-120;displayRange=80;autoBlack=false;
+      const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
+      deliver(frame(0));deliver(frame(2));await new Promise(requestAnimationFrame);
+      const c=document.querySelector('#waterfall'),ctx=c.getContext('2d'),h=Math.max(1,Math.round(2*devicePixelRatio)),pix=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
+      const expected=Array(c.width).fill(0);for(let k=0;k<1024;k++)if(c.width<1024)expected[Math.floor(k*c.width/1024)]=Math.max(expected[Math.floor(k*c.width/1024)],values[k]);else for(let x=Math.floor(k*c.width/1024);x<Math.floor((k+1)*c.width/1024);x++)expected[x]=values[k];
+      const cells=expected.every((q,x)=>JSON.stringify(pix(x,0))===JSON.stringify(q?[255,255,255,255]:[0,0,12,255]));
+      const before=c.dataset.rows;
+      for(const edit of [{levels_b64:'!'.repeat(1368)},{levels_b64:btoa(String.fromCharCode(...Array(1024).fill(121)))},{levels_b64:btoa('x')},{sequence:999},{extra:1},{generation:s.generation-1}]){const m=frame(3);Object.assign(m.data,edit);deliver(m);}
+      await new Promise(requestAnimationFrame);
+      return {cells,gap:pix(0,h),blank:pix(0,h*3),before,after:c.dataset.rows,unmodified:rows.at(-1).levels.every((q,k)=>q===values[k]),overflow:document.documentElement.scrollWidth>innerWidth,axis:document.querySelector('#frequency-ruler').textContent};
+    },s);
+    assert.ok(result.cells);assert.deepEqual(result.gap,[96,96,96,255]);assert.deepEqual(result.blank,[0,0,12,255]);assert.equal(result.before,result.after);assert.ok(result.unmodified);assert.equal(result.overflow,false);assert.match(result.axis,/3000/);assert.match(result.axis,/0/);
+  }
+  await f.req('/recording/jobs/'+s.job.id,'DELETE');
+});
+
+// Proves: CL-006-03; TC-010-005 actual licensed FT8 recording, two real DPRs, local controls and screenshots.
+test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level controls',{timeout:35000},async t=>{
+  const samples=process.env.WSTX_SAMPLE_DIR;assert.ok(samples,'WSTX_SAMPLE_DIR required for real-recording acceptance');
+  const f=await fixture(t);await f.upload(await fs.readFile(path.join(samples,'websdr_test1.wav')));
+  const desktop=await page(f);
+  const context=await browser.newContext({deviceScaleFactor:2});t.after(()=>context.close());
+  const mobile=await page({...f,context},{width:360,height:640});
+  for(const p of [desktop,mobile])assert.equal(await p.inputValue('#display-profile'),'detail');
+  await desktop.locator('#recording-replay').click();
+  for(const p of [desktop,mobile])await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>=45,{timeout:15000});
+  await fs.mkdir('test-results',{recursive:true});
+  await desktop.screenshot({path:'test-results/cr6-crisp-ft8-desktop.png',fullPage:true});
+  await mobile.screenshot({path:'test-results/cr6-crisp-ft8-mobile-dpr2.png',fullPage:true});
+  for(const p of [desktop,mobile]){
+    assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    const before=await p.evaluate(()=>({black:displayBlack,range:displayRange,auto:autoBlack,frozen:estimateFrozen,copy:[...rows.at(-1).levels]}));
+    assert.equal(before.auto,true);assert.equal(before.frozen,true);assert.equal(before.range,30);
+    await p.locator('#display-black').fill('-90');await p.locator('#display-black').dispatchEvent('change');
+    assert.equal(await p.isChecked('#display-auto'),false);
+    await p.locator('#display-range').fill('50');await p.locator('#display-range').dispatchEvent('change');
+    assert.equal(await p.inputValue('#display-range'),'50');
+    await p.evaluate(()=>{const original=rows.at(-1);window.originalLevelCheck=original.levels;estimateFrozen=false;autoBlack=true;displayBlack=-120;estimate({levels:new Uint8Array(1024)});window.silenceWait=!estimateFrozen;estimate({levels:new Uint8Array(1024).fill(40)});});
+    assert.deepEqual(await p.evaluate(()=>[window.silenceWait,displayBlack,estimateFrozen]),[true,-83,true]);
+    await p.locator('#waterfall').focus();await p.keyboard.press('ArrowRight');assert.match(await p.locator('#bin-readout').innerText(),/Native bin 1/);
+    await p.evaluate(()=>{document.body.style.zoom='200%';dispatchEvent(new Event('resize'));});
+    await p.waitForTimeout(40);assert.equal(await p.locator('#waterfall').getAttribute('data-span'),'0,3000');
+    await p.evaluate(()=>{document.body.style.zoom='';dispatchEvent(new Event('resize'));});
+  }
+  const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });

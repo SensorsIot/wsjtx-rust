@@ -1,6 +1,8 @@
 use crate::{profile, spectrum};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::VecDeque;
 use std::{
     fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
@@ -253,6 +255,7 @@ pub struct State {
     pub import: Option<Import>,
     pub job: Option<Job>,
     pub frame: Option<Value>,
+    pub detail_frame: Option<Value>,
 }
 pub struct Recording {
     pub state: Mutex<State>,
@@ -304,6 +307,7 @@ impl Recording {
             import: None,
             job: None,
             frame: None,
+            detail_frame: None,
         };
         let confined = fs::create_dir_all(&dir).is_ok()
             && base
@@ -459,6 +463,7 @@ impl Recording {
         }
         s.generation += 1;
         s.frame = None;
+        s.detail_frame = None;
         Ok(s.generation)
     }
     pub fn reserve(self: &Arc<Self>, profile: &str, boot: &str, generation: u64) -> Result<Value> {
@@ -748,6 +753,8 @@ impl Recording {
                 error: None,
                 cancel: Arc::new(AtomicBool::new(false)),
             };
+            s.frame = None;
+            s.detail_frame = None;
             s.job = Some(job.clone());
         }
         let this = self.clone();
@@ -764,6 +771,7 @@ impl Recording {
         }
         let value = json!({"v":1,"id":id,"generation":j.generation,"state":j.state});
         s.frame = None;
+        s.detail_frame = None;
         Ok(value)
     }
     fn run(&self, job: Job, meta: Metadata) {
@@ -826,46 +834,61 @@ impl Recording {
         {
             return Err("recording_unavailable");
         }
-        let mut fft = spectrum::Spectrum::new(false);
-        let mut window = [0.0; spectrum::SIZE];
-        let mut start = 0;
-        let mut sequence = 0;
+        let mut thin = spectrum::Spectrum::new(false);
+        let mut detail = spectrum::Spectrum::detailed(false);
+        let mut history: VecDeque<f32> = block.samples.iter().copied().collect();
+        let mut history_first = 0u64;
+        let (mut thin_start, mut detail_start) = (0u64, 0u64);
+        let mut thin_peak = [0f32; 128];
+        let mut thin_sequence = 0;
         let began = Instant::now();
-        while start < meta.frames {
-            let mut peak = [0f32; 128];
-            let row_end = ((sequence + 1) * spectrum::RATE).min(meta.frames);
-            while start < row_end {
+        for sequence in 0..meta.frames.div_ceil(2400) {
+            let row_end = ((sequence + 1) * 2400).min(meta.frames);
+            let mut powers = [0f32; 1024];
+            let mut count = 0;
+            while thin_start.min(detail_start) < row_end {
                 if job.cancel.load(Ordering::Acquire) {
                     return Err("cancelled");
                 }
-                for (n, value) in window.iter_mut().enumerate() {
-                    let position = start + n as u64;
-                    if position >= meta.frames {
-                        *value = 0.0;
-                        continue;
-                    }
-                    // The next FFT window overlaps the current one; retain only its 2048-sample working history.
-                    if position < block.first_frame {
-                        continue;
-                    }
-                    while position >= block.first_frame + block.samples.len() as u64 {
-                        let next = input.next()?.ok_or("recording_unavailable")?;
-                        #[cfg(test)]
-                        self.observe_blocks(&[&block, &next]);
-                        block = next;
-                    }
-                    *value = block.samples[(position - block.first_frame) as usize];
+                let start = thin_start.min(detail_start);
+                while history_first < start && !history.is_empty() {
+                    history.pop_front();
+                    history_first += 1;
                 }
-                let amplitudes = fft.amplitudes(&window)?;
-                for (p, a) in peak.iter_mut().zip(amplitudes) {
-                    *p = p.max(a);
+                let needed =
+                    (start + if start == detail_start { 4096 } else { 2048 }).min(meta.frames);
+                while history_first + (history.len() as u64) < needed {
+                    let next = input.next()?.ok_or("recording_unavailable")?;
+                    #[cfg(test)]
+                    self.observe_blocks(&[&block, &next]);
+                    if next.first_frame != history_first + history.len() as u64 {
+                        return Err("recording_unavailable");
+                    }
+                    block = next;
+                    if history.len() + block.samples.len() > 8192 {
+                        return Err("recording_unavailable");
+                    }
+                    history.extend(block.samples.iter().copied());
                 }
-                // Move overlapping samples before reading forward into the next block.
-                window.copy_within(spectrum::HOP as usize.., 0);
-                start += spectrum::HOP;
+                if start == thin_start {
+                    let x: Vec<f32> = history.iter().take(2048).copied().collect();
+                    for (peak, a) in thin_peak.iter_mut().zip(thin.amplitudes(&x)?) {
+                        *peak = peak.max(a);
+                    }
+                    thin_start += spectrum::HOP;
+                }
+                if start == detail_start {
+                    let x: Vec<f32> = history.iter().take(4096).copied().collect();
+                    for (power, a) in powers.iter_mut().zip(detail.native_amplitudes(&x)?) {
+                        *power += a * a;
+                    }
+                    count += 1;
+                    detail_start += 480;
+                }
             }
-            let due = Duration::from_secs_f64(row_end as f64 / 12000.0);
+            let due = Duration::from_secs_f64(row_end as f64 / spectrum::RATE as f64);
             loop {
+                #[cfg(test)]
                 let elapsed = began.elapsed();
                 #[cfg(test)]
                 {
@@ -882,7 +905,7 @@ impl Recording {
                         std::thread::sleep(due.saturating_sub(elapsed) + Duration::from_millis(1));
                     }
                 }
-                let remaining = due.saturating_sub(elapsed);
+                let remaining = due.saturating_sub(began.elapsed());
                 if remaining.is_zero() {
                     break;
                 }
@@ -891,7 +914,10 @@ impl Recording {
                 }
                 std::thread::sleep(remaining.min(Duration::from_millis(20)));
             }
-            let levels: Vec<u8> = peak.into_iter().map(spectrum::quantize).collect();
+            let levels: Vec<u8> = powers
+                .into_iter()
+                .map(|p| spectrum::quantize((p / count as f32).sqrt()))
+                .collect();
             let mut s = self.state.lock().unwrap();
             if job.cancel.load(Ordering::Acquire) {
                 return Err("cancelled");
@@ -900,11 +926,18 @@ impl Recording {
                 j.id == job.id && j.generation == job.generation && j.state == "running"
             }) {
                 s.job.as_mut().unwrap().processed_frames = row_end;
-                s.frame = Some(
-                    json!({"v":1,"type":"spectrum.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":sequence,"first_frame":sequence*12000,"end_frame":row_end,"levels":levels}}),
+                s.detail_frame = Some(
+                    json!({"v":1,"type":"spectrum.detail.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":sequence,"first_frame":sequence*2400,"end_frame":row_end,"levels_b64":STANDARD.encode(levels)}}),
                 );
+                if row_end.is_multiple_of(12000) || row_end == meta.frames {
+                    let levels: Vec<u8> = thin_peak.into_iter().map(spectrum::quantize).collect();
+                    s.frame = Some(
+                        json!({"v":1,"type":"spectrum.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":thin_sequence,"first_frame":thin_sequence*12000,"end_frame":row_end,"levels":levels}}),
+                    );
+                    thin_peak.fill(0.0);
+                    thin_sequence += 1;
+                }
             }
-            sequence += 1;
         }
         Ok(())
     }
