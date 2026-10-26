@@ -455,7 +455,7 @@ async fn refine_known(
             if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
                 continue;
             }
-            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 4);
+            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
             if score > best.score
                 || score == best.score
                     && (frequency < best.frequency
@@ -488,7 +488,7 @@ async fn refine_known(
             if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
                 continue;
             }
-            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 4);
+            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
             if score > best.score
                 || score == best.score
                     && (frequency < best.frequency
@@ -515,7 +515,7 @@ async fn refine_known(
             return Err(DecodeError::Cancelled);
         }
         let frequency = fine.frequency;
-        let score = coherent(samples, start as usize, &wave, &ranges, frequency, 4);
+        let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
         if score > best.score
             || score == best.score
                 && (frequency < best.frequency
