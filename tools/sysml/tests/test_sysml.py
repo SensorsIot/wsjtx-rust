@@ -99,6 +99,40 @@ class ProjectionTests(unittest.TestCase):
 
 
 class ValidatorTests(unittest.TestCase):
+    def test_actual_pilot_rejects_files_that_stitch_invalid_syntax(self):
+        cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
+        with tempfile.TemporaryDirectory() as directory:
+            first, second = (Path(directory) / name for name in ("A.sysml", "B.sysml"))
+            for opening, closing in (("package A { /*\n", "*/ }\n"), ("package A {\n", "}\n")):
+                first.write_text(opening, encoding="utf-8")
+                second.write_text(closing, encoding="utf-8")
+                for models in ([first, second], [second, first]):
+                    with self.subTest(opening=opening, order=[model.name for model in models]):
+                        result = tool.validate(models, cache)
+                        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                        self.assertIn(f"{first}:", result.stdout)
+                        self.assertIn(f"{second}:", result.stdout)
+                        self.assertNotIn("validation passed", result.stdout)
+
+    # Harness #15: file order cannot hide a valid reference or its real diagnostic.
+    def test_actual_pilot_resolves_complete_graph_and_keeps_file_diagnostics(self):
+        cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
+        with tempfile.TemporaryDirectory() as directory:
+            consumer = Path(directory) / "AConsumer.sysml"
+            provider = Path(directory) / "ZProvider.sysml"
+            consumer.write_bytes(b"\xef\xbb\xbfpackage Consumer {\r\n    item def Derived :> Provider::Base;\r\n}\r\n")
+            provider.write_text("package Provider {\n    item def Base;\n}", encoding="utf-8")
+            for models in ([consumer, provider], [provider, consumer]):
+                with self.subTest(order=[model.name for model in models]):
+                    result = tool.validate(models, cache)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            consumer.write_text("package Consumer {\n    item def Derived :> Provider::Missing;\n}\n", encoding="utf-8")
+            result = tool.validate([provider, consumer], cache)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(f"{consumer}:2: ERROR", result.stdout)
+            self.assertIn("Couldn't resolve reference", result.stdout)
+            self.assertNotIn("validation passed", result.stdout)
+
     # Proves: CL-014-04; TC-DOC-003. This invokes the real parser/resolver, not a mock.
     def test_actual_pilot_accepts_valid_and_rejects_syntax_and_reference(self):
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"

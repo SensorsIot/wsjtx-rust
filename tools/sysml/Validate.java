@@ -9,28 +9,54 @@ import java.util.*;
 public class Validate {
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            throw new IllegalArgumentException("Usage: Validate <library-directory> <ordered-model-files...>");
+            throw new IllegalArgumentException("Usage: Validate <library-directory> <model-files...>");
         }
         var interactive = SysMLInteractive.getInstance();
         interactive.loadLibrary(args[0]);
+        var syntax = SysMLInteractive.createInstance();
+        boolean syntaxErrors = false;
         boolean inventory = args.length > 1 && args[1].equals("--inventory");
-        boolean failed = false;
+        var model = new StringBuilder();
+        var sources = new ArrayList<String>();
+        var starts = new ArrayList<Integer>();
+        int firstLine = 1;
         for (int i = inventory ? 2 : 1; i < args.length; i++) {
             String source = Files.readString(Path.of(args[i]));
             if (source.startsWith("\uFEFF")) source = source.substring(1);
-            var result = interactive.process(source);
-            for (var issue : result.getIssues()) {
-                System.out.printf("%s:%s: %s %s%n", args[i], issue.getLineNumber(), issue.getSeverity(), issue.getMessage());
+            source = source.replace("\r\n", "\n").replace('\r', '\n');
+            if (!source.endsWith("\n")) source += "\n";
+            // Check each original file's grammar without resolving forward references.
+            syntax.next(".sysml");
+            syntax.parse(source);
+            var parsed = ((org.eclipse.xtext.resource.XtextResource)syntax.getResource()).getParseResult();
+            for (var node : parsed.getSyntaxErrors()) {
+                System.out.printf("%s:%s: ERROR %s%n", args[i], node.getStartLine(),
+                        node.getSyntaxErrorMessage().getMessage());
             }
-            if (result.getException() != null) {
-                result.getException().printStackTrace(System.err);
-                failed = true;
-            }
-            failed |= result.hasErrors();
-            if (inventory && !result.hasErrors()) collectScope(interactive);
+            syntaxErrors |= parsed.hasSyntaxErrors();
+            syntax.removeResource();
+            sources.add(args[i]);
+            starts.add(firstLine);
+            model.append(source);
+            firstLine += (int)source.chars().filter(c -> c == '\n').count();
         }
-        if (failed) System.exit(1);
+        if (syntaxErrors) System.exit(1);
+        // Resolve the complete graph in one Pilot submission, including forward references.
+        var result = interactive.process(model.toString());
+        for (var issue : result.getIssues()) {
+            var line = issue.getLineNumber();
+            int source = 0;
+            if (line != null) {
+                while (source + 1 < starts.size() && line >= starts.get(source + 1)) source++;
+            }
+            System.out.printf("%s:%s: %s %s%n", sources.get(source),
+                    line == null ? "?" : line - starts.get(source) + 1,
+                    issue.getSeverity(), issue.getMessage());
+        }
+        if (result.getException() != null) result.getException().printStackTrace(System.err);
+        if (result.hasErrors() || result.getException() != null) System.exit(1);
         if (inventory) {
+            collectScope(interactive);
             var root = interactive.resolve("WstxArchitecture::physicalStation");
             if (!(root instanceof PartUsage)) throw new IllegalStateException("Missing physicalStation usage");
             for (var entry : rootParts) row("ROOTPART", entry);
