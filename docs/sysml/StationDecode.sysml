@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: ecc962d32c84b04eb40f4792d803afa6f86bd8b3ab73e8bd33faa53f9459a913
+// Canonical offline decode contract SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -14,6 +14,41 @@ package WstxOfflineDecode {
     enum def FrameStatus { enum decoded; enum unsupported; enum invalid_payload; }
     enum def CallKind { enum call; enum token; enum hash; }
     enum def ExchangeKind { enum blank; enum grid; enum report; enum roger; }
+    attribute def ModemPublicationKey {
+        attribute payload77 : String;
+        attribute startFrame : Integer;
+        attribute frequencyHz : Real;
+        attribute reservedBytes : Integer;
+    }
+    item def ModemHistoryState {
+        attribute mode : Mode;
+        attribute liveHistory : Boolean;
+        attribute lastWindowOrigin : Integer[0..1];
+        attribute keys : ModemPublicationKey[0..2048];
+        attribute retainedBytes : Integer;
+        assert constraint boundedBytes { retainedBytes >= 0 and retainedBytes <= 2097152 }
+        doc /* Puremodemcontext,nosource/jobidentity/result-ring/wiresequenceauthority.
+             DecodeState::new(mode)=finite numericaltestutility,lifetimekey/bytecaps.
+             DecodeState::new_live(mode)=continuousreceive,boundedactivehistory.
+             Mode/policyimmutable; available_count()=retainedkeys,encoded_bytes()=storedcharges.
+             Livegettersnevermanagerwirecount/cursor. SharedwindowAPI/result/errortypesunchanged.
+             EachkeyretainsitsoriginalcompactNumberedJSONcharge; livechargeuses
+             sequence9007199254740991(16digits),finiteutilityusespublicationordinal.
+             Record<=1024bytes,keys<=2048,totalcharges<=2MiB; managerownsactualsafesequence
+             andindependent2048/2MiBpublicring. Callernewcontextonjob/source/gap/historyreset. */
+    }
+    action def PrepareModemWindow {
+        in history : ModemHistoryState;
+        in sourceWindowOrigin : Integer;
+        out preparedHistory : ModemHistoryState;
+        doc /* UpdatesSAMEcaller-ownedinstance,noadditionalcache/worker/source.
+             Afterwindowinputvalidation, liveorigin<lastacceptedorigin=>InvalidSamples
+             withoutstatechange; equaloriginallowed. Otherwise STRICTLYretirekey.startFrame
+             <max(0,sourceWindowOrigin-symbolFrames/2),subtractexactstoredreservedBytes,
+             thenrecordlastWindowOrigin. Retainboundarykeysforhalf-symboloverlapdedupe/SIC.
+             Finiteutilityperformsnoretirementandkeepslifetime2048/2MiBbehavior.
+             Allhistoryinsideexisting64MiB; callbackpartialsretainedonlaterDecodeLimit. */
+    }
     attribute def Limits {
         attribute rateHz : Integer = 12000;
         attribute historyFrames : Integer = 360000;
@@ -489,6 +524,11 @@ package WstxOfflineDecode {
             doc /* FT4exactpayload/CRC/H/105tones/GFSKallfamilies+boundaries; strong36/40@-10,
                  weak20/40@-13; overlapsboth18/20at2spacings,strong18/weak10at1spacing6dB;
                  official>=16/19matches notexhaustivetruth. Error144frames/3Hz,3dBstrongAWGN.
+                 Continuoushistorybothmodes:>2048lifetimeverifiedcallbackswithadvancingorigins,
+                 exacthalf-symbolboundarydedupe,strictolderretirement/exactstoredcharges,
+                 equaloriginsallowed,backwardsrejectunchanged,newcontextgapreset;
+                 privatekeys/bytesboundedandmanagerwirecursorsindependent.
+                 Finitetestutilityunchangedlifetimecaps/partials.
                  Pairsequence8scalarcasesG1..3: standaloneDecimal100completeenumeration,
                  uniform/asymmetric/knownmask/coupled/extremefactors,two+1000000shiftpairs.
                  Allvariable/boundarylogmarginalswithin1e-9absolute,impossibletonesnegInfinity;

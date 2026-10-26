@@ -889,6 +889,30 @@ same mode/payload within half a symbol of estimated start, retaining repeated me
 in later transmissions. Results are ordered by publication sequence, not presumed UTC.
 Recording filenames never establish UTC; source-relative seconds are start_frame/12000.
 
+**Modem context lifetime.** `DecodeState::new(mode)` is a finite numerical-test utility:
+its2048-key/2MiB publication limits apply for that entire context. Production continuous
+receive uses additive `DecodeState::new_live(mode)` with the same
+`decode_window_into_async(samples,origin,state,cancel,publish)` and result/error types.
+The live state owns only bounded modem deduplication/SIC history, never the application's
+job identity, result ring or lifetime wire sequence. Before each valid live window, reject
+an origin smaller than its last accepted origin with `InvalidSamples`; equal origins
+are allowed. Retire only keys with start STRICTLY less than
+`origin.saturating_sub(symbolFrames/2)`, preserving the boundary key and overlap history.
+Each key stores its originally charged encoded-byte budget; subtract exactly those
+charges when retiring it. The caller retains this state across overlapping windows and
+creates a new live state on a new job/source, known gap or analysis-history reset.
+
+Live `available_count()` and `encoded_bytes()` describe retained private keys and their
+reserved byte budget. They do not supply the application's retained-result count or
+wire sequence. For a live record, compute its reserved compact `Numbered` JSON size
+using sequence9007199254740991 (the16-digit safe-integer ceiling); store that exact
+charge with the key. The manager supplies the actual monotonically increasing safe
+sequence and independently enforces its2048-record/2MiB result ring. Finite utility
+record charges keep the existing zero-based publication ordinal. Both policies enforce
+1024bytes/record and2048retained keys/2MiB, reject exhaustion with `DecodeLimit`, and
+preserve accepted partial output. Window/history preparation is a private state update;
+it creates no additional worker, cache owner or source and stays inside64MiB.
+
 Decoder advances/checks cancellation in <=50 ms CPU quanta with bounded saved state.
 Shared receive work services pending conversion/spectrum between quanta; no extra
 worker substitutes for fairness. Existing cancellation invalidates publication before
@@ -1948,6 +1972,7 @@ the communication/recording companions; none require hardware consent.
 | Both modes: payload-channel | Every supported i3/n3 family; exact fields/77 bits; call/CQ/grid/report/free-text/telemetry/contest/hash boundaries, first/max/invalid values; generate CRC/FEC and both tone frames independently. | Fixed expected fields/CRC/codeword/79 or 105 tones; separate CRC recurrence and published H syndrome agree. Hashes retain numeric width/value and `<...>`; source identity, received text and reference observations remain distinct. Include K1ABC=10214965, W9XYZ=12751800, FN42=10342, type3 WI=8049, type4 PJ2/W1AW with hash12=579 and current VHF hashes2662/3931158, report59/serial2047/gridRR99XX. |
 | Both modes: known-word fit metric | Generate independent analytic quadratures with phase=2*pi*f*(k+1)/12000+0.4*sin(2*pi*((k+1)/12000)/0.048), x=0.6*u-0.8*w,60480frames; take k=288..60191 every4 at f=1499,1499.9,1500,1500.1,1501,2999,3000,3001Hz. | Independent scalar Gram calculation recovers coefficients0.6/-0.8 and explained energy sum(x*x); candidate metric agrees within5e-7relative after f32storage. Both1500/3000carrier cases reject a mere scalar correction of the nonorthogonal complex-energy approximation. |
 | FT4: paired sequence scalar kernel | Use all8 fixed cases in `fixtures/decoder/pair-chain/inputs.json` with1..3 groups, uniform/asymmetric/known-symbol/coupled/extreme factors and two+1,000,000common-shift pairs. | Complete path enumeration at100decimal digits in the standalone producer supplies fixed log marginals for every variable and final boundary; candidate agrees within1e-9absolute, impossible tones are negative infinity. Masks, normalization and both common-shift invariances hold. Missing/empty/nonfinite/bad-boundary dimensions reject. The existing2286waveforms and14phase/scale/drift/dynamic-range cases retain their exact inputs and acceptance thresholds. |
+| Both modes: continuous modem history | Seed more than2048 lifetime verified publications while advancing live window origins; exercise equal/backwards origins, same-payload overlap at exactly half a symbol, retirement just beyond it, different encoded charges, and a gap/new-context reset. Repeat with finite utility state. | Live history remains within2048keys/2MiB and continues past2048lifetime callbacks; exact-boundary overlap remains deduplicated, strictly older keys retire with their original byte charges, backwards origins reject without modifying state, and a new context clears modem history. Live sizing reserves the16-digit sequence but never supplies manager wire cursors. Finite utility still stops at its lifetime limit and retains accepted partials. |
 | Both modes: complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
 | Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
 | Both modes: overlap | Twenty equal-level pairs at two tone spacings and twenty pairs at one spacing with six dB difference/mode, fixed seeds/fields/source positions. | Both >=18/20 for equal pairs; stronger>=18 and weaker>=10 for unequal; no fabricated payload. Independent source mixture is the truth, even when the external reference misses weaker content. |
