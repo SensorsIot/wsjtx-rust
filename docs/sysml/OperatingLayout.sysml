@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: bc0a4dd7be1045708002e1156f35c37ee88c307f51dd55d39ffa7d023cc0e9aa
+// Canonical FSD slices SHA256: e976c67c67f0de9caf807e62124d99d5eb406dd8486aa720ae75e0325a8a5cb8
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
@@ -96,21 +96,40 @@ package WstxOperatingLayout {
 
     attribute def BandActivityReadability {
         attribute viewportCssPixels : Integer;
+        attribute textScale : Real = 1.0;
         attribute messageNumericFontCssPixels : Real;
         attribute timestampFontCssPixels : Real;
         attribute headerFontCssPixels : Real;
         attribute verticalCellPaddingCssPixels : Real;
         attribute longMessagesWrap : Boolean = true;
         attribute horizontalPageOverflow : Boolean = false;
+        attribute numericCellsNoWrap : Boolean = true;
+        attribute allSixValuesVisible : Boolean = true;
+        attribute valuesInsideCells : Boolean = true;
+        attribute workspaceWidthEm : Real;
+        attribute bandWidthEm : Real;
+        attribute bandWidthFraction : Real;
+        attribute labelledRowDetails : Boolean;
         assert constraint readableCells {
-            messageNumericFontCssPixels >= 13.0 and
-            (viewportCssPixels < 1500 or messageNumericFontCssPixels >= 14.0) and
-            timestampFontCssPixels >= 12.0 and headerFontCssPixels >= 11.0 and
+            messageNumericFontCssPixels >= 16.0 * textScale and
+            timestampFontCssPixels >= 16.0 * textScale and headerFontCssPixels >= 14.0 * textScale and
             verticalCellPaddingCssPixels >= 8.0 and longMessagesWrap and
-            not horizontalPageOverflow
+            not horizontalPageOverflow and numericCellsNoWrap and allSixValuesVisible and
+            valuesInsideCells and
+            (workspaceWidthEm <= 75.0 or (bandWidthFraction >= 0.55 and bandWidthFraction <= 0.60)) and
+            (bandWidthEm > 44.0 or labelledRowDetails)
         }
         doc /* FSD4.7.1 and TC007002: 360CSSpx retains the same minima and wraps
-             long messages without horizontal page scrolling. Presentation changes
+             long messages without horizontal page scrolling. Desktop cards use2.2:1:0.8; bandWidthFraction measures allocated card widths excluding gaps/padding;
+             workspace<=75em gives Band Activity full width above secondary cards,
+             <=48em stacks all cards. Band table<=44em uses all-six-labelled row details,
+             <=23em single column, otherwise two columns with Message spanning the row.
+             Numeric/time/status cells use ch minimum widths and nowrap; Message uses
+             remaining width and word wrapping with emergency token breaks only as needed.
+             Time is source-relative unless actually UTC; unknown DT is not invented.
+             Normal text16px, labels14px, rem scaled; frequency3499.9 stays unbroken.
+             Preserve accessible table headers and all values; no hiding/clipping/overlap.
+             Presentation changes
              no result fields, ordering/filtering, requests, capabilities or state. */
     }
 
@@ -142,8 +161,14 @@ package WstxOperatingLayout {
              disclosure keyboard access, actual pointer/key split geometry and ARIA,
              no horizontal page overflow, stale link after disconnect. Existing
              At360/1440/1600CSSpx computed Band Activity styles meet the stated
-             13/14CSSpx message/numeric,12CSSpx time,11CSSpx label and8CSSpx padding
-             minima;1600 exercises the >=1500 wide threshold. Long text wraps.
+             16CSSpx normal/time/numeric/message,14CSSpx labels, rem-scaled at2x,
+             and8CSSpx vertical padding. Verify dominant/full-width card placement and
+             all-six-labelled responsive rows at360/720/1200/1440/1600 and1x/2x text.
+             Captured physical FT4 text plus independent3499.9Hz/signedSNR/DT/longcall/
+             fullmessage/large-source-seconds/UTC/status strings are presentation fixtures,
+             never decoder truth. All values stay literal/inside cells, numbers unbroken,
+             messages wrap at words except emergency token breaks. Capture screenshots;
+             retain actual nativeFT4/FT8 positive proofs. Long text wraps.
              TC010005/006/007 independently guard signal semantics. */
     }
     verification def livePresentation004 {

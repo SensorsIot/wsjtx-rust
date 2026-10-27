@@ -1670,9 +1670,25 @@ or replace the waterfall/operating workspace. Login remains usable when required
 All existing forms, profile identity/revision rules and recording operations are reused.
 The persistent station bar and disabled Halt Tx remain accessible while regions are open.
 
-At desktop width, Band Activity and selected-contact views appear beside compact
-operating controls. At 360 CSS pixels and 200% browser zoom they stack without
-horizontal page overflow. The lower workspace scrolls when needed; text is not hidden
+Band Activity receives55% of the desktop card row, using2.2:1:0.8 proportions
+beside Current QSO and Strategy when the available workspace exceeds75em. At75em
+or less (1200CSSpx with16px text), Band Activity spans the full width above the
+secondary cards; below48em the cards all stack. These font-relative boundaries
+also adapt to200% text enlargement. All six Time/SNR/DT/Hz/Message/Status fields
+remain visible. Current source-relative seconds and unknown DT remain truthful;
+no UTC/DT is fabricated. Numeric/time/status values use unbroken text with
+character-based minimum widths; frequency3499.9 must remain one line. Message
+text receives the remaining width and wraps at word boundaries, splitting a token
+only when necessary to keep it inside its cell. No legacy last-column percentage
+reserves Message width for the added Status column.
+
+Below44em of Band Activity table-container width, populated rows become labelled
+field details with all six labels and values. Below23em these details use one column,
+otherwise two columns with Message spanning the row. Column-header semantics remain
+available to assistive technology. Normal/time/numeric/message text is at least16px,
+labels at least14px, with rem scaling and at least8CSSpx vertical cell padding.
+No text is hidden, overlapped, clipped or reduced to fit; no horizontal page overflow.
+At 360 CSS pixels and200% text enlargement the lower cards remain reachable. The lower workspace scrolls when needed; text is not hidden
 solely to fit. The separator supports ArrowUp/ArrowDown, Home and End with updated
 ARIA min/max/current values. Settings disclosure and all supported controls remain
 keyboard accessible. Profile/user fields render literally via textContent.
@@ -2331,10 +2347,11 @@ Independent oracles: the specified layout/order/capability rules and existing se
 status contract; a screenshot alone is not an acceptance oracle. Existing TC-010-005,
 TC-010-006 and TC-010-007 remain the waveform/palette/geometry regressions.
 At360,1440 and1600CSSpx, inspect computed Band Activity cell, time and header
-styles against the specified13/14,12 and11CSSpx minima and8CSSpx vertical padding.
+styles against16CSSpx normal/time/numeric/message and14CSSpx label minima, rem-scaled
+at200% text enlargement, and8CSSpx vertical padding.
 The1600CSSpx view exercises the >=1500CSSpx increase; long text wraps without page
 overflow. Existing splitter, keyboard, capability and transport assertions remain.
-These style oracles come from the stated presentation values, not candidate CSS.
+These style oracles come from the stated presentation values, not candidate CSS. Verify the dominant/full-width Band Activity proportions and labelled responsive rows at360/720/1200/1440/1600CSSpx and1x/2x text. Use captured physical FT4 message text strictly as a labelled presentation fixture, plus independent edge strings:3499.9Hz, signed SNR/DT, long callsigns/full messages, large source seconds, UTC-formatted text and every result status. All six values remain literal and inside their own cells; numbers never split, message tokens wrap only when needed, and table labels remain accessible. This fixture is not decoder/RF truth. Capture desktop/narrow/2x screenshots; retain the separate actual nativeFT4/FT8 decoder/browser proofs.
 
 ## 7. Proposed delivery milestones
 
