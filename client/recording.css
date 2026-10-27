@@ -83,7 +83,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 #band-activity th:nth-child(2),#band-activity th:nth-child(3){width:10%}
 #band-activity th:nth-child(4){width:12%}
 #band-activity th:last-child{width:18%}
-#band-activity td{padding:8px 5px;overflow-wrap:anywhere}
+#band-activity td{padding:8px 5px;overflow-wrap:anywhere;white-space:normal}
 #band-activity tr[data-result-id] td:first-child{font-size:var(--op-font-normal)}
 #band-activity .empty-messages{padding:8px 5px;height:180px;white-space:normal;color:#8099aa;font:var(--op-font-normal)/1.7 'Segoe UI',sans-serif;vertical-align:middle}
 #band-activity .empty-messages strong,#band-activity .empty-messages span{display:block}

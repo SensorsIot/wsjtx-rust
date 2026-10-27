@@ -210,3 +210,17 @@ test('TC-007-002 readable text reflows throughout every operating region at 200 
  await fs.writeFile('test-results/ui-operating/readability-computed.json',JSON.stringify(findings,null,2));
  assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
 });
+
+// CSS fixture only: known CQ text exercises populated cells; it is not decoder or RF evidence.
+test('TC-007-002 populated message cells wrap without crossing adjacent columns',{timeout:20000},async t=>{
+ const {page,errors}=await fixture(t,{width:1200,height:1000});
+ const values=['0.497s','23.0','-0.1','1000.0','CQ K1ABC FN42','Decoded'];
+ await page.locator('#band-activity tbody').evaluate((tbody,values)=>{const row=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=value;row.append(td);}tbody.replaceChildren(row);},values);
+ for(const scale of [1,2])for(const width of [360,1200,1600]){
+  await page.setViewportSize({width,height:1000});await page.evaluate(scale=>document.documentElement.style.fontSize=`${scale*100}%`,scale);
+  const cells=await page.locator('#band-activity tbody td').evaluateAll(nodes=>nodes.map(td=>{const box=td.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(td);return {text:td.textContent,font:parseFloat(getComputedStyle(td).fontSize),whiteSpace:getComputedStyle(td).whiteSpace,inside:[...range.getClientRects()].every(r=>r.left>=box.left-1&&r.right<=box.right+1&&r.top>=box.top-1&&r.bottom<=box.bottom+1)};}));
+  assert.deepEqual(cells.map(c=>c.text),values);assert.ok(cells.every(c=>c.font>=16*scale&&c.whiteSpace==='normal'&&c.inside),`populated cells stay within their own columns ${width}px ${scale}x`);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ }
+ assert.deepEqual(errors,[]);
+});
