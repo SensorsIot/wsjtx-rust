@@ -305,7 +305,7 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
 test('TC-010-005 HTTPS keeps Thin default and restores explicit Detailed on reload',{timeout:15000},async t=>{
   const f=await fixture(t,{secure:true}),p=await page(f);
   assert.equal(await p.inputValue('#display-profile'),'thin','HTTPS default stays Thin');
-  await p.selectOption('#display-profile','detail');await p.reload();await p.locator('#display-profile').waitFor({state:'attached'});
+  await p.selectOption('#display-profile','detail');await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await p.inputValue('#display-profile'),'detail','explicit HTTPS Detailed survives reload without changing defaults');
   const saved=await p.evaluate(()=>Object.entries(localStorage));assert.equal(saved.length,1);assert.match(saved[0][0],/^wstx\.display-profile\.v1:[0-9a-f-]{36}$/);assert.equal(saved[0][1],'detail');
 });

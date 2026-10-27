@@ -38,6 +38,7 @@ function emptyResults(s){return {v:1,profile_id:s.profile_id,boot_id:s.boot_id,s
   mode:s.job.mode,state:s.job.state,error:null,search_limited:false,first_sequence:0,next_sequence:0,available_count:0,next:0,more:false,records:[]};}
 
 async function chooseDisplay(page,value){
+  await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   await page.locator('[data-region=client-preferences]').first().click();await page.selectOption('#display-profile',value);
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
 }
@@ -48,15 +49,15 @@ test('TC-010-005 explicit display choice survives reload and browser storage res
   assert.equal(await page.inputValue('#display-profile'),'detail','cleartext loopback default remains Detailed');
   assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),null,'default is not persisted as an explicit choice');
   for(const choice of ['off','thin','detail']){
-    await chooseDisplay(page,choice);await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await page.locator('#display-profile').waitFor({state:'attached'});
+    await chooseDisplay(page,choice);await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
     assert.equal(await page.inputValue('#display-profile'),choice);
     assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),choice);
   }
   const restored=await browser.newContext({storageState:await page.context().storageState()});t.after(()=>restored.close());
-  const reopened=await restored.newPage();await reopened.goto(app.origin);await reopened.locator('#display-profile').waitFor({state:'attached'});
+  const reopened=await restored.newPage();await reopened.goto(app.origin);await reopened.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await reopened.inputValue('#display-profile'),'detail');
   assert.deepEqual(await reopened.evaluate(()=>Object.entries(localStorage)),[[key,'detail']],'storage contains only versioned profile key and enumerated choice');
-  await page.evaluate(key=>localStorage.setItem(key,'invalid-display-value'),key);await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});
+  await page.evaluate(key=>localStorage.setItem(key,'invalid-display-value'),key);await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await page.inputValue('#display-profile'),'detail','invalid persisted values use normal default');assert.deepEqual(errors,[]);
 });
 test('TC-010-005 display preference is isolated by origin and validated profile UUID',{timeout:20000},async t=>{
@@ -64,14 +65,14 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   await chooseDisplay(page,'off');let current=base;
   // Profile identity wire fixtures test browser preference identity only; no decoded traffic is injected.
   await page.route('**/profile',route=>route.fulfill({json:current}));
-  current={...base,boot_id:crypto.randomUUID(),revision:base.revision+1};await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});
+  current={...base,boot_id:crypto.randomUUID(),revision:base.revision+1};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await page.inputValue('#display-profile'),'off','boot/revision changes preserve explicit choice');
-  current={...base,profile_id:crypto.randomUUID()};await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});
+  current={...base,profile_id:crypto.randomUUID()};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await page.inputValue('#display-profile'),'detail','different profile UUID has its own default');await chooseDisplay(page,'thin');
-  current={...base,profile_id:'invalid-profile-id'};await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});await chooseDisplay(page,'thin');assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.display-profile.v1:invalid-profile-id')),null,'invalid UUID is never persisted');
-  current=base;await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});assert.equal(await page.inputValue('#display-profile'),'off');
+  current={...base,profile_id:'invalid-profile-id'};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);await chooseDisplay(page,'thin');assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.display-profile.v1:invalid-profile-id')),null,'invalid UUID is never persisted');
+  current=base;await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);assert.equal(await page.inputValue('#display-profile'),'off');
   const other=await fixture(t,{width:1440,height:900}),otherPage=await page.context().newPage();t.after(()=>otherPage.close());
-  await otherPage.route('**/profile',route=>route.fulfill({json:base}));await otherPage.goto(other.app.origin);await otherPage.locator('#display-profile').waitFor({state:'attached'});
+  await otherPage.route('**/profile',route=>route.fulfill({json:base}));await otherPage.goto(other.app.origin);await otherPage.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await otherPage.inputValue('#display-profile'),'detail','same profile UUID on another origin cannot inherit Off');await chooseDisplay(otherPage,'thin');
   assert.equal(await page.inputValue('#display-profile'),'off');assert.deepEqual(errors,[]);
 });
@@ -80,15 +81,15 @@ test('TC-010-005 denied browser storage preserves in-memory display selection',{
     await p.addInitScript(()=>Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Storage disabled','SecurityError');}}));
   }});
   assert.equal(await page.inputValue('#display-profile'),'detail');await chooseDisplay(page,'off');assert.equal(await page.inputValue('#display-profile'),'off');
-  await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});assert.equal(await page.inputValue('#display-profile'),'detail');assert.deepEqual(errors,[]);
+  await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);assert.equal(await page.inputValue('#display-profile'),'detail');assert.deepEqual(errors,[]);
 });
 test('TC-010-005 runtime Thin fallback preserves explicit Detailed preference',{timeout:15000},async t=>{
   const {page,errors}=await fixture(t,{width:1440,height:900});await chooseDisplay(page,'off');await chooseDisplay(page,'detail');
   const profile=await page.evaluate(()=>profileData.profile_id),key=`wstx.display-profile.v1:${profile}`;
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'error',id:detailRequest,data:{code:'unknown_command',message:'fixture unsupported Detailed'}}}})));
   assert.equal(await page.inputValue('#display-profile'),'thin');assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),'detail','automatic fallback does not become a user choice');
-  await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});assert.equal(await page.inputValue('#display-profile'),'detail');
-  await chooseDisplay(page,'off');await chooseDisplay(page,'thin');await page.reload();await page.locator('#display-profile').waitFor({state:'attached'});
+  await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);assert.equal(await page.inputValue('#display-profile'),'detail');
+  await chooseDisplay(page,'off');await chooseDisplay(page,'thin');await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await page.inputValue('#display-profile'),'thin');assert.deepEqual(errors,[]);
 });
 
