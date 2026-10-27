@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 7e72f8a0e6d9ed8ec896d1120d65391770645fa5e7aeaf2541891803d44b07ec
+// Canonical FSD slices SHA256: e719d37af6f22178bc07ad34fe063aadf7c4d8c01520df621559d5a4d6039acb
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
@@ -10,6 +10,7 @@ package WstxOfflineDecode {
          Existing physical station/receive/modem/web/browser usages remain owners. */
 
     enum def Mode { enum ft4; enum ft8; }
+    enum def DecodeDepth { enum baseline; enum deep_ft8; }
     enum def FrameStatus { enum decoded; enum unsupported; enum invalid_payload; }
     enum def CallKind { enum call; enum token; enum hash; }
     enum def ExchangeKind { enum blank; enum grid; enum report; enum roger; }
@@ -394,7 +395,7 @@ package WstxOfflineDecode {
         in source : ModemSampleWindow;
         in point : PhysicalFinePoint;
         out families : PhysicalLlrFamily[5];
-        doc /* Pinnedft8b unassistedimetric1. C[k,t]=FFT32symbol[k][t]/1000,t0..7.
+        doc /* BASELINEpolicy: pinnedft8b unassistedimetric1. C[k,t]=FFT32symbol[k][t]/1000,t0..7.
              Gray[0,1,3,2,5,6,4,7],MSBfirst. Each29datahalfstarts7/43(zerobased).
              n1/2/3,k0,n,2n..<29; v0..8^n-1 selectsnGraytones; S=abs(sumCselected).
              EndgroupsKEEPactualfollowingsynccoefficient. Bitindexhalf*87+3*k+bit,
@@ -409,7 +410,7 @@ package WstxOfflineDecode {
         out accepted : Boolean;
         out channelWord : Integer[174];
         out payload77 : Integer[77];
-        doc /* Fiveorderedfamilies,each<=50minsumalpha.8and<=137rank77order0/1/2recovery
+        doc /* BASELINEpolicy: Fiveorderedfamilies,each<=50minsumalpha.8and<=137rank77order0/1/2recovery
              trials/16least-reliablebasisbits. CRCbitsconstrained; publishedH+CRCmandatory.
              RequiremeanabsLLR>=1/hardCHANNELdisagreements<=24. Avalidwordfailinggates
              DOESNOTstoplaterfamilies. Firstallgatesacceptedwordwins; no6thfallbackdecode.
@@ -573,10 +574,14 @@ package WstxOfflineDecode {
          half-tone FFT grid. Evaluate exact off-grid endpoint power by direct quadrature;
          refine clipped to inclusive bounds. FT4mustnotround3500awayorrelax3Hzoracle. */
     action def AdvanceDecode {
+        in depth : DecodeDepth;
         in block : WstxRecordingReceive::SampleBlock;
         in job : DecodeJob;
         out records : ResultRecord[0..2048];
-        doc /* SharedreceiveownerassemblesModemSampleWindowfromcanonicalSampleBlocks;
+        doc /* DefaultdepthBASELINE; explicitdeep_ft8selectsFt8DeepCoarseSearch/ObserveFamilies/
+             BeliefPropagation/OrderedStatistics/AcceptFrameONLYforFT8;FT4unchanged.
+             Thefollowing50/137/24algorithmstatementisscopedtoBASELINE,notdeep.
+             SharedreceiveownerassemblesModemSampleWindowfromcanonicalSampleBlocks;
              physicalalgorithmsconsumeTHATprivatewindow,notone4096-framecaptureblock.
              Purecanonical12kconsumer,noWAV/device/network/UTCaccess. LiveFT8<=30s/15sadvance,
              FT4<=15s/7.5sadvance;finiteinternaltestutilitywindow/historyunchanged.
@@ -770,7 +775,7 @@ package WstxOfflineDecode {
              All2286/38/14inputs/thresholdsunchanged; unsupportedtypedchannelvalidframes
              preserved. OfficialFT8>=12/14, no inventedgoldens. ActualFortranreference
              comparedwithfixedPCM/sourceSHA/settings/APprofile, everyextra/missingreported.
-             No localFortrancompiler; source-builtreferenceartifactcomesfromGitHubActions.
+             VerifiedofficialprebuiltFortranbinarywithmatchingAP/depth/rangeandPCMhashes.
              Thisverificationdefinitionisnotanexecutionverdict. */
     }
     dependency ft8PhysicalCase from ft8PhysicalOracles to WstxRequirements::'TC-004-002';
@@ -791,10 +796,129 @@ package WstxOfflineDecode {
              finalstarts8/9/10=>firstCostas32/33/33,reportedstartunchanged.
              SameexplicitFT8DFT/metric/f32tolerances; direct1401tapconvolution/no wrap/no
              secondrampoffset. Unchanged2286/38/14inputs andoriginalFT4quality/performance/
-             falsepublication/cancel/typedpayloadthresholds. SourcebuiltFortrancomparison
+             falsepublication/cancel/typedpayloadthresholds. VerifiedofficialprebuiltFortrancomparison
              separatewithPCM/settings/depth/APidentity. No candidate-generatedgoldens. */
     }
     dependency ft4PhysicalCase from ft4PhysicalOracles to WstxRequirements::'TC-004-001';
     dependency ft4PhysicalRejectionCase from ft4PhysicalOracles to WstxRequirements::'TC-004-003';
+
+
+    attribute def Ft8DeepLimits {
+        attribute ldpcRank : Integer = 91;
+        attribute crcBits : Integer = 14;
+        attribute bpUpdates : Integer = 30;
+        attribute posteriorChecks : Integer = 31;
+        attribute cumulativeSnapshots : Integer = 2;
+        attribute patternsPerSnapshot : Integer = 4187;
+        attribute patternsPerFamily : Integer = 8374;
+        attribute patternsPerCandidate : Integer = 41870;
+        attribute patternWeightMax : Integer = 2;
+        attribute parityPrefilterPositions : Integer = 40;
+        attribute parityPrefilterLimit : Integer = 10;
+        attribute hardDisagreementMax : Integer = 36;
+        attribute magnitudeSyncHits : Integer = 7;
+        attribute powerSyncHits : Integer = 8;
+        attribute confidenceSyncCutoff : Integer = 10;
+        attribute confidenceSnrMinDb : Real = -25.0;
+        attribute normalizedCoarseMin : Real = 1.3;
+        attribute coarseBaselinePercentile : Integer = 40;
+        attribute baselineObservationCount : Integer = 92;
+        attribute sourceImmutable : Boolean = true;
+        attribute assistedDecoding : Boolean = false;
+        attribute plannedDeepConstructor : String = "Decoder::new_deep_ft8";
+        attribute scalarDeepConstructor : String = "Decoder::new_scalar_deep_ft8";
+        doc /* Explicitoptionalpure-decodernumericalpolicy,baselineisdefault,FT4unchanged.
+             NOnewjob/source/worker/wireorstationcontrolselectionauthority. Same3passes,
+             32subtractions/256qualifiedcap/64MiB/96MiBprocess/50msquanta/250msrelease.
+             DeepmustindependentlypassALL2286/38/14quality,falseandruntimecriteria.
+             Neverapply36tobaselineCRC-constrainedrank77/137trials/24hardlimit. */
+    }
+    item def DeepChannelWord { attribute bits : Integer[174]; }
+    item def DeepReliabilitySnapshot {
+        attribute updateNumber : Integer;
+        attribute cumulativeZeroPositive : Real[174];
+        assert constraint firstTwoOnly { updateNumber >= 1 and updateNumber <= 2 }
+        doc /* L=channelLLR; Ck=sum of incoming check-to-variable messages after updatek.
+             Zk=L+Ck is the FULL posterior including channel evidence, NOT Ck alone.
+             Iteration0 contributes L. Snapshot1=L+Z1=2L+C1;
+             snapshot2=L+Z1+Z2=3L+C1+C2.
+             Not final BP posterior or channel LLR alone. */
+    }
+    action def Ft8DeepCoarseSearch {
+        in source : ModemSampleWindow;
+        out candidates : PhysicalFinePoint[0..256];
+        doc /* Samecompleteactualsource1920/hop480/FFT3840and200..3500inclusive/endpoints.
+             For21andlast14Costassymbols: Aexpectedpower,TtotalSEVENtones0..6;
+             R=6*A/(T-A),maxR21/R14. Positive/zerooutranksfinite; zero/zerorejects.
+             PerfrequencymaxoverALLcompletestarts; baselineis40thpercentilefrequencymax,
+             indexclamp(floor(.4*count+.5),1,count),positivefiniteelseNOcandidates.
+             Normalizescorebybaseline; localmax>=1.3;samedeterministicNMS/ties.
+             Arbitrarysourceorigin,NOupstreamUTCnarrow/widelagpriorormycallpriority.
+             Finegridsunchanged; pass0needs7sync,laterpasses8,before256/257barrier.
+             FinalsupportrecheckusesSAMEpass-dependenthitlimit,notpadding. */
+    }
+    action def Ft8DeepObserveFamilies {
+        in source : ModemSampleWindow;
+        in point : PhysicalFinePoint;
+        out families : PhysicalLlrFamily[5];
+        doc /* Same5families,Gray/order/normalize/polarityasbaseline; pass0magnitude,
+             pass1/2SQUAREeachhypothesismagnitudeBEFOREclassmax/ratio/strongestselection.
+             Fixedsourcecurrent-passbandlimit/rows,NoAP/callsign/contact/semanticprior. */
+    }
+    action def Ft8DeepBeliefPropagation {
+        in channelZeroPositive : Real[174];
+        out reliabilityFrames : DeepReliabilitySnapshot[0..2];
+        out acceptedWord : DeepChannelWord[0..1];
+        doc /* Publishedrank91LDPC; all14CRCbitsFREEduringparitysearch.
+             Checkiteration0then<=30messageupdates; variable=channel+othercheckmessages;
+             check=2atanh(product(tanh(q/2))ofothervariables). Real64productclamp
+             [-1+1e-12,1-1e-12],outgoingfloat32. CheckH+independentCRCaftereachposterior;
+             allzeroREJECT. Keepcumulativesnapshotsafterupdates1/2.
+             Earlystoponlyupdates>=10,unsatisfied>15,fivenondecreasingupdates.
+             Cancellationpropagates,NEVERordinarynobodydecoded. */
+    }
+    action def Ft8DeepOrderedStatistics {
+        in snapshot : DeepReliabilitySnapshot;
+        out nearestWord : DeepChannelWord;
+        out crcValid : Boolean;
+        doc /* Rank91most-reliableindependentbasis,reliabilitydesc/originalcolasc/GF2.
+             Snapshotbasisdecisions,<=4187order0/1/2patterns,least-reliable-firstties
+             originalcolasc,singlebeforeassociatedpairs. Weightnonzero+disagreements
+             onfirst40reorderedPARITYpositions<=10prefilter; zeroorderinitializescost.
+             WeightedSNAPSHOTcostselectsNEARESTPARITYwordFIRST,thenCRC14check.
+             NEVERnearestamongonlyCRCvalidwords. Tiesearlierenumeration. */
+    }
+    action def Ft8DeepAcceptFrame {
+        in source : ModemSampleWindow;
+        in point : PhysicalFinePoint;
+        in channelZeroPositive : Real[174];
+        in word : Integer[174];
+        out accepted : Boolean;
+        doc /* H+independentCRC/nonzero/meanabsCHANNELLLR>=1/hardCHANNELdisagreements<=36.
+             For<=10hardCostashitsrequirePRIVATEphysicalconfidenceSNR>=-25dB:
+             Nuttall3840sum-normalized3840/300,completehop1920powersSUM*92/windowCount;
+             fit200..3500lowerenvelopeexactFT4quartic/10segments/10percentile/0.65dB,
+             <=1000points,zeros120dBbelowpositivefloor,invalidrank/nonfiniteREJECT.
+             BfitdBatnearest3.125Hzbin,Xbase=10^((B-40)/10),Xsig=sum79unscaledFFT32
+             recoveredtonepowers,q=Xsig/(3e6Xbase)-1; confidence10log10(q)-27ifq>.1,
+             else-57. ThisisNOTpubliccalibratedSNR. Failedgatecontinuesnextsnapshot/
+             family; unsupported/invalidtypedpayloadsarenotdropfilters. */
+    }
+    verification ft8DeepOracles {
+        subject decoder : AdvanceDecode;
+        objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+        doc /* Cost2WindowsindependentLLR/H/CRCvectors,smallcodeexhaustiveGF2/pattern
+             enumeration,nearest-then-CRCvsCRC-filterednegative,update0/30/31,snapshots,
+             earlystop9/10,unsatisfied14/15/16,rank90/91,patterns4186/4187/4188,
+             parityprefilter9/10/11,cancelineachphase. ScalarDFT7vs8tones,last14support,
+             arbitrarywindowoffsets,percentilehalf-ties,zero/nonfinitebaseline,
+             magnitudevsSQUARED-before-max,confidence-25neighborsand7..11sync.
+             All2286/38/14truthandbudgetsforBOTHpolicies,2000noiseZEROpublications.
+             ActualofficialprebuiltAPoffdeep,identicalPCM/range200..3500/blankcalls;
+             complete-supportmessagematchesone-to-one<=5Hz; ALLmissing/extra/boundary
+             observationsreported,notgoldenrewritesorassistedcomparison. */
+    }
+    dependency ft8DeepReferenceCase from ft8DeepOracles to WstxRequirements::'TC-004-002';
+    dependency ft8DeepRejectionCase from ft8DeepOracles to WstxRequirements::'TC-004-003';
 
 }

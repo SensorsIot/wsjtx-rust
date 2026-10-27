@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: bc0a4dd7be1045708002e1156f35c37ee88c307f51dd55d39ffa7d023cc0e9aa
+// Canonical FSD slices SHA256: 6f00349a9d4ba0194aa7e0d95c3dfa4995aecc799ef5dc11ae269fa82568783e
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
@@ -94,24 +94,53 @@ package WstxOperatingLayout {
              one-page/cadence bounds hold; no mutation is replayed. */
     }
 
+    attribute def ReadableOperatingTypography {
+        attribute normalTextRem : Real = 1.0;
+        attribute secondaryTextMinimumRem : Real = 0.875;
+        attribute technicalRulerMinimumRem : Real = 0.75;
+        attribute dialMinimumRem : Real = 1.5;
+        attribute dialMaximumRem : Real = 1.75;
+        attribute textEnlargementFactor : Real = 2.0;
+        attribute shrinksAtNarrowWidth : Boolean = false;
+        attribute usesSharedRemTokens : Boolean = true;
+        attribute reflowsVertically : Boolean = true;
+        attribute horizontalPageOverflow : Boolean = false;
+        attribute hidesNavigationLabels : Boolean = false;
+        attribute persistentHaltReachable : Boolean = true;
+        attribute changesStationAuthority : Boolean = false;
+        doc /* Normal body/messages/inputs/selects/action buttons use>=1rem;
+             secondary descriptions/labels/status/table/card headings use>=0.875rem.
+             Only technical frequency/time/level ticks may use>=0.75rem;
+             their accessible descriptions remain normal text. Dial1.5..1.75rem.
+             Rem values follow browser text preference;16/14/12 are defaultCSSpx,
+             product choices, not a WCAG mandated pixel minimum.
+             All in-page regions retain unclipped, nonoverlapping text/controls
+             at360/1200/1600and200percent text enlargement. Vertical scroll/reflow
+             preserves keyboard navigation, unsaved forms and Halt position.
+             Agreed shell, native0..3000Hz waterfall/colors/sliders/split remain;
+             signal/control space adapts to text. No RF/config mutation. */
+    }
     attribute def BandActivityReadability {
-        attribute viewportCssPixels : Integer;
-        attribute messageNumericFontCssPixels : Real;
-        attribute timestampFontCssPixels : Real;
-        attribute headerFontCssPixels : Real;
+        attribute messageNumericFontRem : Real;
+        attribute timestampFontRem : Real;
+        attribute headerFontRem : Real;
         attribute verticalCellPaddingCssPixels : Real;
         attribute longMessagesWrap : Boolean = true;
+        attribute numericValuesWrap : Boolean = true;
+        attribute textStaysWithinCell : Boolean = true;
         attribute horizontalPageOverflow : Boolean = false;
         assert constraint readableCells {
-            messageNumericFontCssPixels >= 13.0 and
-            (viewportCssPixels < 1500 or messageNumericFontCssPixels >= 14.0) and
-            timestampFontCssPixels >= 12.0 and headerFontCssPixels >= 11.0 and
-            verticalCellPaddingCssPixels >= 8.0 and longMessagesWrap and
+            messageNumericFontRem >= 1.0 and timestampFontRem >= 1.0 and
+            headerFontRem >= 0.875 and verticalCellPaddingCssPixels >= 8.0 and
+            longMessagesWrap and numericValuesWrap and textStaysWithinCell and
             not horizontalPageOverflow
         }
-        doc /* FSD4.7.1 and TC007002: 360CSSpx retains the same minima and wraps
-             long messages without horizontal page scrolling. Presentation changes
-             no result fields, ordering/filtering, requests, capabilities or state. */
+        doc /* FSD4.7.1/4.7.3 and TC007002 use shared rem typography; timestamps
+             are decoded-row data, not technical ruler ticks. No narrow-size reduction
+             or wide-screen font threshold. At360CSSpx/2xtext long messages and
+             numeric values wrap within their cells without clipping or overlap.
+             Presentation changes no result fields, ordering/filtering, requests,
+             capabilities or state. ReadableOperatingTypography covers all regions. */
     }
 
     attribute def SplitGeometry {
@@ -141,9 +170,12 @@ package WstxOperatingLayout {
              identity, empty/unavailable views, disabled actions/no new commands,
              disclosure keyboard access, actual pointer/key split geometry and ARIA,
              no horizontal page overflow, stale link after disconnect. Existing
-             At360/1440/1600CSSpx computed Band Activity styles meet the stated
-             13/14CSSpx message/numeric,12CSSpx time,11CSSpx label and8CSSpx padding
-             minima;1600 exercises the >=1500 wide threshold. Long text wraps.
+             At360/1200/1600CSSpx and1x/2xtext computed styles throughout all
+             eight regions meet shared1rem normal/0.875rem secondary minima.
+             Technical ticks alone may use0.75rem; dial1.5..1.75rem. The2xcase
+             sets rootfont32CSSpx, not DPR. Decoded cells/time use1rem, headers
+             0.875rem and padding8CSSpx. Long message/numeric text stays inside
+             its own cell without clipping/overlap; no viewport font reduction.
              TC010005/006/007 independently guard signal semantics. */
     }
     verification def livePresentation004 {
@@ -207,12 +239,33 @@ package WstxOperatingLayout {
         }
         doc /* TC007002: actual browser/server at360/720/1200/1440/1499/1500/1600;
              desktop three-card order, compact header/toolbars/bands, no overflow,
-             typography/breakpoint/native canvas/full-space/splitter assertions,
+             typography/reflow/native canvas/full-space/splitter assertions,
              pointer/keyboard region routes,F2/Escape/focus, real profile/recording
              behavior and request recorder refusing invented RF/QSO/strategy work.
              Same1200x800 target/actual screenshots show design correspondence.
              Cost2 Windows isolated real server/Chromium; no radio. */
     }
     dependency agreedDesignCase from agreedDesignPresentation
+        to WstxRequirements::'TC-007-002';
+    verification readableOperatingWorkspace {
+        subject typography : ReadableOperatingTypography;
+        objective {
+            verify WstxRequirements::'CL-010-05';
+            verify WstxRequirements::'CL-010-07';
+            verify WstxRequirements::'CL-010-08';
+        }
+        doc /* TC007002, cost2 actual Windows server/Chromium, no radio:
+             48cases: eight regions x360/1200/1600CSSpx x1x/2xroot text.
+             Check normal>=1rem/secondary>=0.875rem throughout operate and every
+             secondary region, including real profile/recording/display controls.
+             Only technical ruler ticks may use>=0.75rem; dial1.5..1.75rem.
+             At2x use32CSSpx root text and assert actual text/control bounds,
+             no clipping/overlap/pageoverflow, keyboard routes/Halt reachability,
+             retained unsaved state, fixed0..3000Hz waterfall and adjustable split.
+             Independently supplied long-message/numeric CSS fixtures must remain
+             explicitly separate from actual native source/modem row evidence.
+             Capture1200default/2xtext. No invented backend results or actions. */
+    }
+    dependency readableOperatingCase from readableOperatingWorkspace
         to WstxRequirements::'TC-007-002';
 }

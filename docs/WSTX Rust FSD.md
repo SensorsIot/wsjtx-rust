@@ -903,7 +903,7 @@ Browser closure does not cancel accepted work. Cancellation retains partial resu
 new job/source or restart clears them. Old boot/source/job/generation output cannot
 append. Restart does not persist results or fabricate replacement jobs.
 
-**Bounded processing design.** Use RustFFT planned and portable scalar paths with
+**Bounded processing design (baseline policy).** Use RustFFT planned and portable scalar paths with
 worker-owned checked buffers/scratch and CR6's transform convention. FT8 symbol FFT
 N=1920/hop480; FT4 N=576/hop144 supplies the calibrated noise grid. The following
 coarse Costas time/frequency search applies to FT8; FT4 frequency/timing selection
@@ -946,7 +946,7 @@ unnormalized positive-sign inverse FFT and multiply by1/sqrt(N1*N2). Baseband is
 frequency trial and reported carrier accounts for that bin center explicitly.
 The planned and scalar paths use the same transform signs, scale and bin ordering.
 
-**FT8 synchronization and admission.** Coarse power maxima retain the shared grid,
+**FT8 synchronization and admission (baseline policy).** Coarse power maxima retain the shared grid,
 Costas ratio>=2.7, suppression and deterministic visitation order above. Fine scoring
 uses all21Costas symbols independently. At baseband origin b and frequency tweak d,
 P(b,d)=sum_s abs(sum_[j=0..31] z[b+32*s+j]*exp(-i*2*pi*(tone_s/32+d/200)*j))^2.
@@ -971,7 +971,7 @@ subtraction. This mapping never rounds or replaces the reported canonical start.
 cross-symbol/block phase-fraction gate. Retained full-rate known-word refinement below
 uses the same bounded three grids; it cannot replace this physical tone evidence.
 
-**FT8 unassisted channel observations.** Let C[k,t] be the complex FFT32 coefficient
+**FT8 unassisted channel observations (baseline policy).** Let C[k,t] be the complex FFT32 coefficient
 at tone t of symbol k, divided by1000. Enumerate each block of n=1,2,3data symbols
 within each29-symbol half, starting at zero-based symbols7 and43. For group index
 k=0,n,2n,...<29 and v=0..8^n-1, split v into MSB-first3-bit values, apply Gray map
@@ -987,7 +987,7 @@ maximum gives zero for the fourth family. Form the fifth family before normaliza
 For each174-element family let m=sum(raw)/174, q=sum(raw^2)/174 and
 sigma=sqrt(q-m^2) when q-m^2>0, otherwise sqrt(q). Normalize by sigma without
 subtracting m, multiply by2.83 and negate once for the Rust channel's positive=bit0
-convention. A zero/nonfinite sigma supplies no candidate word. Visit the five families
+convention. A zero/nonfinite sigma supplies no candidate word. Under the baseline policy visit the five families
 in order; each has at most50min-sum iterations and137bounded recovery trials under
 the channel rules below. A word failing H, CRC, mean-absolute-LLR>=1 or hard-channel
 disagreements<=24 does not terminate later metric families. The first word satisfying
@@ -1132,7 +1132,7 @@ its already-canonical origin receives no second -576-frame adjustment. Original
 source samples stay immutable;3passes/32verified subtractions and FFT invalidation
 remain common rules. The pure reconstruction/measurement primitive stays shared.
 
-**Shared channel validity and bounded recovery.** Mode-specific normalized metrics
+**Shared channel validity and bounded recovery (baseline policy).** Mode-specific normalized metrics
 supply positive-for-zero channel LLRs. Publication requires mean absolute LLR>=1 and
 <=24disagreements with channel hard decisions, zero published-H syndrome, and correct
 CRC14. Use normalized min-sum alpha0.8 with<=50iterations per family. Each of the five
@@ -1144,6 +1144,109 @@ lowest weighted CHANNEL-LLR disagreement cost among CRC/parity-valid words. CRC 
 are constrained, not14additional free information bits. A failed channel word does
 not suppress remaining families. Source interpretation determines decoded, unsupported
 or invalid-payload status after channel validity; it is not a physical-message filter.
+
+**Optional unassisted FT8 deep policy.** The pure decoder additionally accepts an
+explicit `deep_ft8` numerical policy; its default remains `baseline`. This policy
+changes only FT8 processing, not FT4, the source/result schema, station authority or
+receive-job lifetime. Selecting a policy creates no second modem, worker or radio
+operation. No application file-decoding operation is introduced. Browser/MCP/profile
+selection of this additive policy requires its own settled station contract; the
+pure test and implementation interface can select it independently. The additive
+constructors `Decoder::new_deep_ft8()` and `Decoder::new_scalar_deep_ft8()` select
+Deep for FT8; existing constructors and decode signatures retain baseline behavior.
+Both Deep constructors leave FT4 processing unchanged and create no external selector.
+
+Deep FT8 uses the following pinned WSJT-X algorithms as one coherent path:
+`lib/ft8/{sync8,decode174_91,osd174_91,get_spectrum_baseline,baseline}.f90` and the
+pass/metric orchestration in `lib/ft8_decode.f90` at revision
+`0f7d5928449ec747c3d1f6da1306f8c94404c3a9`. Source-derived mathematics are adapted to
+arbitrary canonical window origins and bounded complete supports below; no QSO-frequency
+priority, AP mask, callsign history or UTC alignment assumption is added.
+
+For each complete1920-frame symbol window, use its rectangular transform zero-padded
+to3840, hop480 and3.125Hz bins. This is equivalent to the baseline's two shifted
+grids but retains the existing200..3500Hz endpoint trials. For a coarse start, sum
+expected Costas power A and total power T over tones0..6 (seven sync tones, not the
+eight data tones), separately over all three21sync symbols and over the last two14.
+R=6*A/(T-A); zero/zero rejects, positive/zero outranks finite scores. Set the raw point
+score to max(R21,R14). For every candidate carrier take the maximum raw score over
+ALL complete coarse starts, then take the40th-percentile of these frequency maxima:
+1-based index clamp(floor(0.40*count+0.5),1,count), ties included by the order statistic.
+The resulting positive finite baseline divides every raw point score. A zero/nonfinite
+baseline supplies no candidates. Visit local maxima of normalized score>=1.3 with the
+same deterministic frequency/time ties, half-symbol/half-tone suppression, complete
+source bounds and256physically-qualified-candidate cap as the baseline. Using all
+complete starts deliberately replaces the upstream narrow/wide UTC-relative lag prior;
+reference parity must not depend on a window beginning at a particular UTC offset.
+
+Keep the existing bandlimited fine time/frequency grids and known-word refinement.
+On residual pass0 use magnitude hypotheses; on passes1and2 square each grouped
+hypothesis magnitude BEFORE bit-class maxima, normalized-single ratios and strongest
+family selection. The five family definitions,174-bit order,2.83scale and positive-
+for-zero polarity remain unchanged. Initial physical qualification and final support
+recheck require>=7hard Costas hits on pass0 and>=8on passes1/2. Both use actual
+complete original source supports; they do not make padding observable waveform data.
+
+For each family, deep FEC operates on the published rank91LDPC code with CRC14
+independent of the information basis. All91systematic bits, including14CRC bits,
+remain free during parity-word search. Positive LLR denotes bit0. Start each
+check-node message with its channel LLR; variable messages are channel LLR plus incoming
+check messages excluding the recipient. A check message is2*atanh(product(tanh(q/2)))
+over the other variables in its parity row. Use real64 evaluation, clamp only the
+product to[-1+1e-12,1-1e-12] to keep finite logarithms, and round outgoing channel
+messages to float32. Iteration0 checks the initial channel decisions; at most30
+message updates follow. Check H and CRC14 after each posterior update, rejecting the
+all-zero word. Let L be the channel LLR vector and Ck the sum of incoming
+check-to-variable messages after update k. The full posterior at that update is
+Zk=L+Ck, including the channel term; Zk is not check evidence alone. Store the
+cumulative vectors L+Z1=2L+C1 and L+Z1+Z2=3L+C1+C2 after updates1 and2,
+respectively. The initial iteration contributes L before those two updates. If the unsatisfied-parity count fails to decrease on five consecutive
+updates, stop early only once at least10updates occurred and more than15checks remain
+unsatisfied. Cancellation checks bound all BP and recovery work to the existing CPU
+quantum; cancellation is not an ordinary failed decode.
+
+After failed BP, visit the available two stored reliability vectors in order. Build a
+rank91most-reliable independent column basis by reliability-descending, original-column-
+ascending ties and deterministic GF(2)elimination. Initial basis decisions come from
+that snapshot. Enumerate order0, every single flip and every distinct double flip:
+<=1+91+4095=4187patterns per snapshot, at most8374per family and41870per qualified
+candidate across all five families. Visit least-reliable basis positions first, ties
+original-column ascending; visit each single before its associated pairs. For nonzero
+patterns, prefilter using disagreement on the first40parity positions in the reordered
+word plus pattern weight, retaining only sums<=10. The zero-order word initializes the
+nearest-word cost without this prefilter. Evaluate weighted disagreement using the
+same snapshot, select the lowest-cost parity-valid word, and only THEN validate CRC14.
+Do not choose the nearest among only CRC-valid candidates: that is a different search
+with a different false-publication probability. Ties retain the earlier enumerated word.
+A failed CRC/physical/publication gate proceeds to the next snapshot/family.
+
+A deep word must pass H, independent CRC14, nonzero-word rejection, mean-absolute
+channel LLR>=1 and<=36disagreements with the ORIGINAL channel hard decisions. The36
+ceiling is admitted only for this independently CRC-checked rank91path; baseline
+rank77search remains<=24. Do not reuse the wider limit with its CRC-constrained basis.
+For<=10hard sync hits, additionally require the following private physical-confidence
+SNR>=-25dB. This is a reference-compatibility gate, not the public calibrated SNR.
+Compute the periodic four-term Nuttall3840-point window with the same coefficients
+as FT4 and normalize its sum to3840/300; use complete source windows with1920-frame
+hop. Sum positive-bin powers and multiply by92/numberOfWindows, matching the92complete
+observations of the pinned15-second reference while keeping longer windows duration-
+neutral. With df=3.125, fit the same unweighted quartic lower envelope as FT4 over
+200..3500Hz, ten segments,10th-percentile points, at most1000points and+0.65dB.
+For zero bins use the same120dB-below-positive-floor convention; failed finite rank5
+fit or nonpositive baseline rejects this confidence check. Let B be the fitted dB
+value at the nearest3.125Hz bin of the candidate carrier, Xbase=10^((B-40)/10), and
+Xsig the sum over79symbols of the squared magnitude of each recovered tone's
+UNSCALED32-point baseband coefficient. Set q=Xsig/(3e6*Xbase)-1 and confidence to
+10*log10(q)-27when q>0.1, otherwise-57dB. No guessed station text improves this gate.
+
+The pure output and reliable result service remain unchanged: channel-valid decoded,
+unsupported and invalid payloads retain their typed observations. Deep uses the same
+three residual passes,32verified subtractions, one immutable current-pass transform,
+source preservation,64MiB workspace,96MiB process increase, cancellation/service and
+runtime budgets. All2286quality,38waveform and14phase/drift inputs and thresholds apply
+to BOTH policies; zero false publication on2000noise inputs is not traded for sensitivity.
+Deep is not implementation-ready for station use until these conditions and independent
+reference comparisons pass. A passing baseline run is not evidence that deep passed.
 
 **Private numerical ownership.** The physical numerical actions consume an assembled
 private canonical sample window, not a single1..4096-frame capture block. The shared
@@ -1642,12 +1745,13 @@ The independently fetched recorded-input snapshot may have no job and is neither
 required nor mutated by live progress. These interleavings do not disconnect a valid
 station link, replay a mutation or add parallel result requests.
 
-Band Activity uses at least13CSSpx for decoded message and numeric cells, increasing
-to14CSSpx at viewport widths of1500CSSpx or more. Time cells use at least12CSSpx and
-column labels at least11CSSpx. Row cells have at least8CSSpx vertical padding.
-At360CSSpx, the same minimum sizes remain; long message text wraps inside its cell
-without horizontal page scrolling. These visual settings do not change result fields,
-ordering, filtering, requests, capability gates or station state.
+Band Activity uses the shared typography in4.7.3: decoded message, numeric and
+time cells use at least1rem (16default CSS pixels); column labels use at least
+0.875rem (14default CSS pixels). Row cells retain at least8CSSpx vertical padding.
+These minima do not shrink or depend on a wide-screen breakpoint. At360CSSpx and
+200percent text enlargement, long message and numeric values wrap within their own
+cells without clipping, overlap or horizontal page scrolling. These visual settings
+do not change result fields, ordering, filtering, requests, capability gates or state.
 
 TC-009-004 includes an isolated real-server/browser case: independently verified
 native audio fixture passes through the actual source converter, sole receive manager
@@ -1679,7 +1783,7 @@ keyboard accessible. Profile/user fields render literally via textContent.
 
 #### 4.7.2 Agreed operating layout and navigation
 
-The profile-mode operating screen follows the supplied WSTX operating design: a persistent station/navigation header, radio-operation toolbar, spectrum/waterfall, adjustable separator, band strip and three adjacent desktop cards named Band Activity, Current QSO and Strategy. At narrow widths the cards stack without horizontal page scrolling. The dark navy/mint palette, compact controls, card proportions and message readability use the design reference. Source: supplied MagicPath component465528304540209152/revision465570890965458944.
+The profile-mode operating screen follows the supplied WSTX operating design: a persistent station/navigation header, radio-operation toolbar, spectrum/waterfall, adjustable separator, band strip and three adjacent desktop cards named Band Activity, Current QSO and Strategy. At narrow widths the cards stack without horizontal page scrolling. The dark navy/mint palette, control grouping and card proportions follow the design reference; typography follows4.7.3. Source: supplied MagicPath component465528304540209152/revision465570890965458944.
 
 The radio toolbar exposes dial frequency, mode, Monitor and Decode/depth positions. Band buttons and all RF/QSO/strategy operations unsupported by the connected service are disabled with explicit reasons; displayed dial frequency, receive level, period progress, contact identity, strategy revision and decisions remain unknown/unavailable rather than invented. No sample messages, simulated signal or browser-owned automation are substituted for actual station results. Existing authenticated server/profile operations remain authoritative and unchanged.
 
@@ -1688,6 +1792,16 @@ Operate, Recordings, Logbook, Strategies, Server settings, Client preferences an
 The existing calibrated 0..3000Hz native-bin spectrum/waterfall, original level palette, sensitivity/speed controls and mouse/keyboard splitter remain unchanged. Initial display space is compact like the reference (210 CSS pixels on a sufficiently tall desktop) but remains adjustable and fills all allocated signal space; narrow/short viewports retain the existing160px minimum and access to controls.
 
 Verification extends TC-007-002: actual browser at360/720/1200/1440/1499/1500/1600 widths verifies card order/labels and no overflow, five-width computed typography, actual signal geometry and splitter behavior, visible unsupported reasons and no fabricated rows; navigate/open/close every region with pointer/keyboard and F2/Escape, preserve profile save/reload and real recording operations, and record emitted requests to prove no RF/automation mutations. Capture target and actual page at the same1200x800 viewport and compare geometric/card/navigation placement. Cost2: isolated Windows server/Chromium, no radio or external service. The design reference screenshot contains illustrative data and is not decoder evidence.
+
+#### 4.7.3 Readable operating typography
+
+The browser uses shared rem typography tokens throughout the operating workspace and every in-page region. Normal body text, decoded-message rows, inputs, selects and action-button text use at least1rem (16CSS pixels at the browser default). Secondary descriptions, labels, status text and table/card headings use at least0.875rem (14CSS pixels at the browser default). The dial display uses1.5-1.75rem (24-28default CSS pixels). These are product readability defaults, not a claim that WCAG mandates a pixel minimum. Technical frequency/time/level ruler ticks alone may use0.75rem (12default CSS pixels); their accessible descriptions remain normal text.
+
+Narrow layouts reflow controls and cards vertically rather than reducing these sizes or hiding navigation labels. At360,1200and1600CSS-pixel viewport widths, and when text is enlarged to200percent, navigation, forms, labels, messages and status remain readable without clipping, overlap, lost content or horizontal page overflow. The persistent Halt Tx position and each region's controls remain reachable through normal page or region scrolling and keyboard navigation. Text enlargement does not authorize radio actions or change station configuration.
+
+The agreed header/toolbar/signal/bands/cards composition, native0-3000Hz waterfall, calibrated colors, sliders and adjustable split remain. Signal height and available control space may adapt to enlarged or wrapped text so labels and controls remain accessible. No additional font preference control is required.
+
+Verification extends TC-007-002 at cost2 (Windows isolated real server and Chromium): computed styles prove16/14default minima across visible operating and every secondary region, including profile form and recording/display controls; only declared technical ticks may be12. Repeat at360/1200/1600and200percent text enlargement, assert no horizontal page overflow or clipped/overlapping text/controls, navigate every region with keyboard and confirm persistent Halt visibility/reachability, retain unsaved state, and verify unchanged waterfall span/split. Capture1200px default and200percent evidence. Existing actual service authority and request guards remain unchanged.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -2260,7 +2374,9 @@ the communication/recording companions; none require hardware consent.
 | Both modes: unrelated-carrier refinement alias | On the same60480-frame analytic template and trimmed support, set f=400 and1000Hz, t=(k+1)/12000, psi=0.4*sin(2*pi*t/0.048), u=cos(2*pi*f*t+psi), w=sin(2*pi*f*t+psi). Independently form x=cos(2*pi*(3000-f)*t-psi+0.7), then repeat with x+0.25*u-0.5*w. Compare the refinement grid's actual fit metric against a separate scalar full-rate2x2 Gram solve after float32 storage. | For each input the candidate explained energy agrees with the independent full-rate oracle within5e-7 times total observation energy. The unrelated-only input's full-rate explained fraction is below0.001, while a separate every-fourth-sample diagnostic exceeds0.999; it is therefore rejected as an oracle for grid ordering. The mixed case retains the independently calculated target coefficients/energy without alias amplification. An unfiltered stride-four scoring negative control fails this oracle. All existing grids/caps,2286quality cases,14phase/scale/drift cases, known-answer recording thresholds, runtime/cancellation and64MiB limits remain unchanged. |
 | FT4: bandlimited physical chain | Independently calculate both native/complex transform dimensions, asymmetric tapers/center-bin/RMS and complete-support fine grids; include first-ramp source0/1and incomplete support, a true frame missed by the old time-power maximum, periodic Nuttall and scalar-DFT powers, constant/known-quartic/zero/rank-deficient spectral baselines, percentile6.5ties, exact200/3500Hz endpoints with linear-after-division contrast1.18/just-below/just-above vectors, and two complete temporal frames returned through the same per-frequency modeled interface. Enumerate all4/16/256tone sequences and206-bit normalization before extraction; test final-family bit-copy ranges and polarity. Exercise tone hits7/8and hard sync bits19/20, post-refinement starts8/9/10for FT4 and29/30/31/89/90/91for FT8 plus exact-end-support clamping, three-family progression,1401tap scalar convolution and no second ramp-origin subtraction. | Same independent DFT/Decimal/convolution tolerances as the FT8 physical-chain case. Exact103symbol/206raw-bit/174data-bit identities and all source-unit conversions agree with hand-selected vectors. All original FT4quality/phase/noise/invalid/unsupported/performance thresholds remain unchanged; no output is manufactured from the reference. |
 | FT4: qualified support selection | Independently label physical qualification and ordered fine points; use equal-carrier starts0/60479/60480/60481, inclusive half-tone and adjacent floating-point neighbors, duplicates, multiple frequency-candidate lists and a fresh residual pass. First offer a physically invalid higher-score point, then a valid point; separately offer a physically qualified FEC-invalid point before an overlapping valid point. Replay the fixed FT8-as-FT4 wrong-mode input and two separated same-frequency frames. | Starts60479compete,60480/60481remain distinct; half-tone equality competes and the first representable separation above it does not. The first physically qualified point in visit order retains the support across frequency lists; a physical failure excludes nothing, while later FEC failure does not release a retained support. A fresh residual pass has no previous support exclusions. Duplicate/competing points do not consume extra capacity; exactly256distinct qualified points are retained and a257th yields search_limited. Wrong-mode audio publishes no frames or search error; both separated legitimate frames are returned. All original corpus expectations remain unchanged. |
-| FT8: bandlimited physical chain | Use independently calculated long/short DFT vectors, both15/30-second transform sizes, band-edge/center-bin/scale impulses and a2600Hzinterferer beside a400Hzcandidate. Enumerate all8/64/512tone choices for fixed32-point complex coefficient tables; include half-boundary/end-group sync support, Gray-bit ordering, five-family ties, zero/constant/nonfinite normalization and polarity. Compare the4001tap convolution and both edges against direct scalar math. Then replay unchanged waveform/quality/phase/resource fixtures and official reference recordings; compare the actual source-built Fortran runner separately under declared AP/depth settings. | Independent scalar DFT/normal-equation/finite sums give exact bin identities, tone hits, metric signs/order, normalization and direct-convolution samples within these bounds: selected unnormalized DFT coefficients differ by<=1e-9*max(1,sum(abs(input))); baseband samples by<=1e-8*max(1,inputRMS); unquantized metrics/normalization by<=1e-9*max(1,abs(expected)); final float32 LLRs by<=1ULP from independently rounded values; selected float32 SIC residuals by<=1e-7*max(1,sourcePeak). Out-of-band carriers cannot enter through decimation aliases, zero-padding never admits incomplete frames, and zero/nonfinite metrics publish no frame. All original2286/38/14inputs and quality/error/runtime/cancellation thresholds remain; unsupported/invalid typed frames retain channel-valid observations. Actual reference comparison records every expected/missing/extra message and its PCM/settings/source identity; candidate output never rewrites the golden set. |
+| FT8: bandlimited physical chain | Use independently calculated long/short DFT vectors, both15/30-second transform sizes, band-edge/center-bin/scale impulses and a2600Hzinterferer beside a400Hzcandidate. Enumerate all8/64/512tone choices for fixed32-point complex coefficient tables; include half-boundary/end-group sync support, Gray-bit ordering, five-family ties, zero/constant/nonfinite normalization and polarity. Compare the4001tap convolution and both edges against direct scalar math. Then replay unchanged waveform/quality/phase/resource fixtures and official reference recordings; compare the verified official prebuilt Fortran runner separately under declared AP/depth/range settings. | Independent scalar DFT/normal-equation/finite sums give exact bin identities, tone hits, metric signs/order, normalization and direct-convolution samples within these bounds: selected unnormalized DFT coefficients differ by<=1e-9*max(1,sum(abs(input))); baseband samples by<=1e-8*max(1,inputRMS); unquantized metrics/normalization by<=1e-9*max(1,abs(expected)); final float32 LLRs by<=1ULP from independently rounded values; selected float32 SIC residuals by<=1e-7*max(1,sourcePeak). Out-of-band carriers cannot enter through decimation aliases, zero-padding never admits incomplete frames, and zero/nonfinite metrics publish no frame. All original2286/38/14inputs and quality/error/runtime/cancellation thresholds remain; unsupported/invalid typed frames retain channel-valid observations. Actual reference comparison records every expected/missing/extra message and its PCM/settings/source identity; candidate output never rewrites the golden set. |
+| FT8: deep FEC and reference fidelity | Independently specified174-LLR vectors exercise valid words, parity-valid/bad-CRC words, zero word,30/31BP-update boundary, first/second cumulative snapshot, early-stop9/10updates and14/15/16unsatisfied checks; independently enumerate a small parity code to distinguish nearest-then-CRC from CRC-filtered-search. Include rank90/91,4186/4187/4188patterns, first40parity prefilter9/10/11 and cancellation in each search phase. Replay the official AP-off prebuilt reference with exact PCM, matching200..3500range, depth3 and blank calls; retain boundary-truncated observations explicitly. | Scalar tanh/atanh, GF(2)elimination and exhaustive small-code enumeration independently determine signs, CRC decisions, snapshot sums, order/caps and no-word outcomes. A36-disagreement word is admissible only via independent rank91CRC; baseline still rejects25. Complete-support deep reference rows must match message identities one-to-one within5Hz; all missing/extra and incomplete-support classifications remain visible. No reference observation overwrites existing goldens. Both policies independently pass unchanged2286/38/14noise, quality, resource, cancellation and runtime criteria. Cost2WindowsPC, verified prebuilt reference plus actual pure Rust decoder; no compiler or radio. |
+| FT8: deep coarse and confidence oracles | Independently calculate rectangular3840DFT values for one1920sample symbol and a periodic Nuttall3840window, seven-vs-eight-tone distractors, only last-two-block support, arbitrary frame/window offsets, percentile lower/upper ties, zero/nonfinite baseline, and13-vs14available Costas symbols. Independently enumerate magnitude and squared magnitude bit metrics and a known quartic lower envelope; test confidence-25neighbors and7/8/9/10/11hard sync hits. | Independent scalar DFT, finite sums, hand-ranked order statistics and rank5least squares supply expected normalized ratios and source-confidence gates. Deep uses seven sync-tone powers, raw max21/14 then a single positive finite40th-percentile baseline, with exact1.3boundary. It uses squared hypotheses only on later passes; normalizing or squaring in another order fails. No test-generated waveform or candidate decode is its own oracle. Complete original support, physical cap and public SNR semantics are preserved. |
 | Both modes: continuous modem history | Seed more than2048 lifetime verified publications while advancing live window origins; exercise equal/backwards origins, same-payload overlap at exactly half a symbol, retirement just beyond it, different encoded charges, and a gap/new-context reset. Repeat with finite utility state. | Live history remains within2048keys/2MiB and continues past2048lifetime callbacks; exact-boundary overlap remains deduplicated, strictly older keys retire with their original byte charges, backwards origins reject without modifying state, and a new context clears modem history. Live sizing reserves the16-digit sequence but never supplies manager wire cursors. Finite utility still stops at its lifetime limit and retains accepted partials. |
 | Both modes: complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
 | Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode, including off-tone-grid FT8 carriers200.5/1000.3/3499Hz; independently injected carriers/start positions are recovered without operator-supplied offsets; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
@@ -2330,11 +2446,21 @@ and verify the global state becomes stale without enabling unsupported controls.
 Independent oracles: the specified layout/order/capability rules and existing server
 status contract; a screenshot alone is not an acceptance oracle. Existing TC-010-005,
 TC-010-006 and TC-010-007 remain the waveform/palette/geometry regressions.
-At360,1440 and1600CSSpx, inspect computed Band Activity cell, time and header
-styles against the specified13/14,12 and11CSSpx minima and8CSSpx vertical padding.
-The1600CSSpx view exercises the >=1500CSSpx increase; long text wraps without page
-overflow. Existing splitter, keyboard, capability and transport assertions remain.
-These style oracles come from the stated presentation values, not candidate CSS.
+At360,1200and1600CSSpx and100/200percent text enlargement, inspect computed
+styles throughout the operating workspace and every secondary region. Normal body,
+message/numeric/time cells, inputs, selects and action-button text use at least1rem;
+secondary labels, descriptions, status and table/card headings use at least0.875rem.
+Only technical frequency/time/level ruler ticks may use0.75rem; other text does not.
+The dial uses1.5..1.75rem. At the default16CSSpx root these are16/14/12/24..28CSSpx;
+at200percent test text enlargement uses a32CSSpx root, not a device-pixel-ratio change.
+The48-case matrix covers eight regions at three viewport widths and both text scales.
+Independent long-message and numeric-cell style fixtures verify text stays within
+its own cells; these fixtures are explicitly not positive modem evidence. Retain
+8CSSpx vertical cell padding, readable wrapping, unclipped/nonoverlapping text and
+controls, no horizontal page overflow, keyboard navigation and reachable Halt Tx.
+Preserve unsaved form state and existing splitter, waterfall, capability and transport
+assertions. Capture default and200percent1200CSSpx screenshots. These style oracles
+come from the specified presentation values, not candidate CSS or a screenshot alone.
 
 ## 7. Proposed delivery milestones
 

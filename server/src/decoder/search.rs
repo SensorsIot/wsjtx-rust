@@ -99,6 +99,15 @@ impl Decoder {
             ..Self::new()
         }
     }
+    /// Explicit pure FT8 Deep policy entry point; existing constructors stay baseline.
+    pub fn new_deep_ft8() -> Self {
+        // Interface checkpoint: numerical Deep implementation follows in this branch.
+        Self::new()
+    }
+    /// Scalar-transform counterpart of the explicit pure FT8 Deep policy.
+    pub fn new_scalar_deep_ft8() -> Self {
+        Self::with_scalar_transform()
+    }
     /// Blocking numerical convenience wrapper; station workers poll a cooperative future.
     pub fn decode(
         &self,
