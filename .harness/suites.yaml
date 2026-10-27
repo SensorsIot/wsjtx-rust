@@ -129,3 +129,30 @@
   - tools/sysml.py
   - tools/sysml/
   needs: Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; synchronization, semantics, architecture integrity and model/tool tests; no radio or live service.
+
+- suite: fortran-reference-tools
+  cost: 2
+  run: python -m unittest discover -s tools -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools -p test_analyze_fortran_trace.py -v
+  paths:
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - fixtures/decoder/wsjtx-stage-logging.patch.gz
+  - tools/reference_decode.rs
+  - tools/wsjtx_reference.py
+  - tools/test_wsjtx_reference.py
+  - tools/WSJTX-REFERENCE.md
+  - tools/wsjtx_stage_reference.py
+  - tools/test_wsjtx_stage_reference.py
+  - tools/analyze_fortran_trace.py
+  - tools/test_analyze_fortran_trace.py
+  select:
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - fixtures/decoder/wsjtx-stage-logging.patch.gz
+  - tools/reference_decode.rs
+  - tools/wsjtx_reference.py
+  - tools/test_wsjtx_reference.py
+  - tools/WSJTX-REFERENCE.md
+  - tools/wsjtx_stage_reference.py
+  - tools/test_wsjtx_stage_reference.py
+  - tools/analyze_fortran_trace.py
+  - tools/test_analyze_fortran_trace.py
+  needs: Python 3.12 standard library. Windows PC; 25 reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.
