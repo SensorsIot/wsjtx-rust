@@ -214,6 +214,7 @@ test('TC-010-002 two thin browsers, full 60 second traffic and simultaneous stat
   const second=await browser.newContext({ignoreHTTPSErrors:true,storageState:await f.context.storageState()});t.after(()=>second.close());
   const began=performance.now(),coldBefore={...f.proxy.counters};
   const pages=await Promise.all([page(f),page({...f,context:second})]);
+  for(const p of pages)await p.selectOption('#display-profile','thin'); // Explicit32kbit/s mode; default Detailed has no such promise.
   const cold={ms:performance.now()-began,up:f.proxy.counters.up-coldBefore.up,down:f.proxy.counters.down-coldBefore.down};
   const events=[[],[]];for(let n=0;n<2;n++)pages[n].on('websocket',ws=>ws.on('framereceived',e=>{const m=JSON.parse(e.payload);if(m.type==='spectrum.frame')events[n].push({at:performance.now(),message:m});}));
   // Install observers on the existing sockets without relying on transport creation timing.
@@ -302,12 +303,18 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
 });
 
 // Proves: CL-006-03/04; TC-010-005. Actual fast TLS server and browser; no source or decoded-message fixture.
-test('TC-010-005 HTTPS keeps Thin default and restores explicit Detailed on reload',{timeout:15000},async t=>{
-  const f=await fixture(t,{secure:true}),p=await page(f);
-  assert.equal(await p.inputValue('#display-profile'),'thin','HTTPS default stays Thin');
-  await p.selectOption('#display-profile','detail');await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
-  assert.equal(await p.inputValue('#display-profile'),'detail','explicit HTTPS Detailed survives reload without changing defaults');
-  const saved=await p.evaluate(()=>Object.entries(localStorage));assert.equal(saved.length,1);assert.match(saved[0][0],/^wstx\.display-profile\.v1:[0-9a-f-]{36}$/);assert.equal(saved[0][1],'detail');
+test('TC-010-005 HTTPS defaults to native Detailed and honors saved Thin or Off',{timeout:15000},async t=>{
+  const f=await fixture(t,{secure:true});await f.upload(wav(1));const p=await page(f);
+  assert.equal(await p.inputValue('#display-profile'),'detail','every origin defaults to the finest existing profile');
+  await p.evaluate(()=>{window.__fineFrames=[];addEventListener('station-message',e=>{if(e.detail.message.type==='spectrum.detail.frame')window.__fineFrames.push(e.detail.message);});});
+  await p.locator('#recording-replay').click();await p.waitForFunction(()=>window.__fineFrames.length>0);
+  const native=await p.evaluate(()=>window.__fineFrames[0].data);assert.equal(Buffer.from(native.levels_b64,'base64').length,1024);assert.equal(native.end_frame-native.first_frame,2400);
+  for(const choice of ['thin','off']){
+    await p.locator('[data-region=client-preferences]').first().click();await p.selectOption('#display-profile',choice);await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+    assert.equal(await p.inputValue('#display-profile'),choice,'explicit saved reduced-bandwidth/Off choice is honored');
+  }
+  await p.evaluate(()=>localStorage.setItem(`wstx.display-profile.v1:${profileData.profile_id}`,'invalid'));await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+  assert.equal(await p.inputValue('#display-profile'),'detail','invalid saved choice returns to finest existing default');
 });
 
 // Proves: CL-006-03/04; TC-010-005, real native detail wire and independent pixel/geometry oracle.

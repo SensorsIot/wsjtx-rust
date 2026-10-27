@@ -96,7 +96,7 @@ function showRegion(name,opener){
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
 addEventListener('keydown',event=>{if(event.key==='F2'){event.preventDefault();showRegion('server-settings',document.querySelector('#open-server-settings'));}else if(event.key==='Escape'&&currentRegion!=='operate'){event.preventDefault();showRegion('operate');}});
 const profileSelect=document.querySelector('#display-profile');
-const defaultDisplayProfile=()=>location.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(location.hostname)?'detail':'thin';
+const defaultDisplayProfile=()=>'detail';
 const displayPreferenceKey=id=>`wstx.display-profile.v1:${id}`;
 let restoredDisplayProfile;
 function displayPreferenceId(){const id=profileData?.profile_id;return typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)?id:null;}
