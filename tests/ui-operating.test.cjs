@@ -118,6 +118,7 @@ test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strate
   for(const control of await page.locator(selector).all())assert.equal(await control.isDisabled(),true);
  }
  assert.equal(await page.locator('#op-dial').inputValue(),'');
+ assert.match(await page.locator('#signal .op-signal-heading').innerText(),/0\u20133000 Hz/,'fixed-band label retains correct Unicode text');
  assert.match(await page.locator('#radio-toolbar').innerText(),/Timing unavailable/);
  assert.match(await page.locator('#strategy-panel').innerText(),/No active definition/);
  assert.equal(await page.locator('tr[data-result-id]').count(),0);

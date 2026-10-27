@@ -4,7 +4,7 @@ controls.id = 'controls';
 while (main.firstChild) controls.append(main.firstChild);
 main.classList.add('op-app');
 const signal = document.createElement('section'); signal.id = 'signal'; signal.className='op-signal'; signal.setAttribute('aria-label','Recorded spectrum and waterfall');
-signal.innerHTML = '<div class="op-signal-heading"><div><span class="op-live-dot" aria-hidden="true"></span><h2 id="signal-status" role="status">Waiting for station snapshot</h2><span>0?3000 Hz</span></div></div><p id="signal-meta"></p><canvas id="spectrum" aria-label="Spectrum in calibrated dBFS"></canvas><div id="frequency-ruler" aria-label="Fixed frequency span 0 to 3000 Hz"></div><div id="waterfall-wrap"><div id="time-ruler"></div><canvas id="waterfall" tabindex="0" aria-label="Waterfall in source seconds; arrow keys select native bins and rows"></canvas></div><div id="level-legend"></div><canvas id="level-bar" aria-label="Waterfall color scale from navy to red"></canvas>';
+signal.innerHTML = '<div class="op-signal-heading"><div><span class="op-live-dot" aria-hidden="true"></span><h2 id="signal-status" role="status">Waiting for station snapshot</h2><span>0&ndash;3000 Hz</span></div></div><p id="signal-meta"></p><canvas id="spectrum" aria-label="Spectrum in calibrated dBFS"></canvas><div id="frequency-ruler" aria-label="Fixed frequency span 0 to 3000 Hz"></div><div id="waterfall-wrap"><div id="time-ruler"></div><canvas id="waterfall" tabindex="0" aria-label="Waterfall in source seconds; arrow keys select native bins and rows"></canvas></div><div id="level-legend"></div><canvas id="level-bar" aria-label="Waterfall color scale from navy to red"></canvas>';
 const splitter = document.createElement('div'); splitter.id = 'splitter'; splitter.className='op-splitter'; splitter.tabIndex = 0; splitter.innerHTML='<span></span>';
 for (const [key,value] of Object.entries({role:'separator','aria-orientation':'horizontal','aria-label':'Resize spectrum and controls','aria-controls':'signal controls'})) splitter.setAttribute(key,value);
 main.append(signal,splitter,controls);
@@ -62,7 +62,7 @@ const settingsSide=document.createElement('nav');settingsSide.className='op-sett
 settingsSide.innerHTML='<span class="op-eyebrow">SERVER DEFINITIONS</span>'+['General','Radio','Audio'].map(name=>`<button type="button" data-settings-section="${name.toLowerCase()}">${name}</button>`).join('')+'<button type="button" data-region="connection">Connection</button><hr><button type="button" data-region="client-preferences">Client preferences</button>';
 settingsGrid.append(settingsSide,document.querySelector('#station-settings'));settingsRegion.append(settingsGrid);
 settingsSide.addEventListener('click',event=>{const button=event.target.closest('button[data-settings-section]');if(!button)return;for(const entry of settingsSide.querySelectorAll('[data-settings-section]')){entry.classList.toggle('active',entry===button);}const group=document.querySelector('#server-fields-'+button.dataset.settingsSection);group.querySelector('input,select').focus();group.scrollIntoView({block:'nearest'});});
-const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable ? capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable ? radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable ? results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable ? control not offered</dd></div>';connectionRegion.append(capabilities);
+const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionRegion.append(capabilities);
 const profileHeading=document.querySelector('#profile-name');
 const updateIdentity=()=>{document.querySelector('#operating-station').textContent=profileData?.settings.display_name??'Waiting for station';};
 new MutationObserver(updateIdentity).observe(profileHeading,{childList:true,subtree:true,characterData:true});updateIdentity();
@@ -273,16 +273,16 @@ function paint() {
 
 function show() {
   const active = snapshot?.import || (snapshot?.job && ['running','cancelling'].includes(snapshot.job.state) ? snapshot.job : null);
-  statusText.textContent = snapshot?.source_error ? 'Recording unavailable Ãƒâ€šÃ‚Â· import a replacement' : snapshot?.recording ? `Recording ready Ãƒâ€šÃ‚Â· ${snapshot.job?.state || 'idle'}` : 'No recording imported';
+  statusText.textContent = snapshot?.source_error ? 'Recording unavailable · import a replacement' : snapshot?.recording ? `Recording ready · ${snapshot.job?.state || 'idle'}` : 'No recording imported';
   if(fallbackText)statusText.textContent+=` | ${fallbackText}`;
-  if(snapshot?.storage_error) statusText.textContent += ' Ãƒâ€šÃ‚Â· storage unavailable';
-  document.querySelector('#signal-meta').textContent = snapshot?.recording ? `${snapshot.recording.id} Ãƒâ€šÃ‚Â· ${snapshot.recording.frames/12000} s Ãƒâ€šÃ‚Â· 12000 Hz Ãƒâ€šÃ‚Â· UTC unavailable` : '';
+  if(snapshot?.storage_error) statusText.textContent += ' · storage unavailable';
+  document.querySelector('#signal-meta').textContent = snapshot?.recording ? `${snapshot.recording.id} · ${snapshot.recording.frames/12000} s · 12000 Hz · UTC unavailable` : '';
   document.querySelector('#recording-replay').disabled = !snapshot?.recording || !!active || !!snapshot?.storage_error || uploading;
   document.querySelector('#recording-import').disabled = !snapshot || !!active || !!snapshot?.storage_error || uploading;
   document.querySelector('#recording-cancel').disabled = !active && !uploading;
-  if(active) progress.textContent = snapshot.import ? `${active.state} Ãƒâ€šÃ‚Â· ${active.total_bytes === null ? 'awaiting upload' : `${active.received_bytes} / ${active.total_bytes} bytes`}` : `${active.state} Ãƒâ€šÃ‚Â· ${active.processed_frames} frames`;
-  else if(importOutcome && importOutcome.generation===snapshot?.generation) progress.textContent=`Import ${importOutcome.state}${importOutcome.error ? ` Ãƒâ€šÃ‚Â· ${importOutcome.error}` : ''}`;
-  else if(snapshot?.job) progress.textContent = `${snapshot.job.state}${snapshot.job.error ? ` Ãƒâ€šÃ‚Â· ${snapshot.job.error}` : ''} Ãƒâ€šÃ‚Â· ${snapshot.job.processed_frames} frames`;
+  if(active) progress.textContent = snapshot.import ? `${active.state} · ${active.total_bytes === null ? 'awaiting upload' : `${active.received_bytes} / ${active.total_bytes} bytes`}` : `${active.state} · ${active.processed_frames} frames`;
+  else if(importOutcome && importOutcome.generation===snapshot?.generation) progress.textContent=`Import ${importOutcome.state}${importOutcome.error ? ` · ${importOutcome.error}` : ''}`;
+  else if(snapshot?.job) progress.textContent = `${snapshot.job.state}${snapshot.job.error ? ` · ${snapshot.job.error}` : ''} · ${snapshot.job.processed_frames} frames`;
 }
 async function request(path,options={}) {
   const response=await fetch(path,{...options,signal:options.signal || AbortSignal.timeout(10000)});
@@ -295,14 +295,14 @@ async function sync(current=socket) {
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
     if(identity(data)!==identity(snapshot)){rows=[];resetLevels();paint();}snapshot=data;
     if(previousImport && !data.import && previousGeneration===data.generation){
-      try{const outcome=await request(`/recording/imports/${previousImport}`);if(current!==socket)return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable Ãƒâ€šÃ‚Â· current source state refreshed';}
+      try{const outcome=await request(`/recording/imports/${previousImport}`);if(current!==socket)return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
-  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable Ãƒâ€šÃ‚Â· ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
+  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable · ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
-addEventListener('station-stale',()=>{statusText.textContent='Disconnected Ãƒâ€šÃ‚Â· recording data stale';subscribedSocket=undefined;});
+addEventListener('station-stale',()=>{statusText.textContent='Disconnected · recording data stale';subscribedSocket=undefined;});
 addEventListener('station-message',event => {
   const {message,current}=event.detail;
   if(current!==socket)return;
@@ -348,9 +348,9 @@ document.querySelector('#recording-import').addEventListener('click',async()=>{
     for(let offset=0;offset<file.size&&!stopped;offset+=2048){
       const end=Math.min(offset+2048,file.size);
       const result=await request(`/recording/imports/${uploadId}`,{method:'PUT',headers:{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${file.size}`},body:file.slice(offset,end),signal:uploadAbort.signal});
-      progress.textContent=`${result.state} Ãƒâ€šÃ‚Â· ${end} / ${file.size} bytes`;
+      progress.textContent=`${result.state} · ${end} / ${file.size} bytes`;
     }
-  }catch(error){progress.textContent=`Import outcome Ãƒâ€šÃ‚Â· ${error.message} Ãƒâ€šÃ‚Â· refresh state before starting again`;}
+  }catch(error){progress.textContent=`Import outcome · ${error.message} · refresh state before starting again`;}
   finally{uploading=false;uploadAbort=null;uploadId=null;await sync();}
 });
 document.querySelector('#recording-replay').addEventListener('click',async()=>{
@@ -359,9 +359,9 @@ document.querySelector('#recording-replay').addEventListener('click',async()=>{
 document.querySelector('#recording-cancel').addEventListener('click',async()=>{
   stopped=true;uploadAbort?.abort();
   const id=uploadId||snapshot?.import?.id;
-  if(uploading && !id){progress.textContent='Cancellation requested Ãƒâ€šÃ‚Â· awaiting reservation response';return;}
+  if(uploading && !id){progress.textContent='Cancellation requested · awaiting reservation response';return;}
   if(!id && !snapshot?.job){await sync();return;}
-  try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown Ãƒâ€šÃ‚Â· ${error.message}`;await sync();}
+  try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown · ${error.message}`;await sync();}
 });
 profileSelect.addEventListener('change',()=>{rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
