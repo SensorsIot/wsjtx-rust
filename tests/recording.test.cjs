@@ -236,7 +236,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
   async function runPhase(t,name,work){
     let passed=false,failure;const began=performance.now();
     t.after(async()=>{if(!passed){try{await progress(name,{state:t.signal.aborted?'cancelled':'failed',elapsedMs:performance.now()-began,error:failure||t.signal.reason?.message});}finally{await dispose();}}});
-    try{await progress(name,{state:'running',startedUtc:new Date().toISOString()});await work();t.signal.throwIfAborted();await progress(name,{state:'passed',elapsedMs:performance.now()-began});t.signal.throwIfAborted();passed=true;}
+    try{await progress(name,{state:'running',startedUtc:new Date().toISOString()});t.signal.throwIfAborted();await work();t.signal.throwIfAborted();await progress(name,{state:'passed',elapsedMs:performance.now()-began});t.signal.throwIfAborted();passed=true;}
     catch(error){failure=error.message;throw error;}
   }
   test('TC-010-002 cold load in two independent uncached browsers',{timeout:230000},async t=>{
@@ -254,6 +254,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
   });
   test('TC-010-002 full 60 second connected traffic and simultaneous status latency',{timeout:230000},async t=>{
     const delay=require('node:timers/promises').setTimeout,sleep=ms=>delay(ms,undefined,{signal:t.signal});
+    const waitUntil=async deadline=>{while(performance.now()<deadline)await sleep(Math.max(1,Math.ceil(deadline-performance.now())));};
     await runPhase(t,'connected',async()=>{
       assert.ok(prepared,'Cold-load phase must complete successfully before connected measurements');
       const events=[[],[]];for(let n=0;n<2;n++)pages[n].on('websocket',ws=>ws.on('framereceived',e=>{const m=JSON.parse(e.payload);if(m.type==='spectrum.frame')events[n].push({at:performance.now(),message:m});}));
@@ -264,7 +265,8 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
         const due=start+(n+1)*5500;await sleep(Math.max(0,due-performance.now()));
         await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
       }
-      await sleep(Math.max(0,start+60000-performance.now()));const seconds=(performance.now()-start)/1000;
+      await waitUntil(start+60000);const seconds=(performance.now()-start)/1000;
+      assert.ok(seconds>=60,'Thin measurement covers at least60 complete seconds');
       const traffic={up:(f.proxy.counters.up-baseline.up)/seconds,down:(f.proxy.counters.down-baseline.down)/seconds};
       // Bounding the positive sum of both clients by the per-client budget proves each client also stays within it.
       assert.ok(traffic.up<=3000);assert.ok(traffic.down<=3000);
@@ -273,7 +275,8 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       await progress('connected',{step:'Thin measurement complete'},{steadySeconds:seconds,sharedBytesPerSecond:traffic,statusMs:latencies,frames:captured.map(f=>f.length)});
       for(const p of pages)await p.selectOption('#display-profile','off');
       await progress('connected',{step:'Off measurement started'});
-      const offBefore={...f.proxy.counters},offStart=performance.now();await sleep(60000);const offSeconds=(performance.now()-offStart)/1000;
+      const offBefore={...f.proxy.counters},offStart=performance.now();await waitUntil(offStart+60000);const offSeconds=(performance.now()-offStart)/1000;
+      assert.ok(offSeconds>=60,'Off measurement covers at least60 complete seconds');
       const off={up:(f.proxy.counters.up-offBefore.up)/offSeconds,down:(f.proxy.counters.down-offBefore.down)/offSeconds};assert.ok(off.up<=1000);assert.ok(off.down<=1000);
       await progress('connected',{step:'Off measurement complete'},{sharedOffBytesPerSecond:off,offSeconds});
       const uploadBefore={...f.proxy.counters},uploadStart=performance.now(),uploadStatus=[];
