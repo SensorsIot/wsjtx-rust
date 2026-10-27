@@ -1,6 +1,72 @@
 //! Original FSD 4.4/6.4/12.6 independent byte/math/state oracles. Cost 2, Windows PC; no hardware.
 use super::*;
 use std::cell::Cell;
+
+// Proves: CL-006-03/04; TC-010-008 shared history, actual eviction and stale publication.
+#[test]
+fn detailed_history_retains_eight_shared_events_and_only_actual_eviction() {
+    let fixture = Fixture::new();
+    let recording = fixture.recording();
+    let (job, _) = live_ring(&recording);
+    let event = |sequence| {
+        json!({"v":1,"type":"spectrum.detail.frame","data":{
+        "boot_id":recording.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,
+        "sequence":sequence,"first_frame":sequence*2400,"end_frame":(sequence+1)*2400,
+        "levels_b64":STANDARD.encode(vec![sequence as u8;1024])}})
+    };
+    let mut state = recording.state.lock().unwrap();
+    let identity = state.detail_identity(&recording.boot);
+    assert!(state.detail_candidate(0, &identity).is_none());
+    state.publish_detail(event(4), &recording.boot);
+    assert_eq!(state.detail_history.len(), 1);
+    for sequence in [6, 7, 8] {
+        state.publish_detail(event(sequence), &recording.boot);
+    }
+    assert_eq!(state.detail_evicted, None);
+    assert_eq!(state.detail_candidate(5, &identity).unwrap().sequence, 6);
+    let shared = state.detail_frame.clone().unwrap();
+    assert!(Arc::ptr_eq(&shared, state.detail_history.back().unwrap()));
+    for sequence in 9..=12 {
+        state.publish_detail(event(sequence), &recording.boot);
+    }
+    assert_eq!(state.detail_history.len(), 8);
+    assert!(
+        state
+            .detail_history
+            .iter()
+            .map(|f| f.text.len())
+            .sum::<usize>()
+            <= 16384
+    );
+    state.publish_detail(event(13), &recording.boot);
+    assert_eq!(state.detail_evicted, Some(4));
+    assert_eq!(state.detail_candidate(5, &identity).unwrap().sequence, 6);
+    state.publish_detail(event(14), &recording.boot);
+    assert_eq!(state.detail_evicted, Some(6));
+    assert_eq!(state.detail_candidate(5, &identity).unwrap().sequence, 14);
+    assert!(state.detail_candidate(15, &identity).is_none());
+    for key in ["boot_id", "source_id", "job_id", "generation"] {
+        let mut stale = event(15);
+        stale["data"][key] = json!("obsolete");
+        state.publish_detail(stale, &recording.boot);
+    }
+    state.publish_detail(event(14), &recording.boot);
+    assert_eq!(state.detail_history.len(), 8);
+    assert_eq!(state.detail_frame.as_ref().unwrap().sequence, 14);
+    assert!(
+        state
+            .detail_candidate(0, &json!("wrong identity"))
+            .is_none()
+    );
+    state.clear_detail();
+    assert!(state.detail_history.is_empty());
+    assert!(state.detail_frame.is_none());
+    assert_eq!(state.detail_evicted, None);
+    job.cancel.store(true, Ordering::Release);
+    state.publish_detail(event(15), &recording.boot);
+    assert!(state.detail_history.is_empty());
+}
+
 thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
 
 fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
@@ -1346,4 +1412,95 @@ fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identi
         assert_eq!(after["job"]["latest_decode"], before);
         assert_eq!(after["job"]["latest_decode"]["complete"], false);
     }
+}
+
+// Proves: CL-006-03/04; TC-010-008 actual history plus two fixed phases and independent integer-token oracle.
+#[tokio::test(start_paused = true)]
+async fn detailed_phased_jitter_delivers_all_150_shared_rows() {
+    let fixture = Fixture::new();
+    let recording = fixture.recording();
+    let (job, _) = live_ring(&recording);
+    let identity = recording
+        .state
+        .lock()
+        .unwrap()
+        .detail_identity(&recording.boot);
+    let origin = tokio::time::Instant::now();
+    let mut peers = [
+        crate::DetailDelivery::new(identity.clone(), 0),
+        crate::DetailDelivery::new(identity.clone(), 0),
+    ];
+    peers[1].epoch += Duration::from_millis(100);
+    peers[1].updated = peers[1].epoch;
+    let jitter = [0u64, 17, 149, 3, 95, 0];
+    let mut ticks = [0usize; 2];
+    let mut wake = [200u64, 300];
+    let mut credits = [1000i64; 2];
+    let mut previous = [0u64, 100];
+    let mut accepted = [Vec::new(), Vec::new()];
+    let mut encoded = [Vec::new(), Vec::new()];
+    for millis in 1u64..=31000 {
+        tokio::time::advance(Duration::from_millis(1)).await;
+        if millis % 200 == 0 && millis <= 30000 {
+            let sequence = millis / 200 - 1;
+            let frame = json!({"v":1,"type":"spectrum.detail.frame","data":{
+                "boot_id":recording.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,
+                "sequence":sequence,"first_frame":sequence*2400,"end_frame":(sequence+1)*2400,
+                "levels_b64":STANDARD.encode(vec![(sequence%121) as u8;1024])}});
+            let mut state = recording.state.lock().unwrap();
+            state.publish_detail(frame, &recording.boot);
+            assert!(state.detail_history.len() <= 8);
+            assert!(
+                state
+                    .detail_history
+                    .iter()
+                    .map(|f| f.text.len())
+                    .sum::<usize>()
+                    <= 16384
+            );
+        }
+        for n in 0..2 {
+            if millis != wake[n] {
+                continue;
+            }
+            let peer = &mut peers[n];
+            let now = origin + Duration::from_millis(millis);
+            peer.refill(now);
+            credits[n] = (credits[n] + 5 * (millis - previous[n]) as i64).min(2000);
+            previous[n] = millis;
+            let mut burst = 0;
+            while peer.tokens >= 1.0 {
+                let frame = recording
+                    .state
+                    .lock()
+                    .unwrap()
+                    .detail_candidate(peer.cursor, &peer.identity);
+                let Some(frame) = frame else { break };
+                assert!(credits[n] >= 1000);
+                credits[n] -= 1000;
+                accepted[n].push((frame.sequence, millis));
+                encoded[n].push(frame.text.clone());
+                peer.accepted(frame.sequence);
+                burst += 1;
+            }
+            assert!(burst <= 2);
+            assert!((peer.tokens - credits[n] as f64 / 1000.0).abs() < 1e-8);
+            ticks[n] += 1;
+            wake[n] = n as u64 * 100 + 200 * (ticks[n] as u64 + 1) + jitter[ticks[n] % 6];
+        }
+    }
+    for rows in &accepted {
+        assert_eq!(
+            rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+            (0..150).collect::<Vec<_>>()
+        );
+        for first in 0..rows.len() {
+            for last in first..rows.len() {
+                assert!(
+                    ((last - first + 1) as u64) * 1000 <= 2000 + 5 * (rows[last].1 - rows[first].1)
+                );
+            }
+        }
+    }
+    assert_eq!(encoded[0], encoded[1]);
 }

@@ -411,7 +411,7 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
   const stamps=[];ws.on('message',raw=>{const m=JSON.parse(String(raw));if(m.type==='spectrum.detail.frame')stamps.push(performance.now());});
   let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.detail',id:1}));assert.equal((await pending).data.profile,'detail');await f.replay();
   await sleep(1700);const started=performance.now();pending=receive(ws);ws.send(JSON.stringify({v:1,type:'station.get',id:2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-started<2000);
-  assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=195,JSON.stringify(stamps));
+  assert.ok(stamps.length>=5);for(let i=0;i<stamps.length;i++)for(let j=i;j<stamps.length;j++)assert.ok(j-i+1<=2+5*(stamps[j]-stamps[i]+10)/1000,JSON.stringify(stamps));
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
 
@@ -527,4 +527,36 @@ test('TC-010-006 live sensitivity and speed sliders preserve original data and r
   assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-120,30,true]);assert.equal(observations.speedLabel,'80 px/s');
   await p.selectOption('#display-profile','thin');assert.equal(await p.inputValue('#display-sensitivity'),'30');assert.equal(await p.inputValue('#display-speed'),'8');
   await p.locator('#display-sensitivity').focus();await p.keyboard.press('Home');assert.equal(await p.inputValue('#display-sensitivity'),'-30');await p.keyboard.press('End');assert.equal(await p.inputValue('#display-sensitivity'),'30');
+});
+
+// Proves: CL-006-03/04; TC-010-008 actual server/Chromium continuity and shared wire identity.
+test('TC-010-008 phased healthy Detailed peers retain all 150 rows and no grey band',{timeout:50000},async t=>{
+  const f=await fixture(t);await f.upload(wav(30));const p=await page(f);
+  const peers=[],observations=[[],[]],stamps=[[],[]];
+  for(let n=0;n<2;n++){
+    if(n)await sleep(100);
+    const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});
+    await once(ws,'open');peers.push(ws);t.after(()=>ws.close());
+    ws.on('message',raw=>{const m=JSON.parse(String(raw));if(m.type==='spectrum.detail.frame'){observations[n].push(String(raw));stamps[n].push(performance.now());}});
+    const response=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.detail',id:n+1}));
+    assert.equal((await response).data.profile,'detail');
+  }
+  await f.replay();
+  for(let n=0;n<330&&observations.some(rows=>rows.length<150);n++)await sleep(100);
+  const expected=Array.from({length:150},(_,n)=>n);
+  for(let n=0;n<2;n++){
+    assert.deepEqual(observations[n].map(row=>JSON.parse(row).data.sequence),expected);
+    assert.ok(observations[n].every(row=>Buffer.byteLength(row)<=2048));
+    for(let i=0;i<150;i++)for(let j=i;j<150;j++)assert.ok(j-i+1<=2+5*(stamps[n][j]-stamps[n][i]+10)/1000,'arrival bound including 10 ms timestamp batching tolerance');
+  }
+  assert.deepEqual(observations[0],observations[1]);
+  await p.waitForFunction(()=>rows.at(-1)?.sequence===149);
+  const canvas=await p.evaluate(async()=>{
+    paint();await new Promise(requestAnimationFrame);
+    const c=waterfall,rgba=c.getContext('2d').getImageData(0,0,1,c.height).data;
+    return {sequence:rows.map(row=>row.sequence),grey:Array.from({length:c.height},(_,y)=>[...rgba.slice(y*4,y*4+4)]).some(pixel=>pixel.join(',')==='96,96,96,255')};
+  });
+  assert.deepEqual(canvas.sequence,expected);assert.equal(canvas.grey,false);
+  let response=receive(peers[0]);peers[0].send(JSON.stringify({v:1,type:'spectrum.detail',id:9}));assert.equal((await response).data.profile,'detail');
+  const count=observations[0].length;await sleep(450);assert.equal(observations[0].length,count,'repeated selection has no retained-row backfill');
 });

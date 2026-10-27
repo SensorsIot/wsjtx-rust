@@ -287,18 +287,18 @@ function paint() {
 
 function show() {
   const active = snapshot?.import || (snapshot?.job && ['running','cancelling'].includes(snapshot.job.state) ? snapshot.job : null);
-  statusText.textContent = snapshot?.source_error ? 'Recording unavailable Â· import a replacement' : snapshot?.recording ? `Recording ready Â· ${snapshot.job?.state || 'idle'}` : 'No recording imported';
+  statusText.textContent = snapshot?.source_error ? 'Recording unavailable · import a replacement' : snapshot?.recording ? `Recording ready · ${snapshot.job?.state || 'idle'}` : 'No recording imported';
   if(fallbackText)statusText.textContent+=` | ${fallbackText}`;
-  if(snapshot?.storage_error) statusText.textContent += ' Â· storage unavailable';
-  document.querySelector('#signal-meta').textContent = snapshot?.recording ? `${snapshot.recording.id} Â· ${snapshot.recording.frames/12000} s Â· 12000 Hz Â· UTC unavailable` : '';
+  if(snapshot?.storage_error) statusText.textContent += ' · storage unavailable';
+  document.querySelector('#signal-meta').textContent = snapshot?.recording ? `${snapshot.recording.id} · ${snapshot.recording.frames/12000} s · 12000 Hz · UTC unavailable` : '';
   document.querySelector('#recording-replay').disabled = !snapshot?.recording || !!active || !!snapshot?.storage_error || uploading;
   document.querySelector('#recording-import').disabled = !snapshot || !!active || !!snapshot?.storage_error || uploading;
   document.querySelector('#recording-cancel').disabled = !active && !uploading;
-  if(active) progress.textContent = snapshot.import ? `${active.state} Â· ${active.total_bytes === null ? 'awaiting upload' : `${active.received_bytes} / ${active.total_bytes} bytes`}` : `${active.state} Â· ${active.processed_frames} frames`;
-  else if(importOutcome && importOutcome.generation===snapshot?.generation) progress.textContent=`Import ${importOutcome.state}${importOutcome.error ? ` Â· ${importOutcome.error}` : ''}`;
-  else if(snapshot?.job) progress.textContent = `${snapshot.job.state}${snapshot.job.error ? ` Â· ${snapshot.job.error}` : ''} Â· ${snapshot.job.processed_frames} frames`;
+  if(active) progress.textContent = snapshot.import ? `${active.state} · ${active.total_bytes === null ? 'awaiting upload' : `${active.received_bytes} / ${active.total_bytes} bytes`}` : `${active.state} · ${active.processed_frames} frames`;
+  else if(importOutcome && importOutcome.generation===snapshot?.generation) progress.textContent=`Import ${importOutcome.state}${importOutcome.error ? ` · ${importOutcome.error}` : ''}`;
+  else if(snapshot?.job) progress.textContent = `${snapshot.job.state}${snapshot.job.error ? ` · ${snapshot.job.error}` : ''} · ${snapshot.job.processed_frames} frames`;
   signal.setAttribute('aria-label',live?.job?'Live spectrum and waterfall':'Recorded spectrum and waterfall');
-  if(live?.job){statusText.textContent=`Live ${live.job.mode.toUpperCase()} Â· ${live.audio.state} Â· ${live.job.state}${live.job.error?` Â· ${live.job.error}`:''}`;}
+  if(live?.job){statusText.textContent=`Live ${live.job.mode.toUpperCase()} · ${live.audio.state} · ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`;}
 }
 async function request(path,options={}) {
   const response=await fetch(path,{...options,signal:options.signal || AbortSignal.timeout(10000)});
@@ -312,14 +312,14 @@ async function sync(current=socket) {
     if(identity(data)!==identity(snapshot)){rows=[];resetLevels();paint();}snapshot=data;
     if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
-      try{const outcome=await request(`/recording/imports/${previousImport}`);if(current!==socket)return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable Â· current source state refreshed';}
+      try{const outcome=await request(`/recording/imports/${previousImport}`);if(current!==socket)return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
-  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable Â· ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
+  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable · ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
-addEventListener('station-stale',()=>{statusText.textContent='Disconnected Â· recording data stale';subscribedSocket=undefined;});
+addEventListener('station-stale',()=>{statusText.textContent='Disconnected · recording data stale';subscribedSocket=undefined;});
 addEventListener('station-message',event => {
   const {message,current}=event.detail;
   if(current!==socket)return;
@@ -372,9 +372,9 @@ document.querySelector('#recording-import').addEventListener('click',async()=>{
     for(let offset=0;offset<file.size&&!stopped;offset+=2048){
       const end=Math.min(offset+2048,file.size);
       const result=await request(`/recording/imports/${uploadId}`,{method:'PUT',headers:{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${file.size}`},body:file.slice(offset,end),signal:uploadAbort.signal});
-      progress.textContent=`${result.state} Â· ${end} / ${file.size} bytes`;
+      progress.textContent=`${result.state} · ${end} / ${file.size} bytes`;
     }
-  }catch(error){progress.textContent=`Import outcome Â· ${error.message} Â· refresh state before starting again`;}
+  }catch(error){progress.textContent=`Import outcome · ${error.message} · refresh state before starting again`;}
   finally{uploading=false;uploadAbort=null;uploadId=null;await sync();}
 });
 document.querySelector('#recording-replay').addEventListener('click',async()=>{
@@ -383,9 +383,9 @@ document.querySelector('#recording-replay').addEventListener('click',async()=>{
 document.querySelector('#recording-cancel').addEventListener('click',async()=>{
   stopped=true;uploadAbort?.abort();
   const id=uploadId||snapshot?.import?.id;
-  if(uploading && !id){progress.textContent='Cancellation requested Â· awaiting reservation response';return;}
+  if(uploading && !id){progress.textContent='Cancellation requested · awaiting reservation response';return;}
   if(!id && !snapshot?.job){await sync();return;}
-  try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown Â· ${error.message}`;await sync();}
+  try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown · ${error.message}`;await sync();}
 });
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
@@ -445,10 +445,10 @@ function receiveShow(){
   document.querySelector('#receive-start').disabled=!connected||!live||!!active||mutationPending||uncertainMutation||!profileData?.settings.audio.input_device;
   document.querySelector('#receive-stop').disabled=!connected||!active||mutationPending||uncertainMutation||live.job.state==='cancelling';
   if(live){
-    receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` Â· ${live.audio.error}`:''}${live.job?` Â· ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` Â· ${live.job.error}`:''}`:' Â· receive stopped'}${historyIncomplete?' Â· Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' Â· Partial results retained':''}${receiveFailure?` Â· ${receiveFailure}`:''}`;
+    receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
-    capabilities[0].textContent=live.audio.state==='running'?'Running Â· selected input':`Unavailable Â· ${live.audio.error??live.audio.state}`;
-    capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} Â· ${live.job.state}`:'Unavailable Â· receive stopped';
+    capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
+    capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
     statusBar.children[1].textContent=`Audio ${live.audio.state} \u00b7 ${live.job?`${live.job.mode.toUpperCase()} ${live.job.state}`:'Receive stopped'} \u00b7 CAT unavailable`;
     const focus=document.querySelector('#rx-focus .op-contact-identity');
     if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
@@ -470,7 +470,7 @@ async function receiveSync(current=socket){
       renderResults();
     }
     live=data;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
-  }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable Â· ${error.message}`;receiveStatus.textContent=receiveFailure;}}
+  }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
   finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
 }
 const activitySort=document.querySelector('#activity-sort'),activityDirection=document.querySelector('#activity-direction');
@@ -513,7 +513,7 @@ function renderResults(){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   for(const record of ordered){
     const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${liveIdentity(live)}/${record.sequence}`;row.dataset.sequence=String(record.sequence);
-    for(const [index,text] of [periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'â€”':record.snr_db.toFixed(1),record.dt_seconds===null?'â€”':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status].entries()){
+    for(const [index,text] of [periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(1),record.dt_seconds===null?'—':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status].entries()){
       const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;row.append(cell);
     }
     body.append(row);
@@ -560,28 +560,28 @@ async function receiveResults(){
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
     live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
-  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable Â· ${error.message}`;}
+  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
   finally{resultPending=false;}
 }
 document.querySelector('#receive-start').addEventListener('click',async()=>{
   if(!live||mutationPending)return;receiveMutationEpoch++;mutationPending=true;receiveShow();
   try{await request('/receive/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,profile_revision:profileData.revision,mode:document.querySelector('#receive-mode').value})});await sync();await receiveSync();}
-  catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Start outcome unknown Â· ${error.message} Â· refresh before another action`;}
+  catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Start outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 });
 document.querySelector('#receive-stop').addEventListener('click',async()=>{
   if(!live?.job||mutationPending)return;receiveMutationEpoch++;mutationPending=true;receiveShow();
   try{await request('/receive/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,job_id:live.job.id})});await receiveSync();await sync();}
-  catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown Â· ${error.message} Â· refresh before another action`;}
+  catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 });
 document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
   const output=document.querySelector('#audio-inputs');
   try{const data=await request('/audio/devices');output.textContent=data.devices.map(d=>`${d.name} [${d.id}]`).join('\n')||'No audio inputs available';}
-  catch(error){output.textContent=`Audio inputs unavailable Â· ${error.message}`;}
+  catch(error){output.textContent=`Audio inputs unavailable · ${error.message}`;}
 });
 addEventListener('station-ready',event=>receiveSync(event.detail));
-addEventListener('station-stale',()=>{receiveShow();receiveStatus.textContent='Disconnected Â· live receive data stale';});
+addEventListener('station-stale',()=>{receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
 addEventListener('station-message',event=>{if(event.detail.current===socket&&event.detail.message.type==='receive.state')receiveSync(event.detail.current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);

@@ -638,7 +638,11 @@ fn arm_detail(
     let now = tokio::time::Instant::now();
     let elapsed = now.saturating_duration_since(epoch);
     let remainder = elapsed.as_nanos() % 200_000_000;
-    let next = now + Duration::from_nanos(u64::try_from(200_000_000 - remainder).unwrap());
+    let next = now
+        + Duration::from_nanos(
+            u64::try_from(200_000_000 - remainder)
+                .expect("phase remainder is below 200 million nanoseconds"),
+        );
     tick.reset_at(next);
     next
 }
@@ -671,8 +675,27 @@ impl DetailDelivery {
         self.tokens -= 1.0;
         self.cursor = sequence.saturating_add(1);
     }
+    fn write<S: futures_sink::Sink<Message> + Unpin>(
+        &mut self,
+        socket: &mut S,
+        frame: &recording::DetailedFrame,
+    ) -> Result<Option<bool>, S::Error> {
+        if self.tokens < 1.0 || frame.identity != self.identity || frame.sequence < self.cursor {
+            return Ok(None);
+        }
+        let result = optional_write(socket, Message::Text(frame.text.clone().into()))?;
+        if result.is_some() {
+            self.accepted(frame.sequence);
+        }
+        Ok(result)
+    }
     fn ready_at(&self, now: tokio::time::Instant) -> tokio::time::Instant {
-        now + Duration::from_secs_f64(((1.0 - self.tokens) / 5.0).max(0.0))
+        let wait = Duration::from_secs_f64(((1.0 - self.tokens) / 5.0).max(0.0));
+        now + if self.tokens < 1.0 {
+            wait.max(Duration::from_nanos(1))
+        } else {
+            wait
+        }
     }
 }
 
@@ -771,10 +794,9 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                     });
                     if let Some(frame)=frame {
                         if detail_delivery.tokens>=1.0 {
-                            match optional_write(&mut socket,Message::Text(frame.text.clone().into())) {
+                            match detail_delivery.write(&mut socket,&frame) {
                                 Ok(None)=>{},
                                 Ok(Some(flushed))=>{
-                                    detail_delivery.accepted(frame.sequence);
                                     last_display=Instant::now();
                                     if !flushed {optional_since.get_or_insert_with(Instant::now);}
                                     next_detail=next_detail.min(detail_delivery.ready_at(now));

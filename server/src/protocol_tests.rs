@@ -88,6 +88,36 @@ fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
         optional_write(&mut peer, Message::Text("latest".into())).unwrap(),
         Some(true)
     );
+    // TC-010-008: run acceptance accounting through the same operation as the connection.
+    let mut delivery = super::DetailDelivery::new(json!("current"), 5);
+    let mut frame = super::recording::DetailedFrame {
+        text: "x".repeat(2048),
+        identity: json!("current"),
+        sequence: 6,
+    };
+    peer.ready = false;
+    peer.flush = false;
+    assert_eq!(delivery.write(&mut peer, &frame).unwrap(), None);
+    assert_eq!((delivery.cursor, delivery.tokens), (5, 1.0));
+    peer.ready = true;
+    frame.text.push('x');
+    assert_eq!(delivery.write(&mut peer, &frame).unwrap(), None);
+    assert_eq!((delivery.cursor, delivery.tokens), (5, 1.0));
+    frame.text.pop();
+    frame.identity = json!("obsolete");
+    assert_eq!(delivery.write(&mut peer, &frame).unwrap(), None);
+    frame.identity = json!("current");
+    assert_eq!(delivery.write(&mut peer, &frame).unwrap(), Some(false));
+    assert_eq!((delivery.cursor, delivery.tokens), (7, 0.0));
+    assert_eq!(peer.buffered, 1);
+    delivery.refill(delivery.updated + std::time::Duration::from_millis(400));
+    frame.sequence = 7;
+    assert_eq!(delivery.write(&mut peer, &frame).unwrap(), None);
+    assert_eq!((delivery.cursor, delivery.tokens), (7, 2.0));
+    peer.flush = true;
+    assert!(optional_flush(&mut peer).unwrap());
+    assert_eq!(delivery.write(&mut peer, &frame).unwrap(), Some(true));
+    assert_eq!((delivery.cursor, delivery.tokens), (8, 1.0));
 }
 
 // Proves: FR-021; TC-021-005. Level 2: isolated tests on Windows PC/CI.
@@ -141,4 +171,32 @@ async fn detailed_late_tick_keeps_subscription_phase() {
         super::arm_detail(&mut tick, origin) - origin,
         Duration::from_millis(1200)
     );
+}
+
+// Proves: CL-006-03/04; TC-010-008 independent token arithmetic and acceptance-only state.
+#[tokio::test(start_paused = true)]
+async fn detailed_tokens_bound_catchup_without_charging_refusal_or_backwards_time() {
+    use super::DetailDelivery;
+    let now = tokio::time::Instant::now();
+    let mut delivery = DetailDelivery::new(json!(["boot", "source", "job", 1]), 5);
+    assert_eq!(delivery.tokens, 1.0);
+    delivery.refill(now + std::time::Duration::from_millis(100));
+    assert!((delivery.tokens - 1.5).abs() < 1e-9);
+    // Selecting/refusing an optional write has no acceptance side effect.
+    assert_eq!(delivery.cursor, 5);
+    delivery.refill(now);
+    assert!((delivery.tokens - 1.5).abs() < 1e-9);
+    delivery.accepted(6);
+    assert_eq!(delivery.cursor, 7);
+    assert!((delivery.tokens - 0.5).abs() < 1e-9);
+    assert_eq!(
+        delivery.ready_at(delivery.updated) - delivery.updated,
+        std::time::Duration::from_millis(100)
+    );
+    delivery.refill(now + std::time::Duration::from_secs(10));
+    assert_eq!(delivery.tokens, 2.0);
+    delivery.accepted(7);
+    delivery.accepted(8);
+    assert_eq!(delivery.tokens, 0.0);
+    assert_eq!(delivery.cursor, 9);
 }
