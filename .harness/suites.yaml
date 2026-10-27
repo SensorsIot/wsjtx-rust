@@ -279,3 +279,31 @@
   - server/src/main.rs
   depends_on: [profiles]
   needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated server and browser, unsupported/no-input baseline, disabled TX/QSO/log, literal station identity, desktop/mobile/zoom layout and separator accessibility. No transceiver, audio activation or network service.
+
+- suite: simulator-fixtures
+  cost: 2
+  run: >-
+    python -m unittest discover -s tools -p test_wsjtx_simulated_samples.py -v &&
+    python tools/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/manifest.json" --fixture-directory fixtures/decoder &&
+    python tools/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/../ft8/manifest.json" --fixture-directory fixtures/decoder
+  paths:
+  - tools/wsjtx_simulated_samples.py
+  - tools/test_wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-cases.json
+  - fixtures/decoder/independent-vector-tool/
+  - fixtures/decoder/protocol-data/
+  - docs/WSTX Rust FSD.md
+  select:
+  - tools/wsjtx_simulated_samples.py
+  - tools/test_wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-cases.json
+  - fixtures/decoder/independent-vector-tool/
+  - fixtures/decoder/protocol-data/
+  needs: >-
+    Python 3.12 standard library and the immutable CR18 portable fixture store,
+    provisioned before the gate. Set WSTX_SIMULATOR_SAMPLE_DIR to its ft4 directory;
+    its sibling ft8 directory is required. Set WSTX_SIMULATOR_ORACLE_DIR to
+    fixtures/decoder for repository tests (portable tests default to sibling oracle).
+    Preserve delivery-catalog.json and both mode manifests with the frozen store;
+    missing files fail. Windows PC, isolated integrity/refusal tests and explicit
+    verification of all eight WAVs; no download, compiler, decoder run or radio.
