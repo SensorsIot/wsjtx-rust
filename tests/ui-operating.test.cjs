@@ -38,6 +38,21 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   for(const name of ['Enable Tx','Halt Tx','Auto Seq','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.match(await page.locator('#operating-capabilities').innerText(),/Audio.*unavailable/is);
   assert.match(await page.locator('#operating-capabilities').innerText(),/CAT.*unavailable/is);
+  // Existing server is read-only: verify real table styles without inserting decoded rows.
+  for(const width of [360,1440,1499,1500,1600]){
+    await page.setViewportSize({width,height:900});
+    const style=await page.locator('#band-activity table').evaluate(table=>{
+      const header=table.querySelector('th'),cell=table.querySelector('td');
+      const a=getComputedStyle(table),b=getComputedStyle(header),c=getComputedStyle(cell);
+      return {tableFont:a.fontSize,headerFont:b.fontSize,headerPadding:b.paddingTop,cellPadding:c.paddingTop,wrap:c.overflowWrap,overflow:document.documentElement.scrollWidth>innerWidth};
+    });
+    assert.equal(style.tableFont,width>=1500?'14px':'13px',`Band Activity table at ${width}px`);
+    assert.equal(style.headerFont,'11px');assert.equal(style.headerPadding,'8px');
+    assert.equal(style.cellPadding,'8px');assert.equal(style.wrap,'anywhere');assert.equal(style.overflow,false);
+    assert.equal(await page.locator('#band-activity tr[data-result-id]').count(),0,'no fake decoded rows');
+    await page.screenshot({path:`test-results/ui-operating/readability-${width}.png`,fullPage:true});
+  }
+  await page.setViewportSize({width:1440,height:900});
   const g=await geometry(page);assert.ok(g.bar.bottom<=g.signal.top+1);assert.ok(g.signal.bottom<=g.split.top+1);assert.ok(g.split.bottom<=g.workspace.top+1);assert.equal(g.overflow,false);
   await fs.mkdir('test-results/ui-operating',{recursive:true});await page.screenshot({path:'test-results/ui-operating/desktop.png',fullPage:true});assert.deepEqual(errors,[]);
 });
