@@ -8,7 +8,7 @@ const {chromium}=require('playwright');
 const origin=process.env.WSTX_RECEIVE_FIXTURE_ORIGIN;
 const expected=JSON.parse(process.env.WSTX_RECEIVE_FIXTURE_EXPECTED||'null');
 
-// Proves: CL-008-02/03/05; CL-010-05/07/08; TC-009-004.
+// Proves: FR-004; CL-010-05/07/08; TC-009-004; TC-007-002 readable decoded-row subset.
 test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser callsign',{timeout:60000},async()=>{
   assert.ok(origin&&expected,'run through the Rust live_native_fixture_reaches_real_manager_http_and_browser_callsign test');
   const browser=await chromium.launch();
@@ -33,6 +33,15 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     const row=page.locator('#band-activity tbody tr[data-result-id]').filter({hasText:'CQ K1ABC FN42'});
     await row.waitFor({timeout:45000});
     assert.equal(await row.count(),1);
+    for(const width of [360,1440,1499,1500,1600]){
+      await page.setViewportSize({width,height:900});
+      const cells=await row.locator('td').evaluateAll(nodes=>nodes.map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}));
+      assert.ok(cells[0].font>=12,`source time readable at ${width}px`);
+      for(const cell of cells.slice(1))assert.ok(cell.font>=(width>=1500?14:13),`decoded cell readable at ${width}px`);
+      assert.ok(cells.every(cell=>cell.top>=8&&cell.bottom>=8));
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    }
+    await page.setViewportSize({width:1440,height:900});
     assert.match(await page.locator('#rx-focus').innerText(),/No contact selected/);
     assert.doesNotMatch(await page.locator('#rx-focus').innerText(),/Decoder unavailable/);
     const snapshot=await (await fetch(origin+'/receive')).json();

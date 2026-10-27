@@ -27,6 +27,11 @@ body[data-profile=true]{background:#0b141d;color:#e0eaf2}
 .message-pane table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
 .message-pane th{text-align:left;padding:7px 5px;background:#172c39;color:#a8bfcd;font-size:10px;font-weight:500}
 .message-pane th:last-child{width:46%}
+#band-activity table{font-size:13px;font-variant-numeric:tabular-nums}
+#band-activity th{font-size:11px;padding-top:8px;padding-bottom:8px}
+#band-activity td{padding:8px 5px;overflow-wrap:anywhere}
+#band-activity tr[data-result-id] td:first-child{font-size:12px}
+@media(min-width:1500px){#band-activity table{font-size:14px}}
 .empty-messages{text-align:center;padding:22px 12px;height:120px;color:#9bb3c2;line-height:1.6}
 .empty-messages strong,.empty-messages span{display:block}
 .empty-messages strong{font-size:12px;font-weight:500;color:#c3d4de}

@@ -37,7 +37,7 @@ function liveFixture(idle){
 function emptyResults(s){return {v:1,profile_id:s.profile_id,boot_id:s.boot_id,source_id:s.source.id,job_id:s.job.id,generation:s.generation,
   mode:'ft8',state:s.job.state,error:null,search_limited:false,first_sequence:0,next_sequence:0,available_count:0,next:0,more:false,records:[]};}
 
-// Proves: CL-008-03; TC-009-004. Negative delayed HTTP fixture; no decoder evidence.
+// Proves: CL-010-07, CL-010-08; TC-009-004. Negative delayed HTTP fixture; no decoder evidence.
 test('receive result race cannot regress a newer cancelled snapshot',{timeout:15000},async t=>{
   const entered=deferred(),release=deferred();let current;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
@@ -55,7 +55,7 @@ test('receive result race cannot regress a newer cancelled snapshot',{timeout:15
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-008-02/03; TC-009-004. Negative wire fixture through the actual listener.
+// Proves: CL-010-07, CL-010-08; TC-009-004. Negative wire fixture through the actual listener.
 test('receive frame race updates its live owner while recording job is absent',{timeout:15000},async t=>{
   let current;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
@@ -72,7 +72,7 @@ test('receive frame race updates its live owner while recording job is absent',{
   assert.equal(await page.locator('#connection').getAttribute('data-state'),'connected');assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-008-03; TC-009-004. A pre-mutation read is not reconciliation evidence.
+// Proves: CL-010-07, CL-010-08; TC-009-004. A pre-mutation read is not reconciliation evidence.
 test('receive snapshot race preserves unknown mutation until a later read',{timeout:15000},async t=>{
   const entered=deferred(),release=deferred();let hold=false;
   const {page,errors}=await fixture(t,{width:1440,height:900},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
@@ -104,6 +104,14 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   for(const name of ['Enable Tx','Halt Tx','Auto Seq','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.match(await page.locator('#operating-capabilities').innerText(),/Audio.*unavailable/is);
   assert.match(await page.locator('#operating-capabilities').innerText(),/CAT.*unavailable/is);
+  for(const width of [360,1440,1499,1500,1600]){
+    await page.setViewportSize({width,height:900});
+    const type=await page.locator('#band-activity').evaluate(el=>({body:parseFloat(getComputedStyle(el.querySelector('table')).fontSize),header:parseFloat(getComputedStyle(el.querySelector('th')).fontSize)}));
+    assert.ok(type.body>=(width>=1500?14:13),`Band Activity body remains readable at ${width}px: ${type.body}px`);
+    assert.ok(type.header>=11,`Band Activity labels remain readable at ${width}px`);
+    assert.equal((await geometry(page)).overflow,false);
+  }
+  await page.setViewportSize({width:1440,height:900});
   const g=await geometry(page);assert.ok(g.bar.bottom<=g.signal.top+1);assert.ok(g.signal.bottom<=g.split.top+1);assert.ok(g.split.bottom<=g.workspace.top+1);assert.equal(g.overflow,false);
   await fs.mkdir('test-results/ui-operating',{recursive:true});await page.screenshot({path:'test-results/ui-operating/desktop.png',fullPage:true});assert.deepEqual(errors,[]);
 });
