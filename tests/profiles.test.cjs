@@ -223,9 +223,15 @@ test('TC-022-003: lifecycle, ownership aliases/copies, ports and unavailable res
   const system32 = path.join(process.env.SystemRoot, 'System32');
   const whoami = path.join(system32, 'whoami.exe'), icacls = path.join(system32, 'icacls.exe');
   const sid = execFileSync(whoami, ['/user', '/fo', 'csv', '/nh'], {encoding: 'utf8'}).match(/S-1-[0-9-]+/)[0];
-  execFileSync(icacls, [file, '/deny', `*${sid}:(R)`], {stdio: 'pipe'});
-  try {await refusal(['--profile', profiles[0].dir], 'resource_unavailable');}
+  const readableBytes = await fs.readFile(file);
+  // Deny data reads while preserving ACL read access needed by the finally cleanup.
+  execFileSync(icacls, [file, '/deny', `*${sid}:(RD)`], {stdio: 'pipe'});
+  try {
+    await assert.rejects(fs.readFile(file), error => error.code === 'EACCES' || error.code === 'EPERM');
+    await refusal(['--profile', profiles[0].dir], 'resource_unavailable');
+  }
   finally {execFileSync(icacls, [file, '/remove:d', `*${sid}`], {stdio: 'pipe'});}
+  assert.deepEqual(await fs.readFile(file), readableBytes);
   const port = new URL(profiles[0].origin).port;
   await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: `127.0.0.1:${port}`, origin: `http://localhost:${Number(port) + 1}`}})); await refusal(['--profile', profiles[0].dir], 'invalid_profile');
   await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: `127.0.0.1:${port}`, origin: `https://localhost:${port}`}})); await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration');
