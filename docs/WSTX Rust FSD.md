@@ -1679,8 +1679,7 @@ remain visible. Current source-relative seconds and unknown DT remain truthful;
 no UTC/DT is fabricated. Numeric/time/status values use unbroken text with
 character-based minimum widths; frequency3499.9 must remain one line. Message
 text receives the remaining width and wraps at word boundaries, splitting a token
-only when necessary to keep it inside its cell. No legacy last-column percentage
-reserves Message width for the added Status column.
+only when necessary to keep it inside its cell.
 
 Below44em of Band Activity table-container width, populated rows become labelled
 field details with all six labels and values. Below23em these details use one column,
@@ -2349,8 +2348,7 @@ TC-010-006 and TC-010-007 remain the waveform/palette/geometry regressions.
 At360,1440 and1600CSSpx, inspect computed Band Activity cell, time and header
 styles against16CSSpx normal/time/numeric/message and14CSSpx label minima, rem-scaled
 at200% text enlargement, and8CSSpx vertical padding.
-The1600CSSpx view exercises the >=1500CSSpx increase; long text wraps without page
-overflow. Existing splitter, keyboard, capability and transport assertions remain.
+All widths retain these minima; long text wraps without page overflow. Existing splitter, keyboard, capability and transport assertions remain.
 These style oracles come from the stated presentation values, not candidate CSS. Verify the dominant/full-width Band Activity proportions and labelled responsive rows at360/720/1200/1440/1600CSSpx and1x/2x text. Use captured physical FT4 message text strictly as a labelled presentation fixture, plus independent edge strings:3499.9Hz, signed SNR/DT, long callsigns/full messages, large source seconds, UTC-formatted text and every result status. All six values remain literal and inside their own cells; numbers never split, message tokens wrap only when needed, and table labels remain accessible. This fixture is not decoder/RF truth. Capture desktop/narrow/2x screenshots; retain the separate actual nativeFT4/FT8 decoder/browser proofs.
 
 ## 7. Proposed delivery milestones
