@@ -145,11 +145,13 @@ let upper, snapshot, importOutcome, rows = [], drawPending = false, syncPending 
 const identity = s => s ? `${s.boot_id}/${s.job?.source_id}/${s.job?.id}/${s.generation}` : '';
 function split(value) {
   const otherHeight=stationBar.offsetHeight+tuning.offsetHeight+bands.offsetHeight+statusBar.offsetHeight;
-  main.style.minHeight=`${388+otherHeight}px`;
-  const available = Math.max(388,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
-  upper = Math.max(160,Math.min(maximum,value ?? 210));
+  const signalText=[signal.querySelector(".op-signal-heading"),document.querySelector("#signal-meta"),document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")].reduce((height,node)=>height+(node?.offsetHeight||0),0);
+  const minimum=Math.max(160,Math.ceil(signalText+60));
+  main.style.minHeight=`${minimum+228+otherHeight}px`;
+  const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
+  upper = Math.max(minimum,Math.min(maximum,value ?? 210));
   signal.style.height = `${upper}px`;
-  for (const [name,value] of [['min',160],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
+  for (const [name,value] of [['min',minimum],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
 }
 splitter.addEventListener('keydown',event => {
@@ -158,7 +160,9 @@ splitter.addEventListener('keydown',event => {
 });
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
 splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top)/(box.height/signal.offsetHeight));}});
-addEventListener('resize',() => split(upper)); split();
+addEventListener('resize',() => split(upper));
+const textLayoutObserver=new ResizeObserver(()=>split(upper));
+for(const node of [stationBar,signal.querySelector(".op-signal-heading"),document.querySelector("#level-legend")])textLayoutObserver.observe(node); split();
 function timeProjection(H=waterfall.height,C=waterfall.getBoundingClientRect().height){
   const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1);
   let count=0;
@@ -258,7 +262,8 @@ function paint() {
       }
     }
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
-    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f%500===0)tick.textContent=String(f);ruler.append(tick);}
+    const labelStep=500*Math.max(1,Math.ceil(parseFloat(getComputedStyle(ruler).fontSize)*4/Math.max(1,ruler.clientWidth/6)));
+    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.textContent=String(f);ruler.append(tick);}
     const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
     legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
