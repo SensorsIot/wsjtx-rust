@@ -1583,7 +1583,7 @@ Imported model definitions retain their own declared source dependencies.
 | `Architecture.sysml` | 4.1, 6.1, 11, 12.1, 12.2, 12.3, 12.4 |
 | `Profiles.sysml` | 4.2, 6.2, 12.1, 12.2, 12.3, 12.4, 12.5 |
 | `RecordingReceive.sysml` | 4.4, 6.4, 12.6, 12.8 |
-| `StationDecode.sysml` | 4.4, 6.4, 12.7, 12.8 |
+| `StationDecode.sysml` | 4.4, 6.4, 12.7, 12.8, 13.6 |
 | `RadioIO.sysml` | 4.5, 12.8 |
 | `OperatingLayout.sysml` | 4.4, 4.7, 6.6, 12.7, 12.8 |
 
@@ -2341,6 +2341,9 @@ the communication/recording companions; none require hardware consent.
 
 | Case/subcase | Setup and action | Independent expected observation |
 |---|---|---|
+| Both modes: WSJT-X simulator fixtures (13.6) | Verify all eight fixed mode/scenario WAVs, manifests, component chains, declared/emitted payloads and symbols; run the pinned Fortran reference and immutable Rust baseline on identical PCM/search/AP/depth settings. | Independent declared messages and pack/tone mapping define truth. Exact 12 kHz mono PCM16 lengths/hashes and unclipped complete support; clean singles recover exactly with no extras. Weak/fading/overlap known/matched/missed/extra catalogues remain observations, not new thresholds. Preserve existing goldens and all prior corpus budgets. |
+| Simulator final-WAV admission (TC-004-003; 13.6) | In valid copied FT4 and FT8 datasets, retain valid metadata/hash/bytes and vary only a known case's filename: exact case identity plus `.wav`, an absolute path to the valid WAV, or `../` plus that basename with identical parent bytes. Observe the final-WAV reader separately from manifest/declaration/oracle reads. | After immutable identity/settings validation, exact literal names are admitted; both alternative names raise `ValueError` before any final-WAV read. No normalization or historical command/cwd grants file authority. Disposable Windows directories only; never rewrite frozen inputs. |
+| FT8 simulator provenance (TC-004-002; 13.6) | Compare the delivered FT8 package's actual inventory with its provenance text and pinned corresponding-source links. | Included build/tool/revision logs and COPYING/AUTHORS are named accurately; absent header/source/CMake source files are not claimed bundled. Source links remain links. No PCM, generation snapshot, manifest truth or comparison changes to repair prose. |
 | Both modes: payload-channel | Every supported i3/n3 family; exact fields/77 bits; call/CQ/grid/report/free-text/telemetry/contest/hash boundaries, first/max/invalid values; generate CRC/FEC and both tone frames independently. | Fixed expected fields/CRC/codeword/79 or 105 tones; separate CRC recurrence and published H syndrome agree. Hashes retain numeric width/value and `<...>`; source identity, received text and reference observations remain distinct. Include K1ABC=10214965, W9XYZ=12751800, FN42=10342, type3 WI=8049, type4 PJ2/W1AW with hash12=579 and current VHF hashes2662/3931158, report59/serial2047/gridRR99XX. |
 | Both modes: known-word fit metric | Generate independent analytic quadratures with phase=2*pi*f*(k+1)/12000+0.4*sin(2*pi*((k+1)/12000)/0.048), x=0.6*u-0.8*w,60480frames; take k=288..60191 every sample at f=1499,1499.9,1500,1500.1,1501,2999,3000,3001Hz. | Independent scalar Gram calculation recovers coefficients0.6/-0.8 and explained energy sum(x*x); candidate metric agrees within5e-7relative after f32storage. Both1500/3000carrier cases reject a mere scalar correction of the nonorthogonal complex-energy approximation. |
 | Both modes: unrelated-carrier refinement alias | On the same60480-frame analytic template and trimmed support, set f=400 and1000Hz, t=(k+1)/12000, psi=0.4*sin(2*pi*t/0.048), u=cos(2*pi*f*t+psi), w=sin(2*pi*f*t+psi). Independently form x=cos(2*pi*(3000-f)*t-psi+0.7), then repeat with x+0.25*u-0.5*w. Compare the refinement grid's actual fit metric against a separate scalar full-rate2x2 Gram solve after float32 storage. | For each input the candidate explained energy agrees with the independent full-rate oracle within5e-7 times total observation energy. The unrelated-only input's full-rate explained fraction is below0.001, while a separate every-fourth-sample diagnostic exceeds0.999; it is therefore rejected as an oracle for grid ordering. The mixed case retains the independently calculated target coefficients/energy without alias amplification. An unfiltered stride-four scoring negative control fails this oracle. All existing grids/caps,2286quality cases,14phase/scale/drift cases, known-answer recording thresholds, runtime/cancellation and64MiB limits remain unchanged. |
@@ -3843,3 +3846,109 @@ Attribution and sample licensing are in the [README](../README.md#license-and-at
 - [2019 WebSDR example introduction](https://github.com/kgoba/ft8_lib/commit/a31733448d79d7e12cd9dc50198ee9f241829da8)
 - [2019 timestamped example introduction](https://github.com/kgoba/ft8_lib/commit/82da02f7ade8bcaa750016625ddd69a2703938d1)
 - [WSJT-X v3.3.0-beta4 release](https://github.com/WSJTX/wsjtx/releases/tag/v3.3.0-beta4)
+
+### 13.6. Additional WSJT-X simulator samples
+
+Eight test-only recordings supplement the existing independent decoder waveforms,
+noise corpus and real recordings. The simulator source is WSJT-X
+`0f7d5928449ec747c3d1f6da1306f8c94404c3a9` (3.3.0-beta4). Each mode contributes
+one clean fractional-offset signal, one weak AWGN signal, one fading/two-path signal,
+and one controlled two-station mixture. These inputs do not create application
+file-decoding operations or change the existing decoder acceptance thresholds.
+
+| Fixture | Known transmitted message(s) | Lowest tone Hz | DT argument s | SNR argument dB/2500 Hz | Spread Hz / delay ms |
+|---|---|---:|---:|---:|---|
+| SIM18-FT8-CLEAN | CQ K1ABC FN42 | 1000.3 | 0.125 | 99 (noise disabled) | 0 / 0 |
+| SIM18-FT8-WEAK | CQ W1AW FN31 | 1499.7 | 0.125 | -15 | 0 / 0 |
+| SIM18-FT8-FADING | K1ABC W9XYZ -10 | 1800.5 | 0.125 | -10 | 0.5 / 1 |
+| SIM18-FT8-OVERLAP | CQ K1ABC FN42; CQ W1AW FN31 | 1000.3; 1006.55 | 0.125 each | both generated at 99; mixed without added noise | 0 / 0 |
+| SIM18-FT4-CLEAN | CQ K1ABC FN42 | 1000.3 | 0.125 | 99 (noise disabled) | 0 / 0 |
+| SIM18-FT4-WEAK | CQ W1AW FN31 | 1499.7 | 0.125 | -10 | 0 / 0 |
+| SIM18-FT4-FADING | K1ABC W9XYZ -10 | 1800.5 | 0.125 | -5 | 0.5 / 1 |
+| SIM18-FT4-OVERLAP | CQ K1ABC FN42; CQ W1AW FN31 | 1000.3; 1021.1333333333333 | 0.125 each | both generated at 99; mixed without added noise | 0 / 0 |
+
+Both simulators emit 12 kHz mono signed PCM16. FT8 files contain 180000 frames;
+FT4 files contain 72576 frames. The SNR argument is a simulator setting, not a
+claim that a fading realization has exactly that measured SNR. The DT argument
+is relative to the simulator's nominal start; manifests distinguish it from the
+actual ramp/sample origin and display DT. Arbitrary offsets are not rounded to a
+shared tone grid. Source waveform/ramp conventions are used to check complete
+support and the absence of wrapped signal fragments at the file edges.
+
+The overlap cases use two separately generated noise-free component WAVs at the
+listed frequencies. Decode-independent mixing reads each PCM sample as x/32768,
+forms y=0.25*x1 + (0.25*10^(-6/20))*x2 in float64, then computes
+q=round_ties_even(32768*y). It rejects q outside [-32768,32767] rather than
+saturating, and writes each admitted q as a signed little-endian PCM16 integer. The component gain
+ratio is six dB; this is distinct from an RF SNR claim. Component hashes, exact gain
+values, mixed-wave hash and quantization rule are recorded. The original component
+files remain retrievable as evidence and are not counted among the eight final cases.
+
+Every fixture manifest records its declared input message, simulator's normalized
+emitted message, emitted 77-bit vector and canonical packed 77-bit payload,
+plus 79 FT8/103 FT4 channel symbols, exact
+command/working directory/environment controls, binary/source/package SHA256,
+waveform SHA256, format/length/peak/RMS, channel settings and available seed data.
+The FT4 legacy `genft4` driver returns a scrambled 77-bit vector; manifests
+retain that emitted vector separately and derive the canonical payload by the pinned
+77-bit FT4 XOR mask. FT8 emitted bits are canonical. Independent packing/tone checks
+use these explicit conventions, never compare scrambled FT4 bits to a canonical
+Rust payload as if equivalent. The standard drivers do not expose a seed and initialize their C PRNG from OS
+entropy/time/PID. Such seed values are explicitly unknown; retained bytes/hashes,
+not a fabricated seed, define the reproducible regression input. A different
+realization is a different fixture and does not overwrite an admitted one.
+
+Final-WAV admission is part of CL-007-03 and TC-004-003. After matching a case
+identity and settings against the immutable mode declaration, the verifier MUST
+require the manifest filename to equal that case identity followed by the literal
+suffix `.wav`, before reading that final WAV. Any other filename MUST raise
+`ValueError`; it is not resolved or normalized into an accepted alternative.
+Absolute filenames and `../` escaping filenames are refused even when they point
+to byte-identical valid PCM with matching metadata and hash. Historical generator
+command and working-directory strings remain provenance only; they never select
+an input file outside the declared portable layout.
+
+TC-004-003 final-WAV filename subcases start from a valid copied mode dataset and
+change only the filename of a known case. Keep the target bytes, expected hash,
+mode, case identity and all other fields valid: (a) the exact declared
+`SIM18-FT8-CLEAN.wav` or `SIM18-FT4-CLEAN.wav` is admitted; (b) an absolute path to
+that valid final WAV is refused with `ValueError`; (c) `../` plus the same valid
+basename, with a byte-identical file provided at that parent location, is refused
+with `ValueError`. A spy on the final-WAV reader confirms that a refused filename
+is not opened; manifest/declaration/oracle reads are outside this observation.
+The expected result comes from this literal filename rule, not filesystem failure
+or decoder output. Cost 2, automated in a disposable directory on the Windows
+PC; remove only the test's disposable copy afterward. These cases neither modify
+frozen WAVs nor regenerate their manifests.
+
+TC-004-001 (FT4) and TC-004-002 (FT8) include this eight-case named subcase set;
+TC-004-003 includes malformed/header/hash/nonfinite/clipping, literal final-WAV
+filename and mixture-identity refusal checks. Cost 2, isolated automated tests on the Windows PC without a radio.
+Fortran simulator compilation, only when no official matching executable exists,
+runs in the explicitly selected manual GitHub Actions Fortran job; Rust validation
+remains local. This describes test fixtures, not a second modem or production API.
+
+Expected content comes from the declared message plus independently checked packed
+bits/tone mapping, never from candidate decoder output. Both clean single-station
+fixtures must recover exactly their declared message with no extra outputs in the
+Fortran reference and Rust baseline. Weak/fading/overlap cases report every known,
+matched, missed and extra message; recovery rates for one random realization are
+observations, not new sensitivity thresholds. Incorrect messages are never accepted
+as new truth. Existing 2286-case, 38-family and 14-phase/regression expectations stay
+unchanged. Reference/Rust reports pin identical PCM, search 200..3500 Hz and declared
+AP/depth settings; FT8 AP is disabled, while an unassisted FT4 reference uses Fast.
+
+The fixture store and immutable delivery manifest preserve corresponding-source
+links, COPYING/AUTHORS and third-party notices for the supplied tools. Generator
+output independently complements, rather than replaces, existing protocol oracles.
+
+Fixture provenance prose MUST distinguish files actually supplied in the portable
+package from corresponding-source links. The FT8 package includes
+`build-ft8sim.log`, `cmake-version.txt`, `gfortran-version.txt`,
+`source-revision.txt`, `COPYING` and `AUTHORS`; its provenance MUST NOT claim that
+header/source/CMake source files accompany the FT8 directory when those files are
+absent. Pinned corresponding-source URLs remain links, not claims of bundled
+bytes. This CL-007-03 / TC-004-002 provenance subcase checks the package inventory
+against its provenance text on the Windows PC (cost 2, offline artifact review).
+No generation input, frozen PCM, manifest truth or comparison result is changed
+to repair provenance wording.

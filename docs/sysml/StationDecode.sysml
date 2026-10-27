@@ -1,8 +1,8 @@
-// Canonical FSD slices SHA256: 6c73dc6a9720bb7bc79d64ee7a1b8338fbd34a3a8bfe7d6c5345012a937c5b96
+// Canonical FSD slices SHA256: 6c75148d3aba53332b514fe22c31ca553932927f39514b7b052c01ec53c81c1d
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
-         Authority: docs/WSTX Rust FSD.md 4.4 CR7, 6.4 TC-004-001/002/003, 12.7.
+         Authority: docs/WSTX Rust FSD.md 4.4 CR7, 6.4 TC-004-001/002/003, 12.7, 13.6.
          Protocol: https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf sections2-5/AppendixA;
          current source boundaries and fixed vectors use the pinned beta4 reference manifest.
          Pinned GPL-compatible physical routines may be adapted with source provenance/attribution. Independent meaning/readiness
@@ -805,5 +805,208 @@ package WstxOfflineDecode {
     }
     dependency ft4PhysicalCase from ft4PhysicalOracles to WstxRequirements::'TC-004-001';
     dependency ft4PhysicalRejectionCase from ft4PhysicalOracles to WstxRequirements::'TC-004-003';
+
+    package SimulatedReferenceFixtures {
+        attribute def SimulatorFixture {
+            attribute identity : String;
+            attribute finalWavFilename : String;
+            attribute mode : String;
+            attribute scenario : String;
+            attribute messageText : String;
+            attribute carrierHz : Real;
+            attribute nominalDtSeconds : Real = 0.125;
+            attribute sampleRateHz : Integer = 12000;
+            attribute channels : Integer = 1;
+            attribute pcmBits : Integer = 16;
+            attribute frames : Integer;
+            attribute snrArgumentDb2500 : Real;
+            attribute fadingSpreadHz : Real;
+            attribute pathDelayMs : Real;
+            attribute exposesSeedControl : Boolean = false;
+            attribute freezesGeneratedBytes : Boolean = true;
+        }
+        attribute sim18_ft8_clean : SimulatorFixture {
+            :>> identity = "SIM18-FT8-CLEAN";
+            :>> finalWavFilename = "SIM18-FT8-CLEAN.wav";
+            :>> mode = "ft8";
+            :>> scenario = "clean";
+            :>> messageText = "CQ K1ABC FN42";
+            :>> carrierHz = 1000.3;
+            :>> frames = 180000;
+            :>> snrArgumentDb2500 = 99.0;
+            :>> fadingSpreadHz = 0.0;
+            :>> pathDelayMs = 0.0;
+        }
+        attribute sim18_ft8_weak : SimulatorFixture {
+            :>> identity = "SIM18-FT8-WEAK";
+            :>> finalWavFilename = "SIM18-FT8-WEAK.wav";
+            :>> mode = "ft8";
+            :>> scenario = "weak";
+            :>> messageText = "CQ W1AW FN31";
+            :>> carrierHz = 1499.7;
+            :>> frames = 180000;
+            :>> snrArgumentDb2500 = -15.0;
+            :>> fadingSpreadHz = 0.0;
+            :>> pathDelayMs = 0.0;
+        }
+        attribute sim18_ft8_fading : SimulatorFixture {
+            :>> identity = "SIM18-FT8-FADING";
+            :>> finalWavFilename = "SIM18-FT8-FADING.wav";
+            :>> mode = "ft8";
+            :>> scenario = "fading";
+            :>> messageText = "K1ABC W9XYZ -10";
+            :>> carrierHz = 1800.5;
+            :>> frames = 180000;
+            :>> snrArgumentDb2500 = -10.0;
+            :>> fadingSpreadHz = 0.5;
+            :>> pathDelayMs = 1.0;
+        }
+        attribute sim18_ft8_overlap : SimulatorFixture {
+            :>> identity = "SIM18-FT8-OVERLAP";
+            :>> finalWavFilename = "SIM18-FT8-OVERLAP.wav";
+            :>> mode = "ft8";
+            :>> scenario = "overlap";
+            :>> messageText = "CQ K1ABC FN42";
+            :>> carrierHz = 1000.3;
+            :>> frames = 180000;
+            :>> snrArgumentDb2500 = 99.0;
+            :>> fadingSpreadHz = 0.0;
+            :>> pathDelayMs = 0.0;
+            attribute overlapDetails : ControlledOverlap {
+                :>> secondCarrierHz = 1006.55;
+            }
+        }
+        attribute sim18_ft4_clean : SimulatorFixture {
+            :>> identity = "SIM18-FT4-CLEAN";
+            :>> finalWavFilename = "SIM18-FT4-CLEAN.wav";
+            :>> mode = "ft4";
+            :>> scenario = "clean";
+            :>> messageText = "CQ K1ABC FN42";
+            :>> carrierHz = 1000.3;
+            :>> frames = 72576;
+            :>> snrArgumentDb2500 = 99.0;
+            :>> fadingSpreadHz = 0.0;
+            :>> pathDelayMs = 0.0;
+        }
+        attribute sim18_ft4_weak : SimulatorFixture {
+            :>> identity = "SIM18-FT4-WEAK";
+            :>> finalWavFilename = "SIM18-FT4-WEAK.wav";
+            :>> mode = "ft4";
+            :>> scenario = "weak";
+            :>> messageText = "CQ W1AW FN31";
+            :>> carrierHz = 1499.7;
+            :>> frames = 72576;
+            :>> snrArgumentDb2500 = -10.0;
+            :>> fadingSpreadHz = 0.0;
+            :>> pathDelayMs = 0.0;
+        }
+        attribute sim18_ft4_fading : SimulatorFixture {
+            :>> identity = "SIM18-FT4-FADING";
+            :>> finalWavFilename = "SIM18-FT4-FADING.wav";
+            :>> mode = "ft4";
+            :>> scenario = "fading";
+            :>> messageText = "K1ABC W9XYZ -10";
+            :>> carrierHz = 1800.5;
+            :>> frames = 72576;
+            :>> snrArgumentDb2500 = -5.0;
+            :>> fadingSpreadHz = 0.5;
+            :>> pathDelayMs = 1.0;
+        }
+        attribute sim18_ft4_overlap : SimulatorFixture {
+            :>> identity = "SIM18-FT4-OVERLAP";
+            :>> finalWavFilename = "SIM18-FT4-OVERLAP.wav";
+            :>> mode = "ft4";
+            :>> scenario = "overlap";
+            :>> messageText = "CQ K1ABC FN42";
+            :>> carrierHz = 1000.3;
+            :>> frames = 72576;
+            :>> snrArgumentDb2500 = 99.0;
+            :>> fadingSpreadHz = 0.0;
+            :>> pathDelayMs = 0.0;
+            attribute overlapDetails : ControlledOverlap {
+                :>> secondCarrierHz = 1021.1333333333333;
+            }
+        }
+        attribute def ControlledOverlap {
+            attribute secondCarrierHz : Real;
+            attribute secondMessage : String = "CQ W1AW FN31";
+            attribute strongGain : Real = 0.25;
+            attribute weakGain : Real = 0.12529680840681806;
+            attribute gainDifferenceDb : Real = 6.0;
+            attribute rejectsClipping : Boolean = true;
+            attribute saturates : Boolean = false;
+            doc /* Mix two emitted noise-free PCM16 components in float64 after
+                 division by32768, y=.25*x1+weakGain*x2, then
+                 q=round_ties_even(32768*y). Rejectq outside[-32768,32767]; write
+                 admittedq as signedlittle-endianPCM16. Retain component
+                 and final hashes. Strong/weak labels describe selected gain ratio,
+                 not a measured RF SNR. Preserve complete original supports. */
+        }
+        action def AdmitFinalWavFilename {
+            in declaredFixture : SimulatorFixture;
+            in suppliedFilename : String;
+            out admitted : Boolean;
+            assert constraint exactDeclaredFilename {
+                admitted == (suppliedFilename == declaredFixture.finalWavFilename)
+            }
+            doc /* CL-007-03; TC-004-003. declaredFixture is selected only after
+                 immutable mode declaration identity/settings validation. Each fixed
+                 finalWavFilename is identity followed by literal .wav. Compare the
+                 supplied string literally before reading the final WAV; do not
+                 resolve or normalize an alternate spelling into admission. False
+                 yields ValueError and no final-WAV read. Absolute and ../ names
+                 remain false even when their target PCM/hash/metadata is valid.
+                 Manifest/declaration/oracle reads are distinct from final-WAV reads.
+                 Historical command/cwd provenance never authorizes another input. */
+        }
+        verification simulatorFixtureIntegrity {
+            subject decoder : AdvanceDecode;
+            objective { verify WstxRequirements::'CL-007-03'; }
+            doc /* Existing TC-004-001/002 simulator subcases: eight admitted
+                 12k mono PCM16 files, exact lengths/hashes, declared-vs-emitted
+                 message/canonical77bits/79or103tones independently checked. Retain
+                 FT4 legacy emitted scrambled77 separately; canonical77 is obtained
+                 with the pinned FT4 XOR mask, not relabeled as emitted. Unknown PRNG
+                 seed stays unknown; immutable bytes define each retained realization.
+                 DT argument is NOT raw ramp origin or GUI DT. Inspect circular-shift
+                 boundary artifacts and reject clipping; do not trim/pad/normalize.
+                 Clean single-station messages recover exactly; weak/fading/overlap
+                 misses and extras remain observations, never replacement goldens.
+                 APoff FT8 and FT4 Fast reference, search200..3500, exact same PCM.
+                 Cost2 Windows PC, no radio; hosted simulator build only if needed. */
+        }
+        verification simulatorFixtureRefusals {
+            subject decoder : AdvanceDecode;
+            objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+            doc /* TC-004-003: independently malformed/hash-mismatched/truncated
+                 metadata, invalid format/length, nonfinite mixture and clipping
+                 are refused. In a disposable valid copied mode dataset, keep all
+                 metadata/hash/bytes fixed and change only one final-WAV filename:
+                 the declared SIM18-FT8-CLEAN.wav or SIM18-FT4-CLEAN.wav is admitted;
+                 an absolute path to the valid WAV and ../ plus that basename with
+                 a byte-identical parent file both yield ValueError before any
+                 final-WAV reader call. A reader spy distinguishes refusal from
+                 missing-file/hash/format failure. Expected results come from the
+                 literal filename contract, never decoder output. Automated cost 2
+                 on Windows PC, no radio; clean only disposable test copies. Wrong expected content is not repaired from Rust
+                 output. Existing quality/noise/runtime/cancel limits are unchanged. */
+        }
+        verification simulatorFixtureProvenance {
+            subject decoder : AdvanceDecode;
+            objective { verify WstxRequirements::'CL-007-03'; }
+            doc /* TC-004-002 provenance subcase, cost 2 offline artifact review on
+                 Windows PC. Compare supplied package inventory with provenance:
+                 FT8 includes build-ft8sim.log, cmake-version.txt,
+                 gfortran-version.txt, source-revision.txt, COPYING and AUTHORS.
+                 Do not claim absent header/source/CMake source files accompany
+                 the FT8 directory. Pinned corresponding-source URLs remain links,
+                 not evidence that bytes are bundled. Repair wording only; preserve
+                 generation inputs, frozen PCM, manifest truth and comparisons. */
+        }
+        dependency simulatorProvenanceCase from simulatorFixtureProvenance to WstxRequirements::'TC-004-002';
+        dependency ft4SimulatorCases from simulatorFixtureIntegrity to WstxRequirements::'TC-004-001';
+        dependency ft8SimulatorCases from simulatorFixtureIntegrity to WstxRequirements::'TC-004-002';
+        dependency simulatorRefusalCases from simulatorFixtureRefusals to WstxRequirements::'TC-004-003';
+    }
 
 }
