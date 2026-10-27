@@ -379,7 +379,12 @@ if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.stat
 
 const receiveControls=document.createElement('div');receiveControls.id='live-receive-controls';
 receiveControls.innerHTML='<label>Next receive mode<select id="receive-mode"><option value="ft8">FT8</option><option value="ft4">FT4</option><option value="spectrum">Spectrum only</option></select></label><button id="receive-start" disabled>Start receive</button><button id="receive-stop" disabled>Stop receive</button><button id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output><p id="receive-status" role="status">Live receive unavailable until station snapshot</p>';
-document.querySelector('.operating-controls').append(receiveControls);
+// The shared receive operations occupy the agreed operating toolbar.
+// These are modem receive controls, not CAT mode or RF-transmit controls.
+tuning.querySelector('.op-compact-label').remove();
+tuning.querySelector('.op-monitor').remove();
+tuning.querySelector('.op-decode-group').remove();
+tuning.insertBefore(receiveControls,tuning.querySelector('.op-period'));
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0;
@@ -410,9 +415,9 @@ function receiveShow(){
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
     capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
-    const focus=document.querySelector('#rx-focus .empty-messages');
-    if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
-    else{focus.querySelector('strong').textContent='Decoder unavailable';focus.querySelector('span').textContent='No station selected. Contact selection requires decoded results.';}
+    const focus=document.querySelector('#rx-focus .op-contact-identity');
+    if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
+    else{focus.querySelector('strong').textContent='Decoder unavailable';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
   }
 }
 async function receiveSync(current=socket){
@@ -435,14 +440,14 @@ async function receiveSync(current=socket){
 }
 function renderResults(){
   const body=document.querySelector('#band-activity tbody');
-  document.querySelector('#band-activity .count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
+  document.querySelector('#band-activity .op-count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
   if(!resultRows.length){
-    body.innerHTML='<tr><td colspan="5" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr>';return;
+    body.innerHTML='<tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr>';return;
   }
   body.replaceChildren();
   for(const record of resultRows){
     const row=document.createElement('tr');row.dataset.resultId=`${liveIdentity(live)}/${record.sequence}`;row.dataset.sequence=String(record.sequence);
-    for(const text of [`${(record.start_frame/12000).toFixed(3)} s`,record.snr_db===null?'—':record.snr_db.toFixed(1),'—',record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`]){
+    for(const text of [`${(record.start_frame/12000).toFixed(3)} s`,record.snr_db===null?'—':record.snr_db.toFixed(1),'—',record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status]){
       const cell=document.createElement('td');cell.textContent=text;row.append(cell);
     }
     body.append(row);

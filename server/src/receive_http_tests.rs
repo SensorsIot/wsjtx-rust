@@ -147,7 +147,24 @@ impl recording::LiveInput for Input {
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_fixture_reaches_real_manager_http_and_browser_callsign() {
-    let fixture = NativeFt8Fixture::load();
+    live_native_browser_mode("ft8").await;
+}
+
+// Proves: CL-008-02/03/05; CL-010-05/07/08; TC-009-004.
+// Same actual native provider, decoder, owner, HTTP and browser path in FT4 mode.
+#[cfg(not(debug_assertions))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_native_ft4_fixture_reaches_real_manager_http_and_browser_callsign() {
+    live_native_browser_mode("ft4").await;
+}
+
+#[cfg(not(debug_assertions))]
+async fn live_native_browser_mode(mode: &str) {
+    let fixture = if mode == "ft8" {
+        NativeFt8Fixture::load()
+    } else {
+        NativeFt8Fixture::load_mode(mode)
+    };
     let expected = fixture.expected.clone();
     let dir = std::env::temp_dir().join(format!(
         "wstx-live-browser-{}",
@@ -159,7 +176,7 @@ async fn live_native_fixture_reaches_real_manager_http_and_browser_callsign() {
     let origin = format!("http://{address}");
     let profile_id = profile::new_uuid().unwrap();
     let boot = profile::new_uuid().unwrap();
-    let doc = json!({"schema_version":1,"profile_id":profile_id,"revision":0,"display_name":"Actual native FT8 fixture",
+    let doc = json!({"schema_version":1,"profile_id":profile_id,"revision":0,"display_name":format!("Actual native {} fixture", mode.to_uppercase()),
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":address.to_string(),"origin":null},"connection_type":"standard",
         "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();

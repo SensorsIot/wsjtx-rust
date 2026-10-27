@@ -1,5 +1,7 @@
 # WSTX Rust Functional Specification Document
 
+<!-- sysml-projection: 2 -->
+
 - Status: Incremental functional specification; selected interface clauses and tests are defined below
 - Created: 2026-10-24
 - Working name: WSTX Rust
@@ -17,7 +19,7 @@ Contents: [Requirements](#4-proposed-functional-requirements) |
 
 Define the intended behavior and acceptance criteria for a simplified Rust implementation of WSJT-family functionality. The project must preserve on-air interoperability and the workflows needed for weak-signal amateur-radio communication, while keeping the implementation and user experience as simple as possible.
 
-This is a starting specification, not a claim of implemented functionality. Confirmed decisions are listed separately from proposed requirements and open questions. Extract requirements from protocol publications, user documentation, release notes, and observable reference behavior. Write the Rust implementation independently rather than copying or translating the upstream source. Previous source inspection and shared repository history mean this process is not a claim of formal clean-room development.
+This is a starting specification, not a claim of implemented functionality. Confirmed decisions are listed separately from proposed requirements and open questions. Extract requirements from protocol publications, user documentation, release notes, and observable reference behavior. Implement the reviewed functional model in Rust. Pinned GPL-compatible numerical routines may be adapted with their source provenance and attribution preserved in the README and source notices.
 
 ## 2. Confirmed project decisions
 
@@ -257,9 +259,9 @@ the owning requirements; full station setup and legacy WSJT-X migration are late
 | Stable clause | Requirements | Approved target refinement | Cases |
 |---|---|---|---|
 | CL-005-01 | FR-022 | A selected profile owns one process/listener; N is variable and storage, process and browser collections MUST NOT assume four entries. Four concurrent servers are sufficient for CR #5 acceptance; the implementation has no four-instance ceiling. | `TC-022-001` |
-| CL-005-02 | FR-001, FR-016, FR-019, FR-022 | Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. | TC-022-001; TC-022-002 |
-| CL-005-03 | FR-019, FR-021, FR-022 | Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. | TC-022-001; TC-022-003; TC-022-004 |
-| CL-005-04 | FR-016, FR-021, FR-022 | Ownership, invalid storage, occupied endpoints and unavailable startup resources MUST fail explicitly without replacing saved configuration or disrupting a running instance. | TC-022-002; TC-022-003 |
+| CL-005-02 | FR-001, FR-016, FR-019, FR-022 | Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. | TC-022-001; TC-022-002; TC-022-005 |
+| CL-005-03 | FR-019, FR-021, FR-022 | Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. | TC-022-001; TC-022-003; TC-022-004; TC-022-005 |
+| CL-005-04 | FR-016, FR-021, FR-022 | Ownership, invalid storage, occupied endpoints and unavailable startup resources MUST fail explicitly without replacing saved configuration or disrupting a running instance. | TC-022-002; TC-022-003; TC-022-004 |
 | CL-005-05 | FR-001, FR-022 | Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. Native FlexRadio is reserved and refused in this phase. | TC-022-001; TC-022-002 |
 
 **Selection and compatibility.** `wstx-rust --create-profile <directory>` creates a new
@@ -406,36 +408,14 @@ starting points, not a promise that every model/firmware offers identical resour
 [developer program](https://www.flexradio.com/api/developer-program/),
 [API overview](https://www.flexradio.com/api).
 
-1. Phase 2 MUST offer direct native-network integration as an optional profile connection
-   type for the selected radio control, status and sample-stream functions. When selected,
-   that native path MUST NOT require the external SmartSDR desktop application, SmartSDR
-   CAT or DAX applications to be installed/running as bridges. This restriction does not
-   prohibit those tools as operator-selected infrastructure for the standard connection
-   path. A Rust implementation may coordinate
-   shared radio access internally without forcing one hardware GUI-client session per
-   logical station server.
-2. This independence concerns desktop applications. Compatible radio-side firmware and
-   its API remain required; this specification does not promise a FlexRadio operating
-   without its SmartSDR radio firmware or an unrestricted firmware compatibility range.
-   Pin supported models, firmware/API versions and selected stream formats before implementation.
-3. Each native FlexRadio profile MUST persist its intended radio and slice association. On every
-   connection/reconnection the system MUST reconcile that intent with authoritative
-   discovery/status and current runtime handles. A changed/transient slice index MUST
-   NOT redirect a station to another station's slice. Unresolvable associations MUST
-   produce a visible unavailable/conflict state rather than guessing a replacement.
-4. Control responses and received stream data MUST be routed to the associated station.
-   Capacity shortages, occupied resources and incompatible API behavior MUST be reported
-   without stealing another profile's slice or silently reducing the requested independence.
-   Four-slice hardware validation requires a model/configuration that actually provides
-   at least four usable slices.
-5. Shared-radio transmit, tuning and other constrained-resource authority MUST be
-   coordinated under FR-008/FR-009 before those operations are enabled. Four station
-   profiles do not confer simultaneous independent transmit authority. Reconnect/profile
-   restoration MUST NOT replay an old transmit request or bypass the future ownership policy.
-6. The native path MUST reuse the common browser, station-operation, DSP/modem and future
-   MCP interfaces. The default standard connection remains usable without FlexRadio
-   hardware or native-profile fields. A mixed set of instances MUST preserve each
-   profile's selected path, configuration and routing independently.
+| Clause | Requirements | Existing Phase2 promise | Verification |
+|---|---|---|---|
+| CL-013-01 | FR-023 | Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. | TC-023-001 |
+| CL-013-02 | FR-023 | This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. | TC-023-003 |
+| CL-013-03 | FR-023 | Each native FlexRadio profile MUST persist its intended radio and slice association. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. | TC-023-002 |
+| CL-013-04 | FR-023 | Control responses and received stream data MUST be routed to the associated station. Capacity shortages, occupied resources and incompatible API behavior MUST be reported without stealing another profile's slice or silently reducing the requested independence. Four-slice hardware validation requires a model/configuration that actually provides at least four usable slices. | TC-023-001; TC-023-002; TC-023-003 |
+| CL-013-05 | FR-008, FR-009, FR-023 | Shared-radio transmit, tuning and other constrained-resource authority MUST be coordinated under FR-008/FR-009 before those operations are enabled. Four station profiles do not confer simultaneous independent transmit authority. Reconnect/profile restoration MUST NOT replay an old transmit request or bypass the future ownership policy. | TC-023-002; TC-023-003; TC-023-006 |
+| CL-013-06 | FR-023 | The native path MUST reuse the common browser, station-operation, DSP/modem and future MCP interfaces. The default standard connection remains usable without FlexRadio hardware or native-profile fields. A mixed set of instances MUST preserve each profile's selected path, configuration and routing independently. | TC-023-003 |
 
 ### 4.4 Live FT4/FT8 modem and recorded-signal diagnostics
 
@@ -464,8 +444,8 @@ its independent fixtures follow the common receive contract below.
 |---|---|---|---|
 | CL-006-01 | FR-003, FR-018 | Import only the bounded WAV capability below; preserve original bytes and expose immutable, explicitly timed samples without a codec or implicit resampler. | TC-018-001; TC-018-002 |
 | CL-006-02 | FR-018, FR-019 | Profile-owned import/replay/cancellation have explicit pending, terminal and recoverable error states; replacement never destroys the previous committed source before commit. | TC-018-001; TC-018-002; TC-018-003 |
-| CL-006-03 | FR-010, FR-019, FR-021 | Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded selectable Detailed/Thin/Off display. | TC-010-001; TC-010-002; TC-010-003; TC-010-004; TC-010-005; TC-010-006 |
-| CL-006-04 | FR-021 | Bound import, sample, worker and visualization resources; refuse excess work explicitly, discard obsolete display work, preserve status service and invalidate late receive output on cancellation/replacement. | TC-018-002; TC-018-003; TC-010-002 |
+| CL-006-03 | FR-010, FR-019, FR-021 | Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded selectable Detailed/Thin/Off display. | TC-010-001; TC-010-002; TC-010-003; TC-010-004; TC-010-005; TC-010-006; TC-010-007 |
+| CL-006-04 | FR-021 | Bound import, sample, worker and visualization resources; refuse excess work explicitly, discard obsolete display work, preserve status service and invalidate late receive output on cancellation/replacement. | TC-018-002; TC-018-003; TC-010-002; TC-010-004; TC-010-005; TC-010-006; TC-010-007; TC-022-005 |
 
 **Input capability.** RIFF/WAVE little-endian integer PCM format tag 1,
 mono, 16 bits/sample, exactly 12,000 samples/s; 1 through 1,440,000 source frames
@@ -878,7 +858,13 @@ as computation permits; they introduce no production file job or receive route.
 All modem working allocations, including history, FFT plans/scratch, candidates,
 recovery and subtraction, remain <=64MiB; private process increase above idle <=96MiB.
 Base-frequency search is inclusive200..3500Hz, independent of the fixed0..3000Hz
-waterfall. Do not extend the waterfall to conceal higher decoded frequencies. Existing
+waterfall. Each received station's lowest-tone audio frequency and start time are
+searched independently; neither value must be supplied by the operator. FT8 stations
+may occupy arbitrary audio offsets in this band: the6.25Hz spacing between tones
+within one signal does not constrain its lowest tone to multiples of6.25Hz or to a
+shared carrier-frequency grid. Numerical search grids are receiver approximations,
+not required transmitter offsets; retain the existing frequency/time tolerances and
+bounded candidate-selection rules. Do not extend the waterfall to conceal higher decoded frequencies. Existing
 8192-sample display history and2048/4096 FFT workspaces remain spectrum-only resources.
 Deduplicate the same mode/payload within half a symbol of estimated start, retaining
 later repeated transmissions. Result order is publication sequence. Source-relative
@@ -919,11 +905,13 @@ append. Restart does not persist results or fabricate replacement jobs.
 
 **Bounded processing design.** Use RustFFT planned and portable scalar paths with
 worker-owned checked buffers/scratch and CR6's transform convention. FT8 symbol FFT
-N=1920/hop480; FT4 N=576/hop144. Coarse starts advance N/4, frequencies
+N=1920/hop480; FT4 N=576/hop144 supplies the calibrated noise grid. The following
+coarse Costas time/frequency search applies to FT8; FT4 frequency/timing selection
+is specified separately below. FT8 coarse starts advance N/4, frequencies
 200+j*(12000/N)/2 through 3500, using two shifted frequency grids. Include both
 200 and3500 Hz explicitly as coarse candidates when an endpoint is off that uniform
 grid; use direct sine/cosine quadrature power at the exact off-grid endpoint. Refine
-within the inclusive search bounds; do not round the3500 Hz FT4 endpoint out of reach. For K sync symbols
+within the inclusive search bounds; each mode retains its exact endpoints. For K sync symbols
 and Q tones, sum expected-tone power A and other-tone power B; Costas score is
 (Q-1)*A/B, with preliminary qualification >=2.7. A=B=0 rejects; B=0,A>0 outranks
 finite scores. FT8 sync indices are 0..6,36..42,72..78; FT4 1..4,34..37,67..70,100..103.
@@ -932,164 +920,277 @@ score, ascending frequency/time, suppressing within half a symbol AND half a ton
 Use bounded grid/heap storage and constant-size suppression neighborhoods, with
 cancellation/service checkpoints while visiting maxima.
 
-**Phase-consistent synchronization.** Before the 256-candidate cap, qualify every
-repeated Costas block independently. The five timing offsets are dt=-N/8..N/8 in
-N/16 steps, and nine frequency offsets df=-spacing/4..spacing/4 in spacing/16 steps;
-only complete supports within the inclusive frequency bounds are eligible. Precompute
-five coefficient tables from the pure unit analytic GFSK sync waveform h (data and
-ramp tones zero, actual amplitude envelope). For sync symbol j with expected tone tj,
-Hj(dt)=sum[m=0..N-1] h(jN+m-dt)*exp(-i*2*pi*tj*m/N), with zero outside its support.
-Let Zj be the complex coarse symbol transform at the candidate base plus tj*spacing.
-For each block b calculate
-Cb=abs(sum[j in b] Zj*conj(Hj)*exp(-i*2*pi*(fbase+df)*j*N/12000))^2 /
-(sum[j in b]abs(Zj)^2 * sum[j in b]abs(Hj)^2). A zero denominator rejects that grid
-point. One grid point MUST have Cb>=0.5 for EVERY block. Block phases are independent;
-no single phase across the entire FT8/FT4 frame is a qualification condition.
-This uses only K existing transform coefficients per grid point, not N new sample
-correlations per coefficient. At most 45*K complex products per visited raw maximum;
-raw maxima cannot exceed the finite start-row/frequency grid. The fine sample-domain
-Costas ratio is evaluated only for phase-qualified candidates, at the same <=45 grid
-points that meet the phase constraint, choosing descending ratio then ascending
-frequency/time. At most 256 phase-qualified candidates/window/pass; a 257th sets
-`search_limited`, which fails required-corpus completeness acceptance. No cap increase,
-absolute sample-amplitude floor or relative whole-window energy stop excludes a weak
-frame after subtraction. Up to three passes may stop when no new verified frame remains.
+**FT8 physical receive kernel.** The FT8 numerical chain uses the unassisted physical
+algorithms in WSJT-X `0f7d5928449ec747c3d1f6da1306f8c94404c3a9`, specifically
+`lib/ft8/{ft8_downsample,sync8d,ft8b,subtractft8}.f90`. Channel validity and structured
+payload interpretation remain separate: physical acceptance never discards an admitted
+channel-valid frame merely because its payload is unsupported or invalid. The decoder
+uses no callsign cache, selected contact, AP bit masks or inferred message meaning.
+The input/output/source clock, one-worker ownership and result schema stay as specified
+above. All numerical buffers, plans and cached transforms remain within64MiB. Transform
+coefficients and metric/convolution sums use complex/real64 arithmetic over the
+canonical float32 samples; final channel LLRs are rounded to float32.
 
-**Soft channel observations.** Correlate each local GFSK target hypothesis over N real
-samples with a unit analytic template. Its complex energy is E=abs(z)^2/N; N is the
-sum of squared analytic-template magnitudes. The calibrated real noise variance is
-v=PSD*12000/2, floored at 1e-20. With no qualified overlapping peer use score(t)=Et/v.
-FT8 starts with maximum-symbol-power neighboring tones and uses posterior hard
-neighbors for at most two refinements. FT4 marginalizes the two nearest neighboring
-tones: enumerate Q^2=16 left/right pairs for each of Q=4 target tones (64 cached local
-templates per symbol), holding the two more distant neighbors at their current hard
-values. Data-neighbor priors start uniform; sync/ramp priors select their known tone.
-After each FEC round, form the next data-neighbor prior from its two posterior bit
-LLRs L: logP(bits)=-sum log(1+exp(-sign(bit)*L)), sign(0)=+1, sign(1)=-1, L clamped
-[-12,12], then normalize over the four tones. Marginalize pair scores plus both log
-priors with log-sum-exp. At most two observation refinements follow the initial round.
-The final FT4 round without a qualified peer uses the paired observation below instead
-of another single-symbol marginalization. With a peer it retains the single-symbol
-nuisance-aware observation. An earlier H+CRC word satisfying the channel gates may
-finish before that final round. No message meaning, callsign cache or AP hint supplies
-a tone or prior.
+**FT8 bandlimited baseband.** For a current-pass window of L real samples, set
+N1=192000*ceil(L/180000), at most384000, and N2=N1/60, at most6400. Zero-padding is
+private transform storage and never supplies missing waveform support. Cache one
+unnormalized negative-sign long FFT of the immutable current-pass samples; rebuild
+it after residual changes. Let df=12000/N1, i0=round(f0/df), ib=max(1,round((f0-9.375)/df)),
+it=min(N1/2,round((f0+53.125)/df)), T=round(6.25/df), K=it-ib+1. Copy bins ib..it to
+N2 complex bins at (i-i0) mod N2. At band index j=i-ib apply
+0.5*(1+cos(pi*(T-j)/T)) for j=0..T, unit weight inside, and
+0.5*(1+cos(pi*(j-(K-1-T))/T)) for j=K-1-T..K-1. The passband separates the
+candidate's positive-frequency image before reducing the sample rate. Apply an
+unnormalized positive-sign inverse FFT and multiply by1/sqrt(N1*N2). Baseband is
+200complex samples/s,32samples/symbol. The mixed frequency is i0*df; every fine
+frequency trial and reported carrier accounts for that bin center explicitly.
+The planned and scalar paths use the same transform signs, scale and bin ordering.
 
-**FT4 paired observation.** The final no-peer observation uses phase continuity within
-two adjacent symbols, with an independent unknown complex gain for each pair. It adds
-no FEC round, candidate, source, worker or AP information. Set N=576 and G=52 pairs
-covering symbols0..103; the final ramp tone104 and exterior tone-1 are known zero.
-The four local tones (L,T,U,R) occupy relative symbols-1,0,1,2. Use the same unit GFSK
-pulse primitive as reconstruction, with BT=1 and
-p(t)=(erf(c*(t+0.5))-erf(c*(t-0.5)))/2, c=pi*sqrt(2/ln2).
-For lag a in {-1,0,1,2}, psi_a(k)=(2*pi/N)*sum[m=0..k]
-p((m+0.5)/N-a-0.5), k=0..2N-1. Cache the256 complex-f64 unit templates
-h(L,T,U,R,k)=exp(i*(L*psi_-1+T*psi_0+U*psi_1+R*psi_2)); outside local tones are zero.
-The per-pair unknown phase absorbs each template's constant prefix phase. Only the
-first pair contains an amplitude ramp; its four tones are fixed by ramp/sync masks,
-so its likelihood is a common path constant and contributes no unknown-tone evidence.
+**FT8 synchronization and admission.** Coarse power maxima retain the shared grid,
+Costas ratio>=2.7, suppression and deterministic visitation order above. Fine scoring
+uses all21Costas symbols independently. At baseband origin b and frequency tweak d,
+P(b,d)=sum_s abs(sum_[j=0..31] z[b+32*s+j]*exp(-i*2*pi*(tone_s/32+d/200)*j))^2.
+No phase is shared between the21symbol sums. Around round(coarseStart/60), test the
+21integer origins b-10..b+10 at d=0. At the best origin test11frequency tweaks
+-2.5..2.5Hz in0.5Hz steps. Rebuild baseband at the winning carrier, then test the
+nine integer origins bestB-4..bestB+4 at d=0. Every trial must have complete original
+151680-frame support and carrier200..3500Hz; zero-padding never relaxes those bounds.
+Choose descending P, then ascending frequency/start for ties. Convert origin back to
+canonical frame60*b, including the waveform's initial ramp; this is not station UTC
+or the reference GUI's DT convention.
 
-Require the complete60480-frame candidate support in the current-pass residual and
-anchor x[j]=currentResidual[candidateStart+j], j=0..60479. For pair g, bind its
-1152-sample metric input as samples[k]=x[2gN+k], k=0..2N-1. At selected frequency f:
-z_g(L,T,U,R)=sum[k=0..2N-1] samples[k]*conj(h)*exp(-i*2*pi*f*k/12000).
-The factor F_g(L,T,U,R)=abs(z_g)^2/(2N*v) uses the same analytic-quadrature likelihood
-convention and calibrated v as single-symbol power. Subtract a common maximum from
-all256 factors in each pair before sequence inference. Sync/ramp masks allow only
-their known physical tone; data variables have uniform priors, with no FEC-posterior
-or received-message prior in this paired round. State index is4*left+current, and
-factor index is((L*4+T)*4+U)*4+R.
+At the fine point, take a32-point negative-sign FFT of each symbol and select the
+largest-magnitude bin among tones0..7, ties lower tone. At least9of the21Costas tones
+must equal the known pattern. This physical qualification precedes the256-candidate
+cap; a257th qualified candidate sets search_limited. For the post-refinement
+check only, map the preserved final canonical start s to b=floor(s/60+0.5), with
+nonnegative half ties upward, then clamp b to0..floor((L-151680)/60). This is the
+nearest complete baseband origin; never read guard samples supplied only by padding.
+Reapply tone qualification there at the final reported carrier before publication/
+subtraction. This mapping never rounds or replaces the reported canonical start. FT8 has no normalized
+cross-symbol/block phase-fraction gate. Retained full-rate known-word refinement below
+uses the same bounded three grids; it cannot replace this physical tone evidence.
 
-Compute forward/backward log-sum-exp on16 states. alpha_0(L,T)=0 for L=0 and -infinity
-otherwise. alpha_(g+1)(U,R)=LSE_(L,T)(alpha_g(L,T)+F_g(L,T,U,R)), omitting transitions
-whose T at2g or U at2g+1 violates its mask. beta_G(U,R)=0 for R=0 and -infinity
-otherwise; beta_g(L,T)=LSE_(U,R)(F_g(L,T,U,R)+beta_(g+1)(U,R)), with the same masks.
-Subtract a common finite maximum from every forward/backward state row. The joint
-transition log mass is alpha_g(L,T)+F_g(L,T,U,R)+beta_(g+1)(U,R). Sum it over L,U,R
-for the marginal of T, and over L,T,R for U, then normalize each four-tone marginal.
-The final boundary marginal is[0,-infinity,-infinity,-infinity]. Gray-bit log-sum-exp
-and clipping to[-12,12] produce the174 channel LLRs for the existing final FEC/OSD.
+**FT8 unassisted channel observations.** Let C[k,t] be the complex FFT32 coefficient
+at tone t of symbol k, divided by1000. Enumerate each block of n=1,2,3data symbols
+within each29-symbol half, starting at zero-based symbols7 and43. For group index
+k=0,n,2n,...<29 and v=0..8^n-1, split v into MSB-first3-bit values, apply Gray map
+[0,1,3,2,5,6,4,7], and set S(v)=abs(sum_j C[first+k+j,Gray(v_j)]).
+End groups retain their actual following sync-symbol coefficient; outputs at global
+bit index half*87+3*k+bit are stored only below174, and the second half overwrites
+its own output positions. For every bit, raw=max(S for bit1)-max(S for bit0).
+The five fixed metric families are single-symbol raw, pair raw, triple raw,
+single raw/max(all eight S), and, per bit, the largest absolute unnormalized raw
+from the first three families (ties single then pair then triple). A zero single
+maximum gives zero for the fourth family. Form the fifth family before normalization.
 
-The pure sequence kernel accepts1..52 groups, exactly2G+1 nonempty four-tone masks
-with the final mask[true,false,false,false], and finite factors. Invalid dimensions,
-nonfinite arithmetic or no finite path reject the observation. At most52*256*1152
-(15,335,424) complex sample products,52*256 factors and two53*16 state arrays are
-retained; the template bank is4,718,592bytes. These share the existing64MiB workspace.
-Check cancellation/service before each pair correlation bank and before/after the
-bounded trellis. There is no phase tie between separate pairs.
+For each174-element family let m=sum(raw)/174, q=sum(raw^2)/174 and
+sigma=sqrt(q-m^2) when q-m^2>0, otherwise sqrt(q). Normalize by sigma without
+subtracting m, multiply by2.83 and negate once for the Rust channel's positive=bit0
+convention. A zero/nonfinite sigma supplies no candidate word. Visit the five families
+in order; each has at most50min-sum iterations and137bounded recovery trials under
+the channel rules below. A word failing H, CRC, mean-absolute-LLR>=1 or hard-channel
+disagreements<=24 does not terminate later metric families. The first word satisfying
+all channel gates proceeds to typed interpretation and physical publication checks.
+No successful result is inferred from normalization, a zero word, or reference text.
 
-**Bounded overlapping-peer likelihood.** A candidate may use one strongest distinct
-phase-qualified peer whose start differs by <=N/2 and whose tone band overlaps. Base
-separation MUST be >=0.75*spacing to avoid modeling the same sync peak as a second
-station. Estimate each candidate's signal energy S=N*(a^2+b^2)/4 from independent
-2x2 sine/cosine fits to the interiors of its known Costas blocks (trim N/2 at each
-block end); subtract the noise bias N*v/blockFrames, clamp nonnegative, and take the
-median across blocks. Select a peer only when its I>=v AND I>=S/16. A zero/nonfinite
-estimate supplies no peer. The comparison visits at most 256^2 candidate pairs and
-uses no external station identity or decoder result.
+**FT8 reconstructed-signal cancellation.** For a verified frame reconstruct its full
+unit complex GFSK reference r=u+i*w, including the envelope, at the refined coordinate.
+Form c[k]=currentPass[start+k]*conj(r[k]), zero outside the complete reference support.
+Use the normalized4001-tap kernel h[j]=cos(pi*j/4000)^2/sum_[a=-2000..2000]cos(pi*a/4000)^2,
+j=-2000..2000. Compute the centered linear convolution y[k]=sum_j h[j]*c[k-j]; FFT
+implementation must pad to at least frameLength+4000, preventing circular wrap into
+valid samples. At distance a=0..2000 from either frame edge, divide by the available
+kernel weight sum_[j=-2000..a]h[j]. Subtract2*Re(r[k]*y[k]) from the worker-owned
+residual only within the frame. This bounded centered/available-weight formulation
+is the zero-based product definition; its convolution is tested against direct scalar
+math. Up to3passes and32verified subtractions/window remain; a changed residual
+invalidates its cached long FFT. Original source samples remain immutable.
 
-For a peer, d=floor((fpeer-fbase)/spacing+0.5). Its Q equiprobable possible tones map
-to u=d+j, j=0..Q-1; a tone outside 0..Q-1 contributes no in-band nuisance. For target
-tone t and nuisance u define V(k,t,u)=v+S*[k=t]+I*[k=u], omitting the last term when
-u is outside. The hypothesis score is logsumexp[u](-sum[k](log V(k,t,u)+Ek/V(k,t,u)))
--log Q. Compute common-term-subtracted equivalents before log-sum-exp so low noise
-cannot erase finite likelihood differences. This is a specified bounded nuisance
-model, not a claim that symbol-template noises are statistically independent.
-For FT4 evaluate this likelihood inside each of the 16 neighbor-pair hypotheses and
-marginalize with the neighbor priors. For FT8 use its fixed-neighbor energies. No peer
-means the isolated Et/v score; no extra peer combinations or unbounded searches exist.
+**FT4 physical receive kernel.** The FT4 numerical chain uses the unassisted physical
+algorithms in the same pinned WSJT-X revision, specifically
+`lib/ft4/{ft4_downsample,sync4d,get_ft4_bitmetrics,subtractft4}.f90` and the fine-search/
+channel orchestration in `lib/ft4_decode.f90`. Common source/result/worker, structured
+payload, channel validity and resource rules remain unchanged.
 
-Gray bit-zero log-sum-exp minus bit-one gives positive-for-zero LLR, clamped [-12,12].
-Publication requires mean absolute LLR>=1 and <=24 disagreements with channel hard
-decisions, in addition to CRC/parity/source classification. A CRC-valid tentative word
-that fails those gates does not terminate the permitted neighbor refinements. FEC uses
-the published H, normalized min-sum alpha0.8 and <=50 iterations per observation round.
-Success requires zero syndrome and correct CRC; source fields determine decoded,
-unsupported or invalid-payload status. Only the final observation round may use OSD:
-compose the 77 payload-unit vectors through CRC14 and the published (174,91) generator
-to obtain the rank-77 valid-channel subcode. Reliability-ordered GF(2) elimination
-selects 77 independent information-basis columns. Test <=137 order-0/1/2 flips among
-its 16 least-reliable basis bits, choosing the lowest weighted CHANNEL-LLR disagreement
-cost among CRC/parity-valid words. The CRC bits are constrained, not 14 additional
-free information bits. An earlier min-sum success may finish without recovery.
+For current-pass L samples use N1=72576*ceil(L/72576), at most435456, and N2=N1/18,
+at most24192. Cache the negative-sign unnormalized long transform of the actual
+window, zero-padding privately. Let df=12000/N1, baud=12000/576, T=floor(0.5*baud/df),
+F=floor(4*baud/df), S=floor(baud/df), i0=round(f0/df). Build a periodic N2-bin weight W:
+W[j]=0.5*(1+cos(pi*(T-1-j)/T)) for0<=j<T; W=1 forT<=j<T+F;
+W[j]=0.5*(1+cos(pi*(j-T-F)/T)) forT+F<=j<2T+F; otherwise0.
+At signed offset b=-N2/2..N2/2 copy original positive-frequency bin i0+b when in
+0..N1/2, multiply by W[(b+S) mod N2]/N2, then apply the unnormalized positive inverse.
+Normalize the resulting666.666666...complex-sample/s window by its RMS when positive;
+zero/nonfinite RMS supplies no candidate. Fine frequency trials account for i0*df.
+The32complex samples/symbol include one initial ramp symbol and103sync/data symbols.
 
-**Recovered-codeword waveform verification.** Before publication or subtraction, verify
-local phase consistency of the recovered codeword at its refined time/frequency. Use
-its full unit real/sine GFSK templates u,w, including the envelope. Observation x is
-the complete current subtraction-pass observation/residual that produced this candidate,
-evaluated at its refined support. The same x supplies both symbol and group fits;
-all79FT8/105FT4symbols, including sync and ramps, participate. For each symbol s,
-form the 2x2 Gram matrix Gs=[[u.u,u.w],[u.w,w.w]] and vector bs=[u.x,w.x] over that
-symbol. Its independently fitted explained energy is Es=bs^T*inverse(Gs)*bs. Partition
-the frame into consecutive groups of seven symbols for FT8 or four for FT4; the final
-group may be shorter. Sum the Gram matrices/vectors inside each group and calculate
-its explained energy by the same 2x2 solve. Require sum(Egroup)/sum(Es)>=0.5.
-A nonfinite/insufficient fit, nonpositive denominator or relative determinant<=1e-12
-rejects this waveform. Each group has an independent fitted phase; no phase lock
-across the full frame is imposed. This check is linear in the waveform sample count,
-with at most105symbol and27group solves, and adds no parameter search, FEC trial or
-candidate. Its buffers remain within the existing64MiB modem limit.
+**FT4 spectral frequency selection and complete-support timing search.** FT4 uses the
+pinned `getcandidates4.f90`, `ft4_baseline.f90`, `nuttal_window.f90`, `pctile.f90` and
+unweighted quartic-fit mathematics for frequency confidence. Its FFT uses2304real
+samples and576-frame hops over every complete actual-source window; padding supplies
+no averaging/RMS observation. The periodic window at j=0..2303 is
+0.3635819-0.4891775*cos(2*pi*j/2304)+0.1365995*cos(4*pi*j/2304)
+-0.0106411*cos(6*pi*j/2304). Transform input x*window/300; average positive-frequency
+squared magnitudes in linear power, then smooth with15adjacent bins. The existing
+576-point rectangular periodograms remain the separate calibrated SNR estimator.
 
-Up to three subtraction passes and 32 verified subtractions/window may fit reconstructed
-GFSK sine/cosine amplitudes by 2x2 least squares and reanalyze a worker-owned residual.
-Refine a verified codeword's measurement with three fixed correlation grids. Let
+Baseline selection and fitting use the UNSMOOTHED averaged positive-frequency powers.
+For baseline fitting use bin indices ia=round(200/df) through
+ib=round((3500+31.25)/df), df=12000/2304. Split that inclusive range into10segments
+of integer-floor equal length; remainder bins do not supply fit points. In each segment
+select the10th-percentile order statistic at1-based index
+clamp(floor(0.10*segmentLength+0.5),1,segmentLength), including all ties at/below it.
+Fit a quartic to the selected dB powers with equal weights and at most1000points.
+The polynomial variable may be affinely scaled for numerical conditioning; fit the
+same degree4least-squares space with a finite rank-5 solve. Add0.65dB to the fitted
+curve, then exponentiate back to linear power. All-zero spectrum, insufficient/rank-
+deficient fit or nonfinite/nonpositive resulting baseline yields no frequency candidates.
+For zero individual bins in an otherwise positive spectrum, use a dB value120dB below
+the lowest positive in-range bin; nonzero powers are never floored. Smoothing always
+uses the original linear powers, not the temporary dB fitting values.
+
+Visit local maxima of the smoothed-power/baseline ratio>=1.18 in the interior fit
+range. With left/center/right values l,c,r, let delta=0when l-2c+r=0, otherwise
+0.5*(l-r)/(l-2c+r); carrier=(bin+delta)*df-31.25 and contrast=c-0.25*(l-r)*delta.
+Keep carriers200..3500Hz. For exact endpoint e=200or3500, set
+u=(e+31.25)/df, j=floor(u), a=u-j. Interpolate AFTER baseline division:
+endpointContrast=ratio[j]+a*(ratio[j+1]-ratio[j]); when a=0 use ratio[j] alone.
+Include that exact carrier trial iff endpointContrast>=1.18. No polynomial or raw-
+power interpolation replaces this linear ratio interpolation.
+Visit descending contrast then ascending carrier; the spectral-bin bound is1152.
+There is no QSO-frequency or semantic priority.
+
+For each frequency candidate, use the filtered/RMS-normalized FT4 baseband above.
+Search every complete waveform origin: first Costas origin b=32..floor((L-60480)/18)+32
+in four-baseband-sample steps, including the final endpoint when off-grid; no station
+clock, guessed UTC slot or time-power maximum narrows this range. At each origin use
+frequency tweaks-12..12Hz in3Hz steps. Score four complete4-symbol Costas blocks at
+b,b+33*32,b+66*32,b+99*32. Within each block correlate every second FILTERED sample,
+64samples total, against its known continuous rectangular tone/frequency-tweak
+pattern. Sum four correlation magnitudes divided by64, with independent block phases.
+Only original-source-complete trials and carriers200..3500are eligible.
+
+Visit local maxima of this finite9-frequency/time grid with score>=1.2, descending
+score then ascending carrier/start; use the immediate time/frequency neighbors and
+suppress within half a symbol AND half a tone. Around each maximum search frequency
+bestD-4..bestD+4Hz in1Hz steps and origin bestB-5..bestB+5 in one-baseband-sample steps.
+Choose descending score then ascending carrier/start. Convert origin to actual frame
+18*(b-32), including its ramp, and apply the existing8/16tone and20/32bit barriers.
+Raw-grid suppression retains the half-symbol/half-tone rule. After refinement and
+physical tone/bit qualification, treat near-carrier observations whose complete
+waveform supports overlap as competing hypotheses for one transmission in this pass.
+Two qualified points compete exactly when abs(start1-start2)<60480frames AND
+abs(carrier1-carrier2)<=12000/576/2Hz. Exactly adjacent half-open supports remain
+eligible. Keep the first physically qualified point in the stated deterministic visit
+order (spectral contrast descending/carrier ascending, then grid score descending/
+carrier ascending/start ascending); a point failing physical qualification establishes
+no support exclusion. Compare against all previously retained qualified points in this
+pass, including earlier frequency candidates, before counting. This selection uses no
+payload/FEC result: a retained hypothesis keeps its exclusion even if later FEC fails.
+Reset exclusions when the residual is changed for a new subtraction pass. This
+support-based per-pass timing selection is the blind-window adaptation of the pinned
+driver's strongest-point timing selection, without fixed source-origin or UTC slots.
+Only physically qualified distinct candidates count toward256, with257th yielding
+search_limited. All candidate frequencies may yield distinct temporal observations;
+there is no one-result-per-frequency or fixed-slot limit. The per-frequency action
+receives the prior qualified fine-point list and returns a bounded list of additional
+points plus search_limited; it deduplicates against both lists before counting toward
+the global256cap. No unused coarse-time origin is an input. Process one frequency grid
+at a time, at most4162coarse time positions*9frequencies, and release it before the
+next. Precompute fixed correlation templates and service cancellation/conversion/
+spectrum between bounded grid batches, retaining the50msquantum/250msrelease limits.
+
+Rebuild baseband at the selected carrier. Take FFT32 over each of the103sync/data
+symbols beginning at round(start/18)+32. Require>=8of16hardCostas tone hits (largest
+magnitude among bins0..3, ties lower tone). Also form each sync symbol's two MSB-first
+Gray hard bits with metric max(bit1)-max(bit0), ties bit1; require>=20of32known sync
+bits. These physical checks precede the256candidate cap. At the final refined
+coordinate use first Costas origin floor(s/18+0.5)+32, nonnegative half ties upward,
+preserving canonical reported start s; actual guard spans must remain inside original
+source support. FT4 has no cross-block or recovered-group phase-fraction
+threshold. No source padding, modulation prior or text filter creates a candidate.
+
+For sequence lengths1,2,4, enumerate all4^npossible MSB-first2-bit Gray tone choices
+(map[0,1,3,2]) at group starts0,n,2n,...<=103-n across all103sync/data symbols.
+For each choice use the magnitude of the coherent sum of selected complex FFT bins;
+per-bit metric is max(bit1)-max(bit0). Keep206raw bits per family. The pair family's
+bits204..205 copy the single family. The four-symbol family's bits200..203 copy the
+pair family and204..205 copy the single family. Normalize each FULL206-element
+family by the same population-sigma rule as FT8, without subtracting its mean.
+Extract data bit ranges8..65,74..131,140..197 (zero-based inclusive), concatenate174,
+multiply by2.83 and negate once for the existing positive=bit0Rust channel. Visit the
+three families in order, each with<=50min-sum iterations and<=137rank77recovery trials;
+mean-absolute-LLR>=1, hard-disagreements<=24, H andCRC all apply. A failed earlier
+word never prevents the next family; no fourth fallback FEC call is permitted.
+
+For FT4 cancellation use the same verified-frame complex-envelope operation as FT8
+with1401centered taps: h[j]=cos(pi*j/1400)^2/sum_[a=-700..700]cos(pi*a/1400)^2,
+j=-700..700. Use centered linear convolution, FFT padding>=60480+1400, without FT8's
+edge-availability correction. Reconstructed reference includes the initial ramp;
+its already-canonical origin receives no second -576-frame adjustment. Original
+source samples stay immutable;3passes/32verified subtractions and FFT invalidation
+remain common rules. The pure reconstruction/measurement primitive stays shared.
+
+**Shared channel validity and bounded recovery.** Mode-specific normalized metrics
+supply positive-for-zero channel LLRs. Publication requires mean absolute LLR>=1 and
+<=24disagreements with channel hard decisions, zero published-H syndrome, and correct
+CRC14. Use normalized min-sum alpha0.8 with<=50iterations per family. Each of the five
+FT8 or three FT4 families may use bounded order-0/1/2recovery: compose77payload-unit
+vectors throughCRC14 and the published(174,91)generator, producing the rank77valid-
+channel subcode. Reliability-ordered GF(2)elimination selects77independent basis
+columns; test at most137flips among its16least-reliable basis bits, selecting the
+lowest weighted CHANNEL-LLR disagreement cost among CRC/parity-valid words. CRC bits
+are constrained, not14additional free information bits. A failed channel word does
+not suppress remaining families. Source interpretation determines decoded, unsupported
+or invalid-payload status after channel validity; it is not a physical-message filter.
+
+**Private numerical ownership.** The physical numerical actions consume an assembled
+private canonical sample window, not a single1..4096-frame capture block. The shared
+receive owner provides its immutable samples, canonical origin and selected mode;
+source/job/boot/generation authority stays outside the pure modem. A worker-owned
+subtraction residual preserves that window's origin, mode and length. Both modes
+reuse one decoder-owned long-transform/
+band-selection/fine-synchronization/bit-metric/channel/convolution boundary. Mode
+parameters select dimensions and fixed metric families. Plans and scratch are private
+to the one worker; cache only the current mode/window dimension and current-pass
+transform. A source/job/epoch reset drops private numerical state. A residual change
+invalidates its transform before the next candidate search. No mutable global Fortran
+common-block state, extra source, device provider, job manager, public API, UI modem,
+raw command or transmit authority is introduced. Buffers/plans/scratch are admitted
+inside the same64MiB budget and use the existing RustFFT dependency and scalar path.
+
+**Shared reconstructed GFSK reference.** Let N be1920for FT8 or576for FT4,
+BT=2or1 respectively, tone spacing12000/N and F=N*symbolCount. The unit pulse is
+p(t)=(erf(c*(t+0.5))-erf(c*(t-0.5)))/2 with c=pi*BT*sqrt(2/ln2), zero outside|t|<2.
+For canonical sample k=0..F-1, sum each tone_s*spacing*p((k+0.5-(s+0.5)*N)/N).
+Exterior tones are zero. Accumulate phase from sample0throughk, including the carrier
+2*pi*f0/12000 increment before emitting that sample. Unit quadratures are
+u[k]=a[k]*cos(phi[k]),w[k]=a[k]*sin(phi[k]). For ramp R=240FT8/576FT4,
+a[k]=(1-cos(pi*k/R))/2 for k<R, mirrored with F-1-k at the final R frames,
+and1elsewhere. This same primitive supplies both full-rate fitting and cancellation;
+its floating output remains subject to the independent waveform oracles.
+
+**Shared known-word measurement refinement.** Refine a verified codeword's measurement with three fixed correlation grids. Let
 F=waveformFrames and df1=6000/F. The first grid uses time+/-N/4 in N/16 steps and
 frequency+/-spacing/2 in df1 steps, including off-grid endpoints. Around its maximum,
 the second uses time+/-N/16 in max(1,floor(N/128)) steps and frequency+/-df1/2 in
 df1/8 steps. The third uses time+/-max(1,floor(N/128)) in one-frame steps at the
 second grid's frequency. Every point stays within complete source and frequency
-bounds. Correlate known analytic GFSK at every fourth sample after trimming N/2 from
+bounds. Correlate known analytic GFSK at every sample after trimming N/2 from
 both waveform ends. At each grid point form the actual real/quadrature sample Gram
-G=[[u.u,u.w],[u.w,w.w]] and b=[u.x,w.x] on exactly those strided samples. Choose
+G=[[u.u,u.w],[u.w,w.w]] and b=[u.x,w.x] on exactly that full-rate trimmed support. Choose
 maximum explained energy b^T G^-1 b, ties frequency/time. Reject nonfinite or
-relative-determinant <=1e-12 grid fits. Do not assume equal/orthogonal quadratures:
-stride-four sampling can alias a real carrier with its conjugate near1500/3000Hz.
+relative-determinant <=1e-12 grid fits. Do not assume equal/orthogonal quadratures.
+No unfiltered subsampling is permitted in these grid fits: a carrier outside the
+candidate's band must not become its conjugate through sampling aliases. The grid
+coordinates, ordering and candidate/pass/subtraction/FEC limits remain as defined above.
 Final amplitude/SNR/subtraction fits use every sample. Retain no whole-frame phase
 rejection that excludes ordinary +/-2 Hz/min frequency drift.
 Original samples stay immutable. Planned/scalar paths share the same pure kernels,
 and all cached templates, coefficient grids, history and scratch remain within64MiB.
 One pure reconstruction waveform kernel is owned by #7 and reused by #9 if needed;
-it grants no TX/device authority. This is a bounded independent design, not a claim of
-reference-algorithm equivalence or proof that quality targets have already passed.
+it grants no TX/device authority. All mode-specific kernels obey the numerical, resource and quality contracts here.
 
 **Measurements.** Frequency is the lowest transmitted audio tone, not band center or
 RF frequency. Isolated synthetic error <=1 Hz FT8/<=3 Hz FT4; start error <=240 frames
@@ -1107,7 +1208,11 @@ crowded-band SNR accuracy is inferred from external decoder output or dBFS.
 supported family and all variant boundaries. Forty fixed AWGN cases require >=36 exact
 messages at FT8 -15 dB/FT4 -10 dB; forty require >=20 at -18/-13 dB. Zero incorrect
 payloads in either set. Frequency/start cases include 200,200.5,1000.3,3499,3500 Hz
-and source starts 0,1,1200,8400 frames, all complete supports. Twenty equal-level
+and source starts 0,1,1200,8400 frames, all complete supports. The existing frequency/start cases explicitly include off-tone-grid FT8 carriers
+200.5,1000.3 and3499Hz; TC-004-002 verifies their independently injected payloads,
+starts and carrier estimates under the existing1Hz/240-frame FT8 tolerances. These
+are part of the existing twenty frequency/start combinations, not additional samples.
+Twenty equal-level
 two-tone-spacing overlap cases at -10 dB each require both in >=18; twenty one-spacing
 cases with the weaker six dB below a -10 dB stronger require stronger >=18, weaker >=10.
 Every result must correspond to an injected frame; false or unsupported/invalid frame
@@ -1166,7 +1271,7 @@ interface owns a second profile store, receive job authority, decoder or transmi
 | CL-008-02 | FR-002, FR-003, FR-004 | Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. | TC-002-001; TC-002-003; TC-009-002 |
 | CL-008-03 | FR-002, FR-009, FR-019, FR-021 | Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. | TC-002-001; TC-009-001; TC-009-004 |
 | CL-008-04 | FR-002, FR-009 | Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. | TC-009-001; TC-009-002 |
-| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004 |
+| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004; TC-009-002 |
 | CL-008-06 | FR-009 | Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. | TC-009-001; TC-009-003 |
 
 **Ownership and implementation boundary.** The station `recording` receive owner
@@ -1349,7 +1454,7 @@ transmit authority and halt. Optional native FlexRadio remains the later #13 ada
 | TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
 | TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
 | TC-009-003 — Control without audio | CL-008-05, CL-008-06 | Exercise every supported query and receive setter while audio is closed/unavailable. | Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations. | 2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. |
-| TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
+| TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05, CL-010-05, CL-010-07, CL-010-08 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. Hold and release result-page/snapshot responses across a confirmed cancellation and unknown Start outcome; inject a current live frame while the recorded-input job is null. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. Delayed pages preserve newer confirmed lifecycle/error state and do not advance cursors; pre-mutation reads cannot clear the unknown-outcome control barrier, while a later explicit reconciliation can. Live progress updates only its matching live owner, with no exception or false disconnection when the recorded-input job is absent. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
 
 
 ### 4.6 Functional model
@@ -1362,15 +1467,133 @@ Model-authoring and maintenance procedures are defined in the
 [project-specific harness](harness/Project-Specifics.md#project-model-documentation-contract),
 which links the general SysML instruction. Harness procedures are not part of the product model.
 
+### 4.6.1 Declared functional coverage and automation
+
+Coverage describes the delivered portion of each product promise. Automation describes
+the available executable companion, including partial coverage. Neither is a test-run,
+independent-review or acceptance verdict.
+
+| Model identity | Declared state |
+|---|---|
+| `FR-001` | partial |
+| `FR-002` | partial |
+| `FR-003` | partial |
+| `FR-004` | partial |
+| `FR-005` | target |
+| `FR-006` | target |
+| `FR-007` | target |
+| `FR-008` | target |
+| `FR-009` | partial |
+| `FR-010` | partial |
+| `FR-011` | target |
+| `FR-012` | target |
+| `FR-013` | target |
+| `FR-014` | target |
+| `FR-015` | target |
+| `FR-016` | partial |
+| `FR-017` | partial |
+| `FR-018` | implemented |
+| `FR-019` | partial |
+| `FR-020` | target |
+| `FR-021` | partial |
+| `FR-022` | implemented |
+| `FR-023` | target |
+| `CL-003-01` | implemented |
+| `CL-003-02` | implemented |
+| `CL-003-03` | implemented |
+| `CL-003-04` | implemented |
+| `CL-003-05` | implemented |
+| `CL-003-06` | implemented |
+| `CL-003-07` | implemented |
+| `CL-003-08` | implemented |
+| `CL-005-01` | implemented |
+| `CL-005-02` | partial |
+| `CL-005-03` | implemented |
+| `CL-005-04` | implemented |
+| `CL-005-05` | implemented |
+| `CL-006-01` | implemented |
+| `CL-006-02` | partial |
+| `CL-006-03` | partial |
+| `CL-006-04` | partial |
+| `CL-007-01` | partial |
+| `CL-007-02` | partial |
+| `CL-007-03` | partial |
+| `CL-007-04` | partial |
+| `CL-008-01` | partial |
+| `CL-008-02` | partial |
+| `CL-008-03` | partial |
+| `CL-008-04` | partial |
+| `CL-008-05` | partial |
+| `CL-008-06` | partial |
+| `CL-010-05` | partial |
+| `CL-010-07` | partial |
+| `CL-010-08` | partial |
+| `CL-013-01` | target |
+| `CL-013-02` | target |
+| `CL-013-03` | target |
+| `CL-013-04` | target |
+| `CL-013-05` | target |
+| `CL-013-06` | target |
+| `TC-002-001` | partial |
+| `TC-002-003` | partial |
+| `TC-009-001` | partial |
+| `TC-009-002` | partial |
+| `TC-009-003` | partial |
+| `TC-009-004` | partial |
+| `TC-021-005` | implemented |
+| `TC-021-006` | implemented |
+| `TC-021-007` | implemented |
+| `TC-021-008` | implemented |
+| `TC-021-009` | implemented |
+| `TC-022-001` | implemented |
+| `TC-022-002` | partial |
+| `TC-022-003` | implemented |
+| `TC-022-004` | implemented |
+| `TC-022-005` | implemented |
+| `TC-023-001` | planned |
+| `TC-023-002` | planned |
+| `TC-023-003` | planned |
+| `TC-023-004` | planned |
+| `TC-023-005` | planned |
+| `TC-023-006` | planned |
+| `TC-004-001` | partial |
+| `TC-004-002` | partial |
+| `TC-004-003` | partial |
+| `TC-018-001` | implemented |
+| `TC-018-002` | implemented |
+| `TC-018-003` | partial |
+| `TC-010-001` | implemented |
+| `TC-010-002` | implemented |
+| `TC-010-003` | partial |
+| `TC-010-004` | partial |
+| `TC-010-005` | implemented |
+| `TC-010-006` | implemented |
+| `TC-010-007` | implemented |
+| `TC-007-002` | partial |
+
+### 4.6.2 Direct source dependencies of manual companions
+
+Each manual companion depends on the selected normative source sections below.
+Imported model definitions retain their own declared source dependencies.
+
+| Manual companion | FSD sections |
+|---|---|
+| `Architecture.sysml` | 4.1, 6.1, 11, 12.1, 12.2, 12.3, 12.4 |
+| `Profiles.sysml` | 4.2, 6.2, 12.1, 12.2, 12.3, 12.4, 12.5 |
+| `RecordingReceive.sysml` | 4.4, 6.4, 12.6, 12.8 |
+| `StationDecode.sysml` | 4.4, 6.4, 12.7, 12.8 |
+| `RadioIO.sysml` | 4.5, 12.8 |
+| `OperatingLayout.sysml` | 4.4, 4.7, 6.6, 12.7, 12.8 |
+
 ### 4.7 Browser operating composition
 
 | Clause | Requirement | Required behavior | Verification |
 |---|---|---|---|
-| CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002 |
-| CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002 |
-| CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002 |
+| CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002; TC-009-004 |
+| CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002; TC-009-004 |
+| CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002; TC-009-004 |
 
-### 4.7.1 Read-only operating composition
+#### 4.7.1 Read-only operating composition
 
 The profile-mode browser presents one station in one page. A persistent station bar
 identifies the selected server/profile and the existing status-link state using text.
@@ -1380,8 +1603,8 @@ horizontal separator resizes the signal section above the operating workspace.
 The existing signal colour, calibrated bin, row movement and source-time contracts
 remain unchanged. Non-profile status-only mode retains its existing page.
 
-The operating workspace contains Band Activity, selected-contact/Rx focus and compact
-operating controls. Without a supported decoder result interface both message views
+The operating workspace contains Band Activity, Current QSO (selected-contact/Rx
+focus) and Strategy cards, with compact operating controls within these cards. Without a supported decoder result interface both message views
 contain an explicit unavailable state and no message rows. They do not invent UTC,
 frequency, SNR, contacts, capabilities, successful operations or live radio state.
 Dial frequency and mode are labelled unavailable when the server does not provide
@@ -1407,11 +1630,37 @@ TX and status-link availability; contact selection and TX/log controls remain di
 The single pending result request, Thin limit1/4-second cadence and status priority
 follow12.8. Device enumeration requires an explicit operator action.
 
+Receive presentation applies only responses belonging to the current station and
+source/job/generation context. A delayed result page cannot replace lifecycle or
+error state confirmed by a newer receive snapshot, or advance its cursor. A receive
+snapshot requested before a later Start/Stop intent cannot overwrite that intent's
+pending or unknown outcome. An unknown mutation outcome keeps conflicting controls
+disabled and its explanation visible until an authoritative reconciliation request
+initiated after that outcome is accepted; an earlier in-flight read cannot clear it.
+A valid live spectrum frame updates progress only for its matching live owner.
+The independently fetched recorded-input snapshot may have no job and is neither
+required nor mutated by live progress. These interleavings do not disconnect a valid
+station link, replay a mutation or add parallel result requests.
+
+Band Activity uses at least13CSSpx for decoded message and numeric cells, increasing
+to14CSSpx at viewport widths of1500CSSpx or more. Time cells use at least12CSSpx and
+column labels at least11CSSpx. Row cells have at least8CSSpx vertical padding.
+At360CSSpx, the same minimum sizes remain; long message text wraps inside its cell
+without horizontal page scrolling. These visual settings do not change result fields,
+ordering, filtering, requests, capability gates or station state.
+
 TC-009-004 includes an isolated real-server/browser case: independently verified
 native audio fixture passes through the actual source converter, sole receive manager
 and real modem; the returned call-sign record appears literally in Band Activity.
 Assert the full tuple/cursor, stop and partial-output presentation, old-context page
 rejection, unknown epoch reset, cursor expiry and the Thin pending/cadence rules.
+Control three delayed-response interleavings through the actual browser/server:
+release a running result page after a cancelled snapshot; deliver a valid live frame
+while the recorded-input snapshot has no job; and release an idle receive read begun
+before a Start whose response is lost. Expect respectively retained cancelled/partial
+state with no cursor advance, live-only progress with the link still connected and
+no exception, and a persistent unknown-outcome barrier until a later explicit refresh.
+These negative wire fixtures prove response ordering, not successful RF decoding.
 The unsupported/no-input TC-007-002 baseline keeps its empty message views.
 
 
@@ -1427,6 +1676,18 @@ horizontal page overflow. The lower workspace scrolls when needed; text is not h
 solely to fit. The separator supports ArrowUp/ArrowDown, Home and End with updated
 ARIA min/max/current values. Settings disclosure and all supported controls remain
 keyboard accessible. Profile/user fields render literally via textContent.
+
+#### 4.7.2 Agreed operating layout and navigation
+
+The profile-mode operating screen follows the supplied WSTX operating design: a persistent station/navigation header, radio-operation toolbar, spectrum/waterfall, adjustable separator, band strip and three adjacent desktop cards named Band Activity, Current QSO and Strategy. At narrow widths the cards stack without horizontal page scrolling. The dark navy/mint palette, compact controls, card proportions and message readability use the design reference. Source: supplied MagicPath component465528304540209152/revision465570890965458944.
+
+The radio toolbar exposes dial frequency, mode, Monitor and Decode/depth positions. Band buttons and all RF/QSO/strategy operations unsupported by the connected service are disabled with explicit reasons; displayed dial frequency, receive level, period progress, contact identity, strategy revision and decisions remain unknown/unavailable rather than invented. No sample messages, simulated signal or browser-owned automation are substituted for actual station results. Existing authenticated server/profile operations remain authoritative and unchanged.
+
+Operate, Recordings, Logbook, Strategies, Server settings, Client preferences and Help have visible keyboard-accessible entry points. Recordings exposes the actual existing import/replay/cancel controls. Server settings contains the actual revision-aware profile form and connection details. Client preferences contains existing browser-only display-profile and level controls. Logbook and Strategy display service-unavailable states while their operations remain disabled. Opening a secondary in-page region does not hide the persistent Halt Tx control. Escape returns to operation, F2 opens server settings, and focus returns to the opening control after close. Presentation choices issue no radio/QSO/strategy mutation and are not stored as station configuration.
+
+The existing calibrated 0..3000Hz native-bin spectrum/waterfall, original level palette, sensitivity/speed controls and mouse/keyboard splitter remain unchanged. Initial display space is compact like the reference (210 CSS pixels on a sufficiently tall desktop) but remains adjustable and fills all allocated signal space; narrow/short viewports retain the existing160px minimum and access to controls.
+
+Verification extends TC-007-002: actual browser at360/720/1200/1440/1499/1500/1600 widths verifies card order/labels and no overflow, five-width computed typography, actual signal geometry and splitter behavior, visible unsupported reasons and no fabricated rows; navigate/open/close every region with pointer/keyboard and F2/Escape, preserve profile save/reload and real recording operations, and record emitted requests to prove no RF/automation mutations. Capture target and actual page at the same1200x800 viewport and compare geometric/card/navigation placement. Cost2: isolated Windows server/Chromium, no radio or external service. The design reference screenshot contains illustrative data and is not decoder evidence.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -1772,7 +2033,11 @@ save inject a deterministic denied-write/atomic-replace failure in disposable st
 no acknowledgement, no revision advance, previous complete JSON and current settings
 remain authoritative. At crash-before/after-replacement fault points require either
 complete old or complete new JSON, never a partial file; a lost response is reconciled
-by GET without replay. Test a relative profile argument from another working directory,
+by GET without replay. After a lost save response, ordinary Refresh/background GET or
+reconnect MUST NOT permit a second save: Save remains disabled until an explicit reload
+successfully validates the current authoritative profile. A failed explicit reload keeps
+that guard; a successful one recovers the committed revision without a second PUT.
+Test a relative profile argument from another working directory,
 a directory alias, absent parent on creation, existing empty/nonempty creation target,
 unknown/duplicate CLI flags and forbidden WSTX_BIND/WSTX_ORIGIN overrides. No fallback
 or mutation is permitted. This does not certify power-loss durability or WSJT-X migration.
@@ -1847,9 +2112,9 @@ connection-local meaning and are not profile identities. Verify 12.1's body
 and per-process rate limits independently of other profiles. Same-host cookie transport
 is explicitly observed; it is not proof against a hostile service on that hostname.
 
-#### TC-022-005 ? Status readiness independent of settings transport
+#### TC-022-005 — Status readiness independent of settings transport
 
-Proves CL-005-02/03 and CL-006-04. Level 2, automated Windows real Chromium/server
+Proves CL-005-02, CL-005-03 and CL-006-04. Level 2, automated Windows real Chromium/server
 fixture in tests/profiles.test.cjs, using the common four-process profile fixture.
 On an established socket hold GET /profile behind a controlled barrier, click Refresh,
 observe its actual correlated WebSocket status and require changed visible updated plus
@@ -1873,7 +2138,7 @@ emulated counts beyond four and use actual hardware capacity for live slice test
 
 #### TC-023-001 — Direct protocol and four-station route isolation
 
-**Promise:** FR-023, clauses 1 and 4. **Level: 2 — Isolated automated tests.**
+**Promise:** FR-023; CL-013-01, CL-013-04. **Level: 2 — Isolated automated tests.**
 **Where it runs:** Windows PC, candidate Rust system, four station profiles/windows
 and an independent local FlexRadio protocol emulator; no real radio or external service.
 
@@ -1889,7 +2154,7 @@ independently specified protocol fixtures, not packets generated by the code und
 
 #### TC-023-002 — Persisted intent and changed runtime handles
 
-**Promise:** FR-023, clauses 3–5. **Level: 2 — Isolated automated tests.**
+**Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
 **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
 
 **Inputs/actions:** Save intended radio/slice associations, disconnect/restart the
@@ -1903,7 +2168,7 @@ requests or accepting stale handles as authority.
 
 #### TC-023-003 — Capability limits and shared-resource coordination
 
-**Promise:** FR-023, clauses 2, 4–6; FR-008/FR-009. **Level: 2 — Isolated automated tests.**
+**Promise:** FR-023; FR-008/FR-009; CL-013-02, CL-013-04, CL-013-05, CL-013-06. **Level: 2 — Isolated automated tests.**
 **Where it runs:** Windows PC, four logical station servers and an API/resource emulator.
 
 **Inputs/actions:** Emulate sufficient and insufficient slice capacities, incompatible
@@ -1950,7 +2215,7 @@ case and operator consent instead; do not relabel a mutating test as observation
 
 #### TC-023-006 — Conditional future transmit validation
 
-**Promise:** FR-008/FR-009 and FR-023 clause 5.
+**Promise:** FR-008/FR-009, FR-023; CL-013-05.
 **Level: 5 — Tests with external effects and explicit operator consent.**
 **Where it runs:** A designated authorized physical test station, only after transmit
 functionality, its ownership policy and the specific test operation have been approved.
@@ -1974,9 +2239,9 @@ or zero executed cases fail. Tests verify the complete manifest, not a convenien
 
 | Test | Promises | Inputs/actions | Expected result and oracle | Level / where it runs |
 |---|---|---|---|---|
-| TC-004-001 — Offline FT4 | FR-003, FR-004, FR-018 | Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
-| TC-004-002 — Offline FT8 | FR-003, FR-004, FR-018 | Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
-| TC-004-003 — Invalid and nonmatching input | FR-003, FR-004, FR-018 | Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run. | Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures. | 2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. |
+| TC-004-001 — Offline FT4 | FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04 | Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
+| TC-004-002 — Offline FT8 | FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04 | Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions. | Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets. | 2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. |
+| TC-004-003 — Invalid and nonmatching input | FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04 | Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run. | Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures. | 2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. |
 
 The following named subcases preserve those stable case IDs and prove CL-007-01..04.
 Both-mode rows belong to TC-004-001 for FT4 and TC-004-002 for FT8; rejection,
@@ -1991,13 +2256,16 @@ the communication/recording companions; none require hardware consent.
 | Case/subcase | Setup and action | Independent expected observation |
 |---|---|---|
 | Both modes: payload-channel | Every supported i3/n3 family; exact fields/77 bits; call/CQ/grid/report/free-text/telemetry/contest/hash boundaries, first/max/invalid values; generate CRC/FEC and both tone frames independently. | Fixed expected fields/CRC/codeword/79 or 105 tones; separate CRC recurrence and published H syndrome agree. Hashes retain numeric width/value and `<...>`; source identity, received text and reference observations remain distinct. Include K1ABC=10214965, W9XYZ=12751800, FN42=10342, type3 WI=8049, type4 PJ2/W1AW with hash12=579 and current VHF hashes2662/3931158, report59/serial2047/gridRR99XX. |
-| Both modes: known-word fit metric | Generate independent analytic quadratures with phase=2*pi*f*(k+1)/12000+0.4*sin(2*pi*((k+1)/12000)/0.048), x=0.6*u-0.8*w,60480frames; take k=288..60191 every4 at f=1499,1499.9,1500,1500.1,1501,2999,3000,3001Hz. | Independent scalar Gram calculation recovers coefficients0.6/-0.8 and explained energy sum(x*x); candidate metric agrees within5e-7relative after f32storage. Both1500/3000carrier cases reject a mere scalar correction of the nonorthogonal complex-energy approximation. |
-| FT4: paired sequence scalar kernel | Use all8 fixed cases in `fixtures/decoder/pair-chain/inputs.json` with1..3 groups, uniform/asymmetric/known-symbol/coupled/extreme factors and two+1,000,000common-shift pairs. | Complete path enumeration at100decimal digits in the standalone producer supplies fixed log marginals for every variable and final boundary; candidate agrees within1e-9absolute, impossible tones are negative infinity. Masks, normalization and both common-shift invariances hold. Missing/empty/nonfinite/bad-boundary dimensions reject. The existing2286waveforms and14phase/scale/drift/dynamic-range cases retain their exact inputs and acceptance thresholds. |
+| Both modes: known-word fit metric | Generate independent analytic quadratures with phase=2*pi*f*(k+1)/12000+0.4*sin(2*pi*((k+1)/12000)/0.048), x=0.6*u-0.8*w,60480frames; take k=288..60191 every sample at f=1499,1499.9,1500,1500.1,1501,2999,3000,3001Hz. | Independent scalar Gram calculation recovers coefficients0.6/-0.8 and explained energy sum(x*x); candidate metric agrees within5e-7relative after f32storage. Both1500/3000carrier cases reject a mere scalar correction of the nonorthogonal complex-energy approximation. |
+| Both modes: unrelated-carrier refinement alias | On the same60480-frame analytic template and trimmed support, set f=400 and1000Hz, t=(k+1)/12000, psi=0.4*sin(2*pi*t/0.048), u=cos(2*pi*f*t+psi), w=sin(2*pi*f*t+psi). Independently form x=cos(2*pi*(3000-f)*t-psi+0.7), then repeat with x+0.25*u-0.5*w. Compare the refinement grid's actual fit metric against a separate scalar full-rate2x2 Gram solve after float32 storage. | For each input the candidate explained energy agrees with the independent full-rate oracle within5e-7 times total observation energy. The unrelated-only input's full-rate explained fraction is below0.001, while a separate every-fourth-sample diagnostic exceeds0.999; it is therefore rejected as an oracle for grid ordering. The mixed case retains the independently calculated target coefficients/energy without alias amplification. An unfiltered stride-four scoring negative control fails this oracle. All existing grids/caps,2286quality cases,14phase/scale/drift cases, known-answer recording thresholds, runtime/cancellation and64MiB limits remain unchanged. |
+| FT4: bandlimited physical chain | Independently calculate both native/complex transform dimensions, asymmetric tapers/center-bin/RMS and complete-support fine grids; include first-ramp source0/1and incomplete support, a true frame missed by the old time-power maximum, periodic Nuttall and scalar-DFT powers, constant/known-quartic/zero/rank-deficient spectral baselines, percentile6.5ties, exact200/3500Hz endpoints with linear-after-division contrast1.18/just-below/just-above vectors, and two complete temporal frames returned through the same per-frequency modeled interface. Enumerate all4/16/256tone sequences and206-bit normalization before extraction; test final-family bit-copy ranges and polarity. Exercise tone hits7/8and hard sync bits19/20, post-refinement starts8/9/10for FT4 and29/30/31/89/90/91for FT8 plus exact-end-support clamping, three-family progression,1401tap scalar convolution and no second ramp-origin subtraction. | Same independent DFT/Decimal/convolution tolerances as the FT8 physical-chain case. Exact103symbol/206raw-bit/174data-bit identities and all source-unit conversions agree with hand-selected vectors. All original FT4quality/phase/noise/invalid/unsupported/performance thresholds remain unchanged; no output is manufactured from the reference. |
+| FT4: qualified support selection | Independently label physical qualification and ordered fine points; use equal-carrier starts0/60479/60480/60481, inclusive half-tone and adjacent floating-point neighbors, duplicates, multiple frequency-candidate lists and a fresh residual pass. First offer a physically invalid higher-score point, then a valid point; separately offer a physically qualified FEC-invalid point before an overlapping valid point. Replay the fixed FT8-as-FT4 wrong-mode input and two separated same-frequency frames. | Starts60479compete,60480/60481remain distinct; half-tone equality competes and the first representable separation above it does not. The first physically qualified point in visit order retains the support across frequency lists; a physical failure excludes nothing, while later FEC failure does not release a retained support. A fresh residual pass has no previous support exclusions. Duplicate/competing points do not consume extra capacity; exactly256distinct qualified points are retained and a257th yields search_limited. Wrong-mode audio publishes no frames or search error; both separated legitimate frames are returned. All original corpus expectations remain unchanged. |
+| FT8: bandlimited physical chain | Use independently calculated long/short DFT vectors, both15/30-second transform sizes, band-edge/center-bin/scale impulses and a2600Hzinterferer beside a400Hzcandidate. Enumerate all8/64/512tone choices for fixed32-point complex coefficient tables; include half-boundary/end-group sync support, Gray-bit ordering, five-family ties, zero/constant/nonfinite normalization and polarity. Compare the4001tap convolution and both edges against direct scalar math. Then replay unchanged waveform/quality/phase/resource fixtures and official reference recordings; compare the actual source-built Fortran runner separately under declared AP/depth settings. | Independent scalar DFT/normal-equation/finite sums give exact bin identities, tone hits, metric signs/order, normalization and direct-convolution samples within these bounds: selected unnormalized DFT coefficients differ by<=1e-9*max(1,sum(abs(input))); baseband samples by<=1e-8*max(1,inputRMS); unquantized metrics/normalization by<=1e-9*max(1,abs(expected)); final float32 LLRs by<=1ULP from independently rounded values; selected float32 SIC residuals by<=1e-7*max(1,sourcePeak). Out-of-band carriers cannot enter through decimation aliases, zero-padding never admits incomplete frames, and zero/nonfinite metrics publish no frame. All original2286/38/14inputs and quality/error/runtime/cancellation thresholds remain; unsupported/invalid typed frames retain channel-valid observations. Actual reference comparison records every expected/missing/extra message and its PCM/settings/source identity; candidate output never rewrites the golden set. |
 | Both modes: continuous modem history | Seed more than2048 lifetime verified publications while advancing live window origins; exercise equal/backwards origins, same-payload overlap at exactly half a symbol, retirement just beyond it, different encoded charges, and a gap/new-context reset. Repeat with finite utility state. | Live history remains within2048keys/2MiB and continues past2048lifetime callbacks; exact-boundary overlap remains deduplicated, strictly older keys retire with their original byte charges, backwards origins reject without modifying state, and a new context clears modem history. Live sizing reserves the16-digit sequence but never supplies manager wire cursors. Finite utility still stops at its lifetime limit and retains accepted partials. |
 | Both modes: complete-waveform | Independently compose complete GFSK audio from fixed tones for every supported family; explicit sample start/frequency/envelope, both modes, planned and scalar paths. | Exact received fields/payload; time/frequency tolerances in4.4. One-PCM-LSB tolerance between independent math composers, exact hash for retained WAV. Type1 /R and type3 TU remain positive protocol vectors even if a particular reference run misses them. |
-| Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
+| Both modes: AWGN-offset | Forty strong and forty weak fixed-seed slots/mode and twenty explicit frequency/start boundary combinations/mode, including off-tone-grid FT8 carriers200.5/1000.3/3499Hz; independently injected carriers/start positions are recovered without operator-supplied offsets; no seed or threshold changes after seeing candidate results. | >=36/40 at FT8-15/FT4-10 dB, >=20/40 at -18/-13 dB, zero incorrect; exact start/frequency and <=3 dB SNR on the stronger isolated set. Direct DFT/least-squares and injected variance independently establish measurements. |
 | Both modes: overlap | Twenty equal-level pairs at two tone spacings and twenty pairs at one spacing with six dB difference/mode, fixed seeds/fields/source positions. | Both >=18/20 for equal pairs; stronger>=18 and weaker>=10 for unequal; no fabricated payload. Independent source mixture is the truth, even when the external reference misses weaker content. |
-| Both modes: phase-likelihood-scale | Independent initial phase0.7/pi/2, drift+/-1/30Hz/s, canonical gains1e-4/8; two stations80dB apart including sub-PCM16-quantum samples and scaled float repeat; quantization residuals after independent best-fit subtraction. | Exact original payloads and start/frequency tolerances, both stations retained; zero frames/no search_limited on residuals. All original2286case thresholds and256candidatecap remain. Verify bounded5*9*K coefficient qualification, independent Costas-block phase, recovered-codeword group-phase energy fraction>=0.5, rank77CRC+LDPC recovery and64MiB workspace. |
+| Both modes: phase-likelihood-scale | Independent initial phase0.7/pi/2, drift+/-1/30Hz/s, canonical gains1e-4/8; two stations80dB apart including sub-PCM16-quantum samples and scaled float repeat; quantization residuals after independent best-fit subtraction. | Exact original payloads and start/frequency tolerances, both stations retained; zero frames/no search_limited on residuals. All original2286case thresholds and256candidatecap remain. Verify FT4 bandlimited block synchronization/three-metric unassisted decoding and FT8 bandlimited per-symbol synchronization/five-metric decoding; rank77CRC+LDPC recovery and64MiB workspace. |
 | Both modes: recordings | Import pinned official modern FT4 and FT8 plus all22 historical FT8 WAVs unchanged; decode explicit selected modes. | >=16/19 modern FT4 and >=12/14 official FT8 baseline matches; report all misses/new frames and validate their channel/fields independently. Historical text is supplementary, never exhaustive truth; legacyFT4zero is not a modern negative. |
 | Rejection | 1000 full-slot fixed noise inputs/mode at four RMS levels, silence, DC/tones/impulses, wrong mode, truncated support, nonfinite/wrong-rate/discontinuous pure samples, invalid WAV, unsupported tags, invalid source fields, good FEC/bad CRC. | Zero published frames in empty/noise/CRC/wrong-mode corpus, explicit unsupported/invalid classification only for injected CRC-valid frames; defined input errors, no panic, no ordinary-text fallback. Invalid WAV remains the existing import error. Canonical report aliases above32505 remain invalid despite permissive reference output. |
 | Lifecycle/limits | Repeat, cancel during detection/FEC/recovery/subtraction; replace source/start another job/restart; four profiles; history/result/candidate/work/memory ceilings and injected failures. | Same payload multiset and numeric repeat tolerances; publication invalid before cancel ack, terminal after worker release<=250ms, failed processing cannot complete, no stale append, partial outcomes visible, explicit decode_limit/search_limited; no queue or unbounded buffers. |
@@ -2028,7 +2296,7 @@ IDs from #6 are preserved.
 |---|---|---|---|
 | TC-018-001 | CL-006-01, CL-006-02 | Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability. | Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. |
 | TC-018-002 | CL-006-01, CL-006-02, CL-006-04 | Table-mutate each required WAV field/chunk, zero data, odd data, duplicate fmt/data, RIFF mismatch/overflow, truncation at each header/data boundary, rate/channel/format changes, 65 chunks, frame count max+1 and file cap+1; create legal exactly-at-cap ancillary data. Exercise slow/aborted/timed-out upload, cancel before/after validation commit and storage write/flush/manifest/cleanup failures, including restart at commit boundaries. | Hand-specified errors follow 12.6; unsupported capability differs from malformed structure, exact limits accepted. Before manifest commit old bytes/ID remain; after it new bytes/ID remain even with lost response. No partial source becomes replayable, no unbounded pending file remains; startup cleanup keeps committed data and reports failure explicitly. Other station/profile/status remains available. |
-| TC-018-003 | CL-006-02, CL-006-04 | Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. | Exactly one serialized start wins. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. |
+| TC-018-003 | CL-006-02, CL-006-04 | Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. In a real browser, reject the reservation POST with known409 busy and separately503 storage_unavailable; observe local pending/error display and all subsequent requests. | Exactly one serialized start wins. A known rejected reservation ends local pending and visibly reports its exact error, sends no PUT/DELETE/retried POST and preserves authoritative busy/degraded/identity state; it cannot fabricate an accepted import or successful snapshot. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. |
 | TC-010-001 | CL-006-03 | Independently synthesize silence, DC, coherent tones at 750/1500/2250 Hz at amplitudes 0.5/0.25, two simultaneous tones, a noncoherent tone, clipped input and a burst with specified source-frame start/end. Compute selected windows using a direct DFT test oracle; replay through real browser. | Direct DFT uses published formula without candidate FFT/provider helpers; peak group equals floor(k/4) for coherent bins and row interval follows window-start rule. Half-amplitude change is -6.0206 dB within 0.05 dB prequantization; quantized levels add <=0.5 dB. Silence equals floor; DC uses one-sided exception. Require normal and portable scalar FFT paths against the same direct DFT oracle, then compare full selected rows, axes/legend/row gaps in DOM/canvas sampling and source metadata, not screenshot resemblance alone. |
 | TC-010-002 | CL-006-03, CL-006-04 | Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing. | Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. |
 | TC-010-003 | CL-006-03 | Real browser at 1100x850 and 360x640: import actual recording, verify one station page, drag divider beyond both extremes, use keyboard/touch/zoom and resize during replay. Repeat four independent station windows. | Measured pane bounds meet 160/200 px minima, separator is 12 px and accessible, keyboard steps16px/Home/End clamp, small-height page scrolls, no horizontal page overflow, controls and axes remain reachable. Pointer/keyboard actions change only that station's pane, no second waterfall window appears and data/source identity survives resize. Browser assertions plus desktop/narrow screenshots verify actual layout. |
@@ -2062,6 +2330,11 @@ and verify the global state becomes stale without enabling unsupported controls.
 Independent oracles: the specified layout/order/capability rules and existing server
 status contract; a screenshot alone is not an acceptance oracle. Existing TC-010-005,
 TC-010-006 and TC-010-007 remain the waveform/palette/geometry regressions.
+At360,1440 and1600CSSpx, inspect computed Band Activity cell, time and header
+styles against the specified13/14,12 and11CSSpx minima and8CSSpx vertical padding.
+The1600CSSpx view exercises the >=1500CSSpx increase; long text wraps without page
+overflow. Existing splitter, keyboard, capability and transport assertions remain.
+These style oracles come from the stated presentation values, not candidate CSS.
 
 ## 7. Proposed delivery milestones
 
@@ -2545,6 +2818,14 @@ those same viewer/controller roles. Station processes are a variable population;
 owns exactly one selected profile and one exclusive backend choice. Optional browser/MCP
 clients and optional CAT availability do not imply additional station engines. A backend
 choice describes alternatives, not simultaneous connections to every backend.
+
+This is one selected-radio reference context, not a limit on physical radios or a
+derivation of radio count from station count. MCP client references identify endpoints
+without assigning their host; the controller-level attachment owns routing associations,
+not the clients. A native backend's session reference identifies its interface provider,
+not a station-owned connection or lifetime. MCP placement/authority details (#12) and
+native session ownership, sharing and lifecycle (#13) remain unresolved; those slices
+are not implementation-ready until their Markdown contracts and models settle them.
 
 The connected semantic paths required for review and automated structural checks are:
 
@@ -3096,7 +3377,24 @@ are bound to selected profile and current boot; unknown/previous boot/other stat
 return 404 `not_found`, without revealing resource existence elsewhere. Idempotent DELETE
 never cancels a different current operation. Abort during PUT cancels that import on
 transport-loss observation; UI abort also sends DELETE on an independent request and
-reconciles GET when network outcome is uncertain. No mutation is retried automatically.
+reconciles GET when network outcome is uncertain. Cancel while the reservation
+response is pending records local cancellation intent without sending PUT. If that
+response subsequently supplies an accepted import ID, the browser sends DELETE for
+that ID, sends zero PUT requests and reconciles the resulting state. A lost reservation
+or cleanup response enters GET reconciliation without assuming cancellation succeeded;
+unavailable transport preserves an uncertain outcome. A known rejected reservation
+ends the pending cancellation without PUT or DELETE. No mutation is retried automatically. A known rejected reservation response ends local
+pending and visibly reports its error; it creates no accepted import or successful
+snapshot, sends no upload/cancel request or automatic retry, and preserves the last
+authoritative busy/degraded/identity state until a validated snapshot changes it.
+Reservation/upload timeout enters cleanup with `upload_timeout` and ends failed after
+successful cleanup; observed PUT transport loss uses cancellation cleanup and ends
+cancelled. Explicit cancellation before committing also ends cancelled after cleanup
+(a reserved import can cancel immediately). Cleanup I/O failure or its five-second
+deadline ends failed with `storage_unavailable` and the quarantine/retained-slot policy
+in4.4. The state owner serializes these events; entering committing removes pre-commit
+cancellation/timeout paths and preserves the manifest commit-point rule even if a later
+response or cleanup fails.
 
 Validation order: mode/route existence; Origin (403 forbidden_origin); TLS auth
 (401 unauthorized); content type/encoding (415 unsupported_media_type); declared or

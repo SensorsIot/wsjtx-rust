@@ -1,12 +1,11 @@
-// Canonical live modem contract SHA256: 8e7a28689eee4ef1e3c764c292b658d85964a6d008bd9723d2bfab71cdd89486
-// Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
+// Canonical FSD slices SHA256: 7e72f8a0e6d9ed8ec896d1120d65391770645fa5e7aeaf2541891803d44b07ec
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
          Authority: docs/WSTX Rust FSD.md 4.4 CR7, 6.4 TC-004-001/002/003, 12.7.
          Protocol: https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf sections2-5/AppendixA;
          current source boundaries and fixed vectors use the pinned beta4 reference manifest.
-         No upstream decoder implementation is translated. Independent meaning/readiness
+         Pinned GPL-compatible physical routines may be adapted with source provenance/attribution. Independent meaning/readiness
          review is required before production code; semantic parsing is not that review.
          Existing physical station/receive/modem/web/browser usages remain owners. */
 
@@ -71,25 +70,17 @@ package WstxOfflineDecode {
         attribute candidateCap : Integer = 256;
         attribute rawMaximumBound : Integer = 661758;
         attribute complexTransformBound : Integer = 838992;
-        attribute phaseTimePoints : Integer = 5;
-        attribute phaseFrequencyPoints : Integer = 9;
-        attribute minBlockPhaseFraction : Real = 0.5;
-        attribute ft4NeighborPairs : Integer = 16;
-        attribute ft4LocalTemplates : Integer = 64;
         attribute recoveryInformationRank : Integer = 77;
         attribute fecIterations : Integer = 50;
         attribute recoveryTrials : Integer = 137;
         attribute subtractionPasses : Integer = 3;
         attribute subtractions : Integer = 32;
-        attribute neighborRefinements : Integer = 2;
         attribute minFrequencyHz : Real = 200.0;
         attribute maxFrequencyHz : Real = 3500.0;
         attribute costasThreshold : Real = 2.7;
         attribute minMeanAbsLlr : Real = 1.0;
-        attribute minCodewordPhaseFraction : Real = 0.5;
         attribute maxHardDisagreements : Integer = 24;
         attribute minSumAlpha : Real = 0.8;
-        attribute llrBound : Real = 12.0;
     }
     attribute def ModeParameters {
         attribute mode : Mode;
@@ -256,6 +247,24 @@ package WstxOfflineDecode {
              cursor<first=>410cursor_expired,cursor>next=>400,cursor==next=>empty.
              No file decode operation/snapshot/page endpoint. */
     }
+    attribute def Ft8CarrierSearchPolicy {
+        attribute minimumCarrierHz : Real = 200.0;
+        attribute maximumCarrierHz : Real = 3500.0;
+        attribute internalToneSpacingHz : Real = 6.25;
+        attribute requiresKnownCarrier : Boolean = false;
+        attribute requiresKnownStartTime : Boolean = false;
+        attribute requiresCarrierOnToneGrid : Boolean = false;
+        attribute retainsPerCandidateFrequencyAndTiming : Boolean = true;
+        attribute refinementHalfRangeHz : Real = 2.5;
+        attribute refinementStepHz : Real = 0.5;
+        doc /* Search each station independently within the inclusive carrier band.
+             The internal6.25Hz tone spacing does not fix a station's lowest-tone
+             offset to multiples of6.25Hz or a shared transmitter-frequency grid.
+             Finite receiver search steps approximate arbitrary carrier offsets;
+             existing selection bounds and1Hz/240-frame FT8 tolerances remain.
+             Ft8FineSynchronization defines finer carrier/time search;
+             SymbolTransformGrid defines the coarse search. */
+    }
     calc def CostasRatio {
         in tones : Integer;
         in expectedPower : Real;
@@ -274,143 +283,279 @@ package WstxOfflineDecode {
         attribute coefficients : ComplexCoefficient[0..838992];
         doc /* Same1920/576 transforms and two shifted frequency grids retain complex values.
              Complete30swindow:747*1080FT8 or2497*336FT4 coefficients. Raw start/frequency
-             grid <=435*1057FT8 or2081*318FT4=661758. Priority heap and suppression bitmap,
+             grid <=435*1057FT8 or2081*318FT4=661758.
+             ThisgridisFT8coarse/rectangularSNR; FT4detectioninsteadusesFt4FrequencyCandidates
+             andone4162*9timinggrid/frequency. ItsrectangulargridisSNR-only. Priority heap and suppression bitmap,
              checkpoint visits; no quadratic all-pairs suppression. All storage inside64MiB. */
     }
-    calc def SyncBlockCoherence {
-        in matchedMagnitudeSquared : Real;
-        in observedEnergy : Real;
-        in templateEnergy : Real;
-        return fraction : Real = matchedMagnitudeSquared / (observedEnergy * templateEnergy);
-        doc /* Positive denominators only, otherwise reject grid point. Five coefficient tables:
-             Hj(dt)=sum_m h(jN+m-dt)*exp(-i2pi*tj*m/N), m0..N-1, outsideh=0.
-             h is unit analytic sync-only GFSK, actual envelope, zero data/ramp tones.
-             Zj is coarse coefficient at expected tone. matchedMagnitudeSquared equals
-             abs(sum_j Zj*conj(Hj)*exp(-i2pi*(fbase+df)*jN/12000))^2 within ONE Costas block.
-             observedEnergy=sumabsZj^2; templateEnergy=sumabsHj^2. EVERY repeated block
-             needsfraction>=.5 at SAME complete/in-band5time*9frequency point. Block phase
-             independent; no whole-frame phase lock or absolute/relative amplitude floor. */
+
+    item def ModemSampleWindow {
+        attribute mode : Mode;
+        attribute sourceWindowOriginFrame : Integer;
+        attribute samples : Real[0..360000];
+        attribute subtractionPass : Integer;
+        assert constraint windowPosition { sourceWindowOriginFrame >= 0 and sourceWindowOriginFrame <= (900719925 * 10000000 + 4740991) }
+        assert constraint passRange { subtractionPass >= 0 and subtractionPass <= 2 }
+        doc /* PRIVATEboundedcanonicalf32window,NOTa4096-framecaptureSampleBlock/newsource.
+             Sharedreceiveowneraccumulatesvalidatedcanonicalblocksandprovidesthiswindow;
+             origin/modepreserved,source/job/boot/generationauthorityremainoutsidepuremodem.
+             Originalwindowimmutable; worker-ownedresidualcopyhasSAMEorigin/mode/length.
+             L=samplescount. LiveFT8<=360000frames/FT4<=180000;finiteutility<=360000.
+             No gaps/paddingfabricated. Allhistory/windows/residuals/FFTs inside64MiB. */
     }
-    attribute def ToneLikelihoodContext {
-        attribute toneCount : Integer;
-        attribute noiseVariance : Real;
-        attribute targetEnergy : Real;
-        attribute nuisanceEnergy : Real;
-        attribute nuisanceOffset : Integer;
-        attribute peerPresent : Boolean;
-        assert constraint boundedVariance {
-            (toneCount == 4 or toneCount == 8) and noiseVariance >= 0.00000000000000000001 and
-            targetEnergy >= 0.0 and nuisanceEnergy >= 0.0
-        }
-        doc /* E=abs(local analytic quadrature z)^2/N; v=PSD*12000/2, floor1e-20.
-             SignalS=N*(a^2+b^2)/4 from independent block-interior2x2Costas fits, trimN/2ends;
-             subtractNv/blockFrames noise bias, clampnonnegative, median across3/4blocks.
-             One strongest distinct phase-qualified overlapping peer, startdelta<=N/2,
-             basefrequencydelta>=.75spacing, I>=v and I>=S/16, finite estimates only.
-             d=floor((fpeer-fbase)/spacing+.5). Selection<=256^2 candidate comparisons. */
+    attribute def Ft8PhysicalLimits {
+        attribute inputRate : Integer = 12000;
+        attribute maxInputFrames : Integer = 360000;
+        attribute longFftUnit : Integer = 192000;
+        attribute longFftMax : Integer = 384000;
+        attribute downsample : Integer = 60;
+        attribute shortFftMax : Integer = 6400;
+        attribute basebandRate : Integer = 200;
+        attribute samplesPerSymbol : Integer = 32;
+        attribute firstTimePoints : Integer = 21;
+        attribute firstTimeRadius : Integer = 10;
+        attribute frequencyPoints : Integer = 11;
+        attribute frequencyStepHz : Real = 0.5;
+        attribute finalTimePoints : Integer = 9;
+        attribute finalTimeRadius : Integer = 4;
+        attribute requiredCostasHits : Integer = 9;
+        attribute totalCostasSymbols : Integer = 21;
+        attribute metricFamilies : Integer = 5;
+        attribute metricScale : Real = 2.83;
+        attribute channelIterationsPerFamily : Integer = 50;
+        attribute channelTrialsPerFamily : Integer = 137;
+        attribute hardDisagreementMax : Integer = 24;
+        attribute meanAbsLlrMin : Real = 1.0;
+        attribute filterRadius : Integer = 2000;
+        attribute filterTaps : Integer = 4001;
     }
-    calc def MarginalToneLikelihood {
-        in context : ToneLikelihoodContext;
-        in energies : Real[4..8];
-        in targetTone : Integer;
-        return logLikelihood : Real;
-        doc /* No peer:Et/v. Peer:j0..Q-1 mapsu=d+j, weight1/Q; out-of-band u addsno nuisance.
-             V(k,t,u)=v+S*[k=t]+I*[k=u]. Returnlogsumexp_u(-sum_k(logV+Ek/V))-logQ.
-             Subtract common terms BEFORE logsumexp, retaining finite low-noise differences.
-             One peer only, <=Q^2 components/fixed-neighbor symbol, nosemantic/AP prior. */
+    item def ComplexBasebandCoefficient { attribute realPart : Real; attribute imaginaryPart : Real; }
+    enum def PhysicalMetricFamily { enum single; enum pair; enum triple; enum normalizedSingle; enum strongest; enum quadruple; }
+    item def PhysicalLlrFamily { attribute family : PhysicalMetricFamily; attribute llrZeroPositive : Real[174]; }
+    item def PhysicalFinePoint {
+        attribute sourceStartFrame : Integer;
+        attribute carrierHz : Real;
+        attribute syncPower : Real;
+        attribute hardCostasHits : Integer;
     }
-    calc def Ft4NeighborMarginalization {
-        in context : ToneLikelihoodContext;
-        in leftLogPrior : Real[4];
-        in rightLogPrior : Real[4];
-        return toneScores : Real[4];
-        doc /* Enumerate4left*4target*4right local templates (64*576complex-f64=589824bytes).
-             More distant neighbors fixed hard. For each target,logsumexp16pair likelihoods
-             plusleft/right logpriors. Initial data uniform, knownsync/ramp delta priors.
-             Atmosttwoobservationrefinements; finalFT4nopeer round usesFt4PairSequence
-             instead of anotherlocalmarginal. Withpeer retainlocalmarginal. GraybitL clipped+-12,logP=-sumlog(1+exp(-sign(bit)*L)),
-             sign0=+1/sign1=-1; normalize across4tones. FT8 hard-neighbor templates/two
-             posterior refinements. No additional source, thread, encoder or AP hint. */
+    calc def Ft8MetricDifference {
+        in maxBitOne : Real;
+        in maxBitZero : Real;
+        return raw : Real = maxBitOne - maxBitZero;
     }
-    calc def Ft4PairMetric {
-        in samples : Real[1152];
-        in localTones : Integer[4];
-        in baseFrequencyHz : Real;
-        in noiseVariance : Real;
-        return logFactor : Real;
-        doc /* N576,256cachedcomplex-f64templates oflength2N;4,718,592bytes.
-             L,T,U,R atrelative symbols-1,0,1,2. SharedreconstructionunitGaussianpulseBT1:
-             p(t)=(erf(c*(t+.5))-erf(c*(t-.5)))/2,c=pi*sqrt(2/ln2).
-             psi_a(k)=(2pi/N)*sum_m0..k p((m+.5)/N-a-.5),a=-1..2,k0..2N-1.
-             h=exp(i*(Lpsi_-1+Tpsi_0+Upsi_1+Rpsi_2));otherslocaltoneszero.
-             Eachpairindependentcomplexgain absorbsconstantprefixphase.
-             Requirecomplete60480-frame supportin currentResidual atcandidateStart.
-             x[j]=currentResidual[candidateStart+j],j0..60479.
-             Bindthismetric'ssamples[k]=x[2gN+k],k0..1151.
-             z=sum_k samples[k]*conj(h)*exp(-i2pi*f*k/12000), F=abs(z)^2/(2N*v).
-             Sameanalytic-quadraturelikelihoodconventionaslocalpower; variancefloor1e-20.
-             Index((L*4+T)*4+U)*4+R; subtractcommonmaxoverall256factors/pair. */
+    calc def Ft8ChannelPolarity {
+        in raw : Real;
+        in populationSigma : Real;
+        return llrZeroPositive : Real = -2.83 * raw / populationSigma;
+        doc /* Sigma strictlypositive/finite. Perfamily m=sumraw/174,q=sumrawSquared/174;
+             sigma=sqrt(q-m*m) ifpositive,else sqrt(q). NOmean subtraction.
+             Zerowidth/nonfinitefamily suppliesnoword; no duplicateFEC afterfamily5. */
     }
-    calc def Ft4PairSequence {
-        in factorGroups : Integer;
-        in pairFactors : Real[256..13312];
-        in allowedTones : Boolean[12..420];
-        return toneLogMarginals : Real[12..420];
-        doc /* Purebounded16stateforward/backward. PhysicalFT4G52coverssymbols0..103;
-             PairmetricsconsumeanchoredcurrentResidual[candidateStart..candidateStart+60480],
-             each1152-sampleinput boundatcandidateStart+2gN asdefinedbyFt4PairMetric;
-             exteriorz[-1]=0,finalramptonez[104]=0. GenericmathG1..52, exact2G+1masks,
-             eachnonempty; finalmask[true,false,false,false]. Allfactorsfinite, exactG*256.
-             Sync/ramp knownphysicaltonemasks; datauniform,noFECposterior/AP/messageprior.
-             Firstpairramp'sfourtonesfixedbysync/ramp, so itsweightiscommonpathconstant.
-             state(L,T)=4L+T. alpha0(L,T)=0ifL0elsenegInfinity.
-             alpha_(g+1)(U,R)=LSE_(L,T)(alpha_g(L,T)+F_g(L,T,U,R)).
-             betaG(U,R)=0ifR0elsenegInfinity;
-             beta_g(L,T)=LSE_(U,R)(F_g(L,T,U,R)+beta_(g+1)(U,R)).
-             OmittransitionsifT@2g/U@2g+1violatemasks,normalizefinitealphabeta rowsbymax.
-             Transitionmass=alpha+F+beta; LSEoverLURgivesT,andLTRgivesU; normalizetones.
-             Finalboundarylogmarginal[0,negInfinity,negInfinity,negInfinity].
-             GrayLSE/clamp+-12 yields174channelLLRs forEXISTINGfinalFEC/OSDround.
-             FinalFT4nopeeronly, replaceslastlocalround; earlyH+CRC/channelgatesmayfinish.
-             Noadditionalround/candidate/source/worker, nouniversalphasebetweenseparatepairs.
-             Invaliddimensions/nonfinitearithmetic/nofinitepathrejectobservation.
-             <=52*256*1152=15335424complexsampleproducts,52*256factors,two53*16statearrays.
-             Templates/factors/statesinsideexisting64MiB; checkpointsbeforeeachpairbank
-             andbefore/afterboundedtrellis. */
+    action def Ft8BandLimit {
+        in source : ModemSampleWindow;
+        in currentPass : Integer;
+        in carrierHz : Real;
+        out baseband : ComplexBasebandCoefficient[0..6400];
+        out centerBinHz : Real;
+        doc /* Pinned0f7d592 ft8_downsample adaptation. L=currentpassframes;
+             N1=192000*ceil(L/180000)<=384000,N2=N1/60,df=12000/N1.
+             i0=round(f0/df),ib=max(1,round((f0-9.375)/df)),it=min(N1/2,round((f0+53.125)/df)).
+             Sharedcachednegative-signunnormalizedlongFFT rebuiltwhenresidualchanges.
+             Maporiginalbin i to(i-i0)modN2. T=round(6.25/df),K=it-ib+1,j=i-ib.
+             Lowtaperj0..T:.5*(1+cos(pi*(T-j)/T));hightaperjK-1-T..K-1:
+             .5*(1+cos(pi*(j-(K-1-T))/T));interior1.
+             UnnormalizedpositiveinverseFFT,scale1/sqrt(N1*N2),200complexsamples/s.
+             Actualmixedcenter=i0*df; everytrial/reportaccountsforit. Paddingisprivate,
+             cannotadmitincomplete151680frames. Sharedplanned/scalarRustFFT6.4.1,
+             sameconventions/cacheowner; real/complex64transform/metric/convolutionsums
+             overcanonicalfloat32input, finalLLRfloat32; allstoragewithin64MiB. */
     }
-    action def QualifySynchronization {
-        in grid : SymbolTransformGrid;
-        out qualifiedCount : Integer;
+    action def Ft8FineSynchronization {
+        in source : ModemSampleWindow;
+        in coarseStartFrame : Integer;
+        in coarseCarrierHz : Real;
+        out fine : PhysicalFinePoint[0..1];
+        doc /* CoarseCostasratio>=2.7/currentgrid/suppression/order unchanged.
+             UseFt8BandLimit; P(b,d)=sumover21Costassymbolsabs(sumj0..31
+             z[b+32*s+j]*exp(-i2pi*(tone_s/32+d/200)*j))Squared.
+             Independentsymbolphases. Firstb=round(coarseStart/60)+[-10..10],d0;
+             thenfrequencytweaks[-2.5..2.5]step.5atbestb; rebuildatbestcarrier;
+             finalb=bestb+[-4..4],d0. Descendingpower,tiesascendingfrequency/start.
+             EverypointcompleteORIGINAL151680frames/carrier200..3500inclusive.
+             Outputcanonicalstart60*b includesramp,notGUI DT/UTC.
+             FFT32eachsymbol,hardtone=largestabsbin0..7,tieslower;>=9/21Costashits.
+             QualifyBEFORE256cap,257th=>searchLimited. Post-refinementcanonicalstarts:
+             b=floor(s/60+.5),nonnegativehalftiesUP;clamp0..floor((L-151680)/60).
+             RechecktoneevidenceatnearestCOMPLETEbasebandorigin/finalcarrier,notpadding.
+             PRESERVEreportedcanonicalstart s; mappingonlyphysicalguardbeforepublication/SIC.
+             NOcrosssymbol/blockfractiongateforFT8. */
+    }
+    action def Ft8ObserveMetricFamilies {
+        in source : ModemSampleWindow;
+        in point : PhysicalFinePoint;
+        out families : PhysicalLlrFamily[5];
+        doc /* Pinnedft8b unassistedimetric1. C[k,t]=FFT32symbol[k][t]/1000,t0..7.
+             Gray[0,1,3,2,5,6,4,7],MSBfirst. Each29datahalfstarts7/43(zerobased).
+             n1/2/3,k0,n,2n..<29; v0..8^n-1 selectsnGraytones; S=abs(sumCselected).
+             EndgroupsKEEPactualfollowingsynccoefficient. Bitindexhalf*87+3*k+bit,
+             storeonlyindex<174; secondhalfoverwritesitsownpositions.
+             A/B/C=Ft8MetricDifferenceperbitforsingle/pair/triple. D=A/max8S,zeroifmax0.
+             E=largestabsoluteRAW A/B/Cperbit,tiesA/B/C. FormEbeforeanynormalization.
+             Normalizeeach174elementfamilyasFt8ChannelPolarity,NOmean subtraction.
+             NoAP/callsign/contact/semanticprior. No currentFT4neighborlikelihoodapplies. */
+    }
+    action def Ft8DecodeMetricFamilies {
+        in families : PhysicalLlrFamily[5];
+        out accepted : Boolean;
+        out channelWord : Integer[174];
+        out payload77 : Integer[77];
+        doc /* Fiveorderedfamilies,each<=50minsumalpha.8and<=137rank77order0/1/2recovery
+             trials/16least-reliablebasisbits. CRCbitsconstrained; publishedH+CRCmandatory.
+             RequiremeanabsLLR>=1/hardCHANNELdisagreements<=24. Avalidwordfailinggates
+             DOESNOTstoplaterfamilies. Firstallgatesacceptedwordwins; no6thfallbackdecode.
+             Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
+             Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
+    }
+    action def Ft8SubtractVerifiedFrame {
+        in source : ModemSampleWindow;
+        in point : PhysicalFinePoint;
+        in reference : ComplexBasebandCoefficient[151680];
+        out residual : ModemSampleWindow;
+        doc /* Adaptedsubtractft8, boundedCENTEREDzerobasedproductdefinition:
+             c[k]=x[start+k]*conj(reference[k]),zerooutsideframe;
+             h[j]=cos(pi*j/4000)^2/sum[a=-2000..2000]cos(pi*a/4000)^2,j=-2000..2000.
+             y[k]=sumj h[j]*c[k-j],linearFFTpadding>=151680+4000.
+             Atedge-distancea0..2000 dividebyavailableweight sumj[-2000..a]h[j].
+             Subtract2*Re(reference[k]*y[k])ONLYwithinframe; originalsourceimmutable.
+             <=3passes/32verifiedsubtractions, invalidatepassFFTafterresidualchanges.
+             Directscalarconvolution/edgesareindependentoracle; no circularwrap.
+             No additionalowner/provider/job/source orTXauthority. */
+    }
+
+    attribute def Ft4PhysicalLimits {
+        attribute longFftUnit : Integer = 72576;
+        attribute longFftMax : Integer = 435456;
+        attribute downsample : Integer = 18;
+        attribute basebandMax : Integer = 24192;
+        attribute samplesPerSymbol : Integer = 32;
+        attribute shapedSymbols : Integer = 105;
+        attribute observedSymbols : Integer = 103;
+        attribute firstFrequencyPoints : Integer = 9;
+        attribute firstFrequencyStepHz : Integer = 3;
+        attribute firstTimePoints : Integer = 4162;
+        attribute firstTimeStep : Integer = 4;
+        attribute frequencyFft : Integer = 2304;
+        attribute frequencyHop : Integer = 576;
+        attribute smoothBins : Integer = 15;
+        attribute baselineSegments : Integer = 10;
+        attribute baselinePercentile : Integer = 10;
+        attribute baselineDegree : Integer = 4;
+        attribute baselineLiftDb : Real = 0.65;
+        attribute minFrequencyContrast : Real = 1.18;
+        attribute finalFrequencyPoints : Integer = 9;
+        attribute finalTimePoints : Integer = 11;
+        attribute requiredToneHits : Integer = 8;
+        attribute requiredSyncBits : Integer = 20;
+        attribute minSyncMagnitude : Real = 1.2;
+        attribute metricFamilies : Integer = 3;
+        attribute rawBits : Integer = 206;
+        attribute filterTaps : Integer = 1401;
+    }
+    item def PhysicalFrequencyPeak { attribute carrierHz : Real; attribute contrast : Real; }
+    action def Ft4FrequencyCandidates {
+        in source : ModemSampleWindow;
+        out frequencies : PhysicalFrequencyPeak[0..1152];
+        doc /* Pinnedgetcandidates4/ft4_baseline/nuttal_window/pctile/polyfit adaptation.
+             FFT2304/hop576overEVERYcompleteORIGINALwindow,inputx*window/300.
+             Periodicwindowj0..2303:.3635819-.4891775cos(2pi*j/2304)
+             +.1365995cos(4pi*j/2304)-.0106411cos(6pi*j/2304).
+             Averagepositive-binLINEARpowers, smooth15bins; retainedlinearbeforedbfit.
+             df12000/2304,ia=round(200/df),ib=round((3500+31.25)/df).
+             10integerfloorsegments,remainderexcludedfromfit. Percentile1basedindex
+             clamp(floor(.10*segmentLength+.5),1,n),includealltiedvalues<=cutoff.
+             BaselineinputUNSMOOTHEDaveragedpowers; <=1000lower-envelopepoints,
+             equalweightquarticleastsquares,finitefullrank5;
+             affinexscalingallowedasSAMEpolynomialspace. Baseline=10^((fitdb+.65)/10).
+             Allzero/insufficient/singular/nonfinite/nonpositivebaseline=>nofrequencies.
+             Individualzerobinsuseminpositivedb-120forfitonly; positivepowersneverfloored.
+             ratio=original15-binmean/baseline;interiorlocalmaxratio>=1.18.
+             delta=.5*(left-right)/(left-2center+right),0ifden0;
+             carrier=(bin+delta)*df-31.25,contrast=center-.25*(left-right)*delta.
+             Retain200..3500inclusive. Endpointe200/3500:u=(e+31.25)/df,j=flooru,a=u-j;
+             interpolateAFTERdivision rEnd=ratio[j]+a*(ratio[j+1]-ratio[j]);a0=>ratio[j]only.
+             Exactendpointtrialiff rEnd>=1.18; no polynomial/rawpowerinterpolation.
+             Ordercontrastdesc/carrierasc; noQSO/semanticpriority. Nocandidatemadefrompadding.
+             Sharedworker/FFTdependency/scratch,<=50msquantum/64MiB. */
+    }
+    action def Ft4BandLimitAndFineSync {
+        in source : ModemSampleWindow;
+        in coarseCarrierHz : Real;
+        in priorFine : PhysicalFinePoint[0..256];
+        out fine : PhysicalFinePoint[0..256];
         out searchLimited : Boolean;
-        assert constraint boundedQualified { qualifiedCount >= 0 and qualifiedCount <= 256 }
-        doc /* Costas>=2.7 first; local suppressionhalfsymbol ANDhalftone, scoredesc/freq/time.
-             Per rawmax:<=5*9*Kexisting-coefficient products, NOT5*9*K*Nsample correlations.
-             Requirephasefraction>=.5 in EVERY block atonepoint. A257thqualified candidate
-             setssearchLimited. Fine sample Costas only at<=45phase-valid points/admitted
-             candidate, tiesfrequency/time. No unbounded optimizer or amplitude earlystop. */
+        doc /* The outputfinecontainsADDITIONALpoints only. DedupagainstpriorFineAND
+             currentfinebeforecounting; size(priorFine)+size(fine)<=256 globally.
+             Nextdistinctqualifiedpointwouldexceedcap=>searchLimited,notperfrequencyreset.
+             Multipletemporalframesare retained inthispluraloutput.
+             Pinned0f7d592 ft4_downsample/sync4d/driver boundedlocaladaptation.
+             N1=72576*ceil(L/72576)<=435456,N2=N1/18,df=12000/N1,baud=12000/576.
+             T=floor(.5baud/df),F=floor(4baud/df),S=floor(baud/df),i0=round(f0/df).
+             PeriodicW[j]:j0..<T .5*(1+cos(pi*(T-1-j)/T));jT..<T+F 1;
+             jT+F..<2T+F .5*(1+cos(pi*(j-T-F)/T));else0.
+             Signedbinb mapspositiveoriginali0+b if0..N1/2,weightW[(b+S)modN2]/N2.
+             Positiveunnormalizedinverse,normalizewindowbypositivefiniteRMS.
+             Actualcenteri0*df explicitlyaccounted;666.666...Hz/32samplespersymbol.
+             Ft4FrequencyCandidates suppliesONLYcarrierconfidence,notcoarsetimeprior.
+             FirstCostasoriginb=32..floor((L-60480)/18)+32 step4,includeoffgridlastendpoint.
+             Scorefourblocksatb+{0,33,66,99}*32;each64EVERYSECOND FILTEREDsamples
+             correlatesrectangularCostas4tonepattern/frequencytweak,sum4magnitudes/64,
+             independentblockphases. Firstd[-12..12]step3 atALLcompleteoriginpositions.
+             Visit3x3localmaxima>=1.2descendingpower,tiesfrequency/time,suppresshalfsymbol
+             ANDhalftoneforRAWgridpoints. ThenbestD+[-4..4]step1,bestB+[-5..5]step1.
+             AFTERrefinementANDphysical8tone/20bitqualification,suppresscompeting
+             completewaveforms iff abs(startDifference)<60480 ANDabs(carrierDifference)<=12000/576/2.
+             Halfopensupports:exactlyadjacent60480remaineligible. Firstqualifiedpoint
+             inexistingfrequencycontrast/carrierthenpower/carrier/startvisitorderwins.
+             FailedphysicalqualificationcreatesNOexclusion;comparepriorFine+currentfine
+             acrossALLfrequencycandidatesbeforeglobalcount. FEC/payloaddoesnotinfluence
+             selection; retainedpointkeepssupporteveniflaterFECfails. Resetallthese
+             exclusionsatnewresidualpass. Explicitblind-windowstrongest-timingadaptation,
+             notUTC/source-originpartitions,notliteralupstream3fixedsegments.
+             Atmost4162time*9frequencycells/frequencycandidate,releasedbeforenext;
+             precomputedtemplates/boundedservicecheckpoints. NoUTC/slot/time-powerprior.
+             CompleteORIGINAL60480frames/carrier200..3500; outputstart18*(b-32)inclramp.
+             FFT32at103symbolsstartinground(start/18)+32:>=8/16hardtonehits and>=20/32
+             Grayhardbits,max1-max0,ties1. Physicalqualificationbefore256cap/257=>limited,
+             andatfinalfullrateknown-wordmeasurementbeforepublication/subtraction:
+             firstCostasb=floor(s/18+.5)+32,nonnegativehalftiesUP,preservereporteds;
+             guardspansinsideORIGINALsupport. NOcross-block/groupfractiongate, no duplicateworker/cache/provider. */
     }
-    calc def EncodedGroupPhaseAgreement {
-        in currentPassSamples : Real[0..360000];
-        in refinedStartFrame : Integer;
-        in mode : Mode;
-        in groupExplainedEnergy : Real;
-        in symbolExplainedEnergy : Real;
-        return fraction : Real = groupExplainedEnergy / symbolExplainedEnergy;
-        doc /* After bounded known-codeword time/frequency refinement and before publication
-             OR subtraction, full unit real/sine GFSK u,w include the envelope.
-             x is complete support atrefinedStartFrame in currentPassSamples: the SAME
-             current subtraction-pass observation/residual that producedthecandidate.
-             All79FT8/105FT4symbols INCLUDINGsyncandramps supply BOTH symbol/group energies.
-             Per symbol:
-             Gs=[[u.u,u.w],[u.w,w.w]],bs=[u.x,w.x],Es=bs^T*inverse(Gs)*bs.
-             Consecutive groups7FT8/4FT4, finalshortgroup allowed; sumGs/bs then same
-             2x2solvepergroup. Require sumEgroup/sumEs>=.5, positive denominator,
-             finite fits, relativeGramdet>1e-12; otherwise rejectwaveform.
-             Independent phase pergroup imposes no phase tie between groups; drift
-             fixture acceptance remains mandatory, no whole-frame lock.
-             Linear sample work, <=105symbol/27group solves, no new search/FEC/candidate;
-             storage within existing64MiB. Unsupported/invalid sources still publish
-             when their actual CRC-valid waveform passes, never status-based filtering. */
+    action def Ft4ObserveMetricFamilies {
+        in source : ModemSampleWindow;
+        in point : PhysicalFinePoint;
+        out families : PhysicalLlrFamily[3];
+        doc /* Pinnedget_ft4_bitmetrics,103complexFFT32symbols,fourtones,Gray[0,1,3,2].
+             Families=single/pair/quadruple; n1/2/4,k0,n,2n...<=103-n;
+             enumerate4^n coherentmagnitudes;max1-max0
+             MSB-first2bits/tone,206rawbits/family. Pairbits204..205=single;
+             fourbits200..203=pair,204..205=single (zerobased).
+             NormalizeFULL206populationasFT8(no meansubtraction),thenextractinclusive
+             ranges8..65/74..131/140..197=>174data,scale2.83/negateONCE.
+             Threeorderedfamilies,each50minsumalpha.8/137rank77boundedrecovery,
+             meanabs>=1/hardCHANNELdisagreements<=24/H+CRC. Failedwordcontinues;
+             no4thfallback. Sourceunsupported/invalidstatusretained, noAP/semanticprior. */
+    }
+    action def Ft4SubtractVerifiedFrame {
+        in source : ModemSampleWindow;
+        in point : PhysicalFinePoint;
+        in reference : ComplexBasebandCoefficient[60480];
+        out residual : ModemSampleWindow;
+        doc /* Sameboundedcomplex-envelopeoperationasFt8SubtractVerifiedFrame,
+             h[j]=cos(pi*j/1400)^2/sum[-700..700]cos(pi*j/1400)^2,j[-700..700],1401taps.
+             Centeredlinearconvolution,FFTpad>=60480+1400,NOedgeavailabilitycorrection.
+             Referenceincludesramp,alreadycanonicalorigin,NOsecond-576frameadjustment.
+             Originalsamplesimmutable,3passes/32verifiedsubtractions,passFFTinvalidated.
+             Sharedpurewaveform/measurement/FFT/cancelownership,within64MiB. */
     }
     action def AdmitDecode {
         in source : WstxRecordingReceive::SourceDescriptor[0..1];
@@ -431,37 +576,44 @@ package WstxOfflineDecode {
         in block : WstxRecordingReceive::SampleBlock;
         in job : DecodeJob;
         out records : ResultRecord[0..2048];
-        doc /* Pure canonical12k consumer, no WAV/device/network/UTC access or resampler.
-             Detailed/Thin display keeps fixed0..3000Hz even for decoder3159/3337Hz results;
-             display8192history and2048/4096plans are not universal decoder buffers.
-             Copy into boundedhistory,two blocks; live FT8<=30s/advance15s,FT4<=15s/advance7.5s.
-             Initialshortercomplete support; exact sourcecounter boundaries independent ofpacket splits.
-             FFT1920/576,hops480/144,two half-tone grids200..3500,quarter-symbol starts;
-             localrefine5time*9freq points. SharedRustFFT6.4.1planned/scalar, checked worker
-             buffers/scratch, no second provider/wrapper. <=50msquantum/cancelcheck, service
-             pendingconversion/spectrumbetweenquanta; one worker/noqueue, no transmit authority.
-             Phase qualification and likelihood calculations above own observation semantics.
-             Graylogsumexp zero-minusone,clamp+-12,meanabs>=1,<=24CHANNELharddisagreements.
-             ACRCword failing gates does notstop permitted refinements. <=50normalizedminsum
-             iterations/round,alpha.8,initial+<=2observationrefinements.
-             FinalFT4nopeerobservation usesFt4PairSequence insteadofanotherlocalmarginal;
-             withpeer retainlocalnuisanceawareobservation. OnlyfinalroundOSD:
-             77unitpayloads composedCRC14+published174,91generator formrank77subcode;
-             GF2reliabilityordered77basis; <=137order0/1/2 trials among16least-reliable basis
-             bits,lowestweightedCHANNELcost, finalzeroH+CRC+sourceclassification. CRCbits
-             constrained, nofreeCRCinformation/AP; earlierminsum success mayfinish.
-             EncodedGroupPhaseAgreement>=.5 beforepublication/subtraction,independent7/4symbol
-             groupphases,<=105symbol/27group2x2solves, no extra search/FEC/candidates.
-             <=3SICpasses/32validsubtractions/window,fit2x2GFSKquadratureamplitudes,immutable
-             originals. One pure reconstruction kernel owned7/futurereuse9, independent
-             fixture composer never productiondependency. No relative window-energy stop may
-             hide a weaker signal; stop ifno new verifiedframe or3pass ceiling. All arrays
-             inside64MiB, including complex grids and64FT4 templates.
-             Dedup mode/payload/startwithinhalfsymbol, keep later repeated transmissions.
-             Actual runtime/sensitivity/falsepositives remain unmeasured, no test verdict. */
+        doc /* SharedreceiveownerassemblesModemSampleWindowfromcanonicalSampleBlocks;
+             physicalalgorithmsconsumeTHATprivatewindow,notone4096-framecaptureblock.
+             Purecanonical12kconsumer,noWAV/device/network/UTCaccess. LiveFT8<=30s/15sadvance,
+             FT4<=15s/7.5sadvance;finiteinternaltestutilitywindow/historyunchanged.
+             FT8coarseN1920/hop480/half-tone200..3500inclusive/endpoints;FT4N576/hop144
+             noisegridseparatefromFt4FrequencyCandidates/Ft4BandLimitAndFineSync.
+             FT8BandLimit/FineSynchronization/ObserveMetricFamilies/DecodeMetricFamilies;
+             FT4BandLimitAndFineSync/ObserveMetricFamilies. Qualifiedcap256,257=>limited.
+             FiveFT8orthreeFT4families; each<=50minsumalpha.8/<=137rank77recovery among16
+             leastreliablebasisbits,CRCconstrained. Meanabs1/hard24/H+CRCmandatory.
+             NoAP/hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
+             Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
+             <=3passes/32verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
+             SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;
+             onecurrentmode/windowplan/scratchcache andcurrentpassFFT,droponepochreset;
+             no globalmutablecommonblocks; residualchangeinvalidatesFFT.
+             SharedRustFFT6.4.1planned/scalar/oneworker/noqueue/source/cancelquanta<=50ms,
+             serviceconversion/spectrum betweenquanta,release<=250ms. Allplans/grids/scratch
+             within64MiB. Onepurewaveformowner7/futurereuse9,noTXauthority.
+             Displayfixed0..3000Hzindependentofdecode200..3500; no sharedmodem/displayFFTplan.
+             Dedupmode/payload/startwithinhalfsymbol,retainlaterrepeatedtransmissions.
+             Schema/history/source/job/epoch/resultauthorityunchanged; modelisnottestverdict. */
+    }
+    action def ReconstructGfskReference {
+        in mode : Mode;
+        in tones : Integer[79..105];
+        in carrierHz : Real;
+        out reference : ComplexBasebandCoefficient[60480..151680];
+        doc /* Sharedpureprimitive:N1920/576,BT2/1,F=N*symbols,spacing12000/N.
+             p(t)=(erf(c*(t+.5))-erf(c*(t-.5)))/2,c=pi*BT*sqrt(2/ln2),p0outsideabs(t)<2.
+             offset[k]=sum_s tone_s*spacing*p((k+.5-(s+.5)*N)/N),exteriortones0.
+             phi[k]=sum_m0..k 2pi*(carrier+offset[m])/12000,ADVANCEbeforeemission.
+             R240/576,amp[k]=(1-cos(pi*k/R))/2 forfirstR,mirrorF-1-kforlastR,else1.
+             Referenceamp*(cosphi+i*sinphi),samefitting/SICkernel,independentwaveformoracle.
+             No TXauthority/extra encoderdependency/semanticprior. */
     }
     action def MeasureFrame {
-        in block : WstxRecordingReceive::SampleBlock;
+        in block : ModemSampleWindow;
         out record : ResultRecord;
         doc /* Start canonicalframe nearest first ramp/sync. Frequency lowesttoneaudioHz.
              LSsignalsteadyP=(a²+b²)/2,envelopeinsidefit. Noise poolednonoverlapping
@@ -472,9 +624,11 @@ package WstxOfflineDecode {
              Known-codeword fit3fixedgrids:df1=6000/waveformFrames; stage1time+-N/4stepN/16,
              freq+-spacing/2stepdf1 includingoffgridendpoints; stage2time+-N/16stepmax(1,floor(N/128)),
              freq+-df1/2stepdf1/8; stage3time+-max(1,floor(N/128))step1,frequencyfixed.
-             Complete/in-band only,every4thsamptrimN/2ends. Actualstridedreal/quadratureGramG,
+             Complete/in-band only,EVERYsamptrimN/2ends. Actualfullratereal/quadratureGramG,
              b=[u.x,w.x],maximizeb^T*inverse(G)*b,tiesfreq/time. Rejectnonfiniteorrelative
-             determinant<=1e-12; noquadratureorthogonalityassumptionnear1500/3000alias.
+             determinant<=1e-12; noquadratureorthogonalityassumption. Nounfilteredsubsampling:
+              unrelatedcarriersmustnotaliasintocandidatequadratures. Samegridcoordinates/order
+              andcandidate/pass/subtraction/FECcaps.
              finalamplitude/SNR/subtractionallsamples. No whole-frame phase rejection,
              ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
              No UTC/dBFS/noiseless/crowded reference-SNR inference. */
@@ -507,7 +661,8 @@ package WstxOfflineDecode {
     dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::controller::stations::web;
     dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::viewer::browsers;
     package IndependentVerification {
-        doc /* All planned/unimplemented companions, cost2 offlineWindowsPC, actualcandidate
+        doc /* Verification intent; executable coverage is declared in FSD metadata. Cost2
+             offlineWindowsPC, actualcandidate
              Rust/server/browser and independent fixtures/directmath/recordings/link model.
              No hardware/live service. Source and source_message are not decoded inversehashes.
              Missing/empty manifests fail. FSD6.4 remains original independent expectation.
@@ -524,15 +679,19 @@ package WstxOfflineDecode {
                  equaloriginsallowed,backwardsrejectunchanged,newcontextgapreset;
                  privatekeys/bytesboundedandmanagerwirecursorsindependent.
                  Finitetestutilityunchangedlifetimecaps/partials.
-                 Pairsequence8scalarcasesG1..3: standaloneDecimal100completeenumeration,
-                 uniform/asymmetric/knownmask/coupled/extremefactors,two+1000000shiftpairs.
-                 Allvariable/boundarylogmarginalswithin1e-9absolute,impossibletonesnegInfinity;
-                 dimensions/empty/nonfinite/badboundaryreject; full2286/14inputsunchanged.
                  SeparateCRCrecurrence/publishedtables/fixedvectors/independentsynthesis.
-                 Stride4Gramoracle:60480frames,k288..60191step4;
+                 FullrateGramoracle:60480frames,k288..60191EVERYsample;
                  phase=2pi*f*(k+1)/12000+.4sin(2pi*((k+1)/12000)/.048),x=.6u-.8w.
                  f1499/1499.9/1500/1500.1/1501/2999/3000/3001Hz; independentf64Gram
                  yieldscoefficients.6/-.8,explained=sumx*x; candidatef32relativeerror<=5e-7.
+                 Unrelatedcarrieroracle:same60480frames/trimmedsupport,f400/1000Hz,
+                 t=(k+1)/12000,psi=.4sin(2pi*t/.048),u=cos(2pi*f*t+psi),w=sin(2pi*f*t+psi).
+                 x=cos(2pi*(3000-f)*t-psi+.7),repeatwithx+.25u-.5w; float32storage.
+                 Independentfullratescalar2x2Gramenergy; candidateerror<=5e-7*totalxenergy.
+                 Unrelatedonlyfullratefraction<.001,stride4diagnostic>.999; latterMUSTNOT
+                 determinegridordering. Mixedcoefficients/energyfollowindependentfullrateoracle.
+                 Unfilteredstride4scoringnegativecontrolmustfail; unchangedgrids/caps/2286/14/recording/runtime/
+                 cancellation/64MiBthresholds. Sameoracleappliestobothmodes' sharedfitkernel.
                  Planned Rust/decoderfixture suite bindings; no production encoder oracle. */
         }
         dependency ft4Case from ft4 to WstxRequirements::'TC-004-001';
@@ -542,7 +701,7 @@ package WstxOfflineDecode {
             doc /* FT8exactpayload/CRC/H/79tones/GFSKallfamilies+boundaries; strong36/40@-15,
                  weak20/40@-18; sameoverlapcounts; official>=12/14matches,22inheritedtexts
                  supplementaryonly. The shared known-wordfitkernel uses the SAME eight-frequency
-                 Stride4Gramoracle defined by ft4 above, with identical60480-frame phase/x formulas,
+                 FullrateGramoracle defined by ft4 above, with identical60480-frame phase/x formulas,
                  expectedcoefficients.6/-.8 andexplained=sumx*x within5e-7f32relativeerror.
                  Error240frames/1Hz,3dBstrongAWGN. Valid/RandTUvectors
                  retainedpositivesdespitereferencenondetection; no qualityscopeweakening. */
@@ -572,11 +731,70 @@ package WstxOfflineDecode {
                  beforestorage,<=4epsilon32*sqrt(max(u.u,w.w)*rStored.rStored)afterward.
                  Finitecaserequireszeropublications,no search_limited,neverproductionhelpers.
                  All2286originalcases/thresholds/256cap remain. Verifyrecipe/composer/audiohashes,
-                 per-blockphase,45*Kproducts/rawmax,256^2peercomparisons,rank77recovery,
-                 recoveredcodewordgroup-phasefraction>=.5,linearfitwork,64MiBworkingstore.
+                 FT4bandlimitedblocksync/threemetrics andFT8bandlimitedsymbolsync/fivemetrics;
+                 physicalhits/complexenvelopeSIC/rank77/64MiB.
                  No externaldecoder oracle or skipped case pass. */
         }
         dependency phaseLikelihoodCase from phaseLikelihoodAndScale to WstxRequirements::'TC-004-003';
         dependency rejectionCase from rejectionLifecycleResources to WstxRequirements::'TC-004-003';
     }
+    verification ft8ArbitraryCarrierOffsets {
+        subject decoder : AdvanceDecode;
+        objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-04'; }
+        doc /* TC-004-002 uses the existing twenty independent frequency/start
+             combinations, including lowest-tone carriers200.5/1000.3/3499Hz.
+             These offsets need not be multiples of6.25Hz. Exact injected payloads
+             and starts are the oracle; carrier error<=1Hz,start error<=240frames.
+             No operator-supplied station frequency/start or new fixture is required.
+             Executable trace:server/tests/decoder_signal.rs quality_corpus and
+             fixtures/decoder/quality-cases.json Ft8/offset cases. No test verdict
+             follows from this model or its semantic validation. */
+    }
+    dependency ft8ArbitraryCarrierCase from ft8ArbitraryCarrierOffsets
+        to WstxRequirements::'TC-004-002';
+    verification ft8PhysicalOracles {
+        subject decoder : AdvanceDecode;
+        objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+        doc /* Cost2WindowsPC, independentdirectDFTselectedbins,15/30sFFTdimensions,
+             bandedges/centerbin/scaling/400Hzcandidate+2600Hzunrelatedcarrier.
+             DFTerror<=1e-9*max(1,sumabsinput); basebandsample<=1e-8*max(1,inputRMS).
+             Enumerate8/64/512tonechoicesusingindependentDecimal80coefficienttables,
+             completeendgroups/sync/halfboundaries/GrayMSB; allfivefamilies/ties.
+             Metric/normalizationerror<=1e-9*max(1,absexpected),finalf32LLR<=1ULP
+             fromindependentlyroundedvalues. Zero/constant/nonfinitesigma/polaritycases.
+             Directscalar4001tapconvolution/impulses/edges,selectedf32residualerror
+             <=1e-7*max(1,sourcePeak); no circularwrap/outsideframewrites.
+             HardCostas8/9,qualified256/257,failed-earlierword=>latermetric,atmost5FEC.
+             Finalstarts29/30/31/89/90/91=>0/1/1/1/2/2basebandorigins,supportallowing;
+             L=151680+31,s31=>clampedb0,no paddingclaim/canonicalstartstill31.
+             All2286/38/14inputs/thresholdsunchanged; unsupportedtypedchannelvalidframes
+             preserved. OfficialFT8>=12/14, no inventedgoldens. ActualFortranreference
+             comparedwithfixedPCM/sourceSHA/settings/APprofile, everyextra/missingreported.
+             No localFortrancompiler; source-builtreferenceartifactcomesfromGitHubActions.
+             Thisverificationdefinitionisnotanexecutionverdict. */
+    }
+    dependency ft8PhysicalCase from ft8PhysicalOracles to WstxRequirements::'TC-004-002';
+    dependency ft8PhysicalRejectionCase from ft8PhysicalOracles to WstxRequirements::'TC-004-003';
+
+    verification ft4PhysicalOracles {
+        subject decoder : AdvanceDecode;
+        objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+        doc /* Cost2WindowsPC: independentdirectDFT/asymmetrictaper/bincenter/RMS,
+             all4/16/256sequenceenumerations,206normalization/174extraction/Gray/polarity,
+             last-familybitcopies; hardtone7/8 andhardsync19/20; first-ramp0/1/incomplete;Nuttall/scalarDFT/knownquartic/constant/zero/singular
+             baselines/percentilehalfties/endpointslinear-after-division1.18andneighborbounds;
+             TWOcompleteframespersamefrequencyreturnedthroughpluralfineinterface;
+             qualifiedsupportoverlap60479/60480/60481,half-toneinclusiveedge,
+             failedphysicalpointcannotexclude,strongerFECinvalidqualifiedpointstillholds
+             exclusion,perpassreset,duplicatefinepoints,andfixedFT8asFT4wrongmode;
+             trueframesmustnotdependontime-powermaxima;
+             finalstarts8/9/10=>firstCostas32/33/33,reportedstartunchanged.
+             SameexplicitFT8DFT/metric/f32tolerances; direct1401tapconvolution/no wrap/no
+             secondrampoffset. Unchanged2286/38/14inputs andoriginalFT4quality/performance/
+             falsepublication/cancel/typedpayloadthresholds. SourcebuiltFortrancomparison
+             separatewithPCM/settings/depth/APidentity. No candidate-generatedgoldens. */
+    }
+    dependency ft4PhysicalCase from ft4PhysicalOracles to WstxRequirements::'TC-004-001';
+    dependency ft4PhysicalRejectionCase from ft4PhysicalOracles to WstxRequirements::'TC-004-003';
+
 }

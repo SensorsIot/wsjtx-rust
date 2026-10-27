@@ -1,13 +1,16 @@
 #![forbid(unsafe_code)]
 //! Pure FT4/FT8 modem kernels. Samples use the canonical 12 kHz clock.
+mod baseband;
+mod bitmetrics;
 mod channel;
-mod demodulation;
+mod coarse_ft4;
 mod fit;
 mod history;
-mod likelihood;
 mod payload;
+mod physical_ft4;
+mod physical_sync;
 mod search;
-mod sequence;
+mod subtraction;
 mod synchronization;
 mod waveform;
 pub use channel::{Channel, ChannelWord};

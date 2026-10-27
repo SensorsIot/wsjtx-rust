@@ -96,7 +96,6 @@ fn refinement_rejects_unrelated_carrier_sampling_alias() {
                         start: 0,
                         frequency,
                         score: 0.,
-                        phase_points: u64::MAX,
                     },
                     &|| false,
                     &mut budget,

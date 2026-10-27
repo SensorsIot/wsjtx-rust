@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Test input only: independently verified FT8 CQ audio represented as native stereo.
+//! Test input only: independently verified FT4/FT8 CQ audio as native stereo.
 use std::{fs, path::PathBuf, process::Command};
 
 pub const NATIVE_FRAMES: usize = 720_000;
@@ -12,6 +12,11 @@ pub struct NativeFt8Fixture {
 
 impl NativeFt8Fixture {
     pub fn load() -> Self {
+        Self::load_mode("ft8")
+    }
+
+    pub fn load_mode(mode: &str) -> Self {
+        assert!(matches!(mode, "ft4" | "ft8"));
         let root = PathBuf::from(
             std::env::var_os("WSTX_DECODER_VECTORS").expect("explicit verified vector cache"),
         );
@@ -38,10 +43,10 @@ impl NativeFt8Fixture {
             .as_array()
             .unwrap()
             .iter()
-            .find(|v| v["mode"] == "ft8" && v["id"] == "cq")
+            .find(|v| v["mode"] == mode && v["id"] == "cq")
             .unwrap()
             .clone();
-        let wav = fs::read(root.join("ft8-cq/000000_000000.wav")).unwrap();
+        let wav = fs::read(root.join(format!("{mode}-cq/000000_000000.wav"))).unwrap();
         assert_eq!(wav.len(), 360_044);
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(&wav[8..12], b"WAVE");

@@ -1,5 +1,5 @@
 use super::search::CpuBudget;
-use super::{DecodeError, Mode, quadratures};
+use super::{DecodeError, Mode, baseband::PassBand, physical_sync};
 use rustfft::{
     FftPlanner, FftPlannerScalar,
     num_complex::{Complex32, Complex64},
@@ -10,7 +10,6 @@ pub(super) struct Candidate {
     pub start: usize,
     pub frequency: f64,
     pub score: f64,
-    pub phase_points: u64,
 }
 #[derive(Clone, Copy)]
 struct Peak {
@@ -37,110 +36,6 @@ impl Ord for Peak {
             .then(other.row.cmp(&self.row))
     }
 }
-struct PhaseTemplates {
-    wave: Vec<[f32; 2]>,
-    sync: Vec<(usize, u8)>,
-    coefficients: Vec<Vec<Complex64>>,
-    rotations: Vec<Vec<Complex64>>,
-    block_size: usize,
-}
-impl PhaseTemplates {
-    fn new(mode: Mode) -> Self {
-        let sync = mode.sync();
-        let n = mode.symbol_frames();
-        let mut tones = vec![0; mode.symbol_count()];
-        for &(j, t) in &sync {
-            tones[j] = t;
-        }
-        let wave = quadratures(mode, &tones, 0.).unwrap();
-        let mut coefficients = vec![];
-        for step in -2isize..=2 {
-            let dt = step * (n / 16) as isize;
-            let mut row = vec![];
-            for &(j, tone) in &sync {
-                let angle = -2. * PI * tone as f64 / n as f64;
-                let (si, co) = angle.sin_cos();
-                let rotation = Complex64::new(co, si);
-                let mut oscillator = Complex64::new(1., 0.);
-                let mut sum = Complex64::new(0., 0.);
-                for m in 0..n {
-                    let index = (j * n + m) as isize - dt;
-                    if index >= 0 && (index as usize) < wave.len() {
-                        let w = wave[index as usize];
-                        sum += Complex64::new(w[0] as f64, w[1] as f64) * oscillator;
-                    }
-                    oscillator *= rotation;
-                }
-                row.push(sum);
-            }
-            coefficients.push(row);
-        }
-        let rotations = (-4..=4)
-            .map(|df| {
-                sync.iter()
-                    .map(|&(j, _)| Complex64::from_polar(1., -2. * PI * df as f64 * j as f64 / 16.))
-                    .collect()
-            })
-            .collect();
-        Self {
-            wave,
-            sync,
-            coefficients,
-            rotations,
-            block_size: if mode == Mode::Ft8 { 7 } else { 4 },
-        }
-    }
-    fn eligible(&self, spectrum: &Spectrum, peak: Peak, length: usize) -> u64 {
-        let n = spectrum.mode.symbol_frames();
-        let start = peak.row * spectrum.hop;
-        let frequency = spectrum.frequencies[peak.frequency_index];
-        let frame = n * spectrum.mode.symbol_count();
-        let z = self
-            .sync
-            .iter()
-            .map(|&(j, t)| {
-                spectrum.coefficient(peak.row + 4 * j, peak.frequency_index, t as usize)
-                    * Complex64::from_polar(1., -2. * PI * frequency * j as f64 * n as f64 / 12000.)
-            })
-            .collect::<Vec<_>>();
-        let mut mask = 0;
-        for (dt_index, templates) in self.coefficients.iter().enumerate() {
-            let fine_start = start as isize + (dt_index as isize - 2) * (n / 16) as isize;
-            if fine_start < 0 || fine_start as usize + frame > length {
-                continue;
-            }
-            for (df_index, rotations) in self.rotations.iter().enumerate() {
-                let fine_frequency =
-                    frequency + (df_index as f64 - 4.) * spectrum.mode.spacing() / 16.;
-                if !(200. - 1e-7..=3500. + 1e-7).contains(&fine_frequency) {
-                    continue;
-                }
-                let mut good = true;
-                for begin in (0..z.len()).step_by(self.block_size) {
-                    let mut dot = Complex64::new(0., 0.);
-                    let (mut observed, mut template) = (0., 0.);
-                    for j in begin..begin + self.block_size {
-                        dot += z[j] * templates[j].conj() * rotations[j];
-                        observed += z[j].norm_sqr();
-                        template += templates[j].norm_sqr();
-                    }
-                    let denominator = observed * template;
-                    if denominator <= 0.
-                        || !denominator.is_finite()
-                        || dot.norm_sqr() < 0.5 * denominator
-                    {
-                        good = false;
-                        break;
-                    }
-                }
-                if good {
-                    mask |= 1u64 << (dt_index * 9 + df_index);
-                }
-            }
-        }
-        mask
-    }
-}
 pub(super) struct Spectrum {
     values: Vec<Complex32>,
     width: usize,
@@ -148,12 +43,9 @@ pub(super) struct Spectrum {
     frequencies: Vec<f64>,
     hop: usize,
     mode: Mode,
-    phase: PhaseTemplates,
+    sync: Vec<(usize, u8)>,
 }
 impl Spectrum {
-    pub fn sync_wave(&self) -> &[[f32; 2]] {
-        &self.phase.wave
-    }
     fn coefficient(&self, row: usize, f: usize, t: usize) -> Complex64 {
         let col = if f == self.regular {
             self.regular + 15 + t
@@ -241,7 +133,7 @@ impl Spectrum {
             }
         }
         budget.checkpoint().await?;
-        let phase = PhaseTemplates::new(mode);
+        let sync = mode.sync();
         Ok(Self {
             values,
             width,
@@ -249,12 +141,13 @@ impl Spectrum {
             frequencies,
             hop,
             mode,
-            phase,
+            sync,
         })
     }
     pub async fn candidates(
         &self,
         length: usize,
+        physical: &mut PassBand<'_>,
         budget: &mut CpuBudget<'_>,
     ) -> Result<Vec<Candidate>, DecodeError> {
         let n = self.mode.symbol_frames();
@@ -265,7 +158,7 @@ impl Spectrum {
         let starts = (length - frame) / self.hop + 1;
         let nf = self.frequencies.len();
         let q = self.mode.tone_count();
-        let sync = &self.phase.sync;
+        let sync = &self.sync;
         let mut scores = vec![0f64; starts * nf];
         for r in 0..starts {
             budget.checkpoint().await?;
@@ -330,19 +223,18 @@ impl Spectrum {
                     blocked[rr * nf + ff] = true;
                 }
             }
-            let phase_points = self.phase.eligible(self, peak, length);
-            if phase_points == 0 {
-                continue;
-            }
-            if out.len() == 256 {
-                return Err(DecodeError::SearchLimited);
-            }
-            out.push(Candidate {
+            let raw = Candidate {
                 start: r * self.hop,
                 frequency: self.frequencies[f],
                 score: peak.score,
-                phase_points,
-            });
+            };
+            let Some(candidate) = physical_sync::qualify(physical, raw, budget).await? else {
+                continue;
+            };
+            if out.len() == 256 {
+                return Err(DecodeError::SearchLimited);
+            }
+            out.push(candidate);
         }
         Ok(out)
     }
@@ -391,76 +283,5 @@ impl Spectrum {
         };
         let variance = median / (n as f64 * 2f64.ln());
         variance.is_finite().then_some(variance)
-    }
-}
-pub(super) async fn refine(
-    samples: &[f32],
-    mode: Mode,
-    c: Candidate,
-    budget: &mut CpuBudget<'_>,
-) -> Result<Candidate, DecodeError> {
-    let n = mode.symbol_frames();
-    let frame = n * mode.symbol_count();
-    let mut best = Candidate { score: -1., ..c };
-    for (dt_index, dt) in (-2isize..=2).enumerate() {
-        let start = c.start as isize + dt * (n / 16) as isize;
-        if start < 0 || start as usize + frame > samples.len() {
-            continue;
-        }
-        for (df_index, df) in (-4..=4).enumerate() {
-            if c.phase_points & (1u64 << (dt_index * 9 + df_index)) == 0 {
-                continue;
-            }
-            budget.checkpoint().await?;
-            let frequency = c.frequency + df as f64 * mode.spacing() / 16.;
-            if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
-                continue;
-            }
-            let score = costas_ratio(samples, start as usize, mode, frequency);
-            if score > best.score
-                || score == best.score
-                    && (frequency < best.frequency
-                        || frequency == best.frequency && (start as usize) < best.start)
-            {
-                best = Candidate {
-                    start: start as usize,
-                    frequency,
-                    score,
-                    ..c
-                };
-            }
-        }
-    }
-    Ok(best)
-}
-fn costas_ratio(samples: &[f32], start: usize, mode: Mode, frequency: f64) -> f64 {
-    let n = mode.symbol_frames();
-    let q = mode.tone_count();
-    let (mut a, mut b) = (0., 0.);
-    for (symbol, expected) in mode.sync() {
-        for tone in 0..q {
-            let rotation = Complex64::from_polar(
-                1.,
-                -2. * PI * (frequency + tone as f64 * mode.spacing()) / 12000.,
-            );
-            let mut oscillator = Complex64::new(1., 0.);
-            let mut z = Complex64::new(0., 0.);
-            for &x in &samples[start + symbol * n..start + (symbol + 1) * n] {
-                z += oscillator * x as f64;
-                oscillator *= rotation;
-            }
-            if tone == expected as usize {
-                a += z.norm_sqr();
-            } else {
-                b += z.norm_sqr();
-            }
-        }
-    }
-    if b > 0. {
-        (q - 1) as f64 * a / b
-    } else if a > 0. {
-        f64::INFINITY
-    } else {
-        0.
     }
 }

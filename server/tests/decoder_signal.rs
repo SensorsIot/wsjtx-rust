@@ -299,42 +299,43 @@ fn cooperative_quanta_and_partial_cancellation() {
         task::{Context, Poll, Waker},
     };
     let root = prepared("quality");
-    let samples = wav(&root.join("ft8-strong-00/000000_000000.wav"));
-    let decoder = Decoder::new();
-    let cancelled = AtomicBool::new(false);
-    let cancel = || cancelled.load(Ordering::Relaxed);
-    let mut published = vec![];
-    let mut publish = |d: &wstx_rust::decoder::Decode| {
-        published.push(d.clone());
-        cancelled.store(true, Ordering::Relaxed);
-        Ok(())
-    };
-    let mut future =
-        Box::pin(decoder.decode_into_async(&samples, Mode::Ft8, &cancel, &mut publish));
-    let mut cx = Context::from_waker(Waker::noop());
-    let mut polls = 0;
-    let mut maximum = std::time::Duration::ZERO;
-    loop {
-        let now = Instant::now();
-        let result = future.as_mut().poll(&mut cx);
-        maximum = maximum.max(now.elapsed());
-        polls += 1;
-        match result {
-            Poll::Pending => {}
-            Poll::Ready(result) => {
-                assert!(matches!(
-                    result,
-                    Err(wstx_rust::decoder::DecodeError::Cancelled)
-                ));
-                break;
+    for (mode, name) in [(Mode::Ft8, "ft8-strong-00"), (Mode::Ft4, "ft4-strong-00")] {
+        let samples = wav(&root.join(name).join("000000_000000.wav"));
+        let decoder = Decoder::new();
+        let cancelled = AtomicBool::new(false);
+        let cancel = || cancelled.load(Ordering::Relaxed);
+        let mut published = vec![];
+        let mut publish = |d: &wstx_rust::decoder::Decode| {
+            published.push(d.clone());
+            cancelled.store(true, Ordering::Relaxed);
+            Ok(())
+        };
+        let mut future = Box::pin(decoder.decode_into_async(&samples, mode, &cancel, &mut publish));
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut polls = 0;
+        let mut maximum = std::time::Duration::ZERO;
+        loop {
+            let now = Instant::now();
+            let result = future.as_mut().poll(&mut cx);
+            maximum = maximum.max(now.elapsed());
+            polls += 1;
+            match result {
+                Poll::Pending => {}
+                Poll::Ready(result) => {
+                    assert!(matches!(
+                        result,
+                        Err(wstx_rust::decoder::DecodeError::Cancelled)
+                    ));
+                    break;
+                }
             }
         }
+        drop(future);
+        assert_eq!(published.len(), 1);
+        assert!(polls > 1, "future never yielded");
+        assert!(maximum.as_millis() <= 50, "largest quantum {maximum:?}");
+        eprintln!("{mode:?}: {polls} cooperative polls, maximum {maximum:?}");
     }
-    drop(future);
-    assert_eq!(published.len(), 1);
-    assert!(polls > 1, "future never yielded");
-    assert!(maximum.as_millis() <= 50, "largest quantum {maximum:?}");
-    eprintln!("{polls} cooperative polls, maximum {maximum:?}");
 }
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
@@ -752,4 +753,64 @@ fn release_runtime_and_overlapping_window_history() {
             );
         }
     }
+}
+
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
+#[test]
+fn physical_noise_reproduction_has_no_frame() {
+    let root = prepared("quality");
+    let input = wav(&root.join("ft4-noise-2-143").join("000000_000000.wav"));
+    let actual = Decoder::new().decode(&input, Mode::Ft4, &|| false).unwrap();
+    assert!(
+        actual.is_empty(),
+        "independently specified noise has no injected frame: {actual:?}"
+    );
+}
+
+// Proves: FR-004, CL-007-03, CL-007-04.
+#[test]
+fn same_frequency_preserves_two_temporal_frames() {
+    let root = prepared("frozen");
+    let fixtures: Value = serde_json::from_str(include_str!(
+        "../../fixtures/decoder/independent-vectors/manifest.json"
+    ))
+    .unwrap();
+    let vectors = fixtures["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["mode"] == "ft4")
+        .take(2)
+        .collect::<Vec<_>>();
+    assert_eq!(vectors.len(), 2);
+    let mut samples = vec![0f32; 180000];
+    for (v, start) in vectors.iter().zip([6000usize, 96000]) {
+        let source = wav(&root
+            .join(format!("ft4-{}", v["id"].as_str().unwrap()))
+            .join("000000_000000.wav"));
+        samples[start..start + 60480].copy_from_slice(&source[6000..66480]);
+    }
+    let result = Decoder::new()
+        .decode(&samples, Mode::Ft4, &|| false)
+        .unwrap();
+    for (v, start) in vectors.iter().zip([6000u64, 96000]) {
+        assert!(
+            result.iter().any(|r| r.start_frame.abs_diff(start) <= 144
+                && r.payload.text == v["expected_receive"]["text"].as_str().map(str::to_owned)),
+            "missing temporal frame {start}: {result:?}"
+        );
+    }
+    assert_eq!(result.len(), 2);
+}
+
+// Proves: FR-004, CL-007-04.
+#[test]
+fn physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
+    let root = prepared("quality");
+    let input = wav(&root.join("ft4-wrong-mode").join("000000_000000.wav"));
+    let actual = Decoder::new().decode(&input, Mode::Ft4, &|| false).unwrap();
+    assert!(
+        actual.is_empty(),
+        "FT8 audio is not an FT4 frame: {actual:?}"
+    );
 }

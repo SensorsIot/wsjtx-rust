@@ -1,4 +1,4 @@
-// Canonical radio and audio contract SHA256: 8e7a28689eee4ef1e3c764c292b658d85964a6d008bd9723d2bfab71cdd89486
+// Canonical FSD slices SHA256: c119180911c9bcb81b9bc529b0aafbf62902846be3223541459ae96b4eedb411
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
@@ -225,6 +225,7 @@ package WstxRadioIO {
         dependency catIndependenceCase from cat to WstxRequirements::'TC-009-003';
         dependency combinedCase from independent to WstxRequirements::'TC-009-004';
         dependency physicalCase from cat to WstxRequirements::'TC-009-002';
+        dependency physicalIndependenceCase from independent to WstxRequirements::'TC-009-002';
     }
     doc /* Canonical detailed behavior and verification
 ### 4.5 Separate audio and radio-control functions — target FR-002/FR-009
@@ -240,7 +241,7 @@ interface owns a second profile store, receive job authority, decoder or transmi
 | CL-008-02 | FR-002, FR-003, FR-004 | Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. | TC-002-001; TC-002-003; TC-009-002 |
 | CL-008-03 | FR-002, FR-009, FR-019, FR-021 | Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. | TC-002-001; TC-009-001; TC-009-004 |
 | CL-008-04 | FR-002, FR-009 | Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. | TC-009-001; TC-009-002 |
-| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004 |
+| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004; TC-009-002 |
 | CL-008-06 | FR-009 | Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. | TC-009-001; TC-009-003 |
 
 **Ownership and implementation boundary.** The station `recording` receive owner

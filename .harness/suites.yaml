@@ -218,7 +218,7 @@
 
 - suite: live-station-browser
   cost: 2
-  run: cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_fixture_reaches_real_manager_http_and_browser_callsign -- --exact --nocapture
+  run: cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture
   paths:
   - server/src/main.rs
   - server/src/profile.rs
