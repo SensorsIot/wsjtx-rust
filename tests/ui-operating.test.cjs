@@ -100,16 +100,26 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station').count(),1,'persistent operating station identity exists');
   assert.equal(await page.locator('#operating-station').textContent(),'HB9BLA <station>');
   assert.equal(await page.locator('#operating-station station').count(),0);
-  for(const id of ['band-activity','rx-focus']){assert.match(await page.locator('#'+id).innerText(),/Decoder unavailable/);assert.equal(await page.locator('#'+id+' tbody tr[data-result-id]').count(),0);}
-  for(const name of ['Enable Tx','Halt Tx','Auto Seq','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
+  for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
+  await page.getByRole('button',{name:'Station connection details',exact:true}).click();
   assert.match(await page.locator('#operating-capabilities').innerText(),/Audio.*unavailable/is);
   assert.match(await page.locator('#operating-capabilities').innerText(),/CAT.*unavailable/is);
+  await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+  // Existing server is read-only: verify real table styles without inserting decoded rows.
   for(const width of [360,1440,1499,1500,1600]){
     await page.setViewportSize({width,height:900});
-    const type=await page.locator('#band-activity').evaluate(el=>({body:parseFloat(getComputedStyle(el.querySelector('table')).fontSize),header:parseFloat(getComputedStyle(el.querySelector('th')).fontSize)}));
-    assert.ok(type.body>=(width>=1500?14:13),`Band Activity body remains readable at ${width}px: ${type.body}px`);
-    assert.ok(type.header>=11,`Band Activity labels remain readable at ${width}px`);
-    assert.equal((await geometry(page)).overflow,false);
+    const style=await page.locator('#band-activity table').evaluate(table=>{
+      const header=table.querySelector('th'),cell=table.querySelector('td');
+      const a=getComputedStyle(table),b=getComputedStyle(header),c=getComputedStyle(cell);
+      return {tableFont:a.fontSize,headerFont:b.fontSize,headerPadding:b.paddingTop,cellPadding:c.paddingTop,wrap:c.overflowWrap,overflow:document.documentElement.scrollWidth>innerWidth};
+    });
+    assert.equal(style.tableFont,width>=1500?'14px':'13px',`Band Activity table at ${width}px`);
+    assert.equal(style.headerFont,'11px');assert.equal(style.headerPadding,'8px');
+    assert.equal(style.cellPadding,'8px');assert.equal(style.wrap,'anywhere');assert.equal(style.overflow,false);
+    assert.equal(await page.locator('#band-activity tr[data-result-id]').count(),0,'no fake decoded rows');
+    await page.screenshot({path:`test-results/ui-operating/readability-${width}.png`,fullPage:true});
   }
   await page.setViewportSize({width:1440,height:900});
   const g=await geometry(page);assert.ok(g.bar.bottom<=g.signal.top+1);assert.ok(g.signal.bottom<=g.split.top+1);assert.ok(g.split.bottom<=g.workspace.top+1);assert.equal(g.overflow,false);
@@ -125,9 +135,14 @@ test('TC-007-002 operating split and secondary regions remain accessible at narr
     await page.keyboard.press('ArrowDown');const stepped=Number(await separator.getAttribute('aria-valuenow'));assert.equal(stepped,minimum+16);
     await page.keyboard.press('End');const maximum=Number(await separator.getAttribute('aria-valuenow'));assert.ok(maximum>=stepped);assert.equal(maximum,Number(await separator.getAttribute('aria-valuemax')));
     await page.keyboard.press('Home');let g=await geometry(page);assert.equal(g.overflow,false);assert.ok(g.signal.height>=160);assert.ok(g.signal.bottom<=g.workspace.top,JSON.stringify(g));
-    for(const name of ['Station settings','Recorded input','Connection details']){
-      const summary=page.locator('summary').filter({hasText:name});await summary.focus();await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
+    for(const [opener,name] of [['#open-server-settings','Station settings'],['#open-recordings','Recorded input'],['.op-station-button','Connection details']]){
+      await page.locator(opener).focus();await page.keyboard.press('Enter');
+      const summary=page.locator('summary').filter({hasText:name});assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
       await summary.focus();await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),false);
+      await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
+      assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
+      await page.keyboard.press('Escape');assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+      assert.equal(await page.locator(opener).evaluate(el=>document.activeElement===el),true);
     }
     assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   }
@@ -141,7 +156,67 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+box.height/2-40);await page.mouse.up();
   assert.ok(Number(await separator.getAttribute('aria-valuenow'))<before);
   await app.close();await page.locator('#connection[data-state=stale]').waitFor();
-  for(const name of ['Enable Tx','Halt Tx','Auto Seq','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+  for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
   assert.ok(sent.some(m=>m.type==='station.get'),'recorder observes actual allowed station traffic');
   assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
+});
+
+
+// Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 agreed design and authority-preserving regions.
+test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strategy with truthful state',{timeout:20000},async t=>{
+ const {page,errors,sent}=await fixture(t,{width:1200,height:800});
+ for(const id of ['radio-toolbar','band-strip','strategy-panel'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the agreed operating screen`);
+ const composition=await page.evaluate(()=>{
+  const rect=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height};};
+  return Object.fromEntries(['#station-bar','#radio-toolbar','#signal','#splitter','#band-strip','#band-activity','#rx-focus','#strategy-panel'].map(id=>[id,rect(id)]));
+ });
+ assert.ok(composition['#station-bar'].bottom<=composition['#radio-toolbar'].top+1);
+ assert.ok(composition['#radio-toolbar'].bottom<=composition['#signal'].top+1);
+ assert.equal(Math.round(composition['#signal'].height),210);
+ assert.ok(composition['#splitter'].bottom<=composition['#band-strip'].top+1);
+ assert.ok(composition['#band-strip'].bottom<=composition['#band-activity'].top+1);
+ assert.ok(composition['#band-activity'].right<composition['#rx-focus'].left);
+ assert.ok(composition['#rx-focus'].right<composition['#strategy-panel'].left);
+ assert.equal(await page.locator('#focus-heading').textContent(),'Current QSO');
+ assert.match(await page.locator('#strategy-heading').textContent(),/Strategy/);
+ assert.equal(await page.locator('#band-strip button').count(),13);
+ for(const selector of ['#op-dial','#radio-toolbar select','#radio-toolbar button','#band-strip button','#strategy-panel button:disabled']){
+  for(const control of await page.locator(selector).all())assert.equal(await control.isDisabled(),true);
+ }
+ assert.equal(await page.locator('#op-dial').inputValue(),'');
+ assert.match(await page.locator('#signal .op-signal-heading').innerText(),/0\u20133000 Hz/,'fixed-band label retains correct Unicode text');
+ assert.match(await page.locator('#radio-toolbar').innerText(),/Timing unavailable/);
+ assert.match(await page.locator('#strategy-panel').innerText(),/No active definition/);
+ assert.equal(await page.locator('tr[data-result-id]').count(),0);
+ for(const width of [360,720,1200,1440,1499,1500,1600]){
+  await page.setViewportSize({width,height:900});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`no page overflow ${width}`);
+ }
+ await page.setViewportSize({width:1200,height:800});
+ await page.screenshot({path:'test-results/ui-operating/agreed-design-1200.png',fullPage:true});
+ assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 actual form state survives region changes.
+test('TC-007-002 in-page navigation preserves unsaved profile and selected recording with no command replay',{timeout:20000},async t=>{
+ const {page,errors}=await fixture(t,{width:1440,height:950});
+ const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push({method:r.method(),url:r.url()});});
+ await page.keyboard.press('F2');assert.equal(await page.locator('#region-server-settings').isVisible(),true);
+ await page.locator('#display-name').fill('Unsaved operator edit');
+ await page.keyboard.press('Escape');assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+ await page.locator('#open-recordings').click();
+ await page.locator('#recording-file').setInputFiles({name:'selected-but-not-imported.wav',mimeType:'audio/wav',buffer:Buffer.from('not imported')});
+ await page.keyboard.press('Escape');
+ for(const name of ['logbook','strategies','client-preferences','help']){
+  const button=page.locator(`#station-bar [data-region="${name}"]`);await button.focus();await page.keyboard.press('Enter');
+  assert.equal(await page.locator(`#region-${name}`).isVisible(),true);
+  assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
+  assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isDisabled(),true);
+  await page.keyboard.press('Escape');assert.equal(await button.evaluate(el=>document.activeElement===el),true);
+ }
+ await page.locator('#open-server-settings').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
+ await page.keyboard.press('Escape');await page.locator('#open-recordings').click();
+ assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
+ assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations');
+ assert.deepEqual(errors,[]);
 });

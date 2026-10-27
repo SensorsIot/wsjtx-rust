@@ -85,6 +85,7 @@ async function browserWindows(t, profiles) {
 }
 async function connected(page) {
   await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
+  if(await page.locator('#open-server-settings').count())await page.locator('#open-server-settings').click();
   const settings=page.locator('#station-settings');
   if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
 }
