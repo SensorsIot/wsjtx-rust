@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 98ce50a18bef5e874a268a0a24f13d9484034fcbf99e1f9e2109d1e12d29b4e0
+// Canonical FSD slices SHA256: 32625c646bcc8af2dcec0fb12beb7b2099d9535d5406ed119ee69b786093766c
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
@@ -44,7 +44,7 @@ package WstxOperatingLayout {
              spectrum/FT4/FT8 selection use the saved endpoint/current revision.
              Device enumeration requires an operator action; viewing settings or
              choosing a mode never opens audio. Actual12.7 records alone populate
-             Band Activity using source seconds, nullable SNR and audio frequency;
+             Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
              no fabricated UTC/DT, message text or resolved hash. Full source/job/
              generation/sequence binds each row; new identity clears rows, stale
              pages cannot append. At most2048 rows, explicit cursor-expiry history
@@ -56,6 +56,52 @@ package WstxOperatingLayout {
              TC007002 keeps the unsupported/no-input empty-view baseline. */
     }
 
+    attribute def LatestBandActivity {
+        attribute currentDescriptorId : Integer;
+        attribute incomingDescriptorId : Integer;
+        attribute sameContext : Boolean;
+        attribute snapshotFresh : Boolean;
+        attribute mayReplace : Boolean;
+        attribute inFrozenRange : Boolean;
+        attribute sameUtcPeriod : Boolean;
+        attribute clockCorrelated : Boolean;
+        attribute mayShowRow : Boolean;
+        attribute latestEmpty : Boolean;
+        attribute cursorAtFrozenEnd : Boolean;
+        attribute loadingResults : Boolean;
+        attribute displayedRows : Integer;
+        attribute complete : Boolean;
+        attribute partialLabel : Boolean;
+        assert constraint freshPeriod { mayReplace == (sameContext and snapshotFresh and incomingDescriptorId >= currentDescriptorId) }
+        assert constraint latestRows { mayShowRow == (sameContext and inFrozenRange and (not clockCorrelated or sameUtcPeriod)) }
+        assert constraint deliveryProgress { loadingResults == not cursorAtFrozenEnd }
+        assert constraint emptyClears { latestEmpty implies displayedRows == 0 }
+        assert constraint truthfulPartial { partialLabel == not complete }
+        doc /* CL01009, TC007006, FSD4.7.4. New descriptor clears old rows once and
+             seeks its first retained cursor; all pages accumulate <=2048, never page-only.
+             Loading results until cursor reaches frozen end; attempt completion does
+             not assert delivery completeness. New periods supersede pending old views,
+             including Thin cadence unable to load every station before the next period.
+             Old identity/socket/snapshot/page cannot restore obsolete view or cursor.
+             Next attempt retains prior published view; gap/epoch invalidates it.
+             Empty published period => explicit no-stations explanation. Partial overrun
+             stays visibly Partial; cancellation/failure/stale lifecycle stay truthful.
+             Time UTC HH:mm:ss FT8/HH:mm:ss.s FT4; DT signed one decimal seconds,
+             rounded zero +0.0; Unknown when uncorrelated. All six fields remain readable.
+             Existing single pending, Thin limit1/4s, caps/control priority unchanged. */
+    }
+    verification def LatestPeriodAndTimingVerification {
+        objective latestPeriodAndTimingObjective { verify WstxRequirements::'CL-010-09'; verify WstxRequirements::'CL-007-02'; }
+        doc /* TC007006 cost2 Windows actual Rust manager/API and Chromium scripted
+             clocks/results; cost4 controlled HB9BLA receive plus local browser.
+             Multiple periods/stations/>16rows/split+Thin pages/empty, complete vs overrun,
+             gap/cancel/failure/late+obsolete context/midpage/reconnect/expiry/counters.
+             Hand anchor12:00:00Z atframe0:FT8 3600/6000/8400=>-0.2/+0.0/+0.2;
+             FT4 3024/5424/7824 same,95424=>+0.0 at12:00:07.5.
+             Nonzeroanchor/dayrollover/fractionalUTC/ties/signedzero and unknown quality.
+             Actual1440/360/2x text retains all6literalfields without horizontal overflow.
+             Native realdecoder/RF proof remains independent, not a fabricated UI fixture. */
+    }
     attribute def ReceivePresentationFreshness {
         attribute otherwiseValid : Boolean;
         attribute mutationIntervened : Boolean;
@@ -126,7 +172,7 @@ package WstxOperatingLayout {
              <=23em single column, otherwise two columns with Message spanning the row.
              Numeric/time/status cells use ch minimum widths and nowrap; Message uses
              remaining width and word wrapping with emergency token breaks only as needed.
-             Time is source-relative unless actually UTC; unknown DT is not invented.
+             Time is UTC period and signed relative DT under4.7.4; uncorrelated timing is Unknown.
              Normal text16px, labels14px, rem scaled; frequency3499.9 stays unbroken.
              Preserve accessible table headers and all values; no hiding/clipping/overlap.
              Presentation changes

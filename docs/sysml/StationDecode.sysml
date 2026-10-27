@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 471b0e1074e0cbfc529f5f39fa9279d32754743cf56afb7b1d2d108f14ae66c6
+// Canonical FSD slices SHA256: 6c73dc6a9720bb7bc79d64ee7a1b8338fbd34a3a8bfe7d6c5345012a937c5b96
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
@@ -228,6 +228,14 @@ package WstxOfflineDecode {
              published. start indexes canonical12k first ramp/sync, never native orUTC.
              SNR null orfinite[-60,60], bounds labeled; full identity is page envelope. */
     }
+    item def LiveTimedResultRecord :> ResultRecord {
+        attribute period_start_utc : String[0..1];
+        attribute dt_seconds : Real[0..1];
+        doc /* Live-only manager extension4.7.4/12.8, native Decode unchanged.
+             Both null without correlated source timing; otherwise nearest nominal
+             period and signed relative seconds via WstxRadioIO::RelativeDecodeTiming.
+             Existing2048-byte live record cap and stricter1024-byte modem cap remain. */
+    }
     item def ResultPage {
         attribute v : Integer = 1;
         attribute correlation : WstxRecordingReceive::Correlation;
@@ -240,7 +248,8 @@ package WstxOfflineDecode {
         attribute available_count : Integer;
         attribute 'next' : Integer;
         attribute more : Boolean;
-        item records : ResultRecord[0..16];
+        item records : LiveTimedResultRecord[0..16];
+        attribute latest_decode : WstxRadioIO::LatestDecodePeriod[0..1];
         assert constraint pageCursor { first_sequence >= 0 and next_sequence >= first_sequence and next_sequence <= (900719925 * 10000000 + 4740991) and available_count == next_sequence - first_sequence and available_count <= 2048 and 'next' >= first_sequence and 'next' <= next_sequence }
         doc /* Exact12.8 live envelope<=16384bytes,record<=2048bytes; Thinlimit1/page3072.
              Each record sequence<next_sequence,start_frame<actually captured next_frame.

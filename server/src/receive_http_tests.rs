@@ -93,18 +93,31 @@ impl SampleSource for Input {
             if !self.running || !matches!(result, SourcePoll::Pending) || self.fixture.is_none() {
                 return result;
             }
-            if self.first < NATIVE_FRAMES {
-                let count = 8192.min(NATIVE_FRAMES - self.first);
+            // One mode period: the latest-period UI must not be asked to retain an older
+            // fixture station after a second, deliberately empty FT4 period.
+            let frames = if self.fixture.as_ref().unwrap().expected["mode"] == "ft4" {
+                NATIVE_FRAMES / 2
+            } else {
+                NATIVE_FRAMES
+            };
+            if self.first < frames {
+                let count = 8192.min(frames - self.first);
                 let packet = self
                     .fixture
                     .as_ref()
                     .unwrap()
                     .native_stereo(self.first, count);
-                assert!(self.queue.push(&packet, count, self.first as u64, 0, 0));
+                // The fixture has no independent QPC-to-UTC clock; zero is not a clock anchor.
+                let flags = if self.first == 0 {
+                    audio::TIMESTAMP_ERROR
+                } else {
+                    0
+                };
+                assert!(self.queue.push(&packet, count, self.first as u64, 0, flags));
                 self.first += count;
                 return self.source.poll();
             }
-            if self.first == NATIVE_FRAMES {
+            if self.first == frames {
                 assert!(self.queue.push(
                     &[],
                     TRAILING_SILENT_FRAMES,

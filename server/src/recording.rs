@@ -243,6 +243,8 @@ pub struct State {
     pub frame: Option<Value>,
     pub detail_frame: Option<Value>,
     live: Option<LiveState>,
+    latest_decode: Option<LatestDecode>,
+    decode_counter: u64,
 }
 pub struct Recording {
     pub state: Mutex<State>,
@@ -251,6 +253,15 @@ pub struct Recording {
     pub boot: String,
     #[cfg(test)]
     resources: Mutex<Resources>,
+}
+
+#[derive(Clone, Serialize)]
+struct LatestDecode {
+    id: u64,
+    first_sequence: u64,
+    next_sequence: u64,
+    period_start_utc: Option<String>,
+    complete: bool,
 }
 
 struct LiveState {
@@ -342,7 +353,7 @@ impl Recording {
             json!({"id":j.id,"mode":l.mode,"state":j.state,"error":j.error,
                 "processed_frames":j.processed_frames,"first_sequence":l.first_sequence,
                 "next_sequence":l.next_sequence,"available_count":l.records.len(),
-                "last_overrun":l.last_overrun.map(|(first,end)|json!({"first_frame":first,"end_frame":end}))})));
+                "last_overrun":l.last_overrun.map(|(first,end)|json!({"first_frame":first,"end_frame":end})),"latest_decode":s.latest_decode})));
         let timing = live.and_then(|l| l.timing.as_ref());
         json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,
             "audio":audio,"source":source,"job":job,"clock":{"basis":"system_utc",
@@ -423,6 +434,8 @@ impl Recording {
                 cancel: Arc::new(AtomicBool::new(false)),
             };
             s.job = Some(job.clone());
+            s.latest_decode = None;
+            s.decode_counter = 0;
             s.live = Some(LiveState {
                 mode,
                 audio: audio::AudioStatus {
@@ -564,7 +577,7 @@ impl Recording {
             "source_id":source,"job_id":job,"generation":generation,"mode":l.mode,"state":j.state,
             "error":j.error,"search_limited":l.search_limited,"first_sequence":l.first_sequence,
             "next_sequence":l.next_sequence,"available_count":l.records.len(),"next":next,
-            "more":next<l.next_sequence,"records":records})
+            "more":next<l.next_sequence,"records":records,"latest_decode":s.latest_decode})
         };
         while serde_json::to_vec(&page(&records, next))
             .map_err(|_| "decode_limit")?
@@ -575,6 +588,88 @@ impl Recording {
             next -= 1;
         }
         Ok(page(&records, next))
+    }
+    fn publish_latest_decode(
+        &self,
+        context: &Job,
+        interval: (u64, u64),
+        first: u64,
+        complete: bool,
+    ) -> Result<()> {
+        let mut s = self.state.lock().unwrap();
+        if context.cancel.load(Ordering::Acquire)
+            || !s.job.as_ref().is_some_and(|j| {
+                j.id == context.id
+                    && j.generation == context.generation
+                    && j.source_id == context.source_id
+                    && j.state == "running"
+            })
+        {
+            return Ok(());
+        }
+        let l = s.live.as_ref().ok_or("state_conflict")?;
+        let period = if let Some(timing) = l.timing.as_ref().filter(|t| t.correlated) {
+            let Some((period, nominal, support)) = period_parameters(l.mode) else {
+                return Ok(());
+            };
+            let (Some(begin), Some(end)) = (
+                source_ticks(timing, interval.0),
+                source_ticks(timing, interval.1),
+            ) else {
+                return Ok(());
+            };
+            let slot = (end - nominal - support).div_euclid(period) * period;
+            if slot + nominal < begin {
+                return Ok(());
+            }
+            Some(
+                utc_from_filetime(u64::try_from(slot).map_err(|_| "decode_limit")?)
+                    .ok_or("decode_limit")?,
+            )
+        } else {
+            None
+        };
+        if let (Some(previous), Some(next)) = (
+            s.latest_decode
+                .as_ref()
+                .and_then(|v| v.period_start_utc.as_ref()),
+            period.as_ref(),
+        ) && next < previous
+        {
+            return Ok(());
+        }
+        let (first_sequence, next_sequence) = if let Some(period) = period.as_ref() {
+            let mut matching = l
+                .records
+                .iter()
+                .filter(|(r, _)| r["period_start_utc"].as_str() == Some(period));
+            if let Some((record, _)) = matching.next() {
+                let first = record["sequence"].as_u64().ok_or("decode_limit")?;
+                let last = matching
+                    .last()
+                    .map(|(r, _)| r["sequence"].as_u64().unwrap())
+                    .unwrap_or(first);
+                (first, last + 1)
+            } else {
+                (l.next_sequence, l.next_sequence)
+            }
+        } else {
+            (first.max(l.first_sequence), l.next_sequence)
+        };
+        let id = s
+            .decode_counter
+            .checked_add(1)
+            .filter(|id| *id <= source::MAX_COUNTER)
+            .ok_or("counter_exhausted")?;
+        s.decode_counter = id;
+        s.latest_decode = Some(LatestDecode {
+            id,
+            first_sequence,
+            next_sequence,
+            period_start_utc: period,
+            complete,
+        });
+        Ok(())
     }
     fn publish_decode(
         &self,
@@ -615,6 +710,9 @@ impl Recording {
         }
         let mut value =
             serde_json::to_value(decode).map_err(|_| decoder::DecodeError::DecodeLimit)?;
+        let timing = relative_decode_timing(l.timing.as_ref(), l.mode, decode.start_frame);
+        value["period_start_utc"] = json!(timing.as_ref().map(|(period, _)| period));
+        value["dt_seconds"] = json!(timing.map(|(_, dt)| dt));
         value
             .as_object_mut()
             .ok_or(decoder::DecodeError::DecodeLimit)?
@@ -742,6 +840,8 @@ impl LiveWorker {
         }
         s.frame = None;
         s.detail_frame = None;
+        s.latest_decode = None;
+        s.decode_counter = 0;
         s.live.as_mut().ok_or("state_conflict")?.clear_context();
         let replacement = if self.epoch_seen {
             let generation = s
@@ -860,6 +960,10 @@ impl LiveWorker {
                     .map(|o| o.captured_next_frame)
                     .unwrap_or(block.first_frame + block.samples.len() as u64);
                 let next = j.processed_frames;
+                let gap_reset = outcome.as_ref().is_some_and(|o| o.reset_decoder);
+                if gap_reset {
+                    s.latest_decode = None;
+                }
                 let l = s.live.as_mut().ok_or("state_conflict")?;
                 l.next_frame = next;
                 self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
@@ -921,6 +1025,8 @@ impl LiveWorker {
                 }
                 s.frame = None;
                 s.detail_frame = None;
+                s.latest_decode = None;
+                s.decode_counter = 0;
                 if let Some(l) = s.live.as_mut() {
                     l.clear_context();
                 }
@@ -952,6 +1058,16 @@ impl LiveWorker {
             let cancelled = || cancel.load(Ordering::Acquire);
             let mut publish = |decoded: &decoder::Decode| owner.publish_decode(&job, decoded);
             let interval = (window.origin, window.origin + window.samples.len() as u64);
+            let first_sequence = self
+                .owner
+                .state
+                .lock()
+                .unwrap()
+                .live
+                .as_ref()
+                .map(|l| l.next_sequence)
+                .ok_or("state_conflict")?;
+            let mut complete = false;
             let mut future = Box::pin(decoder.decode_window_into_async(
                 window.samples,
                 window.origin,
@@ -968,7 +1084,10 @@ impl LiveWorker {
                 match future.as_mut().poll(&mut context) {
                     Poll::Ready(result) => {
                         break match result {
-                            Ok(()) => Ok(()),
+                            Ok(()) => {
+                                complete = true;
+                                Ok(())
+                            }
                             Err(decoder::DecodeError::Cancelled) => Err("cancelled"),
                             Err(decoder::DecodeError::SearchLimited) => {
                                 if let Some(l) = self.owner.state.lock().unwrap().live.as_mut() {
@@ -1018,6 +1137,10 @@ impl LiveWorker {
             drop(future);
             self.modem = if self.reset { None } else { Some(state) };
             result?;
+            if !self.reset {
+                self.owner
+                    .publish_latest_decode(&job, interval, first_sequence, complete)?;
+            }
             if let Some(next) = replacement {
                 window = next;
             } else {
@@ -1025,6 +1148,108 @@ impl LiveWorker {
             }
         }
     }
+}
+
+fn period_parameters(mode: &str) -> Option<(i128, i128, i128)> {
+    match mode {
+        "ft8" => Some((150_000_000, 5_000_000, 126_400_000)),
+        "ft4" => Some((75_000_000, 4_520_000, 50_400_000)),
+        _ => None,
+    }
+}
+fn source_ticks(timing: &source::SourceTiming, frame: u64) -> Option<i128> {
+    if !timing.correlated {
+        return None;
+    }
+    let anchor = i128::from(filetime_from_utc(timing.system_utc_anchor.as_deref()?)?);
+    Some(
+        anchor
+            + (i128::from(frame) - i128::from(timing.canonical_anchor_frame)) * 10_000_000 / 12000,
+    )
+}
+fn relative_decode_timing(
+    timing: Option<&source::SourceTiming>,
+    mode: &str,
+    frame: u64,
+) -> Option<(String, f64)> {
+    let observed = source_ticks(timing?, frame)?;
+    let (period, nominal, _) = period_parameters(mode)?;
+    let slot = (observed - nominal + period / 2).div_euclid(period) * period;
+    Some((
+        utc_from_filetime(u64::try_from(slot).ok()?)?,
+        (observed - slot - nominal) as f64 / 10_000_000.0,
+    ))
+}
+fn filetime_from_utc(text: &str) -> Option<u64> {
+    let b = text.as_bytes();
+    if b.len() < 20
+        || b.get(4) != Some(&b'-')
+        || b.get(7) != Some(&b'-')
+        || b.get(10) != Some(&b'T')
+        || b.get(13) != Some(&b':')
+        || b.get(16) != Some(&b':')
+        || b.last() != Some(&b'Z')
+    {
+        return None;
+    }
+    let number = |a: usize, z: usize| -> Option<u64> {
+        let part = b.get(a..z)?;
+        if !part.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        std::str::from_utf8(part).ok()?.parse().ok()
+    };
+    let (year, month, day, hour, minute, second) = (
+        number(0, 4)?,
+        number(5, 7)?,
+        number(8, 10)?,
+        number(11, 13)?,
+        number(14, 16)?,
+        number(17, 19)?,
+    );
+    if !(1970..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    let leap = |y: u64| y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
+    let months = [
+        31,
+        if leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    if day == 0 || day > months[(month - 1) as usize] {
+        return None;
+    }
+    let mut days = 0;
+    for y in 1970..year {
+        days += if leap(y) { 366 } else { 365 };
+    }
+    days += months[..(month - 1) as usize].iter().sum::<u64>() + day - 1;
+    let fraction = if b.len() == 20 {
+        0
+    } else {
+        if b.get(19) != Some(&b'.') || !(22..=28).contains(&b.len()) {
+            return None;
+        }
+        let digits = b.len() - 21;
+        number(20, b.len() - 1)? * 10_u64.pow((7 - digits) as u32)
+    };
+    (11_644_473_600 + days * 86400 + hour * 3600 + minute * 60 + second)
+        .checked_mul(10_000_000)?
+        .checked_add(fraction)
 }
 
 fn utc_from_filetime(ticks: u64) -> Option<String> {
@@ -1252,6 +1477,8 @@ impl Recording {
             frame: None,
             detail_frame: None,
             live: None,
+            latest_decode: None,
+            decode_counter: 0,
         };
         let confined = fs::create_dir_all(&dir).is_ok()
             && base

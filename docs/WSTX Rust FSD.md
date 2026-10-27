@@ -775,7 +775,7 @@ No horizontal page overflow; axis labels and primary controls remain reachable.
 | Clause | Requirements | Promise | Verification |
 |---|---|---|---|
 | CL-007-01 | FR-003, FR-004, FR-018 | Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz live source through the existing receive-job authority. Independent recorded fixtures MUST exercise the same pure modem without a physical radio; no file-decoding product operation is provided. | TC-004-001; TC-004-002; TC-004-003 |
-| CL-007-02 | FR-003, FR-004, FR-019 | The common browser MUST show exact supported payload fields, unresolved hash identities, source-relative time, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. | TC-004-001; TC-004-002; TC-004-003 |
+| CL-007-02 | FR-003, FR-004, FR-019 | The common browser MUST show exact supported payload fields, unresolved hash identities, UTC period time and relative DT when correlated or explicit unknown timing under4.7.4, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. | TC-004-001; TC-004-002; TC-004-003; TC-007-006 |
 | CL-007-03 | FR-003, FR-004, FR-018 | Each mode MUST satisfy independent payload/channel/waveform oracles; reference decoder output alone MUST NOT define exhaustive truth or make a hash reversible. | TC-004-001; TC-004-002; TC-004-003 |
 | CL-007-04 | FR-003, FR-004, FR-019, FR-021 | CPU-only decoding MUST meet the per-mode quality, rejection, runtime, memory, repeatability, cancellation and link budgets below, with explicit bounded-work failure. | TC-004-001; TC-004-002; TC-004-003 |
 
@@ -1362,8 +1362,8 @@ and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC
 Recheck once/second. A change exceeding20 ms invalidates that timing segment rather
 than warping sample indices. QPC/system correlation does not prove externally accurate
 UTC: label this basis system_utc with external_accuracy_unknown. Internal numerical fixtures and
-live spectrum/source-relative decoding work without UTC; no slot/DT or future transmit
-clock-readiness claim follows from an unverified system clock.
+live spectrum/decoding work without UTC; correlated system time supports relative DT
+under4.7.4, while no external-UTC accuracy or future transmit readiness is inferred.
 
 **Live lifecycle and results.** Explicit start selects spectrum-only/FT4/FT8 and owns
 one continuous receive job until stop or failure. Incomplete initial waveform support
@@ -1528,6 +1528,7 @@ independent-review or acceptance verdict.
 | `CL-010-05` | partial |
 | `CL-010-07` | partial |
 | `CL-010-08` | partial |
+| `CL-010-09` | target |
 | `CL-013-01` | target |
 | `CL-013-02` | target |
 | `CL-013-03` | target |
@@ -1570,6 +1571,7 @@ independent-review or acceptance verdict.
 | `TC-010-006` | implemented |
 | `TC-010-007` | implemented |
 | `TC-007-002` | partial |
+| `TC-007-006` | planned |
 
 ### 4.6.2 Direct source dependencies of manual companions
 
@@ -1591,6 +1593,7 @@ Imported model definitions retain their own declared source dependencies.
 |---|---|---|---|
 | CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002; TC-009-004 |
 | CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002; TC-009-004 |
+| CL-010-09 | FR-010, FR-019 | Band Activity shows only the latest published decode period and signed station timing relative to our clock, with explicit partial/unavailable states. | TC-007-006 |
 | CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002; TC-009-004 |
 
 #### 4.7.1 Read-only operating composition
@@ -1619,10 +1622,11 @@ explicit Start/Stop receive and spectrum/FT4/FT8 selection. Selection applies to
 next job; displaying settings and selecting a mode never opens audio. Start uses
 the saved input and current profile revision. Stop invalidates publication before
 acknowledgement. Band Activity presents actual12.7 decoded records fetched through
-12.8, with source seconds, nullable SNR, audio frequency and literal message text.
-No UTC/DT or resolved call is invented. Each retained row preserves its source/job/
+12.8, with UTC period time and signed relative DT when correlated to the station clock,
+nullable SNR, audio frequency and literal message text. Unknown UTC/DT and unresolved
+calls remain explicit;4.7.4 defines the latest-period presentation. Each retained row preserves its source/job/
 generation and sequence; new identity clears rows, and stale pages cannot append.
-At most2048 displayed records are retained. Cursor expiry visibly marks incomplete
+At most2048 latest-period records are displayed. Cursor expiry visibly marks incomplete
 history before reading the oldest available cursor. Partial output remains visibly
 partial after stop/failure. Unsupported payload text is labelled by its payload
 status without fabricating a message. Receive availability is separate from CAT,
@@ -1675,8 +1679,8 @@ beside Current QSO and Strategy when the available workspace exceeds75em. At75em
 or less (1200CSSpx with16px text), Band Activity spans the full width above the
 secondary cards; below48em the cards all stack. These font-relative boundaries
 also adapt to200% text enlargement. All six Time/SNR/DT/Hz/Message/Status fields
-remain visible. Current source-relative seconds and unknown DT remain truthful;
-no UTC/DT is fabricated. Numeric/time/status values use unbroken text with
+remain visible. UTC period time and signed relative DT follow4.7.4; unavailable clock
+correlation is explicit and no UTC/DT is fabricated. Numeric/time/status values use unbroken text with
 character-based minimum widths; frequency3499.9 must remain one line. Message
 text receives the remaining width and wraps at word boundaries, splitting a token
 only when necessary to keep it inside its cell.
@@ -1703,6 +1707,57 @@ Operate, Recordings, Logbook, Strategies, Server settings, Client preferences an
 The existing calibrated 0..3000Hz native-bin spectrum/waterfall, original level palette, sensitivity/speed controls and mouse/keyboard splitter remain unchanged. Initial display space is compact like the reference (210 CSS pixels on a sufficiently tall desktop) but remains adjustable and fills all allocated signal space; narrow/short viewports retain the existing160px minimum and access to controls.
 
 Verification extends TC-007-002: actual browser at360/720/1200/1440/1499/1500/1600 widths verifies card order/labels and no overflow, five-width computed typography, actual signal geometry and splitter behavior, visible unsupported reasons and no fabricated rows; navigate/open/close every region with pointer/keyboard and F2/Escape, preserve profile save/reload and real recording operations, and record emitted requests to prove no RF/automation mutations. Capture target and actual page at the same1200x800 viewport and compare geometric/card/navigation placement. Cost2: isolated Windows server/Chromium, no radio or external service. The design reference screenshot contains illustrative data and is not decoder evidence.
+
+#### 4.7.4 Latest decode period and station time offset
+
+Band Activity replaces the previous period with the latest published FT4/FT8 decode
+period. It shows all available verified records for that period, including simultaneous
+stations and messages arriving in different pages; it is neither a cumulative job log
+nor only the last page/message. A newly published empty period clears old rows and says
+no stations were decoded in that period. The previous view remains while the next attempt
+runs. Partial attempts are visibly labelled Partial, never complete. Gap/cancel/failure
+cannot invent a completed empty period. Source/job/generation replacement clears rows.
+
+The existing receive manager owns one bounded latest-decode descriptor and its existing
+retained result ring; no second modem, clock or result store is introduced. It publishes
+the descriptor atomically after an analysis attempt finishes or is abandoned at the
+existing overrun boundary. complete=true means the numerical attempt finished; overrun
+uses complete=false and retains verified partial results. The selected period is the
+latest UTC-aligned period whose nominal waveform support lies wholly inside that real
+analysis window: FT8 period15s, nominal start0.5s, support12.64s; FT4 period7.5s, nominal
+start0.452s, support5.04s. Publication never moves its selected period backwards. If no
+nominal period fits, no new descriptor is published. Without clock correlation it
+identifies only that attempt's sequence range and labels period time and DT Unknown.
+
+A correlated system clock suffices for timing relative to our station; unknown external
+UTC accuracy does not suppress DT or imply certified synchronization. Map each decoder
+start_frame through its source epoch's canonical frame/UTC anchor at12000Hz, never the
+browser clock or callback arrival time. Assign to the nearest nominal waveform start
+on the mode's UTC period grid, resolving an exact tie to the later period. DT is observed
+waveform start minus that period's nominal start. Positive means received late relative
+to our station clock; negative means early. Display one decimal second and an explicit
+sign, normalizing rounded zero to+0.0. Time displays the UTC period start, HH:mm:ss for
+FT8 and HH:mm:ss.s for FT4. Clock correlation/external accuracy remain independently
+truthful. FT4's0.452s origin includes its leading0.048s ramp symbol; its standard DT
+origin is0.5s at the following symbol. start_frame alone is not elapsed DT.
+
+The latest descriptor has monotonic identity and a frozen sequence range. All pages
+for that view accumulate, limited by the existing2048-record/2MiB ring; a16-row page
+never truncates the period. While the cursor has not reached the descriptor end, show
+Loading results; complete describes the analysis attempt, not delivery of every row.
+If a new period arrives before loading finishes, switch to it rather than accumulate
+stale rows. Thin cadence can limit how many rows arrive before that switch. Display only records in that range and matching its UTC
+period, or the range alone when clock correlation is unavailable. New descriptor
+identity clears the old rows once and seeks its first retained sequence. Older pages,
+old sockets/epochs and responses preceding a newer snapshot cannot restore obsolete
+rows or move the cursor. A period change mid-pagination switches to the newer view.
+Expired history stays visibly incomplete. Publications after the frozen end await a
+later descriptor. Known gaps invalidate the view until a qualified later attempt.
+Cancellation/failure preserves the last published view with truthful lifecycle status;
+retained API partial output is not relabelled completed. Single pending request, Thin
+limit1/4s, byte caps, control priority and no automatic mutation retry remain unchanged.
+At narrow widths and enlarged text UTC Time, signed DT and the other four fields remain
+legible without horizontal page overflow.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -2350,6 +2405,33 @@ styles against16CSSpx normal/time/numeric/message and14CSSpx label minima, rem-s
 at200% text enlargement, and8CSSpx vertical padding.
 All widths retain these minima; long text wraps without page overflow. Existing splitter, keyboard, capability and transport assertions remain.
 These style oracles come from the stated presentation values, not candidate CSS. Verify the dominant/full-width Band Activity proportions and labelled responsive rows at360/720/1200/1440/1600CSSpx and1x/2x text. Use captured physical FT4 message text strictly as a labelled presentation fixture, plus independent edge strings:3499.9Hz, signed SNR/DT, long callsigns/full messages, large source seconds, UTC-formatted text and every result status. All six values remain literal and inside their own cells; numbers never split, message tokens wrap only when needed, and table labels remain accessible. This fixture is not decoder/RF truth. Capture desktop/narrow/2x screenshots; retain the separate actual nativeFT4/FT8 decoder/browser proofs.
+
+#### TC-007-006 — Latest decode and signed relative timing
+
+Proves CL-010-09, CL-007-02. Cost2: offline automated Windows development-PC tests of the actual
+Rust manager/API and real Chromium using independently scripted sample/clock/result
+fixtures. Existing native FT4/FT8-through-real-decoder proofs remain separate; UI
+fixtures are not RF truth. Cost4 live acceptance uses HB9BLA IC-7300 and this PC's
+browser for operator-authorized receive-only FT4/FT8 observation.
+
+- Publish two periods with multiple stations and more than16 latest-period records;
+  retrieve split/Thin pages, then a newly empty period. Expect every available latest
+  row, no earlier rows, no page-size truncation and an explicit empty explanation.
+- Exercise complete/overrun attempts, known gaps, cancellation, failure, late results,
+  changed descriptor mid-page, old sockets/epochs, reconnect, expired cursors and safe
+  counters. Expect atomic monotonic view identity, truthful Partial/incomplete/stale
+  labels, no invented completion and no obsolete row/cursor movement. Existing ring,
+  page/record sizes, single pending/cadence and combined32kbit/s regressions remain.
+- Hand oracle: anchor2026-10-27T12:00:00Z at frame0. FT8 starts3600/6000/8400 yield
+  DT-0.2/+0.0/+0.2 in12:00:00. FT4 starts3024/5424/7824 yield the same, and frame95424
+  yields+0.0 in12:00:07.5. Repeat with a nonzero canonical anchor, day rollover,
+  sub-millisecond UTC anchor, nearest-slot ties and signed rounded zero. Without
+  correlation both timing fields are null; with correlation and external_accuracy
+  unknown timing stays relative to our station, not falsely certified external UTC.
+- At1440px/360px and normal/doubled text inspect the actual UTC Time, signed DT,
+  callsigns and all six fields: literal values, unbroken numeric text and no horizontal
+  page overflow. In live acceptance observe actual decoded calls in both modes and
+  record clock quality without claiming independently measured transmitter clock error.
 
 ## 7. Proposed delivery milestones
 
@@ -3565,7 +3647,7 @@ Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states
 nullable strings and retry integer0..8000/null. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
-`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun}` with UUID id,
+`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun,latest_decode}` with UUID id,
 mode spectrum/ft4/ft8, existing receive states and safe counters. available_count is
 next_sequence-first_sequence (0..2048 retained records), not lifetime publication count.
 last_overrun is null until an analysis overrun, otherwise exactly
@@ -3576,6 +3658,24 @@ Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
 nonnegative integer uncertainty/null and external_accuracy unknown. Snapshot<=8192 bytes.
+
+latest_decode is null until an attempt publishes a view, otherwise exactly
+`{id,first_sequence,next_sequence,period_start_utc,complete}`. id is a positive safe
+integer increasing per publication within the source/job epoch. Sequence bounds are
+nonnegative safe integers, first_sequence<=next_sequence<=the publication-end counter
+frozen with this descriptor. Correlated period_start_utc is the selected mode's UTC
+period start string; bounds enclose retained records matching that period, or both
+equal the frozen publication end when empty. Uncorrelated period_start_utc is null and
+bounds identify newly published records of that attempt. complete is boolean, true
+only for a normally finished attempt. Snapshot/page read the descriptor atomically
+with their own result counters. Known gaps clear it without reusing IDs; new jobs/source
+epochs reset it and the ID. Retention/cursor expiry remains authoritative after eviction.
+
+Live records extend12.7 with exactly period_start_utc and dt_seconds, both null without
+station clock correlation. Otherwise period_start_utc identifies the nearest nominal
+period and dt_seconds is finite in[-7.5,7.5) for FT8 or[-3.75,3.75) for FT4 under4.7.4.
+The native numerical Decode shape is unchanged. These extra live fields remain inside
+the2048-byte live record cap; existing1024-byte modem-history accounting is unchanged.
 
 `POST /receive/start` requires exactly `{v,profile_id,boot_id,generation,profile_revision,mode}`;
 mode spectrum/ft4/ft8. Admission uses the current immutable settings and existing single
@@ -3593,7 +3693,7 @@ and canonical positions while resetting analysis and private modem history.
 
 `GET /receive/results` requires source_id,job_id,generation,cursor and optional limit1..16
 (default16) query keys; mode must be ft4/ft8. Exact page keys are
-`{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records}`.
+`{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records,latest_decode}`.
 UUID identities, mode, state, error, search_limited and record payload/field/text/SNR/
 frequency shapes follow12.7. The live counter and retained-result domains below apply.
 

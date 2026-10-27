@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 44b5983cb2ccc73467faa1f2abdcaa8694f923d395b86b84e5dcd943f7b70311
+// Canonical FSD slices SHA256: 45737bb9baa8856aa9c0883da94cddbd5211a230b3f111fe409efda4d6ddb935
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable

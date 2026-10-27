@@ -987,3 +987,187 @@ fn detailed_native_bins_and_power_rows_follow_independent_dft() {
         }
     }
 }
+
+fn relative_clock(r: &Recording, mode: &'static str, anchor: &str, anchor_frame: u64) {
+    let mut s = r.state.lock().unwrap();
+    let live = s.live.as_mut().unwrap();
+    live.mode = mode;
+    live.timing = Some(source::SourceTiming {
+        source_id: live.source.as_ref().unwrap().source_id.clone(),
+        segment: 0,
+        native_rate: 48000,
+        native_anchor_frame: 0.0,
+        canonical_anchor_frame: anchor_frame,
+        converter_delay_native_frames: 0.0,
+        qpc_anchor_100ns: Some(0),
+        system_utc_anchor: Some(anchor.into()),
+        uncertainty_ns: Some(500),
+        correlated: true,
+        external_accuracy: source::ExternalAccuracy::Unknown,
+    });
+}
+
+// Proves: CL-010-09; TC-007-006. Independent hand-calculated UTC/frame vectors.
+#[test]
+fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
+    for (mode, starts, period) in [
+        ("ft8", [3600, 6000, 8400], "2026-10-27T12:00:00.0000000Z"),
+        ("ft4", [3024, 5424, 7824], "2026-10-27T12:00:00.0000000Z"),
+    ] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        let (job, mut decoded) = live_ring(&r);
+        relative_clock(&r, mode, "2026-10-27T12:00:00.0000000Z", 0);
+        for (index, start) in starts.into_iter().enumerate() {
+            decoded.start_frame = start;
+            r.publish_decode(&job, &decoded).unwrap();
+            let p = r
+                .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, index as u64, 1)
+                .unwrap();
+            assert_eq!(p["records"][0]["period_start_utc"], period);
+            assert!(
+                (p["records"][0]["dt_seconds"].as_f64().unwrap() - [-0.2, 0.0, 0.2][index]).abs()
+                    < 0.000001
+            );
+        }
+        if mode == "ft4" {
+            decoded.start_frame = 95424;
+            r.publish_decode(&job, &decoded).unwrap();
+            let p = r
+                .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, 3, 1)
+                .unwrap();
+            assert_eq!(
+                p["records"][0]["period_start_utc"],
+                "2026-10-27T12:00:07.5000000Z"
+            );
+            assert_eq!(p["records"][0]["dt_seconds"], 0.0);
+        }
+    }
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, mut decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T23:59:59.9000000Z", 1200);
+    decoded.start_frame = 8400;
+    r.publish_decode(&job, &decoded).unwrap();
+    let p = r
+        .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, 0, 1)
+        .unwrap();
+    assert_eq!(
+        p["records"][0]["period_start_utc"],
+        "2026-10-28T00:00:00.0000000Z"
+    );
+    assert_eq!(p["records"][0]["dt_seconds"], 0.0);
+    for (mode, start, dt, period) in [
+        ("ft8", 96000, -7.5, "2026-10-27T12:00:15.0000000Z"),
+        ("ft4", 50424, -3.75, "2026-10-27T12:00:07.5000000Z"),
+    ] {
+        relative_clock(&r, mode, "2026-10-27T12:00:00.0000000Z", 0);
+        decoded.start_frame = start;
+        r.publish_decode(&job, &decoded).unwrap();
+        let end = r.receive_snapshot()["job"]["next_sequence"]
+            .as_u64()
+            .unwrap();
+        let p = r
+            .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, end - 1, 1)
+            .unwrap();
+        assert_eq!(p["records"][0]["dt_seconds"], dt);
+        assert_eq!(
+            p["records"][0]["period_start_utc"], period,
+            "nearest-slot tie selects later period"
+        );
+    }
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0001000Z", 0);
+    decoded.start_frame = 6000;
+    r.publish_decode(&job, &decoded).unwrap();
+    let end = r.receive_snapshot()["job"]["next_sequence"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(
+        r.receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, end - 1, 1)
+            .unwrap()["records"][0]["dt_seconds"],
+        0.0001
+    );
+    for anchor in [
+        "not UTC",
+        "2026-02-30T12:00:00.0000000Z",
+        "2026-10-27T12:00:00.00000000Z",
+    ] {
+        relative_clock(&r, "ft8", anchor, 0);
+        r.publish_decode(&job, &decoded).unwrap();
+        let end = r.receive_snapshot()["job"]["next_sequence"]
+            .as_u64()
+            .unwrap();
+        let p = r
+            .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, end - 1, 1)
+            .unwrap();
+        assert!(p["records"][0]["period_start_utc"].is_null());
+        assert!(p["records"][0]["dt_seconds"].is_null());
+    }
+    r.state.lock().unwrap().live.as_mut().unwrap().timing = None;
+    r.publish_decode(&job, &decoded).unwrap();
+    let end = r.receive_snapshot()["job"]["next_sequence"]
+        .as_u64()
+        .unwrap();
+    assert!(
+        r.receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, end - 1, 1)
+            .unwrap()["records"][0]["dt_seconds"]
+            .is_null()
+    );
+}
+
+// Proves: CL-010-09; TC-007-006. Actual numerical silence completes; result inputs are explicit manager fixtures.
+#[test]
+fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, mut decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 540000;
+    decoded.start_frame = 6000;
+    r.publish_decode(&job, &decoded).unwrap();
+    for i in 0..18 {
+        decoded.start_frame = 186000;
+        decoded.frequency_hz = 1000.0 + f64::from(i);
+        r.publish_decode(&job, &decoded).unwrap();
+    }
+    let input = crate::receive_http_tests::Input::queued().0;
+    let mut worker = LiveWorker::new(r.clone(), job.clone(), Box::new(input), "ft8");
+    worker
+        .analyze(receive::AnalysisWindow {
+            origin: 0,
+            samples: vec![0.0; 360000],
+        })
+        .unwrap();
+    let s = r.receive_snapshot();
+    let view = &s["job"]["latest_decode"];
+    assert_eq!(view["id"], 1);
+    assert_eq!(view["first_sequence"], 1);
+    assert_eq!(view["next_sequence"], 19);
+    assert_eq!(view["complete"], true);
+    assert_eq!(view["period_start_utc"], "2026-10-27T12:00:15.0000000Z");
+    let page = r
+        .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, 1, 16)
+        .unwrap();
+    assert_eq!(page["latest_decode"], *view);
+    assert_eq!(page["records"].as_array().unwrap().len(), 16);
+    assert_eq!(
+        r.receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, 17, 16)
+            .unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    worker
+        .analyze(receive::AnalysisWindow {
+            origin: 180000,
+            samples: vec![0.0; 360000],
+        })
+        .unwrap();
+    let s = r.receive_snapshot();
+    let empty = &s["job"]["latest_decode"];
+    assert_eq!(empty["id"], 2);
+    assert_eq!(empty["first_sequence"], 19);
+    assert_eq!(empty["next_sequence"], 19);
+    assert_eq!(empty["period_start_utc"], "2026-10-27T12:00:30.0000000Z");
+}

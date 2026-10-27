@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: c119180911c9bcb81b9bc529b0aafbf62902846be3223541459ae96b4eedb411
+// Canonical FSD slices SHA256: 92901ab110ef5d48cbef5e4e949553b6a556b2990e8eba1a49f484361e6d6fcd
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
@@ -114,7 +114,55 @@ package WstxRadioIO {
              end_frame<=capturedNextFrame. Null until overrun, replace on next,
              clear on newjob/sourceepoch. ExactGET/receive.job key last_overrun. */
     }
+    attribute def RelativeDecodeTiming {
+        attribute mode : ReceiveMode;
+        attribute correlated : Boolean;
+        attribute observedStartSeconds : Real;
+        attribute periodStartSeconds : Real;
+        attribute periodSeconds : Real;
+        attribute nominalStartSeconds : Real;
+        attribute dtSeconds : Real;
+        attribute externalAccuracyKnown : Boolean = false;
+        assert constraint modeTiming {
+            (mode == ReceiveMode::ft8 and periodSeconds == 15.0 and nominalStartSeconds == 0.5) or
+            (mode == ReceiveMode::ft4 and periodSeconds == 7.5 and nominalStartSeconds == 0.452)
+        }
+        assert constraint relativeOffset {
+            dtSeconds == observedStartSeconds - periodStartSeconds - nominalStartSeconds and
+            dtSeconds >= -periodSeconds / 2.0 and dtSeconds < periodSeconds / 2.0
+        }
+        doc /* FSD4.7.4/12.8. Used only with correlated source timing. Observed start
+             comes from canonical frame/UTC anchor at12000Hz, not arrival/browser time.
+             Nearest nominal UTC grid start; ties select later period. Positive late,
+             negative early. External accuracy unknown does not suppress relative DT.
+             Without correlation live wire period_start_utc and dt_seconds are null.
+             FT4 includes leading576-frame ramp:0.5-576/12000=0.452s. */
+    }
+    attribute def LatestDecodePeriod {
+        attribute id : Integer;
+        attribute first_sequence : Integer;
+        attribute next_sequence : Integer;
+        attribute period_start_utc : String[0..1];
+        attribute complete : Boolean;
+        attribute abandoned : Boolean;
+        attribute qualifiedWindow : Boolean;
+        assert constraint safeIdentity { id > 0 and id <= (900719925 * 10000000 + 4740991) }
+        assert constraint frozenRange { first_sequence >= 0 and next_sequence >= first_sequence and next_sequence <= (900719925 * 10000000 + 4740991) }
+        assert constraint neverFalseComplete { abandoned implies not complete }
+        doc /* Existing manager owns this nullable metadata and existing ring, no new
+             endpoint/cache/modem. Publish atomically at finished/overrun attempt only.
+             Select latest UTC period with nominal support wholly inside actual window;
+             FT8 support12.64s/period15s/offset0.5, FT4 5.04s/7.5s/0.452.
+             No qualified period => no publication; never move selected period backwards.
+             Without correlation range is that attempt's newly published records, time null.
+             Correlated range encloses matching retained records, empty => both equal
+             frozen publication end. Job snapshot and result page expose same exact keys.
+             Gap clears view without reusing IDs; epoch resets it/ID. Cancellation/failure
+             cannot create complete empty view; last published output keeps truthful status.
+             Existing evictions/410/caps remain authoritative. */
+    }
     attribute def LiveResultWindow {
+        attribute latest_decode : LatestDecodePeriod[0..1];
         attribute last_overrun : AnalysisOverrun[0..1];
         attribute first_sequence : Integer;
         attribute next_sequence : Integer;
@@ -332,8 +380,8 @@ and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC
 Recheck once/second. A change exceeding20 ms invalidates that timing segment rather
 than warping sample indices. QPC/system correlation does not prove externally accurate
 UTC: label this basis system_utc with external_accuracy_unknown. Internal numerical fixtures and
-live spectrum/source-relative decoding work without UTC; no slot/DT or future transmit
-clock-readiness claim follows from an unverified system clock.
+live spectrum/decoding work without UTC; correlated system time supports relative DT
+under4.7.4 while external accuracy/transmit readiness are not inferred.
 
 **Live lifecycle and results.** Explicit start selects spectrum-only/FT4/FT8 and owns
 one continuous receive job until stop or failure. Incomplete initial waveform support
@@ -445,7 +493,7 @@ Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states
 nullable strings and retry integer0..8000/null. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
-`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun}` with UUID id,
+`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun,latest_decode}` with UUID id,
 mode spectrum/ft4/ft8, existing receive states and safe counters. available_count is
 next_sequence-first_sequence (0..2048 retained records), not lifetime publication count.
 last_overrun is null or the latest abandoned analysis half-open
@@ -454,6 +502,24 @@ Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
 nonnegative integer uncertainty/null and external_accuracy unknown. Snapshot<=8192 bytes.
+
+latest_decode is null until an attempt publishes a view, otherwise exactly
+`{id,first_sequence,next_sequence,period_start_utc,complete}`. id is a positive safe
+integer increasing per publication within the source/job epoch. Sequence bounds are
+nonnegative safe integers, first_sequence<=next_sequence<=the publication-end counter
+frozen with this descriptor. Correlated period_start_utc is the selected mode's UTC
+period start string; bounds enclose retained records matching that period, or both
+equal the frozen publication end when empty. Uncorrelated period_start_utc is null and
+bounds identify newly published records of that attempt. complete is boolean, true
+only for a normally finished attempt. Snapshot/page read the descriptor atomically
+with their own result counters. Known gaps clear it without reusing IDs; new jobs/source
+epochs reset it and the ID. Retention/cursor expiry remains authoritative after eviction.
+
+Live records extend12.7 with exactly period_start_utc and dt_seconds, both null without
+station clock correlation. Otherwise period_start_utc identifies the nearest nominal
+period and dt_seconds is finite in[-7.5,7.5) for FT8 or[-3.75,3.75) for FT4 under4.7.4.
+The native numerical Decode shape is unchanged. These extra live fields remain inside
+the2048-byte live record cap; existing1024-byte modem-history accounting is unchanged.
 
 `POST /receive/start` requires exactly `{v,profile_id,boot_id,generation,profile_revision,mode}`;
 mode spectrum/ft4/ft8. Admission uses the current immutable settings and existing single
@@ -468,7 +534,7 @@ Knownmarkedgaps keepcontext/globalframes but resetanalysis/private modem state.
 
 `GET /receive/results` requires source_id,job_id,generation,cursor and optional limit1..16
 (default16) query keys; mode must be ft4/ft8. Exact page keys are
-`{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records}`.
+`{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records,latest_decode}`.
 UUID identities, mode, state, error, search_limited and shared record
 payload/field/text/SNR/frequency shapes follow12.7. Live counter/retained domains follow12.8.
 

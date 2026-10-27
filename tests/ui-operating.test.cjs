@@ -32,10 +32,10 @@ function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});retur
 function liveFixture(idle){
   return {...idle,audio:{state:'running',device_id:'test-only-unopened-input',device_name:null,error:null,retry_after_ms:null},
     source:{id:crypto.randomUUID(),kind:'live',sample_rate:12000,channels:1,next_frame:4800,segment:0},
-    job:{id:crypto.randomUUID(),mode:'ft8',state:'running',error:null,processed_frames:0,first_sequence:0,next_sequence:0,available_count:0,last_overrun:null}};
+    job:{id:crypto.randomUUID(),mode:'ft8',state:'running',error:null,processed_frames:0,first_sequence:0,next_sequence:0,available_count:0,last_overrun:null,latest_decode:null}};
 }
 function emptyResults(s){return {v:1,profile_id:s.profile_id,boot_id:s.boot_id,source_id:s.source.id,job_id:s.job.id,generation:s.generation,
-  mode:s.job.mode,state:s.job.state,error:null,search_limited:false,first_sequence:0,next_sequence:0,available_count:0,next:0,more:false,records:[]};}
+  mode:s.job.mode,state:s.job.state,error:null,search_limited:false,first_sequence:0,next_sequence:0,available_count:0,next:0,more:false,records:[],latest_decode:s.job.latest_decode};}
 
 async function chooseDisplay(page,value){
   await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
@@ -386,4 +386,40 @@ test('TC-007-002 populated Band Activity has dominant width and complete readabl
   await page.screenshot({path:`test-results/ui-operating/band-activity-${width}-${scale}x.png`,fullPage:true});
  }
  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-09; TC-007-006. Explicit presentation/clock fixtures, never modem/RF truth.
+test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot restore old stations',{timeout:45000},async t=>{
+  let state,records,held=null,hold=false;const pending=deferred();
+  const makeRecord=(sequence,period,dt)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12.3,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`UI FIXTURE STATION ${sequence}`,fields:{},period_start_utc:period,dt_seconds:dt});
+  const period='2026-10-27T12:00:15.0000000Z';
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    records=[makeRecord(0,'2026-10-27T12:00:00.0000000Z',0),...Array.from({length:18},(_,i)=>makeRecord(i+1,period,i===0?-0.2:i===1?0.2:-0.01))];
+    Object.assign(state.job,{first_sequence:0,next_sequence:19,available_count:19,latest_decode:{id:1,first_sequence:1,next_sequence:19,period_start_utc:period,complete:true}});
+    await page.route('**/receive',route=>route.fulfill({json:state}));
+    await page.route('**/receive/results?*',async route=>{
+      const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),limit=Number(new URL(route.request().url()).searchParams.get('limit'));
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      const response={...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)};
+      if(hold&&cursor>=35){held={route,response};pending.resolve();}else await route.fulfill({json:response});
+    });
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===18);
+  assert.doesNotMatch(await page.locator('#band-activity tbody').innerText(),/STATION 0\b/);
+  const cells=page.locator('tr[data-result-id]').first().locator('td');assert.equal(await cells.nth(0).textContent(),'12:00:15');assert.equal(await cells.nth(2).textContent(),'-0.2');
+  assert.equal(await page.locator('tr[data-result-id]').nth(1).locator('td').nth(2).textContent(),'+0.2');assert.equal(await page.locator('tr[data-result-id]').nth(2).locator('td').nth(2).textContent(),'+0.0');
+  for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(await cells.evaluateAll(nodes=>nodes.filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent)),[]);}
+  await page.evaluate(()=>document.documentElement.style.fontSize='16px');
+  const nextPeriod='2026-10-27T12:00:30.0000000Z';records.push(...Array.from({length:18},(_,i)=>makeRecord(i+19,nextPeriod,0.1)));
+  Object.assign(state.job,{next_sequence:37,available_count:37,latest_decode:{id:2,first_sequence:19,next_sequence:37,period_start_utc:nextPeriod,complete:false}});hold=true;
+  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await pending.promise;
+  assert.equal(await page.locator('tr[data-result-id]').count(),16);assert.match(await page.locator('#band-activity header').innerText(),/Partial.*Loading results/);
+  assert.doesNotMatch(await page.locator('#band-activity tbody').innerText(),/STATION 1\b/);
+  state.job.latest_decode={id:3,first_sequence:37,next_sequence:37,period_start_utc:'2026-10-27T12:00:45.0000000Z',complete:true};
+  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===0);
+  await held.route.fulfill({json:held.response});held=null;hold=false;
+  await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-result-id]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
+  assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
 });

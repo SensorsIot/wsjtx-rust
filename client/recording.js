@@ -26,7 +26,7 @@ const bands=document.createElement('section');bands.id='band-strip';bands.classN
 bands.innerHTML='<span class="op-eyebrow">BAND</span>'+['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'].map(band=>`<button type="button" disabled title="CAT tuning unavailable">${band}</button>`).join('');
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest receive periods</span></div><button type="button" class="op-filter" disabled title="Server filtering unavailable">&#9663; All decodes</button></header><div class="op-search"><input disabled aria-label="Find a callsign or message" placeholder="Find callsign or message&#8230;"><span>Unavailable</span></div><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">Time</th><th scope="col">SNR</th><th scope="col">DT</th><th scope="col">Hz</th><th scope="col">Message</th><th scope="col">Status</th></tr></thead><tbody role="rowgroup"><tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div><footer><span class="op-selection-dot"></span>Station selection requires decoded results<span class="op-muted">No sample data</span></footer></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div><button type="button" class="op-filter" disabled title="Server filtering unavailable">&#9663; All decodes</button></header><div class="op-search"><input disabled aria-label="Find a callsign or message" placeholder="Find callsign or message&#8230;"><span>Unavailable</span></div><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">Time</th><th scope="col">SNR</th><th scope="col">DT</th><th scope="col">Hz</th><th scope="col">Message</th><th scope="col">Status</th></tr></thead><tbody role="rowgroup"><tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div><footer><span class="op-selection-dot"></span>Station selection requires decoded results<span class="op-muted">No sample data</span></footer></section>
 <section id="rx-focus" class="message-pane op-card op-contact" aria-labelledby="focus-heading"><header><div><h3 id="focus-heading">Current QSO</h3><span class="op-muted">No active contact &#183; transmission unavailable</span></div><span class="op-contact-badge">Unavailable</span></header><div class="op-contact-body"><div class="op-contact-identity"><div><strong>No station selected</strong><span>Contact selection requires decoded results</span></div></div><ol class="op-qso-steps" aria-label="QSO progression"><li><span>1</span>Call</li><li><span>2</span>Report</li><li><span>3</span>Confirm</li><li><span>4</span>Log</li></ol><div class="op-receive-bubble"><span>LAST RECEIVED <time>Unknown</time></span><p>No received contact message</p></div><div class="op-frequency-fields"><label>Rx audio<input disabled placeholder="Unknown"><span>Hz</span></label><label>Tx audio<input disabled placeholder="Unknown"><span>Hz</span></label><button type="button" disabled title="Tuning unavailable">Rx &#8594; Tx</button></div><div class="op-next-label"><span>NEXT MESSAGE</span><select disabled aria-label="Transmit period unavailable"><option>Period</option></select></div><select class="op-message-select" disabled aria-label="Next outgoing message unavailable"><option>No outgoing message</option></select><div class="op-auto-row"><label class="op-check"><input type="checkbox" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" class="op-text-button" disabled>Prepare CQ</button></div><div class="op-contact-actions"><button type="button" class="op-primary" disabled aria-describedby="transmit-unavailable"><span aria-hidden="true">&#9655;</span>Enable Tx</button><button type="button" disabled aria-describedby="contact-unavailable">Log contact</button></div><p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Contact workflow and logging are unavailable.</p></div></section>
 <section id="strategy-panel" class="op-card op-strategy" aria-labelledby="strategy-heading"><header><div><h3 id="strategy-heading">&#10023; Strategy</h3><span class="op-muted">Server execution</span></div><span class="op-state">Unavailable</span></header><div class="op-strategy-body"><div class="op-strategy-name"><strong>No active definition</strong></div><p class="op-muted op-strategy-description">The station does not yet offer strategy execution. No browser-side selection or automation is running.</p><div class="op-rule-chips"><span>Filters unavailable</span><span>Ranking unavailable</span></div><div class="op-candidate"><span class="op-eyebrow">SELECTED CANDIDATE</span><strong>None</strong><p>No server-confirmed candidate or decision.</p></div><div class="op-policy-summary"><span>Reply attempts<strong>Unavailable</strong></span><span>Stop condition<strong>Unavailable</strong></span><span>Transmission<strong>Unavailable</strong></span></div><button type="button" class="op-primary" disabled title="Strategy service unavailable">&#9655; Resume strategy</button><button type="button" class="op-edit-definition" data-region="strategies">View definition <span>&#8594;</span></button></div></section></div>`;
 controls.prepend(workspace);
@@ -400,9 +400,28 @@ tuning.querySelector('.op-decode-group').remove();
 tuning.insertBefore(receiveControls,tuning.querySelector('.op-period'));
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
-let receiveMutationEpoch=0,liveRevision=0;
+let receiveMutationEpoch=0,liveRevision=0,resultView=null;
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
 const receiveStatus=document.querySelector('#receive-status');
+function validPeriodTime(value,mode){
+  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
+}
+function validLatestDecode(view,mode,end){
+  if(view===null)return true;
+  return view&&Object.keys(view).sort().join(',')==='complete,first_sequence,id,next_sequence,period_start_utc'&&
+    ['id','first_sequence','next_sequence'].every(k=>Number.isSafeInteger(view[k])&&view[k]>=0)&&view.id>0&&
+    view.first_sequence<=view.next_sequence&&view.next_sequence<=end&&typeof view.complete==='boolean'&&
+    (view.period_start_utc===null||validPeriodTime(view.period_start_utc,mode));
+}
+function applyLatestDecode(view,first){
+  if(resultView&&view&&view.id<resultView.id)return false;
+  if(resultView&&view&&view.id===resultView.id){if(['id','first_sequence','next_sequence','period_start_utc','complete'].some(k=>view[k]!==resultView[k]))throw new Error('Changed decode descriptor');return true;}
+  if(resultView===null&&view===null)return true;
+  resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
+  if(view&&first>view.first_sequence)historyIncomplete=true;
+  renderResults();return true;
+}
+function periodLabel(value,mode){return value?value.slice(11,mode==='ft4'?21:19):'Unknown';}
 function validLiveSnapshot(s){
   const shape=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===keys;
   const counter=n=>Number.isSafeInteger(n)&&n>=0;
@@ -413,7 +432,7 @@ function validLiveSnapshot(s){
   if(!shape(a,'device_id,device_name,error,retry_after_ms,state')||!['closed','opening','running','closing','unavailable'].includes(a.state)||![a.device_id,a.device_name,a.error].every(nullableText)||(a.retry_after_ms!==null&&(!counter(a.retry_after_ms)||a.retry_after_ms>8000)))return false;
   if(source!==null&&(!shape(source,'channels,id,kind,next_frame,sample_rate,segment')||!uuid(source.id)||source.kind!=='live'||source.sample_rate!==12000||source.channels!==1||!counter(source.next_frame)||!counter(source.segment)))return false;
   if(j!==null){
-    if(!shape(j,'available_count,error,first_sequence,id,last_overrun,mode,next_sequence,processed_frames,state')||!uuid(j.id)||!['spectrum','ft4','ft8'].includes(j.mode)||!['running','cancelling','completed','cancelled','failed'].includes(j.state)||!nullableText(j.error)||!['first_sequence','next_sequence','available_count','processed_frames'].every(key=>counter(j[key]))||j.available_count!==j.next_sequence-j.first_sequence||j.available_count>2048)return false;
+    if(!shape(j,'available_count,error,first_sequence,id,last_overrun,latest_decode,mode,next_sequence,processed_frames,state')||!uuid(j.id)||!['spectrum','ft4','ft8'].includes(j.mode)||!['running','cancelling','completed','cancelled','failed'].includes(j.state)||!nullableText(j.error)||!['first_sequence','next_sequence','available_count','processed_frames'].every(key=>counter(j[key]))||j.available_count!==j.next_sequence-j.first_sequence||j.available_count>2048||!validLatestDecode(j.latest_decode,j.mode,j.next_sequence))return false;
     const o=j.last_overrun;
     if(o!==null&&(!source||!shape(o,'end_frame,first_frame')||!counter(o.first_frame)||!counter(o.end_frame)||o.first_frame>=o.end_frame||o.end_frame>source.next_frame))return false;
   }
@@ -445,16 +464,20 @@ async function receiveSync(current=socket){
     if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
-      resultRows=[];resultCursor=data.job?.first_sequence??0;historyIncomplete=false;
+      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;
       if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
-    live=data;liveRevision++;uncertainMutation=false;receiveFailure='';receiveShow();show();
+    live=data;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
   }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
   finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
 }
 function renderResults(){
   const body=document.querySelector('#band-activity tbody');
+  const loading=resultView&&resultCursor<resultView.next_sequence;
+  document.querySelector('#band-activity header .op-muted').textContent=resultView?
+    `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
+  document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
   document.querySelector('#band-activity .op-count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
   if(!resultRows.length){
     body.innerHTML='<tr><td colspan="6" class="empty-messages"><strong></strong><span></span></td></tr>';
@@ -464,6 +487,7 @@ function renderResults(){
       const mode=job.mode.toUpperCase();
       heading=job.state==='running'?(connection.dataset.state==='connected'?`Listening for ${mode}`:`${mode} receive status stale`):job.state==='cancelling'?`Stopping ${mode} receive`:`${mode} receive ${job.state}`;
       message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
+      if(resultView){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
     }
     body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;return;
   }
@@ -471,15 +495,16 @@ function renderResults(){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   for(const record of resultRows){
     const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${liveIdentity(live)}/${record.sequence}`;row.dataset.sequence=String(record.sequence);
-    for(const [index,text] of [`${(record.start_frame/12000).toFixed(3)} s`,record.snr_db===null?'—':record.snr_db.toFixed(1),'—',record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status].entries()){
+    for(const [index,text] of [periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(1),record.dt_seconds===null?'—':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status].entries()){
       const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;row.append(cell);
     }
     body.append(row);
   }
 }
 function validRecord(r){
-  return r&&Object.keys(r).sort().join(',')==='fields,frequency_hz,i3,n3,payload77,sequence,snr_db,start_frame,status,text'&&
+  return r&&Object.keys(r).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
     Number.isSafeInteger(r.sequence)&&r.sequence>=0&&Number.isSafeInteger(r.start_frame)&&r.start_frame>=0&&
+    ((r.period_start_utc===null&&r.dt_seconds===null)||(validPeriodTime(r.period_start_utc,live.job.mode)&&Number.isFinite(r.dt_seconds)&&r.dt_seconds>=-(live.job.mode==='ft8'?7.5:3.75)&&r.dt_seconds<(live.job.mode==='ft8'?7.5:3.75)))&&
     Number.isFinite(r.frequency_hz)&&r.frequency_hz>=200&&r.frequency_hz<=3500&&
     (r.snr_db===null||(Number.isFinite(r.snr_db)&&r.snr_db>=-60&&r.snr_db<=60))&&
     typeof r.payload77==='string'&&/^[01]{77}$/.test(r.payload77)&&Number.isInteger(r.i3)&&r.i3>=0&&r.i3<=7&&
@@ -500,12 +525,19 @@ async function receiveResults(){
       historyIncomplete=true;resultCursor=page.first_sequence;receiveShow();return;
     }
     if(!response.ok)throw new Error(page.error?.code??'Result request failed');
-    const keys='available_count,boot_id,error,first_sequence,generation,job_id,mode,more,next,next_sequence,profile_id,records,search_limited,source_id,state,v';
+    const keys='available_count,boot_id,error,first_sequence,generation,job_id,latest_decode,mode,more,next,next_sequence,profile_id,records,search_limited,source_id,state,v';
     if(Object.keys(page).sort().join(',')!==keys||page.v!==1||page.profile_id!==live.profile_id||page.boot_id!==live.boot_id||page.source_id!==live.source.id||page.job_id!==live.job.id||page.generation!==live.generation||page.mode!==live.job.mode||typeof page.search_limited!=='boolean'||!Array.isArray(page.records)||page.records.length>(profileSelect.value==='thin'?1:16))throw new Error('Invalid result page');
     for(const key of ['first_sequence','next_sequence','available_count','next'])if(!Number.isSafeInteger(page[key])||page[key]<0)throw new Error('Invalid result counter');
     if(page.available_count!==page.next_sequence-page.first_sequence||page.available_count>2048||page.next!==cursor+page.records.length||page.next>page.next_sequence||page.more!==(page.next<page.next_sequence)||cursor<page.first_sequence)throw new Error('Invalid result window');
+    if(!validLatestDecode(page.latest_decode,page.mode,page.next_sequence))throw new Error('Invalid decode descriptor');
     for(let i=0;i<page.records.length;i++)if(!validRecord(page.records[i])||page.records[i].sequence!==cursor+i)throw new Error('Invalid decoded record');
-    resultCursor=page.next;resultRows.push(...page.records);resultRows=resultRows.slice(-2048);
+    if(!applyLatestDecode(page.latest_decode,page.first_sequence))return;
+    if(resultView){
+      resultCursor=Math.max(resultCursor,page.next);
+      const known=new Set(resultRows.map(r=>r.sequence));
+      resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
+      resultRows=resultRows.slice(-2048);
+    }else resultCursor=page.next;
     live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
   }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
   finally{resultPending=false;}
