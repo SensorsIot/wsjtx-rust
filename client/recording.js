@@ -96,7 +96,16 @@ function showRegion(name,opener){
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
 addEventListener('keydown',event=>{if(event.key==='F2'){event.preventDefault();showRegion('server-settings',document.querySelector('#open-server-settings'));}else if(event.key==='Escape'&&currentRegion!=='operate'){event.preventDefault();showRegion('operate');}});
 const profileSelect=document.querySelector('#display-profile');
-profileSelect.value=location.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(location.hostname)?'detail':'thin';
+const defaultDisplayProfile=()=>location.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(location.hostname)?'detail':'thin';
+const displayPreferenceKey=id=>`wstx.display-profile.v1:${id}`;
+let restoredDisplayProfile;
+function displayPreferenceId(){const id=profileData?.profile_id;return typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)?id:null;}
+function restoreDisplayPreference(){
+  const id=displayPreferenceId();if(id===restoredDisplayProfile)return;restoredDisplayProfile=id;
+  let saved=null;if(id)try{saved=localStorage.getItem(displayPreferenceKey(id));}catch{}
+  profileSelect.value=['detail','thin','off'].includes(saved)?saved:defaultDisplayProfile();
+}
+restoreDisplayPreference();
 let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=2, fallbackText='', detailRequest;
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
 function paletteRGB(t){
@@ -296,7 +305,7 @@ async function request(path,options={}) {
   const data=await response.json();if(!response.ok) throw new Error(data.error?.code || 'request_failed');return data;
 }
 async function sync(current=socket) {
-  if(current!==socket)return;if(syncPending){syncAgain=true;return;}syncPending=true;
+  if(current!==socket)return;restoreDisplayPreference();if(syncPending){syncAgain=true;return;}syncPending=true;
   try {
     const data=await request('/recording');if(current!==socket) return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
@@ -378,7 +387,7 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
   if(!id && !snapshot?.job){await sync();return;}
   try{const outcome=await request(id?`/recording/imports/${id}`:`/recording/jobs/${snapshot.job.id}`,{method:'DELETE'});await sync();if(id){importOutcome={...outcome,generation:snapshot.generation};show();}}catch(error){progress.textContent=`Cancellation outcome unknown · ${error.message}`;await sync();}
 });
-profileSelect.addEventListener('change',()=>{rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
+profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
 const receiveControls=document.createElement('div');receiveControls.id='live-receive-controls';

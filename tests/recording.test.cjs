@@ -24,17 +24,17 @@ before(async()=>{
 });
 after(async()=>{await browser?.close();if(root)await fs.rm(root,{recursive:true,force:true});});
 async function port(){const s=net.createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=s.address().port;await new Promise(r=>s.close(r));return p;}
-async function fixture(t,{thin=false}={}){
+async function fixture(t,{thin=false,secure=false}={}){
   const dir=await fs.mkdtemp(path.join(root,'station-')),p=await port(),profile_id=crypto.randomUUID();
   const proxy=thin?await link({host:'127.0.0.2',port:1}):null;
   if(proxy)proxy.target.port=proxy.port;
-  const origin=thin?`https://localhost:${proxy.port}`:`http://127.0.0.1:${p}`;
-  const doc={schema_version:1,profile_id,revision:0,display_name:'Recording <station>',callsign:'TEST1',locator:'JN47AA',endpoint:{bind:thin?`127.0.0.2:${proxy.port}`:`127.0.0.1:${p}`,origin:thin?origin:null},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
+  const origin=thin?`https://localhost:${proxy.port}`:secure?`https://localhost:${p}`:`http://127.0.0.1:${p}`;
+  const doc={schema_version:1,profile_id,revision:0,display_name:'Recording <station>',callsign:'TEST1',locator:'JN47AA',endpoint:{bind:thin?`127.0.0.2:${proxy.port}`:`127.0.0.1:${p}`,origin:thin||secure?origin:null},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const token=crypto.randomBytes(32).toString('hex'),env=thin?{...tls,WSTX_TOKEN:token}:{};
+  const token=crypto.randomBytes(32).toString('hex'),env=thin||secure?{...tls,WSTX_TOKEN:token}:{};
   let app=await server(env,['--profile',dir]);
   const context=await browser.newContext({ignoreHTTPSErrors:true});
-  if(thin){const res=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token});assert.equal(res.status(),204);}
+  if(thin||secure){const res=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token});assert.equal(res.status(),204);}
   t.after(async()=>{await context.close();await app.close();await proxy?.close();});
   async function req(route,method='GET',body,headers={},direct=false){
     const target=direct&&thin?`https://127.0.0.2:${proxy.port}`:origin;
@@ -299,6 +299,15 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
   },s);
   assert.equal(observation.ignored,0);assert.equal(observation.count,120);assert.equal(observation.sequences,Array.from({length:120},(_,n)=>n).join(','));assert.deepEqual(observation.pixel,[96,96,96,255]);assert.match(observation.label,/visible source time/);
   await f.req('/recording/jobs/'+s.job.id,'DELETE');await terminal(f);
+});
+
+// Proves: CL-006-03/04; TC-010-005. Actual fast TLS server and browser; no source or decoded-message fixture.
+test('TC-010-005 HTTPS keeps Thin default and restores explicit Detailed on reload',{timeout:15000},async t=>{
+  const f=await fixture(t,{secure:true}),p=await page(f);
+  assert.equal(await p.inputValue('#display-profile'),'thin','HTTPS default stays Thin');
+  await p.selectOption('#display-profile','detail');await p.reload();await p.locator('#display-profile').waitFor({state:'attached'});
+  assert.equal(await p.inputValue('#display-profile'),'detail','explicit HTTPS Detailed survives reload without changing defaults');
+  const saved=await p.evaluate(()=>Object.entries(localStorage));assert.equal(saved.length,1);assert.match(saved[0][0],/^wstx\.display-profile\.v1:[0-9a-f-]{36}$/);assert.equal(saved[0][1],'detail');
 });
 
 // Proves: CL-006-03/04; TC-010-005, real native detail wire and independent pixel/geometry oracle.
