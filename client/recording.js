@@ -411,6 +411,7 @@ function validLiveSnapshot(s){
   return shape(c,'basis,canonical_anchor_frame,correlated,external_accuracy,uncertainty_ns,utc_anchor')&&c.basis==='system_utc'&&typeof c.correlated==='boolean'&&c.external_accuracy==='unknown'&&(c.canonical_anchor_frame===null||counter(c.canonical_anchor_frame))&&(c.correlated?typeof c.utc_anchor==='string'&&Number.isFinite(Date.parse(c.utc_anchor))&&counter(c.uncertainty_ns)&&c.uncertainty_ns<=2000000:c.utc_anchor===null&&c.uncertainty_ns===null);
 }
 function receiveShow(){
+  if(!resultRows.length)renderResults();
   const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
   document.querySelector('#receive-start').disabled=!connected||!live||!!active||mutationPending||uncertainMutation||!profileData?.settings.audio.input_device;
   document.querySelector('#receive-stop').disabled=!connected||!active||mutationPending||uncertainMutation||live.job.state==='cancelling';
@@ -447,7 +448,15 @@ function renderResults(){
   const body=document.querySelector('#band-activity tbody');
   document.querySelector('#band-activity .op-count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
   if(!resultRows.length){
-    body.innerHTML='<tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr>';return;
+    body.innerHTML='<tr><td colspan="6" class="empty-messages"><strong></strong><span></span></td></tr>';
+    const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
+    let heading='Decoder unavailable',message='No decoded messages are available from this server.';
+    if(decoder){
+      const mode=job.mode.toUpperCase();
+      heading=job.state==='running'?(connection.dataset.state==='connected'?`Listening for ${mode}`:`${mode} receive status stale`):job.state==='cancelling'?`Stopping ${mode} receive`:`${mode} receive ${job.state}`;
+      message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
+    }
+    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;return;
   }
   body.replaceChildren();
   for(const record of resultRows){

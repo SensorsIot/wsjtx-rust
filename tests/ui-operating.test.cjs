@@ -35,7 +35,31 @@ function liveFixture(idle){
     job:{id:crypto.randomUUID(),mode:'ft8',state:'running',error:null,processed_frames:0,first_sequence:0,next_sequence:0,available_count:0,last_overrun:null}};
 }
 function emptyResults(s){return {v:1,profile_id:s.profile_id,boot_id:s.boot_id,source_id:s.source.id,job_id:s.job.id,generation:s.generation,
-  mode:'ft8',state:s.job.state,error:null,search_limited:false,first_sequence:0,next_sequence:0,available_count:0,next:0,more:false,records:[]};}
+  mode:s.job.mode,state:s.job.state,error:null,search_limited:false,first_sequence:0,next_sequence:0,available_count:0,next:0,more:false,records:[]};}
+
+// Proves: CL-010-07/08; TC-007-002. Valid empty-state wire fixture only; no decoded messages or decoder-success claim.
+test('TC-007-002 empty live receive distinguishes listening from unavailable',{timeout:15000},async t=>{
+  let current,idle;
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
+    idle=await (await fetch(app.origin+'/receive')).json();current=liveFixture(idle);current.job.mode='ft4';
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:current});});
+    await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(current)}));
+  }});
+  const empty=page.locator('#band-activity .empty-messages');
+  await empty.filter({hasText:'Listening for FT4'}).waitFor();
+  for(const mode of ['ft4','ft8'])for(const state of ['running','cancelling','completed','cancelled','failed']){
+    current={...current,job:{...current.job,mode,state}};await page.evaluate(()=>receiveSync());
+    const heading=state==='running'?`Listening for ${mode.toUpperCase()}`:state==='cancelling'?`Stopping ${mode.toUpperCase()} receive`:`${mode.toUpperCase()} receive ${state}`;
+    assert.equal(await empty.locator('strong').textContent(),heading);
+    assert.equal(await empty.locator('span').textContent(),['running','cancelling'].includes(state)?'No verified messages decoded yet.':'No verified messages were decoded.');
+    assert.equal(await page.locator('tr[data-result-id]').count(),0,'empty state never inserts a decoded station');
+  }
+  current={...current,job:{...current.job,mode:'spectrum',state:'running'}};await page.evaluate(()=>receiveSync());
+  assert.equal(await empty.locator('strong').textContent(),'Decoder unavailable');
+  current={...idle};await page.evaluate(()=>receiveSync());
+  assert.equal(await empty.locator('strong').textContent(),'Decoder unavailable');
+  assert.deepEqual(errors,[]);
+});
 
 // Proves: CL-010-07, CL-010-08; TC-009-004. Negative delayed HTTP fixture; no decoder evidence.
 test('receive result race cannot regress a newer cancelled snapshot',{timeout:15000},async t=>{
