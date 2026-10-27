@@ -74,6 +74,11 @@ impl DeepChannel {
             accumulate(&mut cumulative, &posterior);
             if (1..=2).contains(&iteration) {
                 snapshots.push(cumulative);
+                #[cfg(test)]
+                tests::record(tests::Event::Snapshot(
+                    iteration,
+                    *snapshots.last().unwrap(),
+                ));
             }
             let hard = std::array::from_fn(|i| u8::from(posterior[i] < 0.));
             let unsatisfied = self
@@ -81,6 +86,8 @@ impl DeepChannel {
                 .iter()
                 .filter(|row| row.iter().fold(0, |p, &j| p ^ hard[j]) != 0)
                 .count();
+            #[cfg(test)]
+            tests::record(tests::Event::Posterior(iteration, unsatisfied));
             if unsatisfied == 0 && nonzero(&hard) && channel.valid(&hard) {
                 return Ok(vec![hard]);
             }
@@ -98,6 +105,8 @@ impl DeepChannel {
             if iteration == 30 {
                 break;
             }
+            #[cfg(test)]
+            tests::record(tests::Event::Update(iteration));
             for (row, messages) in self.checks.iter().zip(&mut incoming) {
                 budget.checkpoint().await?;
                 let variables = row
@@ -165,6 +174,8 @@ impl OrderedBasis {
         if reliability.iter().any(|x| !x.is_finite()) {
             return Ok(None);
         }
+        #[cfg(test)]
+        tests::record(tests::Event::BasisInput(*reliability));
         let mut columns = (0..174).collect::<Vec<_>>();
         columns.sort_by(|&a, &b| {
             reliability[b]
@@ -243,10 +254,15 @@ impl OrderedBasis {
     }
     async fn nearest(&self, budget: &mut CpuBudget<'_>) -> Result<Option<Bits>, DecodeError> {
         let (mut best, mut cost) = (self.zero, self.cost(self.zero));
+        #[cfg(test)]
+        tests::record(tests::Event::Pattern(0, true));
         for (position, &i) in self.order.iter().enumerate() {
             budget.checkpoint().await?;
             let single = self.zero.xor(self.rows[i]);
-            if self.admissible(single, 1) {
+            let admitted = self.admissible(single, 1);
+            #[cfg(test)]
+            tests::record(tests::Event::Pattern(1, admitted));
+            if admitted {
                 let value = self.cost(single);
                 if value < cost {
                     (best, cost) = (single, value);
@@ -255,7 +271,10 @@ impl OrderedBasis {
             for &j in &self.order[position + 1..] {
                 budget.checkpoint().await?;
                 let pair = single.xor(self.rows[j]);
-                if self.admissible(pair, 2) {
+                let admitted = self.admissible(pair, 2);
+                #[cfg(test)]
+                tests::record(tests::Event::Pattern(2, admitted));
+                if admitted {
                     let value = self.cost(pair);
                     if value < cost {
                         (best, cost) = (pair, value);

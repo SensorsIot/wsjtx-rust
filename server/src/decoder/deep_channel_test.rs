@@ -191,3 +191,218 @@ fn invalid_values_zero_word_and_osd_cancellation() {
     });
     assert_eq!(result.unwrap_err(), DecodeError::Cancelled);
 }
+
+// Observation-only events originate in the production loop/search, never substitute decisions.
+#[derive(Clone, Debug)]
+pub(super) enum Event {
+    Posterior(usize, usize),
+    Update(usize),
+    Snapshot(usize, [f32; 174]),
+    Pattern(usize, bool),
+    BasisInput([f32; 174]),
+}
+thread_local! {
+    static TRACE: std::cell::RefCell<Option<Vec<Event>>> = const {std::cell::RefCell::new(None)};
+}
+pub(super) fn record(event: Event) {
+    TRACE.with(|trace| {
+        if let Some(events) = trace.borrow_mut().as_mut() {
+            events.push(event);
+        }
+    });
+}
+fn trace_start() {
+    TRACE.with(|trace| *trace.borrow_mut() = Some(vec![]));
+}
+fn trace_finish() -> Vec<Event> {
+    TRACE.with(|trace| trace.borrow_mut().take().unwrap())
+}
+fn identity_rows(rank: usize) -> Vec<Bits> {
+    (0..rank)
+        .map(|i| {
+            let mut row = Bits::default();
+            row.set(i);
+            row
+        })
+        .collect()
+}
+
+// Proves: CL-007-03, TC-004-002. Degree-one checks send a constant positive clamped message.
+// -1000 input stays negative for all16 checks, so unsatisfied counts are independently fixed.
+#[test]
+fn production_bp_update_and_early_stop_boundaries() {
+    let channel = Channel::new();
+    for count in [14, 15, 16] {
+        let deep = DeepChannel {
+            generator: identity_rows(1),
+            checks: vec![vec![0]; count],
+        };
+        let mut llr = [0.; 174];
+        llr[0] = -1000.;
+        let cancel = || false;
+        let mut budget = CpuBudget::new(&cancel);
+        trace_start();
+        complete(deep.decode(&channel, &llr, &mut budget)).unwrap();
+        let trace = trace_finish();
+        let posteriors = trace
+            .iter()
+            .filter_map(|event| match event {
+                Event::Posterior(i, n) => Some((*i, *n)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let updates = trace
+            .iter()
+            .filter_map(|event| match event {
+                Event::Update(i) => Some(*i),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let last = if count == 16 { 10 } else { 30 };
+        assert_eq!(
+            posteriors,
+            (0..=last).map(|i| (i, count)).collect::<Vec<_>>()
+        );
+        assert_eq!(updates, (0..last).collect::<Vec<_>>());
+        assert!(posteriors.contains(&(9, count)) && posteriors.contains(&(10, count)));
+        if count <= 15 {
+            assert_eq!(updates.len(), 30);
+            assert_eq!(posteriors.len(), 31);
+        } else {
+            assert_eq!(updates.last(), Some(&9));
+            assert_eq!(posteriors.last(), Some(&(10, 16)));
+        }
+    }
+}
+
+// Proves: CL-007-03, TC-004-002. One degree-two parity check returns the other variable's LLR.
+// L0=L1=1 => C1=C2=1 exactly; stored cumulative snapshots must therefore be3 and5, not2.
+#[test]
+fn production_snapshot_capture_contains_accumulated_full_posteriors() {
+    let channel = Channel::new();
+    let mut row = Bits::default();
+    row.set(0);
+    row.set(1);
+    let deep = DeepChannel {
+        generator: vec![row],
+        checks: vec![vec![0, 1]],
+    };
+    let mut llr = [0.; 174];
+    llr[0] = 1.;
+    llr[1] = 1.;
+    let cancel = || false;
+    let mut budget = CpuBudget::new(&cancel);
+    trace_start();
+    complete(deep.decode(&channel, &llr, &mut budget)).unwrap();
+    let trace = trace_finish();
+    let basis_inputs = trace
+        .iter()
+        .filter_map(|event| match event {
+            Event::BasisInput(input) => Some(input),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(basis_inputs.len(), 2);
+    assert_eq!(&basis_inputs[0][..2], &[3., 3.]);
+    assert_eq!(&basis_inputs[1][..2], &[5., 5.]);
+    let snapshots = trace
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Snapshot(i, s) => Some((i, s)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(snapshots.len(), 2);
+    for ((iteration, snapshot), value) in snapshots.iter().zip([3., 5.]) {
+        assert_eq!(*iteration, if value == 3. { 1 } else { 2 });
+        assert_eq!(&snapshot[..2], &[value, value]);
+        assert!(snapshot[2..].iter().all(|&x| x == 0.));
+    }
+}
+
+// Proves: CL-007-03, TC-004-002. Independent identity-column rank and combinatorial enumeration.
+#[test]
+fn production_rank_and_4187_pattern_boundaries() {
+    let cancel = || false;
+    let mut budget = CpuBudget::new(&cancel);
+    let reliability = [1.; 174];
+    let production = DeepChannel::new(&Channel::new());
+    assert_eq!(production.generator.len(), 91);
+    let production_basis = complete(OrderedBasis::new(
+        &production.generator,
+        &reliability,
+        &mut budget,
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(production_basis.rows.len(), 91);
+    let mut deficient = identity_rows(91);
+    deficient[90] = deficient[89];
+    assert!(
+        complete(OrderedBasis::new(&deficient, &reliability, &mut budget))
+            .unwrap()
+            .is_none()
+    );
+    let basis = complete(OrderedBasis::new(
+        &identity_rows(91),
+        &reliability,
+        &mut budget,
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(basis.rows.len(), 91);
+    trace_start();
+    assert_eq!(
+        complete(basis.nearest(&mut budget)).unwrap(),
+        Some(Bits::default())
+    );
+    let patterns = trace_finish()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Pattern(w, a) => Some((w, a)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    // Independent count: one zero,91 singles,C(91,2)=4095 pairs.
+    assert_eq!(patterns.len(), 4187);
+    assert_eq!(patterns.iter().filter(|&&(w, _)| w == 0).count(), 1);
+    assert_eq!(patterns.iter().filter(|&&(w, _)| w == 1).count(), 91);
+    assert_eq!(patterns.iter().filter(|&&(w, _)| w == 2).count(), 4095);
+    assert_eq!(patterns.get(4185), Some(&(2, true)));
+    assert_eq!(patterns.get(4186), Some(&(1, true)));
+    assert_eq!(patterns.get(4187), None);
+}
+
+// Proves: CL-007-03, TC-004-002. A rank-one code whose only nonzero word is cheaper.
+// Hard-zero pivot costs5 to flip;32/31/30 negative parity signs make that word nearer.
+// In first40 parity columns its total mismatch+pattern weight is9/10/11 respectively.
+#[test]
+fn production_prefilter_9_10_11_controls_nearest_word() {
+    for total in [9, 10, 11] {
+        let mut row = Bits::default();
+        for i in 0..=40 {
+            row.set(i);
+        }
+        let mut reliability = [0.01; 174];
+        reliability[0] = 5.;
+        for value in &mut reliability[1..=41 - total] {
+            *value = -1.;
+        }
+        let cancel = || false;
+        let mut budget = CpuBudget::new(&cancel);
+        let basis = complete(OrderedBasis::new(&[row], &reliability, &mut budget))
+            .unwrap()
+            .unwrap();
+        trace_start();
+        let actual = complete(basis.nearest(&mut budget)).unwrap().unwrap();
+        let patterns = trace_finish()
+            .into_iter()
+            .filter_map(|event| match event {
+                Event::Pattern(w, a) => Some((w, a)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(patterns, vec![(0, true), (1, total <= 10)]);
+        assert_eq!(actual, if total <= 10 { row } else { Bits::default() });
+    }
+}
