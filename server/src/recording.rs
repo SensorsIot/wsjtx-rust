@@ -646,7 +646,7 @@ impl Recording {
             if let Some((record, _)) = matching.next() {
                 let first = record["sequence"].as_u64().ok_or("decode_limit")?;
                 let last = matching
-                    .last()
+                    .next_back()
                     .map(|(r, _)| r["sequence"].as_u64().unwrap())
                     .unwrap_or(first);
                 (first, last + 1)
