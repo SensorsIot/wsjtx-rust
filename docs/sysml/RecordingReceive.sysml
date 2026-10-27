@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 1ea13cce8f6a1d107569d4d890e9d7ecde0d3b8c244dcdbc892a4a1d31f0b35b
+// Canonical FSD slices SHA256: 45737bb9baa8856aa9c0883da94cddbd5211a230b3f111fe409efda4d6ddb935
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -43,12 +43,6 @@ package WstxRecordingReceive {
         attribute detailRowFrames : Integer = 2400;
         attribute detailRows : Integer = 600;
         attribute detailIntervalMs : Integer = 200;
-        attribute detailRetainedFrames : Integer = 8;
-        attribute detailRetainedEventBytes : Integer = 16384;
-        attribute detailTokenRatePerSecond : Real = 5.0;
-        attribute detailTokenCapacity : Real = 2.0;
-        attribute detailInitialTokens : Real = 1.0;
-        attribute detailNormalWakeLatenessMs : Integer = 150;
         attribute detailEventBytes : Integer = 2048;
         attribute detailBase64Chars : Integer = 1368;
         attribute outboundWriteBufferBytes : Integer = 4096;
@@ -263,9 +257,8 @@ package WstxRecordingReceive {
              safe-integer tuple as Thin. Canonical padded standard RFC4648 base64 exactly
              1368chars decodes1024 bytes each0..120. Unknown/missing fields,
              noncanonical encoding, bad bounds/identities/socket are rejected atomically.
-             Retain at most8 immutable Detailed events in station-owned DetailedRowHistory,
-             shared across peers; Thin retains its latest event. Each peer has one
-             eligible cursor and at most one pending wire reference, no decoder job. */
+             Retain one latest immutable frame per profile in existing station state;
+             per peer one replaceable selected frame, not two queues or another job. */
     }
 
     item def RecordedDetailedSpectrumFrame :> DetailedSpectrumFrame {
@@ -562,7 +555,7 @@ package WstxRecordingReceive {
              Right-pad partial windows at EOS; window support is 4096/12000 seconds, can cross row
              boundaries and MUST be stated in the legend alongside 2.9296875 Hz bins and 0.2 s rows.
              The spectrum shows the latest row's levels. Row sequence starts0 and advances even
-             when output is skipped; deliver nominally5 rows/s/peer with DetailedDeliveryPolicy bounded catch-up.
+             when output is skipped; send at most5 rows/s/peer, paced against the source clock.
              Thin continues its exact N2048/four-bin/one-second definition and event schema.
 
              One replay/source reader and one existing station-owned worker produce both profiles
@@ -571,13 +564,13 @@ package WstxRecordingReceive {
              parser/immutable boundary, identities and cancellation checks. Keep at most two source
              blocks plus at most8192 f32 samples in a common bounded history, the two bounded FFT
              workspaces (2048 and4096 complex elements plus their plan-reported scratch), per-profile
-             row accumulators (128 maxima for Thin,1024 power sums and a window count for Detailed), one latest Thin frame and at most8 shared immutable Detailed frames (encoded event bytes<=16384) in station state. Latest Detailed is a reference into that same history. No
+             row accumulators (128 maxima for Thin,1024 power sums and a window count for Detailed) and one latest immutable frame per profile in station state. No
              subscriber-specific FFT or unbounded queue. Process the two independent start schedules
              against this same forward-only SourceFile reader. Release common history before the
              minimum next needed start; read only when space remains and retain lookahead only for
              those windows. Pad outside EOS without increasing actual source positions/progress;
              no second source file/parser, whole-recording float array or additional sample backlog. Starting/replacing/cancelling clears both
-             profiles and Detailed history; publication checks the existing complete current job tuple. Browser keeps
+             latest frames; publication checks the existing complete current job tuple. Browser keeps
              at most600 Detailed rows (120s, 614400 level bytes), or120 Thin rows (15360 level bytes),
              including explicit gap slots, and one pending repaint. These are application retention
              bounds, not total RSS promises.
@@ -742,104 +735,10 @@ package WstxRecordingReceive {
              single Thin fallback/no retry loop. Detailed keeps fast-link/up-to10KiB/s notice and
              no32kbit/s promise; Thin retains all bandwidth limits. */
     }
-    item def DetailedRowHistory {
-        attribute correlation : Correlation;
-        item retained : DetailedSpectrumFrame[0..8];
-        attribute encodedEventBytes : Integer;
-        attribute lastEvictedSequence : Integer = -1;
-        assert constraint evictionWatermark { lastEvictedSequence >= -1 }
-        assert constraint bytesBound { encodedEventBytes >= 0 and encodedEventBytes <= 16384 }
-        doc /* Station receive owner only: immutable, increasing sequences, current full tuple.
-             encodedEventBytes is the sum of retained UTF8 encoded event lengths; count<=8.
-             Latest is retained[last], not an extra event copy. Clear before source/job/generation
-             replacement or cancellation publication; reset lastEvictedSequence=-1. On actual
-             oldest-event eviction beyond8, set lastEvictedSequence to that evicted sequence.
-             Never advance this watermark for an absent source row. No raw samples/FFT work
-             or per-peer row queue. A real source gap remains absent, never filled. */
-    }
-    attribute def DetailedPeerCursor {
-        attribute correlation : Correlation;
-        attribute eligibleFrom : Integer;
-        attribute nextSequence : Integer;
-        attribute tokens : Real = 1.0;
-        attribute epochMonotonicMs : Integer;
-        attribute lastRefillMonotonicMs : Integer;
-        attribute pendingWireReferences : Integer = 0;
-        assert constraint bounded { eligibleFrom >= 0 and nextSequence >= eligibleFrom and tokens >= 0.0 and tokens <= 2.0 and pendingWireReferences >= 0 and pendingWireReferences <= 1 }
-        doc /* On each Detailed selection/reconnect, eligibleFrom=latest sequence+1 (0 if empty),
-             nextSequence=eligibleFrom, tokens=1, new epoch. Off/profile/identity change drops state.
-             Cursor advances only on accepted wire event. First-write deadline survives partial flush. */
-    }
-    calc def RefillDetailedTokens {
-        in previousTokens : Real;
-        in elapsedMonotonicMs : Integer;
-        return tokens : Real = if elapsedMonotonicMs < 0 ? previousTokens else if previousTokens + elapsedMonotonicMs / 200.0 > 2.0 ? 2.0 else previousTokens + elapsedMonotonicMs / 200.0;
-        assert constraint validTokens { previousTokens >= 0.0 and previousTokens <= 2.0 }
-    }
-    calc def SelectDetailedSequence {
-        in nextSequence : Integer;
-        in lastEvictedSequence : Integer;
-        in newestRetainedSequence : Integer;
-        in firstRetainedAtOrAfterCursor : Integer;
-        return selectedSequence : Integer = if nextSequence <= lastEvictedSequence ? newestRetainedSequence else firstRetainedAtOrAfterCursor;
-        doc /* If no retained event exists at/after cursor, wait without output. Otherwise dispatch
-             only an existing eligible/current event. Newest-row resync is allowed only when
-             nextSequence<=lastEvictedSequence proves actual retention eviction. A source gap
-             without eviction selects the first retained row at/after cursor, never newest
-             merely because cursor<oldest retained. Never synthesize absent rows. */
-    }
-    calc def DetailedPhaseDeadline {
-        in epochMonotonicMs : Integer;
-        in tickIndex : Integer;
-        return deadlineMonotonicMs : Integer = epochMonotonicMs + 200 * tickIndex;
-        assert constraint validTick { tickIndex >= 1 }
-        doc /* Advance to next future phase deadline, never last accepted event+200.
-             Eligible backlog may wake at next token availability; no spin or fabricated ticks. */
-    }
-    calc def DetailedEventEligible {
-        in currentFullTuple : Boolean;
-        in selectedProfileIsDetailed : Boolean;
-        in eligibleRowExists : Boolean;
-        in sinkReady : Boolean;
-        in controlReady : Boolean;
-        in controlHeadroomAvailable : Boolean;
-        in pendingWrite : Boolean;
-        in tokens : Real;
-        return allowed : Boolean = currentFullTuple and selectedProfileIsDetailed and eligibleRowExists and sinkReady and not controlReady and controlHeadroomAvailable and not pendingWrite and tokens >= 1.0;
-    }
-    calc def DetailedCursorAfterWrite {
-        in previousNextSequence : Integer;
-        in selectedSequence : Integer;
-        in acceptedBySink : Boolean;
-        return nextSequence : Integer = if acceptedBySink ? selectedSequence + 1 else previousNextSequence;
-    }
-    action def DetailedDeliveryPolicy {
-        in history : DetailedRowHistory;
-        in previousPeer : DetailedPeerCursor;
-        in sinkReady : Boolean;
-        in controlReady : Boolean;
-        in controlHeadroomAvailable : Boolean;
-        in elapsedMonotonicMs : Integer;
-        out accepted : DetailedSpectrumFrame[0..1];
-        out updatedPeer : DetailedPeerCursor;
-        doc /* Refill tokens, select oldest eligible cursor row, or newest eligible only when
-             cursor<=history.lastEvictedSequence proves actual retained-event eviction.
-             Before EACH optional event require current tuple, no ready control/heartbeat,
-             sink readiness, tokens>=1 and existing2048 payload/4096 cap/1052 headroom guards.
-             Only accepted wire output debits1 token and advances cursor; readiness refusal does neither.
-             Re-enter control selection between at most2 catch-up events. Accepted partial flush retains
-             its original2s write deadline and permits no second pending wire reference.
-             Rate bound on every duration d seconds: N<=2+5*d, payload<=4096+10240*d bytes.
-             Healthy exact5Hz source with<=150ms nominal wake lateness loses no eligible row for30s;
-             two peer phases100ms apart obey same rule. Sustained stalls may evict/drop honestly.
-             No replay across off/reconnect, no per-peer producer, no change to Thin32kbit/s policy. */
-    }
-
     action def TransferDisplay {
         in 'frame' : SpectrumFrame[0..1];
         in detailedFrame : DetailedSpectrumFrame[0..1];
         in requestedProfile : DisplayProfile;
-        action detailedDelivery : DetailedDeliveryPolicy;
         doc /* **Opt-in WebSocket extension.** Keep `wstx.v1`, 1024-byte incoming request/frame/message
              limits; outbound Thin/control payloads remain <=1024 bytes. Set the outbound write
              buffer cap to4096 bytes to admit a <=2048-byte Detailed event while reserving a full
@@ -856,7 +755,7 @@ package WstxRecordingReceive {
              Default browser selection is Detailed on every origin, including remote HTTPS,
              using existing1024 native bins at3000/1024 = 2.9296875Hz; no FFT/protocol/source
              resolution change. The selector offers
-             "Detailed (fast link, up to 10 KiB/s average; short bursts)", "Thin (32 kbit/s link)" and Off.
+             "Detailed (fast link, up to 10 KiB/s per viewer)", "Thin (32 kbit/s link)" and Off.
              Without a valid saved choice, Detailed is selected. RestoreDisplayChoice resolves the
              origin/profile-specific BrowserDisplayPreference; explicit selector changes use
              SelectDisplayChoice. Only a user choice persists; runtime Thin fallback does not replace it.
@@ -888,66 +787,16 @@ package WstxRecordingReceive {
              never render partially accepted data. Every encoded Detailed event is<=2048 UTF-8
              bytes; no binary messages, lossy nibble packing or application compression.
 
-             One replaceable pending wire display event per peer is permitted. Thin keeps its
-             existing cadence and latest-only policy. Detailed retains at most8 ordered immutable
-             producer events in station state, shared by all peers, with total retained encoded
-             event bytes<=16384. Retain each event only after validating its current full
-             boot/source/job/generation tuple; append once in increasing sequence order, discard
-             the oldest beyond8. Maintain lastEvictedSequence=-1 initially and update it only
-             when an actual retained event is evicted, to that evicted event's sequence. A source
-             sequence that was never published does not advance this watermark. Clear history
-             and reset the watermark to-1 before publication for replacement, cancellation or
-             a new source epoch. This is visualization state, not decoder/sample history.
-
-             Each Detailed peer has one next-sequence cursor and a monotonic-time token balance.
-             On entering Detailed, including repeated selection, profile switch or reconnect,
-             initialize the cursor after the newest currently retained event (or0 if none),
-             initialize tokens=1 and set a fresh fixed scheduling epoch. No event at or before
-             that subscription boundary is replayed. Select the oldest retained eligible event with sequence at or after
-             the cursor; a source sequence that never existed is not synthesized. Compare the
-             cursor with lastEvictedSequence, not the first retained sequence: resynchronize to
-             the newest retained eligible candidate only if cursor<=lastEvictedSequence. Otherwise
-             select the oldest existing eligible event at or after the cursor, even when the cursor
-             is below the oldest retained sequence because the source never published that row.
-             Commit any cursor change only when the selected write is accepted. A sequence gap
-             remains observable to the browser;
-             never duplicate, interpolate or repaint a missing interval as measured signal.
-
-             Detailed tokens refill continuously at5/s, capped at2; clamp elapsed monotonic time
-             to nonnegative, and debit exactly1 only when an event is accepted by the optional
-             wire sink. A not-ready/headroom-refused write consumes neither token nor cursor;
-             an accepted partially flushed write consumes both and retains the existing2s
-             original-write deadline. A peer may send at most2 events in a catch-up burst and
-             only while tokens>=1. Thus for every elapsed interval d seconds, accepted events
-             are bounded by2+5*d; sustained event payload traffic is<=10240bytes/s plus at most
-             4096bytes burst allowance. No event changes its<=2048-byte wire schema.
-             The Detailed selector notice states the10KiB/s average and short bursts.
-
-             Nominal200ms scheduling deadlines remain anchored to the subscription epoch;
-             normal scheduling lateness never moves the epoch to last-acceptance+200ms. If eligible
-             rows remain, the next token-availability deadline can permit bounded catch-up before
-             the next nominal tick. Skip empty/elapsed deadlines without creating frame data or
-             busy-polling. A continuously ready healthy peer receiving an exact5Hz source loses
-             no eligible row over30seconds when each nominal wake is delayed by at most150ms;
-             this includes two peers whose subscription phases differ by100ms. Real source gaps,
-             evicted history and sustained backpressure still produce honest unknown intervals.
-             This is not a completeness guarantee for stalled peers.
-
-             Control replies and heartbeats take precedence before every optional event, including
-             each catch-up event; never hold the station mutex across socket readiness/write/flush
-             or await a display write in the connection loop. Backpressure on one peer cannot
-             block source publication or another peer. The existing4096-byte sink cap,
-             1024+2*14-byte reserved control headroom,2s pending-write deadline and peer-removal
-             policy remain in force. Off/profile change/reconnect drops cursor, token state and
-             unaccepted pending reference. No pre-subscription or previous-identity rows are sent.
-             Ready status replies and heartbeats take precedence; optional display output is
-             skipped while readiness/control headroom is unavailable. Its guard enforces event payload <=2048 and
+             One replaceable pending display event per peer, of its selected profile, and <=1 Thin
+             or <=5 Detailed sends per second; no replay of old
+             frames after reconnect or off. Ready status replies and heartbeats take precedence;
+             optional display output never waits in the connection loop and is skipped when send
+             readiness/control headroom is unavailable. Its guard enforces event payload <=2048 and
              payload+1024+2*14<=4096; this intentionally replaces the previous996-byte guard, not
              bypasses it. A partially flushed optional write retains the original2s deadline;
              subsequent control output cannot reset or extend that deadline. Switching/off/reconnect
-             forgets prior frame cursors, token state and pending replacements; already buffered output remains
-             bounded and is rejected by browser profile/identity guards. Current-subscription eligible
-             catch-up only; no previous-subscription or stale-identity replay.
+             forgets prior frame cursors and pending replacements; already buffered output remains
+             bounded and is rejected by browser profile/identity guards. No old rows are replayed.
              Maintain existing two-second write deadline and bounded peer removal. Browser schedules
              at most one pending repaint and bounds history as in4.4. For two thin clients, steady
              60-second accounted traffic is<=3000 bytes/s each direction under12.4's unchanged link
@@ -1307,7 +1156,7 @@ package WstxRecordingReceive {
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-004: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames1920/2400/2880 and sources of1/2399/2400/2401/2879/2880/2881 frames with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected power-averaged rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement.
-                 Independent expected oracle: Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, one latest Thin frame and at most8 shared Detailed frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
+                 Independent expected oracle: Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, two latest frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
         }
         dependency tracenativeBinDetail from nativeBinDetail to WstxRequirements::'TC-010-004';
         verification crispDetailTransport {
@@ -1315,7 +1164,7 @@ package WstxRecordingReceive {
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-005: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. Detailed obeys DetailedDeliveryPolicy5-token/s capacity2 catch-up; Thin remains<=1Hz, no pre-subscription backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Explicit Detailed/Thin/Off survives reload and reopened browser context; origin/port/profile UUIDs isolate choices while boot/revision changes preserve them. Invalid/denied storage uses defaults without page errors or disabling memory selection. Only versioned UUID keys and enumerated values are stored, no secrets/traffic. Automatic fallback preserves saved Detailed; explicit Thin replaces it. Existing wire and bandwidth tests remain unchanged, with no synthesized decoded records. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
+                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Explicit Detailed/Thin/Off survives reload and reopened browser context; origin/port/profile UUIDs isolate choices while boot/revision changes preserve them. Invalid/denied storage uses defaults without page errors or disabling memory selection. Only versioned UUID keys and enumerated values are stored, no secrets/traffic. Automatic fallback preserves saved Detailed; explicit Thin replaces it. Existing wire and bandwidth tests remain unchanged, with no synthesized decoded records. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
         }
         dependency tracecrispDetailTransport from crispDetailTransport to WstxRequirements::'TC-010-005';
         verification fullHeightSliderPresentation {
@@ -1326,26 +1175,6 @@ package WstxRecordingReceive {
                  Independent expected oracle: Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With base B=-83,R=30, g=+10 yields E=-93 and g=-30 yields E=-53, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. Sensitivity does not disable/re-estimate Auto; manual Black/Range does, new-job/profile resets only existing base/Auto settings and preserves both slider values. Fixed source-time scrolling, independent pixel movement, clipping, gap and unobserved-region oracles are specified in TC-010-007. Native/projected readouts and rulers agree with that mapping. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a full-height waterfall canvas with unobserved regions dark, dark floor, red strongest traces and visible working live sliders; original numeric/wire/security/Thin32k assertions remain. */
         }
         dependency traceFullHeightSliders from fullHeightSliderPresentation to WstxRequirements::'TC-010-006';
-        verification healthyDetailedContinuity {
-            subject operation : DetailedDeliveryPolicy;
-            objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-010-008: Cost2 Windows actual server/Chromium, independent5Hz150-row producer/30s,
-                 two peers100ms apart, deterministic0/17/149/3/95/0ms nominal-wake jitter. Expected sequences,
-                 marked native-bin values, token time arithmetic and RGB gap geometry are authored independently.
-                 All eligible healthy rows exactly once/inorder with no grey slots; shared values byte-identical.
-                 Exercise0/1/8/9 history, oldest eviction, true source gaps, not-ready/partial sinks, control priority,
-                 Exact vector: accepted4,cursor5,row5neverpublished,retained6/7/8,lastEvicted=-1 selects6,not8.
-                 Refusal retains cursor5/tokens; accepting6 advances7. Empty/noeligible emitsnothing.
-                 Evicting actual6 sets lastEvicted6 and then permits newest resync forcursor5.
-                 blocked peer, off/profile/reconnect and stale publication. Bound8 events/16384 encoded bytes,
-                 one pending wire reference, N<=2+5*d,<=2048 event bytes,4096 cap,1052 headroom, original2s deadline,
-                 unchanged status<=2s and Thin/Off TLS32kbit/s tests. Eviction resyncs newest eligible and shows
-                 genuine skipped intervals grey; never fabricated signal or pre-subscription backfill.
-                 Cost4 authorized HB9BLA/operator browser: >=60s two healthy phased peers with consecutive source sequences between observed first/last,
-                 shared rows byte-identical and no audio epoch loss, plus actual waterfall; no pacing-created grey bands, real overload remains unknown.
-                 RF callsigns are live acceptance, not the independently known numerical bin oracle. */
-        }
-        dependency traceHealthyDetailedContinuity from healthyDetailedContinuity to WstxRequirements::'TC-010-008';
         verification sourceTimeScroll {
             subject operation : PresentStation;
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }

@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 607c5f7dec49061d441172689ed8840c4cccc831fa5f83742d2cc562d7cd0077
+// Canonical FSD slices SHA256: 6c73dc6a9720bb7bc79d64ee7a1b8338fbd34a3a8bfe7d6c5345012a937c5b96
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
