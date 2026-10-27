@@ -288,7 +288,6 @@ function show() {
   if(active) progress.textContent = snapshot.import ? `${active.state} · ${active.total_bytes === null ? 'awaiting upload' : `${active.received_bytes} / ${active.total_bytes} bytes`}` : `${active.state} · ${active.processed_frames} frames`;
   else if(importOutcome && importOutcome.generation===snapshot?.generation) progress.textContent=`Import ${importOutcome.state}${importOutcome.error ? ` · ${importOutcome.error}` : ''}`;
   else if(snapshot?.job) progress.textContent = `${snapshot.job.state}${snapshot.job.error ? ` · ${snapshot.job.error}` : ''} · ${snapshot.job.processed_frames} frames`;
-  signal.querySelector('h2').textContent=live?.job?'Live receive':'Recorded receive';
   signal.setAttribute('aria-label',live?.job?'Live spectrum and waterfall':'Recorded spectrum and waterfall');
   if(live?.job){statusText.textContent=`Live ${live.job.mode.toUpperCase()} · ${live.audio.state} · ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`;}
 }
@@ -420,9 +419,10 @@ function receiveShow(){
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
     capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
+    statusBar.children[1].textContent=`Audio ${live.audio.state} \u00b7 ${live.job?`${live.job.mode.toUpperCase()} ${live.job.state}`:'Receive stopped'} \u00b7 CAT unavailable`;
     const focus=document.querySelector('#rx-focus .op-contact-identity');
     if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
-    else{focus.querySelector('strong').textContent='Decoder unavailable';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
+    else{focus.querySelector('strong').textContent='No station selected';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
   }
 }
 async function receiveSync(current=socket){

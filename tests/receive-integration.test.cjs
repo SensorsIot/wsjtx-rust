@@ -39,14 +39,18 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     for(const width of [360,1440,1499,1500,1600]){
       await page.setViewportSize({width,height:900});
       const cells=await row.locator('td').evaluateAll(nodes=>nodes.map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}));
-      assert.ok(cells[0].font>=12,`source time readable at ${width}px`);
-      for(const cell of cells.slice(1))assert.ok(cell.font>=(width>=1500?14:13),`decoded cell readable at ${width}px`);
+      assert.ok(cells[0].font>=16,`source time readable at ${width}px`);
+      for(const cell of cells.slice(1))assert.ok(cell.font>=16,`decoded cell readable at ${width}px`);
       assert.ok(cells.every(cell=>cell.top>=8&&cell.bottom>=8));
-      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+      const overflow=await row.locator('td').evaluateAll(nodes=>nodes.flatMap(cell=>{const box=cell.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(cell);return [...range.getClientRects()].filter(r=>r.left<box.left-1||r.right>box.right+1).map(r=>({text:cell.textContent,left:r.left,right:r.right,cellLeft:box.left,cellRight:box.right}));}));
+      assert.deepEqual(overflow,[],`actual decoded cell text fits at ${width}px`);
+      const pageOverflow=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,width:innerWidth,items:[...document.querySelectorAll('body *')].map(el=>({id:el.id,cls:el.className,tag:el.tagName,r:el.getBoundingClientRect(),text:el.textContent.slice(0,80)})).filter(x=>x.r.width>0&&(x.r.right>innerWidth+1||x.r.left< -1)).slice(0,20)}));
+      assert.equal(pageOverflow.overflow,false,JSON.stringify(pageOverflow));
     }
     await page.setViewportSize({width:1440,height:900});
     assert.match(await page.locator('#rx-focus').innerText(),/No contact selected/);
     assert.doesNotMatch(await page.locator('#rx-focus').innerText(),/Decoder unavailable/);
+    assert.match(await page.locator('#workspace-statusbar').innerText(),new RegExp(`Audio running.*${mode.toUpperCase()} running`));
     const snapshot=await (await fetch(origin+'/receive')).json();
     const invalidSnapshot=await fetch(origin+'/receive?unexpected=1');assert.equal(invalidSnapshot.status,400);
     const invalidDevices=await fetch(origin+'/audio/devices?unexpected=1');assert.equal(invalidDevices.status,400,'unknown query must fail before physical enumeration');

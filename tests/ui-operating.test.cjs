@@ -182,9 +182,11 @@ test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strate
  assert.equal(await page.locator('#focus-heading').textContent(),'Current QSO');
  assert.match(await page.locator('#strategy-heading').textContent(),/Strategy/);
  assert.equal(await page.locator('#band-strip button').count(),13);
- for(const selector of ['#op-dial','#radio-toolbar select','#radio-toolbar button','#band-strip button','#strategy-panel button:disabled']){
+ for(const selector of ['#op-dial','#receive-start','#receive-stop','#band-strip button','#strategy-panel button:disabled']){
   for(const control of await page.locator(selector).all())assert.equal(await control.isDisabled(),true);
  }
+ assert.equal(await page.locator('#receive-mode').isEnabled(),true,'receive mode is a supported local selection');
+ assert.equal(await page.locator('#audio-enumerate').isEnabled(),true,'read-only input listing is supported');
  assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/0\u20133000 Hz/,'fixed-band label retains correct Unicode text');
  assert.match(await page.locator('#radio-toolbar').innerText(),/Timing unavailable/);
