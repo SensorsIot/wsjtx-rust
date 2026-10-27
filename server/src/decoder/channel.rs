@@ -3,8 +3,8 @@ pub type ChannelWord = [u8; 174];
 const MASK: &[u8; 77] =
     b"01001010010111101000100110110100101100001000101001111001010101011011111000101";
 pub struct Channel {
-    generator: Vec<[u8; 91]>,
-    checks: Vec<Vec<usize>>,
+    pub(super) generator: Vec<[u8; 91]>,
+    pub(super) checks: Vec<Vec<usize>>,
     source_generator: Vec<ChannelWord>,
 }
 impl Default for Channel {

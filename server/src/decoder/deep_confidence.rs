@@ -1,0 +1,113 @@
+// Adapted from WSJT-X get_spectrum_baseline.f90, baseline.f90 and ft8b.f90.
+// Copyright the WSJT-X contributors. GPL-3.0-only; see COPYING.
+// Source: WSJTX/wsjtx 0f7d5928449ec747c3d1f6da1306f8c94404c3a9.
+use super::{DecodeError, baseband::fft_plan, coarse_ft4, search::CpuBudget};
+use rustfft::num_complex::Complex64;
+const N: usize = 3840;
+const DF: f64 = 12000. / N as f64;
+
+/// Private source-compatibility confidence; never exposed as calibrated signal SNR.
+pub(super) struct Confidence {
+    baseline: Option<Vec<f64>>,
+}
+impl Confidence {
+    pub async fn new(
+        samples: &[f32],
+        scalar: bool,
+        budget: &mut CpuBudget<'_>,
+    ) -> Result<Self, DecodeError> {
+        let fft = fft_plan(N, false, scalar);
+        let mut scratch = vec![Complex64::new(0., 0.); fft.get_inplace_scratch_len()];
+        let mut buffer = vec![Complex64::new(0., 0.); N];
+        let mut taper = (0..N)
+            .map(|j| coarse_ft4::nuttall(j, N))
+            .collect::<Vec<_>>();
+        let scale = (N as f64 / 300.) / taper.iter().sum::<f64>();
+        for value in &mut taper {
+            *value *= scale;
+        }
+        let mut power = vec![0.; N / 2 + 1];
+        let mut count = 0;
+        for start in (0..=samples.len() - N).step_by(1920) {
+            budget.checkpoint().await?;
+            for j in 0..N {
+                buffer[j] = Complex64::new(samples[start + j] as f64 * taper[j], 0.);
+            }
+            fft.process_with_scratch(&mut buffer, &mut scratch);
+            for (value, z) in power.iter_mut().zip(&buffer) {
+                *value += z.norm_sqr();
+            }
+            count += 1;
+        }
+        for value in &mut power {
+            *value *= 92. / count as f64;
+        }
+        let baseline =
+            coarse_ft4::baseline_for_range(&power, (200. / DF) as usize, (3500. / DF) as usize);
+        Ok(Self { baseline })
+    }
+    fn score(&self, frequency: f64, unscaled_power: f64) -> Option<f64> {
+        let baseline = self.baseline.as_ref()?;
+        let bin = (frequency / DF).round() as usize;
+        let xbase = baseline[bin] * 1e-4;
+        let q = unscaled_power / (3e6 * xbase) - 1.;
+        if !q.is_finite() {
+            return None;
+        }
+        Some(if q > 0.1 { 10. * q.log10() - 27. } else { -57. })
+    }
+    pub fn accepts(&self, rows: &[Vec<Complex64>], tones: &[u8], frequency: f64) -> bool {
+        let power = rows
+            .iter()
+            .zip(tones)
+            .map(|(row, &tone)| row[tone as usize].norm_sqr() * 1e6)
+            .sum();
+        self.score(frequency, power)
+            .is_some_and(|value| value >= -25.)
+    }
+    /// Safe early refusal: no recovered word can exceed the per-symbol maximum power.
+    pub fn possible(&self, rows: &[Vec<Complex64>], frequency: f64) -> bool {
+        let upper = rows
+            .iter()
+            .map(|row| row.iter().map(|z| z.norm_sqr()).fold(0., f64::max) * 1e6)
+            .sum();
+        self.score(frequency, upper)
+            .is_some_and(|value| value >= -25.)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // Proves: CL-007-03, TC-004-002. Constant spectra have a constant quartic envelope.
+    #[test]
+    fn constant_envelope_and_private_confidence_boundaries() {
+        let base = coarse_ft4::baseline_for_range(&vec![1.; 1921], 64, 1120).unwrap();
+        let expected = 10f64.powf(0.65 / 10.);
+        for value in &base[64..=1120] {
+            assert!((value - expected).abs() < 1e-9);
+        }
+        let confidence = Confidence {
+            baseline: Some(vec![1.; 1921]),
+        };
+        assert_eq!(confidence.score(1000., 0.), Some(-57.));
+        // q=100: 10log10(100)-27=-7dB. This is not the public SNR estimator.
+        assert!((confidence.score(1000., 3e6 * 1e-4 * 101.).unwrap() + 7.).abs() < 1e-12);
+        let threshold = 3e6 * 1e-4 * (1. + 10f64.powf(0.2));
+        assert!(confidence.score(1000., threshold * (1. - 1e-10)).unwrap() < -25.);
+        assert!(confidence.score(1000., threshold * (1. + 1e-10)).unwrap() > -25.);
+    }
+    // Proves: CL-007-04, TC-004-003. Early upper-bound refusal cannot hide an accepted tone sequence.
+    #[test]
+    fn max_tone_power_is_an_upper_bound_for_every_selected_word() {
+        let confidence = Confidence {
+            baseline: Some(vec![1.; 1921]),
+        };
+        let rows = vec![vec![Complex64::new(1., 0.); 8]; 79];
+        assert!(confidence.possible(&rows, 1000.));
+        assert!(confidence.accepts(&rows, &[0; 79], 1000.));
+        let rows = vec![vec![Complex64::new(0., 0.); 8]; 79];
+        assert!(!confidence.possible(&rows, 1000.));
+        assert!(!confidence.accepts(&rows, &[7; 79], 1000.));
+    }
+}

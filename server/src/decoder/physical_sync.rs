@@ -108,20 +108,40 @@ pub(super) async fn supports(
     c: Candidate,
     budget: &mut CpuBudget<'_>,
 ) -> Result<bool, DecodeError> {
+    supports_at_least(pass, c, 9, budget).await
+}
+pub(super) async fn supports_at_least(
+    pass: &mut PassBand<'_>,
+    c: Candidate,
+    minimum_hits: usize,
+    budget: &mut CpuBudget<'_>,
+) -> Result<bool, DecodeError> {
     let Some(rows) = pass.rows(c.start, c.frequency, budget).await? else {
         return Ok(false);
     };
-    Ok(bitmetrics::physical_accepts(pass.plan.mode, &rows))
+    Ok(if pass.plan.mode == Mode::Ft8 {
+        bitmetrics::physical_hits(Mode::Ft8, &rows).0 >= minimum_hits
+    } else {
+        bitmetrics::physical_accepts(pass.plan.mode, &rows)
+    })
 }
 pub(super) async fn qualify(
     pass: &mut PassBand<'_>,
     coarse: Candidate,
     budget: &mut CpuBudget<'_>,
 ) -> Result<Option<Candidate>, DecodeError> {
+    qualify_at_least(pass, coarse, 9, budget).await
+}
+pub(super) async fn qualify_at_least(
+    pass: &mut PassBand<'_>,
+    coarse: Candidate,
+    minimum_hits: usize,
+    budget: &mut CpuBudget<'_>,
+) -> Result<Option<Candidate>, DecodeError> {
     debug_assert_eq!(pass.plan.mode, Mode::Ft8);
     let candidate = ft8(pass, coarse, budget).await?;
     if let Some(c) = candidate
-        && supports(pass, c, budget).await?
+        && supports_at_least(pass, c, minimum_hits, budget).await?
     {
         return Ok(Some(c));
     }

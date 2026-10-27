@@ -64,6 +64,15 @@ pub(super) fn physical_accepts(mode: Mode, rows: &[Vec<Complex64>]) -> bool {
 }
 
 fn group_scores(rows: &[Vec<Complex64>], first: usize, symbols: usize, mode: Mode) -> Vec<f64> {
+    group_scores_with_power(rows, first, symbols, mode, false)
+}
+fn group_scores_with_power(
+    rows: &[Vec<Complex64>],
+    first: usize,
+    symbols: usize,
+    mode: Mode,
+    power: bool,
+) -> Vec<f64> {
     let width = mode.bits_per_symbol();
     let gray = mode.gray_map();
     let mut scores = vec![0.; 1 << (width * symbols)];
@@ -73,7 +82,7 @@ fn group_scores(rows: &[Vec<Complex64>], first: usize, symbols: usize, mode: Mod
             let value = (value >> (width * (symbols - 1 - j))) & (mode.tone_count() - 1);
             sum += rows[first + j][gray[value]];
         }
-        *score = sum.norm();
+        *score = if power { sum.norm_sqr() } else { sum.norm() };
     }
     scores
 }
@@ -110,13 +119,20 @@ async fn ft8(
     rows: &[Vec<Complex64>],
     budget: &mut CpuBudget<'_>,
 ) -> Result<Vec<[f32; 174]>, DecodeError> {
+    ft8_policy(rows, false, budget).await
+}
+async fn ft8_policy(
+    rows: &[Vec<Complex64>],
+    power: bool,
+    budget: &mut CpuBudget<'_>,
+) -> Result<Vec<[f32; 174]>, DecodeError> {
     let mut raw = vec![vec![0f64; 174]; 5];
     for symbols in 1..=3 {
         for half in 0..2 {
             for k in (0..29).step_by(symbols) {
                 budget.checkpoint().await?;
                 let first = if half == 0 { 7 + k } else { 43 + k };
-                let scores = group_scores(rows, first, symbols, Mode::Ft8);
+                let scores = group_scores_with_power(rows, first, symbols, Mode::Ft8, power);
                 for bit in 0..3 * symbols {
                     let index = half * 87 + 3 * k + bit;
                     if index >= 174 {
@@ -207,6 +223,66 @@ pub(super) async fn observe(
     };
     decode_families(families, channel, budget).await
 }
+pub(super) fn deep_channel_gates(word: &ChannelWord, llr: &[f32; 174]) -> bool {
+    llr.iter().map(|x| x.abs()).sum::<f32>() / 174. >= 1.
+        && word
+            .iter()
+            .zip(llr)
+            .filter(|(b, l)| **b != u8::from(**l < 0.))
+            .count()
+            <= 36
+        && word.iter().any(|&b| b != 0)
+}
+pub(super) async fn observe_deep_ft8(
+    pass: &mut PassBand<'_>,
+    c: Candidate,
+    channel: &Channel,
+    deep: &super::deep_channel::DeepChannel,
+    residual_pass: usize,
+    confidence: &super::deep_confidence::Confidence,
+    budget: &mut CpuBudget<'_>,
+) -> Result<Observation, DecodeError> {
+    let empty = || Observation {
+        llr: [0.; 174],
+        word: None,
+    };
+    let Some(rows) = pass.rows(c.start, c.frequency, budget).await? else {
+        return Ok(empty());
+    };
+    let hits = physical_hits(Mode::Ft8, &rows).0;
+    if hits < if residual_pass == 0 { 7 } else { 8 } {
+        return Ok(empty());
+    }
+    if hits <= 10 && !confidence.possible(&rows, c.frequency) {
+        return Ok(empty());
+    }
+    let mut last = [0.; 174];
+    for llr in ft8_policy(&rows, residual_pass > 0, budget).await? {
+        budget.checkpoint().await?;
+        last = llr;
+        if llr.iter().map(|x| x.abs()).sum::<f32>() / 174. < 1. {
+            continue;
+        }
+        for word in deep.decode(channel, &llr, budget).await? {
+            if !deep_channel_gates(&word, &llr) {
+                continue;
+            }
+            let tones = channel.tones(&word, Mode::Ft8);
+            if hits <= 10 && !confidence.accepts(&rows, &tones, c.frequency) {
+                continue;
+            }
+            return Ok(Observation {
+                llr,
+                word: Some(word),
+            });
+        }
+    }
+    budget.checkpoint().await?;
+    Ok(Observation {
+        llr: last,
+        word: None,
+    })
+}
 async fn decode_families(
     families: Vec<[f32; 174]>,
     channel: &Channel,
@@ -235,3 +311,39 @@ async fn decode_families(
 #[cfg(test)]
 #[path = "bitmetrics_test.rs"]
 mod tests;
+
+#[cfg(test)]
+mod deep_metric_tests {
+    use super::*;
+    // Proves: CL-007-03. Square coherent hypotheses before class maxima/differences.
+    #[test]
+    fn pass_power_is_applied_before_max_log_difference() {
+        let mut rows = vec![vec![Complex64::new(0., 0.); 8]; 2];
+        // Gray values 0 and 4 belong to opposite high-bit classes.
+        let gray = Mode::Ft8.gray_map();
+        rows[0][gray[0]] = Complex64::new(3., 0.);
+        rows[0][gray[4]] = Complex64::new(2., 0.);
+        let magnitude = group_scores_with_power(&rows, 0, 1, Mode::Ft8, false);
+        let power = group_scores_with_power(&rows, 0, 1, Mode::Ft8, true);
+        assert_eq!(raw_metric(&magnitude, 4), (-1., 3.));
+        assert_eq!(raw_metric(&power, 4), (-5., 9.));
+        assert_ne!(raw_metric(&power, 4).0, raw_metric(&magnitude, 4).0.powi(2));
+    }
+    // Proves: CL-007-03. The optional policy's hard-error gate is bounded independently of FEC.
+    #[test]
+    fn deep_hard_error_and_mean_magnitude_boundaries() {
+        let mut word = [0; 174];
+        word[100] = 1;
+        let mut llr = [1.; 174];
+        llr[100] = -1.;
+        for value in &mut llr[..36] {
+            *value = -1.;
+        }
+        assert!(deep_channel_gates(&word, &llr));
+        llr[36] = -1.;
+        assert!(!deep_channel_gates(&word, &llr));
+        let low = std::array::from_fn(|i| if word[i] == 0 { 0.999 } else { -0.999 });
+        assert!(!deep_channel_gates(&word, &low));
+        assert!(!deep_channel_gates(&[0; 174], &[1.; 174]));
+    }
+}

@@ -7,6 +7,14 @@ use std::{
     time::Instant,
 };
 use wstx_rust::decoder::{Decoder, Mode, quadratures};
+fn decoder_for_policy(deep: bool, scalar: bool) -> Decoder {
+    match (deep, scalar) {
+        (false, false) => Decoder::new(),
+        (false, true) => Decoder::with_scalar_transform(),
+        (true, false) => Decoder::new_deep_ft8(),
+        (true, true) => Decoder::new_scalar_deep_ft8(),
+    }
+}
 fn prepared(kind: &str) -> PathBuf {
     static QUALITY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     static FROZEN: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -89,12 +97,20 @@ fn wav(path: &Path) -> Vec<f32> {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn independent_waveforms_decode() {
+    run_independent_waveforms_decode(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_independent_waveforms_decode() {
+    run_independent_waveforms_decode(true);
+}
+fn run_independent_waveforms_decode(deep: bool) {
     let root = prepared("frozen");
     let fixtures: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
-    let decoder = Decoder::new();
+    let decoder = decoder_for_policy(deep, false);
     for v in fixtures["vectors"].as_array().unwrap() {
         let mode = if v["mode"] == "ft4" {
             Mode::Ft4
@@ -161,10 +177,18 @@ fn independent_waveforms_decode() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn quality_corpus() {
+    run_quality_corpus(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_quality_corpus() {
+    run_quality_corpus(true);
+}
+fn run_quality_corpus(deep: bool) {
     let root = prepared("quality");
     let fixtures: Value =
         serde_json::from_str(include_str!("../../fixtures/decoder/quality-cases.json")).unwrap();
-    let decoder = Decoder::new();
+    let decoder = decoder_for_policy(deep, false);
     let selected = std::env::var("WSTX_DECODER_CASE_FILTER").ok();
     assert!(
         selected.is_none(),
@@ -293,6 +317,14 @@ fn quality_corpus() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn cooperative_quanta_and_partial_cancellation() {
+    run_cooperative_quanta_and_partial_cancellation(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_cooperative_quanta_and_partial_cancellation() {
+    run_cooperative_quanta_and_partial_cancellation(true);
+}
+fn run_cooperative_quanta_and_partial_cancellation(deep: bool) {
     use std::{
         future::Future,
         sync::atomic::{AtomicBool, Ordering},
@@ -301,7 +333,7 @@ fn cooperative_quanta_and_partial_cancellation() {
     let root = prepared("quality");
     for (mode, name) in [(Mode::Ft8, "ft8-strong-00"), (Mode::Ft4, "ft4-strong-00")] {
         let samples = wav(&root.join(name).join("000000_000000.wav"));
-        let decoder = Decoder::new();
+        let decoder = decoder_for_policy(deep, false);
         let cancelled = AtomicBool::new(false);
         let cancel = || cancelled.load(Ordering::Relaxed);
         let mut published = vec![];
@@ -340,14 +372,24 @@ fn cooperative_quanta_and_partial_cancellation() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn planned_scalar_and_gain_invariance() {
+    run_planned_scalar_and_gain_invariance(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_planned_scalar_and_gain_invariance() {
+    run_planned_scalar_and_gain_invariance(true);
+}
+fn run_planned_scalar_and_gain_invariance(deep: bool) {
     let root = prepared("quality");
     for (mode, name) in [
         (Mode::Ft8, "ft8-one-spacing-6db-00"),
         (Mode::Ft4, "ft4-strong-00"),
     ] {
         let samples = wav(&root.join(name).join("000000_000000.wav"));
-        let planned = Decoder::new().decode(&samples, mode, &|| false).unwrap();
-        let scalar = Decoder::with_scalar_transform()
+        let planned = decoder_for_policy(deep, false)
+            .decode(&samples, mode, &|| false)
+            .unwrap();
+        let scalar = decoder_for_policy(deep, true)
             .decode(&samples, mode, &|| false)
             .unwrap();
         assert!(!planned.is_empty());
@@ -362,7 +404,9 @@ fn planned_scalar_and_gain_invariance() {
         }
         for gain in [0.0001, 16.] {
             let scaled = samples.iter().map(|&x| x * gain).collect::<Vec<_>>();
-            let actual = Decoder::new().decode(&scaled, mode, &|| false).unwrap();
+            let actual = decoder_for_policy(deep, false)
+                .decode(&scaled, mode, &|| false)
+                .unwrap();
             assert_eq!(planned.len(), actual.len(), "gain {gain}");
             for (a, b) in planned.iter().zip(actual) {
                 assert_eq!(a.payload, b.payload, "gain {gain}");
@@ -375,6 +419,14 @@ fn planned_scalar_and_gain_invariance() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn unmodulated_sources_are_not_frames() {
+    run_unmodulated_sources_are_not_frames(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_unmodulated_sources_are_not_frames() {
+    run_unmodulated_sources_are_not_frames(true);
+}
+fn run_unmodulated_sources_are_not_frames(deep: bool) {
     for mode in [Mode::Ft4, Mode::Ft8] {
         let dc = vec![0.1; 180000];
         let mut impulse = vec![0.; 180000];
@@ -384,7 +436,7 @@ fn unmodulated_sources_are_not_frames() {
             .collect::<Vec<_>>();
         for input in [&dc, &tone, &impulse] {
             assert!(
-                Decoder::new()
+                decoder_for_policy(deep, false)
                     .decode(input, mode, &|| false)
                     .unwrap()
                     .is_empty()
@@ -395,6 +447,14 @@ fn unmodulated_sources_are_not_frames() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
+    run_crc_valid_unsupported_and_invalid_payloads_are_retained(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_crc_valid_unsupported_and_invalid_payloads_are_retained() {
+    run_crc_valid_unsupported_and_invalid_payloads_are_retained(true);
+}
+fn run_crc_valid_unsupported_and_invalid_payloads_are_retained(deep: bool) {
     let fixture: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/payload-boundary-cases.json"
     ))
@@ -444,7 +504,9 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
                 String::from_utf8_lossy(&result.stderr)
             );
             let samples = wav(&output.join("000000_000000.wav"));
-            let decoded = Decoder::new().decode(&samples, mode, &|| false).unwrap();
+            let decoded = decoder_for_policy(deep, false)
+                .decode(&samples, mode, &|| false)
+                .unwrap();
             assert_eq!(decoded.len(), 1, "{mode:?} {name}");
             let d = &decoded[0];
             assert_eq!(d.payload.payload77, expected["payload77"].as_str().unwrap());
@@ -486,6 +548,14 @@ fn fixture_cache_refuses_forged_observations() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn phase_drift_dynamic_range_and_residual_regressions() {
+    run_phase_drift_dynamic_range_and_residual_regressions(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_phase_drift_dynamic_range_and_residual_regressions() {
+    run_phase_drift_dynamic_range_and_residual_regressions(true);
+}
+fn run_phase_drift_dynamic_range_and_residual_regressions(deep: bool) {
     let fixtures: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/synchronization-cases.json"
     ))
@@ -510,7 +580,7 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
         "independent regression input verification: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let decoder = Decoder::new();
+    let decoder = decoder_for_policy(deep, false);
     let mut checked = 0;
     for case in fixtures["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap();
@@ -587,6 +657,14 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn official_modern_recording_baselines() {
+    run_official_modern_recording_baselines(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_official_modern_recording_baselines() {
+    run_official_modern_recording_baselines(true);
+}
+fn run_official_modern_recording_baselines(deep: bool) {
     let cases: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/recording-baselines.json"
     ))
@@ -594,7 +672,7 @@ fn official_modern_recording_baselines() {
     let samples = PathBuf::from(
         std::env::var_os("WSTX_SAMPLE_DIR").expect("WSTX_SAMPLE_DIR recording cache required"),
     );
-    let decoder = Decoder::new();
+    let decoder = decoder_for_policy(deep, false);
     let mut failures = vec![];
     for case in cases["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap();
@@ -673,13 +751,21 @@ fn official_modern_recording_baselines() {
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn release_runtime_and_overlapping_window_history() {
+    run_release_runtime_and_overlapping_window_history(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_release_runtime_and_overlapping_window_history() {
+    run_release_runtime_and_overlapping_window_history(true);
+}
+fn run_release_runtime_and_overlapping_window_history(deep: bool) {
     let root = prepared("quality");
     for scalar in [false, true] {
         let initialize = || {
             if scalar {
-                Decoder::with_scalar_transform()
+                decoder_for_policy(deep, true)
             } else {
-                Decoder::new()
+                decoder_for_policy(deep, false)
             }
         };
         for (mode, id, ceiling, transmissions) in [
@@ -758,9 +844,19 @@ fn release_runtime_and_overlapping_window_history() {
 // Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn physical_noise_reproduction_has_no_frame() {
+    run_physical_noise_reproduction_has_no_frame(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_physical_noise_reproduction_has_no_frame() {
+    run_physical_noise_reproduction_has_no_frame(true);
+}
+fn run_physical_noise_reproduction_has_no_frame(deep: bool) {
     let root = prepared("quality");
     let input = wav(&root.join("ft4-noise-2-143").join("000000_000000.wav"));
-    let actual = Decoder::new().decode(&input, Mode::Ft4, &|| false).unwrap();
+    let actual = decoder_for_policy(deep, false)
+        .decode(&input, Mode::Ft4, &|| false)
+        .unwrap();
     assert!(
         actual.is_empty(),
         "independently specified noise has no injected frame: {actual:?}"
@@ -770,6 +866,14 @@ fn physical_noise_reproduction_has_no_frame() {
 // Proves: FR-004, CL-007-03, CL-007-04.
 #[test]
 fn same_frequency_preserves_two_temporal_frames() {
+    run_same_frequency_preserves_two_temporal_frames(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_same_frequency_preserves_two_temporal_frames() {
+    run_same_frequency_preserves_two_temporal_frames(true);
+}
+fn run_same_frequency_preserves_two_temporal_frames(deep: bool) {
     let root = prepared("frozen");
     let fixtures: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/independent-vectors/manifest.json"
@@ -790,7 +894,7 @@ fn same_frequency_preserves_two_temporal_frames() {
             .join("000000_000000.wav"));
         samples[start..start + 60480].copy_from_slice(&source[6000..66480]);
     }
-    let result = Decoder::new()
+    let result = decoder_for_policy(deep, false)
         .decode(&samples, Mode::Ft4, &|| false)
         .unwrap();
     for (v, start) in vectors.iter().zip([6000u64, 96000]) {
@@ -806,11 +910,43 @@ fn same_frequency_preserves_two_temporal_frames() {
 // Proves: FR-004, CL-007-04.
 #[test]
 fn physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
+    run_physical_wrong_mode_reproduction_has_no_frame_or_search_error(false);
+}
+// Proves: FR-003, FR-004, CL-007-03, CL-007-04. Same original oracle under explicit Deep.
+#[test]
+fn deep_physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
+    run_physical_wrong_mode_reproduction_has_no_frame_or_search_error(true);
+}
+fn run_physical_wrong_mode_reproduction_has_no_frame_or_search_error(deep: bool) {
     let root = prepared("quality");
     let input = wav(&root.join("ft4-wrong-mode").join("000000_000000.wav"));
-    let actual = Decoder::new().decode(&input, Mode::Ft4, &|| false).unwrap();
+    let actual = decoder_for_policy(deep, false)
+        .decode(&input, Mode::Ft4, &|| false)
+        .unwrap();
     assert!(
         actual.is_empty(),
         "FT8 audio is not an FT4 frame: {actual:?}"
     );
+}
+
+// Proves: CL-007-03, TC-004-002. Independent AP-off Fortran observations, not candidate output.
+#[test]
+fn deep_recovers_crc_independent_weak_reference_words() {
+    let file = PathBuf::from(
+        std::env::var_os("WSTX_DECODER_OFFICIAL_FT8").expect("pinned official FT8 input required"),
+    );
+    let check=std::process::Command::new(if cfg!(windows){"python"}else{"python3"})
+        .args(["-c","import hashlib,pathlib,sys;assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]"])
+        .arg(&file).arg("9feb99c275770a6618538026da7decc6b09eb6cf63121e5168fa86dcdf00c2f5").output().unwrap();
+    assert!(check.status.success(), "unchanged source recording hash");
+    let rows = Decoder::new_deep_ft8()
+        .decode(&wav(&file), Mode::Ft8, &|| false)
+        .unwrap();
+    for (text, frequency) in [("CQ EA2BFM IN83", 2280.), ("N1API F2VX 73", 1513.)] {
+        assert!(
+            rows.iter().any(|d| d.payload.text.as_deref() == Some(text)
+                && (d.frequency_hz - frequency).abs() <= 5.),
+            "missing independently observed {text}"
+        );
+    }
 }

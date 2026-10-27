@@ -150,6 +150,27 @@ impl Spectrum {
         physical: &mut PassBand<'_>,
         budget: &mut CpuBudget<'_>,
     ) -> Result<Vec<Candidate>, DecodeError> {
+        self.select_candidates(length, physical, false, 9, budget)
+            .await
+    }
+    pub async fn deep_candidates(
+        &self,
+        length: usize,
+        physical: &mut PassBand<'_>,
+        minimum_hits: usize,
+        budget: &mut CpuBudget<'_>,
+    ) -> Result<Vec<Candidate>, DecodeError> {
+        self.select_candidates(length, physical, true, minimum_hits, budget)
+            .await
+    }
+    async fn select_candidates(
+        &self,
+        length: usize,
+        physical: &mut PassBand<'_>,
+        deep: bool,
+        minimum_hits: usize,
+        budget: &mut CpuBudget<'_>,
+    ) -> Result<Vec<Candidate>, DecodeError> {
         let n = self.mode.symbol_frames();
         let frame = n * self.mode.symbol_count();
         if length < frame {
@@ -164,6 +185,10 @@ impl Spectrum {
             budget.checkpoint().await?;
             for f in 0..nf {
                 let (mut yes, mut other) = (0., 0.);
+                if deep {
+                    scores[r * nf + f] = self.deep_costas_ratio(r, f);
+                    continue;
+                }
                 for &(j, t) in sync {
                     let row = r + 4 * j;
                     yes += self.power(row, f, t as usize);
@@ -182,12 +207,18 @@ impl Spectrum {
                 };
             }
         }
+        if deep {
+            if !normalize_deep_scores(&mut scores, starts, nf) {
+                return Ok(vec![]);
+            }
+        }
+        let threshold = if deep { 1.3 } else { 2.7 };
         let mut heap = BinaryHeap::new();
         for r in 0..starts {
             budget.checkpoint().await?;
             for f in 0..nf {
                 let score = scores[r * nf + f];
-                if score < 2.7 {
+                if score < threshold {
                     continue;
                 }
                 let mut maximum = true;
@@ -228,7 +259,12 @@ impl Spectrum {
                 frequency: self.frequencies[f],
                 score: peak.score,
             };
-            let Some(candidate) = physical_sync::qualify(physical, raw, budget).await? else {
+            let qualified = if deep {
+                physical_sync::qualify_at_least(physical, raw, minimum_hits, budget).await?
+            } else {
+                physical_sync::qualify(physical, raw, budget).await?
+            };
+            let Some(candidate) = qualified else {
                 continue;
             };
             if out.len() == 256 {
@@ -237,6 +273,28 @@ impl Spectrum {
             out.push(candidate);
         }
         Ok(out)
+    }
+    fn deep_costas_ratio(&self, start_row: usize, frequency: usize) -> f64 {
+        let ratio = |skip| {
+            let (mut yes, mut other) = (0., 0.);
+            for &(symbol, expected) in self.sync.iter().skip(skip) {
+                let row = start_row + 4 * symbol;
+                yes += self.power(row, frequency, expected as usize);
+                for tone in 0..7 {
+                    if tone != expected as usize {
+                        other += self.power(row, frequency, tone);
+                    }
+                }
+            }
+            if other > 0. {
+                6. * yes / other
+            } else if yes > 0. {
+                f64::INFINITY
+            } else {
+                0.
+            }
+        };
+        ratio(0).max(ratio(7))
     }
     /// PSD*v conversion uses nonoverlapping symbol periodograms inside this frame support.
     pub fn noise_variance(
@@ -283,5 +341,63 @@ impl Spectrum {
         };
         let variance = median / (n as f64 * 2f64.ln());
         variance.is_finite().then_some(variance)
+    }
+}
+
+fn normalize_deep_scores(scores: &mut [f64], starts: usize, frequencies: usize) -> bool {
+    let mut maxima = (0..frequencies)
+        .map(|f| {
+            (0..starts)
+                .map(|r| scores[r * frequencies + f])
+                .fold(0f64, f64::max)
+        })
+        .collect::<Vec<_>>();
+    maxima.sort_by(f64::total_cmp);
+    let index = ((0.4 * frequencies as f64 + 0.5).floor() as usize).clamp(1, frequencies) - 1;
+    let baseline = maxima[index];
+    if !baseline.is_finite() || baseline <= 0. {
+        return false;
+    }
+    for score in scores {
+        *score /= baseline;
+    }
+    true
+}
+
+#[cfg(test)]
+mod deep_tests {
+    use super::*;
+    // Proves: CL-007-03. An independent power table distinguishes ABC, BC and eighth-tone noise.
+    #[test]
+    fn seven_tone_costas_uses_the_better_abc_or_bc_score() {
+        let mut spectrum = Spectrum {
+            values: vec![Complex32::new(1., 0.); 317 * 16],
+            width: 16,
+            regular: 1,
+            frequencies: vec![200.],
+            hop: 480,
+            mode: Mode::Ft8,
+            sync: Mode::Ft8.sync(),
+        };
+        for (index, &(symbol, tone)) in spectrum.sync.iter().enumerate() {
+            let row = 4 * symbol;
+            // A: target power 1; B/C: target power 4. Six competitor powers are all 1.
+            spectrum.values[row * 16 + 2 * tone as usize] =
+                Complex32::new(if index < 7 { 1. } else { 2. }, 0.);
+            // The eighth tone must never enter this source's seven-tone statistic.
+            spectrum.values[row * 16 + 14] = Complex32::new(1000., 0.);
+        }
+        // ABC = 6*(7+14*4)/(21*6) = 3; BC = 6*(14*4)/(14*6) = 4.
+        assert!((spectrum.deep_costas_ratio(0, 0) - 4.).abs() < 1e-12);
+    }
+    // Proves: CL-007-03. Two starts per frequency prevent a global percentile implementation passing.
+    #[test]
+    fn normalization_uses_frequency_maxima_and_source_percentile() {
+        let mut scores = [1., 2., 3., 4., 5., 10., 8., 6., 4., 2.];
+        assert!(normalize_deep_scores(&mut scores, 2, 5));
+        // Frequency maxima [10,8,6,4,5], sorted [4,5,6,8,10]; nint(.4*5)=2 => 5.
+        assert_eq!(scores, [0.2, 0.4, 0.6, 0.8, 1., 2., 1.6, 1.2, 0.8, 0.4]);
+        assert!(!normalize_deep_scores(&mut [0.; 10], 2, 5));
+        assert!(!normalize_deep_scores(&mut [f64::INFINITY; 10], 2, 5));
     }
 }

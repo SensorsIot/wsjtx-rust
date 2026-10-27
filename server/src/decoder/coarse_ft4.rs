@@ -9,7 +9,10 @@ const DF: f64 = 12000. / N as f64;
 const IA: usize = 38;
 const IB: usize = 678;
 fn window(j: usize) -> f64 {
-    let a = 2. * PI * j as f64 / N as f64;
+    nuttall(j, N)
+}
+pub(super) fn nuttall(j: usize, length: usize) -> f64 {
+    let a = 2. * PI * j as f64 / length as f64;
     0.3635819 - 0.4891775 * a.cos() + 0.1365995 * (2. * a).cos() - 0.0106411 * (3. * a).cos()
 }
 fn cutoff(values: &mut [f64]) -> Option<f64> {
@@ -32,10 +35,13 @@ fn endpoint_contrast(ratio: &[f64], endpoint: f64) -> f64 {
 }
 // Scaled abscissa preserves the same quartic OLS space, with a finite rank-five solve.
 fn baseline(power: &[f64]) -> Option<Vec<f64>> {
-    if power.len() <= IB || power.iter().any(|p| !p.is_finite() || *p < 0.) {
+    baseline_for_range(power, IA, IB)
+}
+pub(super) fn baseline_for_range(power: &[f64], ia: usize, ib: usize) -> Option<Vec<f64>> {
+    if ia >= ib || power.len() <= ib || power.iter().any(|p| !p.is_finite() || *p < 0.) {
         return None;
     }
-    let minimum = power[IA..=IB]
+    let minimum = power[ia..=ib]
         .iter()
         .copied()
         .filter(|p| *p > 0.)
@@ -50,36 +56,41 @@ fn baseline(power: &[f64]) -> Option<Vec<f64>> {
             }
         })
         .collect::<Vec<_>>();
-    let width = (IB - IA + 1) / 10;
-    let x = |i: usize| (i as f64 - (IA + IB) as f64 / 2.) / ((IB - IA) as f64 / 2.);
+    let width = (ib - ia + 1) / 10;
+    let x = |i: usize| (i as f64 - (ia + ib) as f64 / 2.) / ((ib - ia) as f64 / 2.);
     let mut a = [[0.; 6]; 5];
-    let mut count = 0;
+    let mut points = Vec::with_capacity(1000);
     for segment in 0..10 {
-        let begin = IA + segment * width;
+        let begin = ia + segment * width;
         let mut ordered = db[begin..begin + width].to_vec();
         let cutoff = cutoff(&mut ordered)?;
         for (i, &y) in db.iter().enumerate().skip(begin).take(width) {
             if y > cutoff {
                 continue;
             }
-            count += 1;
-            if count > 1000 {
-                return None;
-            }
-            let t = x(i);
-            let mut powers = [1.; 9];
-            for j in 1..9 {
-                powers[j] = powers[j - 1] * t;
-            }
-            for r in 0..5 {
-                for c in 0..5 {
-                    a[r][c] += powers[r + c];
-                }
-                a[r][5] += y * powers[r];
+            let point = (x(i), y);
+            if points.len() < 1000 {
+                points.push(point);
+            } else {
+                *points.last_mut().unwrap() = point;
             }
         }
     }
-    if count < 5 {
+    // Source retains the first999 lower-envelope points and overwrites slot1000.
+    // FT4 has fewer than1000 bins, so its existing accumulation order is unchanged.
+    for &(t, y) in &points {
+        let mut powers = [1.; 9];
+        for j in 1..9 {
+            powers[j] = powers[j - 1] * t;
+        }
+        for r in 0..5 {
+            for c in 0..5 {
+                a[r][c] += powers[r + c];
+            }
+            a[r][5] += y * powers[r];
+        }
+    }
+    if points.len() < 5 {
         return None;
     }
     for col in 0..5 {
@@ -105,7 +116,7 @@ fn baseline(power: &[f64]) -> Option<Vec<f64>> {
     }
     // The source contract defines this polynomial only on the fitted radio band.
     let mut out = vec![1.; power.len()];
-    for (i, value) in out.iter_mut().enumerate().take(IB + 1).skip(IA) {
+    for (i, value) in out.iter_mut().enumerate().take(ib + 1).skip(ia) {
         let t = x(i);
         let y = (0..5).rev().fold(0., |y, j| y * t + a[j][5]);
         *value = 10f64.powf((y + 0.65) / 10.);

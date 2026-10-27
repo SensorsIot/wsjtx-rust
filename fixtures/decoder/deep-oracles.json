@@ -1,0 +1,270 @@
+{
+  "nearest_then_crc_negative": {
+    "meaning": "Independently enumerated rank3 systematic parity code; CRC1 is XOR of first2bits. PositiveLLR=bit0. Nearest parity word has cost0 and badCRC; correct nearest-then-CRC outcome REJECT, despite a further CRC-valid word.",
+    "llr": [
+      -4,
+      4,
+      4,
+      -4,
+      4,
+      -4
+    ],
+    "all_eight_words": [
+      {
+        "systematic": [
+          1,
+          0,
+          0
+        ],
+        "word": [
+          1,
+          0,
+          0,
+          1,
+          0,
+          1
+        ],
+        "crc_ok": false,
+        "cost": 0
+      },
+      {
+        "systematic": [
+          0,
+          0,
+          0
+        ],
+        "word": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "crc_ok": true,
+        "cost": 12
+      },
+      {
+        "systematic": [
+          0,
+          0,
+          1
+        ],
+        "word": [
+          0,
+          0,
+          1,
+          1,
+          1,
+          1
+        ],
+        "crc_ok": false,
+        "cost": 12
+      },
+      {
+        "systematic": [
+          1,
+          1,
+          0
+        ],
+        "word": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          0
+        ],
+        "crc_ok": true,
+        "cost": 12
+      },
+      {
+        "systematic": [
+          1,
+          1,
+          1
+        ],
+        "word": [
+          1,
+          1,
+          1,
+          0,
+          0,
+          1
+        ],
+        "crc_ok": false,
+        "cost": 12
+      },
+      {
+        "systematic": [
+          0,
+          1,
+          0
+        ],
+        "word": [
+          0,
+          1,
+          0,
+          0,
+          1,
+          1
+        ],
+        "crc_ok": false,
+        "cost": 16
+      },
+      {
+        "systematic": [
+          0,
+          1,
+          1
+        ],
+        "word": [
+          0,
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        "crc_ok": true,
+        "cost": 16
+      },
+      {
+        "systematic": [
+          1,
+          0,
+          1
+        ],
+        "word": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "crc_ok": true,
+        "cost": 16
+      }
+    ],
+    "expected": "reject"
+  },
+  "check_message": {
+    "other_messages": [
+      "1.0986122886681096913952452369225257046474905578227494517346943336374942932186090",
+      "1.0986122886681096913952452369225257046474905578227494517346943336374942932186090"
+    ],
+    "tanh_halves": [
+      "0.5",
+      "0.5"
+    ],
+    "product": "0.25",
+    "expected_2atanh_product": "0.51082562376599068320551409630366193487811079644576827017795355783668469448904882",
+    "absolute_tolerance": "1e-12"
+  },
+  "snapshots": {
+    "definition": "L is channel LLR; C1/C2 are incoming check-message sums; Zk=L+Ck is the full posterior. Iteration0 contributes L.",
+    "L": [
+      1,
+      -2,
+      3
+    ],
+    "C1": [
+      0.5,
+      1,
+      -1
+    ],
+    "C2": [
+      0.25,
+      -0.5,
+      0.5
+    ],
+    "Z1": [
+      1.5,
+      -1,
+      2
+    ],
+    "Z2": [
+      1.25,
+      -2.5,
+      3.5
+    ],
+    "first": [
+      2.5,
+      -3,
+      5
+    ],
+    "second": [
+      3.75,
+      -5.5,
+      8.5
+    ],
+    "first_formula": "L+Z1=2L+C1",
+    "second_formula": "L+Z1+Z2=3L+C1+C2",
+    "wrong_check_only_first": [
+      1.5,
+      -1,
+      2
+    ],
+    "wrong_check_only_second": [
+      1.75,
+      -1.5,
+      2.5
+    ]
+  },
+  "pattern_bounds": {
+    "rank3": 7,
+    "rank91": 4187,
+    "two_snapshots": 8374,
+    "five_families": 41870
+  },
+  "parity_prefilter": [
+    {
+      "first40_disagreements": 8,
+      "pattern_weight": 1,
+      "accepted": true
+    },
+    {
+      "first40_disagreements": 8,
+      "pattern_weight": 2,
+      "accepted": true
+    },
+    {
+      "first40_disagreements": 9,
+      "pattern_weight": 1,
+      "accepted": true
+    },
+    {
+      "first40_disagreements": 9,
+      "pattern_weight": 2,
+      "accepted": false
+    },
+    {
+      "first40_disagreements": 10,
+      "pattern_weight": 1,
+      "accepted": false
+    },
+    {
+      "first40_disagreements": 10,
+      "pattern_weight": 2,
+      "accepted": false
+    },
+    {
+      "first40_disagreements": 11,
+      "pattern_weight": 1,
+      "accepted": false
+    },
+    {
+      "first40_disagreements": 11,
+      "pattern_weight": 2,
+      "accepted": false
+    }
+  ],
+  "coarse_tones": {
+    "expected_power_A": 14,
+    "total_seven_tones_T": 20,
+    "out_of_costas_eighth_tone_power": 100,
+    "source_seven_tone_ratio": 14,
+    "incorrect_eight_tone_ratio": 0.9245283018867925
+  }
+}

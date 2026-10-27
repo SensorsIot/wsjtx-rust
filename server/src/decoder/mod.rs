@@ -4,6 +4,8 @@ mod baseband;
 mod bitmetrics;
 mod channel;
 mod coarse_ft4;
+mod deep_channel;
+mod deep_confidence;
 mod fit;
 mod history;
 mod payload;

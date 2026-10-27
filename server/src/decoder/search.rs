@@ -80,6 +80,7 @@ struct Subtraction {
 pub struct Decoder {
     channel: Channel,
     scalar: bool,
+    deep_ft8: Option<super::deep_channel::DeepChannel>,
 }
 impl Default for Decoder {
     fn default() -> Self {
@@ -91,6 +92,7 @@ impl Decoder {
         Self {
             channel: Channel::new(),
             scalar: false,
+            deep_ft8: None,
         }
     }
     pub fn with_scalar_transform() -> Self {
@@ -101,12 +103,16 @@ impl Decoder {
     }
     /// Explicit pure FT8 Deep policy entry point; existing constructors stay baseline.
     pub fn new_deep_ft8() -> Self {
-        // Interface checkpoint: numerical Deep implementation follows in this branch.
-        Self::new()
+        let mut decoder = Self::new();
+        decoder.deep_ft8 = Some(super::deep_channel::DeepChannel::new(&decoder.channel));
+        decoder
     }
     /// Scalar-transform counterpart of the explicit pure FT8 Deep policy.
     pub fn new_scalar_deep_ft8() -> Self {
-        Self::with_scalar_transform()
+        Self {
+            scalar: true,
+            ..Self::new_deep_ft8()
+        }
     }
     /// Blocking numerical convenience wrapper; station workers poll a cooperative future.
     pub fn decode(
@@ -197,7 +203,21 @@ impl Decoder {
         budget.checkpoint().await?;
         let mut subtractions = 0;
         let mut window_seen = Vec::<(String, u64)>::new();
-        for _pass in 0..3 {
+        let deep = if mode == Mode::Ft8 {
+            self.deep_ft8.as_ref()
+        } else {
+            None
+        };
+        for residual_pass in 0..3 {
+            let minimum_hits = if residual_pass == 0 { 7 } else { 8 };
+            let confidence = if deep.is_some() {
+                Some(
+                    super::deep_confidence::Confidence::new(&samples, self.scalar, &mut budget)
+                        .await?,
+                )
+            } else {
+                None
+            };
             let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
             let mut physical = plan.current_pass(&samples, &mut budget).await?;
             let candidates = if mode == Mode::Ft4 {
@@ -216,6 +236,10 @@ impl Decoder {
                     );
                 }
                 candidates
+            } else if deep.is_some() {
+                spectrum
+                    .deep_candidates(samples.len(), &mut physical, minimum_hits, &mut budget)
+                    .await?
             } else {
                 spectrum
                     .candidates(samples.len(), &mut physical, &mut budget)
@@ -226,12 +250,28 @@ impl Decoder {
             let mut verified = 0;
             for c in candidates {
                 budget.checkpoint().await?;
-                let observation =
-                    bitmetrics::observe(&mut physical, c, &self.channel, &mut budget).await?;
+                let observation = if let Some(deep) = deep {
+                    bitmetrics::observe_deep_ft8(
+                        &mut physical,
+                        c,
+                        &self.channel,
+                        deep,
+                        residual_pass,
+                        confidence.as_ref().unwrap(),
+                        &mut budget,
+                    )
+                    .await?
+                } else {
+                    bitmetrics::observe(&mut physical, c, &self.channel, &mut budget).await?
+                };
                 let Some(word) = observation.word else {
                     continue;
                 };
-                if !channel_gates(&word, &observation.llr) {
+                if !(if deep.is_some() {
+                    bitmetrics::deep_channel_gates(&word, &observation.llr)
+                } else {
+                    channel_gates(&word, &observation.llr)
+                }) {
                     continue;
                 }
                 let Some(payload) = self.channel.payload(&word, mode) else {
@@ -252,7 +292,32 @@ impl Decoder {
                 }) {
                     continue;
                 }
-                if !physical_sync::supports(&mut physical, fitted, &mut budget).await? {
+                if deep.is_some() {
+                    if !physical_sync::supports_at_least(
+                        &mut physical,
+                        fitted,
+                        minimum_hits,
+                        &mut budget,
+                    )
+                    .await?
+                    {
+                        continue;
+                    }
+                    let Some(rows) = physical
+                        .rows(fitted.start, fitted.frequency, &mut budget)
+                        .await?
+                    else {
+                        continue;
+                    };
+                    if bitmetrics::physical_hits(Mode::Ft8, &rows).0 <= 10
+                        && !confidence
+                            .as_ref()
+                            .unwrap()
+                            .accepts(&rows, &tones, fitted.frequency)
+                    {
+                        continue;
+                    }
+                } else if !physical_sync::supports(&mut physical, fitted, &mut budget).await? {
                     continue;
                 }
                 let wave = quadratures(mode, &tones, fitted.frequency)
