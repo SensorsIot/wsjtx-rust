@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 633dbdcb948b59df06d77899134de7cbf9f036118970b461a39f31110ca4e61d
+// Canonical FSD slices SHA256: 171ce4740a12a388d14ad81f55152112b8468ac8647bb5de921a98c204530c6e
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -704,6 +704,38 @@ package WstxRecordingReceive {
              and360px alongside these reference images; analytical tones alone do not meet visual
              acceptance. Readout remains calibrated dBFS rather than implying receiver RF power. */
     }
+    attribute def BrowserDisplayPreference {
+        attribute effectiveOrigin : String;
+        attribute profileUuid : String;
+        attribute savedChoice : DisplayProfile[0..1];
+        attribute effectiveChoice : DisplayProfile;
+        attribute storageAvailable : Boolean;
+        doc /* Browser-owned preference for one effective origin and validated saved-profile UUID.
+             The browser storage boundary isolates origins; a versioned UUID key stores only
+             off/thin/detail, never credentials, device identifiers, station settings or decoded traffic.
+             Boot ID and revision do not alter identity. Environment-only/no-profile use is nonpersistent. */
+    }
+    action def RestoreDisplayChoice {
+        in cleartextLoopback : Boolean;
+        in preference : BrowserDisplayPreference;
+        out effectiveChoice : DisplayProfile;
+        doc /* Use a valid saved choice if available. Otherwise Detailed only on cleartext HTTP
+             loopback, Thin everywhere else including HTTPS localhost. Invalid/missing values or
+             unavailable storage use that normal default without disabling in-memory selection.
+             Explicit choices survive reload/browser restart for this origin/profile only. */
+    }
+    action def SelectDisplayChoice {
+        in explicitChoice : DisplayProfile;
+        in preference : BrowserDisplayPreference;
+        out updatedPreference : BrowserDisplayPreference;
+        doc /* An explicit user selection changes effective and saved choice for this viewer only.
+             If storage is unavailable, retain effective choice in memory without a persistence claim.
+             Subscribe with existing off/thin/detail commands; do not change decoder/radio mode,
+             source measurements, station settings or other viewers. Automatic server fallback changes
+             effective choice only, never overwrites the explicit saved choice, and retains existing
+             single Thin fallback/no retry loop. Detailed keeps fast-link/up-to10KiB/s notice and
+             no32kbit/s promise; Thin retains all bandwidth limits. */
+    }
     action def TransferDisplay {
         in 'frame' : SpectrumFrame[0..1];
         in detailedFrame : DetailedSpectrumFrame[0..1];
@@ -724,6 +756,10 @@ package WstxRecordingReceive {
              Default browser selection is Detailed only on cleartext HTTP loopback (localhost,
              127.0.0.1 or [::1]); HTTPS, including HTTPS localhost, defaults Thin. The selector offers
              "Detailed (fast link, up to 10 KiB/s per viewer)", "Thin (32 kbit/s link)" and Off.
+             Without a valid saved choice, these defaults apply. RestoreDisplayChoice resolves the
+             origin/profile-specific BrowserDisplayPreference; explicit selector changes use
+             SelectDisplayChoice. Only a user choice persists; runtime Thin fallback does not replace it.
+             Storage failure/invalid value preserves normal defaults and usable in-memory controls.
              Detailed is explicitly selectable on HTTPS but carries no32 kbit/s promise. A server
              that supports recording/Thin but refuses spectrum.detail with unknown_command triggers
              one Thin subscription and visible "Detailed unavailable; using Thin" feedback. A server
@@ -1128,7 +1164,7 @@ package WstxRecordingReceive {
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-005: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
+                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Explicit Detailed/Thin/Off survives reload and reopened browser context; origin/port/profile UUIDs isolate choices while boot/revision changes preserve them. Invalid/denied storage uses defaults without page errors or disabling memory selection. Only versioned UUID keys and enumerated values are stored, no secrets/traffic. Automatic fallback preserves saved Detailed; explicit Thin replaces it. Existing wire and bandwidth tests remain unchanged, with no synthesized decoded records. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
         }
         dependency tracecrispDetailTransport from crispDetailTransport to WstxRequirements::'TC-010-005';
         verification fullHeightSliderPresentation {
