@@ -976,6 +976,7 @@ fn detailed_native_bins_and_power_rows_follow_independent_dft() {
         }
         assert_eq!(r.snapshot()["job"]["state"], "completed");
         let frame = r.state.lock().unwrap().detail_frame.clone().unwrap();
+        let frame: Value = serde_json::from_str(&frame.text).unwrap();
         assert_eq!(frame["type"], "spectrum.detail.frame");
         assert!(frame.to_string().len() <= 2048);
         let first = ((length - 1) / 2400) * 2400;

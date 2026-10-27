@@ -241,10 +241,81 @@ pub struct State {
     pub import: Option<Import>,
     pub job: Option<Job>,
     pub frame: Option<Value>,
-    pub detail_frame: Option<Value>,
+    pub detail_frame: Option<Arc<DetailedFrame>>,
+    pub detail_history: VecDeque<Arc<DetailedFrame>>,
+    pub detail_evicted: Option<u64>,
     live: Option<LiveState>,
     latest_decode: Option<LatestDecode>,
     decode_counter: u64,
+}
+pub struct DetailedFrame {
+    pub text: String,
+    pub identity: Value,
+    pub sequence: u64,
+}
+impl State {
+    pub fn detail_identity(&self, boot: &str) -> Value {
+        self.job.as_ref().map_or(Value::Null, |j| {
+            json!([boot, j.source_id, j.id, j.generation])
+        })
+    }
+    fn clear_detail(&mut self) {
+        self.detail_frame = None;
+        self.detail_history.clear();
+        self.detail_evicted = None;
+    }
+    fn publish_detail(&mut self, frame: Value, boot: &str) {
+        let data = &frame["data"];
+        let identity = json!([
+            data["boot_id"],
+            data["source_id"],
+            data["job_id"],
+            data["generation"]
+        ]);
+        let Some(sequence) = data["sequence"].as_u64() else {
+            return;
+        };
+        if identity != self.detail_identity(boot)
+            || !self
+                .job
+                .as_ref()
+                .is_some_and(|j| j.state == "running" && !j.cancel.load(Ordering::Acquire))
+            || self
+                .detail_frame
+                .as_ref()
+                .is_some_and(|last| last.sequence >= sequence)
+        {
+            return;
+        }
+        let text = frame.to_string();
+        if text.len() > 2048 {
+            return;
+        }
+        let frame = Arc::new(DetailedFrame {
+            text,
+            identity,
+            sequence,
+        });
+        self.detail_history.push_back(frame.clone());
+        self.detail_frame = Some(frame);
+        if self.detail_history.len() > 8 {
+            self.detail_evicted = self.detail_history.pop_front().map(|old| old.sequence);
+        }
+    }
+    pub fn detail_candidate(&self, cursor: u64, identity: &Value) -> Option<Arc<DetailedFrame>> {
+        let mut eligible = self
+            .detail_history
+            .iter()
+            .filter(|f| &f.identity == identity && f.sequence >= cursor);
+        if self
+            .detail_evicted
+            .is_some_and(|sequence| cursor <= sequence)
+        {
+            eligible.next_back().cloned()
+        } else {
+            eligible.next().cloned()
+        }
+    }
 }
 pub struct Recording {
     pub state: Mutex<State>,
@@ -526,7 +597,7 @@ impl Recording {
                 j.state = "cancelling";
             }
             s.frame = None;
-            s.detail_frame = None;
+            s.clear_detail();
         }
         Ok(self.receive_snapshot())
     }
@@ -839,7 +910,7 @@ impl LiveWorker {
             j.source_id = None;
         }
         s.frame = None;
-        s.detail_frame = None;
+        s.clear_detail();
         s.latest_decode = None;
         s.decode_counter = 0;
         s.live.as_mut().ok_or("state_conflict")?.clear_context();
@@ -911,7 +982,7 @@ impl LiveWorker {
         self.job.source_id = Some(descriptor.source_id.clone());
         s.job = Some(self.job.clone());
         s.frame = None;
-        s.detail_frame = None;
+        s.clear_detail();
         let l = s.live.as_mut().ok_or("state_conflict")?;
         l.source = Some(descriptor.clone());
         l.timing = Some(timing.clone());
@@ -987,7 +1058,7 @@ impl LiveWorker {
                         "source_id":self.job.source_id,"job_id":self.job.id,"generation":self.job.generation,
                         "sequence":sequence,"first_frame":first,"end_frame":end,"levels_b64":STANDARD.encode(&levels)}});
                     if detailed {
-                        s.detail_frame = Some(frame);
+                        s.publish_detail(frame, &self.owner.boot);
                     } else {
                         let mut frame = frame;
                         frame["data"].as_object_mut().unwrap().remove("levels_b64");
@@ -1024,7 +1095,7 @@ impl LiveWorker {
                     self.epoch_seen = false;
                 }
                 s.frame = None;
-                s.detail_frame = None;
+                s.clear_detail();
                 s.latest_decode = None;
                 s.decode_counter = 0;
                 if let Some(l) = s.live.as_mut() {
@@ -1476,6 +1547,8 @@ impl Recording {
             job: None,
             frame: None,
             detail_frame: None,
+            detail_history: VecDeque::new(),
+            detail_evicted: None,
             live: None,
             latest_decode: None,
             decode_counter: 0,
@@ -1634,7 +1707,7 @@ impl Recording {
         }
         s.generation += 1;
         s.frame = None;
-        s.detail_frame = None;
+        s.clear_detail();
         s.live = None;
         Ok(s.generation)
     }
@@ -1926,7 +1999,7 @@ impl Recording {
                 cancel: Arc::new(AtomicBool::new(false)),
             };
             s.frame = None;
-            s.detail_frame = None;
+            s.clear_detail();
             s.job = Some(job.clone());
         }
         let this = self.clone();
@@ -1943,7 +2016,7 @@ impl Recording {
         }
         let value = json!({"v":1,"id":id,"generation":j.generation,"state":j.state});
         s.frame = None;
-        s.detail_frame = None;
+        s.clear_detail();
         Ok(value)
     }
     fn run(&self, job: Job, meta: Metadata) {
@@ -2098,8 +2171,9 @@ impl Recording {
                 j.id == job.id && j.generation == job.generation && j.state == "running"
             }) {
                 s.job.as_mut().unwrap().processed_frames = row_end;
-                s.detail_frame = Some(
+                s.publish_detail(
                     json!({"v":1,"type":"spectrum.detail.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":sequence,"first_frame":sequence*2400,"end_frame":row_end,"levels_b64":STANDARD.encode(levels)}}),
+                    &self.boot,
                 );
                 if row_end.is_multiple_of(12000) || row_end == meta.frames {
                     let levels: Vec<u8> = thin_peak.into_iter().map(spectrum::quantize).collect();

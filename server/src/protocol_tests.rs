@@ -120,25 +120,25 @@ fn protocol_returns_specified_response_and_errors() {
     }
 }
 
-// Proves: CL-006-03/04; TC-010-005 delayed tick cannot produce an early accepted successor.
+// Proves: CL-006-03/04; TC-010-008 fixed subscription phase after delayed wakes.
 #[tokio::test(start_paused = true)]
-async fn detailed_late_tick_rearms_from_actual_acceptance() {
+async fn detailed_late_tick_keeps_subscription_phase() {
     use std::time::Duration;
+    let origin = tokio::time::Instant::now();
     let mut tick = tokio::time::interval(Duration::from_millis(200));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let origin = tokio::time::Instant::now();
     tick.tick().await;
     tokio::time::advance(Duration::from_millis(999)).await;
+    let next = super::arm_detail(&mut tick, origin);
+    assert_eq!(next - origin, Duration::from_millis(1000));
     tick.tick().await;
-    let next = super::arm_detail(&mut tick, tokio::time::Instant::now());
-    assert_eq!(next - origin, Duration::from_millis(1199));
-    // An old Skip grid would tick again at1000ms, only1ms after the delayed tick.
-    tokio::time::advance(Duration::from_millis(1)).await;
-    assert!(
-        tokio::time::timeout(Duration::from_millis(197), tick.tick())
-            .await
-            .is_err()
+    assert_eq!(
+        tokio::time::Instant::now() - origin,
+        Duration::from_millis(1000)
     );
-    tick.tick().await;
-    assert!(tokio::time::Instant::now() - origin >= Duration::from_millis(1199));
+    tokio::time::advance(Duration::from_millis(149)).await;
+    assert_eq!(
+        super::arm_detail(&mut tick, origin) - origin,
+        Duration::from_millis(1200)
+    );
 }
