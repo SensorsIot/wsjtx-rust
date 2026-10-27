@@ -1,0 +1,149 @@
+name: WSJT-X decoder stage diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fortran-stage-diagnostics-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  trace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OMP_NUM_THREADS: '1'
+    steps:
+      - name: Check out project test tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out exact WSJT-X source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: WSJTX/wsjtx
+          ref: 0f7d5928449ec747c3d1f6da1306f8c94404c3a9
+          path: reference-source
+          persist-credentials: false
+      - name: Check protocol and logging identity boundaries
+        run: |
+          python3 -m unittest discover -s tools -p 'test_wsjtx*reference.py' -v
+          python3 -m unittest discover -s tools -p 'test_analyze_fortran_trace.py' -v
+      - name: Install Fortran dependencies on hosted runner only
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reference-output
+          cp /etc/apt/apt-mirrors.txt reference-output/apt-mirrors.before.txt
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          if [ -f /etc/apt/apt-security-mirrors.txt ]; then
+            printf '%s\n' 'https://security.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-security-mirrors.txt
+          fi
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            update 2>&1 | tee reference-output/apt-update.log
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            install --no-install-recommends -y \
+            build-essential cmake ninja-build gfortran \
+            qtbase5-dev qttools5-dev qttools5-dev-tools qtmultimedia5-dev \
+            libqt5serialport5-dev libqt5websockets5-dev libqt5sql5-sqlite \
+            libfftw3-dev libboost-log-dev libusb-1.0-0-dev libudev-dev \
+            portaudio19-dev libhamlib-dev libhamlib-utils pkg-config \
+            2>&1 | tee reference-output/apt-install.log
+          dpkg-query -W > reference-output/runner-packages.txt
+          gfortran --version > reference-output/gfortran-version.txt
+          cmake --version > reference-output/cmake-version.txt
+          git -C reference-source rev-parse HEAD > reference-output/source-revision.txt
+          test "$(cat reference-output/source-revision.txt)" = 0f7d5928449ec747c3d1f6da1306f8c94404c3a9
+          git -C reference-source diff --exit-code
+          git -C reference-source archive --format=tar.gz -o ../reference-output/wsjtx-original-source.tar.gz HEAD
+          cp reference-source/COPYING reference-source/AUTHORS reference-output/
+      - name: Build unmodified source codec, no GUI or Rust build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S reference-source -B reference-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DWSJT_GENERATE_DOCS=OFF \
+            -DWSJT_SKIP_MANPAGES=ON -DWSJT_SKIP_QMAP=ON \
+            -DWSJT_BUILD_UTILS=ON -DWSJT_ENABLE_TESTS=OFF \
+            -DWSJT_FORTRAN_LIBRARY_VARIANTS=OPENMP_ONLY \
+            2>&1 | tee reference-output/configure.log
+          cmake --build reference-build --target wsjt-codec --parallel 2 \
+            2>&1 | tee reference-output/build-original.log
+          cp reference-build/wsjt-codec reference-output/wsjt-codec-original
+          cmake --build reference-build --target ft8sim --parallel 2 \
+            2>&1 | tee reference-output/build-ft8sim.log
+          cp reference-build/ft8sim reference-output/ft8sim
+          python3 tools/wsjtx_simulator_components.py \
+            --exe reference-build/ft8sim \
+            --cases fixtures/decoder/simulator-cases.json \
+            --output reference-output/cr18-ft8-components
+          ldd reference-build/wsjt-codec > reference-output/runtime-libraries.txt
+          cp reference-build/CMakeCache.txt reference-output/CMakeCache.txt
+          python3 tools/wsjtx_reference.py acquire --inputs reference-output/inputs
+          python3 tools/wsjtx_stage_reference.py run \
+            --exe reference-output/wsjt-codec-original \
+            --expected-sha256 "$(sha256sum reference-output/wsjt-codec-original | cut -d' ' -f1)" \
+            --source-revision 0f7d5928449ec747c3d1f6da1306f8c94404c3a9 \
+            --inputs reference-output/inputs --output reference-output/original
+      - name: Apply bounded stderr-only instrumentation and rebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch="$GITHUB_WORKSPACE/reference-output/stage-logging.patch"
+          gzip -cd fixtures/decoder/wsjtx-stage-logging.patch.gz > "$patch"
+          echo "ff9d92157597b2f604b053a5e5e0f03debd3d594b90b11dc25f11371d18043fa  $patch" | sha256sum -c -
+          git -C reference-source apply --check "$patch"
+          git -C reference-source apply "$patch"
+          git -C reference-source diff --binary > reference-output/applied-source.diff
+          cp reference-source/lib/ft8_stage_trace.f90 reference-output/
+          cmake --build reference-build --target wsjt-codec --parallel 2 \
+            2>&1 | tee reference-output/build-instrumented.log
+          cp reference-build/wsjt-codec reference-output/wsjt-codec-instrumented
+      - name: Verify instrumentation disabled preserves exact observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          env -u WSJTX_STAGE_TRACE python3 tools/wsjtx_stage_reference.py run \
+            --exe reference-output/wsjt-codec-instrumented \
+            --expected-sha256 "$(sha256sum reference-output/wsjt-codec-instrumented | cut -d' ' -f1)" \
+            --source-revision 0f7d5928449ec747c3d1f6da1306f8c94404c3a9 --instrumented \
+            --inputs reference-output/inputs --output reference-output/instrumented-disabled
+          python3 tools/wsjtx_stage_reference.py identity \
+            --original reference-output/original/reference.json \
+            --traced reference-output/instrumented-disabled/reference.json \
+            --output reference-output/disabled-identity.json
+      - name: Capture stages with AP off and verify unchanged stdout
+        shell: bash
+        env:
+          WSJTX_STAGE_TRACE: '1'
+        run: |
+          set -euo pipefail
+          python3 tools/wsjtx_stage_reference.py run \
+            --exe reference-output/wsjt-codec-instrumented \
+            --expected-sha256 "$(sha256sum reference-output/wsjt-codec-instrumented | cut -d' ' -f1)" \
+            --source-revision 0f7d5928449ec747c3d1f6da1306f8c94404c3a9 --instrumented \
+            --inputs reference-output/inputs --output reference-output/instrumented-enabled
+          python3 tools/wsjtx_stage_reference.py identity \
+            --original reference-output/original/reference.json \
+            --traced reference-output/instrumented-enabled/reference.json \
+            --output reference-output/enabled-identity.json
+          test "$(wc -c < reference-output/instrumented-enabled/ft8-official/stderr.txt)" -le 268435456
+          python3 tools/analyze_fortran_trace.py \
+            reference-output/instrumented-enabled/ft8-official/stderr.txt \
+            reference-output/trace-summary.json
+          sha256sum reference-output/wsjt-codec-* reference-output/wsjtx-original-source.tar.gz \
+            reference-output/stage-logging.patch > reference-output/SHA256SUMS
+      - name: Upload raw traces, identity checks, binaries and corresponding source
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: wsjtx-fortran-stages-${{ github.run_id }}
+          path: reference-output/
+          if-no-files-found: error
+          retention-days: 30
