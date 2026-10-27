@@ -153,3 +153,5 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
  #band-activity td[data-label]::before{content:attr(data-label);display:block;white-space:normal;color:#8099aa;font:var(--op-font-secondary)/1.4 'Segoe UI',sans-serif;margin-bottom:3px}
 }
 @container (max-width:23em){#band-activity tbody tr:not(:has(.empty-messages)){grid-template-columns:minmax(0,1fr)}#band-activity td:nth-child(5){grid-column:auto}}
+
+#band-activity>header{flex-wrap:wrap;gap:10px}#band-activity .op-order-controls{display:flex;flex-wrap:wrap;gap:8px;max-width:100%}#band-activity .op-order-controls label{font-size:var(--op-font-secondary);margin:0;display:flex;flex-direction:column;gap:3px;min-width:0;max-width:100%}#band-activity .op-order-controls select{font-size:var(--op-font-normal);padding:4px;max-width:100%}

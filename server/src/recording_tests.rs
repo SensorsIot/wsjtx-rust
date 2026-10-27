@@ -185,7 +185,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
     // Initial provider ACK keeps the admitted job/gen; no made-up source ID.
     worker.epoch_seen = false;
-    assert!(queue.push(&[], 1024, 0, 0, audio::SILENT));
+    assert!(queue.push(&[], 1024, 0, 0, audio::SILENT | audio::TIMESTAMP_ERROR));
     assert!(worker.step().unwrap().is_none());
     let first_job = worker.job.clone();
     assert!(worker.window.is_some());
@@ -203,6 +203,9 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
         },
     )
     .unwrap();
+    r.publish_latest_decode(&first_job, (0, 224), 0, false)
+        .unwrap();
+    assert_eq!(r.receive_snapshot()["job"]["latest_decode"]["id"], 1);
     // A marked measured gap resets private analysis but keeps source/job/gen.
     assert!(queue.push(
         &[],
@@ -213,6 +216,17 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     ));
     worker.step().unwrap();
     assert!(worker.reset);
+    assert!(
+        r.receive_snapshot()["job"]["latest_decode"].is_null(),
+        "measured gap invalidates previous period view"
+    );
+    r.publish_latest_decode(&first_job, (12000, 12224), 1, false)
+        .unwrap();
+    assert_eq!(
+        r.receive_snapshot()["job"]["latest_decode"]["id"],
+        2,
+        "gap must not reuse descriptor identity"
+    );
     assert_eq!(worker.job.id, first_job.id);
     assert_eq!(worker.job.generation, first_job.generation);
     assert_eq!(
@@ -224,6 +238,15 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     assert!(queue.push(&[], 1024, 49024, 0, audio::SILENT));
     worker.step().unwrap();
     assert_ne!(worker.job.id, first_job.id);
+    assert!(
+        r.receive_snapshot()["job"]["latest_decode"].is_null(),
+        "unknown epoch clears descriptor"
+    );
+    assert_eq!(
+        r.state.lock().unwrap().decode_counter,
+        0,
+        "new epoch restarts descriptor counter"
+    );
     assert_ne!(worker.job.source_id, first_job.source_id);
     assert_eq!(worker.job.generation, first_job.generation + 1);
     assert_eq!(
@@ -1170,4 +1193,156 @@ fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_row
     assert_eq!(empty["first_sequence"], 19);
     assert_eq!(empty["next_sequence"], 19);
     assert_eq!(empty["period_start_utc"], "2026-10-27T12:00:30.0000000Z");
+}
+
+struct DecodeBoundaryInput {
+    context: source::SourceContext,
+    next: Option<SampleBlock>,
+    owner: Arc<Recording>,
+    views: Arc<Mutex<Vec<Value>>>,
+    running: bool,
+}
+impl SampleSource for DecodeBoundaryInput {
+    fn descriptor(&self) -> Option<Arc<SourceDescriptor>> {
+        Some(self.context.descriptor.clone())
+    }
+    fn acknowledge_epoch(
+        &mut self,
+        _: u64,
+        _: Arc<SourceDescriptor>,
+        _: source::SourceTiming,
+    ) -> std::result::Result<(), source::SourceError> {
+        Err(source::SourceError::InvalidContext)
+    }
+    fn poll(&mut self) -> SourcePoll {
+        let view = self.owner.receive_snapshot()["job"]["latest_decode"].clone();
+        if !view.is_null() && self.views.lock().unwrap().last() != Some(&view) {
+            self.views.lock().unwrap().push(view);
+        }
+        self.next
+            .take()
+            .map(SourcePoll::Block)
+            .unwrap_or(SourcePoll::Pending)
+    }
+}
+impl LiveInput for DecodeBoundaryInput {
+    fn start(&mut self) -> std::result::Result<(), source::SourceError> {
+        self.running = true;
+        Ok(())
+    }
+    fn request_stop(&mut self) {
+        self.running = false;
+    }
+    fn status(&self) -> audio::AudioStatus {
+        audio::AudioStatus {
+            state: if self.running {
+                audio::AudioState::Running
+            } else {
+                audio::AudioState::Closed
+            },
+            error: None,
+            retry_after_ms: None,
+        }
+    }
+}
+// Proves: CL-010-09; TC-007-006. Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
+#[test]
+fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    r.publish_decode(&job, &decoded).unwrap();
+    let context = {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        source::SourceContext {
+            descriptor: l.source.as_ref().unwrap().clone(),
+            timing: Arc::new(l.timing.as_ref().unwrap().clone()),
+        }
+    };
+    let block =
+        |first| SampleBlock::live(&context, first, Arc::from(vec![0.0; 240]), false).unwrap();
+    let mut window =
+        receive::WindowBuffer::new(decoder::Mode::Ft8, context.descriptor.clone()).unwrap();
+    for first in (180000..359760).step_by(240) {
+        assert!(window.push(&block(first)).unwrap().window.is_none());
+    }
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 359760;
+    let views = Arc::new(Mutex::new(vec![]));
+    let next = block(359760);
+    let input = DecodeBoundaryInput {
+        context,
+        next: Some(next),
+        owner: r.clone(),
+        views: views.clone(),
+        running: true,
+    };
+    let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+    worker.window = Some(window);
+    worker.spectrum.reset(359760);
+    worker
+        .analyze(receive::AnalysisWindow {
+            origin: 0,
+            samples: vec![0.0; 180000],
+        })
+        .unwrap();
+    let observed = views.lock().unwrap();
+    assert!(
+        observed
+            .iter()
+            .any(|v| v["id"] == 1 && v["complete"] == false),
+        "abandoned analysis must publish explicit partial view: {observed:?}"
+    );
+    let s = r.receive_snapshot();
+    assert_eq!(
+        s["job"]["last_overrun"],
+        json!({"first_frame":0,"end_frame":180000})
+    );
+    assert_eq!(s["job"]["latest_decode"]["id"], 2);
+    assert_eq!(s["job"]["latest_decode"]["complete"], true);
+    assert_eq!(
+        s["job"]["latest_decode"]["period_start_utc"],
+        "2026-10-27T12:00:15.0000000Z"
+    );
+}
+// Proves: CL-010-09; TC-007-006. Real terminal owner path preserves last view, never an invented completion.
+#[test]
+fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identity() {
+    for cancelled in [false, true] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        let (job, decoded) = live_ring(&r);
+        r.publish_decode(&job, &decoded).unwrap();
+        r.publish_latest_decode(&job, (0, 180000), 0, false)
+            .unwrap();
+        let before = r.receive_snapshot()["job"]["latest_decode"].clone();
+        r.state.lock().unwrap().decode_counter = source::MAX_COUNTER;
+        assert_eq!(
+            r.publish_latest_decode(&job, (0, 180000), 0, false),
+            Err("counter_exhausted")
+        );
+        assert_eq!(
+            r.receive_snapshot()["job"]["latest_decode"],
+            before,
+            "counter exhaustion cannot replace last view"
+        );
+        let input = crate::receive_http_tests::Input::queued().0;
+        let worker = LiveWorker::new(r.clone(), job.clone(), Box::new(input), "ft8");
+        if cancelled {
+            job.cancel.store(true, Ordering::Release);
+        }
+        worker.run(if cancelled {
+            Ok(())
+        } else {
+            Err("audio_failed")
+        });
+        let after = r.receive_snapshot();
+        assert_eq!(
+            after["job"]["state"],
+            if cancelled { "cancelled" } else { "failed" }
+        );
+        assert_eq!(after["job"]["latest_decode"], before);
+        assert_eq!(after["job"]["latest_decode"]["complete"], false);
+    }
 }

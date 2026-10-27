@@ -398,7 +398,7 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     records=[makeRecord(0,'2026-10-27T12:00:00.0000000Z',0),...Array.from({length:18},(_,i)=>makeRecord(i+1,period,i===0?-0.2:i===1?0.2:-0.01))];
     Object.assign(state.job,{first_sequence:0,next_sequence:19,available_count:19,latest_decode:{id:1,first_sequence:1,next_sequence:19,period_start_utc:period,complete:true}});
-    await page.route('**/receive',route=>route.fulfill({json:state}));
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await page.route('**/receive/results?*',async route=>{
       const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),limit=Number(new URL(route.request().url()).searchParams.get('limit'));
       const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
@@ -406,11 +406,15 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
       if(hold&&cursor>=35){held={route,response};pending.resolve();}else await route.fulfill({json:response});
     });
   }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===16);
+  await page.selectOption('#activity-direction','desc');
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===18);
+  assert.equal(await page.locator('tr[data-result-id]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
+  await page.selectOption('#activity-direction','asc');
   assert.doesNotMatch(await page.locator('#band-activity tbody').innerText(),/STATION 0\b/);
   const cells=page.locator('tr[data-result-id]').first().locator('td');assert.equal(await cells.nth(0).textContent(),'12:00:15');assert.equal(await cells.nth(2).textContent(),'-0.2');
   assert.equal(await page.locator('tr[data-result-id]').nth(1).locator('td').nth(2).textContent(),'+0.2');assert.equal(await page.locator('tr[data-result-id]').nth(2).locator('td').nth(2).textContent(),'+0.0');
-  for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(await cells.evaluateAll(nodes=>nodes.filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent)),[]);}
+  for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(await cells.evaluateAll(nodes=>nodes.filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent)),[]);await page.screenshot({path:`test-results/ui-operating/latest-period-${width}-${scale}x.png`,fullPage:true});}
   await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   const nextPeriod='2026-10-27T12:00:30.0000000Z';records.push(...Array.from({length:18},(_,i)=>makeRecord(i+19,nextPeriod,0.1)));
   Object.assign(state.job,{next_sequence:37,available_count:37,latest_decode:{id:2,first_sequence:19,next_sequence:37,period_start_utc:nextPeriod,complete:false}});hold=true;
@@ -422,4 +426,60 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   await held.route.fulfill({json:held.response});held=null;hold=false;
   await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-result-id]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-09; TC-007-006. Period identity can be learned from results, not only snapshots.
+test('TC-007-006 a page-announced period refetches its prefix instead of skipping it',{timeout:35000},async t=>{
+  const oldPeriod='2026-10-27T12:00:00.0000000Z',newPeriod='2026-10-27T12:00:15.0000000Z';let state,announced=false;
+  const records=Array.from({length:19},(_,i)=>({sequence:i,start_frame:i?186000:6000,frequency_hz:1000+i,snr_db:0,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`PAGE FIXTURE ${i}`,fields:{},period_start_utc:i?newPeriod:oldPeriod,dt_seconds:0}));
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=360000;
+    Object.assign(state.job,{next_sequence:19,available_count:19,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:oldPeriod,complete:true}});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',route=>{
+      const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor,cursor+16),next=cursor+batch.length;
+      if(cursor===19)announced=true;
+      const view=announced?{id:2,first_sequence:1,next_sequence:19,period_start_utc:newPeriod,complete:true}:state.job.latest_decode;
+      return route.fulfill({json:{...emptyResults(state),next_sequence:19,available_count:19,next,more:next<19,records:batch,latest_decode:view}});
+    });
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===18);
+  assert.ok(announced);assert.equal(await page.locator('tr[data-result-id]').first().locator('td').nth(4).textContent(),'PAGE FIXTURE 1');
+  assert.equal(await page.locator('tr[data-result-id]').last().locator('td').nth(4).textContent(),'PAGE FIXTURE 18');assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-09; TC-007-006. Numeric/literal presentation sorting never selects a station.
+test('TC-007-006 selectable ordering is numeric, unknown-last and persists across periods and modes',{timeout:20000},async t=>{
+  let state;const period='2026-10-27T12:00:00.0000000Z';
+  let records=[
+    {frequency_hz:1000,snr_db:-20,dt_seconds:-0.2,text:'CQ Z9ZZ JO00'},
+    {frequency_hz:200,snr_db:10,dt_seconds:0.2,text:'cq A1AA IO00'},
+    {frequency_hz:3499.9,snr_db:null,dt_seconds:0,text:'CQ B1BB JN00'},
+    {frequency_hz:1000,snr_db:-5,dt_seconds:-0.1,text:null},
+    {frequency_hz:500,snr_db:0,dt_seconds:0.1,text:' CQ SPACE JO00'},
+  ].map((r,sequence)=>({sequence,start_frame:6000,payload77:'0'.repeat(77),i3:0,n3:0,status:r.text===null?'unsupported':'decoded',fields:r.text===null?null:{},period_start_utc:period,...r}));
+  const {page,errors,sent}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=180000;
+    Object.assign(state.job,{next_sequence:5,available_count:5,latest_decode:{id:1,first_sequence:0,next_sequence:5,period_start_utc:period,complete:true}});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor,cursor+16),next=cursor+batch.length;return route.fulfill({json:{...emptyResults(state),next_sequence:5,available_count:5,next,more:next<5,records:batch}});});
+  }});
+  const order=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===5);
+  assert.deepEqual(await order(),[1,4,0,3,2],'frequency200 precedes1000, numeric ties retain sequence');
+  await page.selectOption('#activity-direction','desc');assert.deepEqual(await order(),[2,0,3,4,1]);
+  await page.selectOption('#activity-sort','signal');assert.equal(await page.inputValue('#activity-direction'),'desc');assert.deepEqual(await order(),[1,4,3,0,2]);
+  await page.selectOption('#activity-direction','asc');assert.deepEqual(await order(),[0,3,4,1,2],'unknown SNR stays last when ascending');
+  await page.selectOption('#activity-sort','dt');assert.deepEqual(await order(),[0,3,2,4,1]);await page.selectOption('#activity-direction','desc');assert.deepEqual(await order(),[1,4,2,3,0]);
+  await page.selectOption('#activity-sort','message');assert.deepEqual(await order(),[4,1,2,0,3]);await page.selectOption('#activity-direction','desc');assert.deepEqual(await order(),[0,2,1,4,3]);
+  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===0);
+  assert.equal(await page.inputValue('#activity-sort'),'message');assert.equal(await page.inputValue('#activity-direction'),'desc');
+  state.generation++;state.source.id=crypto.randomUUID();state.job.id=crypto.randomUUID();state.job.mode='ft4';state.job.latest_decode={id:1,first_sequence:0,next_sequence:5,period_start_utc:null,complete:true};records=records.map(r=>({...r,period_start_utc:null,dt_seconds:null}));
+  await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===5);
+  assert.equal(await page.inputValue('#activity-sort'),'message');assert.equal(await page.inputValue('#activity-direction'),'desc');
+  await page.selectOption('#activity-sort','dt');assert.deepEqual(await order(),[0,1,2,3,4]);await page.selectOption('#activity-direction','desc');assert.deepEqual(await order(),[0,1,2,3,4],'all unknown DT stays in sequence order');
+  for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+  await page.evaluate(()=>{profileData.profile_id='not-a-valid-uuid';renderResults();});assert.equal(await page.inputValue('#activity-sort'),'dt','invalid profile cannot reset preference');
+  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.equal(await page.inputValue('#activity-sort'),'frequency');assert.equal(await page.inputValue('#activity-direction'),'asc');
+  assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });

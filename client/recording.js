@@ -26,7 +26,7 @@ const bands=document.createElement('section');bands.id='band-strip';bands.classN
 bands.innerHTML='<span class="op-eyebrow">BAND</span>'+['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'].map(band=>`<button type="button" disabled title="CAT tuning unavailable">${band}</button>`).join('');
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div><button type="button" class="op-filter" disabled title="Server filtering unavailable">&#9663; All decodes</button></header><div class="op-search"><input disabled aria-label="Find a callsign or message" placeholder="Find callsign or message&#8230;"><span>Unavailable</span></div><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">Time</th><th scope="col">SNR</th><th scope="col">DT</th><th scope="col">Hz</th><th scope="col">Message</th><th scope="col">Status</th></tr></thead><tbody role="rowgroup"><tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div><footer><span class="op-selection-dot"></span>Station selection requires decoded results<span class="op-muted">No sample data</span></footer></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div><div class="op-order-controls"><label>Sort<select id="activity-sort" aria-label="Band Activity sort"><option value="frequency">Frequency</option><option value="signal">Signal strength</option><option value="dt">DT</option><option value="message">Callsign/message</option></select></label><label>Direction<select id="activity-direction" aria-label="Band Activity sort direction"><option value="asc">Ascending</option><option value="desc">Descending</option></select></label></div></header><div class="op-search"><input disabled aria-label="Find a callsign or message" placeholder="Find callsign or message&#8230;"><span>Unavailable</span></div><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">Time</th><th scope="col">SNR</th><th scope="col">DT</th><th scope="col">Hz</th><th scope="col">Message</th><th scope="col">Status</th></tr></thead><tbody role="rowgroup"><tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div><footer><span class="op-selection-dot"></span>Station selection requires decoded results<span class="op-muted">No sample data</span></footer></section>
 <section id="rx-focus" class="message-pane op-card op-contact" aria-labelledby="focus-heading"><header><div><h3 id="focus-heading">Current QSO</h3><span class="op-muted">No active contact &#183; transmission unavailable</span></div><span class="op-contact-badge">Unavailable</span></header><div class="op-contact-body"><div class="op-contact-identity"><div><strong>No station selected</strong><span>Contact selection requires decoded results</span></div></div><ol class="op-qso-steps" aria-label="QSO progression"><li><span>1</span>Call</li><li><span>2</span>Report</li><li><span>3</span>Confirm</li><li><span>4</span>Log</li></ol><div class="op-receive-bubble"><span>LAST RECEIVED <time>Unknown</time></span><p>No received contact message</p></div><div class="op-frequency-fields"><label>Rx audio<input disabled placeholder="Unknown"><span>Hz</span></label><label>Tx audio<input disabled placeholder="Unknown"><span>Hz</span></label><button type="button" disabled title="Tuning unavailable">Rx &#8594; Tx</button></div><div class="op-next-label"><span>NEXT MESSAGE</span><select disabled aria-label="Transmit period unavailable"><option>Period</option></select></div><select class="op-message-select" disabled aria-label="Next outgoing message unavailable"><option>No outgoing message</option></select><div class="op-auto-row"><label class="op-check"><input type="checkbox" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" class="op-text-button" disabled>Prepare CQ</button></div><div class="op-contact-actions"><button type="button" class="op-primary" disabled aria-describedby="transmit-unavailable"><span aria-hidden="true">&#9655;</span>Enable Tx</button><button type="button" disabled aria-describedby="contact-unavailable">Log contact</button></div><p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Contact workflow and logging are unavailable.</p></div></section>
 <section id="strategy-panel" class="op-card op-strategy" aria-labelledby="strategy-heading"><header><div><h3 id="strategy-heading">&#10023; Strategy</h3><span class="op-muted">Server execution</span></div><span class="op-state">Unavailable</span></header><div class="op-strategy-body"><div class="op-strategy-name"><strong>No active definition</strong></div><p class="op-muted op-strategy-description">The station does not yet offer strategy execution. No browser-side selection or automation is running.</p><div class="op-rule-chips"><span>Filters unavailable</span><span>Ranking unavailable</span></div><div class="op-candidate"><span class="op-eyebrow">SELECTED CANDIDATE</span><strong>None</strong><p>No server-confirmed candidate or decision.</p></div><div class="op-policy-summary"><span>Reply attempts<strong>Unavailable</strong></span><span>Stop condition<strong>Unavailable</strong></span><span>Transmission<strong>Unavailable</strong></span></div><button type="button" class="op-primary" disabled title="Strategy service unavailable">&#9655; Resume strategy</button><button type="button" class="op-edit-definition" data-region="strategies">View definition <span>&#8594;</span></button></div></section></div>`;
 controls.prepend(workspace);
@@ -401,6 +401,7 @@ tuning.insertBefore(receiveControls,tuning.querySelector('.op-period'));
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null;
+let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
@@ -472,7 +473,24 @@ async function receiveSync(current=socket){
   }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
   finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
 }
+const activitySort=document.querySelector('#activity-sort'),activityDirection=document.querySelector('#activity-direction');
+function activityOrdering(){
+  const id=displayPreferenceId();
+  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='frequency';activitySortDirection='asc';}
+  activitySort.value=activitySortField;activityDirection.value=activitySortDirection;
+  const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
+  const missing=v=>v===null||v===undefined||v==='';
+  return [...resultRows].sort((a,b)=>{
+    const left=key(a),right=key(b);
+    if(missing(left)!==missing(right))return missing(left)?1:-1;
+    const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
+    return compared*(activitySortDirection==='asc'?1:-1)||a.sequence-b.sequence;
+  });
+}
+activitySort.addEventListener('change',()=>{activitySortField=activitySort.value;activitySortDirection=activitySortField==='signal'?'desc':'asc';renderResults();});
+activityDirection.addEventListener('change',()=>{activitySortDirection=activityDirection.value;renderResults();});
 function renderResults(){
+  const ordered=activityOrdering();
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
   document.querySelector('#band-activity header .op-muted').textContent=resultView?
@@ -493,7 +511,7 @@ function renderResults(){
   }
   body.replaceChildren();
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
-  for(const record of resultRows){
+  for(const record of ordered){
     const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${liveIdentity(live)}/${record.sequence}`;row.dataset.sequence=String(record.sequence);
     for(const [index,text] of [periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(1),record.dt_seconds===null?'—':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status].entries()){
       const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;row.append(cell);
@@ -533,6 +551,9 @@ async function receiveResults(){
     for(let i=0;i<page.records.length;i++)if(!validRecord(page.records[i])||page.records[i].sequence!==cursor+i)throw new Error('Invalid decoded record');
     if(!applyLatestDecode(page.latest_decode,page.first_sequence))return;
     if(resultView){
+      // A page may announce a period whose prefix was fetched and filtered earlier.
+      // Rewind to that descriptor's first cursor; an empty tail is not its full view.
+      if(cursor>resultCursor){receiveShow();return;}
       resultCursor=Math.max(resultCursor,page.next);
       const known=new Set(resultRows.map(r=>r.sequence));
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));

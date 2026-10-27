@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 32625c646bcc8af2dcec0fb12beb7b2099d9535d5406ed119ee69b786093766c
+// Canonical FSD slices SHA256: a460eddff53b79940a69767d8ccc9af972f014df64be3f198d06fd9308851154
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
@@ -56,6 +56,32 @@ package WstxOperatingLayout {
              TC007002 keeps the unsupported/no-input empty-view baseline. */
     }
 
+    enum def ActivitySortField { enum frequency; enum signalStrength; enum dt; enum 'message'; }
+enum def ActivitySortDirection { enum ascending; enum descending; }
+attribute def ActivityOrdering {
+    attribute field : ActivitySortField = ActivitySortField::frequency;
+    attribute direction : ActivitySortDirection = ActivitySortDirection::ascending;
+    attribute unavailableLast : Boolean = true;
+    attribute sequenceTieAscending : Boolean = true;
+    attribute appliesOnlyLatestPeriod : Boolean = true;
+    attribute sendsServerMutation : Boolean = false;
+    attribute newPeriodResetsChoice : Boolean = false;
+    attribute newModeResetsChoice : Boolean = false;
+    attribute sameProfileReconnectResetsChoice : Boolean = false;
+    attribute differentProfileResetsChoice : Boolean = true;
+    assert constraint sortingPolicy {
+        unavailableLast and sequenceTieAscending and appliesOnlyLatestPeriod and
+        not sendsServerMutation and not newPeriodResetsChoice and not newModeResetsChoice and
+        not sameProfileReconnectResetsChoice and differentProfileResetsChoice
+    }
+    doc /* FSD4.7.4/TC007006: numeric frequency/SNR/signedDT, literalASCIIcasefold
+         message; EMPTY=unavailable, unknownlastbothdirections, equaltiepublicationsequenceASC. Field
+         change defaults signalStrengthDESC, othersASC; explicitdirection retained
+         within same field. Re-sort the whole latest view after each arriving page. Reset
+         only for a different VALIDATED profile UUID. No newstore/backend/modem
+         filtering, station selection, arming or automation. Keyboard/360px/2x. */
+}
+
     attribute def LatestBandActivity {
         attribute currentDescriptorId : Integer;
         attribute incomingDescriptorId : Integer;
@@ -100,7 +126,13 @@ package WstxOperatingLayout {
              FT4 3024/5424/7824 same,95424=>+0.0 at12:00:07.5.
              Nonzeroanchor/dayrollover/fractionalUTC/ties/signedzero and unknown quality.
              Actual1440/360/2x text retains all6literalfields without horizontal overflow.
-             Native realdecoder/RF proof remains independent, not a fabricated UI fixture. */
+             Native realdecoder/RF proof remains independent, not a fabricated UI fixture.
+             Sorting: frequency200/1000/3499.9 numericASC by default; SNR-20/+10/-5
+             DESCstrongestfirst; signedDT-0.2/+0.2/unknown ASCearlytolate; literal
+             ASCIIcasefoldmessageASC. Bothdirections keepunknown/emptylast, equalkeys
+             sequenceASC. Pagesre-sortwholelatestview; no priorperiodrow restored.
+             Choicepersistsnewperiod/mode/sameprofilereconnect; differentvalidatedUUID
+             resetsfrequencyASC. No servermutation/cadence/authority changes; 360px/2x. */
     }
     attribute def ReceivePresentationFreshness {
         attribute otherwiseValid : Boolean;

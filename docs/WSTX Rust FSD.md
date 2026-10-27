@@ -1593,7 +1593,7 @@ Imported model definitions retain their own declared source dependencies.
 |---|---|---|---|
 | CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002; TC-009-004 |
 | CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002; TC-009-004 |
-| CL-010-09 | FR-010, FR-019 | Band Activity shows only the latest published decode period and signed station timing relative to our clock, with explicit partial/unavailable states. | TC-007-006 |
+| CL-010-09 | FR-010, FR-019 | Band Activity shows only the latest published decode period and signed station timing relative to our clock, selectable presentation sorting and explicit partial/unavailable states. | TC-007-006 |
 | CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002; TC-009-004 |
 
 #### 4.7.1 Read-only operating composition
@@ -1758,6 +1758,22 @@ retained API partial output is not relabelled completed. Single pending request,
 limit1/4s, byte caps, control priority and no automatic mutation retry remain unchanged.
 At narrow widths and enlarged text UTC Time, signed DT and the other four fields remain
 legible without horizontal page overflow.
+
+Band Activity offers labelled Sort and Direction controls. Default is Frequency,
+ascending numeric audio frequency. Sort options are Frequency, Signal strength,
+DT and Callsign/message. Selecting Signal strength defaults to descending SNR
+(strongest first); other fields default ascending. Direction can explicitly select
+ascending or descending. DT is signed numeric seconds: ascending means early to late,
+not smallest absolute error. Callsign/message compares the literal displayed message
+case-insensitively in ASCII order; it never fabricates a resolved callsign. Empty or
+unavailable sort values come last in both directions. Equal keys retain ascending
+publication sequence. Sorting uses only actual records of the current latest view;
+new pages re-sort the whole current view and old periods cannot return.
+
+The selected field/direction persist in this page through new decode periods, mode
+changes and reconnects to the same profile. Only a different validated profile UUID resets
+to Frequency/ascending. No new server operation, decoder filtering or browser storage
+is introduced. Controls remain keyboard accessible and readable at360px/200%text.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -2432,6 +2448,13 @@ browser for operator-authorized receive-only FT4/FT8 observation.
   callsigns and all six fields: literal values, unbroken numeric text and no horizontal
   page overflow. In live acceptance observe actual decoded calls in both modes and
   record clock quality without claiming independently measured transmitter clock error.
+
+Sorting checks: use independently scripted frequency200/1000/3499.9, SNR-20/+10/-5,
+signed DT-0.2/+0.2/unknown and case-varied literal messages. Check all fields and both
+directions, unknown-last, stable ties, arrivals spanning pages, empty/next periods,
+mode/reconnect retention and profile reset; verify no new server mutations or changed
+result request cadence. Cost2 Windows actual Chromium/candidate server; cost4 actual
+live calls, operator changes both controls and observes only latest-period rows.
 
 ## 7. Proposed delivery milestones
 
