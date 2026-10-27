@@ -144,6 +144,8 @@
   - tools/test_wsjtx_stage_reference.py
   - tools/analyze_fortran_trace.py
   - tools/test_analyze_fortran_trace.py
+  - tools/wsjtx_simulator_components.py
+  - fixtures/decoder/simulator-cases.json
   select:
   - .github/workflows/fortran-stage-diagnostics.yml
   - fixtures/decoder/wsjtx-stage-logging.patch.gz
@@ -155,4 +157,6 @@
   - tools/test_wsjtx_stage_reference.py
   - tools/analyze_fortran_trace.py
   - tools/test_analyze_fortran_trace.py
+  - tools/wsjtx_simulator_components.py
+  - fixtures/decoder/simulator-cases.json
   needs: Python 3.12 standard library. Windows PC; 25 reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.

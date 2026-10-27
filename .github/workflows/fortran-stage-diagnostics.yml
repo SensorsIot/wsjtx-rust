@@ -33,17 +33,28 @@ jobs:
           python3 -m unittest discover -s tools -p 'test_wsjtx*reference.py' -v
           python3 -m unittest discover -s tools -p 'test_analyze_fortran_trace.py' -v
       - name: Install Fortran dependencies on hosted runner only
+        timeout-minutes: 12
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p reference-output
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y \
+          cp /etc/apt/apt-mirrors.txt reference-output/apt-mirrors.before.txt
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          if [ -f /etc/apt/apt-security-mirrors.txt ]; then
+            printf '%s\n' 'https://security.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-security-mirrors.txt
+          fi
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            update 2>&1 | tee reference-output/apt-update.log
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+            -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            install --no-install-recommends -y \
             build-essential cmake ninja-build gfortran \
             qtbase5-dev qttools5-dev qttools5-dev-tools qtmultimedia5-dev \
             libqt5serialport5-dev libqt5websockets5-dev libqt5sql5-sqlite \
             libfftw3-dev libboost-log-dev libusb-1.0-0-dev libudev-dev \
-            portaudio19-dev libhamlib-dev libhamlib-utils pkg-config
+            portaudio19-dev libhamlib-dev libhamlib-utils pkg-config \
+            2>&1 | tee reference-output/apt-install.log
           dpkg-query -W > reference-output/runner-packages.txt
           gfortran --version > reference-output/gfortran-version.txt
           cmake --version > reference-output/cmake-version.txt
@@ -59,12 +70,19 @@ jobs:
           cmake -S reference-source -B reference-build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DWSJT_GENERATE_DOCS=OFF \
             -DWSJT_SKIP_MANPAGES=ON -DWSJT_SKIP_QMAP=ON \
-            -DWSJT_BUILD_UTILS=OFF -DWSJT_ENABLE_TESTS=OFF \
+            -DWSJT_BUILD_UTILS=ON -DWSJT_ENABLE_TESTS=OFF \
             -DWSJT_FORTRAN_LIBRARY_VARIANTS=OPENMP_ONLY \
             2>&1 | tee reference-output/configure.log
           cmake --build reference-build --target wsjt-codec --parallel 2 \
             2>&1 | tee reference-output/build-original.log
           cp reference-build/wsjt-codec reference-output/wsjt-codec-original
+          cmake --build reference-build --target ft8sim --parallel 2 \
+            2>&1 | tee reference-output/build-ft8sim.log
+          cp reference-build/ft8sim reference-output/ft8sim
+          python3 tools/wsjtx_simulator_components.py \
+            --exe reference-build/ft8sim \
+            --cases fixtures/decoder/simulator-cases.json \
+            --output reference-output/cr18-ft8-components
           ldd reference-build/wsjt-codec > reference-output/runtime-libraries.txt
           cp reference-build/CMakeCache.txt reference-output/CMakeCache.txt
           python3 tools/wsjtx_reference.py acquire --inputs reference-output/inputs
