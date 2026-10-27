@@ -83,7 +83,12 @@ async function browserWindows(t, profiles) {
   for (const p of profiles) {const opened = context.waitForEvent('page'); await launcher.evaluate(({url, name}) => {window.open(url, name, 'popup,width=1100,height=850');}, {url: p.origin, name: p.document.profile_id}); pages.push(await opened);}
   await launcher.close(); return {context, pages};
 }
-async function connected(page) {await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});}
+async function connected(page) {
+  await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
+  if(await page.locator('#open-server-settings').count())await page.locator('#open-server-settings').click();
+  const settings=page.locator('#station-settings');
+  if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
+}
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
 // Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.

@@ -1,8 +1,8 @@
 # WSTX Rust
 
-A planned, simplified Rust implementation of WSJT-family radio functionality. Requirements will be extracted from documented and observable behavior, with WSJT-X v3.3.0-beta4 as the initial experimental reference. The existing implementation will not be translated line by line or copied into the Rust project. WSTX Rust is a working name; final release branding remains undecided.
+A planned, simplified Rust implementation of WSJT-family radio functionality. Requirements will be extracted from documented and observable behavior, with WSJT-X v3.3.0-beta4 as the initial experimental reference. Selected decoder stages adapt the pinned WSJT-X numerical routines into Rust, retaining their GPL notices and source provenance. WSTX Rust is a working name; final release branding remains undecided.
 
-The project has a Rust station server, a browser status/settings interface and a Windows/MSVC build workflow. Saved profiles support independently configured server processes and browser windows on distinct ports. Radio functionality is still in the specification phase; no decoder has been implemented or imported.
+The project has a Rust station server, a browser status/settings interface and a Windows/MSVC build workflow. Saved profiles support independently configured server processes and browser windows on distinct ports. The receive implementation includes a Rust FT4/FT8 decoder and separate audio/radio-control providers; live integration and hardware acceptance are in progress. Transmit and complete contact operation remain under development.
 
 Create a profile with `wstx-rust --create-profile <directory>`, then start it with
 `wstx-rust --profile <directory>` and open the reported URL. Each simultaneous server
@@ -126,8 +126,11 @@ was not a complete dependency audit. Licensing and trademarks remain separate.
 The shared FFT provider is [RustFFT 6.4.1](https://crates.io/crates/rustfft/6.4.1),
 by Allen Welkie and Elliott Mahler, under MIT OR Apache-2.0. Its complete notices are
 retained in [server/third-party/rustfft](server/third-party/rustfft). The application
-owns FFT scaling, scratch storage and the independent dBFS definition; no upstream
-WSJT-X transform/decoder implementation was copied.
+owns FFT scaling, scratch storage and the independent display dBFS definition. Selected
+modem synchronization, metrics and subtraction routines adapt WSJT-X revision
+`0f7d5928449ec747c3d1f6da1306f8c94404c3a9` under GPL-3.0-only, with source paths and
+notices in the adapted files. The project retains its [COPYING](COPYING) and
+[AUTHORS](AUTHORS) attribution.
 
 - Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - [ft8_lib MIT license](https://github.com/kgoba/ft8_lib/blob/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE)

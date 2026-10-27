@@ -24,17 +24,17 @@ before(async()=>{
 });
 after(async()=>{await browser?.close();if(root)await fs.rm(root,{recursive:true,force:true});});
 async function port(){const s=net.createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=s.address().port;await new Promise(r=>s.close(r));return p;}
-async function fixture(t,{thin=false}={}){
+async function fixture(t,{thin=false,secure=false}={}){
   const dir=await fs.mkdtemp(path.join(root,'station-')),p=await port(),profile_id=crypto.randomUUID();
   const proxy=thin?await link({host:'127.0.0.2',port:1}):null;
   if(proxy)proxy.target.port=proxy.port;
-  const origin=thin?`https://localhost:${proxy.port}`:`http://127.0.0.1:${p}`;
-  const doc={schema_version:1,profile_id,revision:0,display_name:'Recording <station>',callsign:'TEST1',locator:'JN47AA',endpoint:{bind:thin?`127.0.0.2:${proxy.port}`:`127.0.0.1:${p}`,origin:thin?origin:null},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
+  const origin=thin?`https://localhost:${proxy.port}`:secure?`https://localhost:${p}`:`http://127.0.0.1:${p}`;
+  const doc={schema_version:1,profile_id,revision:0,display_name:'Recording <station>',callsign:'TEST1',locator:'JN47AA',endpoint:{bind:thin?`127.0.0.2:${proxy.port}`:`127.0.0.1:${p}`,origin:thin||secure?origin:null},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const token=crypto.randomBytes(32).toString('hex'),env=thin?{...tls,WSTX_TOKEN:token}:{};
+  const token=crypto.randomBytes(32).toString('hex'),env=thin||secure?{...tls,WSTX_TOKEN:token}:{};
   let app=await server(env,['--profile',dir]);
   const context=await browser.newContext({ignoreHTTPSErrors:true});
-  if(thin){const res=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token});assert.equal(res.status(),204);}
+  if(thin||secure){const res=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token});assert.equal(res.status(),204);}
   t.after(async()=>{await context.close();await app.close();await proxy?.close();});
   async function req(route,method='GET',body,headers={},direct=false){
     const target=direct&&thin?`https://127.0.0.2:${proxy.port}`:origin;
@@ -52,7 +52,7 @@ function wav(seconds=1,amplitude=.5,frequency=750){
   const count=Math.round(seconds*12000),b=Buffer.alloc(44+count*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(count*2,40);
   for(let n=0;n<count;n++)b.writeInt16LE(Math.max(-32768,Math.min(32767,Math.round(amplitude*32768*Math.sin(2*Math.PI*frequency*n/12000)))),44+n*2);return b;
 }
-async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});return p;}
+async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});if(await p.locator('#open-recordings').count())await p.locator('#open-recordings').click();const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
 // Proves: CL-006-01/02/04; TC-018-001/003, level 2 actual server/browser.
@@ -118,6 +118,10 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
   await p.route('**/recording/imports',async route=>{const response=await route.fetch();resource=await response.json();observed();await held;await route.fulfill({response});});
   await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
   assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
+  await p.locator('#open-client-preferences').click();
+  await p.keyboard.press('Escape');await p.locator('#open-recordings').click();
+  assert.equal(await p.locator('#recording-file').evaluate(el=>el.files[0].name),'pending.wav');
+  assert.equal(await p.evaluate(()=>uploading&&!uploadId),true,'navigation preserves pending reservation state');
   await p.locator('#recording-cancel').click();release();
   await p.waitForFunction(()=>!uploading,null,{timeout:3000});assert.equal(puts,0);assert.deepEqual(errors,[]);assert.equal((await f.snapshot()).import,null);assert.equal((await f.req('/recording/imports/'+resource.id)).value.state,'cancelled');
 });
@@ -168,15 +172,16 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   assert.equal(frame.data.levels.length,128);assert.equal(frame.data.levels[32],114);assert.equal(frame.data.first_frame,frame.data.sequence*12000);assert.ok(frame.data.end_frame<=24000);assert.ok(Buffer.byteLength(JSON.stringify(frame))<=1024);
   await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>0,{timeout:8000});
   assert.ok(await p.locator('#signal').innerText().then(s=>s.includes('Hz')&&s.includes('dBFS')));
-  const separator=p.getByRole('separator',{name:'Resize spectrum and controls'});await separator.focus();await p.keyboard.press('Home');assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);await p.keyboard.press('ArrowDown');assert.equal(Number(await separator.getAttribute('aria-valuenow')),176);await p.keyboard.press('End');assert.equal(Number(await separator.getAttribute('aria-valuenow')),638);
+  assert.match(await p.locator('#signal-status').innerText(),/Recording ready \u00b7 (running|completed)/,'receive status preserves its actual Unicode separator');
+  const separator=p.getByRole('separator',{name:'Resize spectrum and controls'});await separator.focus();await p.keyboard.press('Home');assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);await p.keyboard.press('ArrowDown');assert.equal(Number(await separator.getAttribute('aria-valuenow')),176);await p.keyboard.press('End');const expectedMaximum=await p.evaluate(()=>document.querySelector('main').clientHeight-['#station-bar','#radio-toolbar','#band-strip','#workspace-statusbar','#splitter'].reduce((height,id)=>height+document.querySelector(id).offsetHeight,0)-200);assert.equal(Number(await separator.getAttribute('aria-valuenow')),expectedMaximum);
   const box=await separator.boundingBox();await p.mouse.move(box.x+10,box.y+6);await p.mouse.down();await p.mouse.move(box.x+10,0);await p.mouse.up();assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);
   await fs.mkdir('test-results',{recursive:true});await p.screenshot({path:'test-results/recording-desktop.png',fullPage:true});
-  await p.setViewportSize({width:360,height:640});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.ok((await p.locator('#signal').boundingBox()).height>=160);assert.ok((await p.locator('#controls').boundingBox()).height>=200);assert.equal((await separator.boundingBox()).height,12);
+  await p.setViewportSize({width:360,height:640});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.ok((await p.locator('#signal').boundingBox()).height>=160);assert.ok((await p.locator('#controls').boundingBox()).height>=200);assert.equal((await separator.boundingBox()).height,7);
   await p.screenshot({path:'test-results/recording-mobile.png',fullPage:true});
-  const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox();
-  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:180,y:handle.y+6}]});
-  await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:180,y:300}]});
-  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});assert.ok(Number(await separator.getAttribute('aria-valuenow'))>=280);
+  await separator.scrollIntoViewIfNeeded();const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox(),targetY=await p.evaluate(()=>document.querySelector('#signal').getBoundingClientRect().top+Math.min(Number(document.querySelector("#splitter").getAttribute("aria-valuemin"))+16,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))));
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:180,y:handle.y+3}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:180,y:targetY}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});const resizedSignal=await p.locator('#signal').boundingBox();assert.ok(Math.abs(resizedSignal.y+resizedSignal.height-targetY)<=10,'touch drag follows its viewport coordinate below the station bar');
   await p.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
 
@@ -209,6 +214,7 @@ test('TC-010-002 two thin browsers, full 60 second traffic and simultaneous stat
   const second=await browser.newContext({ignoreHTTPSErrors:true,storageState:await f.context.storageState()});t.after(()=>second.close());
   const began=performance.now(),coldBefore={...f.proxy.counters};
   const pages=await Promise.all([page(f),page({...f,context:second})]);
+  for(const p of pages)await p.selectOption('#display-profile','thin'); // Explicit32kbit/s mode; default Detailed has no such promise.
   const cold={ms:performance.now()-began,up:f.proxy.counters.up-coldBefore.up,down:f.proxy.counters.down-coldBefore.down};
   const events=[[],[]];for(let n=0;n<2;n++)pages[n].on('websocket',ws=>ws.on('framereceived',e=>{const m=JSON.parse(e.payload);if(m.type==='spectrum.frame')events[n].push({at:performance.now(),message:m});}));
   // Install observers on the existing sockets without relying on transport creation timing.
@@ -254,13 +260,25 @@ test('TC-018-003 every recording endpoint retains TLS cookie and exact Origin bo
 
 // Proves: CL-006-03/04; TC-010-002, direct peer measures server cadence independently of link delivery jitter.
 test('TC-010-002 optional output is opt-in, bounded, paced and invalidated by cancel',{timeout:15000},async t=>{
-  const f=await fixture(t);await f.upload(wav(5));
+  const f=await fixture(t),initial=await f.upload(wav(5));
   const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());
   const messages=[];ws.on('message',data=>messages.push({at:performance.now(),value:JSON.parse(String(data))}));
   let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.thin',id:1}));assert.equal((await pending).type,'spectrum.subscription');
   const job=await f.replay();await sleep(3300);
   const frames=messages.filter(m=>m.value.type==='spectrum.frame');assert.ok(frames.length>=2);for(let n=1;n<frames.length;n++)assert.ok(frames[n].at-frames[n-1].at>=995);
-  pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.off',id:2}));assert.equal((await pending).type,'spectrum.subscription');const off=messages.filter(m=>m.value.type==='spectrum.frame').length;await sleep(1100);assert.equal(messages.filter(m=>m.value.type==='spectrum.frame').length,off);
+  // FIFO may deliver an already buffered optional frame before the correlated Off ACK.
+  // FSD12.6 allows bounded buffered output; it does not allow a frame after that ACK.
+  const offStart=messages.length,offSent=performance.now();ws.send(JSON.stringify({v:1,type:'spectrum.off',id:2}));
+  let ackIndex=-1;
+  while(performance.now()-offSent<2000){ackIndex=messages.findIndex((m,i)=>i>=offStart&&!['spectrum.frame','heartbeat'].includes(m.value.type));if(ackIndex>=0)break;await sleep(5);}
+  assert.ok(ackIndex>=offStart,'correlated Off ACK arrives within the existing2s control deadline');
+  const ack=messages[ackIndex].value;assert.ok(messages[ackIndex].at-offSent<=2000);assert.deepEqual(ack,{v:1,type:'spectrum.subscription',id:2,data:{profile:'off'}});
+  for(const m of messages.slice(offStart,ackIndex))if(m.value.type==='heartbeat')assert.deepEqual(m.value,{v:1,type:'heartbeat'});
+  const buffered=messages.slice(offStart,ackIndex).filter(m=>m.value.type!=='heartbeat');
+  assert.ok(buffered.length<=Math.floor((messages[ackIndex].at-offSent)/995)+1,'buffered prefix remains bounded by Thin cadence and the control deadline');
+  for(const m of buffered){assert.deepEqual(Object.keys(m.value).sort(),['data','type','v']);assert.equal(m.value.v,1);const f=m.value.data;assert.deepEqual(Object.keys(f).sort(),['boot_id','end_frame','first_frame','generation','job_id','levels','sequence','source_id']);assert.equal(m.value.type,'spectrum.frame');assert.equal(f.boot_id,initial.boot_id);assert.equal(f.source_id,initial.recording.id);assert.equal(f.job_id,job.id);assert.equal(f.generation,job.generation);assert.ok(Number.isSafeInteger(f.sequence)&&f.sequence>=0&&f.sequence<5);assert.ok(f.first_frame<f.end_frame&&f.end_frame<=60000);assert.equal(f.first_frame,f.sequence*12000);assert.equal(f.end_frame,Math.min(f.first_frame+12000,60000));assert.equal(f.levels.length,128);assert.ok(f.levels.every(q=>Number.isInteger(q)&&q>=0&&q<=120));assert.ok(Buffer.byteLength(JSON.stringify(m.value))<=1024);}
+  const throughAck=messages.slice(0,ackIndex+1).filter(m=>m.value.type==='spectrum.frame');for(let n=1;n<throughAck.length;n++)assert.ok(throughAck[n].at-throughAck[n-1].at>=995);
+  const noPostAckFrames=()=>assert.equal(messages.slice(ackIndex+1).filter(m=>m.value.type==='spectrum.frame').length,0,'no optional frame may follow the Off ACK');noPostAckFrames();await sleep(1100);noPostAckFrames();
   await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);const snapshot=await f.snapshot();assert.equal(snapshot.job.state,'cancelled');
 });
 
@@ -282,6 +300,21 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
   },s);
   assert.equal(observation.ignored,0);assert.equal(observation.count,120);assert.equal(observation.sequences,Array.from({length:120},(_,n)=>n).join(','));assert.deepEqual(observation.pixel,[96,96,96,255]);assert.match(observation.label,/visible source time/);
   await f.req('/recording/jobs/'+s.job.id,'DELETE');await terminal(f);
+});
+
+// Proves: CL-006-03/04; TC-010-005. Actual fast TLS server and browser; no source or decoded-message fixture.
+test('TC-010-005 HTTPS defaults to native Detailed and honors saved Thin or Off',{timeout:15000},async t=>{
+  const f=await fixture(t,{secure:true});await f.upload(wav(1));const p=await page(f);
+  assert.equal(await p.inputValue('#display-profile'),'detail','every origin defaults to the finest existing profile');
+  await p.evaluate(()=>{window.__fineFrames=[];addEventListener('station-message',e=>{if(e.detail.message.type==='spectrum.detail.frame')window.__fineFrames.push(e.detail.message);});});
+  await p.locator('#recording-replay').click();await p.waitForFunction(()=>window.__fineFrames.length>0);
+  const native=await p.evaluate(()=>window.__fineFrames[0].data);assert.equal(Buffer.from(native.levels_b64,'base64').length,1024);assert.equal(native.end_frame-native.first_frame,2400);
+  for(const choice of ['thin','off']){
+    await p.locator('[data-region=client-preferences]').first().click();await p.selectOption('#display-profile',choice);await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+    assert.equal(await p.inputValue('#display-profile'),choice,'explicit saved reduced-bandwidth/Off choice is honored');
+  }
+  await p.evaluate(()=>localStorage.setItem(`wstx.display-profile.v1:${profileData.profile_id}`,'invalid'));await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+  assert.equal(await p.inputValue('#display-profile'),'detail','invalid saved choice returns to finest existing default');
 });
 
 // Proves: CL-006-03/04; TC-010-005, real native detail wire and independent pixel/geometry oracle.
@@ -391,7 +424,10 @@ test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},as
 });
 // Proves: CL-006-03/04; TC-010-007 independent source-time movement, clipping and unobserved pixels.
 test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom',{timeout:30000},async t=>{
-  const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
+  const f=await fixture(t);await f.upload(wav(120));const p=await page(f,{width:1100,height:1050});await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
+  // Three Thin rows at80px/s need a tall plot; default workspace is intentionally compact.
+  const movementSeparator=p.getByRole('separator');await movementSeparator.focus();await p.keyboard.press('End');
+  assert.ok((await p.locator('#waterfall').boundingBox()).height>=240,'fixture observes all three row positions before testing exit');
   const result=await p.evaluate(async s=>{
     profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;
     const frame=sequence=>{const detail=profileSelect.value==='detail',interval=detail?2400:12000,levels=new Uint8Array(detail?1024:128).fill(sequence===0?120:0);return {v:1,type:detail?'spectrum.detail.frame':'spectrum.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*interval,end_frame:(sequence+1)*interval,...(detail?{levels_b64:btoa(String.fromCharCode(...levels))}:{levels:[...levels]})}};};

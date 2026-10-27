@@ -1,4 +1,4 @@
-// Canonical recorded receive contract SHA256: 85fd41fa3c86f76137342d0fe4d72f0adf6a30a21401c4118d30e48e383f3c02
+// Canonical FSD slices SHA256: 45737bb9baa8856aa9c0883da94cddbd5211a230b3f111fe409efda4d6ddb935
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -12,7 +12,7 @@ package WstxRecordingReceive {
     enum def ImportState { enum reserved; enum receiving; enum validating; enum committing; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def DisplayProfile { enum off; enum thin; enum detail; }
-    enum def ReceiveKind { enum spectrum; }
+    enum def ReceiveKind { enum spectrum; enum live; }
     enum def ErrorCode {
         enum forbidden_origin; enum unauthorized; enum unsupported_media_type;
         enum request_too_large; enum invalid_request; enum unsupported_version;
@@ -20,7 +20,8 @@ package WstxRecordingReceive {
         enum invalid_state; enum invalid_recording; enum unsupported_audio;
         enum recording_limit; enum storage_unavailable; enum upload_timeout;
         enum cancelled; enum no_recording; enum generation_exhausted;
-        enum recording_unavailable; enum unavailable;
+        enum recording_unavailable; enum unavailable; enum counter_exhausted;
+        enum invalid_samples; enum decode_limit; enum decode_failed;
     }
     attribute def Limits {
         attribute rateHz : Integer = 12000;
@@ -102,6 +103,18 @@ package WstxRecordingReceive {
              before publication. New replay allocates job+generation,source unchanged. */
         assert constraint safeGeneration { generation >= 0 and generation <= (900719925 * 10000000 + 4740991) }
     }
+    attribute def ReceiveContext {
+        attribute profile_id : String;
+        attribute boot_id : String;
+        attribute source_id : String[0..1];
+        attribute job_id : String;
+        attribute generation : Integer;
+        assert constraint safeGeneration { generation >= 0 and generation <= (900719925 * 10000000 + 4740991) }
+        doc /* Opening live job may lack source only until initial provider epoch ACK.
+             Recorded spectrum and acknowledged live jobs require their source UUID.
+             This pending context never permits publication. Correlation remains the
+             REQUIRED full source/job/generation tuple for every frame/result page. */
+    }
     attribute def SourceDescriptor {
         attribute schema_version : Integer = 1;
         attribute profile_id : String;
@@ -169,27 +182,28 @@ package WstxRecordingReceive {
     }
     item def ReceiveJob :> WstxArchitecture::ProcessingRequest {
         attribute schema_version : Integer = 1;
-        attribute correlation : Correlation;
-        attribute kind : ReceiveKind = ReceiveKind::spectrum;
+        attribute correlation : ReceiveContext;
+        attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
         attribute processed_frames : Integer;
         attribute error : ErrorCode[0..1];
         attribute cancelRequested : Boolean;
-        assert constraint progress { processed_frames >= 0 and processed_frames <= 1440000 }
-        doc /* Immutable spectrum settings below. One import OR replay,oneworker,no
-             pendingjobs;no CPU/file work holding state/profile-settings lock. #7 adds
-             approved mode settings with separate decode pacing/history budgets. New
+        assert constraint progress { processed_frames >= 0 and ((kind == ReceiveKind::spectrum and processed_frames <= 1440000) or (kind == ReceiveKind::live and processed_frames <= (900719925 * 10000000 + 4740991))) }
+        doc /* Shared receive lifecycle: recorded spectrum below and continuous live mode
+             through RadioIO/StationDecode. One import OR recorded spectrum OR live receive,
+             one worker/no pendingjobs; no CPU/file work holding state/profile lock. New
              generation on import/replay,refuse ceiling not wrap. Cancellation invalidates
              publication before ack;terminal progress remains until nextjob. No TX scope. */
     }
     attribute def JobView {
         attribute id : String;
-        attribute source_id : String;
+        attribute source_id : String[0..1];
         attribute generation : Integer;
-        attribute kind : ReceiveKind = ReceiveKind::spectrum;
+        attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
         attribute processed_frames : Integer;
         attribute error : ErrorCode[0..1];
+        doc /* source_id null only for live opening before first ACK; recorded source and all publication tuples remain required UUIDs. */
     }
     attribute def RecordingSnapshot {
         attribute v : Integer = 1;
@@ -238,13 +252,19 @@ package WstxRecordingReceive {
         attribute first_frame : Integer;
         attribute end_frame : Integer;
         attribute levels_b64 : String;
-        assert constraint interval { sequence >= 0 and sequence < 600 and first_frame == 2400 * sequence and end_frame > first_frame and end_frame <= first_frame + 2400 }
+        assert constraint interval { sequence >= 0 and first_frame == 2400 * sequence and end_frame > first_frame and end_frame <= first_frame + 2400 and end_frame <= (900719925 * 10000000 + 4740991) }
         doc /* Exact spectrum.detail.frame envelope, <=2048 UTF8bytes; same current UUID/
              safe-integer tuple as Thin. Canonical padded standard RFC4648 base64 exactly
              1368chars decodes1024 bytes each0..120. Unknown/missing fields,
              noncanonical encoding, bad bounds/identities/socket are rejected atomically.
              Retain one latest immutable frame per profile in existing station state;
              per peer one replaceable selected frame, not two queues or another job. */
+    }
+
+    item def RecordedDetailedSpectrumFrame :> DetailedSpectrumFrame {
+        assert constraint recordedSequence { sequence < 600 }
+        doc /* Same wire shape. Finite recording-only bound; live uses safe common
+             frame domain and actual capture counters, not this finite subtype. */
     }
 
     attribute def StartImportBody {
@@ -265,10 +285,52 @@ package WstxRecordingReceive {
              total immutable after first chunk. Only1chunk request at once. Browser
              waits response before next;no streaming-request API assumption. */
     }
+    enum def HttpMethod { enum get; enum mutation; }
+    attribute def HttpResponsePolicy {
+        attribute cacheControl : String = "no-store";
+        attribute corsAllowed : Boolean = false;
+        attribute jsonMediaType : String = "application/json";
+        doc /* FSD12.6: UTF-8 JSON except raw WAV input. No CORS permission is emitted.
+             JSON accepts optional UTF-8 charset as12.5. JSON schemas are exact:
+             reject duplicate/unknown/missing keys. */
+    }
+    attribute def HttpErrorDetail {
+        attribute code : ErrorCode;
+        attribute 'field' : String[0..0];
+        doc /* Exact members code and field. field is JSON null; code is the stable
+             declared error code, never reflected request input. */
+    }
+    attribute def HttpErrorBody {
+        attribute error : HttpErrorDetail;
+        doc /* Exact UTF-8 wire shape {"error":{"code":"...","field":null}}. */
+    }
+    calc def OriginAllowed {
+        in method : HttpMethod;
+        in originHeaderCount : Integer;
+        in suppliedOriginEqualsSelectedOrigin : Boolean;
+        return allowed : Boolean =
+            (method == HttpMethod::get and originHeaderCount == 0) or
+            (originHeaderCount == 1 and suppliedOriginEqualsSelectedOrigin);
+        doc /* FSD12.6: GET alone permits absent Origin. Every mutation requires
+             one exact Origin even on loopback. Repeated Origin is refused. */
+    }
+    calc def HttpAccessStatus {
+        in selectedProfileModeAndKnownRoute : Boolean;
+        in originAllowed : Boolean;
+        in tls : Boolean;
+        in selectedProfileSessionValid : Boolean;
+        return status : Integer = if not selectedProfileModeAndKnownRoute ? 404 else
+            if not originAllowed ? 403 else
+            if tls and not selectedProfileSessionValid ? 401 else 200;
+        doc /* Precedence is mode/route, Origin, TLS session, then payload/resource
+             checks in HttpValidation. TLS requires its selected profile's session
+             on every recording route. 200 means admitted, not a final route result. */
+    }
     attribute def HttpValidation {
         attribute selectedProfile : Boolean;
         attribute originAllowed : Boolean;
         attribute authenticated : Boolean;
+        attribute responsePolicy : HttpResponsePolicy;
         attribute mediaAllowed : Boolean;
         attribute bodyBounded : Boolean;
         attribute schemaValid : Boolean;
@@ -390,7 +452,7 @@ package WstxRecordingReceive {
         in request : StartReplayBody;
         out job : ReceiveJob;
         out frames : SpectrumFrame[*];
-        out detailedFrames : DetailedSpectrumFrame[*];
+        out detailedFrames : RecordedDetailedSpectrumFrame[*];
         doc /* **Receive lifecycle.** One active import OR replay per station, one CPU worker,
              no pending job queue; concurrent start gets `busy`. State owner transitions and token
              checks serialize; CPU/file work does not hold the state owner or profile-settings lock.
@@ -642,6 +704,37 @@ package WstxRecordingReceive {
              and360px alongside these reference images; analytical tones alone do not meet visual
              acceptance. Readout remains calibrated dBFS rather than implying receiver RF power. */
     }
+    attribute def BrowserDisplayPreference {
+        attribute effectiveOrigin : String;
+        attribute profileUuid : String;
+        attribute savedChoice : DisplayProfile[0..1];
+        attribute effectiveChoice : DisplayProfile;
+        attribute storageAvailable : Boolean;
+        doc /* Browser-owned preference for one effective origin and validated saved-profile UUID.
+             The browser storage boundary isolates origins; a versioned UUID key stores only
+             off/thin/detail, never credentials, device identifiers, station settings or decoded traffic.
+             Boot ID and revision do not alter identity. Environment-only/no-profile use is nonpersistent. */
+    }
+    action def RestoreDisplayChoice {
+        in preference : BrowserDisplayPreference;
+        out effectiveChoice : DisplayProfile;
+        doc /* Use a valid saved choice if available. Otherwise Detailed on every origin,
+             including remote HTTPS, using existing1024 native bins at2.9296875Hz. Invalid/missing values or
+             unavailable storage use that normal default without disabling in-memory selection.
+             Explicit choices survive reload/browser restart for this origin/profile only. */
+    }
+    action def SelectDisplayChoice {
+        in explicitChoice : DisplayProfile;
+        in preference : BrowserDisplayPreference;
+        out updatedPreference : BrowserDisplayPreference;
+        doc /* An explicit user selection changes effective and saved choice for this viewer only.
+             If storage is unavailable, retain effective choice in memory without a persistence claim.
+             Subscribe with existing off/thin/detail commands; do not change decoder/radio mode,
+             source measurements, station settings or other viewers. Automatic server fallback changes
+             effective choice only, never overwrites the explicit saved choice, and retains existing
+             single Thin fallback/no retry loop. Detailed keeps fast-link/up-to10KiB/s notice and
+             no32kbit/s promise; Thin retains all bandwidth limits. */
+    }
     action def TransferDisplay {
         in 'frame' : SpectrumFrame[0..1];
         in detailedFrame : DetailedSpectrumFrame[0..1];
@@ -659,9 +752,14 @@ package WstxRecordingReceive {
              off; legacy peers receive only existing status/heartbeat messages. New browser obtains
              status/profile/recording HTTP snapshots before opting into the selected profile and showing current
              recording data; unknown_command from an older server visibly disables recording display.
-             Default browser selection is Detailed only on cleartext HTTP loopback (localhost,
-             127.0.0.1 or [::1]); HTTPS, including HTTPS localhost, defaults Thin. The selector offers
+             Default browser selection is Detailed on every origin, including remote HTTPS,
+             using existing1024 native bins at3000/1024 = 2.9296875Hz; no FFT/protocol/source
+             resolution change. The selector offers
              "Detailed (fast link, up to 10 KiB/s per viewer)", "Thin (32 kbit/s link)" and Off.
+             Without a valid saved choice, Detailed is selected. RestoreDisplayChoice resolves the
+             origin/profile-specific BrowserDisplayPreference; explicit selector changes use
+             SelectDisplayChoice. Only a user choice persists; runtime Thin fallback does not replace it.
+             Storage failure/invalid value preserves normal defaults and usable in-memory controls.
              Detailed is explicitly selectable on HTTPS but carries no32 kbit/s promise. A server
              that supports recording/Thin but refuses spectrum.detail with unknown_command triggers
              one Thin subscription and visible "Detailed unavailable; using Thin" feedback. A server
@@ -854,32 +952,65 @@ package WstxRecordingReceive {
              keyboard-only use, touch input, 200% zoom and literal rendering of source/status text.
              No horizontal page overflow; axis labels and primary controls remain reachable. */
     }
+    enum def ImportEvent {
+        enum chunk_started; enum all_bytes_received; enum valid_and_flushed;
+        enum cancel_accepted; enum transport_lost; enum reservation_expired;
+        enum upload_expired; enum cleanup_succeeded; enum cleanup_failed_or_deadline;
+        enum io_failure; enum validation_failed; enum commit_succeeded;
+    }
+    calc def ImportExpired {
+        in currentState : ImportState;
+        in reservationElapsedMs : Integer;
+        in receiveIdleMs : Integer;
+        in totalElapsedMs : Integer;
+        in limits : Limits;
+        return expired : Boolean =
+            (currentState == ImportState::reserved and reservationElapsedMs >= limits.reservationMs) or
+            (currentState == ImportState::receiving and
+                (receiveIdleMs >= limits.uploadIdleMs or totalElapsedMs >= limits.uploadTotalMs));
+        doc /* FSD12.6: station monotonic elapsed time, not browser timers; equality
+             expires. Event dispatch is serialized with chunk/cancel/commit admission.
+             Emit reservation_expired or upload_expired for the corresponding state. */
+    }
     state def ImportLifecycle {
-        attribute chunkStarted : Boolean;
-        attribute allBytesReceived : Boolean;
-        attribute validAndFlushed : Boolean;
-        attribute cancelAccepted : Boolean;
-        attribute cleanupSucceeded : Boolean;
-        attribute storageFaultOrDeadline : Boolean;
-        attribute commitSucceeded : Boolean;
-        attribute validationFailed : Boolean;
+        attribute acceptedEvent : ImportEvent;
+        attribute cancellationCleanup : Boolean;
+        doc /* Events are accepted serially by the one station state owner. A cancel
+             accepted before committing invalidates commit authorization before its
+             acknowledgement. cancellationCleanup records explicit/transport cancellation;
+             timeout cleanup retains upload_timeout instead. These are event outcomes,
+             not competing Boolean policy flags or a new owner. */
         entry; then reserved;
         state reserved; state receiving; state validating; state committing;
         state cancelling; state completed; state cancelled; state failed;
-        transition upload first reserved if chunkStarted then receiving;
-        transition validate first receiving if allBytesReceived then validating;
-        transition commit first validating if validAndFlushed and not cancelAccepted then committing;
-        transition cancelReserved first reserved if cancelAccepted then cancelled;
-        transition cancelReceiving first receiving if cancelAccepted then cancelling;
-        transition cancelValidation first validating if cancelAccepted then cancelling;
-        transition cleaned first cancelling if cleanupSucceeded then cancelled;
-        transition quarantine first cancelling if storageFaultOrDeadline then failed;
-        transition rejected first validating if validationFailed then failed;
-        transition committed first committing if commitSucceeded then completed;
-        transition commitError first committing if storageFaultOrDeadline then failed;
-        doc /* Flags are stationevents,not freepolicy. Reservation/uploadtimeout enters
-             cleanup with upload_timeout;transportloss samecleanup. FailedblockedI/O
-             retains slot. Restartreconcilesactualmanifest,notHTTPresponse. */
+        transition upload first reserved if acceptedEvent == ImportEvent::chunk_started then receiving;
+        transition validate first receiving if acceptedEvent == ImportEvent::all_bytes_received then validating;
+        transition commit first validating if acceptedEvent == ImportEvent::valid_and_flushed then committing;
+        transition cancelReserved first reserved if acceptedEvent == ImportEvent::cancel_accepted then cancelled;
+        transition cancelReceiving first receiving if acceptedEvent == ImportEvent::cancel_accepted then cancelling;
+        transition cancelValidation first validating if acceptedEvent == ImportEvent::cancel_accepted then cancelling;
+        transition abortReceiving first receiving if acceptedEvent == ImportEvent::transport_lost then cancelling;
+        transition abortValidation first validating if acceptedEvent == ImportEvent::transport_lost then cancelling;
+        transition reservationTimeout first reserved if acceptedEvent == ImportEvent::reservation_expired then cancelling;
+        transition uploadTimeout first receiving if acceptedEvent == ImportEvent::upload_expired then cancelling;
+        transition cleanedCancellation first cancelling if acceptedEvent == ImportEvent::cleanup_succeeded and cancellationCleanup then cancelled;
+        transition cleanedTimeout first cancelling if acceptedEvent == ImportEvent::cleanup_succeeded and not cancellationCleanup then failed;
+        transition quarantine first cancelling if acceptedEvent == ImportEvent::cleanup_failed_or_deadline or acceptedEvent == ImportEvent::io_failure then failed;
+        transition reservationIoError first reserved if acceptedEvent == ImportEvent::io_failure then failed;
+        transition uploadIoError first receiving if acceptedEvent == ImportEvent::io_failure then failed;
+        transition validationIoError first validating if acceptedEvent == ImportEvent::io_failure then failed;
+        transition rejected first validating if acceptedEvent == ImportEvent::validation_failed then failed;
+        transition committed first committing if acceptedEvent == ImportEvent::commit_succeeded then completed;
+        transition commitError first committing if acceptedEvent == ImportEvent::io_failure then failed;
+        doc /* FSD4.4/12.6: reservation expiry30s; receiving inactivity15s or total1800s
+             emits upload_expired. Timeout error is upload_timeout; observed PUT transport
+             loss cancels the import. cleanup_succeeded requires actual release/removal,
+             not an elapsed timer. Normal cancellation cleanup<=1s; I/O failure or cleanup
+             deadline5s publishes failed/storage_unavailable, quarantines files/handles and
+             retains the occupied slot until actual cleanup/restart reconciliation.
+             A replaced manifest remains authoritative after post-commit failure.
+             DELETE in committing is409 invalid_state; terminal DELETE is unchanged.
+             Terminal resources persist only until next reservation/restart. */
     }
     state def ReceiveLifecycle {
         attribute cancelAccepted : Boolean;
@@ -891,7 +1022,64 @@ package WstxRecordingReceive {
         transition cancel first running if cancelAccepted then cancelling;
         transition release first cancelling if workerReleased then cancelled;
         transition complete first running if sourceComplete and workerReleased and not processingFailed and not cancelAccepted then completed;
-        transition fail first running if processingFailed and workerReleased then failed;
+        transition fail first running if processingFailed and workerReleased and not cancelAccepted then failed;
+        doc /* FSD4.4: accepted cancellation already changes running to cancelling;
+             otherwise processing failure prevents completion even with simultaneous EOS.
+             While a failed worker is held, state remains nonterminal. Guards are disjoint;
+             every terminal receive transition requires worker release. */
+    }
+    enum def ImportBrowserEvent {
+        enum start; enum accepted; enum reservation_rejected; enum abort; enum response_lost;
+        enum reconciled; enum terminal;
+    }
+    state def BrowserImportLifecycle {
+        attribute acceptedEvent : ImportBrowserEvent;
+        entry; then idle;
+        state idle; state pending; state pendingCancel; state cleanupRequested; state uploading; state reconciling;
+        transition begin first idle if acceptedEvent == ImportBrowserEvent::start then pending;
+        transition reserved first pending if acceptedEvent == ImportBrowserEvent::accepted then uploading;
+        transition cancelPending first pending if acceptedEvent == ImportBrowserEvent::abort then pendingCancel;
+        transition cancelAcceptedReservation first pendingCancel if acceptedEvent == ImportBrowserEvent::accepted then cleanupRequested;
+        transition cancelledReservationRejected first pendingCancel if acceptedEvent == ImportBrowserEvent::reservation_rejected then idle;
+        transition cancelledReservationUnknown first pendingCancel if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
+        transition cleanupObserved first cleanupRequested if acceptedEvent == ImportBrowserEvent::terminal then reconciling;
+        transition cleanupUnknown first cleanupRequested if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
+        transition reservationRejected first pending if acceptedEvent == ImportBrowserEvent::reservation_rejected then idle;
+        transition reservationUnknown first pending if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
+        transition abortUpload first uploading if acceptedEvent == ImportBrowserEvent::abort then reconciling;
+        transition uploadUnknown first uploading if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
+        transition observed first reconciling if acceptedEvent == ImportBrowserEvent::reconciled then idle;
+        transition finished first uploading if acceptedEvent == ImportBrowserEvent::terminal then idle;
+        doc /* FSD12.6: pendingCancel retains local cancellation intent while awaiting
+             the reservation response. It never starts PUT. An accepted response gives
+             the exact import ID: cleanupRequested sends DELETE for that returned ID,
+             with zero PUT requests, then reconciles GET. Rejected responses end pending
+             cancellation without PUT/DELETE. Lost reservation/cleanup responses enter
+             reconciling; no cancellation success or cleanup is inferred. An unknown
+             reservation ID is observed through GET, never guessed or automatically retried.
+             UI abort during upload stops PUT and sends DELETE independently, then uses GET
+             to reconcile uncertain outcome. A lost reservation response is reconciled from
+             GET /recording, which exposes any accepted import ID. Never retry a mutation,
+             resume upload, replay, or infer rollback from a missing response. reconciling
+             persists on unavailable transport; no fabricated successful snapshot.
+             A known reservation rejection ends local pending, visibly reports the returned
+             error and starts no PUT/DELETE/retry; authoritative busy/degraded/identity state
+             remains unchanged until an independently validated snapshot changes it.
+             idle means no local upload, not permission to ignore authoritative busy state. */
+    }
+    enum def SourceAvailability { enum absent; enum available; enum unavailable; }
+    calc def RecordingAvailability {
+        in committedSourceUnavailable : Boolean;
+        in recordingPresent : Boolean;
+        return availability : SourceAvailability = if committedSourceUnavailable ?
+            SourceAvailability::unavailable else if recordingPresent ?
+            SourceAvailability::available else SourceAvailability::absent;
+        doc /* FSD12.6: authenticated GET remains200 with current identity/generation/
+             operations; unavailable sets recording:null and source_error recording_unavailable.
+             Browser labels absence/unavailability distinctly; idle replacement stays enabled.
+             Replay returns409 recording_unavailable until successful replacement clears error.
+             Affected job fails under ReceiveLifecycle; no job/source is manufactured.
+             Authentication/transport failure is not an absent/unavailable-source snapshot. */
     }
     action importRecording : ImportRecording;
     action recoverSource : RecoverRecordedSource;
@@ -938,8 +1126,8 @@ package WstxRecordingReceive {
         verification receiveIsolation {
             subject operation : CancelReceive;
             objective { verify WstxRequirements::'CL-006-02'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors.
-                 Independent expected oracle: Exactly one serialized start wins. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
+            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. In a real browser, reject the reservation POST with known409 busy and separately503 storage_unavailable; observe local pending/error display and all subsequent requests.
+                 Independent expected oracle: Exactly one serialized start wins. A known rejected reservation ends local pending and visibly reports its exact error, sends no PUT/DELETE/retried POST and preserves authoritative busy/degraded/identity state; it cannot fabricate an accepted import or successful snapshot. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
         }
         dependency tracereceiveIsolation from receiveIsolation to WstxRequirements::'TC-018-003';
         verification calibratedDisplay {
@@ -976,7 +1164,7 @@ package WstxRecordingReceive {
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-005: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. HTTP loopback defaults Detailed, HTTPS defaults Thin; fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
+                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Explicit Detailed/Thin/Off survives reload and reopened browser context; origin/port/profile UUIDs isolate choices while boot/revision changes preserve them. Invalid/denied storage uses defaults without page errors or disabling memory selection. Only versioned UUID keys and enumerated values are stored, no secrets/traffic. Automatic fallback preserves saved Detailed; explicit Thin replaces it. Existing wire and bandwidth tests remain unchanged, with no synthesized decoded records. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
         }
         dependency tracecrispDetailTransport from crispDetailTransport to WstxRequirements::'TC-010-005';
         verification fullHeightSliderPresentation {
@@ -998,7 +1186,8 @@ package WstxRecordingReceive {
     }
     doc /* Implementation freedoms: Rust file layout; existing-library/std storage
          commit primitives preserving the declared commit point; small bounded parser
-         mechanics; test-only fault injection; canvas palette colors/drawing mechanisms within the prescribed integer geometry. No implicit changes
+         mechanics; test-only fault injection; canvas drawing mechanisms preserving the exact
+         authoritative RGB palette and prescribed integer geometry. No implicit changes
          to wire/schema/state/units/bounds/authority/errors/oracles, extra dependencies,
          speculative FFT wrapper, device capabilities or transmit lifecycle. */
 }

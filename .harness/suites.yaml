@@ -160,3 +160,122 @@
   - tools/wsjtx_simulator_components.py
   - fixtures/decoder/simulator-cases.json
   needs: Python 3.12 standard library. Windows PC; 25 reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.
+
+- suite: decoder-quality
+  cost: 2
+  run: cargo test --release --locked --test decoder_signal -- --test-threads=1
+  paths:
+  - server/src/decoder/
+  - server/src/lib.rs
+  - server/tests/decoder_signal.rs
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  select:
+  - server/src/decoder/
+  - server/src/lib.rs
+  - server/tests/decoder_signal.rs
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  needs: Pinned Rust and Python. Windows PC; all frozen decoder waveform, quality, rejection and runtime cases in release mode. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 must name verified reference recordings; optional verified WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION reuse immutable inputs. No diagnostic case filter, radio, audio device or network download.
+
+- suite: live-receive-integration
+  cost: 2
+  run: cargo test --release --locked --test audio_receive live_native_provider_decodes_independent_ft8_callsign -- --exact
+  paths:
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/receive.rs
+  - server/src/decoder/
+  - server/src/lib.rs
+  - server/tests/audio_receive.rs
+  - fixtures/radio/native_ft8_fixture.rs
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  select:
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/receive.rs
+  - server/src/lib.rs
+  - server/tests/audio_receive.rs
+  - fixtures/radio/native_ft8_fixture.rs
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  depends_on: [decoder-quality]
+  needs: Pinned Rust and Python. Windows PC; safe library APIs, deterministic injected native packets through the actual live source, shared receive window and pure FT8 decoder. WSTX_DECODER_VECTORS must name the verified 38-case frozen fixture cache. No transceiver, audio device, unsafe test import or network download; cheap provider boundary cases stay in the ordinary debug Rust group.
+
+- suite: live-station-browser
+  cost: 2
+  run: cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture
+  paths:
+  - server/src/main.rs
+  - server/src/profile.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/receive_http_tests.rs
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/decoder/
+  - server/src/lib.rs
+  - client/
+  - tests/receive-integration.test.cjs
+  - fixtures/radio/native_ft8_fixture.rs
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/profile.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/receive_http_tests.rs
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/decoder/
+  - server/src/lib.rs
+  - client/
+  - tests/receive-integration.test.cjs
+  - fixtures/radio/native_ft8_fixture.rs
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  depends_on: [live-receive-integration]
+  needs: Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. Cheap seeded manager/epoch/ring cases remain in debug.
+
+- suite: operating-layout
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/ui-operating.test.cjs
+  paths: *browser-inputs
+  select:
+  - tests/ui-operating.test.cjs
+  - client/recording.js
+  - client/recording.css
+  - server/src/main.rs
+  depends_on: [profiles]
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated server and browser, unsupported/no-input baseline, disabled TX/QSO/log, literal station identity, desktop/mobile/zoom layout and separator accessibility. No transceiver, audio activation or network service.

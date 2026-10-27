@@ -1,4 +1,4 @@
-// Canonical architecture SHA256: 85fd41fa3c86f76137342d0fe4d72f0adf6a30a21401c4118d30e48e383f3c02
+// Canonical FSD slices SHA256: 8c05d940d6b04236b0655333f498f5397eca2ff59a00590a611c49b81afabd3c
 package WstxArchitecture {
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
@@ -14,6 +14,8 @@ package WstxArchitecture {
          servers suffice for CR #5 acceptance; stations[*] remains variable. */
 
     part physicalStation {
+        doc /* FSD11.9: one selected-radio reference context with four physical roles,
+             not universal radio cardinality or a radio count derived from station count. */
         part user : Operator;
         part viewer : ViewerComputer;
         part controller : StationControllerComputer;
@@ -53,14 +55,16 @@ package WstxArchitecture {
         doc /* FSD 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
              source, job and generation correlate immutable settings and results;
              concrete recorded spectrum types/lifetimes/bounds/cancellation are defined
-             in RecordingReceive.sysml; #7 mode settings remain separately gated.
+             in RecordingReceive.sysml; #7 target mode settings/results refine that same
+             lifecycle in StationDecode.sysml, pending independent readiness review.
              Receive jobs do not own transmit lifecycle or independent halt. */
     }
     item def ProcessingResult {
         doc /* FSD 11.3: #7 owns mode-specific decoded payload/units/oracles and required
              result delivery/retention; #6 owns spectrum frame units/identity/bounds and
              replaceable display delivery. Concrete spectrum schema/lifetimes are WstxRecordingReceive::SpectrumFrame;
-             #7 decode result payload/retention remain preparation gates. */
+             #7 target decoded payload/retention is WstxOfflineDecode::ResultRecord and
+             ResultPage, FSD4.4/6.4/12.7; implementation/readiness not asserted. */
     }
     item def EncodeRequest;
     item def Waveform;
@@ -140,7 +144,10 @@ package WstxArchitecture {
         port radioAudio : AudioExchange;
         port radioControl : RadioControl;
         part stations[*] : StationProcess;
-        part mcpClients[*] : McpClient;
+        ref part mcpClients[*] : McpClient;
+        doc /* FSD11.9: client references do not compose clients onto this computer.
+             Controller-level attachments own routing associations only. #12 client
+             placement/authority remains unresolved and is not implementation-ready. */
         part radioAuthority : RadioAuthority;
 
         part mcpAttachments[*] : McpAttachment;
@@ -228,14 +235,15 @@ package WstxArchitecture {
     }
     part def ReceivePipeline {
         doc /* FSD 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
-             #7 delivers common receive preprocessing/rate conversion if needed for both
-             recorded (#6) and live (#8) sources. PCM unit mapping is distinct from AGC
+             #8 owns one common native-format/rate conversion stage; #7 consumes canonical
+             12k samples. PCM unit mapping is distinct from AGC
              or modem normalization. No source-specific modem resamplers. #6/#7 settle
              one shared FFT provider, ordering/scaling, buffer policy and independent
              oracles before either writes FFT code; no speculative wrapper is required.
              FSD4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
              delivered recorded spectrum contract; review and acceptance evidence remains on issue #6.
-             #7 modem sizes/history and #8 live adapter contracts remain separate gates. */
+             #7 target sizes/history/decoderquanta are in StationDecode.sysml; its independent
+             readiness review and #8 live adapter contract remain separate gates. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
         port processing : ReceiveProcessing;
@@ -307,16 +315,20 @@ package WstxArchitecture {
     part def NativeControl :> RustRadioDriver { port session : SessionAccess; }
     part def NativeSession {
         doc /* A managed native session may serve both implementations. This session is
-             not a second arbitration authority and cannot bypass the common authority. */
+             not a second arbitration authority and cannot bypass the common authority.
+             Session ownership/sharing/lifetime remain #13 decisions; this is a provider
+             type, not a requirement for a separate session per station. */
         port audio : ~SessionAccess;
         port control : ~SessionAccess;
     }
     part def NativeBackend :> RadioBackend {
         doc /* Optional Phase 2 alternate, no external SmartSDR/CAT/DAX bridge required.
-             These logical associations select no native API schema or physical streams. */
+             These logical associations select no native API schema or physical streams.
+             The session is referenced, not composed by the backend. #13 is not
+             implementation-ready until ownership/sharing/lifetime are settled in FSD. */
         part audioDevices : NativeAudio;
         part controlDriver : NativeControl;
-        part session : NativeSession;
+        ref part session : NativeSession;
         connection audioHost connect audio to audioDevices.host;
         connection audioRadio connect audioDevices.radio to radioAudio;
         connection controlHost connect control to controlDriver.authorized;
@@ -375,6 +387,28 @@ package WstxArchitecture {
     dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
     dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
+    doc /* Target responsibility traces from FSD11.10. Dependencies identify the
+         responsible boundary, not delivered capability or an executed verification. */
+    dependency configurationPromise from StationService to WstxRequirements::'FR-001';
+    dependency receivePromise from ReceivePipeline to WstxRequirements::'FR-003';
+    dependency decodePromise from ModeFunctions to WstxRequirements::'FR-004';
+    dependency encodePromise from ModeFunctions to WstxRequirements::'FR-005';
+    dependency timingPromise from TransmitService to WstxRequirements::'FR-006';
+    dependency receiveTimingPromise from ReceivePipeline to WstxRequirements::'FR-006';
+    dependency qsoPromise from QsoAndLogging to WstxRequirements::'FR-007';
+    dependency haltPromise from TransmitService to WstxRequirements::'FR-008';
+    dependency displayPromise from BrowserClient to WstxRequirements::'FR-010';
+    dependency loggingPromise from QsoAndLogging to WstxRequirements::'FR-011';
+    dependency integrationPromise from StationService to WstxRequirements::'FR-012';
+    dependency emePromise from ModeFunctions to WstxRequirements::'FR-013';
+    dependency widebandPromise from ReceivePipeline to WstxRequirements::'FR-014';
+    dependency utilitiesPromise from ModeFunctions to WstxRequirements::'FR-015';
+    dependency persistencePromise from PersistedProfile to WstxRequirements::'FR-016';
+    dependency helpPromise from BrowserClient to WstxRequirements::'FR-017';
+    dependency recordingPromise from RecordedSource to WstxRequirements::'FR-018';
+    dependency htmlPromise from WebAdapter to WstxRequirements::'FR-019';
+    dependency mcpPromise from McpAdapter to WstxRequirements::'FR-020';
+    dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
     package ImplementedStatusSlice {
         doc /* Legacy status/TLS subset retained alongside Profiles.sysml's implemented
              CR #5 profile functionality. Target deployment above is not an assertion of implemented

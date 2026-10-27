@@ -1,0 +1,88 @@
+'use strict';
+// Cost2: launched by receive_http_tests with its actual isolated candidate Router
+// and actual native-packet fixture. No browser route interception or fake result.
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const {chromium}=require('playwright');
+const origin=process.env.WSTX_RECEIVE_FIXTURE_ORIGIN;
+const expected=JSON.parse(process.env.WSTX_RECEIVE_FIXTURE_EXPECTED||'null');
+
+// Proves: FR-004; CL-010-05/07/08; TC-009-004; TC-007-002 readable decoded-row subset.
+test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser callsign',{timeout:60000},async()=>{
+  assert.ok(origin&&expected,'run through the Rust live native manager/browser test');
+  const mode=expected.mode;assert.ok(['ft4','ft8'].includes(mode));
+  const oracle=expected.expected_receive;
+  const browser=await chromium.launch();
+  try{
+    const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();
+    const errors=[],pages=[];page.on('pageerror',e=>errors.push(e.message));
+    page.on('request',request=>{if(request.url().includes('/receive/results'))pages.push({url:request.url(),at:performance.now()});});
+    await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
+    await page.locator('[data-region=client-preferences]').first().click();
+    await page.selectOption('#display-profile','thin');
+    await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+    await page.selectOption('#receive-mode',mode);
+    // A refused request is a negative transport fixture, never decoder evidence.
+    await page.route('**/receive/start',route=>route.abort('failed'));
+    await page.getByRole('button',{name:'Start receive',exact:true}).click();
+    await page.locator('#receive-status').filter({hasText:'Start outcome unknown'}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Start receive',exact:true}).isDisabled(),true);
+    assert.equal((await (await fetch(origin+'/receive')).json()).job,null,'a refused browser mutation never activates the input');
+    await page.unroute('**/receive/start');
+    await page.getByRole('button',{name:'Refresh status',exact:true}).click();
+    await page.waitForFunction(()=>!document.querySelector('#receive-start').disabled);
+    await page.getByRole('button',{name:'Start receive',exact:true}).click();
+    const row=page.locator('#band-activity tbody tr[data-result-id]').filter({hasText:'CQ K1ABC FN42'});
+    await row.waitFor({timeout:45000});
+    assert.equal(await row.count(),1);
+    for(const width of [360,1440,1499,1500,1600]){
+      await page.setViewportSize({width,height:900});
+      const cells=await row.locator('td').evaluateAll(nodes=>nodes.map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}));
+      assert.ok(cells[0].font>=16,`source time readable at ${width}px`);
+      for(const cell of cells.slice(1))assert.ok(cell.font>=16,`decoded cell readable at ${width}px`);
+      assert.ok(cells.every(cell=>cell.top>=8&&cell.bottom>=8));
+      const overflow=await row.locator('td').evaluateAll(nodes=>nodes.flatMap(cell=>{const box=cell.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(cell);return [...range.getClientRects()].filter(r=>r.left<box.left-1||r.right>box.right+1).map(r=>({text:cell.textContent,left:r.left,right:r.right,cellLeft:box.left,cellRight:box.right}));}));
+      assert.deepEqual(overflow,[],`actual decoded cell text fits at ${width}px`);
+      const pageOverflow=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,width:innerWidth,items:[...document.querySelectorAll('body *')].map(el=>({id:el.id,cls:el.className,tag:el.tagName,r:el.getBoundingClientRect(),text:el.textContent.slice(0,80)})).filter(x=>x.r.width>0&&(x.r.right>innerWidth+1||x.r.left< -1)).slice(0,20)}));
+      assert.equal(pageOverflow.overflow,false,JSON.stringify(pageOverflow));
+    }
+    await page.setViewportSize({width:1440,height:900});
+    assert.match(await page.locator('#rx-focus').innerText(),/No contact selected/);
+    assert.doesNotMatch(await page.locator('#rx-focus').innerText(),/Decoder unavailable/);
+    assert.match(await page.locator('#workspace-statusbar').innerText(),new RegExp(`Audio running.*${mode.toUpperCase()} running`));
+    const snapshot=await (await fetch(origin+'/receive')).json();
+    const invalidSnapshot=await fetch(origin+'/receive?unexpected=1');assert.equal(invalidSnapshot.status,400);
+    const invalidDevices=await fetch(origin+'/audio/devices?unexpected=1');assert.equal(invalidDevices.status,400,'unknown query must fail before physical enumeration');
+    assert.equal(snapshot.audio.state,'running');assert.equal(snapshot.source.kind,'live');assert.equal(snapshot.job.mode,mode);
+    const query=new URLSearchParams({source_id:snapshot.source.id,job_id:snapshot.job.id,generation:String(snapshot.generation),cursor:'0',limit:'1'});
+    const response=await fetch(origin+'/receive/results?'+query),raw=await response.text(),result=JSON.parse(raw);
+    assert.equal(response.status,200);assert.ok(Buffer.byteLength(raw)<=3072);assert.equal(result.records.length,1);
+    assert.equal(result.records[0].text,'CQ K1ABC FN42');assert.equal(result.records[0].payload77,expected.payload77);
+    assert.deepEqual(result.records[0].fields,expected.fields);assert.equal(result.records[0].sequence,0);
+    assert.ok(Math.abs(result.records[0].start_frame-(oracle.start_frame-32))<=oracle.time_tolerance_frames);assert.ok(Math.abs(result.records[0].frequency_hz-oracle.frequency_hz)<=oracle.frequency_tolerance_hz);
+    assert.equal(await row.locator('td').nth(2).textContent(),'—','source-relative decode does not invent UTC DT');
+    assert.ok((await row.getAttribute('data-result-id')).includes(snapshot.source.id));
+    for(const request of pages)assert.equal(new URL(request.url).searchParams.get('limit'),'1');
+    for(let i=1;i<pages.length;i++)assert.ok(pages[i].at-pages[i-1].at>=3950,'Thin result requests start at most once per4seconds');
+    const headers={Origin:origin,'Content-Type':'application/json'};
+    let invalid=await fetch(origin+'/receive/start',{method:'POST',headers,body:JSON.stringify({v:1,profile_id:snapshot.profile_id,boot_id:snapshot.boot_id,generation:snapshot.generation,profile_revision:0,mode,unexpected:true})});
+    assert.equal(invalid.status,400);
+    const wrongProfile=await fetch(origin+'/receive/start',{method:'POST',headers,body:JSON.stringify({v:1,profile_id:'00000000-0000-4000-8000-000000000001',boot_id:snapshot.boot_id,generation:snapshot.generation,profile_revision:999,mode})});
+    assert.equal(wrongProfile.status,403,'wrong profile wins over stale saved revision');
+    const duplicate=await fetch(origin+'/receive/results?'+query+'&cursor=0');assert.equal(duplicate.status,400);
+    const ahead=new URLSearchParams(query);ahead.set('cursor',String(result.next_sequence+1));assert.equal((await fetch(origin+'/receive/results?'+ahead)).status,400);
+    const stale=new URLSearchParams(query);stale.set('source_id','00000000-0000-4000-8000-000000000001');assert.equal((await fetch(origin+'/receive/results?'+stale)).status,404);
+    await page.getByRole('button',{name:'Stop receive',exact:true}).click();
+    await page.locator('#receive-status').filter({hasText:'Partial results retained'}).waitFor();
+    assert.equal(await row.count(),1,'accepted partial records survive stop');
+    assert.equal((await (await fetch(origin+'/receive/results?'+query)).json()).records[0].text,'CQ K1ABC FN42');
+    for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+    assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
+    await fs.mkdir('test-results/receive-integration',{recursive:true});
+    await row.scrollIntoViewIfNeeded();
+    await page.screenshot({path:`test-results/receive-integration/real-${mode}-callsign.png`,fullPage:true});
+    assert.deepEqual(errors,[]);
+    console.log(`ACTUAL PATH: verified48k stereo PCM -> LiveSource -> WindowBuffer -> Rust ${mode.toUpperCase()} -> Recording owner -> /receive/results -> CQ K1ABC FN42`);
+  }finally{await browser.close();}
+});

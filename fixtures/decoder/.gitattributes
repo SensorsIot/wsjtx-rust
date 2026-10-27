@@ -1,0 +1,6 @@
+protocol-data/*.dat text eol=lf
+*.json text eol=lf
+independent-vectors/*.json text eol=lf
+protocol-data/*.json text eol=lf
+independent-vector-tool/*.py text eol=lf
+independent-vector-tool/*.md text eol=lf

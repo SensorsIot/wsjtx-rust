@@ -1,0 +1,824 @@
+{
+  "schema_version": 1,
+  "purpose": "Independent additive phase, drift, dynamic-range and residual oracles; all2286qualitycases remain unchanged",
+  "protocol_source": "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf",
+  "generator": "independent-vector-tool/regressions.py",
+  "base_composer_sha256": "6564cc8f5c1c87f767f0c0003efb3aff0d1a8ea88633f68edb5b64b6086eae79",
+  "cases": [
+    {
+      "id": "ft8-phase-0p7-gain-1e-4",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 0.0001,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901000,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        }
+      ],
+      "samples_sha256": "6ee7cf7a88ed735086175345c2136e96555e7026a5ab3e967ede5af42dd6eb21"
+    },
+    {
+      "id": "ft8-phase-pi2-gain-8",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 8,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901001,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.015,
+          "phase_radians": 1.5707963267948966
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        }
+      ],
+      "samples_sha256": "27cd08fe1cfb224739adb6fc2d9c17e93d10260c33935abd4e99680f02b6a632"
+    },
+    {
+      "id": "ft8-drift-positive",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 1,
+      "drift_hz_per_second": 0.03333333333333333,
+      "noise_std": 0.0001,
+      "seed": 901002,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        }
+      ],
+      "samples_sha256": "db4f1995dd398a881a484d839181fb89c8c3443bbdc0b5d40b0a3cb2828e629a"
+    },
+    {
+      "id": "ft8-drift-negative",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 1,
+      "drift_hz_per_second": -0.03333333333333333,
+      "noise_std": 0.0001,
+      "seed": 901003,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        }
+      ],
+      "samples_sha256": "756206d5aa5bf889debfe4e7f5614613ac22b129551b56158165e3dcc94e2b07"
+    },
+    {
+      "id": "ft8-near-strong-80db-pcm16",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "pcm16",
+      "canonical_gain": 1,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901004,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0
+        },
+        {
+          "mode": "ft8",
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "amplitude": 1.5e-05,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        },
+        {
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "call",
+              "text": "W1AW",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "roger",
+              "value": "RR73"
+            }
+          },
+          "text": "W1AW K1ABC RR73",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        }
+      ],
+      "samples_sha256": "9e6b7a1195ce48d42673d34e5d71883fb4e9b62158fe970d86b1bdb5ff3acf85"
+    },
+    {
+      "id": "ft8-near-strong-80db-scaled",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "pcm16",
+      "canonical_gain": 0.0001,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901005,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0
+        },
+        {
+          "mode": "ft8",
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "amplitude": 1.5e-05,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        },
+        {
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "call",
+              "text": "W1AW",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "roger",
+              "value": "RR73"
+            }
+          },
+          "text": "W1AW K1ABC RR73",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "time_tolerance_frames": 240,
+          "frequency_tolerance_hz": 1
+        }
+      ],
+      "samples_sha256": "0f983e453a2fc5ea7b08d6ade6d11addb2a81812d5bff6c5495b155f179810f6"
+    },
+    {
+      "id": "ft8-quantization-only-residual",
+      "decode_mode": "ft8",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "pcm16_best_fit_residual",
+      "canonical_gain": 1,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901006,
+      "signals": [
+        {
+          "mode": "ft8",
+          "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000000000",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0
+        }
+      ],
+      "expected": [],
+      "samples_sha256": "21ecc106e85a5d4f0df69189b3e175510b954abd80cda993b9fdadaee121fa33"
+    },
+    {
+      "id": "ft4-phase-0p7-gain-1e-4",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 0.0001,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901007,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        }
+      ],
+      "samples_sha256": "dab0d6a3a9a12e5a7f9134f57d6eccbe277316399f6af845ad2c19e4627e67c9"
+    },
+    {
+      "id": "ft4-phase-pi2-gain-8",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 8,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901008,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.015,
+          "phase_radians": 1.5707963267948966
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        }
+      ],
+      "samples_sha256": "4973916b3db05d833ab8ebb54f9124355ae5705d21adf797c72cca285a51bdf8"
+    },
+    {
+      "id": "ft4-drift-positive",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 1,
+      "drift_hz_per_second": 0.03333333333333333,
+      "noise_std": 0.0001,
+      "seed": 901009,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        }
+      ],
+      "samples_sha256": "8adc6774437af7f2ad6e4051a42ef75f4314b20615d850e5b0653a014c83f8dd"
+    },
+    {
+      "id": "ft4-drift-negative",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "float32",
+      "canonical_gain": 1,
+      "drift_hz_per_second": -0.03333333333333333,
+      "noise_std": 0.0001,
+      "seed": 901010,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        }
+      ],
+      "samples_sha256": "6ce54dcf2c9a18ebeb7e2206133bcd02d6e59edc371ee2cb2e0928aae66d3fc6"
+    },
+    {
+      "id": "ft4-near-strong-80db-pcm16",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "pcm16",
+      "canonical_gain": 1,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901011,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0
+        },
+        {
+          "mode": "ft4",
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "amplitude": 1.5e-05,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        },
+        {
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "call",
+              "text": "W1AW",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "roger",
+              "value": "RR73"
+            }
+          },
+          "text": "W1AW K1ABC RR73",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        }
+      ],
+      "samples_sha256": "73b2ef64b48b0553a128a4f93a6c01ff81b4ea091d86cce225b20c6a3d9edcf8"
+    },
+    {
+      "id": "ft4-near-strong-80db-scaled",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "pcm16",
+      "canonical_gain": 0.0001,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901012,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0
+        },
+        {
+          "mode": "ft4",
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "amplitude": 1.5e-05,
+          "phase_radians": 0.7
+        }
+      ],
+      "expected": [
+        {
+          "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "token",
+              "text": "CQ",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "grid",
+              "value": "FN42"
+            }
+          },
+          "text": "CQ K1ABC FN42",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        },
+        {
+          "payload77": "00001011111111101010110100010000010011011110111100011010100111111010010011001",
+          "fields": {
+            "type": "standard",
+            "to": {
+              "kind": "call",
+              "text": "W1AW",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "from": {
+              "kind": "call",
+              "text": "K1ABC",
+              "hash_bits": null,
+              "hash_value": null
+            },
+            "ack": false,
+            "exchange": {
+              "kind": "roger",
+              "value": "RR73"
+            }
+          },
+          "text": "W1AW K1ABC RR73",
+          "start_frame": 6000,
+          "frequency_hz": 1500,
+          "time_tolerance_frames": 144,
+          "frequency_tolerance_hz": 3
+        }
+      ],
+      "samples_sha256": "05d1caa7ae496aa27746f47cfb2cddce604efc131d247327b727b4bb96ab9c40"
+    },
+    {
+      "id": "ft4-quantization-only-residual",
+      "decode_mode": "ft4",
+      "rate_hz": 12000,
+      "frames": 180000,
+      "quantization": "pcm16_best_fit_residual",
+      "canonical_gain": 1,
+      "drift_hz_per_second": 0,
+      "noise_std": 0,
+      "seed": 901013,
+      "signals": [
+        {
+          "mode": "ft4",
+          "payload77": "01100011111011011100111011100010101001001010111000000111111101010000000000000",
+          "start_frame": 6000,
+          "frequency_hz": 1000,
+          "amplitude": 0.15,
+          "phase_radians": 0
+        }
+      ],
+      "expected": [],
+      "samples_sha256": "4b26c52cc6e1a74a7cc524724ade55a05990504f6ec55b60b969618263d7209d"
+    }
+  ],
+  "generator_sha256": "4eb7e85528035066da754680a55e06bb1199a9445c4434da34cb983d4902b563"
+}

@@ -1,4 +1,4 @@
-// Canonical profile contract SHA256: 85fd41fa3c86f76137342d0fe4d72f0adf6a30a21401c4118d30e48e383f3c02
+// Canonical FSD slices SHA256: 47baf32460894549b36b0a2b874581d41996b89b25b3e4b097dd043a12f6269e
 package WstxProfiles {
     private import ScalarValues::*;
 
@@ -210,7 +210,11 @@ package WstxProfiles {
     calc def SaveSubmissionAllowed {
         in saving : Boolean;
         in conflict : Boolean;
-        return allowed : Boolean = not saving and not conflict;
+        in unknownOutcome : Boolean;
+        return allowed : Boolean = not saving and not conflict and not unknownOutcome;
+        doc /* FSD12.5: background Refresh/profile snapshots cannot clear a pending,
+             conflict or unknown-outcome save guard; explicit validated reload is required
+             for conflict/unknown outcome. This guard covers programmatic submission too. */
     }
     calc def SnapshotApplicable {
         in sameBoot : Boolean;
@@ -392,17 +396,17 @@ package WstxProfiles {
              PUT validates exact body shape/JSON/UTF8, media type/size before applying.
              Disable form controls while saving, preserving their read-only state;
              SaveSubmissionAllowed is the per-form submission guard. Refresh/profile
-             GET completion must retain saving OR conflict in Save's disabled state;
+             GET completion must retain saving, conflict OR unknown outcome in Save's disabled state;
              a second submission during saving sends no second PUT. Restore editable
              controls after completion, while permanent read-only controls stay disabled.
              SnapshotApplicable rejects a lower revision from the same boot so a held
              Refresh cannot overwrite an acknowledged newer save/form. A changed boot
              permits authoritative restart/recovery resynchronization, including an
              independently restored lower revision.
-             edits typed after submission cannot be clobbered by its acknowledgement.
              Invalid field preserves typed input with error, never Saved. Successful save
              updates revision only on durable 200. On 409 prompt reload before another
-             save. Refresh/reconnect reload authoritative settings; preserve in-progress
+             save. An unknown outcome also requires explicit reload before another save,
+             without automatic PUT replay or an assumed rollback. Refresh/reconnect reload authoritative settings; preserve in-progress
              edits until explicit reload or successful save. No settings polling/replay.
              Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
              silence checked each second =>13-second detection; reconnect 1/2/4 seconds,
@@ -446,6 +450,29 @@ package WstxProfiles {
         transition exitRejected first rejected then stopped;
     }
 
+    enum def SaveBrowserEvent {
+        enum submit; enum success; enum rejected; enum conflict;
+        enum outcome_unknown; enum explicit_reload_validated;
+    }
+    state def BrowserSaveLifecycle {
+        attribute acceptedEvent : SaveBrowserEvent;
+        entry; then editable;
+        state editable; state saving; state conflict; state unknownOutcome;
+        transition submit first editable if acceptedEvent == SaveBrowserEvent::submit then saving;
+        transition saved first saving if acceptedEvent == SaveBrowserEvent::success then editable;
+        transition rejected first saving if acceptedEvent == SaveBrowserEvent::rejected then editable;
+        transition conflicted first saving if acceptedEvent == SaveBrowserEvent::conflict then conflict;
+        transition responseUnknown first saving if acceptedEvent == SaveBrowserEvent::outcome_unknown then unknownOutcome;
+        transition reloadConflict first conflict if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
+        transition reloadUnknown first unknownOutcome if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
+        doc /* FSD12.5: browser form state, separate from the server process lifecycle.
+             While saving, disable editable controls and allow no second PUT; completion
+             restores editable fields without changing permanently read-only fields.
+             Conflict and unknownOutcome keep Save disabled until explicit reload returns
+             a validated authoritative profile on the current OPEN socket. Background GET,
+             Refresh or reconnect alone cannot clear the reload requirement; failed reload
+             leaves it set. No mutation replay. Known rejection shows error, not Saved. */
+    }
     action createProfile : CreateProfile;
     action launchProfile : LaunchSelectedProfile;
     action saveProfile : SaveSelectedProfile;
@@ -540,7 +567,10 @@ package WstxProfiles {
                  flush and replace errors and interruptions before/after replacement;
                  reopen independently checks old/new JSON and retained revision. No
                  runtime fault knobs. Browser route fetches a real successful PUT then
-                 aborts delivery; one PUT only and subsequent GET recovers commit. Lost
+                 aborts delivery; one PUT only and subsequent GET recovers commit. After
+                 a lost response, Refresh/background GET/reconnect keeps Save disabled;
+                 failed explicit reload keeps the guard and successful current-socket
+                 validated explicit reload recovers the committed revision without another PUT. Lost
                  response GET, no replay. Relative path from different CWD, aliases,
                  absent parent/existing empty/nonempty create target, invalid CLI and
                  forbidden env all have mapped errors. Independent ResponseBudgetAdmission
@@ -585,8 +615,8 @@ package WstxProfiles {
                  Check 12.1 login body/rate independently per process, cookie attributes,
                  no secrets except required HttpOnly cookie in permitted store; no
                  local/sessionStorage/profileJSON/retained form/URL/log/report leakage. Failed
-                 network login also clears DOM token immediately on submission; password
-                 autocomplete is disabled. Repeated Cookie headers are checked in the
+                 network login also clears DOM token immediately on submission.
+                 Repeated Cookie headers are checked in the
                  separate auth_tests.rs vector, not only a single cookie string.
                  Oracle: original cookie/error/identity table and independent inputs;
                  trusted same-host processes only, not hostile-host isolation proof. */
