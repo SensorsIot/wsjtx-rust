@@ -1,4 +1,4 @@
-// Canonical offline decode contract SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
+// Canonical live modem contract SHA256: 8e7a28689eee4ef1e3c764c292b658d85964a6d008bd9723d2bfab71cdd89486
 // Fingerprint covers canonical FSD; behavior slice4.4/6.4/12.7.
 package WstxOfflineDecode {
     private import ScalarValues::*;
@@ -111,18 +111,18 @@ package WstxOfflineDecode {
     }
     attribute def Settings { attribute mode : Mode; }
     item def DecodeJob :> WstxRecordingReceive::ReceiveJob {
-        attribute :>> kind = WstxRecordingReceive::ReceiveKind::decode;
+        attribute :>> kind = WstxRecordingReceive::ReceiveKind::live;
         attribute settings : Settings;
         attribute available_count : Integer;
         attribute search_limited : Boolean;
         assert constraint boundedProgress {
-            processed_frames >= 0 and processed_frames <= 1440000 and
+            processed_frames >= 0 and processed_frames <= (900719925 * 10000000 + 4740991) and
             available_count >= 0 and available_count <= 2048
         }
-        doc /* Existing station receive-job authority, kind=decode target extension.
-             One import OR spectrum replay OR decode, immutable mode, fresh job/generation,
-             no queue; error is null or stable recording/job code, never exception text.
-             Fast offline advancement, no source pacing or automatic replay. */
+        doc /* Existing station receive-job authority, kind=live with immutable mode.
+             One import OR recorded spectrum OR continuous receive; no queue.
+             Source-relative FT8/FT4 windows, reliable live ring and epoch rules12.8.
+             Numerical recorded fixtures have no production receive operation. */
     }
     attribute def CallValue {
         attribute kind : CallKind;
@@ -227,26 +227,15 @@ package WstxOfflineDecode {
         attribute frequency_hz : Real;
         attribute snr_db : Real[0..1];
         assert constraint boundedRecord {
-            sequence >= 0 and sequence < 2048 and i3 >= 0 and i3 <= 7 and
-            start_frame >= 0 and start_frame < 1440000 and
+            sequence >= 0 and sequence <= (900719925 * 10000000 + 4740991) and i3 >= 0 and i3 <= 7 and
+            start_frame >= 0 and start_frame <= (900719925 * 10000000 + 4740991) and
             frequency_hz >= 200.0 and frequency_hz <= 3500.0
         }
-        doc /* Exact wire keys,<=1024UTF8bytes. payload77 exactly77binarychars; n3 only
+        doc /* Exact shared live wire keys,<=2048UTF8bytes. payload77 exactly77binarychars; n3 only
              ifi3=0; text<=80ASCII and matching fields only when decoded, otherwise null.
              Supported0.0/.1/.3/.4/.5,1/2/3/4/5;0.2/.6/.7,6/7 unsupported. BadCRC never
              published. start indexes canonical12k first ramp/sync, never native orUTC.
              SNR null orfinite[-60,60], bounds labeled; full identity is page envelope. */
-    }
-    item def DecoderSnapshot {
-        attribute v : Integer = 1;
-        attribute profile_id : String;
-        attribute boot_id : String;
-        attribute generation : Integer;
-        attribute modes : Mode[2];
-        item job : DecodeJob[0..1];
-        doc /* Exact FSD12.7 snapshot<=1536bytes; modes[ft4,ft8], job wire projection
-             id/source_id/generation/mode/state/processed_frames/available_count/error/
-             search_limited only; current nondecodejob=>null, no wholesale serialization. */
     }
     item def ResultPage {
         attribute v : Integer = 1;
@@ -255,15 +244,17 @@ package WstxOfflineDecode {
         attribute 'state' : WstxRecordingReceive::ReceiveState;
         attribute error : WstxRecordingReceive::ErrorCode[0..1];
         attribute search_limited : Boolean;
+        attribute first_sequence : Integer;
+        attribute next_sequence : Integer;
         attribute available_count : Integer;
         attribute 'next' : Integer;
         attribute more : Boolean;
-        item records : ResultRecord[0..1];
-        assert constraint pageCursor { 'next' >= 0 and 'next' <= available_count and available_count <= 2048 }
-        doc /* Wire correlation flattened to profile_id/boot_id/source_id/job_id/generation;
-             exact other keys above. Body<=1536bytes,one<=1024byterecord, latestjobonly.
-             afterN canonicalnonnegative decimal,default0,duplicate/unknown/>count400.
-             Stable append cursor; emptyrunning distinct fromemptyterminal. */
+        item records : ResultRecord[0..16];
+        assert constraint pageCursor { first_sequence >= 0 and next_sequence >= first_sequence and next_sequence <= (900719925 * 10000000 + 4740991) and available_count == next_sequence - first_sequence and available_count <= 2048 and 'next' >= first_sequence and 'next' <= next_sequence }
+        doc /* Exact12.8 live envelope<=16384bytes,record<=2048bytes; Thinlimit1/page3072.
+             Each record sequence<next_sequence,start_frame<actually captured next_frame.
+             cursor<first=>410cursor_expired,cursor>next=>400,cursor==next=>empty.
+             No file decode operation/snapshot/page endpoint. */
     }
     calc def CostasRatio {
         in tones : Integer;
@@ -422,13 +413,16 @@ package WstxOfflineDecode {
              when their actual CRC-valid waveform passes, never status-based filtering. */
     }
     action def AdmitDecode {
-        in source : WstxRecordingReceive::SourceDescriptor;
+        in source : WstxRecordingReceive::SourceDescriptor[0..1];
         in settings : Settings;
         out job : DecodeJob;
-        doc /* Same strict mode/auth/Origin/body/schema/profile/boot/generation/source/busy
-             validation order as12.6. GETdecoder before controls; POSTdecode exact6keys
-             v/profile_id/boot_id/generation/recording_id/mode <=1024bytes. 202newUUID/gen.
-             Existing storage/degraded state applies. Mode immutable, no persisted profile edit. */
+        doc /* Production12.8 live start only; selected-profile auth/Origin/schema,
+             boot/generation/profile-revision and shared receive admission precede capture.
+             Mode immutable. Source absent during opening before first provider ACK;
+             no publication until acknowledged full tuple. Initialstart freshjob/gen,
+             firstsourceACK samejob/gen;
+             subsequent unknownepoch freshsource/job/gen beforeproviderACK and ring reset.
+             Recorded waveforms are internal numerical/integration fixtures, no file API. */
     }
     doc /* Coarse search explicitly includes both200 and3500Hz even when off the uniform
          half-tone FFT grid. Evaluate exact off-grid endpoint power by direct quadrature;
@@ -440,7 +434,8 @@ package WstxOfflineDecode {
         doc /* Pure canonical12k consumer, no WAV/device/network/UTC access or resampler.
              Detailed/Thin display keeps fixed0..3000Hz even for decoder3159/3337Hz results;
              display8192history and2048/4096plans are not universal decoder buffers.
-             Copy into<=30shistory,two blocks,30swindow/15sadvance,complete supports only.
+             Copy into boundedhistory,two blocks; live FT8<=30s/advance15s,FT4<=15s/advance7.5s.
+             Initialshortercomplete support; exact sourcecounter boundaries independent ofpacket splits.
              FFT1920/576,hops480/144,two half-tone grids200..3500,quarter-symbol starts;
              localrefine5time*9freq points. SharedRustFFT6.4.1planned/scalar, checked worker
              buffers/scratch, no second provider/wrapper. <=50msquantum/cancelcheck, service
@@ -489,14 +484,14 @@ package WstxOfflineDecode {
         in records : ResultRecord[0..2048];
         out page : ResultPage;
         doc /* Stationauthority rechecks fullidentity/generation beforeappend. Cancelinvalid
-             beforeack, terminalonlyafterrelease<=250ms; failurewinsoverEOS. Partialretained
-             oncancel/failure; newjob/source/restart clears, oldIDs404, browserclosecontinues.
-             decode_limit onhistory/allocation/resultbyte/count ceiling; search_limited
-             means requiredcorpuscompleteness fails. No silentloss/exceptionstrings.
-             Browser onependingpage,>=2spollstarts,nobeginwhileexplicitstatuspending,
-             loaded/count separatefromterminal, literaltext, staleIDs ignored, noretrymutations.
-             Two maximum-pageclients <=3000accountedB/s/direction andstatus<=2s on32kbitTLS.
-             Futurejoint8 optional spectrum<=1/2s,resultpoll<=1/4s independentlytested. */
+             beforeack; terminalonlyafterrelease<=250ms; retain marked partials onstop/failure.
+             Newjob/source/restart invalidates oldpages/callbacks. Reliable2048/2MiB live ring;
+             evictionadvancesfirst_sequence, lifetime safecountersneverreset within an epoch.
+             SearchLimited=>failed/decode_limit+search_limited=true,acceptedpartialsretained;
+             accepted cancellation has priority. No invented calls/exception strings.
+             Browser onependingpage,Thinlimit1/starts>=4sbehindexplicitstatus; optional
+             spectrum<=1/2s; two32kbitclients<=3000accountedB/s/direction,status<=2s.
+             No automaticmutationreplay or browsermodem/clockauthority. */
     }
     action admitDecode : AdmitDecode;
     action advanceDecode : AdvanceDecode;

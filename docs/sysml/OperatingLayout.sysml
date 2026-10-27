@@ -1,4 +1,4 @@
-// Canonical operating layout SHA256: 295d8b0ee7283626dd3256f9ce47a62ec08188a8867e55df2e2f23d33322fa42
+// Canonical operating layout SHA256: 8e7a28689eee4ef1e3c764c292b658d85964a6d008bd9723d2bfab71cdd89486
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
@@ -7,7 +7,7 @@ package WstxOperatingLayout {
          profile contracts are reused, not redefined. Full QSO/TX/log behavior is
          outside this slice. No modeled verification verdict is asserted. */
 
-    enum def CapabilityState { enum unsupported; enum unavailable; }
+    enum def CapabilityState { enum unsupported; enum unavailable; enum available; }
     enum def LinkState { enum connecting; enum connected; enum stale; }
     enum def SecondaryRegion { enum settings; enum recording; }
 
@@ -23,20 +23,37 @@ package WstxOperatingLayout {
         attribute decoder : CapabilityState = CapabilityState::unsupported;
         attribute transmit : CapabilityState = CapabilityState::unsupported;
         attribute messageRowCount : Integer = 0;
+        attribute liveResultInterfaceAvailable : Boolean = false;
         attribute selectedContactRowCount : Integer = 0;
         attribute transmitEnabled : Boolean = false;
         attribute haltEnabled : Boolean = false;
         attribute autoSequenceEnabled : Boolean = false;
         attribute logEnabled : Boolean = false;
         assert constraint readOnlyUnsupportedCapabilities {
-            messageRowCount == 0 and selectedContactRowCount == 0 and
+            (liveResultInterfaceAvailable or messageRowCount == 0) and
+            messageRowCount >= 0 and messageRowCount <= 2048 and
+            selectedContactRowCount == 0 and
             not transmitEnabled and not haltEnabled and
             not autoSequenceEnabled and not logEnabled
         }
         doc /* Link transitions follow existing station.status/socket authority.
              A connected link does not imply audio/CAT/decoder/TX availability.
              Unknown frequency/mode are visible unavailable text, never defaults.
-             Profile identity uses literal text, never HTML interpretation. */
+             Profile identity uses literal text, never HTML interpretation.
+             With liveResultInterfaceAvailable,12.8 explicit Start/Stop and next-job
+             spectrum/FT4/FT8 selection use the saved endpoint/current revision.
+             Device enumeration requires an operator action; viewing settings or
+             choosing a mode never opens audio. Actual12.7 records alone populate
+             Band Activity using source seconds, nullable SNR and audio frequency;
+             no fabricated UTC/DT, message text or resolved hash. Full source/job/
+             generation/sequence binds each row; new identity clears rows, stale
+             pages cannot append. At most2048 rows, explicit cursor-expiry history
+             warning and partial stop/failure output; unsupported payloads display
+             their status. One pending page, Thin limit1/4s and status priority
+             follow12.8. RX selection/TX/log remain unsupported. TC009004 exercises
+             actual verified native input through converter/manager/modem/HTTP to
+             literal browser rows and stale/epoch/stop/cursor/cadence boundaries;
+             TC007002 keeps the unsupported/no-input empty-view baseline. */
     }
 
     attribute def SplitGeometry {
