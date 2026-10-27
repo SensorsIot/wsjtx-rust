@@ -178,7 +178,7 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   await fs.mkdir('test-results',{recursive:true});await p.screenshot({path:'test-results/recording-desktop.png',fullPage:true});
   await p.setViewportSize({width:360,height:640});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.ok((await p.locator('#signal').boundingBox()).height>=160);assert.ok((await p.locator('#controls').boundingBox()).height>=200);assert.equal((await separator.boundingBox()).height,7);
   await p.screenshot({path:'test-results/recording-mobile.png',fullPage:true});
-  const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox(),targetY=await p.evaluate(()=>document.querySelector('#signal').getBoundingClientRect().top+Math.min(176,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))));
+  const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox(),targetY=await p.evaluate(()=>document.querySelector('#signal').getBoundingClientRect().top+Math.min(Number(document.querySelector("#splitter").getAttribute("aria-valuemin"))+16,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))));
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:180,y:handle.y+3}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:180,y:targetY}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});const resizedSignal=await p.locator('#signal').boundingBox();assert.ok(Math.abs(resizedSignal.y+resizedSignal.height-targetY)<=10,'touch drag follows its viewport coordinate below the station bar');
@@ -408,7 +408,7 @@ test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},as
 });
 // Proves: CL-006-03/04; TC-010-007 independent source-time movement, clipping and unobserved pixels.
 test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom',{timeout:30000},async t=>{
-  const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
+  const f=await fixture(t);await f.upload(wav(120));const p=await page(f,{width:1100,height:1050});await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
   // Three Thin rows at80px/s need a tall plot; default workspace is intentionally compact.
   const movementSeparator=p.getByRole('separator');await movementSeparator.focus();await p.keyboard.press('End');
   assert.ok((await p.locator('#waterfall').boundingBox()).height>=240,'fixture observes all three row positions before testing exit');

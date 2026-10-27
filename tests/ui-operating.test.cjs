@@ -115,8 +115,8 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
       const a=getComputedStyle(table),b=getComputedStyle(header),c=getComputedStyle(cell);
       return {tableFont:a.fontSize,headerFont:b.fontSize,headerPadding:b.paddingTop,cellPadding:c.paddingTop,wrap:c.overflowWrap,overflow:document.documentElement.scrollWidth>innerWidth};
     });
-    assert.equal(style.tableFont,width>=1500?'14px':'13px',`Band Activity table at ${width}px`);
-    assert.equal(style.headerFont,'11px');assert.equal(style.headerPadding,'8px');
+    assert.equal(style.tableFont,'16px',`Band Activity table at ${width}px`);
+    assert.equal(style.headerFont,'14px');assert.equal(style.headerPadding,'8px');
     assert.equal(style.cellPadding,'8px');assert.equal(style.wrap,'anywhere');assert.equal(style.overflow,false);
     assert.equal(await page.locator('#band-activity tr[data-result-id]').count(),0,'no fake decoded rows');
     await page.screenshot({path:`test-results/ui-operating/readability-${width}.png`,fullPage:true});
@@ -175,8 +175,10 @@ test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strate
  assert.equal(Math.round(composition['#signal'].height),210);
  assert.ok(composition['#splitter'].bottom<=composition['#band-strip'].top+1);
  assert.ok(composition['#band-strip'].bottom<=composition['#band-activity'].top+1);
- assert.ok(composition['#band-activity'].right<composition['#rx-focus'].left);
- assert.ok(composition['#rx-focus'].right<composition['#strategy-panel'].left);
+ assert.ok(composition['#band-activity'].top>=composition['#band-strip'].bottom);
+ await page.setViewportSize({width:1600,height:1000});
+ const cardOrder=await page.locator('#controls .operating-grid').evaluate(grid=>[...grid.children].map(el=>el.getBoundingClientRect().left));assert.ok(cardOrder[0]<cardOrder[1]&&cardOrder[1]<cardOrder[2],'three cards remain adjacent when readable space permits');
+ await page.setViewportSize({width:1200,height:800});
  assert.equal(await page.locator('#focus-heading').textContent(),'Current QSO');
  assert.match(await page.locator('#strategy-heading').textContent(),/Strategy/);
  assert.equal(await page.locator('#band-strip button').count(),13);
@@ -218,5 +220,73 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.keyboard.press('Escape');await page.locator('#open-recordings').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
  assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: TC-007-002 readable rem typography and actual 200% text enlargement, every region.
+test('TC-007-002 readable text reflows throughout every operating region at 200 percent',{timeout:60000},async t=>{
+ const {page,errors,sent}=await fixture(t,{width:1200,height:900});
+ const regions=['operate','recordings','server-settings','client-preferences','connection','strategies','logbook','help'];
+ const findings=[];
+ for(const scale of [1,2])for(const width of [360,1200,1600]){
+  await page.setViewportSize({width,height:1000});
+  // Root font-size exercises actual rem text enlargement, not device pixels or a screenshot scale.
+  await page.evaluate(factor=>document.documentElement.style.fontSize=`${factor*100}%`,scale);
+  await page.waitForTimeout(60);
+  for(const region of regions){
+   await page.locator(`#station-bar button[data-region="${region}"]`).focus();await page.keyboard.press('Enter');
+   const container=region==='operate'?'#operating-workspace':`#region-${region}`;
+   await page.locator(container).evaluate(async el=>{for(const details of el.querySelectorAll('details'))details.open=true;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+   const result=await page.evaluate(({container,scale})=>{
+    const regions=[document.querySelector('#station-bar'),document.querySelector('#radio-toolbar'),document.querySelector('#signal'),document.querySelector('#band-strip'),document.querySelector('#workspace-statusbar'),document.querySelector(container)];
+    const violations=[],clipped=[],overlap=[],textBoxes=[];let checked=0;
+    const visible=el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';
+    for(const region of regions)for(const el of [region,...region.querySelectorAll('*')]){
+     if(!visible(el)||el.matches('canvas,option,script,style'))continue;
+     const direct=[...el.childNodes].filter(n=>n.nodeType===Node.TEXT_NODE&&n.textContent.trim());
+     if(!direct.length&&!el.matches('input:not([type=range]):not([type=checkbox]),select,button'))continue;
+     const technical=!!el.closest('#frequency-ruler,#time-ruler');
+     const normal=el.matches('button,input:not([type=range]):not([type=checkbox]),select,td')||!!el.closest('td')||(el.matches('p')&&!el.matches('.op-muted,.op-unavailable,#bin-readout,#settings-result')&&!el.closest('.op-candidate,#settings'));
+     const minimum=(technical?12:normal?16:14)*scale;
+     const computed=getComputedStyle(el),size=parseFloat(computed.fontSize);checked++;
+     if(size+0.1<minimum)violations.push({tag:el.tagName,id:el.id,cls:el.className,size,minimum,text:el.textContent.trim().slice(0,55)});
+     for(const node of direct){const range=document.createRange();range.selectNodeContents(node);for(const r of range.getClientRects()){
+      if(r.width&&r.height){const rendered={left:r.left,right:r.right,top:r.top,bottom:r.bottom};for(let a=el;a&&a!==document.body;a=a.parentElement){const style=getComputedStyle(a),b=a.getBoundingClientRect();if(['hidden','auto','scroll'].includes(style.overflowX)){rendered.left=Math.max(rendered.left,b.left);rendered.right=Math.min(rendered.right,b.right);}if(['hidden','auto','scroll'].includes(style.overflowY)){rendered.top=Math.max(rendered.top,b.top);rendered.bottom=Math.min(rendered.bottom,b.bottom);}}if(rendered.right>rendered.left&&rendered.bottom>rendered.top)textBoxes.push({el,r:rendered,text:node.textContent.trim().slice(0,45)});}
+      if(r.width&& (r.left< -1||r.right>innerWidth+1))clipped.push({id:el.id,cls:el.className,text:node.textContent.trim().slice(0,45),left:r.left,right:r.right});
+      let verticalScroll=false;for(let ancestor=el;ancestor&&ancestor!==document.body;ancestor=ancestor.parentElement){const style=getComputedStyle(ancestor);if(['auto','scroll'].includes(style.overflowY)&&ancestor.scrollHeight>ancestor.clientHeight)verticalScroll=true;if(style.overflowX==='hidden'||(style.overflowY==='hidden'&&!verticalScroll)){
+       const b=ancestor.getBoundingClientRect();if((style.overflowX==='hidden'&&(r.left<b.left-1||r.right>b.right+1))||(style.overflowY==='hidden'&&!verticalScroll&&(r.top<b.top-1||r.bottom>b.bottom+1)))clipped.push({id:el.id,clip:ancestor.id,text:node.textContent.trim().slice(0,45)});
+      }}
+     }}
+    }
+    for(let a=0;a<textBoxes.length;a++)for(let b=a+1;b<textBoxes.length;b++){const x=textBoxes[a],y=textBoxes[b];if(x.el===y.el||x.el.contains(y.el)||y.el.contains(x.el))continue;if(Math.min(x.r.right,y.r.right)-Math.max(x.r.left,y.r.left)>1&&Math.min(x.r.bottom,y.r.bottom)-Math.max(x.r.top,y.r.top)>1)overlap.push([x.text,y.text]);}
+    return {violations,clipped,overlap,checked,overflow:document.documentElement.scrollWidth>innerWidth,rootFont:getComputedStyle(document.documentElement).fontSize,scrollX,mainLeft:document.querySelector('main').getBoundingClientRect().left,mainScroll:document.querySelector('main').scrollLeft};
+   },{container,scale});
+   findings.push({width,scale,region,...result});
+   await fs.writeFile("test-results/ui-operating/readability-computed.json",JSON.stringify(findings,null,2));
+   if(result.clipped.length||result.overflow||result.violations.length)await page.screenshot({path:"test-results/ui-operating/readability-failure.png",fullPage:true});
+   assert.equal(result.rootFont,`${16*scale}px`);assert.ok(result.checked>20);
+   assert.deepEqual(result.violations,[],`font minima ${region} ${width}px ${scale}x`);
+   assert.equal(result.overflow,false,`page overflow ${region} ${width}px ${scale}x`);
+   assert.deepEqual(result.clipped,[],`text clipping ${region} ${width}px ${scale}x`);
+   assert.deepEqual(result.overlap,[],`text overlap ${region} ${width}px ${scale}x`);
+   await page.locator('#halt-tx').scrollIntoViewIfNeeded();assert.equal(await page.locator('#halt-tx').isVisible(),true);assert.equal(await page.locator('#halt-tx').isDisabled(),true);
+   if(width===1200&&region==='operate')await page.screenshot({path:`test-results/ui-operating/readable-${scale}x-1200.png`,fullPage:true});
+  }
+ }
+ await fs.writeFile('test-results/ui-operating/readability-computed.json',JSON.stringify(findings,null,2));
+ assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
+});
+
+// CSS fixture only: known CQ text exercises populated cells; it is not decoder or RF evidence.
+test('TC-007-002 populated message cells wrap without crossing adjacent columns',{timeout:20000},async t=>{
+ const {page,errors}=await fixture(t,{width:1200,height:1000});
+ const values=['0.497s','23.0','-0.1','1000.0','CQ K1ABC FN42','Decoded'];
+ await page.locator('#band-activity tbody').evaluate((tbody,values)=>{const row=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=value;row.append(td);}tbody.replaceChildren(row);},values);
+ for(const scale of [1,2])for(const width of [360,1200,1600]){
+  await page.setViewportSize({width,height:1000});await page.evaluate(scale=>document.documentElement.style.fontSize=`${scale*100}%`,scale);
+  const cells=await page.locator('#band-activity tbody td').evaluateAll(nodes=>nodes.map(td=>{const box=td.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(td);return {text:td.textContent,font:parseFloat(getComputedStyle(td).fontSize),whiteSpace:getComputedStyle(td).whiteSpace,inside:[...range.getClientRects()].every(r=>r.left>=box.left-1&&r.right<=box.right+1&&r.top>=box.top-1&&r.bottom<=box.bottom+1)};}));
+  assert.deepEqual(cells.map(c=>c.text),values);assert.ok(cells.every(c=>c.font>=16*scale&&c.whiteSpace==='normal'&&c.inside),`populated cells stay within their own columns ${width}px ${scale}x`);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ }
  assert.deepEqual(errors,[]);
 });
