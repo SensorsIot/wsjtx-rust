@@ -259,13 +259,25 @@ test('TC-018-003 every recording endpoint retains TLS cookie and exact Origin bo
 
 // Proves: CL-006-03/04; TC-010-002, direct peer measures server cadence independently of link delivery jitter.
 test('TC-010-002 optional output is opt-in, bounded, paced and invalidated by cancel',{timeout:15000},async t=>{
-  const f=await fixture(t);await f.upload(wav(5));
+  const f=await fixture(t),initial=await f.upload(wav(5));
   const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());
   const messages=[];ws.on('message',data=>messages.push({at:performance.now(),value:JSON.parse(String(data))}));
   let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.thin',id:1}));assert.equal((await pending).type,'spectrum.subscription');
   const job=await f.replay();await sleep(3300);
   const frames=messages.filter(m=>m.value.type==='spectrum.frame');assert.ok(frames.length>=2);for(let n=1;n<frames.length;n++)assert.ok(frames[n].at-frames[n-1].at>=995);
-  pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.off',id:2}));assert.equal((await pending).type,'spectrum.subscription');const off=messages.filter(m=>m.value.type==='spectrum.frame').length;await sleep(1100);assert.equal(messages.filter(m=>m.value.type==='spectrum.frame').length,off);
+  // FIFO may deliver an already buffered optional frame before the correlated Off ACK.
+  // FSD12.6 allows bounded buffered output; it does not allow a frame after that ACK.
+  const offStart=messages.length,offSent=performance.now();ws.send(JSON.stringify({v:1,type:'spectrum.off',id:2}));
+  let ackIndex=-1;
+  while(performance.now()-offSent<2000){ackIndex=messages.findIndex((m,i)=>i>=offStart&&!['spectrum.frame','heartbeat'].includes(m.value.type));if(ackIndex>=0)break;await sleep(5);}
+  assert.ok(ackIndex>=offStart,'correlated Off ACK arrives within the existing2s control deadline');
+  const ack=messages[ackIndex].value;assert.ok(messages[ackIndex].at-offSent<=2000);assert.deepEqual(ack,{v:1,type:'spectrum.subscription',id:2,data:{profile:'off'}});
+  for(const m of messages.slice(offStart,ackIndex))if(m.value.type==='heartbeat')assert.deepEqual(m.value,{v:1,type:'heartbeat'});
+  const buffered=messages.slice(offStart,ackIndex).filter(m=>m.value.type!=='heartbeat');
+  assert.ok(buffered.length<=Math.floor((messages[ackIndex].at-offSent)/995)+1,'buffered prefix remains bounded by Thin cadence and the control deadline');
+  for(const m of buffered){assert.deepEqual(Object.keys(m.value).sort(),['data','type','v']);assert.equal(m.value.v,1);const f=m.value.data;assert.deepEqual(Object.keys(f).sort(),['boot_id','end_frame','first_frame','generation','job_id','levels','sequence','source_id']);assert.equal(m.value.type,'spectrum.frame');assert.equal(f.boot_id,initial.boot_id);assert.equal(f.source_id,initial.recording.id);assert.equal(f.job_id,job.id);assert.equal(f.generation,job.generation);assert.ok(Number.isSafeInteger(f.sequence)&&f.sequence>=0&&f.sequence<5);assert.ok(f.first_frame<f.end_frame&&f.end_frame<=60000);assert.equal(f.first_frame,f.sequence*12000);assert.equal(f.end_frame,Math.min(f.first_frame+12000,60000));assert.equal(f.levels.length,128);assert.ok(f.levels.every(q=>Number.isInteger(q)&&q>=0&&q<=120));assert.ok(Buffer.byteLength(JSON.stringify(m.value))<=1024);}
+  const throughAck=messages.slice(0,ackIndex+1).filter(m=>m.value.type==='spectrum.frame');for(let n=1;n<throughAck.length;n++)assert.ok(throughAck[n].at-throughAck[n-1].at>=995);
+  const noPostAckFrames=()=>assert.equal(messages.slice(ackIndex+1).filter(m=>m.value.type==='spectrum.frame').length,0,'no optional frame may follow the Off ACK');noPostAckFrames();await sleep(1100);noPostAckFrames();
   await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);const snapshot=await f.snapshot();assert.equal(snapshot.job.state,'cancelled');
 });
 
