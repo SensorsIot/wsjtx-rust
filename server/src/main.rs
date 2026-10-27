@@ -4,8 +4,13 @@ mod auth_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
+mod receive;
+mod receive_http;
+#[cfg(test)]
+mod receive_http_tests;
 mod recording;
 mod recording_http;
+use wstx_rust::{audio, decoder, source};
 mod spectrum;
 use axum::{Json, body::Bytes};
 use axum::{
@@ -229,7 +234,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         connections: Arc::new(Semaphore::new(16)),
         login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
     };
-    let app = Router::new()
+    let app = router(state);
+    println!("WSTX address {scheme}://{address}");
+    if let Some(tls) = tls {
+        let server = axum_server::from_tcp_rustls(listener, tls)
+            .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
+        println!("WSTX listening {origin}");
+        server.serve(app.into_make_service()).await?;
+    } else {
+        let listener = tokio::net::TcpListener::from_std(listener)
+            .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
+        println!("WSTX listening {origin}");
+        axum::serve(listener, app).await?;
+    }
+    Ok(())
+}
+fn router(state: App) -> Router {
+    Router::new()
         .route("/", get(index))
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/app.js")) }))
         .route("/recording.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/recording.js")) }))
@@ -238,6 +259,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/session", post(session).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/profile", get(get_profile).put(put_profile))
         .route("/recording", get(recording_http::snapshot))
+        .route("/audio/devices", get(receive_http::devices))
+        .route("/receive", get(receive_http::snapshot))
+        .route("/receive/start", post(receive_http::start).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/receive/results", get(receive_http::results))
         .route("/recording/imports", post(recording_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/imports/{id}", get(recording_http::import).put(recording_http::import).delete(recording_http::import).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/recording/replay", post(recording_http::replay).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -252,20 +278,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             headers.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
             response
         }))
-        .with_state(state);
-    println!("WSTX address {scheme}://{address}");
-    if let Some(tls) = tls {
-        let server = axum_server::from_tcp_rustls(listener, tls)
-            .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
-        println!("WSTX listening {origin}");
-        server.serve(app.into_make_service()).await?;
-    } else {
-        let listener = tokio::net::TcpListener::from_std(listener)
-            .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
-        println!("WSTX listening {origin}");
-        axum::serve(listener, app).await?;
-    }
-    Ok(())
+        .with_state(state)
 }
 fn startup_error(code: &str, path: &std::path::Path) -> String {
     let path: String = path
@@ -640,6 +653,9 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
     let mut seen = None;
     let mut last_display = Instant::now() - Duration::from_secs(1);
     let mut optional_since: Option<Instant> = None;
+    let mut receive_tick = interval(Duration::from_secs(2));
+    receive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut receive_seen = Value::Null;
     loop {
         tokio::select! {
             biased;
@@ -649,6 +665,18 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                 if !send_control(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into()),optional_since).await { break; }
                 optional_since=None;
                 if !send(&mut socket,Message::Ping(Vec::new().into())).await {break;}
+            }
+            _ = receive_tick.tick(), if recording.is_some() => {
+                let r=recording.as_ref().unwrap();
+                let s=r.receive_snapshot();
+                let data=json!({"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"],
+                    "source_id":s["source"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"]});
+                let observed=json!([data,s["job"]["last_overrun"]]);
+                let notify=!s["job"].is_null() || !receive_seen[0]["job_id"].is_null();
+                if notify && observed!=receive_seen {
+                    if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":data}).to_string().into()),optional_since).await {break;}
+                    optional_since=None;receive_seen=observed;
+                }
             }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Text(text))) => {
@@ -660,7 +688,8 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                             if let Some(r) = &recording {
                                 if command == "recording.get" {
                                     let s = r.snapshot();
-                                    value = json!({"v":1,"type":"recording.state","id":request["id"],"data":{"generation":s["generation"],"source_id":s["recording"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"]}});
+                                    let source=if s["job"]["kind"]=="live" {&s["job"]["source_id"]}else{&s["recording"]["id"]};
+                                    value = json!({"v":1,"type":"recording.state","id":request["id"],"data":{"generation":s["generation"],"source_id":source,"job_id":s["job"]["id"],"state":s["job"]["state"]}});
                                 } else {
                                     display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
                                     if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now()); }
@@ -684,7 +713,8 @@ async fn connection(mut socket: WebSocket, recording: Option<Arc<recording::Reco
                 if optional_since.is_some() {
                     match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
-                if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(1) {continue;}
+                let live=recording.as_ref().is_some_and(|r|r.state.lock().unwrap().job.as_ref().is_some_and(|j|j.kind=="live"));
+                if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(if live {2}else{1}) {continue;}
                 if display_profile=="detail" && tokio::time::Instant::now()<next_detail {detail_tick.reset_at(next_detail);continue;}
                 let frame = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {s.detail_frame.clone()} else {s.frame.clone()}});
                 if let Some(frame) = frame {
