@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           patch="$GITHUB_WORKSPACE/reference-output/stage-logging.patch"
           gzip -cd fixtures/decoder/wsjtx-stage-logging.patch.gz > "$patch"
-          echo "ff9d92157597b2f604b053a5e5e0f03debd3d594b90b11dc25f11371d18043fa  $patch" | sha256sum -c -
+          echo "74200570f167d82f0a425fca814226f2cc5401d910c89ee39a5cf2be23aa45da  $patch" | sha256sum -c -
           git -C reference-source apply --check "$patch"
           git -C reference-source apply "$patch"
           git -C reference-source diff --binary > reference-output/applied-source.diff
