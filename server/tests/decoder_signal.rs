@@ -16,7 +16,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use wstx_rust::decoder::{Decoder, Mode, quadratures};
+use wstx_rust::decoder::{Decode, DecodeError, DecodeState, Decoder, Mode, quadratures};
 fn prepared(kind: &str) -> PathBuf {
     static QUALITY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     static FROZEN: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -1547,6 +1547,385 @@ fn resource_compare_baseline(expected: &Value, actual: &Value, mode: &str) {
                 <= if mode == "ft8" { 0.2 } else { 0.5 }
         );
     }
+}
+
+struct ResourceHashFile(PathBuf);
+impl Drop for ResourceHashFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+fn resource_f32_hash(samples: &[f32]) -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "wstx-modem-input-{}-{}-{}.f32le",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    ));
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    let owned = ResourceHashFile(path);
+    let mut output = std::io::BufWriter::new(file);
+    for sample in samples {
+        output.write_all(&sample.to_le_bytes()).unwrap();
+    }
+    output.flush().unwrap();
+    drop(output);
+    resource_hash(&owned.0)
+}
+
+struct ResourceLiveAttempt {
+    outcome: Result<(), DecodeError>,
+    records: Vec<Decode>,
+    cancel_return: Option<Duration>,
+}
+fn resource_live_attempt(
+    decoder: &Decoder,
+    samples: Vec<f32>,
+    origin: u64,
+    state: &mut DecodeState,
+    context: Value,
+    cancel_after_pending: bool,
+) -> ResourceLiveAttempt {
+    use std::{
+        cell::RefCell,
+        future::Future,
+        sync::atomic::{AtomicBool, Ordering},
+        task::{Context, Poll, Waker},
+    };
+    assert_eq!(samples.len(), 360000);
+    let began = Instant::now();
+    let publications = RefCell::new(Vec::<(f64, Decode)>::new());
+    let cancel = AtomicBool::new(false);
+    let mut cancelled_at = None;
+    let mut polls = 0u64;
+    let mut pending = 0u64;
+    let mut maximum = Duration::ZERO;
+    let mut flushed = 0usize;
+    eprintln!(
+        "RESOURCE_LIVE_ATTEMPT_START {}",
+        serde_json::json!({"context":context,"origin":origin,
+        "frames":samples.len(),"public_api":"decode_window_into_async","live_history":true,
+        "cancel_after_observed_pending":cancel_after_pending,"total_deadline_seconds":null,
+        "cpu_time_measured":false,"manager_proof":false})
+    );
+    let (outcome, returned) = {
+        let mut publish = |record: &Decode| {
+            let mut values = publications.borrow_mut();
+            assert!(
+                values.len() < 2048,
+                "bounded observer follows existing modem record ceiling"
+            );
+            values.push((began.elapsed().as_secs_f64(), record.clone()));
+            Ok(())
+        };
+        let is_cancelled = || cancel.load(Ordering::SeqCst);
+        let mut future = std::pin::pin!(decoder.decode_window_into_async(
+            samples,
+            origin,
+            state,
+            &is_cancelled,
+            &mut publish
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        loop {
+            let poll_started = Instant::now();
+            let result = future.as_mut().poll(&mut cx);
+            let poll_ended = Instant::now();
+            let wall = poll_ended.duration_since(poll_started);
+            polls += 1;
+            maximum = maximum.max(wall);
+            let ready = matches!(&result, Poll::Ready(_));
+            if !ready {
+                pending += 1;
+            }
+            eprintln!(
+                "RESOURCE_LIVE_POLL {}",
+                serde_json::json!({"context":context,"poll":polls,
+                "started_seconds":poll_started.duration_since(began).as_secs_f64(),
+                "wall_seconds":wall.as_secs_f64(),"ready":ready,"cpu_time_measured":false})
+            );
+            {
+                let values = publications.borrow();
+                for (at, record) in &values[flushed..] {
+                    eprintln!(
+                        "RESOURCE_LIVE_PUBLICATION {}",
+                        serde_json::json!({"context":context,
+                        "callback_seconds":at,"record":record,"genuine_verified_callback":true})
+                    );
+                }
+                flushed = values.len();
+            }
+            match result {
+                Poll::Ready(outcome) => break (outcome, poll_ended),
+                Poll::Pending => {
+                    if cancel_after_pending && cancelled_at.is_none() {
+                        let accepted = Instant::now();
+                        cancel.store(true, Ordering::SeqCst);
+                        cancelled_at = Some(accepted);
+                    }
+                }
+            }
+        }
+    };
+    let records = publications
+        .into_inner()
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect::<Vec<_>>();
+    let cancel_return = cancelled_at.and_then(|accepted| returned.checked_duration_since(accepted));
+    if let Some(accepted) = cancelled_at {
+        eprintln!(
+            "RESOURCE_LIVE_CANCEL {}",
+            serde_json::json!({"context":context,
+            "after_real_pending_boundary":true,"requested_seconds":accepted.duration_since(began).as_secs_f64(),
+            "log_written_after_kernel_return":true,"manager_ack_or_publication_invalidation_claim":false})
+        );
+    }
+    eprintln!(
+        "RESOURCE_LIVE_ATTEMPT_END {}",
+        serde_json::json!({"context":context,
+        "outcome":format!("{outcome:?}"),"numerical_completion":outcome.is_ok(),"wall_seconds":returned.duration_since(began).as_secs_f64(),
+        "polls":polls,"pending":pending,"maximum_poll_wall_seconds":maximum.as_secs_f64(),
+        "wall_sufficient_for50ms_cpu":maximum<=Duration::from_millis(50),"cpu_time_measured":false,
+        "over50ms_disposition":"CPU evidence inconclusive until justified CPU measurement; not automatically a CPU violation",
+        "cancel_to_kernel_return_seconds":cancel_return.map(|time|time.as_secs_f64()),
+        "history_records_after_future_drop":state.available_count(),"records":records,
+        "manager_ack_release_terminal_or_status_proved":false,"new_busy_total_deadline":false})
+    );
+    ResourceLiveAttempt {
+        outcome,
+        records,
+        cancel_return,
+    }
+}
+fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &str) {
+    let canonical = |text: &str| text.replace(" R -", " R-").replace(" R +", " R+");
+    let observations = oracle["observations"].as_array().unwrap();
+    let missing = observations
+        .iter()
+        .filter(|wanted| {
+            !records.iter().any(|record| {
+                record.payload.text.as_ref().is_some_and(|text| {
+                    canonical(text) == canonical(wanted["text"].as_str().unwrap())
+                        && (record.frequency_hz - wanted["frequency_hz"].as_f64().unwrap()).abs()
+                            <= 5.
+                })
+            })
+        })
+        .map(|wanted| wanted["text"].clone())
+        .collect::<Vec<_>>();
+    let extra = records
+        .iter()
+        .filter(|record| {
+            !observations.iter().any(|wanted| {
+                record.payload.text.as_ref().is_some_and(|text| {
+                    canonical(text) == canonical(wanted["text"].as_str().unwrap())
+                })
+            })
+        })
+        .map(|record| record.payload.text.clone())
+        .collect::<Vec<_>>();
+    eprintln!(
+        "RESOURCE_LIVE_REFERENCE_COMPARISON {}",
+        serde_json::json!({"context":context,
+        "oracle":"pinned nonexhaustive recording-baselines.json external observations",
+        "observed_reference_rows":observations.len(),"missing_observed_texts":missing,
+        "new_texts_outside_observation_list":extra,"is_exhaustive_ground_truth":false,
+        "new_quality_threshold_inferred":false})
+    );
+}
+
+// Proves: CL-007-04; TC-004-003. Explicit diagnostic selection is required; no total busy-window SLA is added.
+#[test]
+#[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
+fn resource_busy_live_overlap_and_pending_cancel() {
+    assert!(
+        cfg!(windows) && usize::BITS == 64,
+        "recorded Windows resource diagnostic"
+    );
+    assert!(
+        !cfg!(debug_assertions),
+        "resource timing evidence requires the release test executable"
+    );
+    let cases: Value =
+        serde_json::from_str(include_str!("../../fixtures/decoder/resource-cases.json")).unwrap();
+    let live = &cases["live_window"];
+    let quality =
+        PathBuf::from(std::env::var_os("WSTX_DECODER_CACHE").expect("prepared quality cache"));
+    let official = PathBuf::from(
+        std::env::var_os("WSTX_DECODER_OFFICIAL_FT8").expect("pinned official FT8 WAV"),
+    );
+    let oracle_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/decoder/recording-baselines.json");
+    let oracle_data: Value = serde_json::from_str(include_str!(
+        "../../fixtures/decoder/recording-baselines.json"
+    ))
+    .unwrap();
+    let oracle = oracle_data["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "ft8-official")
+        .unwrap();
+    let single_path = quality.join("ft8-strong-00/000000_000000.wav");
+    let inputs = live["inputs"].as_array().unwrap();
+    assert_eq!(
+        resource_hash(&single_path),
+        inputs[1]["wav_sha256"].as_str().unwrap()
+    );
+    assert_eq!(
+        resource_hash(&official),
+        inputs[2]["wav_sha256"].as_str().unwrap()
+    );
+    assert_eq!(oracle["input_sha256"], inputs[2]["wav_sha256"]);
+    let base_inputs = [vec![0f32; 180000], wav(&single_path), wav(&official)];
+    // Hash the actual Rust canonical Vec bytes before any decoder invocation.
+    for (index, base) in base_inputs.iter().enumerate() {
+        assert_eq!(base.len(), 180000);
+        assert_eq!(
+            resource_f32_hash(base),
+            inputs[index]["f32le_sha256"].as_str().unwrap()
+        );
+        assert_eq!(
+            resource_f32_hash(&base.repeat(2)),
+            inputs[index]["doubled_f32le_sha256"].as_str().unwrap()
+        );
+    }
+    let compiler = resource_capture(Command::new("rustc").args(["--version", "--verbose"]), 10);
+    let os_version = resource_capture(Command::new("cmd").args(["/c", "ver"]), 10);
+    let power = resource_capture(Command::new("powercfg").arg("/getactivescheme"), 10);
+    assert!(compiler.status.success() && os_version.status.success() && power.status.success());
+    eprintln!(
+        "RESOURCE_LIVE_HOST {}",
+        serde_json::json!({"compiler":String::from_utf8_lossy(&compiler.stdout),
+        "os_version":String::from_utf8_lossy(&os_version.stdout),"power_scheme":String::from_utf8_lossy(&power.stdout),
+        "processor_identifier":std::env::var("PROCESSOR_IDENTIFIER").unwrap_or_default(),
+        "parallelism":std::thread::available_parallelism().unwrap().get(),
+        "build_profile":if cfg!(debug_assertions){"debug"}else{"release"},
+        "debug_assertions":cfg!(debug_assertions),
+        "host_scope":"supplemental actual host; not5950X","total_cpu_time_measured":false})
+    );
+    eprintln!(
+        "RESOURCE_LIVE_INPUTS {}",
+        serde_json::json!({"source_sha":resource_source(),
+        "executable_sha256":resource_hash(&std::env::current_exe().unwrap()),"inputs":live,
+        "oracle_manifest_raw_sha256":resource_hash(&oracle_path),"host_scope":"actual current host supplemental; not5950X",
+        "geometry":{"stream_frames":720000,"window_frames":360000,"advance_frames":180000},
+        "cpu_time_measured":false,"four_profile_or_memory_or_station_proof":false})
+    );
+    let constructed = Instant::now();
+    let decoder = Decoder::new();
+    eprintln!(
+        "RESOURCE_LIVE_CONSTRUCTION {}",
+        serde_json::json!({"backend":"planned","seconds":constructed.elapsed().as_secs_f64()})
+    );
+    let mut silence = DecodeState::new_live(Mode::Ft8);
+    let control = resource_live_attempt(
+        &decoder,
+        base_inputs[0].repeat(2),
+        0,
+        &mut silence,
+        serde_json::json!({"case":"silence","mode":"ft8","backend":"planned","state":"fresh","origin":0}),
+        false,
+    );
+    assert_eq!(control.outcome, Ok(()));
+    assert!(control.records.is_empty());
+    let mut single = DecodeState::new_live(Mode::Ft8);
+    let control = resource_live_attempt(
+        &decoder,
+        base_inputs[1].repeat(2),
+        0,
+        &mut single,
+        serde_json::json!({"case":"single","mode":"ft8","backend":"planned","state":"fresh","origin":0}),
+        false,
+    );
+    assert_eq!(control.outcome, Ok(()));
+    assert_eq!(control.records.len(), 2);
+    assert!(
+        control
+            .records
+            .iter()
+            .all(|record| record.payload.payload77 == cases["payload77"].as_str().unwrap())
+    );
+    let stream = base_inputs[2].repeat(4);
+    assert_eq!(stream.len(), 720000);
+    let first_window = stream[..360000].to_vec();
+    let next_window = stream[180000..540000].to_vec();
+    assert_eq!(&first_window[180000..], &next_window[..180000]);
+    let mut retained = DecodeState::new_live(Mode::Ft8);
+    let first = resource_live_attempt(
+        &decoder,
+        first_window.clone(),
+        0,
+        &mut retained,
+        serde_json::json!({"case":"busy","mode":"ft8","backend":"planned","state":"retained-first","origin":0}),
+        false,
+    );
+    resource_official_comparison(&first.records, oracle, "busy-first");
+    assert_eq!(first.outcome, Ok(()));
+    let next = resource_live_attempt(
+        &decoder,
+        next_window.clone(),
+        180000,
+        &mut retained,
+        serde_json::json!({"case":"busy","mode":"ft8","backend":"planned","state":"retained-next","origin":180000}),
+        false,
+    );
+    resource_official_comparison(&next.records, oracle, "busy-retained-next");
+    assert_eq!(next.outcome, Ok(()));
+    for record in &next.records {
+        assert!(record.start_frame >= 180000 && record.start_frame < 540000);
+        assert!(
+            !first
+                .records
+                .iter()
+                .any(|old| old.payload.payload77 == record.payload.payload77
+                    && old.start_frame.abs_diff(record.start_frame) <= 960),
+            "retained live history must not republish the same overlapping source record"
+        );
+    }
+    let mut fresh = DecodeState::new_live(Mode::Ft8);
+    let comparison = resource_live_attempt(
+        &decoder,
+        next_window,
+        180000,
+        &mut fresh,
+        serde_json::json!({"case":"busy","mode":"ft8","backend":"planned","state":"fresh-same-next-window","origin":180000}),
+        false,
+    );
+    resource_official_comparison(&comparison.records, oracle, "busy-fresh-next");
+    assert_eq!(comparison.outcome, Ok(()));
+    eprintln!(
+        "RESOURCE_LIVE_HISTORY_COMPARISON {}",
+        serde_json::json!({"same_source_interval":[180000,540000],
+        "retained_published":next.records,"fresh_published":comparison.records,"does_not_require_equal_publications":true})
+    );
+    let mut cancelled = DecodeState::new_live(Mode::Ft8);
+    let cancellation = resource_live_attempt(
+        &decoder,
+        first_window,
+        0,
+        &mut cancelled,
+        serde_json::json!({"case":"busy","mode":"ft8","backend":"planned","state":"cancel-after-real-Pending","origin":0}),
+        true,
+    );
+    assert_eq!(cancellation.outcome, Err(DecodeError::Cancelled));
+    assert!(
+        cancellation.cancel_return.is_some(),
+        "real Pending boundary must be observed before cancellation"
+    );
+    assert!(
+        cancellation.cancel_return.unwrap() <= Duration::from_millis(250),
+        "pure kernel cancellation-return necessary sub-bound; manager ACK/release remains separately unproved"
+    );
 }
 
 // Proves: FR-003, FR-004, CL-007-03, CL-007-04.

@@ -64,7 +64,12 @@ fn resource_phase_detection_observes_work_without_publishing() {
             } else {
                 Decoder::new()
             };
-            let expected = decoder.decode(&samples, mode, &|| false).unwrap();
+            let context = serde_json::json!({"phase":"detection","mode":mode,"scalar":scalar,"positive":true});
+            let (positive, _) = resource_observer::poll_to_completion(
+                decoder.decode_async(&samples, mode, &|| false),
+                &context,
+            );
+            let expected = positive.unwrap();
             assert_eq!(expected.len(), 1);
             assert_eq!(
                 expected[0].payload.payload77,
@@ -73,15 +78,26 @@ fn resource_phase_detection_observes_work_without_publishing() {
             let cancel = Arc::new(AtomicBool::new(false));
             let observed = resource_observer::install(cancel.clone(), Some(Phase::DetectionRow));
             let mut published = 0;
-            let outcome = complete(decoder.decode_into_async(
-                &samples,
-                mode,
-                &|| cancel.load(Ordering::SeqCst),
-                &mut |_| {
-                    published += 1;
-                    Ok(())
-                },
-            ));
+            let context = serde_json::json!({"phase":"detection","mode":mode,"scalar":scalar,"positive":false});
+            let began = std::time::Instant::now();
+            let (outcome, timing) = resource_observer::poll_to_completion(
+                decoder.decode_into_async(
+                    &samples,
+                    mode,
+                    &|| cancel.load(Ordering::SeqCst),
+                    &mut |_| {
+                        published += 1;
+                        Ok(())
+                    },
+                ),
+                &context,
+            );
+            observed.record_return(
+                &context,
+                began,
+                timing.returned_at,
+                "actual public async decode Future::poll",
+            );
             assert_eq!(outcome, Err(DecodeError::Cancelled));
             assert_eq!(observed.report().counts[Phase::DetectionRow as usize], 1);
             assert_eq!(published, 0);

@@ -119,10 +119,19 @@ fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
                 resource_observer::install(cancel.clone(), Some(Phase::SubtractionForward));
             let is_cancelled = || cancel.load(Ordering::SeqCst);
             let mut budget = CpuBudget::new(&is_cancelled);
-            assert_eq!(
-                complete(subtractor.subtract(&mut actual, start, &wave, &mut budget)),
-                Err(DecodeError::Cancelled)
+            let context = serde_json::json!({"phase":"subtraction","mode":mode,"scalar":scalar,"positive":false});
+            let began = std::time::Instant::now();
+            let (outcome, timing) = resource_observer::poll_to_completion(
+                subtractor.subtract(&mut actual, start, &wave, &mut budget),
+                &context,
             );
+            observed.record_return(
+                &context,
+                began,
+                timing.returned_at,
+                "actual private asynchronous subtraction Future::poll",
+            );
+            assert_eq!(outcome, Err(DecodeError::Cancelled));
             assert_eq!(
                 observed.report().counts[Phase::SubtractionForward as usize],
                 1
@@ -135,7 +144,12 @@ fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
             drop(observed);
             let never = || false;
             let mut positive_budget = CpuBudget::new(&never);
-            complete(subtractor.subtract(&mut actual, start, &wave, &mut positive_budget)).unwrap();
+            let context = serde_json::json!({"phase":"subtraction","mode":mode,"scalar":scalar,"positive":true});
+            let (positive, _) = resource_observer::poll_to_completion(
+                subtractor.subtract(&mut actual, start, &wave, &mut positive_budget),
+                &context,
+            );
+            positive.unwrap();
             let radius = if mode == Mode::Ft8 { 2000 } else { 700 };
             for k in [
                 0,

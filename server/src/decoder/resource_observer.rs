@@ -7,6 +7,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub(super) enum Phase {
 pub(super) struct Report {
     pub counts: [usize; 9],
     pub first_fec_word: Option<[u8; 174]>,
+    pub cancelled_at: Option<Instant>,
 }
 struct Observer {
     cancel: Arc<AtomicBool>,
@@ -42,6 +44,35 @@ pub(super) struct Guard {
 impl Guard {
     pub fn report(&self) -> Report {
         self.report.lock().unwrap().clone()
+    }
+    pub fn record_return(
+        &self,
+        context: &serde_json::Value,
+        started: Instant,
+        returned: Instant,
+        kind: &str,
+    ) {
+        let report = self.report();
+        let latency = report
+            .cancelled_at
+            .and_then(|accepted| returned.checked_duration_since(accepted));
+        eprintln!(
+            "RESOURCE_PHASE_RETURN {}",
+            serde_json::json!({"context":context,"invocation_kind":kind,
+            "invocation_wall_seconds":returned.duration_since(started).as_secs_f64(),
+            "original_token_cancel_observed":report.cancelled_at.is_some(),
+            "cancel_to_kernel_return_seconds":latency.map(|duration|duration.as_secs_f64()),
+            "kernel_return_within250ms":latency.map(|duration|duration<=Duration::from_millis(250)),
+            "cpu_time_measured":false,"manager_ack_release_or_terminal_proved":false})
+        );
+        assert!(
+            latency.is_some(),
+            "timing evidence requires the original token's actual phase cancellation"
+        );
+        assert!(
+            latency.unwrap() <= Duration::from_millis(250),
+            "kernel cancellation-return exceeds necessary250ms sub-bound; this is not manager acceptance evidence"
+        );
     }
 }
 impl Drop for Guard {
@@ -67,12 +98,66 @@ pub(super) fn install(cancel: Arc<AtomicBool>, cancel_on: Option<Phase>) -> Guar
 pub(super) fn hit(phase: Phase) {
     CURRENT.with(|slot| {
         if let Some(observer) = slot.borrow().as_ref() {
-            observer.report.lock().unwrap().counts[phase as usize] += 1;
+            let mut report = observer.report.lock().unwrap();
+            report.counts[phase as usize] += 1;
             if observer.cancel_on == Some(phase) {
+                report.cancelled_at.get_or_insert_with(Instant::now);
                 observer.cancel.store(true, Ordering::SeqCst);
             }
         }
     });
+}
+
+pub(super) struct PollTiming {
+    pub returned_at: Instant,
+    polls: usize,
+    pending: usize,
+    maximum: Duration,
+}
+pub(super) fn poll_to_completion<F: std::future::Future>(
+    future: F,
+    context: &serde_json::Value,
+) -> (F::Output, PollTiming) {
+    use std::task::{Context, Poll, Waker};
+    let mut future = std::pin::pin!(future);
+    let mut cx = Context::from_waker(Waker::noop());
+    let began = Instant::now();
+    let mut timing = PollTiming {
+        returned_at: began,
+        polls: 0,
+        pending: 0,
+        maximum: Duration::ZERO,
+    };
+    loop {
+        let started = Instant::now();
+        let result = future.as_mut().poll(&mut cx);
+        let returned = Instant::now();
+        let wall = returned.duration_since(started);
+        timing.polls += 1;
+        timing.maximum = timing.maximum.max(wall);
+        let ready = matches!(&result, Poll::Ready(_));
+        if !ready {
+            timing.pending += 1;
+        }
+        eprintln!(
+            "RESOURCE_FUTURE_POLL {}",
+            serde_json::json!({"context":context,"poll":timing.polls,
+            "started_seconds":started.duration_since(began).as_secs_f64(),"wall_seconds":wall.as_secs_f64(),
+            "ready":ready,"cpu_time_measured":false})
+        );
+        if let Poll::Ready(value) = result {
+            timing.returned_at = returned;
+            eprintln!(
+                "RESOURCE_FUTURE_SUMMARY {}",
+                serde_json::json!({"context":context,"polls":timing.polls,
+                "pending":timing.pending,"maximum_poll_wall_seconds":timing.maximum.as_secs_f64(),
+                "poll_wall_sufficient_for50ms_cpu":timing.maximum<=Duration::from_millis(50),
+                "over50ms_disposition":"CPU quantum unproved by wall timing; measureCPU rather than infer CPU violation",
+                "cpu_time_measured":false,"manager_ack_release_or_terminal_proved":false})
+            );
+            return (value, timing);
+        }
+    }
 }
 pub(super) fn fec_word(hard: [u8; 174]) {
     hit(Phase::FecIteration);

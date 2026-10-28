@@ -21,6 +21,22 @@
     "expected_word": "all zero, independently channel-valid and unique zero weighted-disagreement cost",
     "does_not_claim": "that BP fails on this input"
   },
+  "live_window": {
+    "mode": "ft8",
+    "rate_hz": 12000,
+    "base_frames": 180000,
+    "full_window_frames": 360000,
+    "advance_frames": 180000,
+    "oracle_manifest": "recording-baselines.json",
+    "official_case": "ft8-official",
+    "official_observations_are_exhaustive_truth": false,
+    "composition": "four exact base repetitions; full windows [0,360000) and [180000,540000); fresh and retained new_live state at the same second origin",
+    "inputs": [
+      {"id": "silence", "wav_sha256": null, "f32le_sha256": "943696a366338cdf1765680dd633ef600abb4a015c7c6bd3d41cd7d585bc98c8", "doubled_f32le_sha256": "eda525bab6d74d439bd683b578242e87fd3146fc4d631b7c81d9f76dd4d47a2d"},
+      {"id": "single", "wav_sha256": "02525d0ebe7661935d52e60f169501aae2428983a72a1e1a0c8087ddce322d51", "f32le_sha256": "16bc4e9e81f2048ec8a8fea6c365fbb0e9edba4a2f2d80005f230e6a2b4d2a7b", "doubled_f32le_sha256": "da4e43c610e4e6a5e72da82219bbf116829440f73b611913a108293c6c672720"},
+      {"id": "busy", "wav_sha256": "9feb99c275770a6618538026da7decc6b09eb6cf63121e5168fa86dcdf00c2f5", "f32le_sha256": "84b2bba3c935c578d1a555a1b5e3cf12f57689b433ff2be4e59d509995cac1c0", "doubled_f32le_sha256": "6e4b639e13941c61cb924685b475eede52beae9635caa189586dbd05dea7bdff"}
+    ]
+  },
   "subtraction": {
     "oracle": "existing envelope_cancellation_matches_scalar_convolution_and_edges input and independent expected_at direct convolution",
     "original_source_sha256": "e6b869f0e5a09f51330194e8c2aa7dea0fc74ef5120d2c056dc56a74d1872ab9"
