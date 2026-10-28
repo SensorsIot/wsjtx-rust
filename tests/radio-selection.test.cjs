@@ -6,6 +6,7 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
 const net=require('node:net'),https=require('node:https');
 const {once}=require('node:events');
 const {randomUUID}=require('node:crypto');
+const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
 const {server}=require('./support.cjs');
 
@@ -22,8 +23,8 @@ async function station(t){
   let cookie='';
   const request=(route,method='GET',body,extra={})=>new Promise((resolve,reject)=>{
     const req=https.request(origin+route,{method,ca:cert.cert,agent:false,headers:{Origin:origin,...(cookie?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'}),...extra}},res=>{
-      let text='';res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,text,body:text?JSON.parse(text):null}));
-    });req.on('error',reject);if(body!==undefined)req.write(typeof body==='string'?body:JSON.stringify(body));req.end();
+      const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{try{const raw=Buffer.concat(chunks),text=(res.headers['content-encoding']==='gzip'?gunzipSync(raw):raw).toString('utf8');resolve({status:res.statusCode,headers:res.headers,raw,text,body:text&&(res.headers['content-type']||'').startsWith('application/json')?JSON.parse(text):null});}catch(error){reject(error);}});
+    });req.on('error',reject);if(body!==undefined)req.write(typeof body==='string'||Buffer.isBuffer(body)?body:JSON.stringify(body));req.end();
   });
   const session=await request('/session','POST',token);assert.equal(session.status,204);cookie=session.headers['set-cookie'][0].split(';')[0];
   return {origin,id,request,cookie};
@@ -32,6 +33,66 @@ async function station(t){
 // Proves: CL-008-07; TC-009-005 cases2/5. Parent has no selection route, so this
 // fails on actual HTTP404 rather than a build/import error.
 if(!process.env.WSTX_SELECTION_FIXTURE){
+test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
+  const {request,cookie}=await station(t);
+  for(const route of ['/profile','/receive/selection','/receive','/radio','/recording']){
+    const identity=await request(route,'GET',undefined,{'Accept-Encoding':'identity'});
+    assert.equal(identity.status,200);assert.equal(identity.headers['content-encoding'],undefined);
+    const encoded=await request(route,'GET',undefined,{'Accept-Encoding':'gzip'});
+    assert.equal(encoded.status,200);
+    assert.equal(encoded.headers['content-encoding'],'gzip',`actual ${route} response must negotiate gzip`);
+    assert.deepEqual([...encoded.raw.subarray(0,3)],[0x1f,0x8b,8]);
+    const decoded=gunzipSync(encoded.raw);assert.equal(encoded.raw.readUInt32LE(encoded.raw.length-4),decoded.length);
+    assert.equal(decoded.toString('utf8'),encoded.text);assert.match(encoded.headers['content-type'],/^application\/json/);
+    assert.ok(encoded.headers.vary.split(',').map(v=>v.trim().toLowerCase()).includes('accept-encoding'));
+    if(encoded.headers['content-length'])assert.equal(Number(encoded.headers['content-length']),encoded.raw.length);
+    const old=structuredClone(identity.body),current=structuredClone(encoded.body);
+    if(route==='/receive/selection'){delete old.monotonic_ms;delete current.monotonic_ms;delete old.snapshot_sequence;delete current.snapshot_sequence;}
+    assert.deepEqual(current,old,'immutable logical fields survive transfer encoding; monotonic selection facts are temporal');
+    assert.ok(!encoded.text.includes(cookie.slice(cookie.indexOf('=')+1)),'credential never enters JSON');
+  }
+});
+
+test('TC-009-005 H1 all 49 ordered header cases use the real authenticated TLS router',{timeout:30000},async t=>{
+  const {request}=await station(t),source=await fs.readFile(path.join(__dirname,'../docs/WSTX Rust FSD.md'),'utf8');
+  const vectors=source.split('\n').filter(line=>/^\| \d+ \| `\[/.test(line)).map(line=>{const columns=line.split('|');return {fields:JSON.parse(columns[2].trim().slice(1,-1)),expected:columns[3].trim()};});
+  assert.equal(vectors.length,49);const identity=await request('/profile');assert.equal(identity.status,200);
+  for(const [index,vector]of vectors.entries()){
+    const actual=await request('/profile','GET',undefined,vector.fields.length?{'Accept-Encoding':vector.fields}:{});
+    assert.equal(actual.status,vector.expected==='406'?406:200,`frozen vector${index+1}`);
+    assert.equal(actual.headers['content-encoding'],vector.expected==='gzip'?'gzip':undefined,`frozen vector${index+1}`);
+    if(vector.expected==='gzip'){assert.deepEqual([...actual.raw.subarray(0,3)],[31,139,8]);assert.equal(gunzipSync(actual.raw).toString('utf8'),identity.text);}
+    if(vector.expected==='identity')assert.equal(actual.text,identity.text);
+  }
+});
+
+test('TC-009-005 H1 authentication errors mutations static and HEAD bypass negotiation',{timeout:30000},async t=>{
+  const {id,request}=await station(t),forbidden={'Accept-Encoding':'identity;q=0,gzip;q=0'};
+  for(const [route,method,body,headers,status]of [
+    ['/profile','GET',undefined,{Cookie:''},401],
+    ['/profile','GET',undefined,{Origin:'https://invalid.example'},403],
+    ['/receive/selection?unexpected=1','GET',undefined,{},400],
+    ['/receive/results','GET',undefined,{},400],
+    ['/not-a-route','GET',undefined,{},404],
+    ['/profile','PUT',{}, {},400],
+    ['/receive/select','POST',{}, {},400],
+    ['/radio/operation','POST',{}, {},400],
+    ['/session','POST','x'.repeat(32),{},401],
+    ['/','GET',undefined,{},200],['/app.js','GET',undefined,{},200],
+    ['/recording.js','GET',undefined,{},200],['/style.css','GET',undefined,{},200],
+    ['/recording.css','GET',undefined,{},200],['/profile','HEAD',undefined,{},200],
+  ]){
+    const actual=await request(route,method,body,{...forbidden,...headers});assert.equal(actual.status,status,`${method}${route}`);assert.equal(actual.headers['content-encoding'],undefined);
+    if(method==='HEAD')assert.equal(actual.raw.length,0);
+    assert.equal(actual.headers['cache-control'],'no-store');assert.equal(actual.headers['x-content-type-options'],'nosniff');assert.ok(actual.headers['content-security-policy']);
+  }
+  const prior=(await request('/receive/selection')).body;
+  const intent={v:1,profile_id:id,boot_id:prior.boot_id,command_id:randomUUID(),action:'mode',profile_revision:0,generation:prior.generation,operating_revision:prior.operating_revision,mode:'ft4'};
+  const refused=await request('/receive/select','POST',intent,forbidden);assert.equal(refused.status,409);assert.equal(refused.body.error.code,'select_band_first');assert.equal(refused.headers['content-encoding'],undefined);
+  const compressedRequest=await request('/receive/select','POST',gzipSync(Buffer.from(JSON.stringify(intent))),{'Content-Encoding':'gzip',...forbidden});assert.equal(compressedRequest.status,415);assert.equal(compressedRequest.headers['content-encoding'],undefined);
+  const after=(await request('/receive/selection')).body;assert.equal(after.operating_revision,prior.operating_revision);assert.equal(after.generation,prior.generation);assert.equal(after.receive.job_id,null);
+});
+
 test('TC-009-005 authenticated TLS selection reports unknown nominal and early refusal',{timeout:30000},async t=>{
   const {id,request}=await station(t);
   const initial=await request('/receive/selection');assert.equal(initial.status,200,'selection route exists');
@@ -192,7 +253,7 @@ function liveSelectionFixture(){
       page.on('requestfailed',request=>{seen.failures.push({route:new URL(request.url()).pathname,error:request.failure()?.errorText,at:performance.now()});const r=reads.get(request);if(r&&r.ended===null){r.ended=performance.now();r.failed=true;seen.active--;}});
       page.on('response',async response=>{
         const route=new URL(response.url()).pathname;
-        const entry={route,status:response.status(),at:performance.now(),bodyBytes:null};seen.http.push(entry);
+        const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         try{const text=await response.text();entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);
           if(route==='/receive/selection'){const r=reads.get(response.request());if(r){r.body=body;r.status=response.status();if(r.ended===null){r.ended=performance.now();seen.active--;}}}
@@ -271,6 +332,7 @@ function liveSelectionFixture(){
       assert.ok(seconds>=75,'full predeclared representative window');const traffic={up:(proxy.counters.up-baseline.up)/seconds,down:(proxy.counters.down-baseline.down)/seconds};
       const pathCounts=observations.map(seen=>Object.fromEntries([...new Set(seen.http.filter(r=>r.at>=start).map(r=>r.route))].map(route=>[route,seen.http.filter(r=>r.at>=start&&r.route===route).length])));
       report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
+      for(const seen of observations){const replies=seen.http.filter(r=>r.at>=start&&r.status===200&&['/receive/selection','/receive','/receive/results','/profile','/radio','/recording'].includes(r.route));assert.ok(replies.length>0);assert.ok(replies.every(r=>r.contentEncoding==='gzip'),'actual browser negotiated gzip on every eligible response');}
       assert.ok(traffic.up<=3000,`${profile} actual counted uplink ${traffic.up}`);assert.ok(traffic.down<=3000,`${profile} actual counted downlink ${traffic.down}`);assert.equal(latencies.length,26);
       const polling=observations.map((seen,index)=>{
         const reads=seen.reads.slice(readStarts[index]).filter(r=>r.started>=start&&r.ended!==null&&r.body);assert.equal(seen.maxActive,1,'one selection read pending per actual browser');

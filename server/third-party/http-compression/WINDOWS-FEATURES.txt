@@ -1,0 +1,209 @@
+Actual target feature-tree excerpt; command recorded in DEPENDENCIES.json.
+├── tower-http feature "compression-gzip"
+│   ├── tower-http v0.7.1
+│   │   ├── futures-core v0.3.34
+│   │   ├── tokio v1.54.1 (*)
+│   │   ├── bytes feature "default" (*)
+│   │   ├── http feature "default" (*)
+│   │   ├── http-body feature "default" (*)
+│   │   ├── pin-project-lite feature "default" (*)
+│   │   ├── tower-layer feature "default" (*)
+│   │   ├── tower-service feature "default" (*)
+│   │   ├── percent-encoding feature "default" (*)
+│   │   ├── tokio-util feature "io" (*)
+│   │   ├── async-compression feature "default"
+│   │   │   └── async-compression v0.4.51
+│   │   │       ├── tokio v1.54.1 (*)
+│   │   │       ├── pin-project-lite feature "default" (*)
+│   │   │       ├── compression-codecs feature "default"
+│   │   │       │   └── compression-codecs v0.4.46
+│   │   │       │       ├── memchr feature "default" (*)
+│   │   │       │       ├── compression-core feature "default"
+│   │   │       │       │   └── compression-core v0.4.34
+│   │   │       │       └── flate2 feature "default"
+│   │   │       │           ├── flate2 v1.1.10
+│   │   │       │           │   ├── crc32fast v1.5.3
+│   │   │       │           │   │   └── cfg-if feature "default" (*)
+│   │   │       │           │   ├── miniz_oxide feature "default"
+│   │   │       │           │   │   ├── miniz_oxide v0.9.1
+│   │   │       │           │   │   │   ├── adler2 v2.0.1
+│   │   │       │           │   │   │   └── simd-adler32 v0.3.10
+│   │   │       │           │   │   └── miniz_oxide feature "with-alloc"
+│   │   │       │           │   │       └── miniz_oxide v0.9.1 (*)
+│   │   │       │           │   └── miniz_oxide feature "simd"
+│   │   │       │           │       ├── miniz_oxide v0.9.1 (*)
+│   │   │       │           │       └── miniz_oxide feature "simd-adler32"
+│   │   │       │           │           └── miniz_oxide v0.9.1 (*)
+│   │   │       │           ├── flate2 feature "runtime_detection"
+│   │   │       │           │   ├── flate2 v1.1.10 (*)
+│   │   │       │           │   └── crc32fast feature "std"
+│   │   │       │           │       └── crc32fast v1.5.3 (*)
+│   │   │       │           └── flate2 feature "rust_backend"
+│   │   │       │               ├── flate2 v1.1.10 (*)
+│   │   │       │               ├── flate2 feature "any_impl"
+│   │   │       │               │   └── flate2 v1.1.10 (*)
+│   │   │       │               └── flate2 feature "miniz_oxide"
+│   │   │       │                   ├── flate2 v1.1.10 (*)
+│   │   │       │                   └── flate2 feature "any_impl" (*)
+│   │   │       └── compression-core feature "default" (*)
+│   │   ├── async-compression feature "tokio"
+│   │   │   └── async-compression v0.4.51 (*)
+│   │   └── bitflags feature "default"
+│   │       └── bitflags v2.13.2
+│   ├── tower-http feature "futures-core"
+│   │   └── tower-http v0.7.1 (*)
+│   ├── tower-http feature "tokio-util"
+│   │   └── tower-http v0.7.1 (*)
+│   └── async-compression feature "gzip"
+│       ├── async-compression v0.4.51 (*)
+│       └── compression-codecs feature "gzip"
+│           ├── compression-codecs v0.4.46 (*)
+│           ├── compression-codecs feature "flate2"
+│           │   └── compression-codecs v0.4.46 (*)
+│           └── compression-codecs feature "memchr"
+│               └── compression-codecs v0.4.46 (*)
+├── windows feature "Win32_Devices_Communication"
+│   ├── windows v0.62.2
+│   │   ├── windows-collections v0.3.2
+│   │   │   └── windows-core v0.62.2
+│   │   │       ├── windows-implement v0.60.2 (proc-macro)
+│   │   │       │   ├── proc-macro2 v1.0.107 (*)
+│   │   │       │   ├── quote v1.0.47 (*)
+│   │   │       │   ├── syn feature "clone-impls"
+│   │   │       │   │   └── syn v2.0.119
+│   │   │       │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       │   │       ├── quote v1.0.47 (*)
+│   │   │       │   │       └── unicode-ident feature "default" (*)
+│   │   │       │   ├── syn feature "full"
+│   │   │       │   │   └── syn v2.0.119 (*)
+│   │   │       │   ├── syn feature "parsing"
+│   │   │       │   │   └── syn v2.0.119 (*)
+│   │   │       │   ├── syn feature "printing"
+│   │   │       │   │   └── syn v2.0.119 (*)
+│   │   │       │   └── syn feature "proc-macro"
+│   │   │       │       ├── syn v2.0.119 (*)
+│   │   │       │       ├── proc-macro2 feature "proc-macro" (*)
+│   │   │       │       └── quote feature "proc-macro" (*)
+│   │   │       ├── windows-interface v0.59.3 (proc-macro)
+│   │   │       │   ├── proc-macro2 v1.0.107 (*)
+│   │   │       │   ├── quote v1.0.47 (*)
+│   │   │       │   ├── syn feature "clone-impls" (*)
+│   │   │       │   ├── syn feature "full" (*)
+│   │   │       │   ├── syn feature "parsing" (*)
+│   │   │       │   ├── syn feature "printing" (*)
+│   │   │       │   └── syn feature "proc-macro" (*)
+│   │   │       ├── windows-link v0.2.1
+│   │   │       ├── windows-result v0.4.1
+│   │   │       │   └── windows-link v0.2.1
+│   │   │       └── windows-strings v0.5.1
+│   │   │           └── windows-link v0.2.1
+│   │   ├── windows-core v0.62.2 (*)
+│   │   ├── windows-future v0.3.2
+│   │   │   ├── windows-core v0.62.2 (*)
+│   │   │   ├── windows-link v0.2.1
+│   │   │   └── windows-threading v0.2.1
+│   │   │       └── windows-link v0.2.1
+│   │   └── windows-numerics v0.3.1
+│   │       ├── windows-core v0.62.2 (*)
+│   │       └── windows-link v0.2.1
+│   └── windows feature "Win32_Devices"
+│       ├── windows v0.62.2 (*)
+│       └── windows feature "Win32"
+│           ├── windows v0.62.2 (*)
+│           └── windows feature "Win32_Foundation"
+│               ├── windows v0.62.2 (*)
+│               └── windows feature "Win32" (*)
+├── windows feature "Win32_Devices_DeviceAndDriverInstallation"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Devices" (*)
+├── windows feature "Win32_Devices_FunctionDiscovery"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Devices" (*)
+├── windows feature "Win32_Devices_Properties"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Devices" (*)
+├── windows feature "Win32_Devices_SerialCommunication"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Devices" (*)
+├── windows feature "Win32_Foundation" (*)
+├── windows feature "Win32_Media_Audio"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Media"
+│       ├── windows v0.62.2 (*)
+│       └── windows feature "Win32" (*)
+├── windows feature "Win32_Media_KernelStreaming"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Media" (*)
+├── windows feature "Win32_Media_Multimedia"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Media" (*)
+├── windows feature "Win32_Security"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32" (*)
+├── windows feature "Win32_Storage_FileSystem"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_Storage"
+│       ├── windows v0.62.2 (*)
+│       └── windows feature "Win32" (*)
+├── windows feature "Win32_System_Com"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System"
+│       ├── windows v0.62.2 (*)
+│       └── windows feature "Win32" (*)
+├── windows feature "Win32_System_Com_StructuredStorage"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System_Com" (*)
+├── windows feature "Win32_System_IO"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_System_Performance"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_System_Pipes"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_System_Registry"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_System_SystemInformation"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_System_Threading"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_System_Variant"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_System" (*)
+├── windows feature "Win32_UI_Shell_PropertiesSystem"
+│   ├── windows v0.62.2 (*)
+│   └── windows feature "Win32_UI_Shell"
+│       ├── windows v0.62.2 (*)
+│       └── windows feature "Win32_UI"
+│           ├── windows v0.62.2 (*)
+│           └── windows feature "Win32" (*)
+└── windows feature "default"
+    ├── windows v0.62.2 (*)
+    └── windows feature "std"
+        ├── windows v0.62.2 (*)
+        ├── windows-collections feature "std"
+        │   ├── windows-collections v0.3.2 (*)
+        │   └── windows-core feature "std"
+        │       ├── windows-core v0.62.2 (*)
+        │       ├── windows-result feature "std"
+        │       │   └── windows-result v0.4.1 (*)
+        │       └── windows-strings feature "std"
+        │           └── windows-strings v0.5.1 (*)
+        ├── windows-core feature "std" (*)
+        ├── windows-future feature "std"
+        │   ├── windows-future v0.3.2 (*)
+        │   └── windows-core feature "std" (*)
+        └── windows-numerics feature "std"
+            ├── windows-numerics v0.3.1 (*)
+            └── windows-core feature "std" (*)
+[dev-dependencies]
+├── tokio feature "default" (*)
+└── tokio feature "test-util"
+    ├── tokio v1.54.1 (*)
+    ├── tokio feature "rt" (*)
+    ├── tokio feature "sync" (*)
+    └── tokio feature "time" (*)

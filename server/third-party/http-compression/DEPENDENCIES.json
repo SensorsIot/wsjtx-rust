@@ -1,0 +1,93 @@
+{
+  "target": "x86_64-pc-windows-msvc",
+  "command": "cargo tree --locked --target x86_64-pc-windows-msvc -e features -p wstx-rust",
+  "direct": {
+    "tower-http": {
+      "version": "0.7.1",
+      "default_features": false,
+      "features": [
+        "compression-gzip"
+      ]
+    },
+    "tower": {
+      "version": "0.5.3",
+      "default_features": false,
+      "features": [
+        "util"
+      ]
+    }
+  },
+  "active_windows_backend": "flate2 rust_backend / miniz_oxide",
+  "inactive_optional_lock_package": "zlib-rs0.6.8 (download/metadata does not establish target activation)",
+  "new_locked_packages": [
+    {
+      "name": "adler2",
+      "version": "2.0.1",
+      "license": "0BSD OR MIT OR Apache-2.0",
+      "repository": "https://github.com/oyvindln/adler2"
+    },
+    {
+      "name": "async-compression",
+      "version": "0.4.51",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Nullus157/async-compression"
+    },
+    {
+      "name": "bitflags",
+      "version": "2.13.2",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/bitflags/bitflags"
+    },
+    {
+      "name": "compression-codecs",
+      "version": "0.4.46",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Nullus157/async-compression"
+    },
+    {
+      "name": "compression-core",
+      "version": "0.4.34",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Nullus157/async-compression"
+    },
+    {
+      "name": "crc32fast",
+      "version": "1.5.3",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/srijs/rust-crc32fast"
+    },
+    {
+      "name": "flate2",
+      "version": "1.1.10",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/rust-lang/flate2-rs"
+    },
+    {
+      "name": "miniz_oxide",
+      "version": "0.9.1",
+      "license": "MIT OR Zlib OR Apache-2.0",
+      "repository": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide"
+    },
+    {
+      "name": "simd-adler32",
+      "version": "0.3.10",
+      "license": "MIT",
+      "repository": "https://github.com/mcountryman/simd-adler32"
+    },
+    {
+      "name": "tower-http",
+      "version": "0.7.1",
+      "license": "MIT",
+      "repository": "https://github.com/tower-rs/tower-http"
+    },
+    {
+      "name": "zlib-rs",
+      "version": "0.6.8",
+      "license": "Zlib",
+      "repository": "https://github.com/trifectatechfoundation/zlib-rs"
+    }
+  ],
+  "negotiation_source_sha256": "329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56",
+  "existing_locked_versions_changed": false,
+  "scope": "Dependency/feature provenance; not runtime/bandwidth acceptance."
+}

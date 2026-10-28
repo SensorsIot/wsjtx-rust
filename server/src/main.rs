@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 #[cfg(test)]
 mod auth_tests;
+mod http_compression;
+#[cfg(test)]
+mod http_compression_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
@@ -292,6 +295,7 @@ fn router(state: App) -> Router {
             headers.insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
             response
         }))
+        .layer(axum::middleware::from_fn(http_compression::encode))
         .with_state(state)
 }
 fn startup_error(code: &str, path: &std::path::Path) -> String {

@@ -310,9 +310,12 @@
 
 - suite: radio-selection
   cost: 2
-  run: cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_ -- --nocapture && cargo build --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs
+  run: >-
+    cargo test --release --locked --bin wstx-rust http_compression_tests:: -- --nocapture && cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_ -- --nocapture && cargo build --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs
   paths: *browser-inputs
   select:
+  - server/src/http_compression.rs
+  - server/src/http_compression_tests.rs
   - server/src/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
