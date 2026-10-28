@@ -29,8 +29,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     def test_complete_resolved_deployment(self):
         self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
         counts = tool.architecture_integrity(self.accepted.stdout)
-        self.assertGreater(counts["connections"], 0)
-        self.assertEqual(counts["references"], 8)
+        self.assertEqual(counts, {"parts": 33, "references": 8, "ports": 74, "connections": 63})
 
     def reject(self, original, replacement, diagnostic):
         self.assertIn(original, self.source, "mutation no longer targets the accepted architecture")
@@ -67,26 +66,35 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.assertIn("Couldn't resolve reference to Type 'WstxProfiles::UndefinedPropertyType'", result.stdout)
         self.assertNotIn("syntax/name/semantic validation passed", result.stdout)
 
-    def test_removed_physical_delegation_is_legal_sysml_but_fails_integrity(self):
-        self.reject("connection webDelegation connect clientBoundary to station.web.client;", "", "missing required connection")
+    def test_missing_selected_browser_direct_link(self):
+        self.reject("connection browserStation connect browser.station to station.web.client;", "", "missing required connection")
+
+    def test_frontend_container_cannot_forward_ports(self):
+        self.reject("part def Frontend {", "part def Frontend { port operator : ~LocalInteraction;", "missing or unexpected boundary port roles")
+
+    def test_backend_container_cannot_forward_ports(self):
+        self.reject("part def Backend {", "part def Backend { port radioAudio : AudioExchange;", "missing or unexpected boundary port roles")
+
+    def test_selected_radio_identity_cannot_be_redirected(self):
+        self.reject("ref part radio : Radio :> physicalStation.radio;", "part otherRadio : Radio; ref part radio : Radio :> otherRadio;", "invalid endpoint/resource/authority association")
 
     def test_missing_encoding_path(self):
         self.reject("connection encodeModem connect transmit.encode to modes.encode;", "", "missing required connection")
 
     def test_control_bypasses_common_authority(self):
-        self.reject("connect radioControl.backend to authorityRequest;", "connect radioControl.backend to backend.control;", "missing required connection")
+        self.reject("connect radioControl.backend to authorityRequest;", "connect radioControl.backend to radioAdapter.control;", "missing required connection")
 
     def test_duplicate_selected_backend(self):
         self.reject("part profile : PersistedProfile;", "part profile : PersistedProfile; part duplicateBackend : StandardBackend;", "duplicate or detached backend")
 
     def test_split_shared_authority(self):
-        self.reject("ref part authority : RadioAuthority :> physicalStation.controller.radioAuthority;", "part authority : RadioAuthority;", "one effective authority")
+        self.reject("ref part authority : RadioAuthority :> physicalStation.backend.radioAuthority;", "part authority : RadioAuthority;", "one effective authority")
 
     def test_swapped_browser_station_association(self):
-        self.reject("ref part station : StationProcess :> physicalStation.controller.stations;", "ref part station : StationProcess :> physicalStation.controller.mcpAttachments.station;", "invalid endpoint/resource/authority association")
+        self.reject("ref part station : StationProcess :> physicalStation.backend.stations;", "ref part station : StationProcess :> physicalStation.backend.mcpAttachments.station;", "invalid endpoint/resource/authority association")
 
     def test_wrong_requesting_resource_context(self):
-        self.reject("binding backendContext bind backend.control.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding backendContext bind backend.control.request.resourceContext = otherContext;", "missing required binding")
+        self.reject("binding backendContext bind radioAdapter.control.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding backendContext bind radioAdapter.control.request.resourceContext = otherContext;", "missing required binding")
 
     def test_wrong_waveform_direction(self):
         self.reject("in item waveform : Waveform;", "out item waveform : Waveform;", "wrong exchange direction")
@@ -101,10 +109,10 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.reject("binding requestContext bind authorityRequest.request.resourceContext = radioBinding;", "connection requestContext connect authorityRequest.request.resourceContext to radioBinding;", "missing required binding")
 
     def test_radio_audio_provider_conjugation(self):
-        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Controller", "port audio : AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Controller", "wrong exchange direction physicalStation.radio.audio")
+        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Backend", "port audio : AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Backend", "wrong exchange direction physicalStation.radio.audio")
 
     def test_radio_control_provider_conjugation(self):
-        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Controller", "port audio : ~AudioExchange;\n        port control : RadioControl;\n    }\n    part def Controller", "wrong exchange direction physicalStation.radio.control")
+        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Backend", "port audio : ~AudioExchange;\n        port control : RadioControl;\n    }\n    part def Backend", "wrong exchange direction physicalStation.radio.control")
 
     def test_audio_playback_semantic_item_type(self):
         self.reject("out item playback : SampleBlock;", "out item playback : Recording;", "wrong semantic item type")

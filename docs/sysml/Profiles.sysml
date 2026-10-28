@@ -486,13 +486,13 @@ package WstxProfiles {
     attribute serverSource : String = "server/src/main.rs; server/src/profile.rs";
     attribute browserSource : String = "client/index.html; client/app.js; client/style.css";
     // Allocation references EXISTING actual deployment usages, never a duplicate part.
-    dependency launchOwner from launchProfile to WstxArchitecture::physicalStation::controller::stations::profile;
-    dependency saveOwner from saveProfile to WstxArchitecture::physicalStation::controller::stations::profile;
-    dependency stationValidationOwner from saveProfile to WstxArchitecture::physicalStation::controller::stations::station;
-    dependency authenticationOwner from authenticate to WstxArchitecture::physicalStation::controller::stations::web;
-    dependency presentationOwner from presentAndEdit to WstxArchitecture::physicalStation::viewer::browsers;
+    dependency launchOwner from launchProfile to WstxArchitecture::physicalStation::backend::stations::profile;
+    dependency saveOwner from saveProfile to WstxArchitecture::physicalStation::backend::stations::profile;
+    dependency stationValidationOwner from saveProfile to WstxArchitecture::physicalStation::backend::stations::station;
+    dependency authenticationOwner from authenticate to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency presentationOwner from presentAndEdit to WstxArchitecture::physicalStation::frontend::browsers;
     dependency createOwner from createProfile to WstxArchitecture::PersistedProfile;
-    dependency lifecycleOwner from stopOrRecover to WstxArchitecture::physicalStation::controller::stations;
+    dependency lifecycleOwner from stopOrRecover to WstxArchitecture::physicalStation::backend::stations;
     dependency internalRequestRefinement from SaveProfile to WstxArchitecture::ProfileRequest;
     dependency externalRequestRefinement from HttpProfilePut to WstxArchitecture::StationRequest;
     satisfy WstxRequirements::'CL-005-01' by launchProfile;

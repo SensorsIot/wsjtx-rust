@@ -526,36 +526,37 @@ def architecture_integrity(output: str) -> dict[str, int]:
     refs = {row[0]: row[1:] for row in records.get("REF", [])}
     ports = {row[0]: row[1] for row in records.get("PORT", [])}
     p = "physicalStation"
-    station = p + ".controller.stations"
-    if {path for path in parts if path.count(".") == 1} != {p + "." + role for role in ("user", "viewer", "controller", "radio")}:
+    station = p + ".backend.stations"
+    if {path for path in parts if path.count(".") == 1} != {p + "." + role for role in ("user", "frontend", "backend", "radio",
+                                                                                   "browserAttachments", "radioAudioAttachments", "radioControlAttachments")}:
         raise ValueError("Architecture integrity: expected four physical roles")
     if parts.get(station, [None, None])[1] != "0:-1":
         raise ValueError("Architecture integrity: station population must remain variable")
-    for path in (station + ".profile", station + ".backend"):
+    for path in (station + ".profile", station + ".radioAdapter"):
         if parts.get(path, [None, None])[1] != "1:1":
             raise ValueError("Architecture integrity: exactly one selected profile/backend per station")
-    variation = parts.get(station + ".backend", [])
+    variation = parts.get(station + ".radioAdapter", [])
     if len(variation) < 3 or variation[2] != "true":
         raise ValueError("Architecture integrity: backend must be an exclusive variation")
     variants = dict(records.get("VARIANTS", []))
-    if variants.get(station + ".backend") != "standardDevices,nativeFlex":
+    if variants.get(station + ".radioAdapter") != "standardDevices,nativeFlex":
         raise ValueError("Architecture integrity: expected standard/native backend alternatives")
     backend_parts = {path for path, values in parts.items() if values[0] in ("WstxArchitecture::StandardBackend", "WstxArchitecture::NativeBackend")}
-    if backend_parts != {station + ".backend.standardDevices", station + ".backend.nativeFlex"}:
+    if backend_parts != {station + ".radioAdapter.standardDevices", station + ".radioAdapter.nativeFlex"}:
         raise ValueError("Architecture integrity: duplicate or detached backend")
     authorities = [path for path, values in parts.items() if values[0] == "WstxArchitecture::RadioAuthority"]
-    if authorities != [p + ".controller.radioAuthority"]:
+    if authorities != [p + ".backend.radioAuthority"]:
         raise ValueError("Architecture integrity: shared radio requires one effective authority")
 
     expected_refs = {
-        station + ".authority": p + ".controller.radioAuthority",
+        station + ".authority": p + ".backend.radioAuthority",
         station + ".radioBinding.radio": p + ".radio",
-        p + ".stationLink.attachments.browser": p + ".viewer.browsers",
-        p + ".stationLink.attachments.station": station,
-        p + ".controller.mcpAttachments.client": p + ".controller.mcpClients",
-        p + ".controller.mcpAttachments.station": station,
-        p + ".radioAudio.channels.station": station,
-        p + ".radioControl.channels.station": station,
+        p + ".browserAttachments.browser": p + ".frontend.browsers",
+        p + ".browserAttachments.station": station,
+        p + ".backend.mcpAttachments.client": p + ".backend.mcpClients",
+        p + ".backend.mcpAttachments.station": station,
+        p + ".radioAudioAttachments.station": station,
+        p + ".radioControlAttachments.station": station,
     }
     for path, target in expected_refs.items():
         if path not in refs or refs[path][1] != "1:1" or refs[path][3] != target:
@@ -563,14 +564,12 @@ def architecture_integrity(output: str) -> dict[str, int]:
 
     # Required exchanges/delegations by independently specified responsibility.
     expected = {
-        p: [("user.interaction", "viewer.operator"), ("viewer.stationLink", "controller.viewerLink"),
-            ("controller.radioAudio", "radio.audio"), ("controller.radioControl", "radio.control")],
-        p + ".viewer": [("operator", "browsers.operator")],
-        p + ".stationLink.attachments": [("browser.station", "clientBoundary"), ("clientBoundary", "station.web.client")],
-        p + ".controller.mcpAttachments": [("client.station", "station.mcp.client")],
-        p + ".radioAudio.channels": [("station.backend.radioAudio", "station.radioBinding.radio.audio")],
-        p + ".radioControl.channels": [("station.backend.radioControl", "station.radioBinding.radio.control")],
-        p + ".controller.radioAuthority": [("authorized.request", "requests.request"), ("requests.outcome", "authorized.outcome")],
+        p + ".browserAttachments": [("physicalStation.user.interaction", "browser.operator"),
+                                    ("browser.station", "station.web.client")],
+        p + ".backend.mcpAttachments": [("client.station", "station.mcp.client")],
+        p + ".radioAudioAttachments": [("station.radioAdapter.radioAudio", "station.radioBinding.radio.audio")],
+        p + ".radioControlAttachments": [("station.radioAdapter.radioControl", "station.radioBinding.radio.control")],
+        p + ".backend.radioAuthority": [("authorized.request", "requests.request"), ("requests.outcome", "authorized.outcome")],
         station: [("web.station", "station.webOperations"), ("mcp.station", "station.mcpOperations"),
             ("station.profile", "profile.context"), ("station.receive", "receive.jobs"),
             ("station.transmit", "transmit.operations"), ("station.qso", "qso.operations"),
@@ -579,16 +578,16 @@ def architecture_integrity(output: str) -> dict[str, int]:
             ("transmit.encode", "modes.encode"), ("transmit.audio", "audio.transmit"),
             ("transmit.control", "radioControl.transmit"), ("web.recording", "station.upload"),
             ("station.acceptedRecording", "profile.upload"), ("profile.recordedSamples", "audio.recorded"),
-            ("qso.contacts", "profile.contacts"), ("audio.backend", "backend.audio"),
-            ("radioControl.backend", "authorityRequest"), ("authorizedControl", "backend.control"),
+            ("qso.contacts", "profile.contacts"), ("audio.backend", "radioAdapter.audio"),
+            ("radioControl.backend", "authorityRequest"), ("authorizedControl", "radioAdapter.control"),
             ("authorityRequest", "authority.requests"), ("authority.authorized", "authorizedControl"),
-            ("authorityRequest.request.resourceContext", "radioBinding"), ("backend.control.request.resourceContext", "radioBinding")],
+            ("authorityRequest.request.resourceContext", "radioBinding"), ("radioAdapter.control.request.resourceContext", "radioBinding")],
         station + ".profile": [("upload", "recordings.upload"), ("recordings.samples", "recordedSamples")],
     }
     for selection in ("standardDevices", "nativeFlex"):
-        expected[station + ".backend." + selection] = [("audio", "audioDevices.host"), ("audioDevices.radio", "radioAudio"),
+        expected[station + ".radioAdapter." + selection] = [("audio", "audioDevices.host"), ("audioDevices.radio", "radioAudio"),
             ("control", "controlDriver.authorized"), ("controlDriver.radio", "radioControl")]
-    expected[station + ".backend.nativeFlex"] += [("audioDevices.session", "session.audio"), ("controlDriver.session", "session.control")]
+    expected[station + ".radioAdapter.nativeFlex"] += [("audioDevices.session", "session.audio"), ("controlDriver.session", "session.control")]
     # Independent role/contract bindings from FSD section 11.9. A leading
     # ~ marks the provider/conjugate role. Do not infer expected roles from the model.
     role_contracts = {}
@@ -597,13 +596,10 @@ def architecture_integrity(output: str) -> dict[str, int]:
         role_contracts.update({owner + "." + name: contract for name, contract in bindings.items()})
 
     roles(p + ".user", interaction="LocalInteraction")
-    roles(p + ".viewer", operator="~LocalInteraction", stationLink="BrowserExchange")
-    roles(p + ".viewer.browsers", operator="~LocalInteraction", station="BrowserExchange")
-    roles(p + ".controller", viewerLink="~BrowserExchange", radioAudio="AudioExchange", radioControl="RadioControl")
-    roles(p + ".controller.mcpClients", station="StationOperations")
+    roles(p + ".frontend.browsers", operator="~LocalInteraction", station="BrowserExchange")
+    roles(p + ".backend.mcpClients", station="StationOperations")
     roles(p + ".radio", audio="~AudioExchange", control="~RadioControl")
-    roles(p + ".stationLink.attachments", clientBoundary="~BrowserExchange")
-    roles(p + ".controller.radioAuthority", requests="~RadioControl", authorized="RadioControl")
+    roles(p + ".backend.radioAuthority", requests="~RadioControl", authorized="RadioControl")
     roles(station, authorityRequest="RadioControl", authorizedControl="~RadioControl")
     roles(station + ".profile", context="~ProfileAccess", contacts="~ProfileAccess", upload="~RecordingTransfer", recordedSamples="ReceiveSamples")
     roles(station + ".profile.recordings", upload="~RecordingTransfer", samples="ReceiveSamples")
@@ -618,23 +614,23 @@ def architecture_integrity(output: str) -> dict[str, int]:
     roles(station + ".radioControl", station="~RadioControl", transmit="~RadioControl", backend="RadioControl")
     roles(station + ".transmit", operations="~StationOperations", encode="EncodeProcessing", audio="AudioExchange", control="RadioControl")
     roles(station + ".qso", operations="~StationOperations", contacts="ProfileAccess")
-    for backend in (station + ".backend", station + ".backend.standardDevices", station + ".backend.nativeFlex"):
+    for backend in (station + ".radioAdapter", station + ".radioAdapter.standardDevices", station + ".radioAdapter.nativeFlex"):
         roles(backend, audio="~AudioExchange", control="~RadioControl", radioAudio="AudioExchange", radioControl="RadioControl")
     for selection in ("standardDevices", "nativeFlex"):
-        backend = station + ".backend." + selection
+        backend = station + ".radioAdapter." + selection
         roles(backend + ".audioDevices", host="~AudioExchange", radio="AudioExchange")
         roles(backend + ".controlDriver", authorized="~RadioControl", radio="RadioControl")
-    roles(station + ".backend.nativeFlex.audioDevices", session="SessionAccess")
-    roles(station + ".backend.nativeFlex.controlDriver", session="SessionAccess")
-    roles(station + ".backend.nativeFlex.session", audio="~SessionAccess", control="~SessionAccess")
+    roles(station + ".radioAdapter.nativeFlex.audioDevices", session="SessionAccess")
+    roles(station + ".radioAdapter.nativeFlex.controlDriver", session="SessionAccess")
+    roles(station + ".radioAdapter.nativeFlex.session", audio="~SessionAccess", control="~SessionAccess")
     for path, contract in role_contracts.items():
         if contract.lstrip("~") == "RadioControl":
             expected[path] = [("outcome.request", "request")]
     required_bindings = {
-        (p + ".controller.radioAuthority", frozenset(("authorized.request", "requests.request"))),
-        (p + ".controller.radioAuthority", frozenset(("requests.outcome", "authorized.outcome"))),
+        (p + ".backend.radioAuthority", frozenset(("authorized.request", "requests.request"))),
+        (p + ".backend.radioAuthority", frozenset(("requests.outcome", "authorized.outcome"))),
         (station, frozenset(("authorityRequest.request.resourceContext", "radioBinding"))),
-        (station, frozenset(("backend.control.request.resourceContext", "radioBinding"))),
+        (station, frozenset(("radioAdapter.control.request.resourceContext", "radioBinding"))),
     }
     required_bindings.update((path, frozenset(("outcome.request", "request")))
                              for path, contract in role_contracts.items() if contract.lstrip("~") == "RadioControl")

@@ -779,11 +779,11 @@ package WstxOfflineDecode {
     satisfy WstxRequirements::'CL-007-02' by publishResults;
     satisfy WstxRequirements::'CL-007-03' by measureFrame;
     satisfy WstxRequirements::'CL-007-04' by advanceDecode;
-    dependency admissionOwner from admitDecode to WstxArchitecture::physicalStation::controller::stations::receive;
-    dependency calculationOwner from advanceDecode to WstxArchitecture::physicalStation::controller::stations::modes;
-    dependency measurementOwner from measureFrame to WstxArchitecture::physicalStation::controller::stations::modes;
-    dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::controller::stations::web;
-    dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::viewer::browsers;
+    dependency admissionOwner from admitDecode to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency calculationOwner from advanceDecode to WstxArchitecture::physicalStation::backend::stations::modes;
+    dependency measurementOwner from measureFrame to WstxArchitecture::physicalStation::backend::stations::modes;
+    dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::frontend::browsers;
     package IndependentVerification {
         doc /* Verification intent; executable coverage is declared in WstxRequirements metadata. Cost2
              offlineWindowsPC, actualcandidate

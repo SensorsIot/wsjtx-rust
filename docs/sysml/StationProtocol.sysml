@@ -215,9 +215,9 @@ package WstxStationProtocol {
     }
     action exchangeStatus : ExchangeStatus;
     satisfy WstxRequirements::'CL-003-02' by exchangeStatus;
-    dependency stationOwner from exchangeStatus to WstxArchitecture::physicalStation::controller::stations::station;
-    dependency transportOwner from exchangeStatus to WstxArchitecture::physicalStation::controller::stations::web;
-    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::physicalStation::viewer::browsers;
+    dependency stationOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::station;
+    dependency transportOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::physicalStation::frontend::browsers;
     dependency securityPromise from SessionSecurity to WstxRequirements::'CL-003-07';
     dependency reconnectPromise from BrowserLinkLifecycle to WstxRequirements::'CL-003-04';
     dependency budgetPromise from ThinLinkBudget to WstxRequirements::'CL-003-05';

@@ -256,9 +256,9 @@ package WstxRadioIO {
     satisfy WstxRequirements::'CL-008-04' by execute;
     satisfy WstxRequirements::'CL-008-05' by capture;
     satisfy WstxRequirements::'CL-008-06' by execute;
-    dependency captureOwner from capture to WstxArchitecture::physicalStation::controller::stations::audio;
-    dependency conversionOwner from convertReceive to WstxArchitecture::physicalStation::controller::stations::receive;
-    dependency controlOwner from execute to WstxArchitecture::physicalStation::controller::stations::radioControl;
+    dependency captureOwner from capture to WstxArchitecture::physicalStation::backend::stations::audio;
+    dependency conversionOwner from convertReceive to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency controlOwner from execute to WstxArchitecture::physicalStation::backend::stations::radioControl;
     package Verification {
         doc /* Planned Cost2Windows actual candidate adapters/services/browser and independent
              native-clock/device/serial/decoder-step fixtures, no hardware. Physicalcase

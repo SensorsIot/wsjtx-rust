@@ -1094,15 +1094,15 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     satisfy WstxRequirements::'CL-006-02' by replaySpectrum;
     satisfy WstxRequirements::'CL-006-03' by spectrum;
     satisfy WstxRequirements::'CL-006-04' by cancelReceive;
-    dependency storageOwner from importRecording to WstxArchitecture::physicalStation::controller::stations::profile::recordings;
-    dependency recoveryOwner from recoverSource to WstxArchitecture::physicalStation::controller::stations::profile::recordings;
-    dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::controller::stations::station;
-    dependency receiveOwner from replaySpectrum to WstxArchitecture::physicalStation::controller::stations::receive;
-    dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::controller::stations::receive;
-    dependency spectrumOwner from spectrum to WstxArchitecture::physicalStation::controller::stations::receive;
-    dependency transferOwner from transfer to WstxArchitecture::physicalStation::controller::stations::web;
-    dependency browserOwner from present to WstxArchitecture::physicalStation::viewer::browsers;
-    dependency sharedInput from SampleBlock to WstxArchitecture::physicalStation::controller::stations::audio;
+    dependency storageOwner from importRecording to WstxArchitecture::physicalStation::backend::stations::profile::recordings;
+    dependency recoveryOwner from recoverSource to WstxArchitecture::physicalStation::backend::stations::profile::recordings;
+    dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::backend::stations::station;
+    dependency receiveOwner from replaySpectrum to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency spectrumOwner from spectrum to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency transferOwner from transfer to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency sharedInput from SampleBlock to WstxArchitecture::physicalStation::backend::stations::audio;
 
     package IndependentVerification {
         doc /* All cases cost 2 - isolated automated tests on Windows development PC.
