@@ -9,7 +9,10 @@ use std::{
 use std::{
     io::{BufRead, BufReader, Write},
     process::{Child, ChildStdin, Command, Stdio},
-    sync::mpsc::{Receiver, sync_channel},
+    sync::{
+        Arc, Mutex,
+        mpsc::{Receiver, sync_channel},
+    },
     thread::JoinHandle,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -688,6 +691,7 @@ struct ResourcePeer {
     input: Option<ChildStdin>,
     messages: Option<Receiver<Result<Value, String>>>,
     reader: Option<JoinHandle<()>>,
+    cleanup: Arc<Mutex<Option<Value>>>,
 }
 impl ResourcePeer {
     fn spawn(command: &mut Command, marked: bool) -> Self {
@@ -703,6 +707,7 @@ impl ResourcePeer {
             input: None,
             messages: None,
             reader: None,
+            cleanup: Arc::new(Mutex::new(None)),
         };
         peer.input = peer.child.stdin.take();
         let stdout = peer.child.stdout.take().expect("owned stdout");
@@ -759,12 +764,15 @@ impl ResourcePeer {
             .expect("valid bounded resource JSON")
     }
     fn wait(&mut self, seconds: u64) {
+        let status = self.wait_status(seconds);
+        assert!(status.success(), "owned peer exit {status}");
+    }
+    fn wait_status(&mut self, seconds: u64) -> std::process::ExitStatus {
         self.input.take();
         let deadline = Instant::now() + Duration::from_secs(seconds);
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
-                assert!(status.success(), "owned peer exit {status}");
-                return;
+                return status;
             }
             assert!(Instant::now() < deadline, "owned peer exit timeout");
             std::thread::sleep(Duration::from_millis(5));
@@ -774,14 +782,24 @@ impl ResourcePeer {
 impl Drop for ResourcePeer {
     fn drop(&mut self) {
         self.input.take();
-        if self.child.try_wait().ok().flatten().is_none() {
-            let _ = self.child.kill();
-        }
-        let _ = self.child.wait();
+        let kill_attempted = !matches!(self.child.try_wait(), Ok(Some(_)));
+        let kill_error = if kill_attempted {
+            self.child.kill().err().map(|error| error.to_string())
+        } else {
+            None
+        };
+        let waited = self.child.wait();
         // A blocked bounded sender must be released before joining its reader.
         self.messages.take();
-        if let Some(reader) = self.reader.take() {
-            let _ = reader.join();
+        let reader_joined = self
+            .reader
+            .take()
+            .is_none_or(|reader| reader.join().is_ok());
+        let receipt = serde_json::json!({"kill_attempted":kill_attempted,"kill_error":kill_error,
+            "wait_succeeded":waited.is_ok(),"exit_code":waited.as_ref().ok().and_then(|status|status.code()),
+            "wait_error":waited.as_ref().err().map(|error|error.to_string()),"reader_joined":reader_joined});
+        if let Ok(mut audit) = self.cleanup.lock() {
+            *audit = Some(receipt);
         }
     }
 }
@@ -841,6 +859,7 @@ impl Drop for ResourceCapture {
 fn resource_capture(command: &mut Command, seconds: u64) -> std::process::Output {
     use std::io::Read;
     let child = command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -918,7 +937,7 @@ fn resource_metrics_source_identity() -> Value {
     let identity: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         identity["canonical_lf_sha256"],
-        "1e264d950b8055832b5bb21757dc2a96234ec73db41cb17225df952d795eca51",
+        "a42a6cfc663b43b75936e1a663974eacdc6eafeeea1a18bdf73c3cbb7114a0d8",
         "reviewed named metrics source; only CRLF/LF representation may differ"
     );
     identity
@@ -956,12 +975,191 @@ fn resource_sample(monitor: &mut ResourcePeer, sequence: u64, pid: u32, creation
     assert!(value["lifetime_peak_commit"].as_u64().unwrap() > 0);
     value
 }
+#[cfg(windows)]
+fn resource_borrowed_child_handle(child: &Child) -> u64 {
+    use std::os::windows::io::AsRawHandle;
+    child.as_raw_handle() as usize as u64
+}
+#[cfg(not(windows))]
+fn resource_borrowed_child_handle(_child: &Child) -> u64 {
+    panic!("Windows owned-process handle qualification required")
+}
+fn resource_bind_monitor(worker: &ResourcePeer) -> (ResourcePeer, u64) {
+    assert!(worker.child.id() > 0);
+    let mut command = Command::new(resource_python());
+    command.arg(resource_helper()).args([
+        "--pid",
+        &worker.child.id().to_string(),
+        "--parent-handle",
+        &resource_borrowed_child_handle(&worker.child).to_string(),
+    ]);
+    let monitor = ResourcePeer::spawn(&mut command, false);
+    let bound = monitor.receive(10);
+    assert_eq!(bound["state"], "bound");
+    assert_eq!(bound["pid"], worker.child.id());
+    let creation = bound["creation_filetime"].as_u64().unwrap();
+    assert!(creation > 0);
+    (monitor, creation)
+}
+#[test]
+fn resource_owned_worker_failure_cleanup_uses_process_object_not_pid_reopen() {
+    assert!(cfg!(windows) && usize::BITS == 64);
+    resource_metrics_source_identity();
+    let executable = std::env::current_exe().unwrap();
+    let config = serde_json::json!({"worker_id":format!("cleanup-control-{}",std::process::id()),
+        "source_sha":resource_source(),"executable_sha256":resource_hash(&executable)});
+    let mut monitor_and_identity = None;
+    let mut cleanup_receipt = None;
+    let mut injected = false;
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut command = Command::new(&executable);
+        command
+            .args([
+                "--exact",
+                "resource_finite_child",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("WSTX_RESOURCE_WORKER_CONFIG", config.to_string());
+        let worker = ResourcePeer::spawn(&mut command, true);
+        cleanup_receipt = Some(worker.cleanup.clone());
+        let ready = worker.receive(20);
+        assert_eq!(ready["state"], "ready");
+        assert_eq!(ready["pid"], worker.child.id());
+        let (monitor, creation) = resource_bind_monitor(&worker);
+        monitor_and_identity = Some((monitor, creation, worker.child.id()));
+        injected = true;
+        panic!("controlled owner failure: parent guard must kill and reap its idle worker");
+    }));
+    assert!(
+        outcome.is_err() && injected,
+        "the planned cleanup control actually reached the failure point"
+    );
+    let cleanup = cleanup_receipt.unwrap().lock().unwrap().clone().unwrap();
+    assert_eq!(cleanup["kill_attempted"], true);
+    assert_eq!(cleanup["kill_error"], Value::Null);
+    assert_eq!(cleanup["wait_succeeded"], true);
+    assert_eq!(cleanup["reader_joined"], true);
+    let (mut monitor, creation, pid) = monitor_and_identity.unwrap();
+    monitor.send(serde_json::json!({"op":"sample","id":1}));
+    let refusal = monitor.receive(10);
+    assert_eq!(
+        refusal,
+        serde_json::json!({"v":1,"error":"process_not_live","winerror":null})
+    );
+    assert!(!monitor.wait_status(10).success());
+    eprintln!(
+        "RESOURCE_CLEANUP_CONTROL {}",
+        serde_json::json!({"worker_pid":pid,"creation_filetime":creation,
+        "worker_reaped_by_parent_guard":true,"held_process_object_observed_terminated":true,
+        "directly_owned_monitor_reaped":true,"worker_cleanup":cleanup,"worker_grandchildren_created":0,"decoded_success_claim":false})
+    );
+}
+fn resource_qualify_round(dispatch: &[u64], replies: &[Value]) -> Value {
+    const SKEW_NS: u64 = 50_000_000;
+    const CLOCK_MARGIN_NS: u64 = 5_000_000;
+    assert!(
+        matches!(replies.len(), 1 | 4) && dispatch.len() == replies.len(),
+        "actual one/four round cardinality"
+    );
+    assert!(
+        dispatch.windows(2).all(|pair| pair[1] >= pair[0]),
+        "monotonic release timestamps"
+    );
+    let dispatch_skew = dispatch.last().unwrap() - dispatch.first().unwrap();
+    assert!(
+        dispatch_skew <= SKEW_NS,
+        "barrier release qualification exceeds50ms"
+    );
+    let mut starts = Vec::new();
+    let mut ends = Vec::new();
+    let mut differences = Vec::new();
+    for reply in replies {
+        let start = reply["started_unix_ns"].as_u64().unwrap();
+        let end = reply["ended_unix_ns"].as_u64().unwrap();
+        let duration = reply["monotonic_duration_ns"].as_u64().unwrap();
+        assert!(
+            start > 0 && duration > 0 && end >= start,
+            "real completed interval"
+        );
+        let difference = (end - start).abs_diff(duration);
+        assert!(
+            difference <= CLOCK_MARGIN_NS,
+            "wall/monotonic clock qualification exceeds5ms"
+        );
+        let seconds = reply["seconds"].as_f64().unwrap();
+        assert!(
+            seconds.is_finite() && ((seconds * 1e9) - duration as f64).abs() <= 1.,
+            "same monotonic duration in both representations"
+        );
+        starts.push(start);
+        ends.push(end);
+        differences.push(difference);
+    }
+    let latest_start = *starts.iter().max().unwrap();
+    let earliest_start = *starts.iter().min().unwrap();
+    let start_spread = latest_start - earliest_start;
+    assert!(
+        start_spread <= SKEW_NS,
+        "actual four-worker start spread exceeds50ms qualification"
+    );
+    let overlap = if replies.len() == 4 {
+        let lower = latest_start.checked_add(CLOCK_MARGIN_NS).unwrap();
+        let upper = ends.iter().min().unwrap().saturating_sub(CLOCK_MARGIN_NS);
+        assert!(
+            upper > lower,
+            "four actual kernel intervals have no qualified common overlap"
+        );
+        Some(upper - lower)
+    } else {
+        None
+    };
+    serde_json::json!({"qualified":true,"workers":replies.len(),"dispatch_skew_ns":dispatch_skew,
+        "actual_start_spread_ns":start_spread,"wall_monotonic_discrepancy_ns":differences,
+        "boundary_margin_ns":CLOCK_MARGIN_NS,"qualified_common_overlap_ns":overlap,
+        "measurement_qualification_only":true,"padding_or_serialized_work_used":false})
+}
+
+#[test]
+fn resource_concurrency_qualification_rejects_serial_work_and_clock_faults() {
+    let interval = |start: u64, duration: u64| {
+        serde_json::json!({"started_unix_ns":start,
+        "ended_unix_ns":start+duration,"monotonic_duration_ns":duration,"seconds":duration as f64/1e9})
+    };
+    let valid = (0..4)
+        .map(|index| interval(1_000_000_000 + index * 1_000_000, 200_000_000))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        resource_qualify_round(&[0, 1_000_000, 2_000_000, 3_000_000], &valid)["qualified_common_overlap_ns"],
+        187_000_000u64
+    );
+    let serialized = (0..4)
+        .map(|index| interval(1_000_000_000 + index * 10_000_000, 5_000_000))
+        .collect::<Vec<_>>();
+    assert!(
+        std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2, 3], &serialized)).is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2, 50_000_001], &valid))
+            .is_err()
+    );
+    let mut bad_clock = valid.clone();
+    bad_clock[0]["ended_unix_ns"] = serde_json::json!(1_210_000_000u64);
+    assert!(
+        std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2, 3], &bad_clock)).is_err()
+    );
+    assert!(std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2], &valid[..3])).is_err());
+}
 fn resource_runtime_parent() {
     assert!(
         cfg!(windows) && usize::BITS == 64,
         "resource acceptance requires recorded64bit Windows host"
     );
-    let root = prepared("quality");
+    let root = PathBuf::from(
+        std::env::var_os("WSTX_DECODER_CACHE")
+            .expect("resource proof requires explicitly prepared immutable quality cache"),
+    );
     let cases: Value =
         serde_json::from_str(include_str!("../../fixtures/decoder/resource-cases.json")).unwrap();
     let executable = std::env::current_exe().unwrap();
@@ -1030,24 +1228,14 @@ fn resource_runtime_parent() {
                         workers.push(ResourcePeer::spawn(&mut command, true));
                         let worker = workers.last_mut().unwrap();
                         let ready = worker.receive(20);
+                        assert_eq!(ready["state"], "ready");
                         assert_eq!(ready["worker_id"], identity);
                         assert_eq!(ready["pid"], worker.child.id());
                         assert_eq!(ready["source_sha"], source);
                         assert_eq!(ready["executable_sha256"], executable_hash);
-                        let creation = ready["creation_filetime"].as_u64().unwrap();
-                        let mut command = Command::new(resource_python());
-                        command.arg(resource_helper()).args([
-                            "--pid",
-                            &worker.child.id().to_string(),
-                            "--creation",
-                            &creation.to_string(),
-                        ]);
-                        monitors.push(ResourcePeer::spawn(&mut command, false));
+                        let (monitor, creation) = resource_bind_monitor(worker);
+                        monitors.push(monitor);
                         let monitor = monitors.last_mut().unwrap();
-                        let bound = monitor.receive(10);
-                        assert_eq!(bound["state"], "bound");
-                        assert_eq!(bound["pid"], worker.child.id());
-                        assert_eq!(bound["creation_filetime"], creation);
                         idle.push(resource_sample(monitor, 1, worker.child.id(), creation));
                         identities.push(creation);
                         worker.send(serde_json::json!({"op":"prepare"}));
@@ -1082,6 +1270,10 @@ fn resource_runtime_parent() {
                     let mut timings = vec![Vec::<f64>::new(); concurrency];
                     let mut rounds = Vec::new();
                     for round in 0..10u64 {
+                        for worker in &workers {
+                            let armed = worker.receive(10);
+                            assert_eq!(armed, serde_json::json!({"state":"armed","round":round}));
+                        }
                         let dispatch = Instant::now();
                         let mut dispatch_ns = Vec::new();
                         for worker in &mut workers {
@@ -1109,10 +1301,18 @@ fn resource_runtime_parent() {
                             timings[index].push(seconds);
                             replies.push(result);
                         }
-                        rounds.push(serde_json::json!({"round":round,"parent_dispatch_offsets_ns":dispatch_ns,"workers":replies}));
+                        let qualification = resource_qualify_round(&dispatch_ns, &replies);
+                        rounds.push(serde_json::json!({"round":round,"parent_dispatch_offsets_ns":dispatch_ns,"workers":replies,"concurrency_qualification":qualification}));
                     }
                     let mut metrics = Vec::new();
+                    for worker in &mut workers {
+                        worker.send(serde_json::json!({"op":"teardown"}));
+                    }
                     for index in 0..concurrency {
+                        let teardown = workers[index].receive(10);
+                        assert_eq!(teardown["state"], "torn_down");
+                        assert_eq!(teardown["completed_rounds"], 10);
+                        assert_eq!(teardown["work_owners_live"], false);
                         let final_sample = resource_sample(
                             &mut monitors[index],
                             2,
@@ -1120,9 +1320,10 @@ fn resource_runtime_parent() {
                             identities[index],
                         );
                         let peak = final_sample["lifetime_peak_commit"].as_u64().unwrap();
-                        metrics.push(serde_json::json!({"idle":idle[index],"final":final_sample,
-                            "absolute_private_peak_sufficient_for64MiB":peak<=64*1024*1024,
+                        metrics.push(serde_json::json!({"idle":idle[index],"final_after_teardown":final_sample,
+                            "teardown":teardown,"absolute_private_peak_within64MiB":peak<=64*1024*1024,
                             "over64MiB_disposition":"inconclusive sufficient criterion; complete owner accounting required, not automatic workspace failure",
+                            "worst_capacity_workspace_audit_complete":false,"whole_workspace_proved":false,
                             "full_station_96MiB_proved":false}));
                         monitors[index].send(serde_json::json!({"op":"close","id":3}));
                         assert_eq!(monitors[index].receive(10)["state"], "closed");
@@ -1144,8 +1345,8 @@ fn resource_runtime_parent() {
                     assert!(
                         metrics
                             .iter()
-                            .all(|m| m["absolute_private_peak_sufficient_for64MiB"] == true),
-                        "workspace sufficient criterion inconclusive; audited complete owner bound still required"
+                            .all(|m| m["absolute_private_peak_within64MiB"] == true),
+                        "workload absolute-peak criterion inconclusive; complete worst-capacity owner audit remains separately required"
                     );
                     completed_configurations += 1;
                 }
@@ -1154,6 +1355,7 @@ fn resource_runtime_parent() {
     }
     assert_eq!(completed_configurations, 16);
     assert_eq!(resource_source(), source);
+    assert_eq!(resource_hash(&executable), executable_hash);
 }
 
 #[test]
@@ -1163,23 +1365,10 @@ fn resource_finite_child() {
         std::env::var("WSTX_RESOURCE_WORKER_CONFIG").expect("parent-owned worker configuration");
     assert!(text.len() <= 2048);
     let config: Value = serde_json::from_str(&text).unwrap();
-    let identity = resource_capture(
-        Command::new(resource_python())
-            .arg(resource_helper())
-            .arg("--parent-identity"),
-        10,
-    );
-    assert!(identity.status.success());
-    let identity: Value = serde_json::from_slice(&identity.stdout).unwrap();
-    assert_eq!(identity["pid"], std::process::id());
-    assert_eq!(resource_source(), config["source_sha"].as_str().unwrap());
-    assert_eq!(
-        resource_hash(&std::env::current_exe().unwrap()),
-        config["executable_sha256"].as_str().unwrap()
-    );
     resource_emit(
         serde_json::json!({"state":"ready","pid":std::process::id(),"worker_id":config["worker_id"],
-        "creation_filetime":identity["creation_filetime"],"source_sha":config["source_sha"],"executable_sha256":config["executable_sha256"]}),
+        "source_sha":config["source_sha"],"executable_sha256":config["executable_sha256"],
+        "provenance_origin":"parent-owned frozen source/executable; worker performs no subprocess probes"}),
     );
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
@@ -1188,10 +1377,6 @@ fn resource_finite_child() {
             .unwrap();
     assert_eq!(prepare, serde_json::json!({"op":"prepare"}));
     let path = PathBuf::from(config["input"].as_str().unwrap());
-    assert_eq!(
-        resource_hash(&path),
-        config["input_sha256"].as_str().unwrap()
-    );
     let mode = if config["mode"] == "ft8" {
         Mode::Ft8
     } else {
@@ -1246,11 +1431,27 @@ fn resource_finite_child() {
         "records":expected.len(),"cold_max_poll_wall_seconds":cold_poll,"warmup_max_poll_wall_seconds":warm_poll,
         "baseline":expected.iter().map(|record|serde_json::json!({"payload77":record.payload.payload77,"start_frame":record.start_frame,"frequency_hz":record.frequency_hz})).collect::<Vec<_>>()}),
     );
+    let mut work = Some((base, samples, decoder, expected, warmup));
     let mut next_round = 0;
+    resource_emit(serde_json::json!({"state":"armed","round":next_round}));
     while let Some(line) = resource_line(&mut input).unwrap() {
         let command: Value = serde_json::from_slice(&line).unwrap();
+        if command == serde_json::json!({"op":"teardown"}) {
+            assert_eq!(next_round, 10);
+            assert!(work.is_some(), "one actual teardown");
+            drop(work.take());
+            resource_emit(
+                serde_json::json!({"state":"torn_down","completed_rounds":next_round,"work_owners_live":false,
+                "owners_dropped":["decoder_channel","base_input","full_input","cold_baseline","warmup_records"]}),
+            );
+            continue;
+        }
         if command == serde_json::json!({"op":"finish"}) {
             assert_eq!(next_round, 10);
+            assert!(
+                work.is_none(),
+                "finish follows actual teardown and live final sample"
+            );
             resource_emit(serde_json::json!({"state":"finished","rounds":next_round}));
             return;
         }
@@ -1258,19 +1459,29 @@ fn resource_finite_child() {
             command,
             serde_json::json!({"op":"round","round":next_round})
         );
+        let (_, samples, decoder, expected, _) = work.as_ref().expect("round before teardown");
         let started_unix_ns = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos() as u64;
         let began = Instant::now();
         let (actual, max_poll_wall_seconds) = resource_decode(&decoder, &samples, mode);
-        let seconds = began.elapsed().as_secs_f64();
+        let monotonic_duration = began.elapsed();
+        let ended_unix_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+        let seconds = monotonic_duration.as_secs_f64();
         resource_repeat(&expected, &actual, mode);
         resource_emit(
             serde_json::json!({"state":"completed","round":next_round,"seconds":seconds,"started_unix_ns":started_unix_ns,
+            "ended_unix_ns":ended_unix_ns,"monotonic_duration_ns":monotonic_duration.as_nanos() as u64,
             "records":actual.len(),"max_poll_wall_seconds":max_poll_wall_seconds}),
         );
         next_round += 1;
+        if next_round < 10 {
+            resource_emit(serde_json::json!({"state":"armed","round":next_round}));
+        }
     }
     panic!("parent pipe closed before required finish handshake");
 }

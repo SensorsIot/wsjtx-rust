@@ -16,6 +16,7 @@ BOOL = ctypes.c_int32
 HANDLE = ctypes.c_void_p
 SIZE_T = ctypes.c_size_t
 QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_DUP_HANDLE = 0x40
 SYNCHRONIZE = 0x100000
 WAIT_OBJECT_0, WAIT_TIMEOUT, WAIT_FAILED = 0, 258, 0xFFFFFFFF
 
@@ -82,6 +83,15 @@ class NativeApi:
         self.wait = self.dll.WaitForSingleObject
         self.wait.argtypes = [HANDLE, DWORD]
         self.wait.restype = DWORD
+        self.duplicate = self.dll.DuplicateHandle
+        self.duplicate.argtypes = [HANDLE, HANDLE, HANDLE, ctypes.POINTER(HANDLE), DWORD, BOOL, DWORD]
+        self.duplicate.restype = BOOL
+        self.current = self.dll.GetCurrentProcess
+        self.current.argtypes = []
+        self.current.restype = HANDLE
+        self.process_id = self.dll.GetProcessId
+        self.process_id.argtypes = [HANDLE]
+        self.process_id.restype = DWORD
 
     @staticmethod
     def last_error():
@@ -89,6 +99,48 @@ class NativeApi:
 
 
 class OwnedProcess:
+    @classmethod
+    def from_parent_handle(cls, source_handle, expected_pid, api=None):
+        checked_layout()
+        source_handle = positive_integer(source_handle, "source_handle")
+        if source_handle == (1 << 64) - 1:
+            raise MetricsError("invalid_source_handle")
+        pid = positive_integer(expected_pid, "pid", (1 << 32) - 1)
+        native = api if api is not None else NativeApi()
+        parent_pid = positive_integer(os.getppid(), "parent_pid", (1 << 32) - 1)
+        parent = native.open(PROCESS_DUP_HANDLE, False, parent_pid)
+        if not parent:
+            raise MetricsError("OpenProcessParent", native.last_error())
+        target = HANDLE()
+        duplicated = False
+        try:
+            if not native.duplicate(parent, source_handle, native.current(), ctypes.byref(target),
+                                    QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, 0):
+                raise MetricsError("DuplicateHandle", native.last_error())
+            if not target.value:
+                raise MetricsError("invalid_duplicate_handle")
+            duplicated = True
+        finally:
+            if not native.close(parent):
+                code = native.last_error()
+                if duplicated:
+                    native.close(target.value)
+                raise MetricsError("CloseParentHandle", code)
+        process = cls.__new__(cls)
+        process.pid, process.creation = pid, None
+        process.api, process.handle = native, target.value
+        try:
+            actual_pid = native.process_id(process.handle)
+            if not actual_pid:
+                raise MetricsError("GetProcessId", native.last_error())
+            if actual_pid != pid:
+                raise MetricsError("process_object_identity_mismatch")
+            process._identity()
+        except BaseException:
+            process.close()
+            raise
+        return process
+
     def __init__(self, pid, expected_creation, api=None):
         self.pid = positive_integer(pid, "pid", (1 << 32) - 1)
         self.creation = positive_integer(expected_creation, "creation")
@@ -111,7 +163,9 @@ class OwnedProcess:
         if not self.api.times(self.handle, ctypes.byref(created), ctypes.byref(exited),
                               ctypes.byref(kernel), ctypes.byref(user)):
             raise MetricsError("GetProcessTimes", self.api.last_error())
-        if created.ticks() != self.creation:
+        if self.creation is None:
+            self.creation = positive_integer(created.ticks(), "creation")
+        elif created.ticks() != self.creation:
             raise MetricsError("creation_identity_mismatch")
         live(self.api, self.handle)
         return kernel.ticks() + user.ticks()
@@ -192,9 +246,15 @@ def exact_object(pairs):
     return result
 
 
-def serve(pid, creation, stream, api=None):
-    with OwnedProcess(pid, creation, api) as process:
-        emit({"v": 1, "state": "bound", "pid": pid, "creation_filetime": creation})
+def serve(pid, creation, stream, api=None, parent_handle=None):
+    if parent_handle is not None:
+        if creation is not None:
+            raise MetricsError("invalid_request")
+        process = OwnedProcess.from_parent_handle(parent_handle, pid, api)
+    else:
+        process = OwnedProcess(pid, creation, api)
+    with process:
+        emit({"v": 1, "state": "bound", "pid": process.pid, "creation_filetime": process.creation})
         previous = 0
         while True:
             line = stream.readline(4097)
@@ -221,14 +281,15 @@ def main():
     parser.add_argument("--parent-identity", action="store_true")
     parser.add_argument("--pid", type=int)
     parser.add_argument("--creation", type=int)
+    parser.add_argument("--parent-handle", type=int)
     args = parser.parse_args()
     try:
         if args.parent_identity:
-            if args.pid is not None or args.creation is not None:
+            if args.pid is not None or args.creation is not None or args.parent_handle is not None:
                 raise MetricsError("invalid_request")
             emit(parent_creation(NativeApi()))
         else:
-            serve(args.pid, args.creation, sys.stdin)
+            serve(args.pid, args.creation, sys.stdin, parent_handle=args.parent_handle)
     except (MetricsError, ValueError, TypeError) as error:
         emit({"v": 1, "error": getattr(error, "operation", "invalid_request"),
               "winerror": getattr(error, "code", None)})

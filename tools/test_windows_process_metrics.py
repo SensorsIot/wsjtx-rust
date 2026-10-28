@@ -50,12 +50,79 @@ class FakeApi:
         self.calls.append(("wait", handle, timeout))
         return {"exited": 0, "wait": 0xFFFFFFFF, "unexpected_wait": 128}.get(self.fault, 258)
 
+    def current(self):
+        return -1
+
+    def duplicate(self, parent, source, target_process, result, access, inherit, options):
+        self.calls.append(("duplicate", parent, source, target_process, access, inherit, options))
+        if self.fault == "duplicate":
+            return 0
+        if self.fault != "invalid_duplicate":
+            result._obj.value = 456
+        return 1
+
+    def process_id(self, handle):
+        self.calls.append(("process_id", handle))
+        return 0 if self.fault == "process_id" else 99 if self.fault == "wrong_process" else 42
+
     @staticmethod
     def last_error():
         return 5
 
 
 class WindowsMetricsControls(unittest.TestCase):
+    def test_parent_handle_duplicate_binds_actual_object_and_narrows_access(self):
+        api = FakeApi()
+        with patch.object(metrics.os, "getppid", return_value=777):
+            process = metrics.OwnedProcess.from_parent_handle(900, 42, api)
+        self.assertEqual(api.calls[0], ("open", 0x40, False, 777))
+        self.assertIn(("duplicate", 123, 900, -1, 0x101000, False, 0), api.calls)
+        self.assertEqual(api.closed, [123])
+        self.assertEqual(process.creation, 88)
+        self.assertEqual(process.sample()["pid"], 42)
+        api.fault = "identity"
+        with self.assertRaisesRegex(metrics.MetricsError, "creation_identity_mismatch"):
+            process.sample()
+        process.close()
+        self.assertEqual(api.closed, [123, 456])
+        self.assertNotIn(900, api.closed)
+        self.assertNotIn(-1, api.closed)
+
+    def test_duplicate_faults_close_only_owned_handles(self):
+        for fault, operation, closed in [
+            ("open", "OpenProcessParent", []), ("duplicate", "DuplicateHandle", [123]),
+            ("invalid_duplicate", "invalid_duplicate_handle", [123]),
+            ("process_id", "GetProcessId", [123, 456]),
+            ("wrong_process", "process_object_identity_mismatch", [123, 456]),
+            ("times", "GetProcessTimes", [123, 456]),
+            ("wait", "WaitForSingleObject", [123, 456]),
+            ("exited", "process_not_live", [123, 456]),
+            ("close", "CloseParentHandle", [123, 456]),
+        ]:
+            with self.subTest(fault=fault):
+                api = FakeApi(fault)
+                with self.assertRaises(metrics.MetricsError) as caught:
+                    metrics.OwnedProcess.from_parent_handle(900, 42, api)
+                self.assertEqual(caught.exception.operation, operation)
+                self.assertEqual(api.closed, closed)
+        for source in [0, -1, True, 1 << 64, (1 << 64) - 1]:
+            with self.assertRaises(metrics.MetricsError):
+                metrics.OwnedProcess.from_parent_handle(source, 42, FakeApi())
+
+    def test_duplicate_mode_protocol_does_not_fallback_to_pid_open(self):
+        api, output = FakeApi(), io.StringIO()
+        with patch.object(metrics.os, "getppid", return_value=777), contextlib.redirect_stdout(output):
+            metrics.serve(42, None, io.StringIO('{"op":"sample","id":1}\n{"op":"close","id":2}\n'), api, parent_handle=900)
+        self.assertEqual([call for call in api.calls if call[0] == "open"], [("open", 0x40, False, 777)])
+        rows = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(rows[0], {"v": 1, "state": "bound", "pid": 42, "creation_filetime": 88})
+        self.assertEqual(rows[1]["creation_filetime"], 88)
+        self.assertEqual(api.closed, [123, 456])
+        api = FakeApi()
+        with self.assertRaisesRegex(metrics.MetricsError, "invalid_request"):
+            metrics.serve(42, 88, io.StringIO(""), api, parent_handle=900)
+        self.assertEqual(api.calls, [])
+
     def test_native_x64_fields_offsets_and_widths(self):
         self.assertEqual(metrics.checked_layout(), 80)
         self.assertEqual(ctypes.sizeof(metrics.FileTime), 8)
