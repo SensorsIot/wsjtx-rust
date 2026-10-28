@@ -105,6 +105,7 @@ package WstxArchitecture {
         attribute ft4AdvanceSeconds : Real = 7.5;
     }
 
+    enum def RadioPublicationMode { enum off; enum radioEvents; enum polling; }
     enum def RadioVfoRole {
         enum a; enum b; enum c; enum main; enum sub; enum memory;
         enum current; enum transmit; enum receive; enum other;
@@ -344,6 +345,8 @@ package WstxArchitecture {
         }
     }
     attribute def HamlibCalTableFloatProperties {
+        doc /* Source HAMLIB_MAX_CAL_LENGTH=32 (rig.h299) bounds the ordered table
+             declared at rig.h1868; each source-defined entry remains opaque here. */
         attribute 'hamlib.struct.cal_table_float.size' : Integer[0..1] {
             doc /* Meaning: number of plots in the table. Unit: unspecified; do not infer units. Access/role: model parameter-domain/calibration metadata.
                  Source type: int size. Owner: physicalRadio/model definition. Context: cal_table_float record context. Source: include/hamlib/rig.h:1864. */
@@ -356,12 +359,14 @@ package WstxArchitecture {
             doc /* Meaning: associated value. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: float val. Owner: physicalRadio/model definition. Context: cal_table_float record context. Source: include/hamlib/rig.h:1867. */
         }
-        attribute 'hamlib.struct.cal_table_float.table' : HamlibUnresolvedProperty[*] {
+        attribute 'hamlib.struct.cal_table_float.table' : HamlibUnresolvedProperty[0..32] {
             doc /* Meaning: table of plots. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: table[HAMLIB_MAX_CAL_LENGTH]. Owner: physicalRadio/model definition. Context: cal_table_float record context. Source: include/hamlib/rig.h:1868. */
         }
     }
     attribute def HamlibCalTableProperties {
+        doc /* Source HAMLIB_MAX_CAL_LENGTH=32 (rig.h299) bounds the ordered table
+             declared at rig.h1838; each source-defined entry remains opaque here. */
         attribute 'hamlib.struct.cal_table.size' : Integer[0..1] {
             doc /* Meaning: number of plots in the table. Unit: unspecified; do not infer units. Access/role: model parameter-domain/calibration metadata.
                  Source type: int size. Owner: physicalRadio/model definition. Context: cal_table record context. Source: include/hamlib/rig.h:1834. */
@@ -374,7 +379,7 @@ package WstxArchitecture {
             doc /* Meaning: associated value, basically the measured dB value. Unit: dB. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: int val. Owner: physicalRadio/model definition. Context: cal_table record context. Source: include/hamlib/rig.h:1837. */
         }
-        attribute 'hamlib.struct.cal_table.table' : HamlibUnresolvedProperty[*] {
+        attribute 'hamlib.struct.cal_table.table' : HamlibUnresolvedProperty[0..32] {
             doc /* Meaning: table of plots. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: table[HAMLIB_MAX_CAL_LENGTH]. Owner: physicalRadio/model definition. Context: cal_table record context. Source: include/hamlib/rig.h:1838. */
         }
@@ -508,6 +513,8 @@ package WstxArchitecture {
         }
     }
     attribute def HamlibChannelProperties {
+        doc /* RIG_SETTING_MAX=64 (rig.h1286) bounds the source value_t levels array
+             declared at rig.h1675; no active union member or data value is invented. */
         attribute 'hamlib.struct.channel.channel_num' : Integer[0..1] {
             doc /* Meaning: Channel number. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: int channel_num. Owner: physicalRadio/model definition. Context: channel record context. Source: include/hamlib/rig.h:1654. */
@@ -580,7 +587,7 @@ package WstxArchitecture {
             doc /* Meaning: Function status. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: setting_t funcs. Owner: physicalRadio/model definition. Context: channel record context. Source: include/hamlib/rig.h:1674. */
         }
-        attribute 'hamlib.struct.channel.levels' : HamlibUnresolvedProperty[*] {
+        attribute 'hamlib.struct.channel.levels' : HamlibUnresolvedProperty[0..64] {
             doc /* Meaning: Level values. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: value_t levels[RIG_SETTING_MAX]. Owner: physicalRadio/model definition. Context: channel record context. Source: include/hamlib/rig.h:1675. */
         }
@@ -1094,199 +1101,206 @@ package WstxArchitecture {
         }
     }
     attribute def HamlibFunctionProperties {
-        attribute 'hamlib.RIG_FUNC_ABM' : Boolean[0..1] {
+        doc /* Generic RIG_FUNC status values retain the int status API domain from
+             src/settings.c506. The descriptor shorthand boolean/int does not imply
+             universal Boolean semantics: model-specific values such as Kenwood NR=2
+             are valid in their declared context (kenwood.c4441..4450). Legal statuses,
+             get/set support and any normalized Boolean view are per-model constraints;
+             representing an Integer does not admit every Integer to every radio.
+             Explicit RIG_CONF_CHECKBUTTON property types remain Boolean. */
+        attribute 'hamlib.RIG_FUNC_ABM' : Integer[0..1] {
             doc /* Meaning: ABM -- Auto Band Mode. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1348. */
         }
-        attribute 'hamlib.RIG_FUNC_AFC' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_AFC' : Integer[0..1] {
             doc /* Meaning: AFC -- Auto Frequency Control ON/OFF. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1352. */
         }
-        attribute 'hamlib.RIG_FUNC_AFLT' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_AFLT' : Integer[0..1] {
             doc /* Meaning: AFLT -- AF Filter setting. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1363. */
         }
-        attribute 'hamlib.RIG_FUNC_AIP' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_AIP' : Integer[0..1] {
             doc /* Meaning: AIP -- RF pre-amp (AIP on Kenwood, IPO on Yaesu, etc.). Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1337. */
         }
-        attribute 'hamlib.RIG_FUNC_ANF' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_ANF' : Integer[0..1] {
             doc /* Meaning: ANF -- Automatic Notch Filter (DSP). Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1335. */
         }
-        attribute 'hamlib.RIG_FUNC_ANL' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_ANL' : Integer[0..1] {
             doc /* Meaning: ANL -- Noise limiter setting. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1364. */
         }
-        attribute 'hamlib.RIG_FUNC_APF' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_APF' : Integer[0..1] {
             doc /* Meaning: APF -- Audio Peak Filter. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1338. */
         }
-        attribute 'hamlib.RIG_FUNC_ARO' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_ARO' : Integer[0..1] {
             doc /* Meaning: ARO -- Auto Repeater Offset. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1342. */
         }
-        attribute 'hamlib.RIG_FUNC_BC' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_BC' : Integer[0..1] {
             doc /* Meaning: BC -- Beat Canceller. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1349. */
         }
-        attribute 'hamlib.RIG_FUNC_BC2' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_BC2' : Integer[0..1] {
             doc /* Meaning: BC2 -- 2nd Beat Cancel. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1365. */
         }
-        attribute 'hamlib.RIG_FUNC_COMP' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_COMP' : Integer[0..1] {
             doc /* Meaning: COMP -- Speech Compression. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1329. */
         }
-        attribute 'hamlib.RIG_FUNC_CSQL' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_CSQL' : Integer[0..1] {
             doc /* Meaning: CSQL -- DCS Squelch setting. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1362. */
         }
-        attribute 'hamlib.RIG_FUNC_DIVERSITY' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_DIVERSITY' : Integer[0..1] {
             doc /* Meaning: DIVERSITY -- Diversity receive. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1367. */
         }
-        attribute 'hamlib.RIG_FUNC_DSQL' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_DSQL' : Integer[0..1] {
             doc /* Meaning: DSQL -- Digital modes squelch. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1368. */
         }
-        attribute 'hamlib.RIG_FUNC_DUAL_WATCH' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_DUAL_WATCH' : Integer[0..1] {
             doc /* Meaning: DUAL_WATCH -- Dual Watch / Sub Receiver. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1366. */
         }
-        attribute 'hamlib.RIG_FUNC_FAGC' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_FAGC' : Integer[0..1] {
             doc /* Meaning: FAGC -- Fast AGC. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1327. */
         }
-        attribute 'hamlib.RIG_FUNC_FBKIN' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_FBKIN' : Integer[0..1] {
             doc /* Meaning: FBKIN -- Full Break-in (CW mode). Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1334. */
         }
-        attribute 'hamlib.RIG_FUNC_LOCK' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_LOCK' : Integer[0..1] {
             doc /* Meaning: LOCK -- Lock. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1343. */
         }
-        attribute 'hamlib.RIG_FUNC_MBC' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_MBC' : Integer[0..1] {
             doc /* Meaning: MBC -- Manual Beat Canceller. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1350. */
         }
-        attribute 'hamlib.RIG_FUNC_MN' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_MN' : Integer[0..1] {
             doc /* Meaning: MN -- Manual Notch. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1340. */
         }
-        attribute 'hamlib.RIG_FUNC_MON' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_MON' : Integer[0..1] {
             doc /* Meaning: MON -- Monitor transmitted signal. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1339. */
         }
-        attribute 'hamlib.RIG_FUNC_MUTE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_MUTE' : Integer[0..1] {
             doc /* Meaning: MUTE -- Mute. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1344. */
         }
-        attribute 'hamlib.RIG_FUNC_NB' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_NB' : Integer[0..1] {
             doc /* Meaning: NB -- Noise Blanker. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1328. */
         }
-        attribute 'hamlib.RIG_FUNC_NB2' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_NB2' : Integer[0..1] {
             doc /* Meaning: NB2 -- 2nd Noise Blanker. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1361. */
         }
-        attribute 'hamlib.RIG_FUNC_NR' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_NR' : Integer[0..1] {
             doc /* Meaning: NR -- Noise Reduction (DSP). Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1336. */
         }
-        attribute 'hamlib.RIG_FUNC_OVF_STATUS' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_OVF_STATUS' : Integer[0..1] {
             doc /* Meaning: OVF_STATUS -- Read overflow status 0=Off, 1=On. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1376. */
         }
-        attribute 'hamlib.RIG_FUNC_RESUME' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_RESUME' : Integer[0..1] {
             doc /* Meaning: RESUME -- Scan auto-resume. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1355. */
         }
-        attribute 'hamlib.RIG_FUNC_REV' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_REV' : Integer[0..1] {
             doc /* Meaning: REV -- Reverse transmit and receive frequencies. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1346. */
         }
-        attribute 'hamlib.RIG_FUNC_RF' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_RF' : Integer[0..1] {
             doc /* Meaning: RF -- RTTY Filter. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1341. */
         }
-        attribute 'hamlib.RIG_FUNC_RIT' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_RIT' : Integer[0..1] {
             doc /* Meaning: RIT -- Receiver Incremental Tuning. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1351. */
         }
-        attribute 'hamlib.RIG_FUNC_SATMODE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SATMODE' : Integer[0..1] {
             doc /* Meaning: SATMODE -- Satellite mode ON/OFF. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1353. */
         }
-        attribute 'hamlib.RIG_FUNC_SBKIN' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SBKIN' : Integer[0..1] {
             doc /* Meaning: SBKIN -- Semi Break-in (CW mode). Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1333. */
         }
-        attribute 'hamlib.RIG_FUNC_SCEN' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SCEN' : Integer[0..1] {
             doc /* Meaning: SCEN -- scrambler/encryption. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1369. */
         }
-        attribute 'hamlib.RIG_FUNC_SCOPE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SCOPE' : Integer[0..1] {
             doc /* Meaning: SCOPE -- Simple bandscope ON/OFF. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1354. */
         }
-        attribute 'hamlib.RIG_FUNC_SEND_MORSE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SEND_MORSE' : Integer[0..1] {
             doc /* Meaning: SEND_MORSE -- Send specified characters using CW. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1374. */
         }
-        attribute 'hamlib.RIG_FUNC_SEND_VOICE_MEM' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SEND_VOICE_MEM' : Integer[0..1] {
             doc /* Meaning: SEND_VOICE_MEM -- Transmit in SSB message stored in memory. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1375. */
         }
-        attribute 'hamlib.RIG_FUNC_SLICE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SLICE' : Integer[0..1] {
             doc /* Meaning: SLICE -- Rig slice selection -- Flex. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1370. */
         }
-        attribute 'hamlib.RIG_FUNC_SPECTRUM' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SPECTRUM' : Integer[0..1] {
             doc /* Meaning: SPECTRUM -- Spectrum scope data output ON/OFF. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1372. */
         }
-        attribute 'hamlib.RIG_FUNC_SPECTRUM_HOLD' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SPECTRUM_HOLD' : Integer[0..1] {
             doc /* Meaning: SPECTRUM_HOLD -- Pause spectrum scope updates ON/OFF. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1373. */
         }
-        attribute 'hamlib.RIG_FUNC_SQL' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SQL' : Integer[0..1] {
             doc /* Meaning: SQL -- Turn Squelch Monitor on/off. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1347. */
         }
-        attribute 'hamlib.RIG_FUNC_SYNC' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_SYNC' : Integer[0..1] {
             doc /* Meaning: Synchronize VFOs -- Yaesu FTDX101 SY cmd, IC-7610 "Tracking". Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1377. */
         }
-        attribute 'hamlib.RIG_FUNC_TBURST' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_TBURST' : Integer[0..1] {
             doc /* Meaning: TBURST -- 1750 Hz tone burst. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1356. */
         }
-        attribute 'hamlib.RIG_FUNC_TONE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_TONE' : Integer[0..1] {
             doc /* Meaning: TONE -- CTCSS Tone TX. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1331. */
         }
-        attribute 'hamlib.RIG_FUNC_TRANSCEIVE' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_TRANSCEIVE' : Integer[0..1] {
             doc /* Meaning: TRANSCEIVE -- Send radio state changes automatically ON/OFF. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1371. */
         }
-        attribute 'hamlib.RIG_FUNC_TSQL' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_TSQL' : Integer[0..1] {
             doc /* Meaning: TSQL -- CTCSS Activate/De-activate RX. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1332. */
         }
-        attribute 'hamlib.RIG_FUNC_TUNER' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_TUNER' : Integer[0..1] {
             doc /* Meaning: TUNER -- Enable automatic tuner. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1357. */
         }
-        attribute 'hamlib.RIG_FUNC_VOX' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_VOX' : Integer[0..1] {
             doc /* Meaning: VOX -- Voice Operated Relay. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1330. */
         }
-        attribute 'hamlib.RIG_FUNC_VSC' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_VSC' : Integer[0..1] {
             doc /* Meaning: VSC -- Voice Scan Control. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1345. */
         }
-        attribute 'hamlib.RIG_FUNC_XIT' : Boolean[0..1] {
+        attribute 'hamlib.RIG_FUNC_XIT' : Integer[0..1] {
             doc /* Meaning: XIT -- Transmitter Incremental Tuning. Unit: unspecified; do not infer units. Access/role: requested/observed setting; separate get/set availability.
                  Source type: boolean/int status. Owner: physicalRadio. Context: VFO-context. Source: include/hamlib/rig.h:1358. */
         }
@@ -1982,9 +1996,12 @@ package WstxArchitecture {
             doc /* Meaning: antennaSelection. Unit: unspecified; do not infer units. Access/role: requested and/or observed; retain separately with status/freshness.
                  Source type: record(ant_t, value_t option, current/TX/RX). Owner: physicalRadio. Context: VFO. Source: include/hamlib/rig.h:3380; include/hamlib/rig.h:3385. */
         }
-        attribute 'radio.asynchronousPublication' : Boolean[0..1] {
+        attribute 'radio.asynchronousPublication' : RadioPublicationMode[0..1] {
             doc /* Meaning: asynchronousPublication. Unit: unspecified; do not infer units. Access/role: requested and/or observed; retain separately with status/freshness.
-                 Source type: int/bool with event callbacks. Owner: physicalRadio. Context: radio. Source: include/hamlib/rig.h:3555; include/hamlib/rig.h:3559. */
+                 Source type: int/bool with event callbacks; rig.h1304..1306 defines raw codes
+                 0=off, 1=radioEvents, 2=polling. These are explicit semantic names, not
+                 SysML ordinal casts or an instruction to start application polling.
+                 Owner: physicalRadio. Context: radio. Source: include/hamlib/rig.h:3555; include/hamlib/rig.h:3559. */
         }
         attribute 'radio.carrierDetect' : Integer[0..1] {
             doc /* Meaning: carrierDetect. Unit: unspecified; do not infer units. Access/role: requested and/or observed; retain separately with status/freshness.
@@ -5843,7 +5860,10 @@ package WstxArchitecture {
              extension, 105 connection, 80 capability, 25 operating, 208 structured
              members). Check exact ID-set coverage once, types/units/access and source
              contexts; integer/value_t.i is Integer, float/value_t.f Real, standard
-             functions Boolean, strings String, genuine opaque/action unions explicit.
+             function statuses Integer with per-model legal domains, strings String,
+             genuine opaque/action unions explicit. Publication mode retains all three
+             source meanings (off/events/polling); finite calibration/level arrays retain
+             source bounds32/64 and opaque elements. CHECKBUTTON remains Boolean.
              Exact symbol-token masks determine float/enum/string/read-only classes;
              e.g. AGC differs from AGC_TIME, NOTCHF from NOTCHF_RAW, and measured
              ALC/STRENGTH do not acquire setters. KEYLIGHT's source float/prose on-off
