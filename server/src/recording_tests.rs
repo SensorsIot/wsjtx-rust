@@ -2015,3 +2015,150 @@ fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     );
     actor.request_close();
 }
+
+#[cfg(not(debug_assertions))]
+#[test]
+fn review_connect_profile_edit_before_install_releases_own_reservation() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (generation, old) = r.radio_reserve(0).unwrap();
+    drop(old);
+    let (actor, rig) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.profile_changed(1); // deterministic reservation -> successful-save invalidation -> install
+    assert_eq!(
+        r.radio_install(generation, 0, actor.clone()),
+        Err("state_conflict")
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !rig.lock().unwrap().closed && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        rig.lock().unwrap().closed,
+        "obsolete physical actor closes outside Recording lock"
+    );
+    assert!(
+        !r.state.lock().unwrap().operating.radio.connecting,
+        "a profile edit before install must terminate this attempt's connecting reservation"
+    );
+    assert!(r.radio_actor().is_none());
+    let (next, old) = r
+        .radio_reserve(1)
+        .expect("new current-profile Connect is recoverable");
+    drop(old);
+    assert_eq!(next, generation + 1);
+    r.radio_disconnect(next).unwrap();
+}
+#[cfg(not(debug_assertions))]
+#[test]
+fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (actor, rig) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    let current = selection_intent(&r, "mode", Some("ft4"), None);
+    {
+        let s = r.state.lock().unwrap();
+        assert_eq!(
+            r.selection_preflight(&s, &current, false).unwrap().band,
+            "40m"
+        );
+    }
+    r.profile_changed(1);
+    let before = r.selection_snapshot(false).unwrap();
+    assert_eq!(before["selection"]["band"], Value::Null);
+    assert_eq!(
+        before["radio"]["observations"]["frequency"]["confirmed"],
+        false
+    );
+    let writes = rig.lock().unwrap().writes.len();
+    let result = r.selection_begin(selection_intent(&r, "mode", Some("ft4"), None), None, false);
+    assert_eq!(
+        result,
+        Err("select_band_first"),
+        "stale prior-profile physical frequency cannot choose a manual band"
+    );
+    let after = r.selection_snapshot(false).unwrap();
+    assert_eq!(after["operating_revision"], before["operating_revision"]);
+    assert_eq!(after["generation"], before["generation"]);
+    assert_eq!(after["operation"], before["operation"]);
+    assert_eq!(after["receive"], before["receive"]);
+    assert_eq!(rig.lock().unwrap().writes.len(), writes);
+    let explicit = selection_intent(&r, "band", None, Some("20m"));
+    {
+        let s = r.state.lock().unwrap();
+        assert_eq!(
+            r.selection_preflight(&s, &explicit, false).unwrap().band,
+            "20m"
+        );
+    }
+    actor.request_close();
+}
+
+#[cfg(not(debug_assertions))]
+#[test]
+fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
+    for newer in [false, true] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        let (generation, old) = r.radio_reserve(0).unwrap();
+        drop(old);
+        let (actor, rig) =
+            crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+        r.radio_disconnect(generation).unwrap();
+        let expected = if newer {
+            r.profile_changed(1);
+            let (next, old) = r.radio_reserve(1).unwrap();
+            drop(old);
+            next
+        } else {
+            generation
+        };
+        assert_eq!(
+            r.radio_install(generation, 0, actor.clone()),
+            Err("state_conflict")
+        );
+        {
+            let s = r.state.lock().unwrap();
+            assert_eq!(s.operating.radio.generation, expected);
+            assert_eq!(s.operating.radio.connecting, newer);
+            assert_eq!(s.operating.radio.error, None);
+            assert!(s.operating.radio.actor.is_none());
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !rig.lock().unwrap().closed && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(rig.lock().unwrap().closed);
+        if newer {
+            r.radio_disconnect(expected).unwrap();
+        }
+    }
+}
+#[cfg(not(debug_assertions))]
+#[test]
+fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (actor, _) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    let good = actor.snapshot().unwrap();
+    for mismatch in 0..3 {
+        let mut wrong = good.clone();
+        match mismatch {
+            0 => wrong.authority.profile_id = profile::new_uuid().unwrap(),
+            1 => wrong.authority.boot_id = profile::new_uuid().unwrap(),
+            _ => wrong.authority.connection_generation += 1,
+        }
+        let intent = selection_intent(&r, "mode", Some("ft4"), None);
+        let mut s = r.state.lock().unwrap();
+        s.operating.radio.cached = Some(wrong);
+        assert_eq!(
+            r.selection_preflight(&s, &intent, false).err(),
+            Some("select_band_first")
+        );
+        assert_eq!(s.operating.revision, 0);
+        assert!(s.job.is_none());
+    }
+    actor.request_close();
+}

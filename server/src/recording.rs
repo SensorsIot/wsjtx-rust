@@ -916,12 +916,10 @@ impl Recording {
     pub(crate) fn radio_actor(&self) -> Option<Arc<wstx_rust::radio_control::actor::Actor>> {
         self.state.lock().unwrap().operating.radio.actor.clone()
     }
-    pub(crate) fn radio_connect(
-        self: &Arc<Self>,
-        configuration: wstx_rust::radio_control::Configuration,
+    fn radio_reserve(
+        &self,
         revision: u64,
-    ) -> Result<Value> {
-        use wstx_rust::radio_control::{Authority, actor::Actor, catalogue::Catalogue};
+    ) -> Result<(u64, Option<Arc<wstx_rust::radio_control::actor::Actor>>)> {
         self.refresh_radio_cache();
         let (generation, old) = {
             let mut s = self.state.lock().unwrap();
@@ -951,6 +949,15 @@ impl Recording {
             radio.error = None;
             (radio.generation, old)
         };
+        Ok((generation, old))
+    }
+    pub(crate) fn radio_connect(
+        self: &Arc<Self>,
+        configuration: wstx_rust::radio_control::Configuration,
+        revision: u64,
+    ) -> Result<Value> {
+        use wstx_rust::radio_control::{Authority, actor::Actor, catalogue::Catalogue};
+        let (generation, old) = self.radio_reserve(revision)?;
         // Final Arc destruction invokes Actor::Drop and therefore belongs outside state locks.
         drop(old);
         let authority = Authority {
@@ -997,6 +1004,14 @@ impl Recording {
                 return Err(selection::radio_error(e));
             }
         };
+        self.radio_install(generation, revision, actor)
+    }
+    fn radio_install(
+        &self,
+        generation: u64,
+        revision: u64,
+        actor: Arc<wstx_rust::radio_control::actor::Actor>,
+    ) -> Result<Value> {
         let installed = {
             let mut s = self.state.lock().unwrap();
             if s.operating.radio.generation == generation
@@ -1007,6 +1022,12 @@ impl Recording {
                 s.operating.radio.connecting = false;
                 true
             } else {
+                // A profile edit ends only this still-owned reservation. A later
+                // generation or explicit Disconnect must remain authoritative.
+                if s.operating.radio.generation == generation && s.operating.radio.connecting {
+                    s.operating.radio.connecting = false;
+                    s.operating.radio.error = Some("state_conflict");
+                }
                 false
             }
         };
@@ -1211,14 +1232,19 @@ impl Recording {
             return Err("busy");
         }
         let mode = intent.mode.unwrap_or(s.operating.nominal.mode);
+        let bound_radio =
+            selection::bound_snapshot(s.operating.radio.cached.as_ref(), intent.profile_revision)
+                .filter(|snapshot| {
+                    snapshot.authority.profile_id == self.profile
+                        && snapshot.authority.boot_id == self.boot
+                        && snapshot.authority.connection_generation == s.operating.radio.generation
+                });
         let selected_band = intent
             .band
             .as_deref()
             .or(s.operating.nominal.band)
             .or_else(|| {
-                s.operating
-                    .radio
-                    .cached
+                bound_radio
                     .as_ref()
                     .filter(|v| v.state == wstx_rust::radio_control::State::Ready)
                     .and_then(|v| v.facts.frequency.confirmed.then_some(&v.facts.frequency))
@@ -1233,12 +1259,7 @@ impl Recording {
             .ok_or("selection_unavailable")?;
         let nominal_hz = selection::frequency(mode, band).ok_or("selection_unavailable")?;
         if cat {
-            let snapshot = s
-                .operating
-                .radio
-                .cached
-                .as_ref()
-                .ok_or("radio_unavailable")?;
+            let snapshot = bound_radio.as_ref().ok_or("radio_unavailable")?;
             if snapshot.state != wstx_rust::radio_control::State::Ready
                 || snapshot.authority.profile_revision != intent.profile_revision
             {

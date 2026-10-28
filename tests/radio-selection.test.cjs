@@ -33,6 +33,18 @@ async function station(t){
 // Proves: CL-008-07; TC-009-005 cases2/5. Parent has no selection route, so this
 // fails on actual HTTP404 rather than a build/import error.
 if(!process.env.WSTX_SELECTION_FIXTURE){
+test('TC-009-005 network lifetime and correlated Off oracle reject true violations',()=>{
+  // Frozen52311 CDP finished before the next admission; response.json callbacks overlapped.
+  const transfers=[{route:'/receive/selection',started:245504.2448,ended:246268.4788},{route:'/receive/selection',started:246269.0282,ended:247211.7476}];
+  assert.equal(selectionNetworkSummary(transfers,245000,248000).maxActive,1);
+  const overlap=structuredClone(transfers);overlap[1].started=overlap[0].ended-1;assert.equal(selectionNetworkSummary(overlap,245000,248000).maxActive,2);
+  const boundary=structuredClone(transfers);boundary[1].started=boundary[0].ended;assert.equal(selectionNetworkSummary(boundary,245000,248000).maxActive,1);
+  assert.ok(41670.0860<41671.8184,'old parsed-body completion would falsely report overlap');
+  const requests=[{socket:2,id:17,profile:'off',at:10}],acks=[{socket:2,id:16,profile:'off',at:11},{socket:3,id:17,profile:'off',at:12},{socket:2,id:17,profile:'thin',at:13}];
+  assert.equal(correlatedOffAck(requests,acks,9),null);acks.push({socket:2,id:17,profile:'off',at:14});const ack=correlatedOffAck(requests,acks,9);assert.equal(ack.id,17);
+  const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
+});
+
 test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
   const {request,cookie}=await station(t);
   for(const route of ['/profile','/receive/selection','/receive','/radio','/recording']){
@@ -219,6 +231,23 @@ test('TC-009-005 one status refresh coalesces unchanged receive readiness',{time
   liveSelectionFixture();
 }
 
+function selectionNetworkSummary(transfers,start,end){
+  const requests=transfers.filter(r=>r.route==='/receive/selection'&&r.started<end&&(r.ended===null||r.ended>start));
+  const events=[];
+  for(const request of requests){assert.ok(request.ended===null||request.ended>=request.started,'CDP terminal follows admission');const first=Math.max(start,request.started),last=Math.min(end,request.ended??end);if(last>first){events.push({at:first,delta:1},{at:last,delta:-1});}}
+  events.sort((a,b)=>a.at-b.at||a.delta-b.delta);
+  let active=0,maxActive=0;for(const event of events){active+=event.delta;assert.ok(active>=0);maxActive=Math.max(maxActive,active);}
+  return {maxActive,requests,pendingAtEnd:requests.filter(r=>r.ended===null||r.ended>end).length};
+}
+function correlatedOffAck(requests,acks,after){
+  for(const request of requests.filter(r=>r.profile==='off'&&r.at>=after)){
+    const ack=acks.find(a=>a.profile==='off'&&a.id===request.id&&a.socket===request.socket&&a.at>=request.at);
+    if(ack)return {profile:'off',socket:ack.socket,id:ack.id,requestedAt:request.at,ackAt:ack.at};
+  }
+  return null;
+}
+function optionalAfterOff(frames,ack){return frames.filter(frame=>frame.socket===ack.socket&&frame.at>ack.ackAt&&['spectrum.frame','spectrum.detail.frame'].includes(frame.type));}
+
 function liveSelectionFixture(){
   test('TC-009-005 actual native/CAT/TLS two-browser Thin and Off selection workload',{timeout:510000},async t=>{
     const {link}=require('./support.cjs'),{performance}=require('node:perf_hooks'),{chromium}=require('playwright');
@@ -238,11 +267,11 @@ function liveSelectionFixture(){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const session=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token,timeout:20000});assert.equal(session.status(),204);
       const page=await context.newPage();pages.push(page);
-      const seen={reads:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[]};observations.push(seen);
+      const seen={reads:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[]};observations.push(seen);
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
-      cdp.on('Network.requestWillBeSent',event=>{const transfer={route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
-      cdp.on('Network.loadingFinished',event=>{const transfer=transfers.get(event.requestId);if(transfer){transfer.ended=performance.now();transfer.encodedBytes=event.encodedDataLength;}});
-      cdp.on('Network.loadingFailed',event=>{const transfer=transfers.get(event.requestId);if(transfer){transfer.ended=performance.now();transfer.failure=event.errorText;}});
+      cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
+      cdp.on('Network.loadingFinished',event=>{const transfer=transfers.get(event.requestId);if(transfer&&transfer.ended===null){transfer.ended=performance.now();transfer.browserEnded=event.timestamp;transfer.encodedBytes=event.encodedDataLength;}});
+      cdp.on('Network.loadingFailed',event=>{const transfer=transfers.get(event.requestId);if(transfer&&transfer.ended===null){transfer.ended=performance.now();transfer.browserEnded=event.timestamp;transfer.failure=event.errorText;}});
       page.on('pageerror',error=>errors.push(error.message));
       const reads=new Map();
       page.on('request',request=>{
@@ -261,7 +290,7 @@ function liveSelectionFixture(){
           if(route==='/receive/results')seen.results.push(body);
         }catch(error){errors.push(`actual ${route} response: ${error.message}`);}
       });
-      page.on('websocket',socket=>{const session={opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload);seen.wireFrames.push({at:performance.now(),type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='spectrum.frame')seen.frames.push({at:performance.now(),data:m.data});else session.messages.push({at:performance.now(),type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
+      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
     }
     const coldStarted=performance.now(),coldDeadline=coldStarted+230000;
     const coldRemaining=()=>{const remaining=Math.floor(coldDeadline-performance.now());assert.ok(remaining>0,'shared 230s Cold phase deadline');return remaining;};
@@ -323,7 +352,8 @@ function liveSelectionFixture(){
     }
     await command('band','40m','ft8',7074000);
     async function measure(profile,steps){
-      for(const page of pages){await page.locator('[data-region=client-preferences]').first().click();await page.selectOption('#display-profile',profile);await page.locator('.op-secondary:not([hidden]) .return-operate').click();}
+      const offProofs=[];
+      for(const [index,page]of pages.entries()){const after=performance.now();await page.locator('[data-region=client-preferences]').first().click();await page.selectOption('#display-profile',profile);await page.locator('.op-secondary:not([hidden]) .return-operate').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);}}
       await sleep(500);const baseline={...proxy.counters},start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
       const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
@@ -331,11 +361,11 @@ function liveSelectionFixture(){
       const [,commands]=await Promise.all([status(),controls()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
       assert.ok(seconds>=75,'full predeclared representative window');const traffic={up:(proxy.counters.up-baseline.up)/seconds,down:(proxy.counters.down-baseline.down)/seconds};
       const pathCounts=observations.map(seen=>Object.fromEntries([...new Set(seen.http.filter(r=>r.at>=start).map(r=>r.route))].map(route=>[route,seen.http.filter(r=>r.at>=start&&r.route===route).length])));
-      report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
+      report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
       for(const seen of observations){const replies=seen.http.filter(r=>r.at>=start&&r.status===200&&['/receive/selection','/receive','/receive/results','/profile','/radio','/recording'].includes(r.route));assert.ok(replies.length>0);assert.ok(replies.every(r=>r.contentEncoding==='gzip'),'actual browser negotiated gzip on every eligible response');}
       assert.ok(traffic.up<=3000,`${profile} actual counted uplink ${traffic.up}`);assert.ok(traffic.down<=3000,`${profile} actual counted downlink ${traffic.down}`);assert.equal(latencies.length,26);
       const polling=observations.map((seen,index)=>{
-        const reads=seen.reads.slice(readStarts[index]).filter(r=>r.started>=start&&r.ended!==null&&r.body);assert.equal(seen.maxActive,1,'one selection read pending per actual browser');
+        const reads=seen.reads.slice(readStarts[index]).filter(r=>r.started>=start&&r.ended!==null&&r.body);const network=selectionNetworkSummary(seen.transfers,start,start+seconds*1000);assert.equal(network.maxActive,1,'one actual CDP network selection read pending per browser');
         const pending=commands.map(id=>reads.filter(r=>r.body.operation?.command_id===id&&r.body.operation.result==='pending'));
         for(const [n,polls]of pending.entries()){assert.ok(polls.length>=2,`${profile} browser${index} command${n}: actual pending reads ${polls.length}`);assert.ok(polls.some((r,i)=>i&&r.started-polls[i-1].started>=3950),`${profile} browser${index} observed4s pending cadence`);}
         let passivePairs=0;
@@ -351,6 +381,7 @@ function liveSelectionFixture(){
         return {reads:reads.map(r=>({startedMs:r.started-start,completedMs:r.ended-start,phase:r.body.operation?.phase??null,command:r.body.operation?.command_id??null,snapshotMonotonicMs:r.body.monotonic_ms})),pending:pending.map(p=>p.length),passivePairs,frames:seen.frames.length-frameStarts[index]};
       });
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
+      if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
       report.phases[profile]={...report.phases[profile],state:'passed',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s ${JSON.stringify(traffic)}`);
     }
     await measure('thin',[['mode','ft4','ft4',7047500],['band','20m','ft4',14080000]]);
