@@ -66,6 +66,57 @@ function wav(seconds=1,amplitude=.5,frequency=750){
 async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});if(await p.locator('#open-recordings').count())await p.locator('#open-recordings').click();const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
+// Proves: CL-003-04, CL-010-07; TC-009-005. Only a current accepted snapshot clears disconnected presentation.
+test('TC-009-005 authenticated reconnect accepts only current connected operating snapshots',{timeout:30000},async t=>{
+  const f=await fixture(t,{secure:true}),p=await page(f),gates=[],allGates=[];
+  const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
+  function hold(){const gate={entered:deferred(),release:deferred(),delivered:deferred()};gates.push(gate);allGates.push(gate);return gate;}
+  t.after(()=>{for(const gate of allGates)gate.release.resolve();});
+  await p.route('**/receive/selection',async route=>{
+    const gate=gates.shift();if(!gate){await route.continue();return;}
+    const response=await route.fetch();assert.equal(response.status(),200,'held snapshot comes from the actual authenticated server');
+    gate.entered.resolve();await gate.release.promise;
+    await route.fulfill({response,...(gate.invalid?{body:'{invalid-json'}:{})});gate.delivered.resolve();
+  });
+  await p.waitForFunction(()=>operatingState&&!operatingReadPending&&connection.dataset.state==='connected');
+  const mutations=[];p.on('request',request=>{if(request.method()!=='GET')mutations.push(new URL(request.url()).pathname);});
+  await t.test('closed original socket cannot accept a held real response before replacement',async()=>{
+    const old=hold();await p.evaluate(()=>{window.__operatingWitness={state:operatingState,socket};void operatingSync(true);});await old.entered.promise;
+    await p.evaluate(()=>new Promise(resolve=>{addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
+    assert.equal(await p.evaluate(()=>socket===window.__operatingWitness.socket&&socket.readyState!==WebSocket.OPEN&&connection.dataset.state==='stale'),true,'release occurs in the actual closed-original-socket window');
+    old.release.resolve();await old.delivered.promise;await p.waitForFunction(()=>!operatingReadPending);
+    const result=await p.evaluate(()=>({sameSocket:socket===window.__operatingWitness.socket,closed:socket.readyState!==WebSocket.OPEN,stale:connection.dataset.state==='stale',sameState:operatingState===window.__operatingWitness.state}));
+    assert.deepEqual(result,{sameSocket:true,closed:true,stale:true,sameState:true},'old read has settled without acceptance before the retry replaces its socket');
+  });
+  await t.test('replacement waits for its own genuine snapshot before clearing stale',async()=>{
+    await p.waitForFunction(()=>connection.dataset.state==='connected'&&operatingState&&!operatingReadPending);
+    const old=hold(),current=hold();await p.evaluate(()=>{window.__operatingWitness={state:operatingState,socket};void operatingSync(true);});await old.entered.promise;
+    await p.evaluate(()=>new Promise(resolve=>{addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
+    await p.waitForFunction(()=>socket!==window.__operatingWitness.socket&&connection.dataset.state==='connected');
+    old.release.resolve();await old.delivered.promise;await current.entered.promise;
+    assert.equal(await p.evaluate(()=>operatingState===window.__operatingWitness.state),true,'old-socket reply cannot replace accepted operating state');
+    assert.equal(await p.locator('#operating-selection-status').textContent(),'Disconnected · operating data stale','Connected header alone cannot clear operating staleness');
+    current.release.resolve();await current.delivered.promise;await p.waitForFunction(()=>!operatingReadPending);
+    assert.equal(await p.evaluate(()=>operatingFailure),'');assert.doesNotMatch(await p.locator('#operating-selection-status').textContent(),/Disconnected|stale/);
+    assert.equal(await p.evaluate(()=>operatingSupported),true);assert.deepEqual(mutations,[],'reconnection performs no command replay or device mutation');
+  });
+  await t.test('invalid response cannot establish current operating state',async()=>{
+    const invalid=hold();invalid.invalid=true;await p.evaluate(()=>{void operatingSync(true);});await invalid.entered.promise;
+    invalid.release.resolve();await invalid.delivered.promise;await p.waitForFunction(()=>!operatingReadPending);
+    assert.match(await p.locator('#operating-selection-status').textContent(),/^Operating state stale/);assert.equal(await p.evaluate(()=>operatingSupported),null);
+    await p.locator('#operating-refresh').click();await p.waitForFunction(()=>!operatingReadPending&&operatingSupported===true);assert.equal(await p.evaluate(()=>operatingFailure),'');
+  });
+  await t.test('unchanged snapshot after reconnect preserves an unknown selection barrier',async()=>{
+    let commands=0;await p.route('**/receive/select',route=>{commands++;return route.abort('failed');});
+    await p.locator('#operating-band').selectOption('40m');await p.waitForFunction(()=>operatingUnknown&&!operatingReadPending&&!mutationPending);
+    const command=await p.evaluate(()=>({...operatingUnknown}));assert.equal(commands,1);
+    await p.evaluate(()=>new Promise(resolve=>{window.__unknownSnapshot=operatingState;addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
+    await p.waitForFunction(()=>connection.dataset.state==='connected'&&!operatingReadPending&&operatingState!==window.__unknownSnapshot);
+    assert.deepEqual(await p.evaluate(()=>({...operatingUnknown})),command);assert.equal(await p.locator('#operating-band').isDisabled(),true);
+    assert.match(await p.locator('#operating-selection-status').textContent(),/Selection outcome unknown/);assert.equal(commands,1,'unknown selection is never replayed');
+  });
+});
+
 // Proves: CL-006-01/02/04; TC-018-001/003, level 2 actual server/browser.
 test('TC-018-001/003 import preserves source, jobs change, cancel releases and restart recovers',{timeout:30000},async t=>{
   const f=await fixture(t),bytes=wav(3);let s=await f.upload(bytes);const source=s.recording.id;

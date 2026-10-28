@@ -681,7 +681,7 @@ async function operatingSync(reconcile=false){
   operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket;
   try{
     const response=await fetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
-    if(epoch!==operatingEpoch||current!==socket)return;
+    if(epoch!==operatingEpoch||current!==socket||current.readyState!==WebSocket.OPEN||connection.dataset.state!=='connected')return;
     let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
     if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
     if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
@@ -694,7 +694,7 @@ async function operatingSync(reconcile=false){
       if(s.boot_id!==unknown.boot_id||s.profile_revision!==unknown.profile_revision||s.radio.connection_generation>unknown.connection_generation||(unknown.action==='disconnect'&&s.radio.state==='closed')){operatingRadioUnknown=null;operatingFailure='';}
     }
     if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
-    operatingState=s;operatingSupported=true;if(resolved||operatingFailure.startsWith('Operating state stale'))operatingFailure='';
+    operatingState=s;operatingSupported=true;if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
     if(s.selection.confirmed_command_id&&s.selection.confirmed_command_id!==lastOperatingCommit){lastOperatingCommit=s.selection.confirmed_command_id;document.querySelector('#receive-mode').value=s.selection.mode;}
   }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
   finally{operatingReadPending=false;operatingShow();receiveShow();if(operatingReadAgain){operatingReadAgain=false;operatingSync(true);}}
