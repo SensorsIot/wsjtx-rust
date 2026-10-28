@@ -108,12 +108,14 @@ pub(super) fn hit(phase: Phase) {
     });
 }
 
+#[cfg(not(debug_assertions))]
 pub(super) struct PollTiming {
     pub returned_at: Instant,
     polls: usize,
     pending: usize,
     maximum: Duration,
 }
+#[cfg(not(debug_assertions))]
 pub(super) fn poll_to_completion<F: std::future::Future>(
     future: F,
     context: &serde_json::Value,

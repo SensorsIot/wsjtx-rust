@@ -38,12 +38,12 @@ impl Ord for Peak {
 }
 
 /// Direct upper-bound capacity state, never a signal-generated candidate claim.
-#[cfg(test)]
+#[cfg(all(test, not(debug_assertions)))]
 pub(super) struct PeakCapacityReserve {
     heap: BinaryHeap<Peak>,
     old_generation: Vec<Peak>,
 }
-#[cfg(test)]
+#[cfg(all(test, not(debug_assertions)))]
 impl PeakCapacityReserve {
     pub(super) fn new() -> Self {
         let points = || {

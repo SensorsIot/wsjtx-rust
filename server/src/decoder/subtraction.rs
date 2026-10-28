@@ -17,7 +17,7 @@ pub(super) struct Subtractor {
     scratch: Vec<Complex64>,
 }
 impl Subtractor {
-    #[cfg(test)]
+    #[cfg(all(test, not(debug_assertions)))]
     pub(super) fn capacity_ledger(&self) -> serde_json::Value {
         serde_json::json!({"kernel_complex64_capacity":self.kernel.capacity(),
             "correction_f64_capacity":self.correction.capacity(),
