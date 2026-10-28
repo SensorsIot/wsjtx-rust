@@ -101,10 +101,10 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.reject("binding requestContext bind authorityRequest.request.resourceContext = radioBinding;", "connection requestContext connect authorityRequest.request.resourceContext to radioBinding;", "missing required binding")
 
     def test_radio_audio_provider_conjugation(self):
-        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def StationControllerComputer", "port audio : AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def StationControllerComputer", "wrong exchange direction physicalStation.radio.audio")
+        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Controller", "port audio : AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Controller", "wrong exchange direction physicalStation.radio.audio")
 
     def test_radio_control_provider_conjugation(self):
-        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def StationControllerComputer", "port audio : ~AudioExchange;\n        port control : RadioControl;\n    }\n    part def StationControllerComputer", "wrong exchange direction physicalStation.radio.control")
+        self.reject("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Controller", "port audio : ~AudioExchange;\n        port control : RadioControl;\n    }\n    part def Controller", "wrong exchange direction physicalStation.radio.control")
 
     def test_audio_playback_semantic_item_type(self):
         self.reject("out item playback : SampleBlock;", "out item playback : Recording;", "wrong semantic item type")

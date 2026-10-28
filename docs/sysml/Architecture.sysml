@@ -26,9 +26,9 @@ package WstxArchitecture {
         doc /* One selected-radio reference context with user, viewer, controller and radio
              roles. Viewer/controller roles may share a computer. This is not universal
              radio cardinality or a radio count derived from station count. */
-        part user : Operator;
-        part viewer : ViewerComputer;
-        part controller : StationControllerComputer;
+        part user : User;
+        part viewer : Viewer;
+        part controller : Controller;
         part radio : Radio;
         connection localInteraction connect user.interaction to viewer.operator;
         connection stationLink connect viewer.stationLink to controller.viewerLink {
@@ -517,7 +517,7 @@ package WstxArchitecture {
         in item outcome : NativeSessionOutcome;
     }
 
-    part def Operator { port interaction : LocalInteraction; }
+    part def User { port interaction : LocalInteraction; }
     part def BrowserClient {
         attribute localDisplayLevels : WstxRecordingReceive::DisplayLevels;
         attribute localDisplayPreference : WstxRecordingReceive::BrowserDisplayPreference;
@@ -532,7 +532,7 @@ package WstxArchitecture {
         port station : BrowserExchange;
     }
     part def McpClient { port station : StationOperations; }
-    part def ViewerComputer {
+    part def Viewer {
         port operator : ~LocalInteraction;
         port stationLink : BrowserExchange;
         part browsers[*] : BrowserClient;
@@ -550,7 +550,7 @@ package WstxArchitecture {
         port audio : ~AudioExchange;
         port control : ~RadioControl;
     }
-    part def StationControllerComputer {
+    part def Controller {
         attribute platformPolicy : WstxProductScope::ReleasePolicy;
         attribute accelerationPolicy : WstxProductScope::AccelerationPolicy;
         attribute hasFixedStationPopulationLimit : Boolean = WstxProfiles::hasFixedPopulationLimit;
