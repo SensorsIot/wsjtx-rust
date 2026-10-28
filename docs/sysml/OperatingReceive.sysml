@@ -1,4 +1,3 @@
-// Canonical FSD slices SHA256: 4f85372bc4e8f2974a9dc830b4bd9accb6a20a8d7c040c42b15afefba176e0df
 package WstxOperatingReceive {
     private import ScalarValues::*;
 
@@ -32,14 +31,14 @@ package WstxOperatingReceive {
             (eligible and selection == HttpCodingSelection::noAcceptable) }
         constraint excludedPreservation { not eligible implies
             (not compressed and not status406) }
-        // HttpCodingSelection comes from pinned tower-http0.7.1, FSD12.1.1 ordered table; no custom parser.
+        // HttpCodingSelection comes from pinned tower-http0.7.1, contract 12.1.1 ordered table; no custom parser.
         // ALL eligible nonempty selected-gzip JSON encoded even <32bytes.
         // Ineligible responses preserve original status/bytes/headers before negotiation.
         // Vary exact-token merge BEFORE library; no substring comparison.
         // Logical schemas/caps/provenance/owner and WS/request representations unchanged.
     }
     verification def HttpNegotiationAndIdentity { doc /* TC009005case8 A/B: every pinned
-       FSD12.1.1 ordered table vector incl field order, duplicate/wildcard/malformed q; identity
+       contract 12.1.1 ordered table vector incl field order, duplicate/wildcard/malformed q; identity
        only when selected; noAcceptable406. Raw gzip/independent decoder, exact JSON,
        tiny2bytebody, correct Vary token merge and framing. */ }
     verification def HttpExcludedAndCaps { doc /* case8 C: HEAD/no-body/already-encoded/range,
@@ -48,7 +47,7 @@ package WstxOperatingReceive {
     verification def HttpActualCombinedTls { doc /* case8 D: real two-browser native/CAT75s
        Thin and75sOff, unchanged TLS accounting/status/cadences/oracles; no estimated PASS. */ }
 
-    doc /* Target implementation contract for FSD4.7.5/6.6 TC009005/12.8.1.
+    doc /* Target implementation contract for contract 4.7.5/6.6 TC009005/12.8.1.
          Markdown remains authoritative; no execution or implementation verdict.
          One existing station/receive authority and one typed radio Actor are reused.
          Ordinary preferred defaults and Monitor-start behavior follow pinned
@@ -63,7 +62,7 @@ package WstxOperatingReceive {
         attribute nominalHz : Integer;
         attribute operatingRevision : Integer;
         assert constraint nativeRange { nominalHz >= 30000 and nominalHz <= 74800000 }
-        doc /* FSD4.7.5: pinned ALLregion default table; currentband preferred else
+        doc /* contract 4.7.5: pinned ALLregion default table; currentband preferred else
              nearest sameband. Ordinary20mFT8=14074000/FT4=14080000;
              40mFT8=7074000/FT4=7047500. Absent preferred-entry subcase explicitly
              unsupported initialslice, no invented standard fallback. */
@@ -77,7 +76,7 @@ package WstxOperatingReceive {
         attribute modeConfirmed : Boolean;
         attribute dataConfirmed : Boolean;
         attribute operationContext : String;
-        doc /* FSD4.7.5: requested/committednominal versus physical facts separate.
+        doc /* contract 4.7.5: requested/committednominal versus physical facts separate.
              Each current fact has matching successful query provenance; aggregate
              observed_at cannot freshen cached unqueried fields. FIL1 not numeric
              width3000Hz. Partial failure never implies rollback or target success. */
@@ -86,7 +85,7 @@ package WstxOperatingReceive {
         in originalMonitor : Boolean;
         in ordinarySelectionCommitted : Boolean;
         return desired : Boolean = originalMonitor or ordinarySelectionCommitted;
-        doc /* FSD4.7.5: actual22:02UTC MonitorOFF+band20->ON14.074,OFF+FT4->ON7.0475;
+        doc /* contract 4.7.5: actual22:02UTC MonitorOFF+band20->ON14.074,OFF+FT4->ON7.0475;
              alreadyON staysdesiredON. Rejectedbeforecommit preservesoriginalintent.
              Existing old NextReceive selector remains nextjob-only/no device start. */
     }
@@ -99,7 +98,7 @@ package WstxOperatingReceive {
         in stopRequested : Boolean;
         return allowed : Boolean = currentContextValidated and transitionTokenCurrent and
             oldPublicationInvalid and workerReleased and audioOwnerReleased and not stopRequested;
-        doc /* FSD4.7.5: bounded ordinaryrelease<=250ms is not timerpermission;failed
+        doc /* contract 4.7.5: bounded ordinaryrelease<=250ms is not timerpermission;failed
              close retainsowner and blocksCATsetter/newinput. No profile lock held. */
     }
     calc def MayRestart {
@@ -113,7 +112,7 @@ package WstxOperatingReceive {
         return allowed : Boolean = currentContextValidated and tokenCurrent and
             revisionMatches and desiredMonitor and selectionCommitted and
             oldOwnersReleased and not stopRequested;
-        doc /* FSD4.7.5: restart same stationmanager, saved exactendpoint refreshed
+        doc /* contract 4.7.5: restart same stationmanager, saved exactendpoint refreshed
              generation;no oldcallbacks/pages or unknownmutation clearsnewintent. */
     }
     state def ModeBandTransition {
@@ -141,7 +140,7 @@ package WstxOperatingReceive {
         transition reviseApply first applying if acceptedEvent == Event::revisionChanged then failed;
         transition stopRestart first restarting if acceptedEvent == Event::stop then cancelled;
         transition reviseRestart first restarting if acceptedEvent == Event::revisionChanged then failed;
-        doc /* FSD4.7.5: accept invalidatesoldpublication/startsactualcancel before
+        doc /* contract 4.7.5: accept invalidatesoldpublication/startsactualcancel before
              releasing. Eventaccept invalidcontext never admitted. Oneordinarycommand
              noqueue;Stop synchronously invalidatestoken/clearsresume. Failed state
              never means resourcesreleased:keepsrealowner until actualcleanup. Partial
@@ -150,29 +149,29 @@ package WstxOperatingReceive {
              no automaticreplay. Terminaloperation record doesnot replace receive state. */
     }
     action def ResolveOrdinaryTarget {
-        doc /* FSD4.7.5: region/mode/timefilteredpinnedtable; onlyadmittedpreferredsameband; tiebreak firstsortedrow. Nominalfrequency usedforlookup,
+        doc /* contract 4.7.5: region/mode/timefilteredpinnedtable; onlyadmittedpreferredsameband; tiebreak firstsortedrow. Nominalfrequency usedforlookup,
              not claiming physicalreadback. Initialunsupportedsubcases stayexplicit. */
     }
     action def ManualSelection {
-        doc /* FSD4.7.5: explicitcontrol-disabled performsnominal/decodertransitionwith
+        doc /* contract 4.7.5: explicitcontrol-disabled performsnominal/decodertransitionwith
              zerobytes/serialopen;actualrigunconfirmed. ConfiguredCATfailure cannot
              silentlybecomeManualsuccess. Existing audioMonitor independent. */
     }
     action def ApplyTypedReceiveSetup {
-        doc /* FSD4.7.5: sameActorphysicalidentity/onelease; freshReadRxTxRX before
+        doc /* contract 4.7.5: sameActorphysicalidentity/onelease; freshReadRxTxRX before
              setters; existingUSB/FIL1,DATAon/FIL1,frequencyfinalexactreadback<=5s,
              individualexchange1s/cancel50ms,explicitcanonicalconnectonly; selectionneveropensCAT. NoPTT/raw
              serial/width/notch/PBTchange. Requestedmode/nominalpendinguntilconfirmation.
              Freshness trackedperquery;manualretuneafterobservationisnottransactionlock. */
     }
     action def SwitchReceiveContext {
-        doc /* FSD4.7.5: invalidateoldtuple,existingstop/waitactualrelease,noCAT/new
+        doc /* contract 4.7.5: invalidateoldtuple,existingstop/waitactualrelease,noCAT/new
              capturefirst. ReuseexistingStart withsavedendpoint/currentrevision,new
              source/job/generation;resetconverter/spectrum/modem atRFtransition.
              DesiredMonitorON can showSwitching,not fictitiousseamlesssamples. */
     }
     action def ReconcilePartialFailure {
-        doc /* FSD4.7.5: preservelastcommittednominal,requestederror,actualknown
+        doc /* contract 4.7.5: preservelastcommittednominal,requestederror,actualknown
              partialfacts;readonlyqueriesrefreshonlyqueriedfields. No automatic
              restoringwrites,retryorreceive restart. Explicitnewoperationrequired.
              12.8.1 matchingrecord/newerrevisionorfence resolvesunknownoutcome barrier;
@@ -202,7 +201,7 @@ package WstxOperatingReceive {
             if intent == ReceiveIntent::monitor and current == ReceiveState::running ? ExistingOperation::stop else
             if intent == ReceiveIntent::monitor and previousOwnershipReleased and (current == ReceiveState::stopped or current == ReceiveState::failed) ? ExistingOperation::start else
             ExistingOperation::none;
-        doc /* FSD4.7.51/2/3/4/6. Existing server guards still decide admission; none does
+        doc /* contract 4.7.51/2/3/4/6. Existing server guards still decide admission; none does
              not claim success. Observed Monitor-off and Stop share receive-only stopped indications
              and retained texts; Receiving may remain green transitionally. Hidden
              loop/wait/TX effects and native release are unobserved. Abstract stopped
@@ -238,19 +237,19 @@ package WstxOperatingReceive {
         transition complete first pending if acceptedEvent == MutationEvent::confirmed or acceptedEvent == MutationEvent::rejected then idle;
         transition uncertain first pending if acceptedEvent == MutationEvent::responseLost then outcomeUnknown;
         transition reconcile first outcomeUnknown if acceptedEvent == MutationEvent::laterAuthoritativeReconciliation then idle;
-        doc /* FSD4.7.54. Old/pre-intent reads never emit laterAuthoritativeReconciliation.
+        doc /* contract 4.7.54. Old/pre-intent reads never emit laterAuthoritativeReconciliation.
              This names the legacy Start/Stop browser barrier only; coordinated selection
              uses MayClearUnknown and explicit12.8.1 fencing; it adds no mutation queue/retry.
              Reconciliation determines real state, not automatic desired success. */
     }
     action def StartWithExistingReceiveAPI {
         in nextMode : ReceiveMode;
-        doc /* FSD4.7.51/3: POST /receive/start with unchanged FSD12.8 exact shape,
+        doc /* contract 4.7.51/3: POST /receive/start with unchanged contract 12.8 exact shape,
              saved input/current revision/current context. One receive owner and
              actual decoder; no audio selection fallback or radio command. */
     }
     action def StopWithExistingReceiveAPI {
-        doc /* FSD4.7.52/5: exact current-job Stop, publication invalid before ACK;
+        doc /* contract 4.7.52/5: exact current-job Stop, publication invalid before ACK;
              existing cancellation/release bounds and failure ownership preserved.
              Verified partial results remain; stale callbacks cannot publish. */
     }
@@ -497,7 +496,7 @@ package WstxOperatingReceive {
         attribute band : String;
         attribute mode : Mode;
         attribute frequencyHz : Integer;
-        doc /* Exact immutable preferred table and unsupported cells are FSD4.7.5.
+        doc /* Exact immutable preferred table and unsupported cells are contract 4.7.5.
              ALL/default includes R1 4m FT8.160m/4m FT4 have no entry. Backend range
              filters before admission. Unknown band/nominal are optional in WireSelection;
              resolved values must name the same admitted row, never a guessed band. */
@@ -510,7 +509,7 @@ package WstxOperatingReceive {
         attribute operatingRevision : Integer;
         attribute snapshotSequence : Integer;
         attribute monotonicMs : Integer;
-        doc /* Exact snapshot JSON/object cardinalities/errors are FSD12.8.1 S2..S4.
+        doc /* Exact snapshot JSON/object cardinalities/errors are contract 12.8.1 S2..S4.
              Atomically captured station state; no lock across I/O. Revision changes on
              admission, fence and profile revision, never fact polling. One normal record
              plus one cancellation record <=4096bytes. Read has no device/mutation effect.
@@ -550,7 +549,7 @@ package WstxOperatingReceive {
              actual frequency/USB/DATA/FIL, width/notch/PBT and restore independently
              observed, no TX or quiet-band fabricated decoding. Verification not run. */
     }
-    doc /* Normative wire serialization and producer/consumer meanings, FSD12.8.1:
+    doc /* Normative wire serialization and producer/consumer meanings, contract 12.8.1:
 #### 12.8.1 Coordinated receive operating selection — target extension
 
 This target interface implements4.7.5/CL-008-07 through the same station owner and

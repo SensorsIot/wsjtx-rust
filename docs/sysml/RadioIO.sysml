@@ -1,8 +1,7 @@
-// Canonical FSD slices SHA256: 7f0fccae335963e4100b1665d50809306b8ad8b3a1f67f232b45adfb0fcfb87e
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
-         Authority: FSD4.5/12.8; recorded source and pure decoder contracts remain
+         Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
          RecordingReceive/StationDecode. One physical architecture, no new deployment.
          Windows binding0.62.2 shared between WASAPI and overlapped serial I/O.
          Full normative operation, state, wire and oracle text follows this package. */
@@ -42,7 +41,7 @@ package WstxRadioIO {
         attribute pttDisabled : Boolean = true;
         doc /* Existing schema1 profile/audio/control shape and revision own persistence.
              Exact opaque audio ID, no default fallback. COMn compatibility or strict
-             icom7300://COMn?baud=auto&radio=94&controller=E0 with FSD4.5 grammar.
+             icom7300://COMn?baud=auto&radio=94&controller=E0 with contract 4.5 grammar.
              Catalogue/live observations are not persisted intent or permission. */
     }
     item def NativePacket {
@@ -131,7 +130,7 @@ package WstxRadioIO {
             dtSeconds == observedStartSeconds - periodStartSeconds - nominalStartSeconds and
             dtSeconds >= -periodSeconds / 2.0 and dtSeconds < periodSeconds / 2.0
         }
-        doc /* FSD4.7.4/12.8. Used only with correlated source timing. Observed start
+        doc /* contract 4.7.4/12.8. Used only with correlated source timing. Observed start
              comes from canonical frame/UTC anchor at12000Hz, not arrival/browser time.
              Nearest nominal UTC grid start; ties select later period. Positive late,
              negative early. External accuracy unknown does not suppress relative DT.
@@ -198,7 +197,7 @@ package WstxRadioIO {
         attribute 'filter' : Integer[0..1];
         attribute data : Boolean[0..1];
         attribute dataFilter : Integer[0..1];
-        doc /* Compiled typed union exact per FSD12.8, not arbitrary optional combinations.
+        doc /* Compiled typed union exact per contract 12.8, not arbitrary optional combinations.
              Frequency30000..74800000; settersUSB/LSB/FIL1..3; DATAOFF00/00.
              No raw command, PTT/TX setter, VOX or tuner operation. */
     }
@@ -606,7 +605,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
 
 
     */
-    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+    doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
          receive/radio/result shapes and owner/cancellation/source contracts.
          New selection uses the same authority, explicit actual release before

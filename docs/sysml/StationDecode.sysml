@@ -1,8 +1,7 @@
-// Canonical FSD slices SHA256: 31158eeb780f7537944feee8bf9175c1817c52b3f3dcd390e7332306c3d355e6
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
-         Authority: docs/WSTX Rust FSD.md 4.4 CR7, 6.4 TC-004-001/002/003, 12.7, 13.6.
+         Contract: WstxProductScope::ContractIndex 4.4 CR7, 6.4 TC-004-001/002/003, 12.7, 13.6.
          Protocol: https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf sections2-5/AppendixA;
          current source boundaries and fixed vectors use the pinned beta4 reference manifest.
          Pinned GPL-compatible physical routines may be adapted with source provenance/attribution. Independent meaning/readiness
@@ -130,7 +129,7 @@ package WstxOfflineDecode {
         attribute numericValue : Integer[0..1];
         doc /* Semantic union, wire exactly{kind,value}: blank=>null, grid=>grid4,
              report=>integer-50..50, roger=>RRR/RR73/73. Internal semantic arm names
-             are not extra wire fields; FSD12.7 exact JSON mapping is normative. */
+             are not extra wire fields; contract 12.7 exact JSON mapping is normative. */
     }
     attribute def PayloadFields;
     attribute def FreeTextFields :> PayloadFields {
@@ -670,11 +669,11 @@ package WstxOfflineDecode {
     dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::controller::stations::web;
     dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::viewer::browsers;
     package IndependentVerification {
-        doc /* Verification intent; executable coverage is declared in FSD metadata. Cost2
+        doc /* Verification intent; executable coverage is declared in WstxRequirements metadata. Cost2
              offlineWindowsPC, actualcandidate
              Rust/server/browser and independent fixtures/directmath/recordings/link model.
              No hardware/live service. Source and source_message are not decoded inversehashes.
-             Missing/empty manifests fail. FSD6.4 remains original independent expectation.
+             Missing/empty manifests fail. WstxRequirements retains the independent case expectations.
              Corpus2286:2000noise+160AWGN+80overlap+40offset+6silence/mismatch/CRCnegative;
              fieldboundary and supportedfamily vectors additional. Actual execution not claimed. */
         verification ft4 {
@@ -1009,7 +1008,7 @@ package WstxOfflineDecode {
         dependency simulatorRefusalCases from simulatorFixtureRefusals to WstxRequirements::'TC-004-003';
     }
 
-    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+    doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
          receive/radio/result shapes and owner/cancellation/source contracts.
          New selection uses the same authority, explicit actual release before

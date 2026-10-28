@@ -1,14 +1,13 @@
-// Canonical FSD slices SHA256: a6417377f6046b2def7f9bd71da49f14d640e3c9aa596716ead58c06dad4a5bd
 package WstxArchitecture {
-    doc /* FSD12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
+    doc /* contract 12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
          Existing handler/auth/errors/caps precede negotiation, exactly one dispatch.
          WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
          selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
-    doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
+    doc /* Target architecture from WstxProductScope::ContractIndex chapter 11, with semantic obligations in WstxProductScope.
          One physical deployment with software decomposition; not implemented radio support.
          Items are semantic responsibilities, not wire schemas or Rust API definitions.
          CR #6 concrete data/state/HTTP/display/oracles refine existing usages in
-         WstxRecordingReceive (RecordingReceive.sysml), FSD4.4/6.4/12.6. This recorded
+         WstxRecordingReceive (RecordingReceive.sysml), contract 4.4/6.4/12.6. This recorded
          input/display slice is delivered; review, validation and acceptance evidence remains on issue #6. */
 
     doc /* Approved CR #5 profile behavior/data/state/HTTP/session implementation
@@ -18,7 +17,7 @@ package WstxArchitecture {
          servers suffice for CR #5 acceptance; stations[*] remains variable. */
 
     part physicalStation {
-        doc /* FSD11.9: one selected-radio reference context with four physical roles,
+        doc /* contract 11.9: one selected-radio reference context with four physical roles,
              not universal radio cardinality or a radio count derived from station count. */
         part user : Operator;
         part viewer : ViewerComputer;
@@ -45,18 +44,18 @@ package WstxArchitecture {
     item def StationOutcome;
     item def Recording;
     item def SampleBlock {
-        doc /* FSD 11.3 shared receive data: #6 owns one typed immutable sample contract;
+        doc /* contract 11.3 shared receive data: #6 owns one typed immutable sample contract;
              #6 recorded and #8 live producers feed the existing receive path. Element
              type/units, rate, frame clock, optional UTC, discontinuity, buffer owner,
              lifetime, bounds, version and backpressure must be settled before code.
              Concrete version1 recorded samples and spectrum-path bounds are defined by
-             WstxRecordingReceive::SampleBlock and FSD4.4; #8 live details remain gated. */
+             WstxRecordingReceive::SampleBlock and contract 4.4; #8 live details remain gated. */
     }
     item def AudioOutcome;
     item def ControlRequest { ref part resourceContext : RadioBinding; }
     item def ControlOutcome { ref item request : ControlRequest; }
     item def ProcessingRequest {
-        doc /* FSD 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
+        doc /* contract 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
              source, job and generation correlate immutable settings and results;
              concrete recorded spectrum types/lifetimes/bounds/cancellation are defined
              in RecordingReceive.sysml; #7 target mode settings/results refine that same
@@ -64,11 +63,11 @@ package WstxArchitecture {
              Receive jobs do not own transmit lifecycle or independent halt. */
     }
     item def ProcessingResult {
-        doc /* FSD 11.3: #7 owns mode-specific decoded payload/units/oracles and required
+        doc /* contract 11.3: #7 owns mode-specific decoded payload/units/oracles and required
              result delivery/retention; #6 owns spectrum frame units/identity/bounds and
              replaceable display delivery. Concrete spectrum schema/lifetimes are WstxRecordingReceive::SpectrumFrame;
              #7 target decoded payload/retention is WstxOfflineDecode::ResultRecord and
-             ResultPage, FSD4.4/6.4/12.7; implementation/readiness not asserted. */
+             ResultPage, contract 4.4/6.4/12.7; implementation/readiness not asserted. */
     }
     item def EncodeRequest;
     item def Waveform;
@@ -149,7 +148,7 @@ package WstxArchitecture {
         port radioControl : RadioControl;
         part stations[*] : StationProcess;
         ref part mcpClients[*] : McpClient;
-        doc /* FSD11.9: client references do not compose clients onto this computer.
+        doc /* contract 11.9: client references do not compose clients onto this computer.
              Controller-level attachments own routing associations only. #12 client
              placement/authority remains unresolved and is not implementation-ready. */
         part radioAuthority : RadioAuthority;
@@ -210,7 +209,7 @@ package WstxArchitecture {
         port audioStatus : ~AudioStatus;
     }
     part def WebAdapter {
-        doc /* FSD 11.3/11.7: extend existing shared profile/auth/Origin/HTTP/WebSocket
+        doc /* contract 11.3/11.7: extend existing shared profile/auth/Origin/HTTP/WebSocket
              services once; dependent issues do not add parallel transport authorities. */
         port client : ~BrowserExchange;
         port station : StationOperations;
@@ -238,13 +237,13 @@ package WstxArchitecture {
         port samples : ReceiveSamples;
     }
     part def ReceivePipeline {
-        doc /* FSD 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
+        doc /* contract 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
              #8 owns one common native-format/rate conversion stage; #7 consumes canonical
              12k samples. PCM unit mapping is distinct from AGC
              or modem normalization. No source-specific modem resamplers. #6/#7 settle
              one shared FFT provider, ordering/scaling, buffer policy and independent
              oracles before either writes FFT code; no speculative wrapper is required.
-             FSD4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
+             contract 4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
              delivered recorded spectrum contract; review and acceptance evidence remains on issue #6.
              #7 target sizes/history/decoderquanta are in StationDecode.sysml; its independent
              readiness review and #8 live adapter contract remain separate gates. */
@@ -255,7 +254,7 @@ package WstxArchitecture {
     part def ModeFunctions {
         doc /* Pure receive calculations and encoding/waveform generation. No device,
              filesystem, wall-clock or network dependency; mode support is CR-specific.
-             FSD 11.3/11.7: #7 owns pure receive functions and mode result payloads;
+             contract 11.3/11.7: #7 owns pure receive functions and mode result payloads;
              hardware/device-format adaptation and common rate conversion stay outside. */
         port receive : ~ReceiveProcessing;
         port encode : ~EncodeProcessing;
@@ -263,7 +262,7 @@ package WstxArchitecture {
     part def TransmitService {
         doc /* UTC mapping/scheduling, operation authority, bounded halt and audio/PTT
              coordination. #9 settles deadlines/controller-loss policy before hardware TX.
-             FSD 11.3/11.7: transmit lifecycle/halt is distinct from #6 receive jobs;
+             contract 11.3/11.7: transmit lifecycle/halt is distinct from #6 receive jobs;
              halt cannot wait for receive cancellation, work or congestion. Existing
              context/resource authority is reused rather than recreated. */
         port operations : ~StationOperations;
@@ -391,7 +390,7 @@ package WstxArchitecture {
     dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
     dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
-    doc /* Target responsibility traces from FSD11.10. Dependencies identify the
+    doc /* Target responsibility traces from contract 11.10. Dependencies identify the
          responsible boundary, not delivered capability or an executed verification. */
     dependency configurationPromise from StationService to WstxRequirements::'FR-001';
     dependency receivePromise from ReceivePipeline to WstxRequirements::'FR-003';
@@ -422,7 +421,7 @@ package WstxArchitecture {
         dependency statusProtocol from StatusServer to WstxRequirements::'CL-003-02';
     }
     dependency coordinatedReceivePromise from ReceivePipeline to WstxRequirements::'CL-008-07';
-    doc /* FSD4.7.5/12.8.1 coordinated receive controls reuse this existing receive
+    doc /* contract 4.7.5/12.8.1 coordinated receive controls reuse this existing receive
          and radio authority path. No additional station/backend/physical connector,
          sample source or deployment is introduced. WstxOperatingReceive models the
          single-owner release/setup/readback/restart and cancellation fences. */

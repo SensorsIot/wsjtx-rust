@@ -1,9 +1,8 @@
-// Canonical FSD slices SHA256: f65f1f74a9c3536ec7d7ae7e398815da6ae7e9c8d003cbeabc81c8ffe5ac37db
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
     doc /* Implementation contract for the profile-mode read-only operating layout.
-         Markdown authority: docs/WSTX Rust FSD.md4.7.1 and6.6 TC007002. Existing signal and
+         Contract: WstxProductScope::ContractIndex4.7.1 and6.6 TC007002. Existing signal and
          profile contracts are reused, not redefined. Full QSO/TX/log behavior is
          outside this slice. No modeled verification verdict is asserted. */
 
@@ -44,7 +43,7 @@ package WstxOperatingLayout {
              spectrum/FT4/FT8 selection use the saved endpoint/current revision.
              Device enumeration requires an operator action; viewing settings or
              choosing Next receive mode never opens audio. Separate operating mode/band
-             behavior is WstxOperatingReceive/FSD4.7.5/12.8.1. Actual12.7 records alone populate
+             behavior is WstxOperatingReceive/contract 4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
              no fabricated UTC/DT, message text or resolved hash. Full source/job/
              generation/sequence binds each row; new identity clears rows, stale
@@ -75,7 +74,7 @@ attribute def ActivityOrdering {
         not sendsServerMutation and not newPeriodResetsChoice and not newModeResetsChoice and
         not sameProfileReconnectResetsChoice and differentProfileResetsChoice
     }
-    doc /* FSD4.7.4/TC007006: numeric frequency/SNR/signedDT, literalASCIIcasefold
+    doc /* contract 4.7.4/TC007006: numeric frequency/SNR/signedDT, literalASCIIcasefold
          message; EMPTY=unavailable, unknownlastbothdirections, equaltiepublicationsequenceASC. Field
          change defaults signalStrengthDESC, othersASC; explicitdirection retained
          within same field. Re-sort the whole latest view after each arriving page. Reset
@@ -104,7 +103,7 @@ attribute def ActivityOrdering {
         assert constraint deliveryProgress { loadingResults == not cursorAtFrozenEnd }
         assert constraint emptyClears { latestEmpty implies displayedRows == 0 }
         assert constraint truthfulPartial { partialLabel == not complete }
-        doc /* CL01009, TC007006, FSD4.7.4. New descriptor clears old rows once and
+        doc /* CL01009, TC007006, contract 4.7.4. New descriptor clears old rows once and
              seeks its first retained cursor; all pages accumulate <=2048, never page-only.
              Loading results until cursor reaches frozen end; attempt completion does
              not assert delivery completeness. New periods supersede pending old views,
@@ -162,8 +161,8 @@ attribute def ActivityOrdering {
             mayUpdateLiveProgress == (otherwiseValid and matchingLiveOwner) and
             not updatesRecordedProgress
         }
-        doc /* FSD4.7.1 and TC009004 legacy Start/Stop only. Coordinated
-             selection unknown outcomes use FSD12.8.1 fencing, not this legacy guard.
+        doc /* contract 4.7.1 and TC009004 legacy Start/Stop only. Coordinated
+             selection unknown outcomes use contract 12.8.1 fencing, not this legacy guard.
              Intervening events are relative to request
              initiation. Otherwise-valid includes existing station/source/job/
              generation and wire validation rules. Rejected stale pages change
@@ -200,7 +199,7 @@ attribute def ActivityOrdering {
             (workspaceWidthEm <= 75.0 or (bandWidthFraction >= 0.55 and bandWidthFraction <= 0.60)) and
             (bandWidthEm > 44.0 or labelledRowDetails)
         }
-        doc /* FSD4.7.1 and TC007002: 360CSSpx retains the same minima and wraps
+        doc /* contract 4.7.1 and TC007002: 360CSSpx retains the same minima and wraps
              long messages without horizontal page scrolling. Desktop cards use2.2:1:0.8; bandWidthFraction measures allocated card widths excluding gaps/padding;
              workspace<=75em gives Band Activity full width above secondary cards,
              <=48em stacks all cards. Band table<=44em uses all-six-labelled row details,
@@ -321,7 +320,7 @@ attribute def ActivityOrdering {
     }
     dependency agreedDesignCase from agreedDesignPresentation
         to WstxRequirements::'TC-007-002';
-    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+    doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
          receive/radio/result shapes and owner/cancellation/source contracts.
          New selection uses the same authority, explicit actual release before

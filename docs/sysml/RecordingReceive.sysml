@@ -1,7 +1,6 @@
-// Canonical FSD slices SHA256: b8c211f709490e93bd816a9b1d6dad45ef0b8acea47031795513186bda9b9809
 package WstxRecordingReceive {
     private import ScalarValues::*;
-    doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
+    doc /* Implementation contract from authoritative contract 4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
          verification companions exist;
          actual run/review/acceptance evidence belongs to issue #6. Existing
          usages only, no new deployment/universal job manager/TX authority.
@@ -290,7 +289,7 @@ package WstxRecordingReceive {
         attribute cacheControl : String = "no-store";
         attribute corsAllowed : Boolean = false;
         attribute jsonMediaType : String = "application/json";
-        doc /* FSD12.6: UTF-8 JSON except raw WAV input. No CORS permission is emitted.
+        doc /* contract 12.6: UTF-8 JSON except raw WAV input. No CORS permission is emitted.
              JSON accepts optional UTF-8 charset as12.5. JSON schemas are exact:
              reject duplicate/unknown/missing keys. */
     }
@@ -311,7 +310,7 @@ package WstxRecordingReceive {
         return allowed : Boolean =
             (method == HttpMethod::get and originHeaderCount == 0) or
             (originHeaderCount == 1 and suppliedOriginEqualsSelectedOrigin);
-        doc /* FSD12.6: GET alone permits absent Origin. Every mutation requires
+        doc /* contract 12.6: GET alone permits absent Origin. Every mutation requires
              one exact Origin even on loopback. Repeated Origin is refused. */
     }
     calc def HttpAccessStatus {
@@ -422,7 +421,7 @@ package WstxRecordingReceive {
     action def RecoverRecordedSource {
         out 'snapshot' : RecordingSnapshot;
         assert constraint newBootGeneration { 'snapshot'.generation == 0 }
-        doc /* FSD4.4/12.6 restart postconditions: preserve selected profile and committed
+        doc /* contract 4.4/12.6 restart postconditions: preserve selected profile and committed
              source UUID/original bytes; generate a new boot identity. Fresh snapshot
              import and job are null, generation0. Prior boot operations are forgotten,
              their import resources/job DELETE return404. No durable cancelled job,
@@ -970,7 +969,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
             (currentState == ImportState::reserved and reservationElapsedMs >= limits.reservationMs) or
             (currentState == ImportState::receiving and
                 (receiveIdleMs >= limits.uploadIdleMs or totalElapsedMs >= limits.uploadTotalMs));
-        doc /* FSD12.6: station monotonic elapsed time, not browser timers; equality
+        doc /* contract 12.6: station monotonic elapsed time, not browser timers; equality
              expires. Event dispatch is serialized with chunk/cancel/commit admission.
              Emit reservation_expired or upload_expired for the corresponding state. */
     }
@@ -1004,7 +1003,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         transition rejected first validating if acceptedEvent == ImportEvent::validation_failed then failed;
         transition committed first committing if acceptedEvent == ImportEvent::commit_succeeded then completed;
         transition commitError first committing if acceptedEvent == ImportEvent::io_failure then failed;
-        doc /* FSD4.4/12.6: reservation expiry30s; receiving inactivity15s or total1800s
+        doc /* contract 4.4/12.6: reservation expiry30s; receiving inactivity15s or total1800s
              emits upload_expired. Timeout error is upload_timeout; observed PUT transport
              loss cancels the import. cleanup_succeeded requires actual release/removal,
              not an elapsed timer. Normal cancellation cleanup<=1s; I/O failure or cleanup
@@ -1025,7 +1024,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         transition release first cancelling if workerReleased then cancelled;
         transition complete first running if sourceComplete and workerReleased and not processingFailed and not cancelAccepted then completed;
         transition fail first running if processingFailed and workerReleased and not cancelAccepted then failed;
-        doc /* FSD4.4: accepted cancellation already changes running to cancelling;
+        doc /* contract 4.4: accepted cancellation already changes running to cancelling;
              otherwise processing failure prevents completion even with simultaneous EOS.
              While a failed worker is held, state remains nonterminal. Guards are disjoint;
              every terminal receive transition requires worker release. */
@@ -1052,7 +1051,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         transition uploadUnknown first uploading if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
         transition observed first reconciling if acceptedEvent == ImportBrowserEvent::reconciled then idle;
         transition finished first uploading if acceptedEvent == ImportBrowserEvent::terminal then idle;
-        doc /* FSD12.6: pendingCancel retains local cancellation intent while awaiting
+        doc /* contract 12.6: pendingCancel retains local cancellation intent while awaiting
              the reservation response. It never starts PUT. An accepted response gives
              the exact import ID: cleanupRequested sends DELETE for that returned ID,
              with zero PUT requests, then reconciles GET. Rejected responses end pending
@@ -1076,7 +1075,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         return availability : SourceAvailability = if committedSourceUnavailable ?
             SourceAvailability::unavailable else if recordingPresent ?
             SourceAvailability::available else SourceAvailability::absent;
-        doc /* FSD12.6: authenticated GET remains200 with current identity/generation/
+        doc /* contract 12.6: authenticated GET remains200 with current identity/generation/
              operations; unavailable sets recording:null and source_error recording_unavailable.
              Browser labels absence/unavailability distinctly; idle replacement stays enabled.
              Replay returns409 recording_unavailable until successful replacement clears error.
@@ -1192,7 +1191,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
          authoritative RGB palette and prescribed integer geometry. No implicit changes
          to wire/schema/state/units/bounds/authority/errors/oracles, extra dependencies,
          speculative FFT wrapper, device capabilities or transmit lifecycle. */
-    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+    doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
          receive/radio/result shapes and owner/cancellation/source contracts.
          New selection uses the same authority, explicit actual release before

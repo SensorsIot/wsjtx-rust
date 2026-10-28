@@ -1,14 +1,13 @@
-// Canonical FSD slices SHA256: 46e432fd564703cb5eb6d9bf78ab84c3aeebdfdf4302917ca7a39fe06992949c
 package WstxProfiles {
     private import ScalarValues::*;
 
-    doc /* FSD12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
+    doc /* contract 12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
          Existing handler/auth/errors/caps precede negotiation, exactly one dispatch.
          WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
          selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
     doc /* Implementation contract for the delivered CR #5 profile functionality. Review,
          validation and acceptance evidence remains on issue #5; no modeled verification verdict is asserted. Markdown remains authoritative:
-         docs/WSTX Rust FSD.md 4.2 (selection/schema/ownership), 6.2 (independent cases),
+         WstxProductScope::ContractIndex 4.2 (selection/schema/ownership), 6.2 (independent cases),
          12.5 (HTTP/session); existing 12.1..12.4 remain the legacy/status contract.
          UUID: RFC 9562 section 5.4, https://www.rfc-editor.org/rfc/rfc9562.html#section-5.4.
          HTTP: RFC 9110, https://www.rfc-editor.org/rfc/rfc9110.html.
@@ -196,7 +195,7 @@ package WstxProfiles {
             HttpOutcome::ok;
     }
     calc def ResponseBudgetAdmission {
-        doc /* FSD12.5 cross-field bound, checked BEFORE readiness. Encode the complete
+        doc /* contract 12.5 cross-field bound, checked BEFORE readiness. Encode the complete
              HttpProfileRepresentation using the selected effective origin and worst
              valid later settings/revision, not merely the initial file values.
              Independent schema-1 compact UTF-8 oracle: 36-byte profile/boot UUIDs,
@@ -216,7 +215,7 @@ package WstxProfiles {
         in conflict : Boolean;
         in unknownOutcome : Boolean;
         return allowed : Boolean = not saving and not conflict and not unknownOutcome;
-        doc /* FSD12.5: background Refresh/profile snapshots cannot clear a pending,
+        doc /* contract 12.5: background Refresh/profile snapshots cannot clear a pending,
              conflict or unknown-outcome save guard; explicit validated reload is required
              for conflict/unknown outcome. This guard covers programmatic submission too. */
     }
@@ -469,7 +468,7 @@ package WstxProfiles {
         transition responseUnknown first saving if acceptedEvent == SaveBrowserEvent::outcome_unknown then unknownOutcome;
         transition reloadConflict first conflict if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
         transition reloadUnknown first unknownOutcome if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
-        doc /* FSD12.5: browser form state, separate from the server process lifecycle.
+        doc /* contract 12.5: browser form state, separate from the server process lifecycle.
              While saving, disable editable controls and allow no second PUT; completion
              restores editable fields without changing permanently read-only fields.
              Conflict and unknownOutcome keep Save disabled until explicit reload returns
