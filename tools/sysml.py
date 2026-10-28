@@ -24,6 +24,7 @@ MODELS = ROOT / "docs/sysml"
 TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
 ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
 CANONICAL_MARKER = "// Canonical authority: SysML"
+SOURCE_BINDING_ROOTS = ("client", "server", "tests")
 CANONICAL_MODELS = {
     "Requirements.sysml", "Architecture.sysml", "Profiles.sysml",
     "RecordingReceive.sysml", "StationDecode.sysml", "RadioIO.sysml",
@@ -90,6 +91,8 @@ def source_binding(identifier: str, binding: str, root: Path, manual: bool = Fal
     resolved = (root / path).resolve()
     if path.is_absolute() or ".." in path.parts or not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
         raise ValueError(f"Missing or out-of-scope implementation/test binding: {identifier}: {binding}")
+    if path.parts[0] not in SOURCE_BINDING_ROOTS:
+        raise ValueError(f"Binding outside declared source inputs: {identifier}: {binding}; update HOW input coverage before admitting a new root")
     if not identifier.startswith("TC-") or manual:
         return True
     source = resolved.read_text(encoding="utf-8")
@@ -100,7 +103,14 @@ def source_binding(identifier: str, binding: str, root: Path, manual: bool = Fal
     else:
         proves = " ".join(re.findall(r"(?m)^\s*(?://|#)\s*Proves:([^\r\n]+)", source))
         named = re.search(r"\btest\s*\(\s*['\"][^'\"\r\n]*\b" + re.escape(identifier) + r"\b", source)
-        return identifier in set(ID.findall(proves)) or bool(named)
+        return identifier in source_proves(proves) or bool(named)
+
+
+def source_proves(text: str) -> set[str]:
+    # Fixture-specific and HOW names are not product identities. Numeric product
+    # IDs retain the existing strict shape and shorthand-expansion checks.
+    text = re.sub(r"\b(?:FR|CL|TC)-[A-Za-z][A-Za-z0-9-]*", "", text)
+    return {ref for ref in references(text) if not ref.startswith(("CL-014-", "TC-DOC-"))}
 
 
 def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES) -> dict[str, dict]:
@@ -176,6 +186,13 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
     unverified = {i for i in entries if i.startswith("CL-")} - verified
     if unverified:
         raise ValueError("Canonical clauses lack verification links: " + ", ".join(sorted(unverified)))
+    for directory_name in SOURCE_BINDING_ROOTS:
+        for path in sorted((root / directory_name).rglob("*")):
+            if not path.is_file() or path.suffix not in {".rs", ".js", ".cjs"}:
+                continue
+            for tag in re.findall(r"(?m)^\s*(?://|#)\s*Proves:([^\r\n]+)", path.read_text(encoding="utf-8")):
+                if unknown := source_proves(tag) - entries.keys():
+                    raise ValueError("Source Proves tag names undefined model identities: " + path.relative_to(root).as_posix() + ": " + ", ".join(sorted(unknown)))
     return entries
 
 
@@ -688,12 +705,19 @@ def main(argv=None):
     commands.add_parser("sync", help="Legacy Markdown projection only; refused for canonical SysML")
     commands.add_parser("fingerprints", help="Print authority-source fingerprints for review; never updates models")
     commands.add_parser("check", help="Check the declared functional authority and run full semantic validation")
+    commands.add_parser("traces", help="Check canonical source/model bindings only; no Pilot or behavior execution")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "setup":
             setup(args.cache_dir)
+            return 0
+        if args.command == "traces":
+            if authority(MODELS, FSD) != "sysml":
+                raise ValueError("Source/model traces require canonical SysML; the active FSD is not a trace catalog")
+            entries = canonical_catalog(MODELS, ROOT)
+            print(f"Canonical source/model trace checks passed: {len(entries)} identities; no semantic validation or behavior execution.")
             return 0
         if args.command == "fingerprints":
             if authority(MODELS, FSD) == "sysml":

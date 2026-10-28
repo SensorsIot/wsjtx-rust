@@ -123,6 +123,9 @@
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/
+  - client/
+  - server/
+  - tests/
   - .github/workflows/windows-rust.yml
   select:
   - docs/WSTX Rust FSD.md
@@ -130,6 +133,25 @@
   - tools/sysml.py
   - tools/sysml/
   needs: Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; exclusive authority, catalog/trace checks, full semantics, architecture integrity and model/tool tests; no radio or live service.
+
+- suite: source-model-traces
+  cost: 2
+  run: python tools/sysml.py traces
+  paths:
+  - client/
+  - server/
+  - tests/
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  select:
+  - client/
+  - server/
+  - tests/
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  needs: Python 3.12. Windows PC; canonical source/model identity and binding checks only. No Java, model mutation suite, compilation, radio or behavior proof.
 
 - suite: fortran-reference-tools
   cost: 2

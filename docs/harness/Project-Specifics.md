@@ -85,7 +85,8 @@ regressions and inherit producer inputs, rather than ordering test commands.
 | `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Shared recording test file; also affected by recording source/job producers |
 | `recording-thin` | Optional display pacing, bounded subscribers and the full 32 kbit/s display/status regression | Shared recording test file; also affected by display rendering |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
-| `sysml-documentation` | FSD/model synchronization, semantic and architecture checks, model/tool tests | FSD, SysML and model tooling |
+| `sysml-documentation` | Canonical catalog/trace checks, full semantic and architecture validation, model/tool tests | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
+| `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
 names: `^TC-018-` goes to storage, `^TC-010-002` to thin-link checks, and the complement
@@ -93,11 +94,13 @@ to display. The complement includes future names instead of silently omitting th
 The unchanged standalone fixture tests have their own group. No test assertion or
 test case is removed by selection.
 
-The FSD and model have an explicit documentation owner. Their edits select model
-validation; runtime oracles are selected by changed implementation and executable
-tests. The required independent contract comparison still checks that executable
-tests cover changed promises. Full input fingerprints retain the FSD, so changed
-contract input invalidates previous evidence when a runtime group is selected.
+The model has an explicit documentation owner. Its edits select full model validation;
+runtime oracles are selected by changed implementation and executable tests. Source
+edits also select the fast binding check, without a dependency that runs the full Pilot
+mutation suite on every code edit. Both model suites fingerprint the model, tool and
+complete client/server/test source inputs they read. A source edit or deletion invalidates
+old trace evidence and full-model evidence, even when only the fast suite is selected.
+Independent contract comparison still checks that tests prove the changed promises.
 
 Selection is conservative at shared-file boundaries: a recording client edit also
 selects profile regressions because that client moves and sizes the shared controls
@@ -227,6 +230,7 @@ Do not infer functional truth from a regenerated artifact or observed defective 
 
 ```powershell
 python tools/sysml.py check
+python tools/sysml.py traces
 python -m unittest discover -s tools/sysml/tests -q
 ```
 
@@ -234,6 +238,9 @@ python -m unittest discover -s tools/sysml/tests -q
 bindings, loads the complete model set in the pinned Pilot, then applies the independent
 architecture integrity oracle. `fingerprints` prints current input hashes for review;
 it never renews model approval. Canonical `sync` fails without writing any model.
+`traces` requires canonical SysML and checks only authority, catalog and source/model
+bindings. It never invokes Java, the mutation suite or application behavior. Source-only
+edits select this fast check; model/tool changes retain the full checks as well.
 The legacy Markdown projection path remains a compatibility check only while the active
 FSD exists without the canonical marker; it is not used after cutover.
 
@@ -330,7 +337,7 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-004 | CL-014-04 | Remove/corrupt Java, validator/library or model paths. Required validation fails nonzero and never reports semantic PASS. | Automated tool/prerequisite fixtures on this PC. |
 | TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
 | TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | Independent reviewer traces the affected canonical contract to code boundaries and independent expected observations; missing required decisions, model/contract disagreement or a shared-only generated oracle refuse readiness. Recheck exact changes and closure reconciliation. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning review on this PC; automation cannot establish complete intended meaning. |
-| TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; canonical sync cannot rewrite the model. New packages must be referenced by ProductScope and validated in full. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
+| TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; canonical sync cannot rewrite the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
 `tools/sysml/Validate.java` adapter. Results, independent review and first-use trial
@@ -405,6 +412,14 @@ Bindings are semicolon-separated repository-root-relative files, never absolute 
 escaping paths. Automated cases require a matching `Proves:` case identity, an exact
 Node test-name identity, or an explicit `path::test_symbol` binding. A Rust symbol must
 exist; independent review still establishes its relationship to the promised behaviour.
+The checker admits bindings under the exact Git roots `client/`, `server/` and `tests/`,
+which both model suites fingerprint. These are validation-input coverage bounds, not a
+product limitation. A new source root requires a reviewed HOW update to the admission
+constant, both suites' complete inputs, fast selection and their regression together;
+an unregistered binding is refused rather than silently borrowing stale evidence.
+Recognized numeric product identities in source `Proves:` comments must exist in the
+canonical catalog; same-prefix shorthand is expanded. HOW and fixture-specific names
+are not product declarations. A tag's presence still does not establish test execution.
 A manual physical case uses `attribute method : String = "manual";` and names its
 existing probe/source, without claiming an automated or executed result. A planned case
 may lack an executable. Source tags and existing files prove presence, not conformance.

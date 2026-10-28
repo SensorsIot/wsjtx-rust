@@ -38,6 +38,8 @@ class CanonicalAuthorityTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        for name in tool.SOURCE_BINDING_ROOTS:
+            (self.root / name).mkdir()
         self.models = self.root / "docs/sysml"
         self.models.mkdir(parents=True)
         self.fsd = self.root / "docs/FSD.md"
@@ -93,8 +95,8 @@ class CanonicalAuthorityTests(unittest.TestCase):
                     self.check()
 
     def test_actual_test_binding_is_required_for_delivered_case(self):
-        source = self.root / "case.cjs"
-        partial = MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "case.cjs";')
+        source = self.root / "tests/case.cjs"
+        partial = MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "tests/case.cjs";')
         self.requirements.write_text(partial, encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Missing or out-of-scope"):
             self.check()
@@ -104,20 +106,20 @@ class CanonicalAuthorityTests(unittest.TestCase):
         for content in ("// Proves: CL-003-01; TC-001-001\ntest('identity',()=>{});", "test('TC-001-001: identity',()=>{});"):
             source.write_text(content, encoding="utf-8")
             self.check()
-        self.requirements.write_text(partial.replace("case.cjs", "../escape.cjs"), encoding="utf-8")
+        self.requirements.write_text(partial.replace("tests/case.cjs", "../escape.cjs"), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "out-of-scope"):
             self.check()
 
     def test_explicit_manual_and_rust_symbol_bindings(self):
-        source = self.root / "probe.rs"
+        source = self.root / "server/probe.rs"
         source.write_text("#[test]\nfn known_observation() {}", encoding="utf-8")
-        partial = MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "probe.rs::known_observation";')
+        partial = MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "server/probe.rs::known_observation";')
         self.requirements.write_text(partial, encoding="utf-8")
         self.check()
         self.requirements.write_text(partial.replace("known_observation", "missing"), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Missing executable test symbol"):
             self.check()
-        self.requirements.write_text(partial.replace('probe.rs::known_observation', 'probe.rs').replace('attribute executable', 'attribute method : String = "manual";\nattribute executable'), encoding="utf-8")
+        self.requirements.write_text(partial.replace('server/probe.rs::known_observation', 'server/probe.rs').replace('attribute executable', 'attribute method : String = "manual";\nattribute executable'), encoding="utf-8")
         self.check()
 
     def test_retired_dependency_and_bad_relative_links_refused(self):
@@ -157,6 +159,44 @@ class CanonicalAuthorityTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(tool.main(["sync"]), 2)
             self.assertEqual(self.requirements.read_text(encoding="utf-8"), MODEL)
+
+    def test_fast_traces_refuse_deleted_source_without_invoking_java(self):
+        self.requirements.write_text(MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "tests/case.cjs";'), encoding="utf-8")
+        source = self.root / "tests/case.cjs"
+        source.write_text("test('TC-001-001: identity',()=>{});", encoding="utf-8")
+        real_catalog = tool.canonical_catalog
+        with mock.patch.object(tool, "ROOT", self.root), mock.patch.object(tool, "MODELS", self.models), mock.patch.object(tool, "FSD", self.fsd), mock.patch.object(tool, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)), mock.patch.object(tool, "validate", side_effect=AssertionError("Fast traces invoked Java")), mock.patch.object(tool, "tool_paths", side_effect=AssertionError("Fast traces resolved Java")):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(tool.main(["traces"]), 0)
+            self.assertIn("no semantic validation or behavior execution", output.getvalue())
+            source.unlink()
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(tool.main(["traces"]), 2)
+            self.assertIn("Missing or out-of-scope", errors.getvalue())
+            source.write_text("// Removed the case identity\ntest('unrelated',()=>{});", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(tool.main(["traces"]), 2)
+            self.assertIn("No Proves tag or named-test identity", errors.getvalue())
+            self.requirements.write_text("package Legacy {}", encoding="utf-8")
+            self.fsd.write_text("Existing legacy authority", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(tool.main(["traces"]), 2)
+            self.assertIn("require canonical SysML", errors.getvalue())
+
+    def test_binding_outside_fingerprinted_roots_requires_how_coverage_update(self):
+        probe = self.root / "tools/probe.rs"
+        probe.parent.mkdir()
+        probe.write_text("fn existing_probe() {}", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "outside declared source inputs"):
+            tool.source_binding("FR-001", "tools/probe.rs", self.root)
+
+    def test_source_proves_requires_defined_numeric_ids_and_expands_aliases(self):
+        source = self.root / "tests/proves.cjs"
+        source.write_text("// Proves: FR-001; CL-003-01/01; TC-001-001/001; TC-DOC-001; TC-FIXTURE-001", encoding="utf-8")
+        self.check()
+        source.write_text("// Proves: TC-001-001/002", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "undefined model identities.*TC-001-002"):
+            self.check()
 
 
 if __name__ == "__main__":
