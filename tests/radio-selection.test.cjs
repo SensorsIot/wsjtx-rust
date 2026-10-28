@@ -45,6 +45,36 @@ test('TC-009-005 network lifetime and correlated Off oracle reject true violatio
   const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
 });
 
+test('TC-009-005 frozen automatic cadence fault controls',async t=>{
+  const body=(result='pending')=>({profile_id:'profile-A',boot_id:'boot-A',profile_revision:3,operating_revision:7,generation:11,snapshot_sequence:21,receive:{job_id:'old-job'},operation:{command_id:'command-A',result,new_job_id:null}});
+  const previous=()=>({station:'https://station-A',started:1000,ended:1800,kind:'explicit/reconciliation',body:body()});
+  const successor=()=>({station:'https://station-A',started:5000,ended:5800,kind:'automatic',body:{...body('success'),snapshot_sequence:22}});
+  const pair=(p=previous(),c=successor(),mutations=[])=>cadencePair(p,c,mutations);
+  const refused=(p,c,mutations=[])=>{try{assert.equal(pair(p,c,mutations).eligible,false);}catch(error){if(error.code!=='ERR_ASSERTION')throw error;if(!/spacing|transport/.test(error.message))throw error;}};
+  await t.test('pending to terminal uses prior state',()=>assert.equal(pair().pendingCoverage,true));
+  await t.test('pending to pending remains coverage',()=>{const c=successor();c.body.operation.result='pending';assert.equal(pair(previous(),c).pendingCoverage,true);});
+  await t.test('pending below3950 refused',()=>{const c=successor();c.started=4949;assert.throws(()=>pair(previous(),c),/spacing/);});
+  await t.test('applied prior state at4s refused',()=>{const p=previous();p.body.operation.result='success';assert.throws(()=>pair(p),/spacing/);});
+  await t.test('wrong command refused',()=>{const c=successor();c.body.operation.command_id='command-B';refused(previous(),c);});
+  await t.test('each fixed identity refused',()=>{for(const key of ['profile_id','boot_id','profile_revision','operating_revision']){const c=successor();c.body[key]='changed';refused(previous(),c);}const c=successor();c.station='https://station-B';refused(previous(),c);});
+  await t.test('explicit and reconcile cannot prove timer coverage',()=>{const c=successor();c.kind='explicit/reconciliation';assert.equal(pair(previous(),c).eligible,false);assert.throws(()=>assertCadenceCoverage([pair(previous(),c)],'explicit'),/missing/);});
+  await t.test('overlap refused using network lifetime',()=>{const p=previous();p.ended=5001;assert.throws(()=>pair(p),/transport/);});
+  await t.test('same command owns new receive generation',()=>{const c=successor();c.body.generation=12;c.body.receive.job_id='new-job';c.body.operation.new_job_id='new-job';assert.equal(pair(previous(),c).pendingCoverage,true);});
+  await t.test('unowned new generation refused',()=>{const c=successor();c.body.generation=12;c.body.receive.job_id='unrelated';refused(previous(),c);c.body.operation.new_job_id='unrelated';c.body.operation.command_id='command-B';refused(previous(),c);});
+  await t.test('intervening mutation refused',()=>refused(previous(),successor(),[{started:2000}]));
+  await t.test('delayed pending is lawful but cannot prove4s regime',()=>{const c=successor();c.started=9000;assert.equal(pair(previous(),c).eligible,true);assert.equal(pair(previous(),c).pendingCoverage,false);});
+  await t.test('every browser and profile needs both regimes',()=>{
+    const p=previous();p.body.operation.result='success';const c=successor();c.started=9000;const passive=pair(p,c),pending=pair();
+    for(const profile of ['thin','off'])for(const browser of [0,1]){assertCadenceCoverage([pending,passive],`${profile}${browser}`);assert.throws(()=>assertCadenceCoverage([passive],`${profile}${browser}`),/pending-context/);assert.throws(()=>assertCadenceCoverage([pending],`${profile}${browser}`),/passive-context/);}
+  });
+  await t.test('actual frozen source and exact caller stack',async()=>{
+    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:683},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(759),origin,mapping),'automatic');for(const line of [700,713,726,732,742,744,752,761])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(758),origin,mapping),/unknown/);
+    assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
+  });
+});
+
 test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
   const {request,cookie}=await station(t);
   for(const route of ['/profile','/receive/selection','/receive','/radio','/recording']){
@@ -239,6 +269,71 @@ function selectionNetworkSummary(transfers,start,end){
   let active=0,maxActive=0;for(const event of events){active+=event.delta;assert.ok(active>=0);maxActive=Math.max(maxActive,active);}
   return {maxActive,requests,pendingAtEnd:requests.filter(r=>r.ended===null||r.ended>end).length};
 }
+// Freeze the actual served caller and acceptance guards, not just a function name.
+function cadenceSource(bytes){
+  const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+  assert.equal(sha256,'fc865a907d9a26bc08f414980991f90f58cebf1b7cbe233246571483ee18e986','review caller/acceptance mapping when recording.js changes');
+  const source=bytes.toString('utf8');
+  const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
+  return {sha256,valid,fetchLine:683,timerLine:759};
+}
+function cadenceCaller(initiator,origin,mapping){
+  const frames=initiator?.stack?.callFrames;
+  assert.equal(initiator?.type,'script','selection read must have script provenance');
+  assert.ok(frames?.length>=2,'complete selection caller stack');
+  assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine);
+  const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
+  // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
+  const explicitLines=[700,713,726,732,742,744,752,761];
+  if(caller.lineNumber===mapping.timerLine)return 'automatic';
+  assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
+  return 'explicit/reconciliation';
+}
+function cadencePair(previous,current,mutations){
+  const gap=current.started-previous.started,p=previous.body,c=current.body;
+  const pending=p.operation?.result==='pending';
+  const pair={previous,current,gap,priorResult:p.operation?.result??null,minimum:pending?3950:7950,eligible:false,reason:null};
+  if(current.kind!=='automatic'){pair.reason='explicit/reconciliation';return pair;}
+  assert.ok(previous.ended<=current.started,'sequential actual selection transport');
+  // These lower bounds apply to EVERY automatic dispatch, even across an identity change.
+  assert.ok(gap>=pair.minimum,`automatic ${pair.priorResult} start spacing ${gap}`);
+  if(!c){pair.reason='incomplete trailing response';return pair;}
+  const fixed=['station','profile_id','boot_id','profile_revision','operating_revision'];
+  if(fixed.some(key=>(key==='station'?previous.station:p[key])!==(key==='station'?current.station:c[key]))||p.operation?.command_id!==c.operation?.command_id){pair.reason='identity/command changed';return pair;}
+  if(p.operation&&['base_revision','revision','action','requested','old_job_id'].some(key=>JSON.stringify(p.operation[key])!==JSON.stringify(c.operation[key]))){pair.reason='command context changed';return pair;}
+  if(p.radio?.connection_generation!==c.radio?.connection_generation){pair.reason='radio connection changed';return pair;}
+  if(mutations.some(m=>m.started>previous.started&&m.started<=current.started)){pair.reason='intervening mutation';return pair;}
+  if(c.snapshot_sequence<p.snapshot_sequence){pair.reason='stale successor';return pair;}
+  const changed=p.generation!==c.generation||p.receive.job_id!==c.receive.job_id;
+  // Only the same owning operation may introduce its newly created receive context.
+  if(changed&&!(pending&&c.operation?.command_id===p.operation.command_id&&c.operation.new_job_id&&c.receive.job_id===c.operation.new_job_id&&c.generation>=p.generation)){
+    pair.reason='unrelated receive context';return pair;
+  }
+  pair.eligible=true;pair.pendingCoverage=pending&&gap<7950;pair.passiveCoverage=!pending;return pair;
+}
+function cadenceJoin(seen,origin,mapping){
+  const network=seen.transfers.filter(r=>r.route==='/receive/selection'&&r.method==='GET');
+  assert.equal(network.length,seen.reads.length,'complete ordered page/CDP selection join');
+  return network.map((transfer,index)=>{
+    const read=seen.reads[index];
+    assert.ok(index===0||transfer.started>network[index-1].started,'unambiguous CDP admission order');
+    assert.ok(index===0||read.started>seen.reads[index-1].started,'unambiguous page admission order');
+    assert.ok(Math.abs(transfer.started-read.started)<1000,'ordered page/CDP admission agrees');
+    assert.equal(transfer.failure,undefined);
+    if(read.body){assert.equal(read.status,200);assert.ok(mapping.valid(read.body),'actual selection body passes frozen browser schema');assert.ok(Buffer.byteLength(JSON.stringify(read.body))<=3072);}
+    else assert.equal(index,network.length-1,'only final in-flight/observer response may be incomplete');
+    const previous=network[index-1];if(previous)assert.ok(previous.ended!==null&&previous.ended<=transfer.started,'no transport overlap');
+    const priorBody=seen.reads[index-1]?.body;
+    if(priorBody&&read.body&&priorBody.boot_id===read.body.boot_id)assert.ok(read.body.snapshot_sequence>=priorBody.snapshot_sequence,'fail closed on a snapshot the browser would reject as old');
+    // The source cannot dispatch the next read until response.text, validation and
+    // operatingState assignment finish. Observer JSON callbacks may finish later.
+    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,observerParsedAt:read.ended};
+  });
+}
+function assertCadenceCoverage(pairs,label){
+  assert.ok(pairs.some(p=>p.eligible&&p.pendingCoverage),`${label}: missing automatic4s pending-context pair`);
+  assert.ok(pairs.some(p=>p.eligible&&p.passiveCoverage),`${label}: missing automatic8s passive-context pair`);
+}
 function correlatedOffAck(requests,acks,after){
   for(const request of requests.filter(r=>r.profile==='off'&&r.at>=after)){
     const ack=acks.find(a=>a.profile==='off'&&a.id===request.id&&a.socket===request.socket&&a.at>=request.at);
@@ -283,6 +378,7 @@ function liveSelectionFixture(){
       page.on('requestfailed',request=>{seen.failures.push({route:new URL(request.url()).pathname,error:request.failure()?.errorText,at:performance.now()});const r=reads.get(request);if(r&&r.ended===null){r.ended=performance.now();r.failed=true;seen.active--;}});
       page.on('response',async response=>{
         const route=new URL(response.url()).pathname;
+        if(route==='/recording.js'){seen.cadenceSource=await response.body();return;}
         const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         try{const text=await response.text();entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);
@@ -365,21 +461,31 @@ function liveSelectionFixture(){
       report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
       for(const seen of observations){const replies=seen.http.filter(r=>r.at>=start&&r.status===200&&['/receive/selection','/receive','/receive/results','/profile','/radio','/recording'].includes(r.route));assert.ok(replies.length>0);assert.ok(replies.every(r=>r.contentEncoding==='gzip'),'actual browser negotiated gzip on every eligible response');}
       assert.ok(traffic.up<=3000,`${profile} actual counted uplink ${traffic.up}`);assert.ok(traffic.down<=3000,`${profile} actual counted downlink ${traffic.down}`);assert.equal(latencies.length,26);
+      report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),reads:seen.reads,transfers:seen.transfers}));await save();
+      const evidence=observations.map(seen=>{
+        const evidence={joined:[],pairs:[],errors:[]};
+        try{
+          const mapping=cadenceSource(seen.cadenceSource);evidence.sourceSha256=mapping.sha256;
+          evidence.joined=cadenceJoin(seen,origin,mapping);
+          const mutations=observations.flatMap(o=>o.transfers).filter(r=>!['GET','HEAD'].includes(r.method));
+          for(let n=1;n<evidence.joined.length;n++){
+            const previous=evidence.joined[n-1],current=evidence.joined[n];
+            if(previous.started<start||current.started>=start+seconds*1000)continue;
+            try{evidence.pairs.push(cadencePair(previous,current,mutations));}
+            catch(error){evidence.errors.push({message:error.message,previous,current});}
+          }
+        }catch(error){evidence.errors.push({message:error.message});}
+        return evidence;
+      });
+      report.phases[profile].cadenceEvidence=evidence;await save();
       const polling=observations.map((seen,index)=>{
-        const reads=seen.reads.slice(readStarts[index]).filter(r=>r.started>=start&&r.ended!==null&&r.body);const network=selectionNetworkSummary(seen.transfers,start,start+seconds*1000);assert.equal(network.maxActive,1,'one actual CDP network selection read pending per browser');
+        const network=selectionNetworkSummary(seen.transfers,start,start+seconds*1000);assert.equal(network.maxActive,1,'one actual CDP network selection read pending per browser');
+        const proof=evidence[index];assert.deepEqual(proof.errors,[],'complete validated cadence evidence');
+        const reads=proof.joined.filter(r=>r.started>=start&&r.started<start+seconds*1000&&r.body);
         const pending=commands.map(id=>reads.filter(r=>r.body.operation?.command_id===id&&r.body.operation.result==='pending'));
-        for(const [n,polls]of pending.entries()){assert.ok(polls.length>=2,`${profile} browser${index} command${n}: actual pending reads ${polls.length}`);assert.ok(polls.some((r,i)=>i&&r.started-polls[i-1].started>=3950),`${profile} browser${index} observed4s pending cadence`);}
-        let passivePairs=0;
-        for(let n=1;n<reads.length;n++){
-          const previous=reads[n-1],current=reads[n];
-          const user=seen.gestures.some(at=>at>=previous.started-200&&at<=current.started+100);
-          if(user)continue;
-          const pendingBefore=previous.body.operation?.result==='pending';const minimum=pendingBefore?3950:7950;
-          assert.ok(current.started-previous.started>=minimum,`${profile} browser${index} actual poll start spacing ${current.started-previous.started}`);
-          if(!pendingBefore)passivePairs++;
-        }
-        assert.ok(passivePairs>=1,'actual passive8s polling observed between user actions');
-        return {reads:reads.map(r=>({startedMs:r.started-start,completedMs:r.ended-start,phase:r.body.operation?.phase??null,command:r.body.operation?.command_id??null,snapshotMonotonicMs:r.body.monotonic_ms})),pending:pending.map(p=>p.length),passivePairs,frames:seen.frames.length-frameStarts[index]};
+        for(const [n,polls]of pending.entries())assert.ok(polls.length>=1,`${profile} browser${index} command${n}: actual pending reads ${polls.length}`);
+        assertCadenceCoverage(proof.pairs,`${profile} browser${index}`);
+        return {reads,pending:pending.map(p=>p.length),passivePairs:proof.pairs.filter(p=>p.eligible&&p.passiveCoverage).length,pendingPairs:proof.pairs.filter(p=>p.eligible&&p.pendingCoverage).length,frames:seen.frames.length-frameStarts[index]};
       });
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
