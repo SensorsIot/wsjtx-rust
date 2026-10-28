@@ -4,7 +4,8 @@ package WstxArchitecture {
          WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
          selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
     doc /* Target architecture from WstxProductScope::ContractIndex chapter 11, with semantic obligations in WstxProductScope.
-         One physical deployment with software decomposition; not implemented radio support.
+         One physical deployment with software decomposition; runtime capability/status and
+         remaining target boundaries are declared in WstxRequirements and WstxProductScope.
          Items are semantic responsibilities, not wire schemas or Rust API definitions.
          CR #6 concrete data/state/HTTP/display/oracles refine existing usages in
          WstxRecordingReceive (RecordingReceive.sysml), contract 4.4/6.4/12.6. This recorded
@@ -122,6 +123,7 @@ package WstxArchitecture {
 
     part def Operator { port interaction : LocalInteraction; }
     part def BrowserClient {
+        doc /* Own presentation/local filtering/color, pending/stale state and requests; not authoritative radio state, timing-critical modulation or transmit authority. */
         port operator : ~LocalInteraction;
         port station : BrowserExchange;
     }
@@ -195,6 +197,7 @@ package WstxArchitecture {
         binding returnedContext bind requests.outcome = authorized.outcome;
     }
     part def StationService {
+        doc /* Own authoritative station state, operations/jobs/transitions and authorization; not HTTP/MCP parsing or device protocol syntax. One owner validates profile/source/generation and rejects obsolete results. */
         doc /* Station-owned validation, state, jobs and operation authority. This owner
              validates uploads before handing them to its selected profile's storage. */
         port webOperations : ~StationOperations;
@@ -209,6 +212,7 @@ package WstxArchitecture {
         port audioStatus : ~AudioStatus;
     }
     part def WebAdapter {
+        doc /* Own embedded client, HTTP/file transfer/versioned WebSocket, transport authentication and Origin checks; no second QSO/modem engine or direct radio writes. */
         doc /* contract 11.3/11.7: extend existing shared profile/auth/Origin/HTTP/WebSocket
              services once; dependent issues do not add parallel transport authorities. */
         port client : ~BrowserExchange;
@@ -216,10 +220,12 @@ package WstxArchitecture {
         port recording : RecordingTransfer;
     }
     part def McpAdapter {
+        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. */
         port client : ~StationOperations;
         port station : StationOperations;
     }
     part def PersistedProfile {
+        doc /* Bootstrap/profile owns selection, stable identity, endpoints, exclusive ownership, validation and storage; not DSP or browser state. */
         doc /* Exactly one explicitly selected profile per process, exclusive ownership,
              stable identity, configuration/contact/recording storage. #5 owns schema. */
         port context : ~ProfileAccess;
@@ -237,6 +243,7 @@ package WstxArchitecture {
         port samples : ReceiveSamples;
     }
     part def ReceivePipeline {
+        doc /* Own sample-window handling, normalization/resampling and bounded jobs/spectrum; not file dialogs, HTTP, CAT or UI rendering. PCM-unit mapping is not gain control and native conversion has one owner. */
         doc /* contract 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
              #8 owns one common native-format/rate conversion stage; #7 consumes canonical
              12k samples. PCM unit mapping is distinct from AGC
@@ -252,6 +259,7 @@ package WstxArchitecture {
         port processing : ReceiveProcessing;
     }
     part def ModeFunctions {
+        doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
         doc /* Pure receive calculations and encoding/waveform generation. No device,
              filesystem, wall-clock or network dependency; mode support is CR-specific.
              contract 11.3/11.7: #7 owns pure receive functions and mode result payloads;
@@ -260,6 +268,7 @@ package WstxArchitecture {
         port encode : ~EncodeProcessing;
     }
     part def TransmitService {
+        doc /* Own UTC scheduling, transmit state, audio/PTT coordination and priority halt; no browser timer or visualization-queue dependency. Defaults UNARMED on startup. Halt never waits for decode, receive cancellation or congestion. Controller/device loss and authority-expiry policy are settled before hardware TX and cannot be replaced in MCP. */
         doc /* UTC mapping/scheduling, operation authority, bounded halt and audio/PTT
              coordination. #9 settles deadlines/controller-loss policy before hardware TX.
              contract 11.3/11.7: transmit lifecycle/halt is distinct from #6 receive jobs;
@@ -271,10 +280,12 @@ package WstxArchitecture {
         port control : RadioControl;
     }
     part def QsoAndLogging {
+        doc /* Own exchange/completion/cancel and durable contacts; never bypass transmit authority or another profile storage. Stable completion identity and explicit persisted/unsaved outcome prevent silent duplicate contacts when completion replays. Concrete log schema/compatibility remains a target decision. */
         port operations : ~StationOperations;
         port contacts : ProfileAccess;
     }
     part def AudioInterface {
+        doc /* Own sources/sinks, device/channel sample movement, metadata and device failures. No CAT/PTT, mode decoding or QSO decisions. CAT-disabled audio and control without an open audio device remain independent. */
         doc /* Independent samples, timing and failures; CAT-disabled live input and stored
              recordings use the same receive boundary. Does not issue control commands. */
         port status : AudioStatus;
@@ -284,6 +295,7 @@ package WstxArchitecture {
         port backend : AudioExchange;
     }
     part def RadioControlInterface {
+        doc /* Own selected capabilities, typed CAT/control/PTT/status/resource claims; not audio samples/sound devices, browser/MCP policy or duplicate modem logic. */
         doc /* Capabilities, CAT/PTT/status, independent failures and resource claims. No
              samples; Rust control subset only, no full Hamlib port/API or mandatory library. */
         port station : ~RadioControl;
@@ -328,7 +340,7 @@ package WstxArchitecture {
         doc /* Optional Phase 2 alternate, no external SmartSDR/CAT/DAX bridge required.
              These logical associations select no native API schema or physical streams.
              The session is referenced, not composed by the backend. #13 is not
-             implementation-ready until ownership/sharing/lifetime are settled in FSD. */
+             implementation-ready until ownership/sharing/lifetime are settled in the canonical contract. */
         part audioDevices : NativeAudio;
         part controlDriver : NativeControl;
         ref part session : NativeSession;
@@ -414,8 +426,7 @@ package WstxArchitecture {
     dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
     package ImplementedStatusSlice {
         doc /* Legacy status/TLS subset retained alongside Profiles.sysml's implemented
-             CR #5 profile functionality. Target deployment above is not an assertion of implemented
-             radio, modem or MCP support. */
+             CR #5 profile functionality. Target deployment does not assert full radio/modem or MCP delivery. */
         part def StatusServer;
         dependency statusScope from StatusServer to WstxRequirements::'CL-003-01';
         dependency statusProtocol from StatusServer to WstxRequirements::'CL-003-02';

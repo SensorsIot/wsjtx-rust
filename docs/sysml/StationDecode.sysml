@@ -1,6 +1,8 @@
 package WstxOfflineDecode {
     private import ScalarValues::*;
-    doc /* Target implementation contract, NOT implemented decoder behavior or test results.
+    doc /* Canonical pure-modem contract used by live receive and internal numerical fixtures.
+         Partial Rust FT4/FT8 implementation exists; declared coverage is not test results.
+         Package name preserves established identities, not a public offline-decode API.
          Contract: WstxProductScope::ContractIndex 4.4 CR7, 6.4 TC-004-001/002/003, 12.7, 13.6.
          Protocol: https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf sections2-5/AppendixA;
          current source boundaries and fixed vectors use the pinned beta4 reference manifest.
@@ -114,6 +116,120 @@ package WstxOfflineDecode {
              Source-relative FT8/FT4 windows, reliable live ring and epoch rules12.8.
              Numerical recorded fixtures have no production receive operation. */
     }
+    attribute def PayloadCodebook {
+        attribute payloadBits : Integer = 77;
+        attribute crcInputBits : Integer = 82;
+        attribute informationBits : Integer = 91;
+        attribute codewordBits : Integer = 174;
+        attribute crcPolynomial : Integer = 26455;
+        attribute crcInitialState : Integer = 0;
+        attribute freeTextRadix : Integer = 42;
+        attribute nonstandardCallRadix : Integer = 38;
+        attribute cqNumericFirst : Integer = 3;
+        attribute cqNumericLast : Integer = 1002;
+        attribute cqAlphabeticBase : Integer = 1003;
+        attribute callHash22Base : Integer = 2063592;
+        attribute standardCallBase : Integer = 6257896;
+        attribute gridMaximum : Integer = 32399;
+        attribute reservedGridCode : Integer = 32400;
+        attribute blankExchange : Integer = 32401;
+        attribute rrrExchange : Integer = 32402;
+        attribute rr73Exchange : Integer = 32403;
+        attribute goodbyeExchange : Integer = 32404;
+        attribute maximumExchangeCode : Integer = 32505;
+        attribute ft4XorMask : String = "01001010010111101000100110110100101100001000101001111001010101011011111000101";
+        attribute generatorTable : String = "fixtures/decoder/protocol-data/generator.dat";
+        attribute parityTable : String = "fixtures/decoder/protocol-data/parity.dat";
+        attribute sectionTable : String = "fixtures/decoder/protocol-data/arrl_rac_sections.json";
+        attribute stateProvinceTable : String = "fixtures/decoder/protocol-data/states_provinces.json";
+        attribute protocolReference : String = "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf";
+        doc /* QEX sections2..5/AppendixA plus published data-only tables define normal
+             77-bit FT4/FT8. Current source-field boundaries are pinned independently by
+             WstxProductScope::BehaviorBaseline's portable codec manifest and fixed official
+             vectors. This does not adopt permissive malformed-payload aliases, AP/context
+             guessing, SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
+             Both modes share source families:0.0 free text,0.1 DXpedition,0.3/.4 FieldDay,
+             0.5 telemetry,1/2 standard /R or /P,3 RTTY,4 nonstandard,5 extended VHF.
+             0.2/.6/.7 and6/7 are unsupported; WSPR packaging0.6 is not an ordinary message.
+             Preserve exact77bits even for unsupported/invalid_payload; CRC-invalid never
+             publishes. n3 precedes i3 for type0; all fields MSB-first in published order.
+             Type1/2 widths28,1,28,1,1,15,3; type3=1,28,28,1,3,13,3;
+             type4=12,58,1,2,1,3; currenttype5=12,22,1,3,11,25,3.
+             Free-text alphabet is blank,0..9,A..Z,+-./?; trim trailing padding only,
+             allblank invalid. Telemetry is71bits,18uppercasehex,firstdigit0..7,zero valid.
+             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based84
+             sections includeDX;0/>84 invalid. RTTY report529..599 step10, serial0..7999;
+            8001..8065 map published state/province tokens;8000/>8065 invalid.
+             DXpedition report is even-30..32; nonstandard fullcall<=11base38characters;
+             VHF report52..59,serial0..2047,gridAA00AA..RR99XX.
+             Standard c28:DE0/QRZ1/CQ2; numericCQ3..1002=>CQ000..999;
+             alphabeticCQ1003+four-positionbase27 blank/A..Z modifier with leading
+             blanks removed and no embedded/trailing blank. Reserved holes invalid.
+             hash22=2063592+hash; standard mixed-radix call=6257896+call.
+             Calls normalize digit into position3; radix37,36,10,27,27,27 alphabets are
+             blank/digits/letters; digits/letters; digits; blank/letters three times.
+             At least one of first two characters is a letter; nonempty suffix has no
+             embedded blank. K1ABC=10214965,W9XYZ=12751800. Grid4 radices18,18,10,10
+             with A..R,A..R,0..9,0..9 giveFN42=10342; grid6 adds24,24 lettersA..X.
+             Grid/report0..32399 aregrids,32400reserved,32401blank,32402RRR,
+            32403RR73,32404'73'. ReportCode below is exact,>32505invalid. Invalid
+             structured content never falls back to free text. Hashes keep10/12/22-bit
+             numeric identity and display<...>; no configured/prior-job/station inverse.
+             A concrete type4full call stays concrete; no cross-profile/source/job cache.
+             CRC14 polynomial0x6757,zero state, operates on payload zero-extended82bits;
+             append14CRCbits to77payload bits then published GF(2) parity=>174bits.
+             FT4 XORs the exact77-bit mask beforeCRC/FEC and reverses onlyafter validation.
+             Gray maps by bit-group value:FT8[0,1,3,2,5,6,4,7],FT4[0,1,3,2].
+             FT8=79symbols*1920frames;FT4=105incl2ramps*576frames. Published Costas,
+             continuous phase, GaussianBT2/1 and raised-cosine ramps are normative.
+             Independent fixtures use separate polynomial division/streaming recurrence,
+             published syndrome and fixed tones before audio synthesis; never production
+             decoder/reconstruction as sole oracle. Vectors record provenance, fields,
+             bits/CRC/codeword/tones,start/frequency/amplitude/noise/seed/parameters/hash.
+             Cross-math audio permits1PCM-LSB; retained WAV bytes use exact SHA256. */
+    }
+    calc def ReportCode {
+        in report : Integer;
+        return code : Integer = if report < -30 ? 32400 + report + 35 + 101 else 32400 + report + 35;
+        assert constraint domain { report >= -50 and report <= 50 }
+    }
+    calc def StandardCallCode {
+        in firstIndex : Integer;
+        in secondIndex : Integer;
+        in digitIndex : Integer;
+        in suffixOne : Integer;
+        in suffixTwo : Integer;
+        in suffixThree : Integer;
+        return code : Integer = 6257896 + (((((firstIndex * 36 + secondIndex) * 10 + digitIndex) * 27 + suffixOne) * 27 + suffixTwo) * 27 + suffixThree);
+        assert constraint radixDomains { firstIndex >= 0 and firstIndex < 37 and secondIndex >= 0 and secondIndex < 36 and
+            digitIndex >= 0 and digitIndex < 10 and suffixOne >= 0 and suffixOne < 27 and
+            suffixTwo >= 0 and suffixTwo < 27 and suffixThree >= 0 and suffixThree < 27 }
+        doc /* Indices are from PayloadCodebook's normalized alphabets; caller enforces
+             letter-prefix/nonblank-suffix/no-embedded-blank constraints before use. */
+    }
+    requirement SharedWireMapping {
+        doc /* ResultRecord has exact keys sequence,status,payload77,i3,n3,text,fields,
+             start_frame,frequency_hz,snr_db. LiveTimedResultRecord adds exactly
+             period_start_utc anddt_seconds. Fields null unless decoded; text null unless
+             decoded then<=80canonicalASCII; payload77exact77ASCIIbits; i3=0..7,
+             n3nullunlessi3=0then0..7. Sequence/start are nonnegative safe integers below
+             actual lifetime next_sequence/captured next_frame; finitefrequency200..3500,
+             SNRnullorfinite[-60,60]. Record<=2048UTF8bytes, numericalcharge<=1024;
+             oversizedpublication=>decode_limit with acceptedpartials. CallValue exactly
+             {kind,text,hash_bits,hash_value}; concretecall uppercase1..13(nonstandard<=11),
+             tokenCQ/DE/QRZ/modifier bothnullhashfields; hashnulltext with exactwidth/value.
+             Every supported PayloadFields variant has all its defined keys, no extras:
+             free_text/telemetry{type,value};standard{type,to,from,ack,exchange};
+             rtty{type,tu,to,from,ack,report,exchange};dxpedition{type,first,second,hashed,report};
+             field_day{type,to,from,ack,transmitters,class,section};
+             nonstandard{type,full_call,hashed_call,hash_second,cq,roger};
+             vhf{type,to,from,ack,report,serial,grid}. Semantic StandardExchange
+             serial/state union members map to exact wire{kind,value}, not extra keys.
+             Nonstandard CQ ignores hash for presentation while preserving raw bits/hash.
+             i3/n3 disambiguates source family. WstxRadioIO owns live lifecycle/page/error/
+             cancellation/retention. No production file-decode route, test-source/raw-path
+             command or browser offline-decode action is implied by numerical fixtures. */
+    }
     attribute def CallValue {
         attribute kind : CallKind;
         attribute text : String[0..1];
@@ -129,7 +245,7 @@ package WstxOfflineDecode {
         attribute numericValue : Integer[0..1];
         doc /* Semantic union, wire exactly{kind,value}: blank=>null, grid=>grid4,
              report=>integer-50..50, roger=>RRR/RR73/73. Internal semantic arm names
-             are not extra wire fields; contract 12.7 exact JSON mapping is normative. */
+             are not extra wire fields; SharedWireMapping is the exact canonical JSON mapping. */
     }
     attribute def PayloadFields;
     attribute def FreeTextFields :> PayloadFields {
@@ -148,7 +264,7 @@ package WstxOfflineDecode {
         attribute 'from' : CallValue;
         attribute ack : Boolean;
         attribute exchange : StandardExchange;
-        doc /* type=standard; i3=1/R or2/P. Exact c28/grid/report canonical maps in4.4;
+        doc /* type=standard; i3=1/R or2/P. Exact c28/grid/report canonical maps are PayloadCodebook and ReportCode;
              codes32400 and>32505 invalid, not fallback text. */
     }
     attribute def RttyFields :> PayloadFields {
@@ -700,7 +816,7 @@ package WstxOfflineDecode {
                  determinegridordering. Mixedcoefficients/energyfollowindependentfullrateoracle.
                  Unfilteredstride4scoringnegativecontrolmustfail; unchangedgrids/caps/2286/14/recording/runtime/
                  cancellation/64MiBthresholds. Sameoracleappliestobothmodes' sharedfitkernel.
-                 Planned Rust/decoderfixture suite bindings; no production encoder oracle. */
+                 Rust/decoderfixture bindings are declared in WstxRequirements; no production encoder oracle. */
         }
         dependency ft4Case from ft4 to WstxRequirements::'TC-004-001';
         verification ft8 {
@@ -726,7 +842,7 @@ package WstxOfflineDecode {
                  actual5950XWindowsOS/build/power/hash/workload/min/median/p95/max/memory;
                  fourprofiles<=2xruntime,64MiBworker/96MiBprocessdelta,<=250msrelease.
                  Futurejoint48kcapture+FFT+decode provesfairness, notlargerringassumption.
-                 PlannedRust/fixture/HTTP/browser/linkcompanions; no execution verdict. */
+                 Rust/fixture/HTTP/browser/link bindings are declared in WstxRequirements; no execution verdict. */
         }
         verification phaseLikelihoodAndScale {
             subject decoder : AdvanceDecode;

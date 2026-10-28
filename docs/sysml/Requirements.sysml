@@ -1,5 +1,6 @@
 // Canonical authority: SysML
 package WstxRequirements {
+    private import ScalarValues::*;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -101,7 +102,7 @@ package WstxRequirements {
     }
     requirement 'FR-018' {
         doc /* Recorded audio input
-             Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. The first recorded-input format, bounded import/replay workflow and tests are specified in4.4/6.4/12.6 and delivered by #6; acceptance evidence remains on issue #6. */
+             Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. The first recorded-input format, bounded import/replay workflow and tests are specified in4.4/6.4/12.6 ; implementation coverage is declared below. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/recording.rs; server/src/recording_http.rs";
     }
@@ -124,13 +125,13 @@ package WstxRequirements {
     }
     requirement 'FR-022' {
         doc /* Concurrent persisted station profiles — phase 1 target
-             Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. CR #5 delivers phase 1; review, validation and acceptance evidence remains on issue #5. CR #3 did not implement profiles. */
+             Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. Independent persisted profile functionality is implemented; coverage and verification are declared separately. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/profile.rs; server/src/main.rs; client/app.js";
     }
     requirement 'FR-023' {
         doc /* Optional direct FlexRadio integration — phase 2 target
-             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Specified target; not implemented or accepted by CR #3. */
+             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Phase-two target; not implemented. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     requirement 'CL-003-01' {
@@ -896,7 +897,7 @@ package WstxRequirements {
              socket with HTTP held, establish a replacement, then release the old response: it cannot
              restore Connected, replace the newer profile snapshot or overwrite its form. Fail the
              initial/background GET separately: visible failure/stale, no false configuration success.
-             Oracles are these Markdown timing/identity rules, real WS traffic and independently
+             Oracles are these independent canonical timing/identity expectations, real WS traffic and independently
              prepared profile revisions; barrier release happens only after the status assertion. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

@@ -1,6 +1,7 @@
 package WstxRadioIO {
     private import ScalarValues::*;
-    doc /* Target implementation contract, not implemented hardware support.
+    doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
+         hardware matrix completion and physical acceptance remain separately declared.
          Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
          RecordingReceive/StationDecode. One physical architecture, no new deployment.
          Windows binding0.62.2 shared between WASAPI and overlapped serial I/O.

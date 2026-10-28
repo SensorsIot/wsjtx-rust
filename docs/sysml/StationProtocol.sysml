@@ -2,7 +2,7 @@ package WstxStationProtocol {
     private import ScalarValues::*;
     doc /* Canonical status, authentication and transport contract. Profile, recording,
          live receive and display extensions refine this shared boundary in WstxProfiles,
-         WstxRecordingReceive and WstxRadioIO. They do not create separate authentication
+         WstxRecordingReceive WstxRadioIO and WstxOperatingReceive. They do not create separate authentication
          or transport authorities. Implemented status is not a complete operating API. */
 
     enum def DeploymentMode { enum trustedLoopback; enum authenticatedTls; }
@@ -132,8 +132,8 @@ package WstxStationProtocol {
              station.get is the legacy known command; explicitly defined recording
              extensions add their own shapes without weakening shared validation.
              Binary frames close1003; excessive frame/message size is transport
-             rejection/closure followed by normal reconnect. No application or
-             negotiated WebSocket compression, and no arbitrary station-object dump. */
+             rejection/closure followed by normal reconnect. No application payload codec or negotiated WebSocket compression; bounded
+             HTTP content coding is solely WstxOperatingReceive::HttpContentCodingBoundary, and no arbitrary station-object dump. */
     }
     item def Heartbeat {
         attribute v : Integer = 1;

@@ -6,16 +6,16 @@ package WstxProfiles {
          WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
          selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
     doc /* Implementation contract for the delivered CR #5 profile functionality. Review,
-         validation and acceptance evidence remains on issue #5; no modeled verification verdict is asserted. Markdown remains authoritative:
+         validation and acceptance evidence remains on issue #5; no modeled verification verdict is asserted. The canonical contract is this package and WstxRequirements:
          WstxProductScope::ContractIndex 4.2 (selection/schema/ownership), 6.2 (independent cases),
          12.5 (HTTP/session); existing 12.1..12.4 remain the legacy/status contract.
          UUID: RFC 9562 section 5.4, https://www.rfc-editor.org/rfc/rfc9562.html#section-5.4.
          HTTP: RFC 9110, https://www.rfc-editor.org/rfc/rfc9110.html.
          Cookies: RFC 6265 section 8.5, https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5.
          This file supplies behavior/data/state/error/ownership semantics absent from
-         the generated Requirements projection. Pinned validation checks names/types,
+         the stable Requirements declarations. Pinned validation checks names/types,
          not execution, equivalence, real OS atomicity or successful test results.
-         Readiness requires independent comparison with the original Markdown first. */
+         Readiness requires independent comparison with approved requirements, source and independent verification expectations before implementation. */
 
     enum def ConnectionType { enum 'standard'; enum native_flex; }
     enum def ControlMode { enum disabled; enum cat; }
@@ -503,7 +503,7 @@ package WstxProfiles {
 
     package IndependentVerification {
         doc /* Case identities remain WstxRequirements::TC-022-001..004, projected
-             from authoritative Markdown 6.2. No cases/verdicts are regenerated from
+             from WstxRequirements and this package. No cases/verdicts are regenerated from
              action calculations. These declarations refine their subjects/oracles.
              Delivered source/test companions, level 2 isolated automated Windows PC tests;
              FOUR real candidate processes, distinct saved ports/profiles, four real
@@ -549,7 +549,7 @@ package WstxProfiles {
                  Render <img src=x onerror=alert(1)> display name and
                  <script>alert(1)</script> audio ID literally, no element/dialog/script.
                  Desktop/360px identity/errors/Save readable and keyboard reachable.
-                 Oracle: original Markdown/domain table and independent fixture edits. */
+                 Oracle: independent canonical domain table and independent fixture edits. */
         }
         verification persistence {
             subject operation : SaveSelectedProfile;
@@ -562,7 +562,7 @@ package WstxProfiles {
                  OS reboot claimed (optional isolated VM only). Test missing file,
                  truncation/UTF8/unknown/duplicate/missing/type/UUID/schema0/2/port0/65536,
                  16384-byte valid whitespace padding versus16385, reserved native.
-                 Exact startup categories per LaunchSelectedProfile and Markdown table;
+                 Exact startup categories per LaunchSelectedProfile and canonical domain table;
                  independent pre/post hashes unchanged. Restore bytes and restart.
                  Deny write/replace deterministically:503/no revision advance/old state.
                  Crash before/after replacement:complete old/new, never partial. Test-build-only
@@ -584,7 +584,7 @@ package WstxProfiles {
                  hostname must fail invalid_profile BEFORE readiness without rewriting
                  any profile. Numeric loopback transports fixture requests with exact
                  saved Origin header; no external DNS/service. Expected bytes come from
-                 original Markdown, not the candidate helper. No migration/power-loss claim. */
+                 independent case expectations, not the candidate helper. No migration/power-loss claim. */
         }
         verification lifecycleIsolation {
             subject operation : LaunchSelectedProfile;
@@ -636,7 +636,7 @@ package WstxProfiles {
                  Close old socket with GET held, establish replacement, release old:
                  no reconnection or newer snapshot/form overwrite. Initial/background
                  GET failure visibly fails/stales, never successful configuration.
-                 Oracle: original Markdown6.2/12.5, real WS and prepared revisions. */
+                 Oracle: WstxRequirements and this package, real WS and prepared revisions. */
         }
         dependency identity005 from statusReadiness to WstxRequirements::'TC-022-005';
         dependency identity001 from variableServers to WstxRequirements::'TC-022-001';

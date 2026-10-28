@@ -1,11 +1,20 @@
 package WstxProductScope {
     private import ScalarValues::*;
+    private import WstxRequirements::*;
+    private import WstxArchitecture::*;
+    private import WstxStationProtocol::*;
+    private import WstxProfiles::*;
+    private import WstxRecordingReceive::*;
+    private import WstxOfflineDecode::*;
+    private import WstxRadioIO::*;
+    private import WstxOperatingLayout::*;
+    private import WstxOperatingReceive::*;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
          WstxProfiles configuration/persistence; WstxRecordingReceive recording/display;
-         WstxStationDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
-         capture/conversion/CAT; WstxOperatingLayout presentation.
+         WstxOfflineDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
+         capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is
          not an extra architecture. Declared coverage is not an execution verdict.
@@ -101,7 +110,7 @@ package WstxProductScope {
              discrete packing/FEC/symbol vectors and justified floating tolerances are
              independent expectations. Evaluate success, false positives, sensitivity,
              runtime, weak/overlapping/offset signals and device/operator workflows.
-             WstxStationDecode fixes its current mode-specific numeric/resource limits;
+             WstxOfflineDecode fixes its current mode-specific numeric/resource limits;
              those concrete limits supersede general unsettled-budget language.
              Reference decoder output alone is not exhaustive truth. Pin reference
              binary/version/hash/settings/input; do not substitute the original archive.
@@ -119,7 +128,7 @@ package WstxProductScope {
              canonical immutable sample blocks, shared receive jobs, FFT spectrum and
              pure FT4/FT8 modem are implemented boundaries, not a second profile or
              transport authority. WstxRecordingReceive defines source schema/lifetime,
-             WstxRadioIO native conversion/timing and WstxStationDecode numerical work.
+             WstxRadioIO native conversion/timing and WstxOfflineDecode numerical work.
              Integer-to-real PCM mapping is not AGC/filtering/normalization. Native
              rate conversion has one owner; no recorded/live-specific modem resamplers.
              RustFFT provider/conventions are shared while mode/display plans remain
@@ -210,28 +219,28 @@ package WstxProductScope {
              live recordings to measure sensitivity, false decodes and numeric error.
              Evaluate interoperability/quality/latency rather than adopting embedded
              resource limits. Sample use does not require importing its decoder.
-             WstxStationDecode owns concrete protocol/physical fixture expectations and
+             WstxOfflineDecode owns concrete protocol/physical fixture expectations and
              simulator admission; README retains attribution and sample licensing.
              Investigation dates or discovery history are not functional obligations. */
     }
     package ContractIndex {
-        doc /* Numeric references retained inside model prose are local contract aliases,
-             not citations requiring a Markdown specification. 4.1/6.1/12.1..12.4:
+        doc /* Numeric references inside model prose are local contract aliases. 4.1/6.1/12.1..12.4:
              SharedProtocol. 4.2/6.2/12.5: Profiles. 4.3/6.3: NativeFlex plus FR-023
              and its six TC-023 cases. 4.4/6.4: RecordingAndDisplay and Modem;
              4.5/12.8: LiveRadio. 4.7/6.6: Operating. 11: Architecture.
-             12.6: RecordingAndDisplay. 12.7: SharedRecord. 13.6: Modem's simulator
+             12.1.1/4.7.3/4.7.5/12.8.1: OperatingReceive. 12.6: RecordingAndDisplay. 12.7: SharedRecord. 13.6: Modem's simulator
              verifications. Other scope/quality/provenance clauses are in this package.
              These aliases are resolved model elements, not external file references. */
         alias SharedProtocol for WstxStationProtocol;
         alias Profiles for WstxProfiles;
         alias NativeFlex for WstxProductScope::NativeFlexBoundary;
         alias RecordingAndDisplay for WstxRecordingReceive;
-        alias Modem for WstxStationDecode;
+        alias Modem for WstxOfflineDecode;
         alias LiveRadio for WstxRadioIO;
         alias Operating for WstxOperatingLayout;
+        alias OperatingReceive for WstxOperatingReceive;
         alias Architecture for WstxArchitecture;
-        alias SharedRecord for WstxStationDecode::ResultRecord;
+        alias SharedRecord for WstxOfflineDecode::ResultRecord;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';

@@ -6,7 +6,7 @@ The project has a Rust station server, a browser status/settings interface and a
 
 Create a profile with `wstx-rust --create-profile <directory>`, then start it with
 `wstx-rust --profile <directory>` and open the reported URL. Each simultaneous server
-uses its own profile directory and port. The [profile contract](docs/WSTX%20Rust%20FSD.md#42-concurrent-persisted-station-profiles--target-fr-022)
+uses its own profile directory and port. The [profile contract](docs/sysml/Profiles.sysml)
 defines configuration, locking, recovery and access; device selections are saved intent
 and do not activate hardware. No-argument startup retains the original status mode.
 
@@ -49,15 +49,18 @@ The first release targets Windows desktop. macOS and Linux are planned afterward
 
 ## Repository layout
 
-The [FSD](docs/WSTX%20Rust%20FSD.md#35-station-server-and-operator-client) defines the product
-requirements. The [target architecture](docs/WSTX%20Rust%20FSD.md#11-target-product-architecture) defines component boundaries,
-internal contract ownership and how the queued functional CRs fit together.
+The [canonical SysML product scope](docs/sysml/ProductScope.sysml) and
+[requirements and verification](docs/sysml/Requirements.sysml) define the functional
+contract. The [architecture](docs/sysml/Architecture.sysml) defines component boundaries,
+internal contract ownership and connections. This README provides orientation, setup
+and licensing; it is not a second functional specification.
 
 | Path | Contents |
 | --- | --- |
 | `server/` | Rust station server, persisted profiles, WebSocket/HTTP settings and optional native TLS. |
 | `client/` | HTML/CSS/JavaScript status/settings interface, embedded into the server executable. |
-| `docs/` | One functional specification document and its synchronized SysML model. |
+| `docs/sysml/` | Canonical functional SysML requirements, interfaces, behaviour, architecture and verification. |
+| `docs/archive/` | Frozen historical Markdown; not an active specification or validation input. |
 | `docs/harness/` | Project-specific harness bindings and development instructions. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
 | `harness/`, `.harness/` | Pinned development harness and project bindings. |
@@ -66,8 +69,9 @@ Build, test and packaging instructions are in the [project-specific harness](doc
 
 ## Documentation
 
-- [Functional specification](docs/WSTX%20Rust%20FSD.md)
-- [Functional behavior baseline](docs/WSTX%20Rust%20FSD.md#behavior-reference)
+- [Canonical functional model and behaviour baseline](docs/sysml/ProductScope.sysml)
+- [Stable requirements and verification cases](docs/sysml/Requirements.sysml)
+- [Architecture](docs/sysml/Architecture.sysml)
 - [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)
 - [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
 

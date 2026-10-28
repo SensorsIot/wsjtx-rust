@@ -7,7 +7,7 @@ package WstxRecordingReceive {
          Shared RustFFT6.4.1 primary API https://docs.rs/rustfft/6.4.1/rustfft/,
          https://docs.rs/rustfft/6.4.1/rustfft/trait.Fft.html and
          https://docs.rs/rustfft/6.4.1/rustfft/struct.FftPlannerScalar.html.
-         Independent DFT/math/oracles remain the original Markdown,not library output. */
+         Independent DFT/math/oracles remain independent case expectations and direct math, not library output. */
     enum def ImportState { enum reserved; enum receiving; enum validating; enum committing; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def DisplayProfile { enum off; enum thin; enum detail; }
@@ -1109,7 +1109,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              Actual candidate server/browser, disposable profiles, synthetic byte fixtures,
              independent direct DFT and pinned actual recordings with chapter13 provenance.
              No radio/audio device/live station. Definitions and candidate source presence are not acceptance results.
-             Original Markdown remains the independent expectation for implementation. */
+             Independent case expectations are retained in WstxRequirements and this package; production/library output is not their oracle. */
         verification validRecording {
             subject operation : ImportRecording;
             objective { verify WstxRequirements::'CL-006-01'; verify WstxRequirements::'CL-006-02'; }
