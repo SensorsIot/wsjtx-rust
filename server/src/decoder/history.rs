@@ -3,6 +3,105 @@ use super::{Decode, DecodeError, Mode};
 use serde::Serialize;
 
 const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
+
+/// Actual heap capacities, not serialized byte charges or decoded observations.
+#[cfg(test)]
+pub(super) fn retained_record_bytes(record: &Decode) -> usize {
+    use super::{Call, Exchange, Fields};
+    fn call(c: &Call) -> usize {
+        c.text.as_ref().map_or(0, String::capacity)
+    }
+    fn exchange(e: &Exchange) -> usize {
+        match e {
+            Exchange::Grid(s) | Exchange::Roger(s) | Exchange::State(s) => s.capacity(),
+            _ => 0,
+        }
+    }
+    let p = &record.payload;
+    p.payload77.capacity()
+        + p.text.as_ref().map_or(0, String::capacity)
+        + p.fields.as_ref().map_or(0, |f| match f {
+            Fields::FreeText { value } | Fields::Telemetry { value } => value.capacity(),
+            Fields::Standard {
+                to,
+                from,
+                exchange: e,
+                ..
+            }
+            | Fields::Rtty {
+                to,
+                from,
+                exchange: e,
+                ..
+            } => call(to) + call(from) + exchange(e),
+            Fields::Dxpedition {
+                first,
+                second,
+                hashed,
+                ..
+            } => call(first) + call(second) + call(hashed),
+            Fields::FieldDay {
+                to,
+                from,
+                class_name,
+                section,
+                ..
+            } => call(to) + call(from) + class_name.capacity() + section.capacity(),
+            Fields::Nonstandard {
+                full_call,
+                hashed_call,
+                roger,
+                ..
+            } => call(full_call) + call(hashed_call) + roger.capacity(),
+            Fields::Vhf { to, from, grid, .. } => call(to) + call(from) + grid.capacity(),
+        })
+}
+
+#[cfg(test)]
+pub(super) fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_json::Value) {
+    let mut state = DecodeState::new_live(mode);
+    let mut records = Vec::new();
+    let mut setup_callbacks = 0;
+    for index in 0..2048u128 {
+        // Legal radix42 FreeText, distinct full payloads, not padded allocations.
+        let value = 42u128.pow(12) + index;
+        let bits = std::array::from_fn(|j| {
+            if j < 71 {
+                ((value >> (70 - j)) & 1) as u8
+            } else {
+                0
+            }
+        });
+        let record = Decode {
+            payload: super::unpack(&bits),
+            start_frame: 0,
+            frequency_hz: 1000.,
+            snr_db: Some(-20.),
+        };
+        assert_eq!(record.payload.status, super::PayloadStatus::Decoded);
+        state
+            .publish_if_new(&record, &mut |_| {
+                setup_callbacks += 1;
+                Ok(())
+            })
+            .unwrap();
+        records.push(record);
+    }
+    state.prepare_window(0).unwrap();
+    assert_eq!(state.available_count(), 2048);
+    assert_eq!(setup_callbacks, 2048);
+    let ledger = serde_json::json!({"prepared_records":records.len(), "prepared_callbacks":setup_callbacks,
+        "actual_decoded_callbacks":0,"is_decoded_success":false,"origin":0,"start_frame":0,
+        "history_key_capacity":state.published.capacity(),
+        "history_key_reserved_bytes":state.published.capacity()*std::mem::size_of::<PublicationKey>(),
+        "history_string_reserved_bytes":state.published.iter().map(|k|k.payload.capacity()).sum::<usize>(),
+        "semantic_encoded_charge_bytes":state.encoded_bytes(),"record_capacity":records.capacity(),
+        "record_inline_reserved_bytes":records.capacity()*std::mem::size_of::<Decode>(),
+        "record_nested_reserved_bytes":records.iter().map(retained_record_bytes).sum::<usize>(),
+        "unexercised_maximum_nested_record_allowance_bytes":null,
+        "maximum_legal_retained_graph_proved":false});
+    (state, records, ledger)
+}
 struct PublicationKey {
     payload: String,
     start: u64,

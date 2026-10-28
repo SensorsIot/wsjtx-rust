@@ -87,6 +87,15 @@ impl Spectrum {
         };
         let mut buffer = vec![Complex32::new(0., 0.); n];
         let mut scratch = vec![Complex32::new(0., 0.); fft.get_inplace_scratch_len()];
+        #[cfg(test)]
+        if std::env::var_os("WSTX_RESOURCE_CAPACITY_NONCE").is_some() {
+            eprintln!(
+                "RESOURCE_STORAGE {}",
+                serde_json::json!({"owner":"spectrum","mode":mode,
+                "rows":rows,"width":width,"values_complex32_capacity":values.capacity(),
+                "buffer_complex32_capacity":buffer.capacity(),"scratch_complex32_capacity":scratch.capacity()})
+            );
+        }
         let oscillators = (0..2)
             .map(|half| {
                 (0..n)

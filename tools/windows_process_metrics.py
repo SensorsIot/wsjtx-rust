@@ -100,6 +100,34 @@ class NativeApi:
 
 class OwnedProcess:
     @classmethod
+    def from_local_parent_handle(cls, source_handle, expected_pid, api=None):
+        """Duplicate this caller's retained Popen handle; never reopen by PID."""
+        checked_layout()
+        source_handle = positive_integer(source_handle, "source_handle")
+        if source_handle == (1 << 64) - 1:
+            raise MetricsError("invalid_source_handle")
+        pid = positive_integer(expected_pid, "pid", (1 << 32) - 1)
+        native = api if api is not None else NativeApi()
+        target = HANDLE()
+        current = native.current()
+        if not native.duplicate(current, source_handle, current, ctypes.byref(target),
+                                QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, 0):
+            raise MetricsError("DuplicateHandle", native.last_error())
+        if not target.value:
+            raise MetricsError("invalid_duplicate_handle")
+        process = cls.__new__(cls)
+        process.pid, process.creation = pid, None
+        process.api, process.handle = native, target.value
+        try:
+            if native.process_id(process.handle) != pid:
+                raise MetricsError("process_object_identity_mismatch")
+            process._identity()
+        except BaseException:
+            process.close()
+            raise
+        return process
+
+    @classmethod
     def from_parent_handle(cls, source_handle, expected_pid, api=None):
         checked_layout()
         source_handle = positive_integer(source_handle, "source_handle")
@@ -277,6 +305,8 @@ def serve(pid, creation, stream, api=None, parent_handle=None):
 
 
 def main():
+    if "--capacity-pins" in sys.argv:
+        return capacity_main()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--parent-identity", action="store_true")
     parser.add_argument("--pid", type=int)
@@ -295,6 +325,227 @@ def main():
               "winerror": getattr(error, "code", None)})
         return 1
     return 0
+
+
+CAPACITY_CASE = "decoder::search::tests::resource_capacity_owned_child"
+
+
+def pe_image_size(data):
+    """Conservatively charge every mapped main-image section, not file length."""
+    import struct
+    if len(data) < 64 or data[:2] != b"MZ":
+        raise MetricsError("invalid_pe")
+    offset = struct.unpack_from("<I", data, 60)[0]
+    if offset > len(data) - 24 or data[offset:offset+4] != b"PE\0\0":
+        raise MetricsError("invalid_pe")
+    machine, sections = struct.unpack_from("<HH", data, offset+4)
+    optional_size = struct.unpack_from("<H", data, offset+20)[0]
+    optional = offset+24
+    if machine != 0x8664 or not sections or optional_size < 112 or optional+optional_size > len(data):
+        raise MetricsError("unsupported_pe")
+    if struct.unpack_from("<H", data, optional)[0] != 0x20B:
+        raise MetricsError("unsupported_pe")
+    size = struct.unpack_from("<I", data, optional+56)[0]
+    headers = struct.unpack_from("<I", data, optional+60)[0]
+    table = optional+optional_size
+    if not 0 < headers <= size or table+40*sections > len(data):
+        raise MetricsError("invalid_pe")
+    for index in range(sections):
+        virtual_size, address, raw_size = struct.unpack_from("<III", data, table+40*index+8)
+        if address+max(virtual_size, raw_size) > size:
+            raise MetricsError("invalid_pe_section")
+    return size
+
+
+class CapacityProtocol:
+    def __init__(self, nonce):
+        self.nonce, self.state = nonce, "WAIT_READY"
+
+    def accept(self, record):
+        if type(record) is not dict or set(record) != {"state", "nonce"} or record["nonce"] != self.nonce:
+            raise MetricsError("capacity_nonce_or_shape")
+        expected = {"WAIT_READY": "READY", "WORKING": "FINISHED"}.get(self.state)
+        if record["state"] != expected:
+            raise MetricsError("capacity_protocol_order")
+        self.state = "WORKING" if expected == "READY" else "FINISHED"
+        return expected
+
+
+def finish_capacity_child(child, deadline, clock, receipt):
+    """No fresh timeout; cleanup remains inside the original operational budget."""
+    if child.poll() is None:
+        receipt["kill_attempted"] = True
+        try:
+            child.kill()
+        except OSError as error:
+            receipt["kill_error"] = repr(error)
+    try:
+        child.wait(timeout=max(0.0, deadline-clock()))
+    except TimeoutError as error:
+        receipt["wait_error"] = repr(error)
+    # subprocess.TimeoutExpired is not a TimeoutError; the caller retains it below.
+    except Exception as error:
+        receipt["wait_error"] = repr(error)
+    receipt.update(exit_code=child.returncode, cleanup_complete=child.poll() is not None)
+
+
+def capacity_main():
+    """One reviewed, descendant-free release-lib child; no metadata subprocesses."""
+    import hashlib
+    from pathlib import Path
+    import queue
+    import secrets
+    import subprocess
+    import threading
+    import time
+    started = time.monotonic()
+    deadline = started+300
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--capacity-pins", required=True)
+    parser.add_argument("--capacity-pins-sha", required=True)
+    parser.add_argument("--capacity-out", required=True)
+    args = parser.parse_args()
+    if sys.flags.optimize or not __debug__:
+        raise MetricsError("assertions_disabled")
+    digest = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    if digest(args.capacity_pins) != args.capacity_pins_sha:
+        raise MetricsError("unreviewed_capacity_pins")
+    pins = json.loads(Path(args.capacity_pins).read_text(encoding="utf-8-sig"), object_pairs_hook=exact_object)
+    for name in ("source_commit", "compiler", "host", "exe", "cache", "files", "root_clean_source_attestation"):
+        if not pins.get(name):
+            raise MetricsError("missing_capacity_pin_"+name)
+    for path, expected in pins["files"].items():
+        if digest(path) != expected:
+            raise MetricsError("capacity_input_drift")
+    # Bind actual launch/inputs/helper bytes, rather than merely any caller-listed files.
+    required = [str(Path(pins["exe"]).resolve()), str(Path(__file__).resolve())]
+    required += [str((Path(pins["cache"])/name/"000000_000000.wav").resolve())
+                 for name in ("ft8-strong-00", "ft4-strong-00")]
+    resolved = {str(Path(path).resolve()): expected for path, expected in pins["files"].items()}
+    if any(path not in resolved for path in required):
+        raise MetricsError("missing_launch_or_input_pin")
+    # Immutable input truth comes from the admitted fixture, not caller-selected hashes.
+    if [resolved[path] for path in required[2:]] != [
+            "02525d0ebe7661935d52e60f169501aae2428983a72a1e1a0c8087ddce322d51",
+            "17efa54767abee26df1116894f84c56c014135ac6aabf17277358d6ca55d7f36"]:
+        raise MetricsError("wrong_capacity_input")
+    image_size = pe_image_size(Path(pins["exe"]).read_bytes())
+    out = Path(args.capacity_out)
+    out.mkdir(parents=True, exist_ok=False)
+    nonce = secrets.token_hex(16)
+    command = [pins["exe"], "--exact", CAPACITY_CASE, "--ignored", "--nocapture", "--test-threads=1"]
+    receipt = {"command": command, "pins": pins, "pins_sha256": args.capacity_pins_sha,
+               "owner_pid": os.getpid(), "python_executable": sys.executable,
+               "python_version": sys.version, "python_binary_sha256": digest(sys.executable),
+               "owner_assertions_enabled": __debug__, "owner_optimize": sys.flags.optimize,
+               "source_cleanliness_verification": "root attested; owner rechecked listed file hashes only",
+               "host_qualification": "supplemental actual host; not canonical reference qualification",
+               "main_pe_size_of_image": image_size, "operational_budget_seconds": 300,
+               "cleanup_reserve_seconds": 10, "complete": False, "workspace_proof": "INCONCLUSIVE",
+               "station_96mib_proved": False, "events": [], "samples": [], "reader_joined": False}
+    events = queue.Queue(maxsize=128)
+    child = process = None
+    readers = []
+    protocol = CapacityProtocol(nonce)
+    def read_stream(stream, name):
+        total = 0
+        try:
+            with (out/(name+".log")).open("w", encoding="utf-8") as log:
+                while True:
+                    line = stream.readline(16385)
+                    if not line:
+                        break
+                    total += len(line)
+                    if len(line) > 16384 or total > 4_000_000:
+                        events.put_nowait(("error", "output_limit")); return
+                    log.write(line); log.flush()
+                    if line.startswith("RESOURCE_"):
+                        events.put_nowait(("record", line))
+        except BaseException as error:
+            try: events.put_nowait(("error", repr(error)))
+            except queue.Full: pass
+        finally:
+            try: events.put_nowait(("eof", name))
+            except queue.Full: pass
+    try:
+        if deadline-time.monotonic() <= 10:
+            raise MetricsError("capacity_deadline_before_spawn")
+        env = dict(os.environ)
+        env.update(WSTX_RESOURCE_CAPACITY_NONCE=nonce, WSTX_DECODER_CACHE=pins["cache"])
+        child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, encoding="utf-8", cwd=Path(pins["exe"]).parent, env=env)
+        receipt["owned_pid"] = child.pid
+        for name, stream in (("stdout", child.stdout), ("stderr", child.stderr)):
+            thread = threading.Thread(target=read_stream, args=(stream, name), daemon=True)
+            thread.start(); readers.append(thread)
+        process = OwnedProcess.from_local_parent_handle(int(child._handle), child.pid)
+        eof = 0
+        while protocol.state != "FINISHED":
+            remaining = deadline-time.monotonic()-10
+            if remaining <= 0:
+                raise MetricsError("capacity_timeout")
+            try: kind, value = events.get(timeout=remaining)
+            except queue.Empty: raise MetricsError("capacity_timeout") from None
+            if kind == "error":
+                raise MetricsError("capacity_reader_"+value)
+            if kind == "eof":
+                eof += 1
+                if eof == 2: raise MetricsError("capacity_early_eof")
+                continue
+            prefix, text = value.split(" ", 1)
+            if prefix not in {"RESOURCE_HANDSHAKE", "RESOURCE_STORAGE", "RESOURCE_CAPACITY", "RESOURCE_KERNEL", "RESOURCE_DISPOSITION"}:
+                raise MetricsError("capacity_unknown_record")
+            if prefix != "RESOURCE_HANDSHAKE" and protocol.state != "WORKING":
+                raise MetricsError("capacity_record_outside_work")
+            data = json.loads(text, object_pairs_hook=exact_object)
+            receipt["events"].append({"kind": prefix, "data": data})
+            if prefix == "RESOURCE_HANDSHAKE":
+                state = protocol.accept(data)
+                receipt["samples"].append(process.sample())
+                child.stdin.write(("START" if state == "READY" else "RELEASE")+" "+nonce+"\n")
+                child.stdin.flush()
+        child.stdin.close()
+        child.wait(timeout=max(0, deadline-time.monotonic()-10))
+        for thread in readers: thread.join(timeout=max(0, deadline-time.monotonic()))
+        # Drain remaining records: a duplicate FINISHED or trailing unknown event cannot pass.
+        while not events.empty():
+            kind, value = events.get_nowait()
+            if kind not in ("eof",): raise MetricsError("capacity_trailing_record")
+        stdout = (out/"stdout.log").read_text(encoding="utf-8")
+        kernels = [r["data"] for r in receipt["events"] if r["kind"] == "RESOURCE_KERNEL"]
+        dispositions = [r["data"] for r in receipt["events"] if r["kind"] == "RESOURCE_DISPOSITION"]
+        if (child.returncode != 0 or len(kernels) != 4 or
+                {(k["mode"],k["scalar"]) for k in kernels} != {(m,s) for m in ("ft8","ft4") for s in (False,True)} or
+                not all(k["complete"] and k["frames"] == 360000 and k["actual_decoded_callbacks"] > 0 for k in kernels) or
+                len(dispositions) != 1 or not dispositions[0]["all_test_owners_dropped"] or
+                "test result: ok. 1 passed; 0 failed; 0 ignored;" not in stdout or
+                any(thread.is_alive() for thread in readers)):
+            raise MetricsError("capacity_incomplete_evidence")
+        receipt["absolute_peak_plus_main_image_bytes"] = max(s["lifetime_peak_commit"] for s in receipt["samples"])+image_size
+        receipt["other_nonprivate_and_unexercised_capacity_allowance_bytes"] = None
+        receipt["complete"] = True
+    except BaseException as error:
+        receipt["failure"] = {"type": type(error).__name__, "message": str(error)}
+    finally:
+        if child is not None:
+            if child.stdin and not child.stdin.closed:
+                try: child.stdin.close()
+                except OSError as error:
+                    receipt["stdin_close_error"] = repr(error)
+                    receipt["complete"] = False
+            finish_capacity_child(child, deadline, time.monotonic, receipt)
+            for thread in readers: thread.join(timeout=max(0, deadline-time.monotonic()))
+            receipt["reader_joined"] = not any(t.is_alive() for t in readers)
+            for stream in (child.stdout, child.stderr):
+                if stream and receipt["reader_joined"]: stream.close()
+        if process is not None:
+            try: process.close()
+            except MetricsError as error:
+                receipt["query_close_error"] = str(error); receipt["complete"] = False
+        receipt["elapsed_seconds"] = time.monotonic()-started
+        receipt["complete"] = bool(receipt["complete"] and receipt.get("cleanup_complete") and receipt["reader_joined"])
+        (out/"receipt.json").write_text(json.dumps(receipt, indent=2)+"\n", encoding="utf-8")
+    return 0 if receipt["complete"] else 1
 
 
 if __name__ == "__main__":

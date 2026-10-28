@@ -225,6 +225,28 @@ pub(super) fn pinned_samples(mode: super::Mode) -> Vec<f32> {
         .args(["-c", "import hashlib,pathlib,sys; assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]"])
         .arg(&path).arg(case["sha256"].as_str().unwrap()).status().unwrap();
     assert!(verified.success(), "independently pinned D1 input hash");
+    pinned_samples_no_probe(mode)
+}
+
+/// The capacity child's parent verifies the immutable WAV hash before launch.
+/// This reader deliberately never starts a verifier/probe descendant.
+#[cfg(not(debug_assertions))]
+pub(super) fn pinned_samples_no_probe(mode: super::Mode) -> Vec<f32> {
+    let cases = cases();
+    let name = if mode == super::Mode::Ft8 {
+        "ft8"
+    } else {
+        "ft4"
+    };
+    let case = cases["samples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["mode"] == name)
+        .unwrap();
+    let path = std::path::PathBuf::from(std::env::var_os("WSTX_DECODER_CACHE").unwrap())
+        .join(case["id"].as_str().unwrap())
+        .join("000000_000000.wav");
     let bytes = std::fs::read(path).unwrap();
     assert_eq!(&bytes[..4], b"RIFF");
     assert_eq!(&bytes[8..12], b"WAVE");

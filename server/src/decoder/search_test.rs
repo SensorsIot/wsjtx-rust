@@ -1,4 +1,201 @@
 use super::*;
+
+// Direct library capacity evidence. Never invoked by an ordinary test selection.
+#[test]
+#[ignore = "requires reviewed retained-handle parent and pinned inputs"]
+#[cfg(not(debug_assertions))]
+fn resource_capacity_owned_child() {
+    use crate::decoder::{history, resource_observer as observer};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let nonce = std::env::var("WSTX_RESOURCE_CAPACITY_NONCE").expect("owned parent required");
+    assert!(nonce.len() == 32 && nonce.bytes().all(|c| c.is_ascii_hexdigit()));
+    let handshake = |state: &str, reply: &str| {
+        eprintln!(
+            "RESOURCE_HANDSHAKE {}",
+            serde_json::json!({"state":state,"nonce":nonce})
+        );
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).unwrap();
+        assert!(line.len() <= 256);
+        assert_eq!(line.trim_end(), format!("{reply} {nonce}"));
+    };
+    handshake("READY", "START");
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        let (mut retained_state, records, history_ledger) = history::capacity_state(mode);
+        eprintln!("RESOURCE_CAPACITY {}", history_ledger);
+        // Retain actual nested variant witnesses, never arbitrary padded buffers.
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/decoder/independent-vectors/manifest.json"
+        ))
+        .unwrap();
+        let witnesses = manifest["vectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                let bits = std::array::from_fn(|i| {
+                    row["payload77"].as_str().unwrap().as_bytes()[i] - b'0'
+                });
+                Decode {
+                    payload: unpack(&bits),
+                    start_frame: 0,
+                    frequency_hz: 1000.,
+                    snr_db: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            witnesses
+                .iter()
+                .all(|record| record.payload.status == crate::decoder::PayloadStatus::Decoded)
+        );
+        eprintln!(
+            "RESOURCE_CAPACITY {}",
+            serde_json::json!({"owner":"variant_witnesses",
+            "records":witnesses.len(),"inline_reserved_bytes":witnesses.capacity()*std::mem::size_of::<Decode>(),
+            "nested_reserved_bytes":witnesses.iter().map(history::retained_record_bytes).sum::<usize>(),
+            "is_decoded_success":false,"all_legal_graph_maxima_proved":false})
+        );
+        let candidates = (0..256)
+            .map(|start| Candidate {
+                start,
+                frequency: 1000.,
+                score: 1.,
+            })
+            .collect::<Vec<_>>();
+        let pending = (0..32)
+            .map(|start| Subtraction {
+                start,
+                frequency: 1000.,
+                tones: vec![0; mode.symbol_count()],
+            })
+            .collect::<Vec<_>>();
+        let seen = (0..256)
+            .map(|i| (format!("{i:077b}"), i as u64))
+            .collect::<Vec<_>>();
+        eprintln!(
+            "RESOURCE_CAPACITY {}",
+            serde_json::json!({"owner":"direct_candidate_sic_suppression",
+            "candidates":candidates.len(),"pending_sic":pending.len(),"window_seen":seen.len(),
+            "reserved_bytes":candidates.capacity()*std::mem::size_of::<Candidate>()+
+                pending.capacity()*std::mem::size_of::<Subtraction>()+pending.iter().map(|s|s.tones.capacity()).sum::<usize>()+
+                seen.capacity()*std::mem::size_of::<(String,u64)>()+seen.iter().map(|s|s.0.capacity()).sum::<usize>(),
+            "is_decoded_success":false,"internal_search_heap_maximum_exercised":false})
+        );
+        let base = observer::pinned_samples_no_probe(mode);
+        let samples = base
+            .iter()
+            .copied()
+            .cycle()
+            .take(360000)
+            .collect::<Vec<_>>();
+        for scalar in [false, true] {
+            let (long, short) = if mode == Mode::Ft8 {
+                (384000, 6400)
+            } else {
+                (362880, 20160)
+            };
+            let scratch = [(long, false), (short, true), (32, false)].map(|(n, inv)| {
+                crate::decoder::baseband::fft_plan(n, inv, scalar).get_inplace_scratch_len()
+            });
+            eprintln!(
+                "RESOURCE_STORAGE {}",
+                serde_json::json!({"owner":"reconstructed_bandplan_query",
+                "mode":mode,"scalar":scalar,"long_len":long,"short_len":short,"scratch_lengths":scratch,
+                "direct_private_field_observation":false})
+            );
+            let decoder = if scalar {
+                Decoder::with_scalar_transform()
+            } else {
+                Decoder::new()
+            };
+            let cancel = Arc::new(AtomicBool::new(false));
+            let observed = observer::install(cancel.clone(), None);
+            let mut state = DecodeState::new_live(mode);
+            let mut callbacks = 0;
+            complete(decoder.decode_window_into_async(
+                samples.clone(),
+                0,
+                &mut state,
+                &|| false,
+                &mut |record| {
+                    assert_eq!(
+                        record.payload.payload77,
+                        observer::cases()["payload77"].as_str().unwrap()
+                    );
+                    callbacks += 1;
+                    Ok(())
+                },
+            ))
+            .unwrap();
+            assert!(callbacks > 0);
+            // Exercise the real complete subtraction kernel even if search chose no SIC.
+            let bits = std::array::from_fn(|i| {
+                observer::cases()["payload77"].as_str().unwrap().as_bytes()[i] - b'0'
+            });
+            let tones = decoder
+                .channel
+                .tones(&decoder.channel.encode(&bits, mode), mode);
+            let wave = quadratures(mode, &tones, 1000.).unwrap();
+            let mut residual = samples.clone();
+            let mut subtractor = Subtractor::new(mode, scalar).unwrap();
+            eprintln!("RESOURCE_STORAGE {}", subtractor.capacity_ledger());
+            let never = || false;
+            complete(subtractor.subtract(&mut residual, 6000, &wave, &mut CpuBudget::new(&never)))
+                .unwrap();
+            assert_ne!(residual, samples);
+            let report = observed.report();
+            assert!(report.counts[observer::Phase::SubtractionCommit as usize] > 0);
+            eprintln!(
+                "RESOURCE_KERNEL {}",
+                serde_json::json!({"mode":mode,"scalar":scalar,"frames":samples.len(),
+                "complete":true,"actual_decoded_callbacks":callbacks,"phase_counts":report.counts,
+                "direct_subtraction_exercised":true,"prepared_records_are_decodes":false})
+            );
+            drop(observed);
+            let cancelled = observer::install(cancel.clone(), Some(observer::Phase::DetectionRow));
+            let mut unexpected = 0;
+            assert_eq!(
+                complete(decoder.decode_window_into_async(
+                    samples.clone(),
+                    0,
+                    &mut retained_state,
+                    &|| cancel.load(Ordering::SeqCst),
+                    &mut |_| {
+                        unexpected += 1;
+                        Ok(())
+                    }
+                )),
+                Err(DecodeError::Cancelled)
+            );
+            assert_eq!(unexpected, 0);
+            assert_eq!(retained_state.available_count(), 2048);
+            assert_eq!(
+                cancelled.report().counts[observer::Phase::DetectionRow as usize],
+                1
+            );
+            eprintln!(
+                "RESOURCE_CAPACITY {}",
+                serde_json::json!({"owner":"retained_history_cancel",
+                "mode":mode,"scalar":scalar,"remaining_keys":retained_state.available_count(),
+                "original_token_cancelled":cancel.load(Ordering::SeqCst),
+                "actual_phase_counts":cancelled.report().counts,"unexpected_callbacks":unexpected,
+                "manager_ack_proved":false,"cancellation_sla_proved":false})
+            );
+            std::hint::black_box((&records, &witnesses, &candidates, &pending, &seen));
+        }
+    }
+    eprintln!(
+        "RESOURCE_DISPOSITION {}",
+        serde_json::json!({"unknown_maximum_nested_record_allowance":true,
+        "unknown_unexercised_internal_grid_heap_allowance":true,"workspace_sufficient_proof":"INCONCLUSIVE",
+        "station_96mib_proved":false,"all_test_owners_dropped":true})
+    );
+    handshake("FINISHED", "RELEASE");
+}
 // Proves: CL-007-04; TC-004-003. Capacity setup is not a decoded-success fixture.
 #[test]
 fn resource_candidate_and_sic_reserved_storage_ledger() {

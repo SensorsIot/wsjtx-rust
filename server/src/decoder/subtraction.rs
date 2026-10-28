@@ -17,6 +17,13 @@ pub(super) struct Subtractor {
     scratch: Vec<Complex64>,
 }
 impl Subtractor {
+    #[cfg(test)]
+    pub(super) fn capacity_ledger(&self) -> serde_json::Value {
+        serde_json::json!({"kernel_complex64_capacity":self.kernel.capacity(),
+            "correction_f64_capacity":self.correction.capacity(),
+            "buffer_complex64_capacity":self.buffer.capacity(),
+            "scratch_complex64_capacity":self.scratch.capacity(),"frame":self.frame})
+    }
     pub fn new(mode: Mode, scalar: bool) -> Result<Self, DecodeError> {
         let radius = if mode == Mode::Ft8 {
             2000usize
