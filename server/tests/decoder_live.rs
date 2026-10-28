@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 use std::cell::Cell;
-use wstx_rust::decoder::{Decode, DecodeError, Mode, unpack};
+use wstx_rust::decoder::{Call, Decode, DecodeError, Exchange, Fields, Mode, PayloadStatus, unpack};
 #[path = "../src/decoder/history.rs"]
 mod history;
 use history::DecodeState;

@@ -307,6 +307,53 @@ struct PublicationKey {
 #[cfg(test)]
 #[test]
 fn resource_history_capacity_counts_reserved_key_storage() {
+    {
+        let tables = UnpackTableReserve::new();
+        for mode in [Mode::Ft8, Mode::Ft4] {
+            let (mut state, records, cohort) = capacity_state(mode);
+            assert_eq!(records.len(), 2048);
+            assert_eq!(state.available_count(), 2048);
+            assert_eq!(cohort["prepared_callbacks"], 2048);
+            for (record, expected) in [
+                (&records[0], "CQ AAAA CQ ZZZZ R 32F EMA"),
+                (&records[2047], "CQ ADAT CQ ZZZZ R 32F EMA"),
+            ] {
+                assert_eq!(record.payload.text.as_deref(), Some(expected));
+                let paths = record_string_paths(record);
+                assert_eq!(
+                    paths.iter().map(|(path, _)| *path).collect::<Vec<_>>(),
+                    [
+                        "payload77",
+                        "text",
+                        "fields.to.text",
+                        "fields.from.text",
+                        "fields.class_name",
+                        "fields.section",
+                    ]
+                );
+                let capacities = paths.iter().map(|(_, s)| s.capacity()).sum::<usize>();
+                let lengths = paths.iter().map(|(_, s)| s.len()).sum::<usize>();
+                assert_eq!(retained_record_bytes(record), capacities);
+                let layout = string_layout_ledger("cohort_endpoint", "field_day", record);
+                assert_eq!(layout["owner_count"], 6);
+                assert_eq!(layout["string_lengths_sum"], serde_json::json!(lengths));
+                assert_eq!(
+                    layout["string_capacities_sum"],
+                    serde_json::json!(capacities)
+                );
+                assert_eq!(
+                    layout["inline_decode_bytes"],
+                    serde_json::json!(std::mem::size_of::<Decode>())
+                );
+                let before = (state.available_count(), state.encoded_bytes());
+                state
+                    .publish_if_new(record, &mut |_| panic!("cohort duplicate cannot publish"))
+                    .unwrap();
+                assert_eq!((state.available_count(), state.encoded_bytes()), before);
+            }
+        }
+        tables.retain();
+    }
     let mut history = DecodeState::new_live(Mode::Ft8);
     let mut publications = 0;
     for index in 0..2048usize {
