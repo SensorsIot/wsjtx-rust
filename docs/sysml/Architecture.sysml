@@ -344,7 +344,7 @@ package WstxArchitecture {
         attribute inhibited : Boolean[0..1];
         attribute digitalPredistortion : Boolean[0..1];
         attribute externalAmplifierEnabled : Boolean[0..1];
-        attribute driveGainFraction : Real[0..1];
+        attribute driveGainLevel : Real[0..1];
         attribute bassLevel : Real[0..1];
         attribute extendedSsb : Boolean[0..1];
         attribute equalizerPreset : String[0..1];
@@ -372,7 +372,7 @@ package WstxArchitecture {
         attribute inhibitedDomain : BooleanCapability[*];
         attribute digitalPredistortionDomain : BooleanCapability[*];
         attribute externalAmplifierEnabledDomain : BooleanCapability[*];
-        attribute driveGainFractionDomain : RealCapability[*];
+        attribute driveGainLevelDomain : RealCapability[*];
         attribute bassLevelDomain : RealCapability[*];
         attribute extendedSsbDomain : BooleanCapability[*];
         attribute equalizerPresetDomain : StringCapability[*];
@@ -399,7 +399,7 @@ package WstxArchitecture {
     dependency transmitter_inhibited_metadata_owner from RadioTransmitterCapabilities::inhibitedDomain to RadioTransmitterSettings::inhibited;
     dependency transmitter_digitalPredistortion_metadata_owner from RadioTransmitterCapabilities::digitalPredistortionDomain to RadioTransmitterSettings::digitalPredistortion;
     dependency transmitter_externalAmplifierEnabled_metadata_owner from RadioTransmitterCapabilities::externalAmplifierEnabledDomain to RadioTransmitterSettings::externalAmplifierEnabled;
-    dependency transmitter_driveGainFraction_metadata_owner from RadioTransmitterCapabilities::driveGainFractionDomain to RadioTransmitterSettings::driveGainFraction;
+    dependency transmitter_driveGainLevel_metadata_owner from RadioTransmitterCapabilities::driveGainLevelDomain to RadioTransmitterSettings::driveGainLevel;
     dependency transmitter_bassLevel_metadata_owner from RadioTransmitterCapabilities::bassLevelDomain to RadioTransmitterSettings::bassLevel;
     dependency transmitter_extendedSsb_metadata_owner from RadioTransmitterCapabilities::extendedSsbDomain to RadioTransmitterSettings::extendedSsb;
     dependency transmitter_equalizerPreset_metadata_owner from RadioTransmitterCapabilities::equalizerPresetDomain to RadioTransmitterSettings::equalizerPreset;
@@ -739,6 +739,8 @@ package WstxArchitecture {
         attribute dcsEnabled : Boolean[0..1];
         attribute dcsSquelchEnabled : Boolean[0..1];
         attribute toneBurstEnabled : Boolean[0..1];
+        attribute ctcssDetected : Boolean[0..1];
+        attribute dcsDetected : Boolean[0..1];
         attribute detectedCtcssHz : HertzValue[0..1];
         attribute detectedDcsCode : String[0..1];
         attribute dtmfPending : Boolean[0..1];
@@ -760,6 +762,8 @@ package WstxArchitecture {
         attribute dcsEnabledDomain : BooleanCapability[*];
         attribute dcsSquelchEnabledDomain : BooleanCapability[*];
         attribute toneBurstEnabledDomain : BooleanCapability[*];
+        attribute ctcssDetectedDomain : ReadOnlyBooleanCapability[*];
+        attribute dcsDetectedDomain : ReadOnlyBooleanCapability[*];
         attribute detectedCtcssHzDomain : ReadOnlyHertzValueCapability[*];
         attribute detectedDcsCodeDomain : ReadOnlyStringCapability[*];
         attribute dtmfPendingDomain : ReadOnlyBooleanCapability[*];
@@ -780,6 +784,8 @@ package WstxArchitecture {
     dependency tones_dcsEnabled_metadata_owner from RadioTonesCapabilities::dcsEnabledDomain to RadioToneSettings::dcsEnabled;
     dependency tones_dcsSquelchEnabled_metadata_owner from RadioTonesCapabilities::dcsSquelchEnabledDomain to RadioToneSettings::dcsSquelchEnabled;
     dependency tones_toneBurstEnabled_metadata_owner from RadioTonesCapabilities::toneBurstEnabledDomain to RadioToneSettings::toneBurstEnabled;
+    dependency tones_ctcssDetected_metadata_owner from RadioTonesCapabilities::ctcssDetectedDomain to RadioToneSettings::ctcssDetected;
+    dependency tones_dcsDetected_metadata_owner from RadioTonesCapabilities::dcsDetectedDomain to RadioToneSettings::dcsDetected;
     dependency tones_detectedCtcssHz_metadata_owner from RadioTonesCapabilities::detectedCtcssHzDomain to RadioToneSettings::detectedCtcssHz;
     dependency tones_detectedDcsCode_metadata_owner from RadioTonesCapabilities::detectedDcsCodeDomain to RadioToneSettings::detectedDcsCode;
     dependency tones_dtmfPending_metadata_owner from RadioTonesCapabilities::dtmfPendingDomain to RadioToneSettings::dtmfPending;
@@ -809,8 +815,8 @@ package WstxArchitecture {
         attribute fixedEdgePreset : String[0..1];
         attribute onTransmit : Boolean[0..1];
         attribute centerReference : String[0..1];
-        attribute videoBandwidthHz : HertzValue[0..1];
-        attribute resolutionBandwidthHz : HertzValue[0..1];
+        attribute videoBandwidth : String[0..1];
+        attribute resolutionBandwidth : String[0..1];
         doc /* Physical radio spectrum range/span differs from receive filter
              bandwidth and frontend waterfall span. A filter name supplies no width. */
     }
@@ -831,8 +837,8 @@ package WstxArchitecture {
         attribute fixedEdgePresetDomain : StringCapability[*];
         attribute onTransmitDomain : BooleanCapability[*];
         attribute centerReferenceDomain : StringCapability[*];
-        attribute videoBandwidthHzDomain : HertzValueCapability[*];
-        attribute resolutionBandwidthHzDomain : HertzValueCapability[*];
+        attribute videoBandwidthDomain : StringCapability[*];
+        attribute resolutionBandwidthDomain : StringCapability[*];
     }
     dependency scope_scopeId_metadata_owner from RadioScopeCapabilities::scopeIdDomain to RadioScopeSettings::scopeId;
     dependency scope_enabled_metadata_owner from RadioScopeCapabilities::enabledDomain to RadioScopeSettings::enabled;
@@ -850,8 +856,8 @@ package WstxArchitecture {
     dependency scope_fixedEdgePreset_metadata_owner from RadioScopeCapabilities::fixedEdgePresetDomain to RadioScopeSettings::fixedEdgePreset;
     dependency scope_onTransmit_metadata_owner from RadioScopeCapabilities::onTransmitDomain to RadioScopeSettings::onTransmit;
     dependency scope_centerReference_metadata_owner from RadioScopeCapabilities::centerReferenceDomain to RadioScopeSettings::centerReference;
-    dependency scope_videoBandwidthHz_metadata_owner from RadioScopeCapabilities::videoBandwidthHzDomain to RadioScopeSettings::videoBandwidthHz;
-    dependency scope_resolutionBandwidthHz_metadata_owner from RadioScopeCapabilities::resolutionBandwidthHzDomain to RadioScopeSettings::resolutionBandwidthHz;
+    dependency scope_videoBandwidth_metadata_owner from RadioScopeCapabilities::videoBandwidthDomain to RadioScopeSettings::videoBandwidth;
+    dependency scope_resolutionBandwidth_metadata_owner from RadioScopeCapabilities::resolutionBandwidthDomain to RadioScopeSettings::resolutionBandwidth;
     attribute def RadioMeters {
         attribute context : RadioPropertyContext;
         attribute evidence : RadioObservationEvidence[*];
@@ -1095,17 +1101,46 @@ package WstxArchitecture {
         attribute keyer : RadioKeyerSettings[0..1]; attribute tones : RadioToneSettings[0..1];
         doc /* Only Boolean/named function members explicitly supported for storage;
              these are stored contents, never another current operating context. */
+        attribute scope : RadioScopeSettings[0..1];
+        attribute meters : RadioMeters[0..1];
+        attribute frontPanel : RadioFrontPanelValues[0..1];
+        attribute scanning : RadioScanningValues[0..1];
+        attribute digital : RadioDigitalValues[0..1];
+        doc /* Shared complete named vocabulary; only members evidenced for this
+             storage family and channel type may be present. Functions, levels and
+             extensions are separate supported storage subsets, never independent
+             current values or permission to write read-only operating measurements. */
     }
     attribute def StoredRadioLevels {
         attribute tuning : RadioVfoValues[0..1]; attribute receiver : RadioReceiverSettings[0..1];
         attribute transmitter : RadioTransmitterSettings[0..1]; attribute audio : RadioAudioSettings[0..1];
         attribute keyer : RadioKeyerSettings[0..1]; attribute scope : RadioScopeSettings[0..1];
         doc /* Only separately supported numeric/named level members for storage. */
+        attribute tones : RadioToneSettings[0..1];
+        attribute meters : RadioMeters[0..1];
+        attribute frontPanel : RadioFrontPanelValues[0..1];
+        attribute scanning : RadioScanningValues[0..1];
+        attribute digital : RadioDigitalValues[0..1];
+        doc /* Shared complete named vocabulary; only members evidenced for this
+             storage family and channel type may be present. Functions, levels and
+             extensions are separate supported storage subsets, never independent
+             current values or permission to write read-only operating measurements. */
     }
     attribute def StoredRadioExtensions {
         attribute receiver : RadioReceiverSettings[0..1]; attribute transmitter : RadioTransmitterSettings[0..1];
         attribute audio : RadioAudioSettings[0..1]; attribute digital : RadioDigitalValues[0..1];
         doc /* Resolved named extension meanings only; no token-number/value arrays. */
+        attribute tuning : RadioVfoValues[0..1];
+        attribute keyer : RadioKeyerSettings[0..1];
+        attribute tones : RadioToneSettings[0..1];
+        attribute scope : RadioScopeSettings[0..1];
+        attribute meters : RadioMeters[0..1];
+        attribute frontPanel : RadioFrontPanelValues[0..1];
+        attribute scanning : RadioScanningValues[0..1];
+        doc /* Shared complete named vocabulary; only members evidenced for this
+             storage family and channel type may be present. Functions, levels and
+             extensions are separate supported storage subsets, never independent
+             current values or permission to write read-only operating measurements. */
     }
     attribute def RadioMemoryValues {
         attribute selectedChannel : Integer[0..1]; attribute channels : StoredMemoryChannel[*];
@@ -1249,7 +1284,10 @@ package WstxArchitecture {
          include/hamlib/rig.h standard114entries, public channel28members/channel_cap and
          contextual frequency/filter/step lists. Known named extension meanings in Icom,
          Kenwood, Yaesu, Optoscan, FiFiSDR and SimpleCAT map to groups above. Their source
-         tables describe possible meanings, not support for every model. Numeric vendor
+         tables describe possible meanings, not support for every model. Icom scope VBW/RBW
+         are named bandwidth choices without evidenced Hz; driveGainLevel is a model
+         scale (source0..255), not normalized without a documented conversion. Optoscan
+         CTCSS/DCS active flags do not imply decoded tone frequency or DCS code. Numeric vendor
          codes with undecoded semantics remain unresolved: FTX1 APRS receive filters,
          smart-beacon thresholds, GPS/location/display/color/tuning-key options, charger,
          dither, DSP/EQ stages and battery-conditioned max-power controls require source
