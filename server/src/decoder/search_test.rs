@@ -156,6 +156,9 @@ fn resource_capacity_owned_child() {
                 "direct_subtraction_exercised":true,"prepared_records_are_decodes":false})
             );
             drop(observed);
+            drop(subtractor);
+            drop(residual);
+            drop(wave);
             let cancelled = observer::install(cancel.clone(), Some(observer::Phase::DetectionRow));
             let mut unexpected = 0;
             assert_eq!(
