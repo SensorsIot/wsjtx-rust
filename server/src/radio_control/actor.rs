@@ -8,7 +8,7 @@ use super::{
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         mpsc::{self, SyncSender, TrySendError},
     },
     thread::{self, JoinHandle},
@@ -18,19 +18,54 @@ use std::{
 struct Command {
     request: Request,
     response: SyncSender<Result<Observation>>,
+    reservation: Option<Arc<AtomicBool>>,
 }
 pub struct Actor {
     commands: SyncSender<Command>,
     snapshot: Arc<Mutex<Snapshot>>,
-    lease: Arc<AtomicBool>,
+    lease: Arc<AtomicU8>,
     shutdown: Arc<AtomicBool>,
     current_cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     thread: Option<JoinHandle<()>>,
 }
-struct Lease(Arc<AtomicBool>);
+// 0 idle,1 ordinary operation,2 reserved transition,3 reserved exchange.
+struct Lease(Arc<AtomicU8>, Option<Arc<AtomicBool>>);
 impl Drop for Lease {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
+        if let Some(released) = &self.1 {
+            self.0.store(2, Ordering::Release);
+            if released.load(Ordering::Acquire) {
+                let _ = self
+                    .0
+                    .compare_exchange(2, 0, Ordering::AcqRel, Ordering::Acquire);
+            }
+        } else {
+            self.0.store(0, Ordering::Release);
+        }
+    }
+}
+/// A receive transition reserves the same actor across release/readback/start.
+/// No queued operations or polling can interleave its typed exchanges.
+pub struct TransitionLease {
+    actor: Arc<Actor>,
+    released: Arc<AtomicBool>,
+}
+impl TransitionLease {
+    pub fn snapshot(&self) -> Result<Snapshot> {
+        self.actor.snapshot()
+    }
+    pub fn execute(&self, request: Request) -> Result<Observation> {
+        self.actor
+            .execute_inner(request, Some(self.released.clone()))
+    }
+}
+impl Drop for TransitionLease {
+    fn drop(&mut self) {
+        self.released.store(true, Ordering::Release);
+        let _ = self
+            .actor
+            .lease
+            .compare_exchange(2, 0, Ordering::AcqRel, Ordering::Acquire);
     }
 }
 
@@ -53,13 +88,16 @@ impl Actor {
         }
         let deadline = Instant::now() + Duration::from_secs(5);
         let snapshot = Arc::new(Mutex::new(Snapshot {
+            publication: 0,
+            closing_requested: false,
             state: State::Connecting,
             authority: authority.clone(),
             effective_baud: None,
             observation: Observation::default(),
+            facts: super::Facts::default(),
             last_error: None,
         }));
-        let lease = Arc::new(AtomicBool::new(true));
+        let lease = Arc::new(AtomicU8::new(1));
         let shutdown = Arc::new(AtomicBool::new(false));
         let current_cancel = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
         let (commands, receive) = mpsc::sync_channel::<Command>(1);
@@ -101,22 +139,24 @@ impl Actor {
                                 State::Unavailable
                             };
                             state.last_error = Some(error);
+                            state.facts.stale();
+                            let _ = state.publish();
                         }
-                        busy.store(false, Ordering::Release);
+                        busy.store(0, Ordering::Release);
                         return;
                     }
                 };
                 if executor.attach_snapshot(shared.clone()).is_err() {
                     let _ = executor.close();
-                    busy.store(false, Ordering::Release);
+                    busy.store(0, Ordering::Release);
                     return;
                 }
-                busy.store(false, Ordering::Release);
+                busy.store(0, Ordering::Release);
                 let mut last_poll = Instant::now();
                 while !stop.load(Ordering::Acquire) {
                     match receive.recv_timeout(Duration::from_millis(20)) {
                         Ok(command) => {
-                            let _lease = Lease(busy.clone());
+                            let _lease = Lease(busy.clone(), command.reservation);
                             if let Ok(mut value) = current.lock() {
                                 *value = Some(command.request.cancelled.clone());
                             }
@@ -128,6 +168,7 @@ impl Actor {
                             if let Ok(mut value) = current.lock() {
                                 *value = None;
                             }
+                            drop(_lease);
                             let _ = command.response.try_send(if stop.load(Ordering::Acquire) {
                                 Err(Error::Cancelled)
                             } else {
@@ -138,15 +179,10 @@ impl Actor {
                         Err(mpsc::RecvTimeoutError::Timeout) => {
                             if last_poll.elapsed() >= Duration::from_secs(1)
                                 && busy
-                                    .compare_exchange(
-                                        false,
-                                        true,
-                                        Ordering::AcqRel,
-                                        Ordering::Acquire,
-                                    )
+                                    .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
                                     .is_ok()
                             {
-                                let _lease = Lease(busy.clone());
+                                let _lease = Lease(busy.clone(), None);
                                 last_poll = Instant::now();
                                 let _ = executor
                                     .refresh(stop.clone(), last_poll + Duration::from_secs(5));
@@ -173,6 +209,25 @@ impl Actor {
             .map_err(|_| Error::Unavailable)
     }
     pub fn execute(&self, request: Request) -> Result<Observation> {
+        self.execute_inner(request, None)
+    }
+    pub fn reserve_transition(self: &Arc<Self>) -> Result<TransitionLease> {
+        if self.shutdown.load(Ordering::Acquire) {
+            return Err(Error::Unavailable);
+        }
+        self.lease
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| Error::Busy)?;
+        Ok(TransitionLease {
+            actor: self.clone(),
+            released: Arc::new(AtomicBool::new(false)),
+        })
+    }
+    fn execute_inner(
+        &self,
+        request: Request,
+        reservation: Option<Arc<AtomicBool>>,
+    ) -> Result<Observation> {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
@@ -182,16 +237,25 @@ impl Actor {
         if Instant::now() >= request.deadline {
             return Err(Error::Timeout);
         }
+        let (expected, occupied) = if reservation.is_some() {
+            (2, 3)
+        } else {
+            (0, 1)
+        };
         self.lease
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| Error::Busy)?;
         let deadline = request.deadline;
         let cancel = request.cancelled.clone();
         let (response, result) = mpsc::sync_channel(1);
-        match self.commands.try_send(Command { request, response }) {
+        match self.commands.try_send(Command {
+            request,
+            response,
+            reservation: reservation.clone(),
+        }) {
             Ok(()) => {}
             Err(error) => {
-                self.lease.store(false, Ordering::Release);
+                self.lease.store(expected, Ordering::Release);
                 return Err(match error {
                     TrySendError::Full(_) => Error::Busy,
                     TrySendError::Disconnected(_) => Error::Unavailable,
@@ -223,12 +287,28 @@ impl Actor {
             cancel.store(true, Ordering::Release);
         }
         if let Ok(mut snapshot) = self.snapshot.lock() {
+            let before = (
+                snapshot.closing_requested,
+                snapshot.state,
+                snapshot.facts.clone(),
+            );
+            snapshot.closing_requested = true;
+            snapshot.facts.stale();
             if snapshot.last_error == Some(Error::FailedClose) {
                 snapshot.state = State::Closing;
             } else if self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
                 snapshot.state = State::Closed;
             } else {
                 snapshot.state = State::Closing;
+            }
+            if before
+                != (
+                    snapshot.closing_requested,
+                    snapshot.state,
+                    snapshot.facts.clone(),
+                )
+            {
+                let _ = snapshot.publish();
             }
         }
     }

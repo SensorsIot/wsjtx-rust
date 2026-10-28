@@ -385,6 +385,157 @@ pub(super) fn checkpoint(stage: &'static str) -> Result<()> {
     }
 }
 struct Fixture(PathBuf);
+
+// Proves: CL-008-07; TC-009-005 case6. Deterministically hold the operation in
+// restarting while the real PacketQueue/LiveSource rotates its continuing worker.
+#[test]
+fn selection_cancel_tracks_its_worker_through_unknown_source_epoch() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, _) = live_ring(&r);
+    let (mut input, queue) = crate::receive_http_tests::Input::queued();
+    input.start().unwrap();
+    let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+    worker.epoch_seen = false;
+    assert!(queue.push(&[], 1024, 0, 0, audio::SILENT | audio::TIMESTAMP_ERROR));
+    worker.step().unwrap();
+    let original = worker.job.clone();
+    let command = profile::new_uuid().unwrap();
+    {
+        let mut s = r.state.lock().unwrap();
+        s.operating.revision = 1;
+        s.operating.operation = Some(selection::Operation {
+            command_id: command.clone(),
+            base_revision: 0,
+            revision: 1,
+            action: "band",
+            requested: selection::Requested {
+                mode: "ft8",
+                band: "40m",
+                nominal_hz: 7074000,
+            },
+            phase: "restarting",
+            result: "pending",
+            error: None,
+            monitor_before: false,
+            monitor_wanted: true,
+            old_job_id: None,
+            new_job_id: Some(original.id.clone()),
+            new_generation: Some(original.generation),
+            old_generation: 0,
+            new_worker_cancel: Some(original.cancel.clone()),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        });
+    }
+    assert!(!queue.push(&[], 8193, 1024, 0, audio::SILENT));
+    assert!(queue.push(&[], 1024, 1024, 0, audio::SILENT));
+    worker.step().unwrap();
+    assert_ne!(worker.job.id, original.id);
+    assert_eq!(worker.job.generation, original.generation + 1);
+    assert!(
+        Arc::ptr_eq(&worker.job.cancel, &original.cancel),
+        "an epoch replacement retains its actual worker cancel token"
+    );
+    let ack = r
+        .selection_cancel(
+            &r.profile,
+            &r.boot,
+            profile::new_uuid().unwrap(),
+            command,
+            0,
+        )
+        .unwrap();
+    let cancelled = worker.job.cancel.load(Ordering::Acquire);
+    worker.input.request_stop();
+    assert_eq!(ack.0["phase"], "cancelled");
+    assert!(
+        cancelled,
+        "target cancellation must stop its own continuing worker after an unknown epoch"
+    );
+}
+
+// Proves: CL-008-07; TC-009-005 case6. A later real Start owns a distinct
+// cancellation Arc even if old operation metadata remains visible.
+#[test]
+fn selection_old_command_cannot_cancel_unrelated_later_start() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (old, _) = live_ring(&r);
+    let command = profile::new_uuid().unwrap();
+    {
+        let mut s = r.state.lock().unwrap();
+        s.job.as_mut().unwrap().state = "cancelled";
+        s.operating.revision = 1;
+        s.operating.operation = Some(selection::Operation {
+            command_id: command.clone(),
+            base_revision: 0,
+            revision: 1,
+            action: "band",
+            requested: selection::Requested {
+                mode: "ft8",
+                band: "40m",
+                nominal_hz: 7074000,
+            },
+            phase: "applied",
+            result: "success",
+            error: None,
+            monitor_before: false,
+            monitor_wanted: true,
+            old_job_id: None,
+            new_job_id: Some(old.id.clone()),
+            new_generation: Some(old.generation),
+            old_generation: 0,
+            new_worker_cancel: Some(old.cancel.clone()),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        });
+    }
+    let (input, _) = crate::receive_http_tests::Input::queued();
+    let started = r
+        .receive_start_input(
+            &r.profile,
+            &r.boot,
+            1,
+            "independent-new-input".into(),
+            "ft4",
+            Box::new(input),
+        )
+        .unwrap();
+    let current = r.state.lock().unwrap().job.as_ref().unwrap().clone();
+    assert!(!Arc::ptr_eq(&current.cancel, &old.cancel));
+    r.selection_cancel(
+        &r.profile,
+        &r.boot,
+        profile::new_uuid().unwrap(),
+        command,
+        0,
+    )
+    .unwrap();
+    let stayed_running = !current.cancel.load(Ordering::Acquire);
+    r.receive_stop(
+        &r.profile,
+        &r.boot,
+        started["generation"].as_u64().unwrap(),
+        started["job"]["id"].as_str().unwrap(),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !r.selection_snapshot(false).unwrap()["receive"]["owner_released"]
+        .as_bool()
+        .unwrap()
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        stayed_running,
+        "retained old command must not acquire authority over a fresh Start"
+    );
+    assert_eq!(
+        r.selection_snapshot(false).unwrap()["receive"]["owner_released"],
+        true
+    );
+}
+
 impl Fixture {
     fn new() -> Self {
         let path =
@@ -404,6 +555,427 @@ impl Fixture {
         fs::write(&path, bytes).unwrap();
         File::open(path).unwrap()
     }
+}
+
+fn selection_intent(
+    r: &Recording,
+    action: &'static str,
+    mode: Option<&'static str>,
+    band: Option<&str>,
+) -> selection::Intent {
+    let s = r.state.lock().unwrap();
+    selection::Intent {
+        profile_id: r.profile.clone(),
+        boot_id: r.boot.clone(),
+        command_id: profile::new_uuid().unwrap(),
+        profile_revision: s.operating.profile_revision,
+        generation: s.generation,
+        revision: s.operating.revision,
+        action,
+        mode,
+        band: band.map(str::to_owned),
+    }
+}
+fn selection_wait(r: &Recording) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let s = r.selection_snapshot(false).unwrap();
+        if s["operation"]["result"] != "pending" {
+            return s;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "selection fixture terminal deadline"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+fn selection_released(r: &Recording) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while r.selection_snapshot(false).unwrap()["receive"]["owner_released"] != true {
+        assert!(
+            Instant::now() < deadline,
+            "receive fixture must actually release"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+// Proves: CL-008-07; TC-009-005 cases2/5. Domain refusal is earlier than missing
+// configured CAT and every counter increments only for a genuinely admitted command.
+#[test]
+fn selection_unknown_band_and_safe_counter_refuse_without_effects() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    assert_eq!(
+        r.selection_begin(selection_intent(&r, "mode", Some("ft4"), None), None, true),
+        Err("select_band_first")
+    );
+    assert_eq!(r.state.lock().unwrap().operating.revision, 0);
+    r.state.lock().unwrap().operating.revision = profile::MAX_REVISION;
+    assert_eq!(
+        r.selection_begin(selection_intent(&r, "band", None, Some("40m")), None, false),
+        Err("counter_exhausted")
+    );
+    assert!(r.state.lock().unwrap().operating.operation.is_none());
+    assert_eq!(
+        r.selection_cancel(
+            &r.profile,
+            &r.boot,
+            profile::new_uuid().unwrap(),
+            profile::new_uuid().unwrap(),
+            profile::MAX_REVISION
+        ),
+        Err("counter_exhausted")
+    );
+    assert_eq!(r.receive_snapshot()["generation"], 0);
+}
+
+// Proves: CL-008-07 and unchanged TC-009-004 Start revision guard. A loaded saved
+// revision is independent station state; later edits invalidate a captured old input.
+#[test]
+fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    r.initialize_profile_revision(7);
+    let (input, _) = crate::receive_http_tests::Input::queued();
+    r.resources.lock().unwrap().live_input = Some(Box::new(input));
+    assert_eq!(
+        r.receive_start(&r.profile, &r.boot, 0, 6, "must-not-open".into(), "ft8"),
+        Err("state_conflict")
+    );
+    assert_eq!(r.state.lock().unwrap().operating.revision, 0);
+    assert_eq!(r.receive_snapshot()["generation"], 0);
+    let (input, _) = crate::receive_http_tests::Input::queued();
+    r.resources.lock().unwrap().live_input = Some(Box::new(input));
+    let started = r
+        .receive_start(&r.profile, &r.boot, 0, 7, "current-input".into(), "ft8")
+        .unwrap();
+    r.receive_stop(
+        &r.profile,
+        &r.boot,
+        started["generation"].as_u64().unwrap(),
+        started["job"]["id"].as_str().unwrap(),
+    )
+    .unwrap();
+    selection_released(&r);
+    r.profile_changed(8);
+    r.profile_changed(9);
+    assert_eq!(
+        r.receive_start(&r.profile, &r.boot, 1, 7, "old-input".into(), "ft4"),
+        Err("state_conflict")
+    );
+    assert_eq!(r.receive_snapshot()["generation"], 1);
+    assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
+}
+
+// Proves: CL-008-07; TC-009-005 case2. Expectations are parsed from the separately
+// reviewed authoritative FSD table, never generated from the implementation table.
+#[test]
+fn selection_preferred_entries_match_complete_canonical_integer_table() {
+    let text = include_str!("../../docs/WSTX Rust FSD.md");
+    let section = text
+        .split("#### 4.7.5 ")
+        .nth(1)
+        .unwrap()
+        .split("## 5.")
+        .next()
+        .unwrap();
+    let mut rows = 0;
+    for line in section.lines().filter(|line| line.starts_with("| ")) {
+        let cells: Vec<_> = line.trim_matches('|').split('|').map(str::trim).collect();
+        if cells.len() != 3 || !selection::BANDS.contains(&cells[0]) {
+            continue;
+        }
+        assert_eq!(selection::BANDS[rows], cells[0]);
+        rows += 1;
+        for (mode, value) in [("ft8", cells[1]), ("ft4", cells[2])] {
+            let expected = if value == "-" {
+                None
+            } else {
+                Some(value.parse::<u64>().unwrap())
+            };
+            assert_eq!(
+                selection::frequency(mode, cells[0]),
+                expected,
+                "{mode} {}",
+                cells[0]
+            );
+        }
+    }
+    assert_eq!(
+        rows, 12,
+        "the entire independent table, including both unsupported cells, was tested"
+    );
+}
+
+// Proves: CL-008-07; TC-009-005 cases4/6. Real native-wrapper Drop is deliberately
+// held. A failed release never becomes timeout permission to tune or open again.
+#[test]
+fn selection_release_timeout_retains_owner_and_never_commits_target() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (mut input, _) = crate::receive_http_tests::Input::queued();
+    let (entered, released) = input.block_release();
+    r.receive_start_input(
+        &r.profile,
+        &r.boot,
+        0,
+        "held-input".into(),
+        "ft8",
+        Box::new(input),
+    )
+    .unwrap();
+    r.selection_begin(selection_intent(&r, "band", None, Some("40m")), None, false)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !entered.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let snapshot = selection_wait(&r);
+    released.store(true, Ordering::Release);
+    selection_released(&r);
+    assert_eq!(snapshot["operation"]["phase"], "release_blocked");
+    assert_eq!(snapshot["operation"]["error"], "release_failed");
+    assert_eq!(snapshot["receive"]["owner_released"], false);
+    assert!(snapshot["selection"]["nominal_hz"].is_null());
+    assert_eq!(snapshot["radio"]["connection_generation"], 0);
+}
+
+// Proves: CL-008-07; TC-009-005 case4. The same owner restarts in an immutable new
+// mode only after actual release; Stop/profile edit invalidate every late restart.
+#[test]
+fn selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restart() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (first, _) = crate::receive_http_tests::Input::queued();
+    let old = r
+        .receive_start_input(
+            &r.profile,
+            &r.boot,
+            0,
+            "first-input".into(),
+            "ft8",
+            Box::new(first),
+        )
+        .unwrap();
+    let (next, _) = crate::receive_http_tests::Input::queued();
+    r.resources.lock().unwrap().live_input = Some(Box::new(next));
+    r.selection_begin(
+        selection_intent(&r, "band", None, Some("40m")),
+        Some("next-input".into()),
+        false,
+    )
+    .unwrap();
+    let current = selection_wait(&r);
+    assert_eq!(current["operation"]["result"], "success");
+    assert_eq!(current["selection"]["nominal_hz"], 7074000);
+    assert_ne!(current["receive"]["job_id"], old["job"]["id"]);
+    assert!(current["generation"].as_u64().unwrap() > old["generation"].as_u64().unwrap());
+    let id = current["receive"]["job_id"].as_str().unwrap();
+    r.receive_stop(
+        &r.profile,
+        &r.boot,
+        current["generation"].as_u64().unwrap(),
+        id,
+    )
+    .unwrap();
+    selection_released(&r);
+    let (mut held, _) = crate::receive_http_tests::Input::queued();
+    let (entered, released) = held.block_release();
+    let generation = r.receive_snapshot()["generation"].as_u64().unwrap();
+    r.receive_start_input(
+        &r.profile,
+        &r.boot,
+        generation,
+        "held-input".into(),
+        "ft8",
+        Box::new(held),
+    )
+    .unwrap();
+    let admitted = r
+        .selection_begin(
+            selection_intent(&r, "mode", Some("ft4"), None),
+            Some("must-not-open".into()),
+            false,
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !entered.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    r.profile_changed(1);
+    released.store(true, Ordering::Release);
+    selection_released(&r);
+    let failed = selection_wait(&r);
+    assert_eq!(failed["operation"]["command_id"], admitted["command_id"]);
+    assert_eq!(failed["operation"]["error"], "state_conflict");
+    assert_eq!(failed["selection"]["mode"], "ft8");
+    assert_eq!(failed["receive"]["state"], "cancelled");
+    assert_eq!(failed["profile_revision"], 1);
+}
+
+fn selection_profile_fixture() -> (
+    Fixture,
+    Arc<Recording>,
+    crate::App,
+    profile::Settings,
+    Arc<AtomicBool>,
+) {
+    let fixture = Fixture::new();
+    let r = Recording::open(
+        &fixture.0,
+        profile::new_uuid().unwrap(),
+        profile::new_uuid().unwrap(),
+    );
+    let document = json!({"schema_version":1,"profile_id":r.profile,"revision":0,"display_name":"Before edit","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
+    fs::write(
+        fixture.0.join("profile.json"),
+        serde_json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
+    let (store, _) = profile::Store::open(&fixture.0).unwrap();
+    let mut settings = store.document.settings();
+    settings.display_name = "After edit".into();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    {
+        let mut s = r.state.lock().unwrap();
+        s.operating.revision = 1;
+        s.operating.operation = Some(selection::Operation {
+            command_id: profile::new_uuid().unwrap(),
+            base_revision: 0,
+            revision: 1,
+            action: "band",
+            requested: selection::Requested {
+                mode: "ft8",
+                band: "40m",
+                nominal_hz: 7074000,
+            },
+            phase: "applying",
+            result: "pending",
+            error: None,
+            monitor_before: false,
+            monitor_wanted: true,
+            old_job_id: None,
+            new_job_id: None,
+            new_generation: None,
+            old_generation: 0,
+            new_worker_cancel: None,
+            cancelled: cancelled.clone(),
+        });
+    }
+    let app = crate::App {
+        origin: "http://127.0.0.1:18001".into(),
+        profile: Some(Arc::new(crate::ProfileState {
+            store: Mutex::new(store),
+            boot: r.boot.clone(),
+            recording: r.clone(),
+        })),
+        profile_id: Some(r.profile.clone()),
+        token: None,
+        connections: Arc::new(crate::Semaphore::new(16)),
+        login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
+    };
+    (fixture, r, app, settings, cancelled)
+}
+fn selection_edit_request(
+    app: &crate::App,
+    settings: profile::Settings,
+) -> (
+    crate::HeaderMap,
+    std::result::Result<crate::Bytes, crate::BytesRejection>,
+) {
+    let mut headers = crate::HeaderMap::new();
+    headers.insert(crate::header::ORIGIN, app.origin.parse().unwrap());
+    headers.insert(
+        crate::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+    let bytes =
+        serde_json::to_vec(&json!({"profile_id":app.profile_id,"revision":0,"settings":settings}))
+            .unwrap();
+    (headers, Ok(crate::Bytes::from(bytes)))
+}
+
+// Proves: CL-008-07; TC-009-005 case4. A persisted rename is deliberately observed
+// while Recording invalidation is held. The SAME Store mutex prevents a new reader
+// from seeing the edit until cancellation has been published, before HTTP success.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn selection_profile_success_publishes_cancellation_before_new_reader() {
+    let (fixture, r, app, settings, cancelled) = selection_profile_fixture();
+    let state = app.profile.as_ref().unwrap().clone();
+    let (headers, body) = selection_edit_request(&app, settings);
+    let (writer, reader) = {
+        let held = r.state.lock().unwrap();
+        let writer = tokio::spawn(crate::put_profile(crate::State(app), headers, body));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if fs::read(fixture.0.join("profile.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .is_some_and(|v| v["revision"] == 1)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let entered = Arc::new(AtomicBool::new(false));
+        let returned = Arc::new(AtomicBool::new(false));
+        let entry = entered.clone();
+        let result = returned.clone();
+        let token = cancelled.clone();
+        let reader = std::thread::spawn(move || {
+            entry.store(true, Ordering::Release);
+            let store = state.store.lock().unwrap();
+            let observed = (store.document.revision, token.load(Ordering::Acquire));
+            result.store(true, Ordering::Release);
+            observed
+        });
+        while !entered.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(
+            !returned.load(Ordering::Acquire),
+            "edited settings cannot be read before Recording invalidation"
+        );
+        assert!(
+            !cancelled.load(Ordering::Acquire),
+            "fixture really held the invalidation interval"
+        );
+        drop(held);
+        (writer, reader)
+    };
+    assert_eq!(writer.await.unwrap().status(), crate::StatusCode::OK);
+    assert_eq!(reader.join().unwrap(), (1, true));
+    assert_eq!(
+        r.selection_snapshot(false).unwrap()["operation"]["error"],
+        "state_conflict"
+    );
+}
+
+// Proves: CL-008-07 and unchanged CL-005-02; TC-009-005 case4. A real atomic-store
+// refusal cannot invalidate the old operation. This uses only a disposable fixture,
+// no ACL changes or production fault switch.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn selection_profile_save_failure_preserves_existing_token() {
+    let (fixture, r, app, settings, cancelled) = selection_profile_fixture();
+    let state = app.profile.as_ref().unwrap().clone();
+    let original = fixture.0.join("profile.json");
+    let backup = fixture.0.join("original-profile.json");
+    fs::rename(&original, &backup).unwrap();
+    fs::create_dir(&original).unwrap();
+    let (headers, body) = selection_edit_request(&app, settings);
+    let response = crate::put_profile(crate::State(app), headers, body).await;
+    fs::remove_dir(&original).unwrap();
+    fs::rename(&backup, &original).unwrap();
+    assert_eq!(response.status(), crate::StatusCode::SERVICE_UNAVAILABLE);
+    assert!(!cancelled.load(Ordering::Acquire));
+    assert_eq!(state.store.lock().unwrap().document.revision, 0);
+    let snapshot = r.selection_snapshot(false).unwrap();
+    assert_eq!(snapshot["operating_revision"], 1);
+    assert_eq!(snapshot["operation"]["result"], "pending");
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -1345,4 +1917,101 @@ fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identi
         assert_eq!(after["job"]["latest_decode"], before);
         assert_eq!(after["job"]["latest_decode"]["complete"], false);
     }
+}
+
+#[cfg(not(debug_assertions))]
+#[test]
+fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
+    use wstx_rust::radio_control::State;
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (actor, _) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    let old = actor.snapshot().unwrap();
+    assert_eq!(old.state, State::Ready);
+    actor.request_close();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !actor.close_complete() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(actor.close_complete());
+    r.refresh_radio_cache();
+    r.commit_radio_cache(Some(actor), 1, Some(old));
+    assert_eq!(
+        r.state
+            .lock()
+            .unwrap()
+            .operating
+            .radio
+            .cached
+            .as_ref()
+            .unwrap()
+            .state,
+        State::Closed,
+        "a delayed Ready capture must not resurrect a closed actor"
+    );
+}
+#[cfg(not(debug_assertions))]
+#[test]
+fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
+    use wstx_rust::radio_control::{Operation, Request};
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (actor, _) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    let old = actor.snapshot().unwrap();
+    assert!(!old.facts.mode.confirmed);
+    actor
+        .execute(Request {
+            authority: old.authority.clone(),
+            request_id: "cache-mode".into(),
+            operation: Operation::ReadMode,
+            deadline: Instant::now() + Duration::from_secs(2),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        })
+        .unwrap();
+    r.refresh_radio_cache();
+    assert!(
+        r.state
+            .lock()
+            .unwrap()
+            .operating
+            .radio
+            .cached
+            .as_ref()
+            .unwrap()
+            .facts
+            .mode
+            .confirmed
+    );
+    r.commit_radio_cache(Some(actor.clone()), 1, Some(old));
+    assert!(
+        r.state
+            .lock()
+            .unwrap()
+            .operating
+            .radio
+            .cached
+            .as_ref()
+            .unwrap()
+            .facts
+            .mode
+            .confirmed,
+        "a delayed older capture must not erase an independently observed mode query"
+    );
+    actor.request_close();
+}
+#[cfg(not(debug_assertions))]
+#[test]
+fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (actor, _) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    r.commit_radio_cache(Some(actor.clone()), 1, None);
+    assert!(
+        r.state.lock().unwrap().operating.radio.cached.is_some(),
+        "an unversioned failed observation cannot clear a newer published cache"
+    );
+    actor.request_close();
 }

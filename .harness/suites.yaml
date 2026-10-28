@@ -307,3 +307,20 @@
     Preserve delivery-catalog.json and both mode manifests with the frozen store;
     missing files fail. Windows PC, isolated integrity/refusal tests and explicit
     verification of all eight WAVs; no download, compiler, decoder run or radio.
+
+- suite: radio-selection
+  cost: 2
+  run: cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_ -- --nocapture && cargo build --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs
+  paths: *browser-inputs
+  select:
+  - server/src/selection.rs
+  - server/src/selection_http.rs
+  - server/src/selection_http_tests.rs
+  - server/src/radio_http.rs
+  - server/src/radio_http_tests.rs
+  - server/src/radio_control/
+  - client/recording.js
+  - client/recording.css
+  - tests/radio-selection.test.cjs
+  depends_on: [protocol, live-receive-integration]
+  needs: Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on the existing32kbit TLS link. Both75s Thin/Off windows, all five known-answer contexts and observed pending polls are mandatory; no physical radio, device or production fault switch.

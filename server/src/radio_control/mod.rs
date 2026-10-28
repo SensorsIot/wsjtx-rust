@@ -339,6 +339,66 @@ pub struct Observation {
     pub split: Option<bool>,
     pub observed_at: Option<Instant>,
 }
+/// Provenance belongs to the particular addressed query that consumed its reply.
+/// The legacy aggregate Observation timestamp deliberately retains its old meaning.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fact<T> {
+    pub value: Option<T>,
+    pub query_sequence: Option<u64>,
+    pub observed_at: Option<Instant>,
+    pub confirmed: bool,
+}
+impl<T> Default for Fact<T> {
+    fn default() -> Self {
+        Self {
+            value: None,
+            query_sequence: None,
+            observed_at: None,
+            confirmed: false,
+        }
+    }
+}
+impl<T> Fact<T> {
+    pub(super) fn observed(value: T, sequence: u64, at: Instant) -> Self {
+        Self {
+            value: Some(value),
+            query_sequence: Some(sequence),
+            observed_at: Some(at),
+            confirmed: true,
+        }
+    }
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Facts {
+    pub sequence: u64,
+    pub frequency: Fact<u64>,
+    pub mode: Fact<ModeValue>,
+    pub data: Fact<DataValue>,
+    pub rx_tx: Fact<bool>,
+    pub split: Fact<bool>,
+}
+impl Facts {
+    pub(super) fn invalidate(&mut self, operation: &Operation) {
+        match operation {
+            Operation::SetFrequency { .. } => self.frequency.confirmed = false,
+            Operation::SetMode { .. } => self.mode.confirmed = false,
+            Operation::SetData { .. } => self.data.confirmed = false,
+            Operation::ReceiveSetup { .. } => {
+                self.frequency.confirmed = false;
+                self.mode.confirmed = false;
+                self.data.confirmed = false;
+            }
+            _ => {}
+        }
+    }
+    pub(super) fn stale(&mut self) {
+        self.frequency.confirmed = false;
+        self.mode.confirmed = false;
+        self.data.confirmed = false;
+        self.rx_tx.confirmed = false;
+        self.split.confirmed = false;
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     Closed,
@@ -349,9 +409,31 @@ pub enum State {
 }
 #[derive(Clone, Debug)]
 pub struct Snapshot {
+    pub(super) publication: u64,
+    pub(super) closing_requested: bool,
     pub state: State,
     pub authority: Authority,
     pub effective_baud: Option<u32>,
     pub observation: Observation,
+    pub facts: Facts,
     pub last_error: Option<Error>,
+}
+
+impl Snapshot {
+    /// Private publication order, separate from per-query wire provenance.
+    pub fn publication(&self) -> u64 {
+        self.publication
+    }
+    pub(super) fn publish(&mut self) -> Result<()> {
+        self.publication = self.publication.checked_add(1).ok_or(Error::Limit)?;
+        Ok(())
+    }
+    pub(super) fn invalidate(&mut self, operation: &Operation) -> Result<()> {
+        let before = self.facts.clone();
+        self.facts.invalidate(operation);
+        if self.facts != before {
+            self.publish()?;
+        }
+        Ok(())
+    }
 }

@@ -139,16 +139,24 @@ impl<T: Transport> Executor<T> {
             }
             return Err(last_error);
         };
+        let observed_at = Instant::now();
         let observation = Observation {
             frequency_hz: Some(frequency),
-            observed_at: Some(Instant::now()),
+            observed_at: Some(observed_at),
             ..Observation::default()
         };
         let snapshot = Arc::new(Mutex::new(Snapshot {
+            publication: 0,
+            closing_requested: false,
             state: State::Ready,
             authority: authority.clone(),
             effective_baud: Some(rate),
             observation,
+            facts: super::Facts {
+                sequence: 1,
+                frequency: super::Fact::observed(frequency, 1, observed_at),
+                ..super::Facts::default()
+            },
             last_error: None,
         }));
         Ok(Self {
@@ -169,7 +177,19 @@ impl<T: Transport> Executor<T> {
             .map_err(|_| Error::Unavailable)
     }
     pub(super) fn attach_snapshot(&mut self, shared: Arc<Mutex<Snapshot>>) -> Result<()> {
-        *shared.lock().map_err(|_| Error::Unavailable)? = self.snapshot()?;
+        let mut candidate = self.snapshot()?;
+        {
+            let mut current = shared.lock().map_err(|_| Error::Unavailable)?;
+            candidate.publication = current.publication;
+            candidate.publish()?;
+            if current.closing_requested {
+                candidate.closing_requested = true;
+                candidate.state = current.state;
+                candidate.last_error = current.last_error;
+                candidate.facts.stale();
+            }
+            *current = candidate;
+        }
         self.snapshot = shared;
         Ok(())
     }
@@ -208,10 +228,17 @@ impl<T: Transport> Executor<T> {
         match result {
             Ok(()) => {
                 let mut s = self.snapshot.lock().map_err(|_| Error::Unavailable)?;
-                s.last_error = None;
+                if !s.closing_requested && s.last_error.is_some() {
+                    s.publish()?;
+                    s.last_error = None;
+                }
                 Ok(s.observation.clone())
             }
             Err(error) => {
+                self.snapshot
+                    .lock()
+                    .map_err(|_| Error::Unavailable)?
+                    .invalidate(&request.operation)?;
                 let must_close = !matches!(
                     error,
                     Error::Rejected
@@ -284,21 +311,60 @@ impl<T: Transport> Executor<T> {
     }
     fn set_state(&self, state: State, error: Option<Error>) -> Result<()> {
         let mut snapshot = self.snapshot.lock().map_err(|_| Error::Unavailable)?;
+        let state = if snapshot.closing_requested && state != State::Closed {
+            State::Closing
+        } else {
+            state
+        };
+        snapshot.publish()?;
         snapshot.state = state;
+        if state != State::Ready {
+            snapshot.facts.stale();
+        }
         snapshot.last_error = error;
         Ok(())
     }
     fn update(&self, reply: &Reply) -> Result<()> {
         let mut snapshot = self.snapshot.lock().map_err(|_| Error::Unavailable)?;
+        if matches!(reply, Reply::Ack | Reply::Rejected) {
+            return Ok(());
+        }
+        let sequence = snapshot
+            .facts
+            .sequence
+            .checked_add(1)
+            .filter(|n| *n <= 9_007_199_254_740_991)
+            .ok_or(Error::Limit)?;
+        let at = Instant::now();
         match reply {
-            Reply::Frequency(v) => snapshot.observation.frequency_hz = Some(*v),
-            Reply::Mode(v) => snapshot.observation.mode = Some(*v),
-            Reply::Data(v) => snapshot.observation.data = Some(*v),
-            Reply::Transmitting(v) => snapshot.observation.transmitting = Some(*v),
-            Reply::Split(v) => snapshot.observation.split = Some(*v),
+            Reply::Frequency(v) => {
+                snapshot.observation.frequency_hz = Some(*v);
+                snapshot.facts.frequency = super::Fact::observed(*v, sequence, at);
+            }
+            Reply::Mode(v) => {
+                snapshot.observation.mode = Some(*v);
+                snapshot.facts.mode = super::Fact::observed(*v, sequence, at);
+            }
+            Reply::Data(v) => {
+                snapshot.observation.data = Some(*v);
+                snapshot.facts.data = super::Fact::observed(*v, sequence, at);
+            }
+            Reply::Transmitting(v) => {
+                snapshot.observation.transmitting = Some(*v);
+                snapshot.facts.rx_tx = super::Fact::observed(*v, sequence, at);
+            }
+            Reply::Split(v) => {
+                snapshot.observation.split = Some(*v);
+                snapshot.facts.split = super::Fact::observed(*v, sequence, at);
+            }
             Reply::Ack | Reply::Rejected => return Ok(()),
         };
-        snapshot.observation.observed_at = Some(Instant::now());
+        snapshot.facts.sequence = sequence;
+        snapshot.observation.observed_at = Some(at);
+        if snapshot.closing_requested {
+            snapshot.facts.stale();
+        }
+        snapshot.publish()?;
         Ok(())
     }
     fn run(
@@ -308,6 +374,11 @@ impl<T: Transport> Executor<T> {
         overall: Instant,
         cancel: &AtomicBool,
     ) -> Result<()> {
+        // Before a setter can emit bytes, its prior facts cease to establish readiness.
+        self.snapshot
+            .lock()
+            .map_err(|_| Error::Unavailable)?
+            .invalidate(operation)?;
         if let Operation::ReceiveSetup {
             frequency_hz,
             mode,
@@ -354,6 +425,9 @@ impl<T: Transport> Executor<T> {
             return Ok(());
         }
         let deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
+        if self.snapshot()?.facts.sequence >= 9_007_199_254_740_991 {
+            return Err(Error::Limit);
+        }
         let reply = exchange(
             &mut inner.transport,
             &inner.configuration,
@@ -458,5 +532,91 @@ fn exchange<T: Transport>(
                 return Ok(reply);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+    struct NoIo;
+    impl Transport for NoIo {
+        fn configure(&mut self, _: u32) -> Result<()> {
+            panic!("no I/O in publication interleaving")
+        }
+        fn write(&mut self, _: &[u8], _: Instant, _: &AtomicBool) -> Result<usize> {
+            panic!("no I/O in publication interleaving")
+        }
+        fn read(&mut self, _: &mut [u8], _: Instant, _: &AtomicBool) -> Result<usize> {
+            panic!("no I/O in publication interleaving")
+        }
+        fn quiet(&mut self, _: Instant, _: &AtomicBool) -> Result<()> {
+            panic!("no I/O in publication interleaving")
+        }
+        fn close(&mut self) -> Result<()> {
+            panic!("no I/O in publication interleaving")
+        }
+    }
+    #[test]
+    fn closing_publication_survives_late_attach_and_query() {
+        let authority = Authority {
+            profile_id: "a".into(),
+            boot_id: "b".into(),
+            profile_revision: 0,
+            resource_id: "isolated".into(),
+            connection_generation: 1,
+        };
+        let ready = Snapshot {
+            publication: 0,
+            closing_requested: false,
+            state: State::Ready,
+            authority: authority.clone(),
+            effective_baud: Some(9600),
+            observation: Observation::default(),
+            facts: super::super::Facts::default(),
+            last_error: None,
+        };
+        let mut closing = ready.clone();
+        closing.publication = 9;
+        closing.closing_requested = true;
+        closing.state = State::Closing;
+        let shared = Arc::new(Mutex::new(closing));
+        let mut executor = Executor {
+            authority,
+            catalogue: Catalogue::builtin().unwrap(),
+            inner: Mutex::new(Inner {
+                transport: NoIo,
+                configuration: Configuration::parse("COM3").unwrap(),
+                last_poll: None,
+            }),
+            snapshot: Arc::new(Mutex::new(ready)),
+        };
+        executor.attach_snapshot(shared).unwrap();
+        let attached = executor.snapshot().unwrap();
+        assert_eq!(attached.state, State::Closing);
+        assert_eq!(attached.publication(), 10);
+        executor
+            .update(&Reply::Mode(super::super::ModeValue { code: 1, filter: 1 }))
+            .unwrap();
+        executor.set_state(State::Ready, None).unwrap();
+        let late = executor.snapshot().unwrap();
+        assert_eq!(
+            late.state,
+            State::Closing,
+            "late executor success cannot undo requested close"
+        );
+        assert!(
+            late.facts.mode.value.is_some(),
+            "late reply can retain a dated observation"
+        );
+        assert!(
+            !late.facts.mode.confirmed,
+            "late reply cannot restore freshness after close"
+        );
+        assert!(late.publication() > attached.publication());
+        assert_eq!(
+            executor.snapshot().unwrap().publication(),
+            late.publication(),
+            "pure reads do not publish"
+        );
     }
 }

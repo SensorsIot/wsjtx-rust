@@ -399,8 +399,10 @@ tuning.querySelector('.op-monitor').remove();
 tuning.querySelector('.op-decode-group').remove();
 tuning.insertBefore(receiveControls,tuning.querySelector('.op-period'));
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingRadioUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,lastOperatingCommit=null,operatingSocket=null;
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null;
+let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
 const receiveStatus=document.querySelector('#receive-status');
@@ -442,8 +444,8 @@ function validLiveSnapshot(s){
 function receiveShow(){
   if(!resultRows.length)renderResults();
   const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
-  document.querySelector('#receive-start').disabled=!connected||!live||!!active||mutationPending||uncertainMutation||!profileData?.settings.audio.input_device;
-  document.querySelector('#receive-stop').disabled=!connected||!active||mutationPending||uncertainMutation||live.job.state==='cancelling';
+  document.querySelector('#receive-start').disabled=!connected||!live||!!active||mutationPending||uncertainMutation||operatingBlocked()||!profileData?.settings.audio.input_device;
+  document.querySelector('#receive-stop').disabled=!connected||!active||mutationPending||uncertainMutation||operatingSelectionBlocked()||live.job.state==='cancelling';
   if(live){
     receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
@@ -454,6 +456,7 @@ function receiveShow(){
     if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
     else{focus.querySelector('strong').textContent='No station selected';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
   }
+  operatingShow();
 }
 async function receiveSync(current=socket){
   if(current!==socket||connection.dataset.state!=='connected')return;
@@ -530,7 +533,7 @@ function validRecord(r){
     (r.status==='decoded'?typeof r.text==='string'&&/^[\x20-\x7e]{1,80}$/.test(r.text)&&r.fields&&typeof r.fields==='object'&&!Array.isArray(r.fields):['unsupported','invalid_payload'].includes(r.status)&&r.text===null&&r.fields===null);
 }
 async function receiveResults(){
-  if(resultPending||livePending||mutationPending||uncertainMutation||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
+  if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
   const now=performance.now();if(now-lastResultStart<4000)return;
   resultPending=true;lastResultStart=now;
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch;
@@ -580,8 +583,180 @@ document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
   try{const data=await request('/audio/devices');output.textContent=data.devices.map(d=>`${d.name} [${d.id}]`).join('\n')||'No audio inputs available';}
   catch(error){output.textContent=`Audio inputs unavailable · ${error.message}`;}
 });
-addEventListener('station-ready',event=>receiveSync(event.detail));
-addEventListener('station-stale',()=>{receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
+function receiveReadyKey(profile,statusId){
+  const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+  if(!profile||!uuid(profile.profile_id)||!uuid(profile.boot_id)||!Number.isSafeInteger(profile.revision)||profile.revision<0||!Number.isSafeInteger(statusId)||statusId<=0)return null;
+  return JSON.stringify([profile.profile_id,profile.boot_id,profile.revision,statusId]);
+}
+function receiveReady(current){
+  if(current!==socket||connection.dataset.state!=='connected')return false;
+  const key=receiveReadyKey(profileData,pendingId);
+  if(key!==null){
+    if(lastReceiveReady?.socket===current&&lastReceiveReady.key===key)return false;
+    // The synchronous receiveSync entry below necessarily starts or queues this
+    // read under the same socket/connection checks; failed HTTP is not replayed.
+    lastReceiveReady={socket:current,key};
+  }
+  receiveSync(current);return true;
+}
+addEventListener('station-ready',event=>receiveReady(event.detail));
+addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
 addEventListener('station-message',event=>{if(event.detail.current===socket&&event.detail.message.type==='receive.state')receiveSync(event.detail.current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
+
+// These controls share the existing station/receive authority. Nominal selection
+// and dated CAT observations remain different values throughout a transition.
+const operatingControls=document.createElement('div');operatingControls.id='operating-receive-controls';
+operatingControls.innerHTML='<label>Operating mode<select id="operating-mode" disabled><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Band<select id="operating-band" disabled><option value="">Choose band</option></select></label><button id="operating-monitor" disabled aria-pressed="false">Monitor</button><button id="operating-stop" disabled>Stop</button><button id="operating-refresh" disabled>Refresh operating state</button><label class="receive-only-verification"><input type="checkbox" id="radio-receive-only">Receive-only keying/inhibit verified</label><button id="radio-connect" disabled>Connect CAT</button><button id="radio-disconnect" disabled>Disconnect CAT</button><output id="operating-radio">CAT readback unavailable</output><p id="operating-selection-status" role="status">Operating selection unavailable until station snapshot</p>';
+receiveControls.before(operatingControls);
+const operatingMode=document.querySelector('#operating-mode'),operatingBand=document.querySelector('#operating-band'),operatingStatus=document.querySelector('#operating-selection-status');
+const operatingBands=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m'];
+const operatingUuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
+const operatingCounter=v=>Number.isSafeInteger(v)&&v>=0;
+const operatingShape=(v,keys)=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===keys.split(',').sort().join(',');
+const operatingNullable=(v,valid)=>v===null||valid(v);
+const operatingModeValid=v=>['ft4','ft8'].includes(v);
+const operatingFrequency=v=>Number.isSafeInteger(v)&&v>=30000&&v<=74800000;
+function operatingSelectionBlocked(){return !!operatingUnknown||!!operatingIntent||operatingState?.operation?.result==='pending';}
+function operatingBlocked(){return operatingSelectionBlocked()||!!operatingRadioUnknown;}
+function validOperatingState(s){
+  if(!operatingShape(s,'v,profile_id,boot_id,profile_revision,generation,operating_revision,snapshot_sequence,monotonic_ms,control,selection,available_bands,operation,cancellation,receive,radio')||s.v!==1||!operatingUuid(s.profile_id)||!operatingUuid(s.boot_id)||!['manual','cat'].includes(s.control))return false;
+  for(const key of ['profile_revision','generation','operating_revision','snapshot_sequence','monotonic_ms'])if(!operatingCounter(s[key]))return false;
+  const n=s.selection;
+  if(!operatingShape(n,'mode,band,nominal_hz,origin,confirmed_command_id')||!operatingModeValid(n.mode)||!operatingNullable(n.band,v=>operatingBands.includes(v))||!operatingNullable(n.nominal_hz,operatingFrequency)||!['unknown','manual','cat_readback'].includes(n.origin)||!operatingNullable(n.confirmed_command_id,operatingUuid)||(n.band===null)!==(n.nominal_hz===null))return false;
+  if(n.band===null&&(n.origin!=='unknown'||n.confirmed_command_id!==null))return false;
+  if(!Array.isArray(s.available_bands)||new Set(s.available_bands).size!==s.available_bands.length||s.available_bands.some((v,i)=>!operatingBands.includes(v)||(i&&operatingBands.indexOf(s.available_bands[i-1])>=operatingBands.indexOf(v))))return false;
+  if(s.operation!==null){const o=s.operation;
+    if(!operatingShape(o,'command_id,base_revision,revision,action,requested,phase,result,error,monitor_before,monitor_wanted,old_job_id,new_job_id')||!operatingUuid(o.command_id)||!operatingCounter(o.base_revision)||!operatingCounter(o.revision)||!['mode','band'].includes(o.action)||!['releasing','applying','restarting','applied','failed','release_blocked','cancelled'].includes(o.phase)||!['pending','success','failed','cancelled'].includes(o.result)||!operatingNullable(o.error,v=>typeof v==='string'&&/^[a-z_]{1,32}$/.test(v))||typeof o.monitor_before!=='boolean'||typeof o.monitor_wanted!=='boolean'||!operatingNullable(o.old_job_id,operatingUuid)||!operatingNullable(o.new_job_id,operatingUuid))return false;
+    if(!operatingShape(o.requested,'mode,band,nominal_hz')||!operatingModeValid(o.requested.mode)||!operatingBands.includes(o.requested.band)||!operatingFrequency(o.requested.nominal_hz))return false;
+  }
+  if(s.cancellation!==null){const c=s.cancellation;if(!operatingShape(c,'command_id,target_command_id,revision,result')||!operatingUuid(c.command_id)||!operatingUuid(c.target_command_id)||!operatingCounter(c.revision)||!['cancelled','fenced','already_cancelled'].includes(c.result))return false;}
+  const receive=s.receive;
+  if(!operatingShape(receive,'job_id,mode,state,audio_state,owner_released')||!operatingNullable(receive.job_id,operatingUuid)||!operatingNullable(receive.mode,v=>['spectrum','ft4','ft8'].includes(v))||!operatingNullable(receive.state,v=>['running','cancelling','completed','cancelled','failed'].includes(v))||!['closed','opening','running','closing','unavailable'].includes(receive.audio_state)||typeof receive.owner_released!=='boolean')return false;
+  const r=s.radio;if(!operatingShape(r,'connection_generation,state,error,observations')||!operatingCounter(r.connection_generation)||!['closed','connecting','ready','closing','unavailable'].includes(r.state)||!operatingNullable(r.error,v=>typeof v==='string'&&/^[a-z_]{1,32}$/.test(v))||!operatingShape(r.observations,'frequency,mode,data,rx_tx,split'))return false;
+  for(const [key,f]of Object.entries(r.observations)){
+    if(!operatingShape(f,'value,query_sequence,observed_at_ms,confirmed')||typeof f.confirmed!=='boolean'||(f.confirmed&&r.state!=='ready'))return false;
+    if(f.value===null){if(f.query_sequence!==null||f.observed_at_ms!==null||f.confirmed)return false;continue;}
+    if(!operatingCounter(f.query_sequence)||f.query_sequence===0||!operatingCounter(f.observed_at_ms)||f.observed_at_ms>s.monotonic_ms)return false;
+    if(key==='frequency'&&!operatingFrequency(f.value))return false;
+    if(key==='mode'&&(!operatingShape(f.value,'mode,filter')||typeof f.value.mode!=='string'||!(/^(USB|LSB|[0-9A-F]{2})$/).test(f.value.mode)||!Number.isInteger(f.value.filter)||f.value.filter<0||f.value.filter>255))return false;
+    if(key==='data'&&(!operatingShape(f.value,'enabled,filter')||typeof f.value.enabled!=='boolean'||!Number.isInteger(f.value.filter)||f.value.filter<0||f.value.filter>3))return false;
+    if(key==='rx_tx'&&!['RX','TX'].includes(f.value))return false;
+    if(key==='split'&&typeof f.value!=='boolean')return false;
+  }
+  return true;
+}
+function operatingShow(){
+  if(!document.querySelector('#operating-receive-controls'))return;
+  const connected=connection.dataset.state==='connected',s=operatingState,ready=connected&&operatingSupported===true&&!!s;
+  const blocked=!ready||mutationPending||uncertainMutation||operatingBlocked();
+  operatingMode.disabled=blocked;operatingBand.disabled=blocked;
+  const active=live?.job&&['running','cancelling'].includes(live.job.state),target=operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);
+  document.querySelector('#operating-monitor').disabled=!connected||!live||mutationPending||uncertainMutation||!!operatingUnknown||(active?live.job.state==='cancelling':(!!operatingRadioUnknown||!live.audio||!profileData?.settings.audio.input_device||s?.receive.owner_released===false));
+  document.querySelector('#operating-monitor').setAttribute('aria-pressed',String(!!active));
+  document.querySelector('#operating-stop').disabled=!connected||(!target&&(!active||mutationPending||uncertainMutation));
+  document.querySelector('#operating-refresh').disabled=!connected||operatingReadPending;
+  document.querySelector('#radio-connect').disabled=!ready||mutationPending||operatingBlocked()||s.control!=='cat'||['ready','connecting','closing'].includes(s.radio.state)||!document.querySelector('#radio-receive-only').checked;
+  document.querySelector('#radio-disconnect').disabled=!ready||s.radio.connection_generation===0||s.radio.state==='closed';
+  if(!s){operatingStatus.textContent=operatingFailure||'Operating selection unavailable until station snapshot';return;}
+  operatingMode.value=s.selection.mode;
+  const listed=operatingBand.querySelectorAll('option');if([...listed].slice(1).map(o=>o.value).join(',')!==s.available_bands.join(',')){
+    operatingBand.replaceChildren(new Option('Choose band',''),...s.available_bands.map(b=>new Option(b,b)));
+  }
+  operatingBand.value=s.selection.band??'';
+  const frequency=s.radio.observations.frequency;
+  const observed=frequency.value===null?'Actual rig frequency unknown':`Observed ${(frequency.value/1e6).toFixed(6)} MHz · ${connected&&frequency.confirmed?'confirmed query':'stale/unconfirmed'} at ${frequency.observed_at_ms} ms`;
+  const nominal=s.selection.nominal_hz===null?'Nominal frequency unknown':`Nominal ${(s.selection.nominal_hz/1e6).toFixed(6)} MHz · ${s.selection.origin==='manual'?'manual, actual rig unconfirmed':'CAT readback at selection'}`;
+  document.querySelector('#operating-radio').textContent=`CAT ${s.radio.state}${s.radio.error?' · '+s.radio.error:''} · ${observed} · ${nominal}`;
+  const dial=document.querySelector('#op-dial');dial.value=frequency.value!==null?(frequency.value/1e6).toFixed(6):s.selection.nominal_hz!==null?(s.selection.nominal_hz/1e6).toFixed(6):'';dial.title=`${observed}. ${nominal}`;dial.setAttribute('aria-label',frequency.value!==null?'Observed dial frequency':'Nominal dial frequency, actual rig unconfirmed');
+  const capabilities=document.querySelectorAll('#operating-capabilities dd');capabilities[1].textContent=!connected?'Unavailable · status stale':s.radio.state==='ready'?'Ready · IC-7300 readback':`Unavailable · ${s.radio.error??s.radio.state}`;
+  radio.textContent=!connected?'Radio state stale':s.control==='manual'?'Radio manual · CAT disabled':`CAT ${s.radio.state}`;
+  if(live)statusBar.children[1].textContent=`Audio ${live.audio.state} · ${live.job?live.job.mode.toUpperCase()+' '+live.job.state:'Receive stopped'} · CAT ${s.radio.state}`;
+  const o=s.operation;
+  operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or Stop to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
+}
+async function operatingSync(reconcile=false){
+  if(connection.dataset.state!=='connected'||!profileData)return;
+  if(operatingReadPending){if(reconcile)operatingReadAgain=true;return;}
+  operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket;
+  try{
+    const response=await fetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
+    if(epoch!==operatingEpoch||current!==socket)return;
+    let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
+    if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
+    if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
+    if(new TextEncoder().encode(text).length>3072||!validOperatingState(s))throw new Error('Invalid operating snapshot');
+    if(s.profile_id!==profileData.profile_id||s.boot_id!==profileData.boot_id||s.profile_revision!==profileData.revision)throw new Error('Operating identity is stale');
+    if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
+    const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
+    if(resolved)operatingUnknown=null;
+    if(operatingRadioUnknown&&reconcile){const unknown=operatingRadioUnknown;
+      if(s.boot_id!==unknown.boot_id||s.profile_revision!==unknown.profile_revision||s.radio.connection_generation>unknown.connection_generation||(unknown.action==='disconnect'&&s.radio.state==='closed')){operatingRadioUnknown=null;operatingFailure='';}
+    }
+    if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
+    operatingState=s;operatingSupported=true;if(resolved||operatingFailure.startsWith('Operating state stale'))operatingFailure='';
+    if(s.selection.confirmed_command_id&&s.selection.confirmed_command_id!==lastOperatingCommit){lastOperatingCommit=s.selection.confirmed_command_id;document.querySelector('#receive-mode').value=s.selection.mode;}
+  }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
+  finally{operatingReadPending=false;operatingShow();receiveShow();if(operatingReadAgain){operatingReadAgain=false;operatingSync(true);}}
+}
+async function operatingSelect(action,value){
+  if(!operatingState||mutationPending||uncertainMutation||operatingBlocked())return;
+  const s=operatingState,command_id=crypto.randomUUID(),epoch=++operatingEpoch;
+  const body={v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id,action,profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,[action]:value};
+  operatingIntent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
+  try{
+    const response=await fetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    if(epoch!==operatingEpoch)return;
+    if(!response.ok){operatingFailure=`Selection refused · ${ack.error?.code??'request_failed'}`;operatingIntent=null;return;}
+    if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||ack.command_id!==command_id||ack.accepted!==true||!operatingCounter(ack.operating_revision)||ack.operating_revision<=s.operating_revision||!['releasing','applying','restarting','applied','failed','release_blocked'].includes(ack.phase))throw new Error('Invalid admission receipt');
+  }catch(error){if(epoch===operatingEpoch){operatingUnknown=operatingIntent;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or Stop to cancel/fence`;}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;receiveShow();await operatingSync(true);await receiveSync();}}
+}
+async function operatingStop(){
+  const s=operatingState,target=operatingUnknown??operatingIntent??(s?.operation?{command_id:s.operation.command_id,base_revision:s.operation.base_revision,boot_id:s.boot_id}:null);
+  if(!target||(!operatingUnknown&&!operatingIntent&&s?.operation?.result!=='pending')){document.querySelector('#receive-stop').click();return;}
+  const epoch=++operatingEpoch;receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
+  try{
+    const command_id=crypto.randomUUID();
+    const response=await fetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:target.boot_id,command_id,action:'cancel',operating_revision:target.base_revision,target_command_id:target.command_id}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    if(!response.ok)throw new Error(ack.error?.code??'Stop refused');
+    if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==profileData.profile_id||ack.boot_id!==target.boot_id||ack.command_id!==command_id||ack.accepted!==true||ack.phase!=='cancelled'||!operatingCounter(ack.operating_revision))throw new Error('Invalid cancellation receipt');
+    if(epoch===operatingEpoch){operatingUnknown=null;operatingIntent=null;}
+  }catch(error){if(epoch===operatingEpoch){operatingUnknown=target;operatingFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);await receiveSync();receiveShow();}}
+}
+operatingMode.addEventListener('change',()=>operatingSelect('mode',operatingMode.value));
+operatingBand.addEventListener('change',()=>{if(operatingBand.value)operatingSelect('band',operatingBand.value);});
+document.querySelector('#operating-monitor').addEventListener('click',()=>{if(operatingState?.operation?.result==='pending'||operatingUnknown||operatingIntent)operatingStop();else if(live?.job&&['running','cancelling'].includes(live.job.state))document.querySelector('#receive-stop').click();else document.querySelector('#receive-start').click();});
+document.querySelector('#operating-stop').addEventListener('click',operatingStop);
+document.querySelector('#operating-refresh').addEventListener('click',()=>operatingSync(true));
+document.querySelector('#radio-receive-only').addEventListener('change',operatingShow);
+for(const action of ['connect','disconnect'])document.querySelector('#radio-'+action).addEventListener('click',async()=>{
+  const s=operatingState;if(!s||mutationPending)return;const epoch=++operatingEpoch;receiveMutationEpoch++;mutationPending=true;receiveShow();
+  try{const response=await fetch('/radio/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='connect'?{v:1,profile_id:s.profile_id,boot_id:s.boot_id,profile_revision:s.profile_revision,receive_only_verified:document.querySelector('#radio-receive-only').checked}:{v:1,profile_id:s.profile_id,boot_id:s.boot_id,connection_generation:s.radio.connection_generation}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    if(!response.ok){if(!operatingShape(ack,'error')||!operatingShape(ack.error,'code,field')||typeof ack.error.code!=='string'||ack.error.field!==null)throw new Error('Invalid CAT refusal');operatingFailure=`CAT ${action} refused · ${ack.error.code}`;return;}
+    if(new TextEncoder().encode(text).length>2048)throw new Error('Invalid CAT receipt size');
+    if(!operatingShape(ack,'v,profile_id,boot_id,connection_generation,state,error,device_id,effective_baud,observation')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||!operatingCounter(ack.connection_generation))throw new Error('Invalid CAT receipt');
+  }
+  catch(error){if(epoch===operatingEpoch){operatingRadioUnknown={action,connection_generation:s.radio.connection_generation,profile_revision:s.profile_revision,boot_id:s.boot_id};operatingFailure=`CAT ${action} outcome unknown · ${error.message} · refresh before another action`;}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);receiveShow();}}
+});
+refresh.addEventListener('click',()=>{if(operatingUnknown||operatingIntent||operatingFailure.startsWith('Operating state stale')||operatingFailure.startsWith('CAT '))operatingSync(true);});
+addEventListener('station-ready',event=>{
+  const replaced=operatingState&&operatingState.boot_id!==profileData?.boot_id;
+  const edited=operatingState&&operatingState.profile_revision!==profileData?.revision;
+  if(replaced||edited){if(operatingIntent||operatingRadioUnknown)mutationPending=false;operatingState=null;operatingUnknown=null;operatingRadioUnknown=null;operatingIntent=null;operatingEpoch++;}
+  const reconnected=operatingSocket!==event.detail;operatingSocket=event.detail;
+  // station-ready also follows routine status/profile refreshes. Those must not
+  // bypass the selection cadence or create a second optional HTTP workload.
+  if(operatingSupported!==false&&(reconnected||replaced||edited||(!operatingState&&!operatingReadPending)))operatingSync(reconnected||!!replaced||!!edited);
+  operatingShow();
+});
+addEventListener('station-stale',()=>{operatingFailure='Disconnected · operating data stale';operatingShow();});
+setInterval(()=>{
+  if(operatingSupported===false||operatingReadPending||livePending||resultPending||syncPending||mutationPending||uncertainMutation||refresh.disabled||connection.dataset.state!=='connected')return;
+  const pending=operatingState?.operation?.result==='pending',slow=profileSelect.value!=='detail',interval=slow?(pending?4000:8000):(pending?500:2000);
+  if(performance.now()-lastOperatingRead>=interval)operatingSync(false);
+},250);
+if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected'){operatingSocket=socket;operatingSync(false);}

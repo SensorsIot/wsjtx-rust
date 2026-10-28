@@ -223,6 +223,110 @@ fn req(operation: Operation) -> Request {
         cancelled: Arc::new(AtomicBool::new(false)),
     }
 }
+
+// Proves: CL-008-07; TC-009-005 case3. Independent addressed replies and fixed
+// sequence expectations distinguish each completed query from the legacy cache.
+#[test]
+fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets() {
+    let ng = vec![0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd];
+    let (executor, _) = service(vec![
+        Action::Bytes(MODE.to_vec()),
+        Action::Bytes(DATA.to_vec()),
+        Action::Bytes(ACK.to_vec()),
+        Action::Bytes(MODE.to_vec()),
+        Action::Bytes(ng),
+    ]);
+    let initial = executor.snapshot().unwrap();
+    assert_eq!(initial.facts.frequency.query_sequence, Some(1));
+    executor.execute(req(Operation::ReadMode)).unwrap();
+    let mode = executor.snapshot().unwrap();
+    assert_eq!(mode.facts.frequency, initial.facts.frequency);
+    assert_eq!(mode.facts.mode.query_sequence, Some(2));
+    assert_eq!(
+        mode.facts.mode.value,
+        Some(ModeValue { code: 1, filter: 2 })
+    );
+    assert!(mode.facts.mode.confirmed);
+    executor.execute(req(Operation::ReadData)).unwrap();
+    let data = executor.snapshot().unwrap();
+    assert_eq!(data.facts.frequency, initial.facts.frequency);
+    assert_eq!(data.facts.mode, mode.facts.mode);
+    assert_eq!(data.facts.data.query_sequence, Some(3));
+    assert_eq!(data.facts.rx_tx.query_sequence, None);
+    assert_eq!(
+        executor.execute(req(Operation::ReceiveSetup {
+            frequency_hz: 7074000,
+            mode: Sideband::Usb,
+            filter: 2,
+            data: true,
+            data_filter: 2
+        })),
+        Err(Error::Rejected)
+    );
+    let failed = executor.snapshot().unwrap();
+    assert!(
+        !failed.facts.frequency.confirmed
+            && !failed.facts.mode.confirmed
+            && !failed.facts.data.confirmed
+    );
+    assert_eq!(failed.facts.frequency.value, initial.facts.frequency.value);
+    assert_eq!(
+        failed.facts.frequency.observed_at,
+        initial.facts.frequency.observed_at
+    );
+    assert_eq!(
+        failed.facts.mode.query_sequence,
+        Some(4),
+        "ACK is not a query completion"
+    );
+    assert_eq!(
+        failed.facts.data.query_sequence,
+        Some(3),
+        "NG is not a query completion"
+    );
+}
+
+// Proves: CL-008-07; TC-009-005 cases3/4. One actor lease covers the transition,
+// including gaps between typed exchanges, without queueing or polling interference.
+#[test]
+fn transition_lease_excludes_other_operations_and_polling_until_released() {
+    let script = Arc::new(Mutex::new(Script {
+        actions: VecDeque::from([
+            Action::Bytes(FREQUENCY.to_vec()),
+            Action::Bytes(MODE.to_vec()),
+            Action::Bytes(DATA.to_vec()),
+            Action::Bytes(FREQUENCY.to_vec()),
+        ]),
+        ..Script::default()
+    }));
+    let transport = script.clone();
+    let actor = Arc::new(
+        radio_control::actor::Actor::begin(
+            Configuration::parse("COM3").unwrap(),
+            authority(),
+            Catalogue::builtin().unwrap(),
+            move |_, _| Ok(Fake(transport)),
+        )
+        .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while actor.snapshot().unwrap().state == State::Connecting && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let lease = actor.reserve_transition().unwrap();
+    assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
+    lease.execute(req(Operation::ReadMode)).unwrap();
+    lease.execute(req(Operation::ReadData)).unwrap();
+    std::thread::sleep(Duration::from_millis(1100));
+    let writes = script.lock().unwrap().writes.len();
+    drop(lease);
+    actor.execute(req(Operation::ReadFrequency)).unwrap();
+    actor.request_close();
+    assert_eq!(
+        writes, 3,
+        "idle polling must not enter a reserved transition"
+    );
+}
 // Proves: CL-008-06; TC-009-001. Invalid authority cannot even activate a native transport.
 #[test]
 fn actor_rejects_invalid_authority_before_native_factory() {

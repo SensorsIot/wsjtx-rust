@@ -4,12 +4,19 @@ mod auth_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
+mod radio_http;
+#[cfg(all(test, not(debug_assertions)))]
+mod radio_http_tests;
 mod receive;
 mod receive_http;
 #[cfg(test)]
 mod receive_http_tests;
 mod recording;
 mod recording_http;
+mod selection;
+mod selection_http;
+#[cfg(all(test, not(debug_assertions)))]
+mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
 mod spectrum;
 use axum::{Json, body::Bytes};
@@ -210,6 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recording::Recording::open(&base, id, recording_boot)
             })
             .await?;
+            recording.initialize_profile_revision(store.document.revision);
             let watched = recording.clone();
             tokio::spawn(async move {
                 let mut timer = interval(Duration::from_millis(50));
@@ -264,6 +272,12 @@ fn router(state: App) -> Router {
         .route("/receive/start", post(receive_http::start).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/results", get(receive_http::results))
+        .route("/receive/selection", get(selection_http::snapshot))
+        .route("/receive/select", post(selection_http::select).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio", get(radio_http::snapshot))
+        .route("/radio/connect", post(radio_http::connect).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio/disconnect", post(radio_http::disconnect).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio/operation", post(radio_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/imports", post(recording_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/imports/{id}", get(recording_http::import).put(recording_http::import).delete(recording_http::import).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/recording/replay", post(recording_http::replay).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -453,6 +467,7 @@ async fn put_profile(
         if store.save(edit.settings).is_err() {
             return profile_error(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable", None);
         }
+        state.recording.profile_changed(store.document.revision);
         Json(representation(&state, &store.document, &app.origin)).into_response()
     })
     .await

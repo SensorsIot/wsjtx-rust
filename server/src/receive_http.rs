@@ -132,7 +132,15 @@ pub async fn start(
             .input_device
             .clone()
             .ok_or("audio_unconfigured")?;
-        r.receive_start(&b.profile_id, &b.boot_id, b.generation, device, mode)
+        drop(store);
+        r.receive_start(
+            &b.profile_id,
+            &b.boot_id,
+            b.generation,
+            b.profile_revision,
+            device,
+            mode,
+        )
     })
     .await
     {

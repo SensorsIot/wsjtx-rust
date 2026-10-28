@@ -155,3 +155,8 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 @container (max-width:23em){#band-activity tbody tr:not(:has(.empty-messages)){grid-template-columns:minmax(0,1fr)}#band-activity td:nth-child(5){grid-column:auto}}
 
 #band-activity>header{flex-wrap:wrap;gap:10px}#band-activity .op-order-controls{display:flex;flex-wrap:wrap;gap:8px;max-width:100%}#band-activity .op-order-controls label{font-size:var(--op-font-secondary);margin:0;display:flex;flex-direction:column;gap:3px;min-width:0;max-width:100%}#band-activity .op-order-controls select{font-size:var(--op-font-normal);padding:4px;max-width:100%}
+#operating-receive-controls{display:flex;flex-wrap:wrap;align-items:end;gap:.6rem;width:100%;min-width:0}
+#operating-receive-controls label{display:flex;flex-direction:column;gap:.25rem;max-width:100%}
+#operating-receive-controls .receive-only-verification{flex-direction:row;align-items:center;flex-wrap:wrap}
+#operating-radio,#operating-selection-status{flex-basis:100%;max-width:100%;overflow-wrap:anywhere}
+#operating-monitor[aria-pressed=true]{background:#1f6f48;color:white}

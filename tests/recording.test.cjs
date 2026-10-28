@@ -260,7 +260,18 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const events=[[],[]];for(let n=0;n<2;n++)pages[n].on('websocket',ws=>ws.on('framereceived',e=>{const m=JSON.parse(e.payload);if(m.type==='spectrum.frame')events[n].push({at:performance.now(),message:m});}));
       // Install observers on the existing sockets without relying on transport creation timing.
       for(const p of pages)await p.evaluate(()=>{window.__displayEvents=[];addEventListener('station-message',e=>{if(e.detail.message.type==='spectrum.frame')window.__displayEvents.push({at:performance.now(),message:e.detail.message});});});
-      await f.replay();await sleep(2000);const baseline={...f.proxy.counters},start=performance.now(),latencies=[];
+      const playback=await f.replay();await sleep(2000);const baseline={...f.proxy.counters},start=performance.now(),latencies=[];
+      // TC-009-005: actual selection polling shares the counted link. A band
+      // intent must not quiet or replace the original recorded frame workload.
+      await pages[0].locator('#operating-refresh:enabled').click();
+      await pages[0].waitForFunction(generation=>operatingState?.generation===generation,playback.generation);
+      const operatingBefore=await pages[0].evaluate(()=>({revision:operatingState.operating_revision,operation:operatingState.operation}));
+      const bandResponse=pages[0].waitForResponse(r=>new URL(r.url()).pathname==='/receive/select'&&r.request().method()==='POST');
+      await pages[0].selectOption('#operating-band','40m');const band=await bandResponse;assert.equal(band.status(),409);assert.equal((await band.json()).error.code,'busy');
+      await pages[0].locator('#operating-band:enabled').waitFor();
+      const operatingAfter=await pages[0].evaluate(()=>({revision:operatingState.operating_revision,operation:operatingState.operation}));
+      assert.deepEqual(operatingAfter,operatingBefore,'refused intent changes no selection revision or record');
+      const stillPlaying=await f.snapshot();assert.equal(stillPlaying.generation,playback.generation);assert.equal(stillPlaying.job.id,playback.job.id);assert.equal(stillPlaying.job.state,'running');
       for(let n=0;n<10;n++){
         const due=start+(n+1)*5500;await sleep(Math.max(0,due-performance.now()));
         await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
