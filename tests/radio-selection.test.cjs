@@ -91,6 +91,12 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
     const stale=structuredClone(snapshot);stale.snapshot_sequence=19;assert.equal(mapping.valid(stale),true);
     assert.throws(()=>cadenceAccepted(stale,request,next,q()),/stale sequence/);
   });
+  const coldSockets=()=>[{index:0,opened:10,closed:12},{index:1,opened:20,closed:22},{index:2,opened:30,closed:null}];
+  const socketBaseline=()=>({index:2,count:3,at:40,end:120});
+  await t.test('failed Cold attempts precede accepted live socket segment',()=>{cadenceSocketSegment(coldSockets(),socketBaseline());const sockets=coldSockets();sockets[0].closed=100;cadenceSocketSegment(sockets,socketBaseline());});
+  await t.test('accepted socket closure or replacement during segment refused',()=>{const sockets=coldSockets();sockets[2].closed=80;assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/remains live/);sockets.push({index:3,opened:81,closed:null});assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/new socket/);});
+  await t.test('new measured socket refused despite otherwise valid context',()=>{const sockets=coldSockets();sockets.push({index:3,opened:80,closed:null});assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/new socket/);});
+  await t.test('wrong baseline socket index or time refused',()=>{for(const change of [{index:0},{index:3},{at:25},{at:121},{end:null}])assert.throws(()=>cadenceSocketSegment(coldSockets(),{...socketBaseline(),...change}));const sockets=coldSockets();sockets[2].index=1;assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/identity/);});
 });
 
 test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
@@ -352,18 +358,28 @@ function cadenceAccepted(body,request,next,qualification){
 }
 function cadenceQualification(seen){
   const q=seen.acceptance,events=q.events;
-  assert.ok(events.length>=2);assert.equal(seen.sockets.length,1,'fixed workload has one stable socket');assert.equal(seen.sockets[0].closed,null);
+  assert.ok(events.length>=2);cadenceSocketSegment(seen.sockets,q.socketBaseline);
   let epoch=events[0].epoch,actions=0;
   for(const event of events){
     assert.ok(event.connected&&event.sameSocket,'fixed workload socket/context changed');
     for(const key of ['profile_id','boot_id','profile_revision'])assert.equal(event[key],q.expected[key],`fixed workload expected ${key}`);
     if(event.action){epoch++;actions++;}assert.equal(event.epoch,epoch,'all source epoch changes accounted for');
   }
-  for(const profile of seen.profileBodies)for(const [key,field]of [['profile_id','profile_id'],['boot_id','boot_id'],['profile_revision','revision']])assert.equal(profile[field],q.expected[key],'authoritative profile remains fixed');
+  for(const {at,body:profile}of seen.profileBodies.filter(p=>p.at>=q.socketBaseline.at))for(const [key,field]of [['profile_id','profile_id'],['boot_id','boot_id'],['profile_revision','revision']])assert.equal(profile[field],q.expected[key],'authoritative profile remains fixed within qualified segment');
   const mutations=seen.transfers.filter(r=>r.wallStarted>=events[0].at&&!['GET','HEAD'].includes(r.method));
   assert.equal(mutations.length,actions,'each epoch action has exactly one actual mutation');
   assert.ok(mutations.every(r=>r.method==='POST'&&r.route==='/receive/select'),'no unaccounted epoch-changing mutation');
   return q;
+}
+function cadenceSocketSegment(sockets,baseline){
+  assert.ok(baseline&&Number.isInteger(baseline.count)&&baseline.count>0,'accepted socket baseline captured');
+  assert.equal(baseline.index,baseline.count-1,'accepted baseline is the current socket');
+  assert.ok(Number.isFinite(baseline.at)&&baseline.at>=0&&Number.isFinite(baseline.end)&&baseline.at<=baseline.end,'bounded monotonic socket segment');
+  assert.equal(sockets.length,baseline.count,'no new socket after accepted baseline');
+  const accepted=sockets[baseline.index];assert.ok(accepted,'accepted baseline socket exists');
+  assert.equal(accepted.index,baseline.index,'baseline socket identity');
+  assert.ok(sockets.every(s=>s.opened<=baseline.at),'all socket creations precede baseline');
+  assert.ok(accepted.closed===null||accepted.closed>baseline.end,'accepted socket remains live throughout segment');
 }
 function cadenceJoin(seen,origin,mapping){
   const network=seen.transfers.filter(r=>r.route==='/receive/selection'&&r.method==='GET');
@@ -434,7 +450,7 @@ function liveSelectionFixture(){
       page.on('response',async response=>{
         const route=new URL(response.url()).pathname;
         if(route==='/recording.js'){seen.cadenceSource=await response.body();return;}
-        if(route==='/profile'&&response.status()===200)seen.profileBodies.push(await response.json());
+        if(route==='/profile'&&response.status()===200)seen.profileBodies.push({at:performance.now(),body:await response.json()});
         const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         try{const text=await response.text();entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);
@@ -461,8 +477,9 @@ function liveSelectionFixture(){
     }
     coldRemaining();
     for(const [index,page]of pages.entries()){
-      const authoritative=observations[index].profileBodies.at(-1);assert.ok(authoritative,'authoritative setup profile observed');
-      observations[index].acceptance={expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
+      const authoritative=observations[index].profileBodies.at(-1)?.body;assert.ok(authoritative,'authoritative setup profile observed');
+      const socketBaseline={index:observations[index].sockets.length-1,count:observations[index].sockets.length,at:performance.now(),end:null};
+      observations[index].acceptance={socketBaseline,expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
         const initialSocket=socket,events=[];
         const snapshot=action=>{events.push({at:performance.timeOrigin+performance.now(),action,epoch:operatingEpoch,connected:connection.dataset.state==='connected',sameSocket:socket===initialSocket&&socket.readyState===WebSocket.OPEN,profile_id:profileData.profile_id,boot_id:profileData.boot_id,profile_revision:profileData.revision,acceptedSequence:operatingState?.snapshot_sequence??null});};
         snapshot(false);
@@ -530,7 +547,7 @@ function liveSelectionFixture(){
       report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
       for(const seen of observations){const replies=seen.http.filter(r=>r.at>=start&&r.status===200&&['/receive/selection','/receive','/receive/results','/profile','/radio','/recording'].includes(r.route));assert.ok(replies.length>0);assert.ok(replies.every(r=>r.contentEncoding==='gzip'),'actual browser negotiated gzip on every eligible response');}
       assert.ok(traffic.up<=3000,`${profile} actual counted uplink ${traffic.up}`);assert.ok(traffic.down<=3000,`${profile} actual counted downlink ${traffic.down}`);assert.equal(latencies.length,26);
-      for(const [index,page]of pages.entries())observations[index].acceptance.events=await page.evaluate(()=>window.__cadenceAcceptanceCheckpoint());
+      for(const [index,page]of pages.entries()){observations[index].acceptance.events=await page.evaluate(()=>window.__cadenceAcceptanceCheckpoint());observations[index].acceptance.socketBaseline.end=performance.now();}
       report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),acceptance:seen.acceptance,profileBodies:seen.profileBodies,reads:seen.reads,transfers:seen.transfers}));await save();
       const evidence=observations.map(seen=>{
         const evidence={joined:[],pairs:[],errors:[]};
