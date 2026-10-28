@@ -4,6 +4,61 @@ use serde::Serialize;
 
 const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
 
+/// Real fixed-table graphs plus the old inline array of one lists() reallocation.
+/// MaybeUninit slots represent moved String headers, never duplicate String owners.
+#[cfg(test)]
+pub(super) struct UnpackTableReserve {
+    sections: Vec<String>,
+    states: Vec<String>,
+    old_inline: Vec<std::mem::MaybeUninit<String>>,
+}
+#[cfg(test)]
+impl UnpackTableReserve {
+    pub(super) fn new() -> Self {
+        let sections: Vec<String> = serde_json::from_str(include_str!(
+            "../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
+        ))
+        .unwrap();
+        let states: Vec<String> = serde_json::from_str(include_str!(
+            "../../../fixtures/decoder/protocol-data/states_provinces.json"
+        ))
+        .unwrap();
+        for (table, count, twos, threes) in [(&sections, 84, 54, 30), (&states, 65, 63, 2)] {
+            assert_eq!(table.len(), count);
+            assert_eq!(table.iter().filter(|s| s.len() == 2).count(), twos);
+            assert_eq!(table.iter().filter(|s| s.len() == 3).count(), threes);
+            assert!(
+                table
+                    .iter()
+                    .all(|s| s.is_ascii() && s.capacity() == s.len())
+            );
+            assert!(table.capacity() >= 128);
+        }
+        let mut old_inline = Vec::with_capacity(64);
+        old_inline.resize_with(64, std::mem::MaybeUninit::uninit);
+        let data = serde_json::json!({"owner":"unpack_fixed_tables_and_old_inline",
+            "section_count":sections.len(),"state_count":states.len(),
+            "section_vector_capacity":sections.capacity(),"state_vector_capacity":states.capacity(),
+            "section_string_capacities":sections.iter().map(String::capacity).sum::<usize>(),
+            "state_string_capacities":states.iter().map(String::capacity).sum::<usize>(),
+            "old_inline_slots":old_inline.len(),"old_inline_capacity":old_inline.capacity(),
+            "old_inline_reserved_bytes":old_inline.capacity()*std::mem::size_of::<String>(),
+            "old_inline_has_initialized_string_owners":false,"is_decoded_success":false,
+            "both_parser_branches_retained_conservatively":true,"new_decode_old_generation_added":false});
+        let encoded = serde_json::to_string(&data).unwrap();
+        assert!(encoded.len() < 16000);
+        eprintln!("RESOURCE_CAPACITY {encoded}");
+        Self {
+            sections,
+            states,
+            old_inline,
+        }
+    }
+    pub(super) fn retain(&self) {
+        std::hint::black_box((&self.sections, &self.states, &self.old_inline));
+    }
+}
+
 /// Inspect only real unpack-created String owners; inline enums are not heap owners.
 #[cfg(test)]
 pub(super) fn record_string_paths(record: &Decode) -> Vec<(&'static str, &String)> {

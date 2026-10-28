@@ -78,6 +78,7 @@ impl PeakCapacityReserve {
         assert_eq!(old_generation.len(), largest_pair.0);
         assert!(old_generation.capacity() >= largest_pair.0);
         let data = serde_json::json!({"owner":"direct_peak_two_generation_reserve",
+            "mode":"ft8","direct_capacity_not_signal":true,
             "logical_maximum_peaks":heap.len(),"peak_size_bytes":std::mem::size_of::<Peak>(),
             "growth":growth,"largest_observed_old_new":largest_pair,
             "retained_heap_capacity":heap.capacity(),"retained_old_generation_capacity":old_generation.capacity(),

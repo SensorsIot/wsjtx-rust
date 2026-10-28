@@ -1,5 +1,200 @@
 use super::*;
 
+/// Test-owned FT4 upper envelope. These are legal typed capacity entries, not detections.
+#[cfg(not(debug_assertions))]
+struct Ft4CapacityReserve {
+    times: Vec<usize>,
+    old_times: Vec<usize>,
+    physical: Vec<(usize, Candidate)>,
+    old_physical: Vec<(usize, Candidate)>,
+    physical_sort: Vec<std::mem::MaybeUninit<(usize, Candidate)>>,
+    coarse: Vec<(f64, f64)>,
+    old_coarse: Vec<(f64, f64)>,
+    coarse_sort: Vec<std::mem::MaybeUninit<(f64, f64)>>,
+    converted: Vec<f64>,
+    powers: Vec<f64>,
+    old_powers: Vec<f64>,
+    outputs: Vec<Vec<Candidate>>,
+    refinement: Vec<f64>,
+    old_refinement: Vec<f64>,
+}
+#[cfg(not(debug_assertions))]
+impl Ft4CapacityReserve {
+    fn new() -> Self {
+        fn push_trace<T>(
+            items: impl IntoIterator<Item = T>,
+        ) -> (Vec<T>, Vec<serde_json::Value>, usize) {
+            let mut out = vec![];
+            let mut trace = vec![];
+            let mut largest_old = 0;
+            for item in items {
+                let old = out.capacity();
+                out.push(item);
+                let new = out.capacity();
+                if old != new {
+                    largest_old = largest_old.max(old);
+                    trace.push(
+                        serde_json::json!({"len":out.len(),"old_capacity":old,"new_capacity":new}),
+                    );
+                }
+            }
+            (out, trace, largest_old)
+        }
+        fn emit(data: serde_json::Value) {
+            let encoded = serde_json::to_string(&data).unwrap();
+            assert!(encoded.len() < 16000);
+            eprintln!("RESOURCE_CAPACITY {encoded}");
+        }
+        let last = (359999 - 60480) / 18 + 32;
+        let mut times = (32..=last).step_by(4).collect::<Vec<_>>();
+        assert_eq!(times.len(), 4160);
+        let old_times = times.clone();
+        let times_before = times.capacity();
+        if times.last() != Some(&last) {
+            times.push(last);
+        }
+        assert_eq!(times.len(), 4161);
+        assert!(times.capacity() >= 8320);
+        let entries = (0..4161).step_by(2).flat_map(|r| {
+            (0..9).step_by(2).map(move |f| {
+                (
+                    r * 9 + f,
+                    Candidate {
+                        start: r * 72,
+                        frequency: 1000. + (f as f64 - 4.) * 3.,
+                        score: 1.3,
+                    },
+                )
+            })
+        });
+        let (mut physical, physical_trace, physical_old) = push_trace(entries);
+        assert_eq!(physical.len(), 10405);
+        assert!(physical.iter().all(|(index, c)| *index < 4161 * 9
+            && c.start + 60480 <= 360000
+            && (200. ..=3500.).contains(&c.frequency)
+            && c.score.is_finite()));
+        let old_physical = physical
+            .iter()
+            .take(physical_old)
+            .copied()
+            .collect::<Vec<_>>();
+        physical.sort_by(|(_, a), (_, b)| {
+            b.score
+                .total_cmp(&a.score)
+                .then(a.frequency.total_cmp(&b.frequency))
+                .then(a.start.cmp(&b.start))
+        });
+        let mut physical_sort = Vec::with_capacity(10405);
+        physical_sort.resize_with(10405, std::mem::MaybeUninit::uninit);
+        let pairs = || (0..641).map(|i| (200. + 3300. * i as f64 / 640., 2f64));
+        let (mut coarse, coarse_trace, coarse_old) = push_trace(pairs());
+        assert!(coarse.iter().all(
+            |(frequency, contrast)| (200. ..=3500.).contains(frequency) && contrast.is_finite()
+        ));
+        let old_coarse = coarse.iter().take(coarse_old).copied().collect::<Vec<_>>();
+        coarse.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.total_cmp(&b.0)));
+        let mut coarse_sort = Vec::with_capacity(641);
+        coarse_sort.resize_with(641, std::mem::MaybeUninit::uninit);
+        let (conversion_source, conversion_trace, _) = push_trace(pairs());
+        let conversion_capacity = conversion_source.capacity();
+        let converted = conversion_source
+            .into_iter()
+            .map(|p| p.0)
+            .collect::<Vec<_>>();
+        assert_eq!(converted.len(), 641);
+        assert!(converted.capacity() <= 2048);
+        let (powers, powers_trace, powers_old) = push_trace((0..16695).map(|_| 1f64));
+        let old_powers = powers.iter().take(powers_old).copied().collect::<Vec<_>>();
+        assert!(powers.capacity() >= 32768);
+        let mut outputs = vec![];
+        let mut output_traces = vec![];
+        for _ in 0..2 {
+            let (new, trace, old) = push_trace((0..256).map(|start| Candidate {
+                start,
+                frequency: 1000.,
+                score: 1.3,
+            }));
+            let previous = new.iter().take(old).copied().collect::<Vec<_>>();
+            outputs.push(new);
+            outputs.push(previous);
+            output_traces.push(trace);
+        }
+        let lower = 1000. - Mode::Ft4.spacing() / 2.;
+        let upper = 1000. + Mode::Ft4.spacing() / 2.;
+        let step = 6000. / 60480.;
+        let (refinement, refinement_trace, refinement_old) = push_trace(
+            (-105..=105)
+                .map(|df| 1000. + df as f64 * step)
+                .filter(|f| *f >= lower && *f <= upper)
+                .chain([lower, upper]),
+        );
+        let old_refinement = refinement
+            .iter()
+            .take(refinement_old)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(refinement.len() <= 213 && refinement.capacity() <= 256);
+        emit(
+            serde_json::json!({"owner":"ft4_timing_coarse_capacity_reserve","mode":"ft4",
+            "times_frames":359999,"times_before_capacity":times_before,"times_after_capacity":times.capacity(),
+            "old_times_capacity":old_times.capacity(),"coarse_logical_upper":641,"coarse_growth":coarse_trace,
+            "coarse_final_capacity":coarse.capacity(),"old_coarse_capacity":old_coarse.capacity(),
+            "coarse_sort_scratch_slots":coarse_sort.capacity(),"conversion_growth":conversion_trace,
+            "conversion_source_capacity":conversion_capacity,"converted_f64_capacity":converted.capacity(),
+            "is_signal_generated":false,"is_decoded_success":false}),
+        );
+        emit(
+            serde_json::json!({"owner":"ft4_physical_peak_sort_capacity_reserve","logical_upper":physical.len(),
+            "growth":physical_trace,"final_capacity":physical.capacity(),"old_capacity":old_physical.capacity(),
+            "sort_scratch_capacity":physical_sort.capacity(),"entry_bytes":std::mem::size_of::<(usize,Candidate)>(),
+            "old_growth_and_sort_simultaneously_held_conservatively":true,"is_decoded_success":false}),
+        );
+        emit(
+            serde_json::json!({"owner":"ft4_powers_outputs_refinement_capacity_reserve",
+            "powers_logical_upper":powers.len(),"powers_growth":powers_trace,"powers_capacity":powers.capacity(),
+            "old_powers_capacity":old_powers.capacity(),"candidate_output_growth":output_traces,
+            "candidate_buffer_capacities":outputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
+            "refinement_growth":refinement_trace,"refinement_capacity":refinement.capacity(),
+            "old_refinement_capacity":old_refinement.capacity(),"is_decoded_success":false,
+            "all_are_prepared_capacity_owners":true}),
+        );
+        Self {
+            times,
+            old_times,
+            physical,
+            old_physical,
+            physical_sort,
+            coarse,
+            old_coarse,
+            coarse_sort,
+            converted,
+            powers,
+            old_powers,
+            outputs,
+            refinement,
+            old_refinement,
+        }
+    }
+    fn retain(&self) {
+        std::hint::black_box((
+            &self.times,
+            &self.old_times,
+            &self.physical,
+            &self.old_physical,
+            &self.physical_sort,
+            &self.coarse,
+            &self.old_coarse,
+            &self.coarse_sort,
+            &self.converted,
+            &self.powers,
+            &self.old_powers,
+            &self.outputs,
+            &self.refinement,
+            &self.old_refinement,
+        ));
+    }
+}
+
 /// Finite receive allocation-path witnesses, not TX surface-grammar or DSP successes.
 #[cfg(not(debug_assertions))]
 fn payload_layout_witnesses() -> Vec<(String, &'static str, Decode)> {
@@ -347,9 +542,19 @@ fn resource_capacity_owned_child() {
         );
         drop(layouts);
     }
-    let peak_reserve = crate::decoder::synchronization::PeakCapacityReserve::new();
+    let table_reserve = history::UnpackTableReserve::new();
     let mut additional_tiers = vec![];
     for mode in [Mode::Ft8, Mode::Ft4] {
+        let peak_reserve = if mode == Mode::Ft8 {
+            Some(crate::decoder::synchronization::PeakCapacityReserve::new())
+        } else {
+            None
+        };
+        let ft4_reserve = if mode == Mode::Ft4 {
+            Some(Ft4CapacityReserve::new())
+        } else {
+            None
+        };
         let (mut retained_state, records, history_ledger) = history::capacity_state(mode);
         eprintln!("RESOURCE_CAPACITY {}", history_ledger);
         // Retain actual nested variant witnesses, never arbitrary padded buffers.
@@ -515,7 +720,13 @@ fn resource_capacity_owned_child() {
                 "manager_ack_proved":false,"cancellation_sla_proved":false})
             );
             std::hint::black_box((&records, &witnesses, &candidates, &pending, &seen));
-            peak_reserve.retain();
+            if let Some(reserve) = &peak_reserve {
+                reserve.retain();
+            }
+            if let Some(reserve) = &ft4_reserve {
+                reserve.retain();
+            }
+            table_reserve.retain();
         }
         let missing: &[(usize, usize, usize)] = if mode == Mode::Ft8 {
             &[(180000, 192000, 3200)]
@@ -580,18 +791,33 @@ fn resource_capacity_owned_child() {
                 );
                 assert_eq!(retained_state.available_count(), 2048);
                 std::hint::black_box((&records, &witnesses, &candidates, &pending, &seen));
-                peak_reserve.retain();
+                if let Some(reserve) = &peak_reserve {
+                    reserve.retain();
+                }
+                if let Some(reserve) = &ft4_reserve {
+                    reserve.retain();
+                }
+                table_reserve.retain();
             }
         }
+        drop(ft4_reserve);
+        drop(peak_reserve);
     }
     assert_eq!(additional_tiers.len(), 10);
     drop(additional_tiers);
-    drop(peak_reserve);
+    drop(table_reserve);
     eprintln!(
         "RESOURCE_DISPOSITION {}",
         serde_json::json!({"unknown_maximum_nested_record_allowance":true,
         "unknown_unexercised_internal_grid_heap_allowance":true,"workspace_sufficient_proof":"INCONCLUSIVE",
-        "station_96mib_proved":false,"all_test_owners_dropped":true})
+        "station_96mib_proved":false,"all_test_owners_dropped":true,
+        "one_unpack_string_buffers_requested_bound":197,
+        "history_numbered_ascii_encoded_bound":625,"history_json_old_new_requested_bound":1536,
+        "current_decode_inline_bytes":std::mem::size_of::<Decode>(),
+        "clone_argument_inline_bytes":std::mem::size_of::<Decode>(),
+        "one_unpack_bound_includes_inline_future_control_or_stack":false,
+        "future_control_stack_proof":"separate real-kernel/source working-storage term",
+        "universal_process_commit_claimed":false})
     );
     handshake("FINISHED", "RELEASE");
 }
