@@ -351,7 +351,7 @@ fn audio_overflow_and_duplicate_epoch() {
         SourcePoll::Failed(SourceError::UnsupportedFormat)
     ));
 }
-// Proves: CL-008-03/05; TC-002-001/003/009-004. Backoff and explicit stop never rely on UTC.
+// Proves: CL-008-03/05; TC-002-001; TC-002-003; TC-009-004. Backoff and explicit stop never rely on UTC.
 #[test]
 fn audio_lifecycle_retries() {
     let mut lifecycle = Lifecycle::default();
