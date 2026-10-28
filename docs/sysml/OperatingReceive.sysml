@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 8d875c2d7dd14caae2aef5f7eeed547f67b8201d1dc62ae17261c9a65cf2901a
+// Canonical FSD slices SHA256: 4f85372bc4e8f2974a9dc830b4bd9accb6a20a8d7c040c42b15afefba176e0df
 package WstxOperatingReceive {
     private import ScalarValues::*;
 
@@ -415,6 +415,51 @@ package WstxOperatingReceive {
              cancelrecordseparate. Profilechangeinvalidateswithoutundopersistedconfig.
              Appliednominal+audiofailurestayscommittedandfailed,notfabricatedrollback. */
     }
+    enum def PollDispatch { automaticInterval; explicitReconciliation; other; }
+    enum def PollSuccessor { pending; terminal; }
+    part def PollCadenceEvidence {
+        attribute dispatch : PollDispatch;
+        attribute successor : PollSuccessor;
+        attribute previousAcceptedPending : Boolean;
+        attribute sameCommandContext : Boolean;
+        attribute sequentialTransport : Boolean;
+        attribute noInterveningSnapshotOrUnrelatedMutation : Boolean;
+        attribute startGapMs : Real;
+        attribute pendingRegimeEvidence : Boolean;
+        attribute passiveRegimeEvidence : Boolean;
+        constraint automaticSpacing { dispatch == PollDispatch::automaticInterval implies
+            ((previousAcceptedPending and startGapMs >= 3950) or
+             (not previousAcceptedPending and startGapMs >= 7950)) }
+        constraint pendingProof { pendingRegimeEvidence ==
+            (dispatch == PollDispatch::automaticInterval and previousAcceptedPending and
+             sameCommandContext and sequentialTransport and
+             noInterveningSnapshotOrUnrelatedMutation and startGapMs >= 3950 and startGapMs < 7950) }
+        constraint passiveProof { passiveRegimeEvidence ==
+            (dispatch == PollDispatch::automaticInterval and not previousAcceptedPending and
+             sameCommandContext and sequentialTransport and
+             noInterveningSnapshotOrUnrelatedMutation and startGapMs >= 7950) }
+        doc /* TC0090057/8D: successor pending OR terminal does not select the cadence;
+             last accepted state at dispatch does. Match station/profile/boot, saved
+             profile/operating revision and command. The same command may create its
+             expected fresh receive job/generation; unrelated context changes refuse.
+             CDP initiator + frozen caller mapping, not gesture-time erasure.
+             50ms observation tolerance; <7950 is coverage, not product max latency. */
+    }
+    part def BrowserWindowCadenceCoverage {
+        attribute measuredCommands : Integer = 2;
+        attribute commandsWithActualPending : Integer;
+        attribute qualifyingPendingPairs : Integer;
+        attribute qualifyingPassivePairs : Integer;
+        constraint allCommands { commandsWithActualPending == measuredCommands }
+        constraint actualRegimes { qualifyingPendingPairs >= 1 and qualifyingPassivePairs >= 1 }
+        doc /* EACH browser/EACH75s Thin/Off window; all5CQ/26status/bytes/ACK/frame
+             bounds unchanged. A legal short operation need not survive two replies.
+             No forced delay/padding/omitted work or retroactive execution PASS. */
+    }
+    verification def PollCadenceFaultControls { doc /* Pending->pending/terminal accepted
+         only with real timer/context/sequential transport. Reject pending<3950,
+         passive-at4s, wrong command/identity, explicit-only, overlap and missing
+         positive pending/passive evidence in either browser/profile. */ }
     attribute def WireLimits {
         attribute requestBytes : Integer = 1024;
         attribute receiptBytes : Integer = 384;
@@ -496,7 +541,9 @@ package WstxOperatingReceive {
              profile edits, Stop/late callback/CAS/fencing and exact strict barriers.
              Old/new client compatibility,384/3072/4096/1024 byte maxima+one-over,
              all safe counters and zero-effect refusals; no candidate-generated oracle.
-             Actual8s/4s Thin/Off selection traffic + mode/band controls preserve existing
+             Actual8s/4s Thin/Off traffic uses PollCadenceEvidence/BrowserWindowCadenceCoverage;
+             terminal successor allowed, explicit reconciliation cannot prove timer cadence.
+             Actual mode/band controls preserve existing
              two-browser32kbit mean<=3000B/s eachway and visible status<=2s.
              Detailed2s/500ms fast-link is separate. Keyboard360px/200percent.
              TC009002 separate authorizedcost4 physical IC7300/USB/CAT/browser;
@@ -715,6 +762,11 @@ is transported. Existing32kbit/s Thin/Off <=3000B/s mean each direction and <=2s
 status acceptance must include actual allowed selection polls and mode/band traffic,
 all TLS/headers/transport, on the exact candidate. Body arithmetic is not bandwidth
 proof. Fast-link cadence is not a32kbit/s promise.
+Pending versus passive cadence is selected from the last accepted browser operation
+state at interval dispatch. A pending-context automatic poll may discover terminal
+completion of the same command; status/control priority may defer it. This permits
+neither a faster4s automatic gate nor classification of an explicit reconciliation
+as an automatic cadence sample. TC-009-0057 defines the actual coverage evidence.
 Negotiated HTTP snapshot content coding is limited to12.1.1. The combined32kbit/s
 proof uses real browsers negotiating supported gzip and records actual response
 Content-Encoding; identity remains correct but has no identical-workload bandwidth

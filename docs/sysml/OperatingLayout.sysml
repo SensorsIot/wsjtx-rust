@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 533eaef380884e4836fd63fb2d75384c5a87be2ae711350a7832d78fa7d90aa2
+// Canonical FSD slices SHA256: f65f1f74a9c3536ec7d7ae7e398815da6ae7e9c8d003cbeabc81c8ffe5ac37db
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
