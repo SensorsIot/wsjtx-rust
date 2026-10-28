@@ -10,7 +10,7 @@ Run the commands below from the repository root.
 
 ## Windows build and packaging
 
-The Rust executable serves an embedded browser status client and a versioned WebSocket interface. Radio functionality is not implemented.
+The Rust executable serves the embedded browser, versioned station interfaces and implemented receive services. Native Windows audio, typed CAT adapters and the pure FT4/FT8 decoder are separate modules. Their presence does not establish complete mode parity or live acceptance; current implementation and verification declarations belong to the functional model and issue evidence.
 
 The root Cargo workspace contains the station-server package in `server/`. Run Cargo commands from the repository root; the shared lock file and toolchain stay there, and Windows build artifacts remain under `target/x86_64-pc-windows-msvc/`. The `client/` files are embedded at Rust compile time, without a frontend build step.
 
@@ -23,7 +23,7 @@ run on the Windows PC; a local pass is not automatically repeated on GitHub.
 
 The workflow uses a GitHub-hosted Windows Server 2022 x64 runner with the MSVC build tools. It installs Rust 1.99.0, matching `rust-toolchain.toml`, and checks formatting, Clippy warnings, tests, release compilation, and execution of the built program. The executable is uploaded as the `wstx-rust-windows-x64` artifact with a 14-day retention period.
 
-No radio, sound device, third-party decoder or repository secrets are required. Rust dependencies implement HTTP/WebSockets, asynchronous networking, JSON and TLS. Node 24 test dependencies provide a real Chromium browser, independent WebSocket peer and disposable TLS certificates. The workflow runs browser tests against the compiled release executable. These checks validate status communication, not FT4/FT8 behavior.
+No radio, sound device, third-party decoder or repository secrets are required. Rust dependencies implement HTTP/WebSockets, asynchronous networking, JSON and TLS. Node 24 test dependencies provide a real Chromium browser, independent WebSocket peer and disposable TLS certificates. The workflow runs browser tests against the compiled release executable. The selected suites state which communication, receive and modem promises they exercise; an unexecuted hardware case is not a passed check.
 
 The workflow has read-only repository permissions and pins its checkout and artifact actions to specific commits. It does not publish GitHub releases or packages.
 
@@ -138,7 +138,7 @@ cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
 
 The server stays running. Open `http://127.0.0.1:8080` in a browser; stop the server
 with Ctrl+C. Remote TLS and access settings are defined in the
-[communication contract](../WSTX%20Rust%20FSD.md#121-connection-and-security).
+[communication contract](../sysml/Requirements.sysml).
 
 For automated browser tests, install Node 24 and run from the repository root:
 
@@ -158,7 +158,7 @@ remains an alternative execution location for this full recipe when explicitly c
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
 Screenshots and the thin-link measurement report are written to ignored `test-results/`.
 The portable link simulator uses modelled network overhead, not packet capture;
-see the [measurement limits](../WSTX%20Rust%20FSD.md#124-thin-link-budget-and-test-model).
+see the [measurement limits](../sysml/Requirements.sysml).
 
 ## Same-machine development
 
@@ -172,13 +172,27 @@ Both applications can be developed on one Windows computer: the station-server p
 ## Product model maintenance
 
 The reusable [SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
-explains how to write models without project-specific assumptions. This binding selects
-Markdown-primary authority and the local toolchain below. Product model artifacts,
-coverage and view scope belong to [the architecture](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views);
-functional promises and application test cases remain in
-[the FSD](../WSTX%20Rust%20FSD.md). The project model-maintenance contract and
-documentation-tool test definitions are recorded below.
+explains how to write models without project-specific assumptions. This binding selects the exclusive authority policy below and the local toolchain. The
+functional entry point is [Requirements.sysml](../sysml/Requirements.sysml), with the
+[architecture](../sysml/Architecture.sysml) and the model packages it references.
 Harness instructions are not represented in product SysML.
+
+### Exclusive functional authority
+
+`Requirements.sysml` declares SysML authority with the exact first-level comment
+`// Canonical authority: SysML`. Canonical SysML requires the active
+`docs/WSTX Rust FSD.md` to be absent. A marker together with that active FSD fails;
+absence of both the marker and active FSD also fails. Before the paired model/archival
+cutover, an existing active FSD without the marker selects the established Markdown
+projection checks. This compatibility state does not authorize two specifications.
+
+When the marker is present, only SysML owns functional requirements, architecture,
+behaviour, interfaces, constraints and durable verification definitions. Functional
+Markdown is historical archive material: it is not edited, regenerated, synchronized
+or read by preparation, implementation or validation. There is no replacement Markdown
+FSD. Optional views present existing model facts and carry no additional authority.
+The reviewed product cutover changes the marker and archives the active FSD together;
+HOW rollout and product publication remain separate reviewed batches.
 
 ### Pinned local validation
 
@@ -204,35 +218,29 @@ and [Temurin archive guidance](https://adoptium.net/installation/archives/).
 This trusted development cache is not an independent authorization boundary for
 deployment or radio operations.
 
-## Synchronization workflow
+## Model authoring and validation
 
-Edit the authoritative Markdown first, preserving IDs. For FSD changes, regenerate:
-
-```powershell
-python tools/sysml.py sync
-```
-
-Both model fingerprints now refer to the single FSD. For every FSD change, review its
-effect on the manually modeled architecture, reconcile affected parts, ports and
-connections, and update the architecture source-hash marker after that review. Updating
-the marker alone is not a conformance review. Print the normalized FSD source hash with:
-
-```powershell
-python -c "from pathlib import Path; import hashlib; print(hashlib.sha256(Path('docs/WSTX Rust FSD.md').read_text(encoding='utf-8').encode()).hexdigest())"
-```
-
-Check synchronization, real model validation and the tool's negative fixtures:
+Read the declared authority and affected model packages first. Under canonical SysML,
+edit and independently review requirements and verification expectations in the model,
+then implement and check code using independent expectations. Preserve all stable IDs.
+Do not infer functional truth from a regenerated artifact or observed defective code.
 
 ```powershell
 python tools/sysml.py check
 python -m unittest discover -s tools/sysml/tests -q
 ```
 
-The scoped `sysml-documentation` level-2 suite selects these commands for the relevant
-Markdown/model/tool changes. The application suites are unchanged. Tool tests live
-under `tools/sysml/tests/`, avoiding the application's unrelated `tests/` trigger.
-Missing/corrupt/stale generated content fails comparison. The architecture-source hash
-detects unreconciled input changes; merely updating it is not semantic review.
+`check` admits exactly one authority, checks canonical identities/states and trace
+bindings, loads the complete model set in the pinned Pilot, then applies the independent
+architecture integrity oracle. `fingerprints` prints current input hashes for review;
+it never renews model approval. Canonical `sync` fails without writing any model.
+The legacy Markdown projection path remains a compatibility check only while the active
+FSD exists without the canonical marker; it is not used after cutover.
+
+The `sysml-documentation` level-2 suite owns these checks. Application outcomes remain
+in their existing functional suites and issue evidence; no duplicate application build
+is required merely to inspect model syntax. A selected compiler or behavioural gate
+remains binding. Missing tools, files or evidence fail rather than becoming a skip/PASS.
 
 ## Meaning and limits of semantic validation
 
@@ -249,14 +257,13 @@ python tools/sysml.py validate docs/sysml/Requirements.sysml docs/sysml/Architec
 Syntax/type/reference errors fail. Missing/invalid tools, model libraries or model files,
 or missing completion evidence, fail rather than falling back to a lightweight checker.
 Self-tests feed legal, malformed and unresolved-reference fixtures to the actual Pilot.
-They also exercise source drift, missing/corrupt output and unavailable tool/library cases.
+They also exercise authority ambiguity, missing identities/files, broken traces, archive independence and unavailable tool/library cases. Legacy source/projection mutations remain isolated compatibility fixtures.
 
 The `check` command also requests a resolved semantic inventory from the same Pilot
 process. The Java adapter traverses actual usage/type/connector objects, inherited
 features, conjugated directed items, reference subsetting, binding-versus-ordinary connector kinds
 and backend variants. Python
-checks an independently authored endpoint/identity oracle bound to FSD
-section 11.9: required physical/delegation paths, recording and encode paths, one profile
+checks an independently authored endpoint/identity oracle for the declared architecture: required physical/delegation paths, recording and encode paths, one profile
 and backend variation per station, common authority, correlated resource context and
 no extra bypass edges or detached runtime inventories. Every boundary role is checked
 against its independently specified complete item-kind/direction signature, including
@@ -271,92 +278,68 @@ backend, redirect association/context identity, change waveform/provider directi
 stations and add runtime structure to a view. They run through the real Pilot before
 the integrity assertions. Legal but disconnected/miswired models must fail the explicit
 integrity oracle even when ordinary semantic validation succeeds. The fixture list and
-expected diagnostics remain executable companions to the FSD's durable case definition.
+expected diagnostics remain executable companions to the HOW test definitions below.
 
 Successful parsing/resolution is not execution of modeled verification cases, proof
 that Rust satisfies the model, or proof of prose behavior. Actual application outcomes
-belong to test output and the implementing CR. Source/model correspondence and connector coverage require review against the Markdown arrows; a disconnected but well-typed model can pass semantic validation.
+belong to test output and the implementing CR. Code/model correspondence and connector coverage require independent review against the canonical contract; a disconnected but well-typed model can pass semantic validation.
 
 ## Project model documentation contract
 
 ### Required sequence for functional issues
 
-1. Write and approve the requirements and test cases in the single Markdown FSD first.
-   Preserve stable IDs and define setup, actions, expected results, independent oracles,
-   test level and execution location before implementation.
-2. Transfer the approved functional contract into the SysML model, keeping the Markdown.
-3. Compare Markdown and SysML for equivalent meaning: behavior, interfaces, ownership,
-   states, timing, failure outcomes and verification cases. Resolve gaps and disagreements
-   against the approved Markdown before code is written. Syntax or matching names alone
-   is not this comparison.
-   For every mismatch, record the cause and review the shared SysML authoring rules and
-   checks. Correct the model, improve reusable guidance or project-specific enforcement
-   where it was insufficient, and add a focused regression where useful. Enforce a clear
-   existing rule rather than adding a duplicate. Repeat the comparison before proceeding.
-4. Implement the product code from the reconciled SysML slice and its declared normative
-   references. If a required decision is missing, return to requirements/model alignment;
-   do not invent behavior or silently fill the gap during coding.
-5. Verify the resulting code against the original Markdown requirements and the test
-   expectations defined there. Do not derive both implementation and expected results
-   solely from SysML or from the new code: that could reproduce the same mistake twice.
-6. Record results and reconcile the FSD/model before closing the issue.
+1. Identify the current canonical contract, implemented baseline and affected owners.
+2. Define changed requirements and independent verification expectations in the canonical
+   artifact. For SysML authority, update the model directly; do not edit archived Markdown.
+3. Obtain independent meaning/readiness review of behaviour, data, ownership, states,
+   timing, errors and test oracles before implementation. Unresolved decisions block the slice.
+4. Implement against the reviewed model and declared normative references. Verification
+   keeps independent expected values and does not generate its sole oracle from that code.
+5. Run the ordinary selected checks and independently review the exact candidate. Keep
+   test existence, actual execution, model readiness and live acceptance separate.
+6. Before issue closure reconcile delivered functionality, durable cases and model/source
+   bindings. Current issues retain approval, review, deployment and dated execution evidence.
 
-Markdown is the authority and independent verification reference; SysML is the functional
-implementation specification. Views are optional presentations, not another source of
-behavior. This sequence applies to product functionality; harness HOW remains Markdown.
+### Method clauses (Markdown only)
 
-Markdown remains authoritative initially. The FSD owns functional requirements and
-test definitions, architecture, interface responsibilities and implemented wire contracts. A synchronized SysML v2
-representation supports structured review without changing this authority or renumbering
-the existing identities. This section specifies documentation behavior, not radio behavior.
-Only product functional documentation is represented in SysML. Harness/process/skill
-rules and these CL-014/TC-DOC method definitions remain Markdown-only.
+These are HOW bindings, not product requirements and not SysML model elements.
 
-| Clause | Area | Required behavior | Verification |
+| ID | Subject | Rule | Verification |
 |---|---|---|---|
-| CL-014-01 | Documentation authority | The parallel model MUST preserve the authoritative Markdown sources and stable FR/CL/TC identities. Model syntax or tool conventions MUST NOT silently migrate authority or replace a requirement with an implementation deviation. | TC-DOC-001 |
-| CL-014-02 | Model coverage | The model MUST declare its covered source slices and distinguish target architecture, partial requirements and implemented status-slice/test elements. It MUST NOT claim that prose projection or successful semantic validation proves full behavior or implementation conformance. | TC-DOC-001; review |
-| CL-014-03 | Architecture boundaries | The structured architecture MUST retain separate audio and radio-control interfaces, variable station processes and optional native FlexRadio implementations behind those interfaces. It MUST retain the scoped Rust control implementation rather than imply a complete Hamlib replacement or a mandatory Hamlib dependency. | TC-DOC-001; semantic validation and review |
-| CL-014-04 | Validation | Reproducible checks MUST compare the covered Markdown projection and run a pinned full SysML parser/name resolver/semantic validator. Missing/invalid tools, model libraries or model files MUST fail; lightweight synchronization/lint checks MUST NOT masquerade as semantic proof or runtime test verdicts. | TC-DOC-002; TC-DOC-003; TC-DOC-004 |
-| CL-014-05 | Synchronization | Changes to a covered Markdown source and its model MUST be reconciled in the same change. Generated content MUST be regenerated and checked; manually modeled architecture MUST be reviewed against its source. Unsupported or unmodeled detail MUST remain explicit. | TC-DOC-001; TC-DOC-002 |
-| CL-014-06 | Architecture integrity | The structured architecture MUST represent one coherent physical deployment and its connected software decomposition. Physical links MUST delegate to the same browser/station/backend usages; receive and transmit modem paths and profile-owned recording input MUST remain connected. Per-station backend selection MUST be exclusive, station count variable, and control paths for a shared radio MUST use one effective authority rather than independent per-station authorities. Directed semantic exchanges MUST retain independent audio/control responsibilities without inventing wire schemas. | TC-DOC-005 |
-| CL-014-07 | Implementation sufficiency | The product SysML companion is intended to support AI implementation of the complete functional product. Before code for a functional CR, its approved model slice MUST settle the behavior, interfaces, data ownership, states, timing, errors and independent verification oracles required to implement that slice, with pinned normative external protocol references. An implementing agent MAY choose only declared implementation freedoms and MUST NOT guess unresolved functional decisions. Views only present existing model facts and are not required inputs for code generation. Markdown remains authoritative; unresolved slices MUST be marked not implementation-ready, and structural validation MUST NOT imply complete code-generation readiness. | TC-DOC-006; manual preparation review |
-| CL-014-08 | Functional implementation sequence | Each functional issue MUST define Markdown requirements and tests first, transfer them to SysML, compare both for semantic equivalence before coding, implement from the reconciled model, and verify the code against the original Markdown requirements and independent test expectations. The Markdown MUST remain available as the authority and verification reference. Missing decisions return to contract alignment; implementation and expected results MUST NOT share the model or code as their sole oracle. | TC-DOC-006; independent review |
-| CL-014-09 | Modeling feedback | A Markdown/SysML mismatch MUST trigger a model correction, recorded cause and review of the authoring instructions/checks. Missing or ambiguous reusable guidance MUST be corrected in the shared harness; project-specific safeguards belong in this binding. Add a focused regression where useful, enforce already-clear rules, and repeat semantic correspondence review before coding continues. Correct Markdown MUST NOT be rewritten merely to agree with an incorrect model. | TC-DOC-006; independent review |
-
-[Functional model and views](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views) defines the model artifacts and coverage.
-[Project-specific harness instructions](Project-Specifics.md#product-model-maintenance)
-define source synchronization and pinned tool entrypoints. The initial model projects
-defined requirement/clause/test identities and selected architecture boundaries; it does
-not formalize every protocol rule, numerical constraint, state machine or radio waveform.
+| CL-014-01 | Authority | One declared functional authority applies. Canonical SysML and an active FSD cannot coexist; archived Markdown is never an ongoing input after cutover. | TC-DOC-001; TC-DOC-007 |
+| CL-014-02 | Functional scope | Model product requirements, behaviour, architecture/interfaces and verification. Keep harness, skills, process and build documentation Markdown-only. | TC-DOC-001; manual scope review |
+| CL-014-03 | Architecture | Preserve physical roles, population/identity/ownership, actual ports and directed semantic exchanges. Views select existing model facts and cannot supply missing architecture. | TC-DOC-005 |
+| CL-014-04 | Real validation | Required checks use the pinned full validator/library. Missing tools/files, syntax/name/semantic errors or missing completion evidence fail with no lint fallback. | TC-DOC-003; TC-DOC-004 |
+| CL-014-05 | Stable identities and traces | Preserve stable FR/CL/TC identities and declared states. Clause ownership and verification links are reciprocal. Delivered declarations name existing implementation/executable or explicit manual bindings; no declared status means a test passed. | TC-DOC-001; TC-DOC-002; TC-DOC-007 |
+| CL-014-06 | Structural integrity | Validate the resolved architecture against the independent physical/end-to-end oracle, including identity bindings, exclusive backend and shared authority. A legal but miswired model fails the oracle. | TC-DOC-005 |
+| CL-014-07 | Implementation readiness | Before code, the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
+| CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, independently review it, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
+| CL-014-09 | Modeling feedback | Correct differences against the declared authority; do not bless code defects by rewriting requirements. Record causes/review on the issue and improve demonstrated reusable/project-specific gaps, with a focused regression where useful. | TC-DOC-006; independent review |
 
 ## Documentation-tool test definitions
 
-These checks verify CL-014-01 through CL-014-09; they do not test radio functionality.
-TC-DOC-006 is the explicitly manual preparation/readiness review; the remaining cases
-combine automated model checks with the stated source-correspondence review.
-**Level: 2 - isolated local verification, automated unless declared manual. Where they run:** the Windows development PC,
-local Markdown/model fixtures and the pinned portable OMG reference validator. They
-require no radio, live service, Jupyter server or global Java installation.
+These checks prove HOW clauses, not radio functionality. Level 2 means isolated
+verification on the documentation development PC using local fixtures and the pinned
+portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 
-| ID | Clauses | Inputs/actions | Expected results |
+| ID | Clauses | Independent actions and expected observations | Method and location |
 |---|---|---|---|
-| TC-DOC-001 — Projection and identities | CL-014-01, CL-014-02, CL-014-03, CL-014-05 | Generate the declared FSD projection, compare stable IDs/trace relationships and inspect the selected architecture against its Markdown source. | Existing identities/prose remain intact; canonical Markdown is not mutated; the generated representation is current. Audio/control separation, variable station instances and optional native backends remain explicit. Semantic/model review remains distinct from behavior execution. |
-| TC-DOC-002 — Source/model drift | CL-014-04, CL-014-05 | In disposable fixtures, change a covered source or remove/corrupt its generated representation; change the architecture source without reconciling its model. | Synchronization fails and identifies the stale/missing artifact. Regeneration alone cannot claim a manually modeled architecture has been reviewed. |
-| TC-DOC-003 — Full-tool positive and negative models | CL-014-04 | Run the actual pinned validator on a legal model, unmatched syntax and an unresolved type/reference. | The legal model is accepted; malformed syntax and unresolved references return nonzero semantic-validation outcomes with diagnostics. This does not execute modeled verification cases or prove application behavior. |
-| TC-DOC-004 — Unavailable validation | CL-014-04 | Invoke required validation with a missing/invalid Java/validator/library path or absent model file. | The command fails nonzero and never reports semantic PASS. There is no regex-only fallback. |
-| TC-DOC-005 - Connected architecture integrity | CL-014-03, CL-014-06 | Load the complete target architecture with the pinned Pilot on the Windows development PC. Extract resolved usage/port/connector chains from its semantic AST and compare with the independent physical and end-to-end path oracle in the FSD architecture chapter. In isolated copies remove a required connection/delegation, reroute an endpoint to bypass authority, duplicate a selected backend, split shared authority, reverse a provider direction, change a semantic item kind, or weaken an identity binding to an ordinary connection. | The accepted model has one connected physical/software deployment, variable stations, profile-owned recording and TX/modem paths, directed semantic port exchanges, one backend variation per station, and one shared authority. Each negative fixture fails semantic validation or an explicit integrity diagnostic. A view-only edit cannot repair a failed underlying path. Level 2: local isolated automated model checks; no radio, service, viewer or network access. This establishes structural correspondence, not runtime safety, protocol compliance or performance. |
-| TC-DOC-006 - Functional implementation readiness | CL-014-01, CL-014-02, CL-014-07, CL-014-08, CL-014-09 | Before a functional CR writes code, an independent reviewer compares its Markdown requirements/test definitions with the SysML slice and pinned references for equivalent meaning. Trace every required behavior, interface/data/state/timing/error decision and independent test oracle; list choices explicitly left free. Confirm that implementation uses the reconciled model and verification retains the original Markdown expectations. Repeat with a required decision unresolved, a Markdown/model mismatch with no corrective authoring feedback, or an expected result derived only from the new code/model. | Readiness requires an implementation-sufficient model consistent with Markdown and independent Markdown-based verification. An unresolved decision, disagreement, missing corrective authoring feedback or shared-only implementation/test oracle refuses readiness and identifies the gap; views cannot supply missing semantics. Level 2: manual offline contract review on the Windows development workspace, because syntax/connectivity automation cannot determine whether all product decisions are sufficient for implementation. This repair does not claim the full product passes readiness. |
+| TC-DOC-001 | CL-014-01, CL-014-02, CL-014-05 | Inspect stable IDs, declared states, scope and FR/CL/TC relationships. During the legacy compatibility state, generation preserves Markdown and IDs. Canonical state reads the model directly, checks bindings and never rewrites it or requires a Markdown view. | Automated local model/tool fixtures; independent scope/meaning review. |
+| TC-DOC-002 | CL-014-05 | Mutate declared state/identity/link or remove a required artifact and expect a named nonzero refusal. Legacy disposable Markdown fixtures still reject stale/missing projection content; their existence does not maintain an archived project specification. | Automated isolated fixtures on this PC. |
+| TC-DOC-003 | CL-014-04 | Feed the actual Pilot a valid model, malformed syntax and unresolved names/types. Accept only the valid model; other cases return diagnostics and nonzero. | Automated pinned Pilot, local fixtures. |
+| TC-DOC-004 | CL-014-04 | Remove/corrupt Java, validator/library or model paths. Required validation fails nonzero and never reports semantic PASS. | Automated tool/prerequisite fixtures on this PC. |
+| TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
+| TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | Independent reviewer traces the affected canonical contract to code boundaries and independent expected observations; missing required decisions, model/contract disagreement or a shared-only generated oracle refuse readiness. Recheck exact changes and closure reconciliation. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning review on this PC; automation cannot establish complete intended meaning. |
+| TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; canonical sync cannot rewrite the model. New packages must be referenced by ProductScope and validated in full. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
 
-Executable traces are the scoped tests under `tools/sysml/tests/`, the synchronization
-entrypoint `tools/sysml.py` and full-validator adapter `tools/sysml/Validate.java`;
-their usage is defined in [project-specific harness instructions](Project-Specifics.md#product-model-maintenance) and their functional coverage in [the architecture](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views). Execution evidence belongs
-to the documentation CR, not a fabricated modeled verdict.
+Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
+`tools/sysml/Validate.java` adapter. Results, independent review and first-use trial
+are recorded on the owning issue, never as invented model verdicts.
 
 ## Communication verification model
 
 Functional limits and measurement acceptance are specified in
-[the FSD communication chapter](../WSTX%20Rust%20FSD.md#124-thin-link-budget-and-test-model).
+[the FSD communication chapter](../sysml/Requirements.sysml).
 The following describes this project's verification machinery.
 
 The portable test proxy shapes actual TCP-stream bytes (including real TLS records
@@ -386,61 +369,49 @@ send-timeout branch or independently measure total queue memory.
 ## Recording fixture acquisition
 
 Candidate recordings and oracle limitations are specified in
-[the FSD](../WSTX%20Rust%20FSD.md#13-ft8-sample-recordings-and-provenance).
+[the FSD](../sysml/Requirements.sysml).
 
 - Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - Keep original WAV files and expected-output texts unchanged, with hashes and source URLs recorded in a fixture manifest when imported.
 - For the selected WSJT-X `v3.3.0-beta4` behavior reference, generate a separate output set and record the exact binary, settings, command, and audio input. Do not overwrite the historical references.
 
-### Declared model projection and slice freshness
+### Canonical model catalog and source bindings
 
-The optional exact marker `<!-- sysml-projection: 2 -->` in the authoritative FSD
-selects declared projection metadata. Without it the tool retains the legacy projection
-and prints a warning that declared fidelity is inactive. Legacy fixed state lists are
-not evidence of implementation or test execution. Product integration requiring the
-new fidelity checks uses version 2.
+The canonical entry point is `docs/sysml/Requirements.sysml`. The model set includes
+Requirements, Architecture, Profiles, RecordingReceive, StationDecode, RadioIO,
+OperatingLayout, OperatingReceive, StationProtocol and ProductScope. Additional packages
+are discovered, scanned and fully validated; ProductScope references their package so
+that removal causes a name-resolution failure. A missing required baseline package fails.
 
-Version 2 uses two visible tables, with exact headers. Each projected requirement,
-clause and test has exactly one declared state; the identity cell is backticked:
+Each requirement/clause declares `coverage : ImplementationState` as target, partial
+or implemented. Each verification declares `automation : AutomationState` as planned,
+partial or implemented. These are declarations of available companions, not execution
+or acceptance results. Clauses have native dependency links to their FR owners and TC
+cases; TC objectives verify the same clauses, with reciprocal links checked.
 
-| Model identity | Declared state |
-|---|---|
-| `FR-001` | partial |
-| `CL-005-01` | target |
-| `TC-022-001` | planned |
+Partial/implemented requirement and clause definitions carry a root-relative binding:
 
-These rows illustrate the format, not the project's current coverage. Requirement
-and clause states are `target`, `partial`, `implemented`; verification states are
-`planned`, `partial`, `implemented`. They describe declared companion implementation,
-never execution results, independent review or live acceptance. Missing, duplicate,
-unknown or invalid metadata fails generation. Method-only CL-014 and TC-DOC elements
-remain outside product projection.
+```sysml
+attribute implementation : String = "server/src/profile.rs; client/app.js";
+```
 
-Clause Verification cells and verification definitions name reciprocal stable IDs.
-The parser expands same-prefix numeric suffixes (`CL-005-02/03`, `CL-005-02,03`),
-ascending suffix ranges (`CL-005-01..03` or en-dash suffix ranges) and full IDs separated
-by punctuation. Width, undefined references and mismatched reciprocal links fail.
-Numbered normative clauses needing independent traceability receive explicit stable
-CL definitions in the FSD; the generator does not invent identities for prose.
+Partial/implemented verification definitions carry existing executable bindings:
 
-Every manual `.sysml` companion has exactly one row in the second table:
+```sysml
+attribute executable : String = "tests/profiles.test.cjs; server/src/profile_tests.rs";
+```
 
-| Manual companion | FSD sections |
-|---|---|
-| `Architecture.sysml` | 11 |
-| `Profiles.sysml` | 4.2, 6.2, 12.5 |
+Bindings are semicolon-separated repository-root-relative files, never absolute or
+escaping paths. Automated cases require a matching `Proves:` case identity, an exact
+Node test-name identity, or an explicit `path::test_symbol` binding. A Rust symbol must
+exist; independent review still establishes its relationship to the promised behaviour.
+A manual physical case uses `attribute method : String = "manual";` and names its
+existing probe/source, without claiming an automated or executed result. A planned case
+may lack an executable. Source tags and existing files prove presence, not conformance.
 
-The product author declares all relevant source dependencies; these rows illustrate
-the format. Each selection contains the numbered heading and its entire subtree,
-ending before the next heading at the same or shallower depth. Selected sections
-must exist and be unique and nonoverlapping; duplicate numbered headings fail.
-Source order and exact LF-normalized UTF-8 text define the digest, including the
-selected section keys. Unrelated sections do not invalidate a companion. Generated
-Requirements.sysml is excluded because it already fingerprints the entire source.
-
-`python tools/sysml.py fingerprints` prints the declared per-companion hashes and
-never edits models. After independent meaning comparison, each manual companion
-carries exactly one `// Canonical FSD slices SHA256: <64 lowercase hex digits>` line.
-`check` requires every declared companion file and rejects undeclared files or stale
-markers before the unchanged Pilot semantic and architecture checks. A renewed hash
-only records source freshness; it does not prove meaning parity or execute behavior.
+Canonical documents link to active model elements or existing repository paths with
+correct model-file-relative Markdown links. Retired FSD section dependencies, source-hash
+markers and broken file references fail. The minimum stable identity baseline includes
+all 23 FRs, 38 clauses and 38 verification identities present in the reviewed application
+baseline; additions retain unique identities. An intended retirement or authority change
+requires explicit review rather than deleting a definition to obtain a green check.

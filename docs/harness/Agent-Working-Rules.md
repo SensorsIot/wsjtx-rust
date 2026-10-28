@@ -16,6 +16,7 @@ rules around it. Agent memory only points here.
   is recorded on that issue. Without it the session writes the change text (outcome,
   changes, acceptance, evidence) and the operator implements it.
 - **Another person's checkout** is never touched.
+- **Development placement.** Application implementation, builds and radio acceptance run on HB9BLA. This PC may prepare issues and execute the approved model/authority transition in isolated worktrees. Shared model ownership, integration and publication remain serialized across both PCs.
 
 ## Deciding
 

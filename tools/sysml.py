@@ -1,4 +1,4 @@
-"""Markdown-authoritative SysML projection and real OMG Pilot validation.
+"""Declared-authority SysML checks and real OMG Pilot validation.
 
 sync is generation, not semantic proof. check additionally calls the pinned Java
 parser/name resolver/semantic validator. Neither executes modeled behavior.
@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import urllib.request
+import urllib.parse
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,160 @@ FSD = ROOT / "docs/WSTX Rust FSD.md"
 MODELS = ROOT / "docs/sysml"
 TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
 ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
+CANONICAL_MARKER = "// Canonical authority: SysML"
+CANONICAL_MODELS = {
+    "Requirements.sysml", "Architecture.sysml", "Profiles.sysml",
+    "RecordingReceive.sysml", "StationDecode.sysml", "RadioIO.sysml",
+    "OperatingLayout.sysml", "OperatingReceive.sysml", "StationProtocol.sysml", "ProductScope.sysml",
+}
+# Stable identities are an independent migration admission baseline, not generated
+# from the candidate under review. New identities may be added without renumbering.
+BASELINE_IDENTITIES = {f"FR-{i:03}" for i in range(1, 24)}
+for _group, _suffixes in {
+    3: range(1, 9), 5: range(1, 6), 6: range(1, 5), 7: range(1, 5),
+    8: range(1, 8), 10: (5, 7, 8, 9), 13: range(1, 7),
+}.items():
+    BASELINE_IDENTITIES.update(f"CL-{_group:03}-{i:02}" for i in _suffixes)
+for _group, _suffixes in {
+    2: (1, 3), 4: range(1, 4), 7: (2, 6), 9: range(1, 6),
+    10: range(1, 8), 18: range(1, 4), 21: range(5, 10),
+    22: range(1, 6), 23: range(1, 7),
+}.items():
+    BASELINE_IDENTITIES.update(f"TC-{_group:03}-{i:03}" for i in _suffixes)
+
+
+def authority(directory: Path, fsd: Path) -> str:
+    """Select exactly one reviewed authority; never inspect archived Markdown."""
+    entry = directory / "Requirements.sysml"
+    text = entry.read_text(encoding="utf-8") if entry.is_file() else ""
+    markers = re.findall(r"^// Canonical authority:[^\r\n]*$", text, re.MULTILINE)
+    if markers and markers != [CANONICAL_MARKER]:
+        raise ValueError("Invalid or duplicate canonical-authority declaration")
+    if markers:
+        if fsd.exists():
+            raise ValueError("Two functional authorities: canonical SysML and active FSD")
+        return "sysml"
+    if fsd.is_file():
+        return "markdown"
+    raise ValueError("No declared functional authority: canonical model or active FSD required")
+
+
+def without_comments(text: str) -> str:
+    """Strip comments while retaining quoted names/strings for profile checks.
+
+    The pinned Pilot remains the syntax/name/semantic validator. This narrow lexer
+    only keeps comment examples from masquerading as catalog declarations.
+    """
+    tokens = re.finditer(r'/\*[\s\S]*?\*/|//[^\r\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[^/"\']+|.', text)
+    return "".join(" " if token.group().startswith(("/*", "//")) else token.group() for token in tokens)
+
+
+def declaration_body(text: str, opening: int) -> str:
+    depth = 0
+    for token in re.finditer(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[{}]', text[opening:]):
+        value = token.group()
+        if value == "{":
+            depth += 1
+        elif value == "}":
+            depth -= 1
+            if depth == 0:
+                return text[opening + 1:opening + token.start()]
+    raise ValueError("Unclosed canonical catalog declaration")
+
+
+def source_binding(identifier: str, binding: str, root: Path, manual: bool = False):
+    path_text, separator, symbol = binding.partition("::")
+    path = Path(path_text)
+    resolved = (root / path).resolve()
+    if path.is_absolute() or ".." in path.parts or not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
+        raise ValueError(f"Missing or out-of-scope implementation/test binding: {identifier}: {binding}")
+    if not identifier.startswith("TC-") or manual:
+        return True
+    source = resolved.read_text(encoding="utf-8")
+    if separator:
+        if not symbol or not re.search(r"\bfn\s+" + re.escape(symbol) + r"\s*\(|\btest\s*\(\s*['\"]" + re.escape(symbol) + r"['\"]", source):
+            raise ValueError(f"Missing executable test symbol: {identifier}: {binding}")
+        return True
+    else:
+        proves = " ".join(re.findall(r"(?m)^\s*(?://|#)\s*Proves:([^\r\n]+)", source))
+        named = re.search(r"\btest\s*\(\s*['\"][^'\"\r\n]*\b" + re.escape(identifier) + r"\b", source)
+        return identifier in set(ID.findall(proves)) or bool(named)
+
+
+def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES) -> dict[str, dict]:
+    actual = {path.name for path in directory.glob("*.sysml")}
+    if missing := CANONICAL_MODELS - actual:
+        raise ValueError("Canonical model files missing: " + ", ".join(sorted(missing)))
+    entries = {}
+    clean_models = {}
+    for path in sorted(directory.glob("*.sysml")):
+        source = path.read_text(encoding="utf-8")
+        if re.search(r"Canonical FSD|\bFSD(?:\s+(?:chapter|section))?\s*\d|WSTX(?:%20| )Rust(?:%20| )FSD", source):
+            raise ValueError("Canonical model retains a retired FSD dependency: " + path.name)
+        for target in re.findall(r"\]\(([^)]+)\)", source):
+            target = target.strip("<>")
+            if target.startswith(("https://", "http://", "#")):
+                continue
+            target = urllib.parse.unquote(target.split("#", 1)[0])
+            if target and not (path.parent / target).resolve().is_file():
+                raise ValueError("Dangling model documentation link: " + path.name + ": " + target)
+        clean = without_comments(source)
+        clean_models[path.name] = clean
+        for match in re.finditer(r"\b(requirement|verification)(?:\s+def)?\s+'((?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3}))'\s*\{", clean):
+            kind, identifier = match[1], match[2]
+            if identifier in entries:
+                raise ValueError("Duplicate canonical identity: " + identifier)
+            if kind != ("verification" if identifier.startswith("TC-") else "requirement"):
+                raise ValueError("Wrong canonical identity kind: " + identifier)
+            body = declaration_body(clean, match.end() - 1)
+            state_name, enum = ("automation", "AutomationState") if kind == "verification" else ("coverage", "ImplementationState")
+            states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*" + enum + r"\s*=\s*" + enum + r"::(\w+)\s*;", body)
+            allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
+            if len(states) != 1 or states[0] not in allowed:
+                raise ValueError("Missing or invalid declared model state: " + identifier)
+            refs = re.findall(r"\bverify\s+(?:WstxRequirements::)?'([^']+)'\s*;", body)
+            key = "executable" if kind == "verification" else "implementation"
+            bindings = re.findall(r'\battribute\s+' + key + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+            methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+            if len(bindings) > 1 or len(methods) > 1 or (methods and methods[0] not in {"manual", "automated"}):
+                raise ValueError("Invalid verification/implementation metadata: " + identifier)
+            if states[0] in {"partial", "implemented"} and (not bindings or not bindings[0].strip()):
+                raise ValueError("Delivered declaration lacks implementation/test binding: " + identifier)
+            matched = [source_binding(identifier, binding.strip(), root, manual=methods == ["manual"])
+                       for binding in (bindings[0].split(";") if bindings else [])]
+            if kind == "verification" and bindings and not any(matched):
+                raise ValueError(f"No Proves tag or named-test identity for {identifier}: {bindings[0]}")
+            entries[identifier] = {"kind": kind, "state": states[0], "refs": refs}
+    if missing := set(required) - entries.keys():
+        raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
+    for name in actual - CANONICAL_MODELS:
+        package = re.search(r"\bpackage\s+(\w+)\s*\{", clean_models[name])
+        if not package or not re.search(r"\b" + re.escape(package[1]) + r"::", clean_models["ProductScope.sysml"]):
+            raise ValueError("Additional canonical package lacks a ProductScope reference: " + name)
+    dependencies, case_links = {}, {}
+    for source in clean_models.values():
+        for owner, target in re.findall(r"\bdependency\s+\w+\s+from\s+'(CL-[^']+)'\s+to\s+'([^']+)'\s*;", source):
+            if owner not in entries or target not in entries or not target.startswith(("FR-", "TC-")):
+                raise ValueError("Invalid canonical clause dependency: " + owner + " -> " + target)
+            (dependencies if target.startswith("FR-") else case_links).setdefault(owner, set()).add(target)
+    verified = set()
+    for identifier, entry in entries.items():
+        if identifier.startswith("CL-") and identifier not in dependencies:
+            raise ValueError("Canonical clause lacks requirement ownership: " + identifier)
+        if identifier.startswith("CL-") and identifier not in case_links:
+            raise ValueError("Canonical clause lacks a declared verification case: " + identifier)
+        if entry["kind"] == "verification":
+            if not entry["refs"] or any(ref not in entries or ref.startswith("TC-") for ref in entry["refs"]):
+                raise ValueError("Undefined or absent verification target: " + identifier)
+            verified.update(entry["refs"])
+            actual_clauses = {ref for ref in entry["refs"] if ref.startswith("CL-")}
+            declared_clauses = {clause for clause, cases in case_links.items() if identifier in cases}
+            if actual_clauses != declared_clauses:
+                raise ValueError("Nonreciprocal canonical verification links: " + identifier)
+    unverified = {i for i in entries if i.startswith("CL-")} - verified
+    if unverified:
+        raise ValueError("Canonical clauses lack verification links: " + ", ".join(sorted(unverified)))
+    return entries
 
 
 def digest(text: str) -> str:
@@ -530,9 +685,9 @@ def main(argv=None):
     parser.add_argument("--cache-dir", type=Path, default=Path.home() / ".cache/wsjtx-rust/sysml-tools")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Download and verify pinned portable tools; no global installation")
-    commands.add_parser("sync", help="Regenerate the FSD projection only; not semantic validation")
-    commands.add_parser("fingerprints", help="Print declared v2 companion slice digests; never updates models")
-    commands.add_parser("check", help="Check Markdown synchronization and run real semantic validation")
+    commands.add_parser("sync", help="Legacy Markdown projection only; refused for canonical SysML")
+    commands.add_parser("fingerprints", help="Print authority-source fingerprints for review; never updates models")
+    commands.add_parser("check", help="Check the declared functional authority and run full semantic validation")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
     args = parser.parse_args(argv)
@@ -541,28 +696,39 @@ def main(argv=None):
             setup(args.cache_dir)
             return 0
         if args.command == "fingerprints":
-            print(json.dumps(companion_fingerprints(FSD.read_text(encoding="utf-8")), indent=2))
+            if authority(MODELS, FSD) == "sysml":
+                canonical_catalog(MODELS, ROOT)
+                print(json.dumps({path.name: digest(path.read_text(encoding="utf-8")) for path in sorted(MODELS.glob("*.sysml"))}, indent=2))
+            else:
+                print(json.dumps(companion_fingerprints(FSD.read_text(encoding="utf-8")), indent=2))
             return 0
         if args.command in ("sync", "check"):
-            expected = render(FSD.read_text(encoding="utf-8"))
-            generated = MODELS / "Requirements.sysml"
-            if args.command == "sync":
-                generated.write_text(expected, encoding="utf-8", newline="\n")
-                print("FSD projection regenerated; run check for syntax/name/semantic validation.")
-                return 0
-            if not generated.exists() or generated.read_text(encoding="utf-8") != expected:
-                raise ValueError("FSD projection is stale; run python tools/sysml.py sync")
-            source = FSD.read_text(encoding="utf-8")
-            if projection_v2(source):
-                check_companions(source, MODELS)
+            if authority(MODELS, FSD) == "sysml":
+                if args.command == "sync":
+                    raise ValueError("SysML is canonical: edit and review the model directly; sync never rewrites it")
+                entries = canonical_catalog(MODELS, ROOT)
+                print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
             else:
-                print("WARNING: legacy projection uses fixed status lists and whole-source markers; v2 fidelity is NOT active.", file=sys.stderr)
-                architecture = MODELS / "Architecture.sysml"
-                check_architecture(architecture.read_text(encoding="utf-8"), source)
-                profiles = MODELS / "Profiles.sysml"
-                check_profiles_contract(profiles.read_text(encoding="utf-8"), source)
-            paths = [generated, *sorted(path for path in MODELS.glob("*.sysml") if path != generated)]
-            print("Markdown synchronization passed; this alone is not semantic validation.")
+                expected = render(FSD.read_text(encoding="utf-8"))
+                generated = MODELS / "Requirements.sysml"
+                if args.command == "sync":
+                    generated.write_text(expected, encoding="utf-8", newline="\n")
+                    print("FSD projection regenerated; run check for syntax/name/semantic validation.")
+                    return 0
+                if not generated.exists() or generated.read_text(encoding="utf-8") != expected:
+                    raise ValueError("FSD projection is stale; run python tools/sysml.py sync")
+                source = FSD.read_text(encoding="utf-8")
+                if projection_v2(source):
+                    check_companions(source, MODELS)
+                else:
+                    print("WARNING: legacy projection uses fixed status lists and whole-source markers; v2 fidelity is NOT active.", file=sys.stderr)
+                    architecture = MODELS / "Architecture.sysml"
+                    check_architecture(architecture.read_text(encoding="utf-8"), source)
+                    profiles = MODELS / "Profiles.sysml"
+                    check_profiles_contract(profiles.read_text(encoding="utf-8"), source)
+                print("Markdown synchronization passed; this alone is not semantic validation.")
+            entry = MODELS / "Requirements.sysml"
+            paths = [entry, *sorted(path for path in MODELS.glob("*.sysml") if path != entry)]
         else:
             paths = args.files
         result = validate(paths, args.cache_dir, inventory=args.command == "check")

@@ -37,6 +37,7 @@
   - fixtures/decoder/
   - tools/recording-fixtures.cjs
   - docs/WSTX Rust FSD.md
+  - docs/sysml/
   - .github/workflows/windows-rust.yml
   - Cargo.toml
   - Cargo.lock
@@ -128,7 +129,7 @@
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/
-  needs: Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; synchronization, semantics, architecture integrity and model/tool tests; no radio or live service.
+  needs: Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; exclusive authority, catalog/trace checks, full semantics, architecture integrity and model/tool tests; no radio or live service.
 
 - suite: fortran-reference-tools
   cost: 2
@@ -293,6 +294,7 @@
   - fixtures/decoder/independent-vector-tool/
   - fixtures/decoder/protocol-data/
   - docs/WSTX Rust FSD.md
+  - docs/sysml/
   select:
   - tools/wsjtx_simulated_samples.py
   - tools/test_wsjtx_simulated_samples.py

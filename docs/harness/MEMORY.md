@@ -1,16 +1,19 @@
 # Current project memory
 
-Development is moving to **HB9BLA**, `192.168.0.37`, with checkout
-`D:\Github\wsjtx-rust`. Read [the short handover](HB9BLA-HANDOFF.md) next.
-The FSD, synchronized functional SysML models and current GitHub issues remain
-authoritative; recheck Git and runtime state before changing anything.
+Read `AGENTS.md`, the pinned harness, `Harness-Overview.md` and the exclusive functional
+authority binding in `Project-Specifics.md` before continuing. Recheck Git, issue ownership
+and runtime state; current contracts and issue evidence are authoritative for their scope.
 
-Published integration: `74146d89b`. Deployed receiver source: `582e08595`.
-Its latest-period display, signed DT and sorting passed nine selected gate groups.
-Integrated main passed all thirteen selected groups, including the full decoder
-quality corpus. These are previous-PC results; HB9BLA's compiler/linker and browser
-smoke checks passed, but no full product suite was claimed there.
+The functional entry point is `docs/sysml/Requirements.sysml`. Its canonical-authority
+marker together with absence of the active FSD selects SysML-only authority. Archived
+functional Markdown is historical and is never maintained or read as an active oracle.
+Do not infer execution or acceptance from model status declarations or a successful parser.
 
-Previous coding workers are frozen. Continue from the handover, not duplicate
-implementations or historical patches applied blindly. The pinned `harness/` is
-authoritative; do not replace it with a user-level skill or update its pin automatically.
+Application implementation/builds and radio acceptance run on HB9BLA (`192.168.0.37`),
+checkout `D:\Github\wsjtx-rust`; the documentation transition may run on this PC.
+Use the current GitHub issue checkpoint and private runtime receipt for actual deployed
+source and work remaining, rather than a remembered version. Preserve existing credentials,
+normal checks, independent review and one shared-file/integration writer.
+
+`HB9BLA-HANDOFF.md` identifies runtime/data locations. The pinned `harness/` is the process
+source; do not replace it with a user-level skill or update its pin without its rollout.

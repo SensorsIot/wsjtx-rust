@@ -1,22 +1,22 @@
 # Harness reference index
 
 The build procedure is the [CR process](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Process.md); method changes
-follow [Harness changes](https://github.com/SensorsIot/harness/blob/V2/core/docs/Harness-Changes.md). The FSD is the product
+follow [Harness changes](https://github.com/SensorsIot/harness/blob/V2/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
 contract; the references below are the constraints a change must respect.
 
 | Subject | Reference |
 |---|---|
-| Product contract | [WSTX Rust FSD](../WSTX%20Rust%20FSD.md) |
-| Product component/interface boundaries | [Target architecture](../WSTX%20Rust%20FSD.md#11-target-product-architecture) |
-| Product SysML artifacts and view scope | [Architecture model](../WSTX%20Rust%20FSD.md#1111-functional-model-and-views) |
-| Behavior baseline and provenance | [FSD](../WSTX%20Rust%20FSD.md), [Samples](../WSTX%20Rust%20FSD.md#13-ft8-sample-recordings-and-provenance); notices in [README](../../README.md#license-and-attribution) |
+| Product contract | [Functional model entry point](../sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
+| Product component/interface boundaries | [Architecture](../sysml/Architecture.sysml) and its referenced behaviour/interface packages |
+| Product SysML artifacts and view scope | [Architecture model](../sysml/Architecture.sysml); [catalog and validation](Project-Specifics.md#canonical-model-catalog-and-source-bindings) |
+| Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
 | Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |
 | Testing | [testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
 | Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
 | Parallel issue workspaces and supervised sub-agents | [Parallel work](../../harness/core/docs/Parallel-Work.md); `python harness/core/tools/parallel.py status` |
-| Writing functional SysML companions | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md) |
+| Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | [Escapes ledger](Escapes-Ledger.md) |
@@ -65,39 +65,39 @@ The paths a harness change may touch; everything else is product:
 - `docs/harness/`, `AGENTS.md`, `CLAUDE.md`
 - `.github/ISSUE_TEMPLATE/`
 - `.github/workflows/` (the CI build)
-- `tools/sysml.py`, `tools/sysml/` (project-specific model projection, semantic validation and their tests)
+- `tools/sysml.py`, `tools/sysml/` (project-specific authority/trace checks, semantic validation and their tests)
 
 ## Documentation is current-state
 
-The Markdown FSD remains authoritative. Only functional product documentation has a
-SysML companion: requirements, product behavior, architecture/interfaces and verification
-cases. Harness instructions, skills, workflows, standards and gate documentation remain
-Markdown. The harness authoring chapter explains how to write product models; the harness
-itself is not modeled in SysML.
+The [exclusive authority binding](Project-Specifics.md#exclusive-functional-authority)
+selects one functional authority. With the canonical model declaration and archived
+functional Markdown, SysML alone owns product requirements, behaviour, architecture,
+interfaces and durable verification definitions. Retired Markdown is historical and is
+not edited, regenerated or read by the active workflow. Harness instructions, skills,
+standards, process, build and gate documentation remain Markdown.
 
-For each functional issue, follow [the required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
-Markdown requirements and tests first, then SysML, semantic comparison, implementation
-from the reconciled model, and verification against the original Markdown expectations.
+For each functional issue follow the [required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
+settle the canonical requirements and independent verification expectations, obtain
+meaning/readiness review, implement against the reviewed model and verify with independent
+oracles. Reconcile delivered functionality, source bindings and durable cases before
+manual issue closure. A test's presence, actual execution and live acceptance are distinct.
 
-The [FSD](../WSTX%20Rust%20FSD.md#61-browser-and-server-test-catalogue) owns this project's
-stable functional clauses and test descriptions. Test source holds executable assertions
-and promise tags; issues retain change approval and execution evidence. This explicit
-operator binding overrides the generic preference to keep test descriptions next to
-the test source. Detailed protocol fields, errors and limits remain canonical in the
-FSD's communication subchapter rather than being repeated across documents.
-Product-specific acceptance tests, fixtures and the provisioning/wiring needed to run
-them belong to the functional CR they verify. Changes to the reusable development method
-belong to harness work; adding browser and thin-link verification for FR-019/FR-021 is
-functional verification rather than a separate harness improvement.
+The [model catalog](../sysml/Requirements.sysml) owns stable FR/CL/TC identities and
+functional verification definitions. Executable assertions and fixture data remain linked
+companions. Protocol, states, errors and bounds are in the responsible model packages,
+not duplicated into another active specification. Product-specific tests and additive
+execution wiring remain with their functional CR; reusable method changes follow the
+harness rollout process.
 
-Documentation-maintenance clauses CL-014 and tool cases TC-DOC are HOW bindings in
-[Project specifics](Project-Specifics.md#project-model-documentation-contract). They
-remain Markdown-only. The FSD owns application functionality and its durable acceptance
-cases; the product SysML represents that functional contract and the declared architecture.
+CL-014 and TC-DOC are HOW bindings in
+[Project specifics](Project-Specifics.md#project-model-documentation-contract), not product
+SysML. Full parsing/name checking, architecture integrity and trace checks do not prove
+behavioural equivalence or implementation readiness; independent review and relevant
+application tests supply that evidence.
 
-The FSD, its companions and these bindings state the rule that holds now, never the path
-to it ([documentation](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/documentation.md)). Open work lives in
-GitHub issues; history is `git log`.
+The active canonical contract and these bindings state the rule that holds now, never
+its history ([documentation](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/documentation.md)).
+Open work and review/execution evidence live in GitHub issues; history is `git log`.
 
 ## Backlog
 

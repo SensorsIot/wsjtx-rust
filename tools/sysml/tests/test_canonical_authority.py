@@ -1,0 +1,163 @@
+"""TC-DOC-007: isolated authority, archive independence and canonical trace refusals."""
+import contextlib
+import importlib.util
+import io
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest import mock
+
+spec = importlib.util.spec_from_file_location("canonical_tool", Path(__file__).resolve().parents[2] / "sysml.py")
+tool = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tool)
+REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
+MODEL = '''// Canonical authority: SysML
+package WstxRequirements {
+    enum def ImplementationState { enum target; enum partial; enum implemented; }
+    enum def AutomationState { enum planned; enum partial; enum implemented; }
+    requirement 'FR-001' {
+        doc /* Independently observable station identity. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    requirement 'CL-003-01' {
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    verification 'TC-001-001' {
+        attribute automation : AutomationState = AutomationState::planned;
+        objective { verify 'FR-001'; verify 'CL-003-01'; }
+    }
+    dependency owns from 'CL-003-01' to 'FR-001';
+    dependency checks from 'CL-003-01' to 'TC-001-001';
+}
+'''
+
+
+class CanonicalAuthorityTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.models = self.root / "docs/sysml"
+        self.models.mkdir(parents=True)
+        self.fsd = self.root / "docs/FSD.md"
+        for name in tool.CANONICAL_MODELS:
+            (self.models / name).write_text("package P" + name.split(".")[0] + " {}", encoding="utf-8")
+        self.requirements = self.models / "Requirements.sysml"
+        self.requirements.write_text(MODEL, encoding="utf-8")
+
+    def check(self):
+        return tool.canonical_catalog(self.models, self.root, required=REQUIRED)
+
+    def test_exclusive_authority_and_invalid_marker(self):
+        self.assertEqual(tool.authority(self.models, self.fsd), "sysml")
+        self.fsd.write_text("Unrelated current Markdown", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Two functional authorities"):
+            tool.authority(self.models, self.fsd)
+        self.requirements.write_text(MODEL.replace(tool.CANONICAL_MARKER, "// legacy"), encoding="utf-8")
+        self.assertEqual(tool.authority(self.models, self.fsd), "markdown")
+        self.fsd.unlink()
+        with self.assertRaisesRegex(ValueError, "No declared functional authority"):
+            tool.authority(self.models, self.fsd)
+        for changed in (MODEL + tool.CANONICAL_MARKER, MODEL.replace("authority: SysML", "authority: Markdown")):
+            self.requirements.write_text(changed, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Invalid or duplicate"):
+                tool.authority(self.models, self.fsd)
+
+    def test_missing_file_duplicate_id_missing_id_and_wrong_state_refused(self):
+        self.assertEqual(set(self.check()), REQUIRED)
+        for changed, message in (
+            (MODEL.replace("'FR-001' {", "'FR-999' {"), "Missing stable"),
+            (MODEL + "requirement 'FR-001' {}", "Duplicate canonical"),
+            (MODEL.replace("ImplementationState::target", "ImplementationState::passed", 1), "declared model state"),
+        ):
+            with self.subTest(message=message):
+                self.requirements.write_text(changed, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    self.check()
+        self.requirements.write_text(MODEL, encoding="utf-8")
+        (self.models / "RadioIO.sysml").unlink()
+        with self.assertRaisesRegex(ValueError, "Canonical model files missing"):
+            self.check()
+
+    def test_undefined_nonreciprocal_and_absent_clause_verification_refused(self):
+        for changed, message in (
+            (MODEL.replace("verify 'FR-001'", "verify 'FR-999'"), "verification target"),
+            (MODEL.replace("verify 'CL-003-01';", ""), "Nonreciprocal"),
+            (MODEL.replace("dependency checks from 'CL-003-01' to 'TC-001-001';", ""), "declared verification case"),
+            (MODEL.replace("dependency owns from 'CL-003-01' to 'FR-001';", ""), "requirement ownership"),
+        ):
+            with self.subTest(message=message):
+                self.requirements.write_text(changed, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    self.check()
+
+    def test_actual_test_binding_is_required_for_delivered_case(self):
+        source = self.root / "case.cjs"
+        partial = MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "case.cjs";')
+        self.requirements.write_text(partial, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Missing or out-of-scope"):
+            self.check()
+        source.write_text("// A comment mentioning TC-001-001 is not an executable binding", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "No Proves tag or named-test"):
+            self.check()
+        for content in ("// Proves: CL-003-01; TC-001-001\ntest('identity',()=>{});", "test('TC-001-001: identity',()=>{});"):
+            source.write_text(content, encoding="utf-8")
+            self.check()
+        self.requirements.write_text(partial.replace("case.cjs", "../escape.cjs"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "out-of-scope"):
+            self.check()
+
+    def test_explicit_manual_and_rust_symbol_bindings(self):
+        source = self.root / "probe.rs"
+        source.write_text("#[test]\nfn known_observation() {}", encoding="utf-8")
+        partial = MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "probe.rs::known_observation";')
+        self.requirements.write_text(partial, encoding="utf-8")
+        self.check()
+        self.requirements.write_text(partial.replace("known_observation", "missing"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Missing executable test symbol"):
+            self.check()
+        self.requirements.write_text(partial.replace('probe.rs::known_observation', 'probe.rs').replace('attribute executable', 'attribute method : String = "manual";\nattribute executable'), encoding="utf-8")
+        self.check()
+
+    def test_retired_dependency_and_bad_relative_links_refused(self):
+        for extra, message in (("// Canonical FSD slices SHA256: stale", "retired FSD"), ("doc /* FSD12.6 remains authoritative */", "retired FSD"), ("doc /* [tests](../tests/missing.cjs) */", "Dangling model")):
+            self.requirements.write_text(MODEL + extra, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, message):
+                self.check()
+
+    def test_new_package_requires_scope_reference_and_is_scanned(self):
+        extra = self.models / "FutureBackend.sysml"
+        extra.write_text("package FutureBackend {}", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "lacks a ProductScope reference"):
+            self.check()
+        (self.models / "ProductScope.sysml").write_text("package Scope { private import FutureBackend::*; }", encoding="utf-8")
+        self.check()
+        extra.write_text("package FutureBackend { requirement 'FR-001' { attribute coverage : ImplementationState = ImplementationState::target; } }", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Duplicate canonical"):
+            self.check()
+
+    def test_check_never_reads_archive_and_sync_never_rewrites_model(self):
+        archive = self.root / "docs/archive/FSD.md"
+        archive.parent.mkdir()
+        real_catalog, real_read = tool.canonical_catalog, Path.read_text
+
+        def read(path, *args, **kwargs):
+            if "archive" in path.parts:
+                raise AssertionError("Canonical tooling attempted to read an archived specification")
+            return real_read(path, *args, **kwargs)
+
+        with mock.patch.object(tool, "ROOT", self.root), mock.patch.object(tool, "MODELS", self.models), mock.patch.object(tool, "FSD", self.fsd), mock.patch.object(tool, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)), mock.patch.object(tool, "validate", return_value=subprocess.CompletedProcess([], 0, "semantic fixture", "")) as validate, mock.patch.object(tool, "architecture_integrity", return_value={"connections": 69}), mock.patch.object(Path, "read_text", read):
+            for state in ("missing", "edited"):
+                if state == "edited":
+                    archive.write_text("Contradictory historical Markdown", encoding="utf-8")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(tool.main(["check"]), 0)
+                self.assertEqual(len(validate.call_args.args[0]), 10)
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(tool.main(["sync"]), 2)
+            self.assertEqual(self.requirements.read_text(encoding="utf-8"), MODEL)
+
+
+if __name__ == "__main__":
+    unittest.main()

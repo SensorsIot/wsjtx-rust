@@ -5,14 +5,15 @@
 Use **`D:\Github\wsjtx-rust` on HB9BLA (`192.168.0.37`)**. Read `AGENTS.md`,
 `MEMORY.md`, the pinned harness and current GitHub issues. The operator authorizes
 continued implementation, tests, parallel agents and radio work until they return.
-Keep Markdown requirements/tests → synchronized SysML → independent review → code
-→ ordinary gates → live acceptance. Do not close partial issues or bypass red checks.
+Read the current authority binding before functional edits. With canonical SysML, use
+model requirements/tests, independent review, code, ordinary gates and live acceptance.
+Archived functional Markdown is not maintained or used as an implementation oracle.
+Do not close partial issues or bypass red checks.
 
-Published integration: `74146d89b`, all thirteen selected gate groups green.
-Deployed source: `582e08595`, nine selected groups green; executable SHA256
-`b96c6f5cc635b58408bcb0c142367a813666474829c7a8a8fc69994dd3c5013e`.
-Full results came from the previous PC. HB9BLA has Rust 1.99/MSVC, Python 3.12,
-Node 24, Playwright/Chromium and verified hooks; compiler/linker/browser smokes pass.
+Use the checked-out commit, current GitHub checkpoint and station-running receipt to
+identify source and deployed versions separately. Previously recorded results are not
+passes for a changed candidate. HB9BLA has Rust/MSVC, Python, Node and browser prerequisites;
+verify their availability in the actual agent environment before starting work.
 
 ## Preserve the runtime
 
@@ -29,27 +30,20 @@ Node 24, Playwright/Chromium and verified hooks; compiler/linker/browser smokes 
   Scoped Infisical authentication/secret reading works with normal TLS validation;
   native CLI use still needs standard Windows CA trust. Do not bypass TLS.
 
-## Continue in this order
+## Continue from current ownership
 
-1. Verify actual latest-period rows, signed DT and selectable sorting in the deployed
-   browser, including narrow/enlarged text. Previous-PC Computer Use stopped before
-   its Chrome refresh. Keep the user's **0–3000 Hz, existing 2.93 Hz/bin source**.
-2. **#10 grey waterfall rows:** reviewed requirements/model-only commit `083ece294`
-   (`cr10/detailed-continuity`) has **no implementation**. Apply that scoped commit
-   onto a fresh current-main branch. Implement the bounded eight-row history,
-   eviction watermark and catch-up policy; review/gate and observe two healthy peers
-   for at least sixty seconds. Requirements already passed meaning/Pilot review.
-3. **#7 decoder:** reviewed optional Deep branch `cr7/deep-ft8`, `8bd8e5b174`,
-   remains unmerged: 18/21 reference messages versus baseline16, zero extras in that
-   comparison. Two complete-frame misses remain; one partial-start message is outside
-   contract. Do not loosen CRC/confidence gates. Read
-   `D:\Github\wsjtx-rust-recordings\handoff\deep-ft8-8bd8e5b174\CONTINUE.md`.
-4. **#18 samples:** eight WAVs are verified. Portable-helper admission still needs
-   absolute/escaping filename refusal and correction of its FT8 source/CMake
-   provenance sentence. Preserve its reviewed known-answer data; issue remains open.
-5. Use the transferred operating inventory/eighteen flows to specify mode/band/CAT,
-   Monitor/Stop/re-decode, then transmit/QSO/logging in existing issues. The current
-   decoder-mode selector does not retune the radio. MCP reuses the same station engine.
+GitHub issues own the approved work order, current candidate, review, actual evidence and
+next action. Check them before applying an old branch, patch or diagnostic recommendation.
+Keep open runtime work in its owning #7/#8/#9/#10/#11/#12/#13 issue; a helper report or
+isolated passing test is not issue completion. Preserve known model, code and radio
+ownership and one integration writer across the two PCs.
+
+The model/authority transition is #20 with the separate project harness rollout #21.
+Shared model writes and publication are serialized with the documentation lane. Once the
+canonical marker and functional archive are published together, prepare future changes
+in SysML directly. The modem's test fixtures remain internal diagnostics, not a requested
+offline-decoding product. Keep the existing0..3000Hz/2.93Hz-bin display contract unless an
+approved functional requirement changes it.
 
 ## Inputs and unfinished work
 
@@ -74,6 +68,7 @@ Read `product-migration-audit\RESTORE.md`; fetch bundled tips under a backup
 namespace, never overwrite main or blindly apply historical FSDs. Private proof/audit
 stays `.git\migration-private\` and must not be uploaded publicly.
 
-Harness pin stays `1c6ffbb3`; source V2 `a9950ab9` early-failure improvement still
-needs separate project adoption/trial. Skills: `D:\Github\agent-skills`, thirty valid
-skills registered without replacing user state. Never install Fortran locally.
+Use the exact harness gitlink of the checked-out candidate. A source-harness publication
+alone is not project adoption: updates require their separate rollout and actual trial.
+Skills source is `D:\Github\agent-skills`; registered skills preserve user state. Never
+install Fortran locally.
