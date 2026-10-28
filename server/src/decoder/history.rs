@@ -172,15 +172,34 @@ pub(super) fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_jso
     let mut records = Vec::new();
     let mut setup_callbacks = 0;
     for index in 0..2048u128 {
-        // Legal radix42 FreeText, distinct full payloads, not padded allocations.
-        let value = 42u128.pow(12) + index;
-        let bits = std::array::from_fn(|j| {
-            if j < 71 {
-                ((value >> (70 - j)) & 1) as u8
-            } else {
-                0
+        // Legal RX FieldDay n3=4, six real String owners, distinct four-letter CQ tokens.
+        let mut number = index;
+        let mut letters = [b'A'; 4];
+        for letter in letters.iter_mut().rev() {
+            *letter += (number % 26) as u8;
+            number /= 26;
+        }
+        assert_eq!(number, 0);
+        let word = std::str::from_utf8(&letters).unwrap();
+        let to = 1003
+            + letters
+                .iter()
+                .fold(0u128, |value, c| value * 27 + (c - b'A' + 1) as u128);
+        let mut bits = [0u8; 77];
+        for (start, width, value) in [
+            (0, 28, to),
+            (28, 28, 532443),
+            (56, 1, 1),
+            (57, 4, 15),
+            (61, 3, 5),
+            (64, 7, 11),
+            (71, 3, 4),
+        ] {
+            assert!(value < (1u128 << width));
+            for j in 0..width {
+                bits[start + j] = ((value >> (width - 1 - j)) & 1) as u8;
             }
-        });
+        }
         let record = Decode {
             payload: super::unpack(&bits),
             start_frame: 0,
@@ -188,6 +207,16 @@ pub(super) fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_jso
             snr_db: Some(-20.),
         };
         assert_eq!(record.payload.status, super::PayloadStatus::Decoded);
+        assert!(matches!(
+            record.payload.fields.as_ref(),
+            Some(super::Fields::FieldDay { .. })
+        ));
+        assert_eq!(
+            record.payload.text.as_deref(),
+            Some(format!("CQ {word} CQ ZZZZ R 32F EMA").as_str())
+        );
+        assert_eq!(record_string_paths(&record).len(), 6);
+        assert_eq!(record.payload.text.as_ref().unwrap().len(), 25);
         state
             .publish_if_new(&record, &mut |_| {
                 setup_callbacks += 1;
@@ -200,6 +229,8 @@ pub(super) fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_jso
     assert_eq!(state.available_count(), 2048);
     assert_eq!(setup_callbacks, 2048);
     let ledger = serde_json::json!({"prepared_records":records.len(), "prepared_callbacks":setup_callbacks,
+        "cohort":"legal_field_day_n3_4_four_letter_cq_tokens","string_owners_per_record":6,
+        "largest_attained_record_nested_bytes":records.iter().map(retained_record_bytes).max(),
         "actual_decoded_callbacks":0,"is_decoded_success":false,"origin":0,"start_frame":0,
         "history_key_capacity":state.published.capacity(),
         "history_key_reserved_bytes":state.published.capacity()*std::mem::size_of::<PublicationKey>(),

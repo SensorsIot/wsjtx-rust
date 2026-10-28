@@ -347,6 +347,8 @@ fn resource_capacity_owned_child() {
         );
         drop(layouts);
     }
+    let peak_reserve = crate::decoder::synchronization::PeakCapacityReserve::new();
+    let mut additional_tiers = vec![];
     for mode in [Mode::Ft8, Mode::Ft4] {
         let (mut retained_state, records, history_ledger) = history::capacity_state(mode);
         eprintln!("RESOURCE_CAPACITY {}", history_ledger);
@@ -513,8 +515,78 @@ fn resource_capacity_owned_child() {
                 "manager_ack_proved":false,"cancellation_sla_proved":false})
             );
             std::hint::black_box((&records, &witnesses, &candidates, &pending, &seen));
+            peak_reserve.retain();
+        }
+        let missing: &[(usize, usize, usize)] = if mode == Mode::Ft8 {
+            &[(180000, 192000, 3200)]
+        } else {
+            &[
+                (72576, 72576, 4032),
+                (145152, 145152, 8064),
+                (217728, 217728, 12096),
+                (290304, 290304, 16128),
+            ]
+        };
+        for &(frames, long, short) in missing {
+            for scalar in [false, true] {
+                let scratch = [(long, false), (short, true), (32, false)].map(|(n, inverse)| {
+                    crate::decoder::baseband::fft_plan(n, inverse, scalar).get_inplace_scratch_len()
+                });
+                eprintln!(
+                    "RESOURCE_STORAGE {}",
+                    serde_json::json!({"owner":"reconstructed_additional_bandplan_query",
+                    "mode":mode,"frames":frames,"scalar":scalar,"long_len":long,"short_len":short,
+                    "scratch_lengths":scratch,"direct_private_field_observation":false})
+                );
+                let decoder = if scalar {
+                    Decoder::with_scalar_transform()
+                } else {
+                    Decoder::new()
+                };
+                let input = base
+                    .iter()
+                    .copied()
+                    .cycle()
+                    .take(frames)
+                    .collect::<Vec<_>>();
+                let observed = observer::install(Arc::new(AtomicBool::new(false)), None);
+                let mut fresh = DecodeState::new_live(mode);
+                let mut callbacks = 0;
+                complete(decoder.decode_window_into_async(
+                    input,
+                    0,
+                    &mut fresh,
+                    &|| false,
+                    &mut |record| {
+                        assert_eq!(
+                            record.payload.payload77,
+                            observer::cases()["payload77"].as_str().unwrap()
+                        );
+                        callbacks += 1;
+                        Ok(())
+                    },
+                ))
+                .unwrap();
+                assert!(callbacks > 0);
+                let identity = (mode, frames, scalar);
+                assert!(!additional_tiers.contains(&identity));
+                additional_tiers.push(identity);
+                eprintln!(
+                    "RESOURCE_CAPACITY {}",
+                    serde_json::json!({"owner":"additional_fft_tier",
+                    "mode":mode,"frames":frames,"scalar":scalar,"long_len":long,"short_len":short,
+                    "complete":true,"actual_decoded_callbacks":callbacks,"phase_counts":observed.report().counts,
+                    "is_prepared_decode":false,"runtime_sla_claimed":false})
+                );
+                assert_eq!(retained_state.available_count(), 2048);
+                std::hint::black_box((&records, &witnesses, &candidates, &pending, &seen));
+                peak_reserve.retain();
+            }
         }
     }
+    assert_eq!(additional_tiers.len(), 10);
+    drop(additional_tiers);
+    drop(peak_reserve);
     eprintln!(
         "RESOURCE_DISPOSITION {}",
         serde_json::json!({"unknown_maximum_nested_record_allowance":true,
