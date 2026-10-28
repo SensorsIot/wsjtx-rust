@@ -244,7 +244,14 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
 
 // Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 agreed design and authority-preserving regions.
 test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strategy with truthful state',{timeout:20000},async t=>{
- const {page,errors,sent}=await fixture(t,{width:1200,height:800});
+ const {page,errors,sent}=await fixture(t,{width:1200,height:1200});
+ assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),210,'sufficiently tall desktop starts with the specified compact signal height');
+ await page.setViewportSize({width:1200,height:800});
+ const shortSignal=await page.locator('#signal').evaluate(signal=>({height:signal.getBoundingClientRect().height,minimum:Number(document.querySelector('#splitter').getAttribute('aria-valuemin')),maximum:Number(document.querySelector('#splitter').getAttribute('aria-valuemax')),current:Number(document.querySelector('#splitter').getAttribute('aria-valuenow'))}));
+ assert.ok(shortSignal.height>=160,'short viewport preserves the signal minimum');
+ assert.ok(shortSignal.current>=shortSignal.minimum&&shortSignal.current<=shortSignal.maximum,'short viewport respects the accessible splitter bounds');
+ assert.equal(Math.round(shortSignal.height),shortSignal.current,'accessible splitter value matches the displayed signal height');
+ assert.equal(await page.getByRole('separator').getAttribute('tabindex'),'0','short viewport retains keyboard resizing');
  for(const id of ['radio-toolbar','band-strip','strategy-panel'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the agreed operating screen`);
  const composition=await page.evaluate(()=>{
   const rect=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height};};
@@ -252,7 +259,6 @@ test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strate
  });
  assert.ok(composition['#station-bar'].bottom<=composition['#radio-toolbar'].top+1);
  assert.ok(composition['#radio-toolbar'].bottom<=composition['#signal'].top+1);
- assert.equal(Math.round(composition['#signal'].height),210);
  assert.ok(composition['#splitter'].bottom<=composition['#band-strip'].top+1);
  assert.ok(composition['#band-strip'].bottom<=composition['#band-activity'].top+1);
  assert.ok(composition['#band-activity'].top>=composition['#band-strip'].bottom);

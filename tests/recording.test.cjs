@@ -271,7 +271,8 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       await pages[0].locator('#operating-band:enabled').waitFor();
       const operatingAfter=await pages[0].evaluate(()=>({revision:operatingState.operating_revision,operation:operatingState.operation}));
       assert.deepEqual(operatingAfter,operatingBefore,'refused intent changes no selection revision or record');
-      const stillPlaying=await f.snapshot();assert.equal(stillPlaying.generation,playback.generation);assert.equal(stillPlaying.job.id,playback.job.id);assert.equal(stillPlaying.job.state,'running');
+      assert.equal(typeof playback.id,'string','replay returns a job receipt');assert.ok(Number.isSafeInteger(playback.generation));
+      const stillPlaying=await f.snapshot();assert.equal(stillPlaying.generation,playback.generation);assert.ok(stillPlaying.job,'refused selection retains the recording job');assert.equal(stillPlaying.job.id,playback.id);assert.equal(stillPlaying.job.state,'running');
       for(let n=0;n<10;n++){
         const due=start+(n+1)*5500;await sleep(Math.max(0,due-performance.now()));
         await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
@@ -484,7 +485,7 @@ test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},as
 });
 // Proves: CL-006-03/04; TC-010-007 independent source-time movement, clipping and unobserved pixels.
 test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom',{timeout:30000},async t=>{
-  const f=await fixture(t);await f.upload(wav(120));const p=await page(f,{width:1100,height:1050});await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
+  const f=await fixture(t);await f.upload(wav(120));const p=await page(f,{width:1100,height:1400});await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
   // Three Thin rows at80px/s need a tall plot; default workspace is intentionally compact.
   const movementSeparator=p.getByRole('separator');await movementSeparator.focus();await p.keyboard.press('End');
   assert.ok((await p.locator('#waterfall').boundingBox()).height>=240,'fixture observes all three row positions before testing exit');

@@ -1544,11 +1544,10 @@ impl Recording {
                             .new_worker_cancel
                             .as_ref()
                             .is_some_and(|cancel| Arc::ptr_eq(cancel, &j.cancel)))
-            }) {
-                if !terminal(job.state) {
-                    job.cancel.store(true, Ordering::Release);
-                    job.state = "cancelling";
-                }
+            }) && !terminal(job.state)
+            {
+                job.cancel.store(true, Ordering::Release);
+                job.state = "cancelling";
             }
             let already = op.result == "cancelled";
             let current = s.operating.operation.as_mut().unwrap();

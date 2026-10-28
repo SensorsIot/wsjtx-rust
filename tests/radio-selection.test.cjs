@@ -69,8 +69,8 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:683},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(759),origin,mapping),'automatic');for(const line of [700,713,726,732,742,744,752,761])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(758),origin,mapping),/unknown/);
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:682},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(758),origin,mapping),'automatic');for(const line of [699,712,725,731,741,743,751,760])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(757),origin,mapping),/unknown/);
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
   await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
@@ -296,10 +296,10 @@ function selectionNetworkSummary(transfers,start,end){
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'fc865a907d9a26bc08f414980991f90f58cebf1b7cbe233246571483ee18e986','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'fc70aef7af38797599faac4c653dc96f8504b15f1ee12bedd10e2bb2d126876b','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:683,timerLine:759};
+  return {sha256,valid,fetchLine:682,timerLine:758};
 }
 function cadenceCaller(initiator,origin,mapping){
   const frames=initiator?.stack?.callFrames;
@@ -308,7 +308,7 @@ function cadenceCaller(initiator,origin,mapping){
   assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
-  const explicitLines=[700,713,726,732,742,744,752,761];
+  const explicitLines=[699,712,725,731,741,743,751,760];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';

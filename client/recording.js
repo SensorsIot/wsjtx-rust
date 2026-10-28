@@ -671,7 +671,6 @@ function operatingShow(){
   document.querySelector('#operating-radio').textContent=`CAT ${s.radio.state}${s.radio.error?' · '+s.radio.error:''} · ${observed} · ${nominal}`;
   const dial=document.querySelector('#op-dial');dial.value=frequency.value!==null?(frequency.value/1e6).toFixed(6):s.selection.nominal_hz!==null?(s.selection.nominal_hz/1e6).toFixed(6):'';dial.title=`${observed}. ${nominal}`;dial.setAttribute('aria-label',frequency.value!==null?'Observed dial frequency':'Nominal dial frequency, actual rig unconfirmed');
   const capabilities=document.querySelectorAll('#operating-capabilities dd');capabilities[1].textContent=!connected?'Unavailable · status stale':s.radio.state==='ready'?'Ready · IC-7300 readback':`Unavailable · ${s.radio.error??s.radio.state}`;
-  radio.textContent=!connected?'Radio state stale':s.control==='manual'?'Radio manual · CAT disabled':`CAT ${s.radio.state}`;
   if(live)statusBar.children[1].textContent=`Audio ${live.audio.state} · ${live.job?live.job.mode.toUpperCase()+' '+live.job.state:'Receive stopped'} · CAT ${s.radio.state}`;
   const o=s.operation;
   operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or Stop to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
