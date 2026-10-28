@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 63067c8a11300e96e69ac4bc384ae450aef0b2835274dc16ce7f1f53e98e8f3a
+// Canonical FSD slices SHA256: 46e432fd564703cb5eb6d9bf78ab84c3aeebdfdf4302917ca7a39fe06992949c
 package WstxProfiles {
     private import ScalarValues::*;
 

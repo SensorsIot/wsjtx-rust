@@ -2605,6 +2605,9 @@ IC-7300/browser readback check. All existing cases remain required.
    Preserve Vary fields `[Origin,X-Accept-Encoding-Other]` and append the exact
    Accept-Encoding token; existing case-insensitive exact token and Vary:* remain.
    Preserve security/cache headers. Every table row retains actual multiheader order.
+   Unknown/excess serialized size on an otherwise eligible success returns the existing
+   bounded503snapshot_limit before negotiation even with all encodings forbidden; verify
+   each route own logical cap, no body polling/buffering/redispatch, and retained security headers.
 
 Independent oracles are the pinned source/table and observed default flow, manually
 derived CI-V exchanges, independently fixed waveform payloads, exact wire schemas and
@@ -3483,6 +3486,11 @@ logical caps and response eligibility are established BEFORE encoding negotiatio
 a no-acceptable-encoding result must not replace an excluded response. A library
 response predicate evaluated after negotiation is insufficient. The same response
 passes through one integration boundary, without another auth/handler/actor dispatch.
+
+At this six-route boundary, an otherwise eligible success MUST have an exact, nonempty
+serialized size within that route's existing logical cap; unknown or excess size returns503
+with exactly `{"error":{"code":"snapshot_limit","field":null}}` before negotiation,
+without polling, buffering or redispatch, retaining applicable existing cache/security headers.
 
 **Independent ordered negotiation oracle.** Fields are separate raw
 Accept-Encoding header values in insertion order; `[]` means absent. Outcomes apply

@@ -1,10 +1,14 @@
-// Canonical FSD slices SHA256: bb770b27c4dc6763319008a5ea5558acc659cd61eb0d116d1305a9c0eb5c95ad
+// Canonical FSD slices SHA256: 8d875c2d7dd14caae2aef5f7eeed547f67b8201d1dc62ae17261c9a65cf2901a
 package WstxOperatingReceive {
     private import ScalarValues::*;
 
 
     enum def HttpCodingSelection { identity; gzip; noAcceptable; }
     part def HttpContentCodingBoundary {
+        doc /* Six current GET routes have fixed serialized JSON. Each own logical cap
+             and exact nonempty size precede negotiation. Unknown/excess is existing
+             bounded503snapshot_limit {error:{code:"snapshot_limit",field:null}}, even
+             all encodings forbidden; no polling/buffering/redispatch; retain security/cache. */
         attribute exactAllowedGet : Boolean;
         attribute authenticated : Boolean;
         attribute successfulJson : Boolean;
@@ -40,7 +44,7 @@ package WstxOperatingReceive {
        tiny2bytebody, correct Vary token merge and framing. */ }
     verification def HttpExcludedAndCaps { doc /* case8 C: HEAD/no-body/already-encoded/range,
        auth/errors/secrets/mutations bypass BEFORE negotiation, even all-encodings-forbidden;
-       no duplicate effects, logical caps before compression, no request decompression. */ }
+       no duplicate effects, per-route logical caps/exact size before compression, unknown/excess503snapshot_limit before negotiation, no body polling/buffering/redispatch, no request decompression. */ }
     verification def HttpActualCombinedTls { doc /* case8 D: real two-browser native/CAT75s
        Thin and75sOff, unchanged TLS accounting/status/cadences/oracles; no estimated PASS. */ }
 

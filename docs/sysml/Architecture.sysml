@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 8cfdea55943bb150fffcf0ee59a901614d8c30b1812779a691f022b232603f67
+// Canonical FSD slices SHA256: a6417377f6046b2def7f9bd71da49f14d640e3c9aa596716ead58c06dad4a5bd
 package WstxArchitecture {
     doc /* FSD12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
          Existing handler/auth/errors/caps precede negotiation, exactly one dispatch.
