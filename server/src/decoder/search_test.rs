@@ -108,7 +108,8 @@ impl Ft4CapacityReserve {
         assert!(powers.capacity() >= 32768);
         let mut outputs = vec![];
         let mut output_traces = vec![];
-        for _ in 0..2 {
+        // Producer push trajectory, distinct from the consumer's batched extend path.
+        {
             let (new, trace, old) = push_trace((0..256).map(|start| Candidate {
                 start,
                 frequency: 1000.,
@@ -119,6 +120,34 @@ impl Ft4CapacityReserve {
             outputs.push(previous);
             output_traces.push(trace);
         }
+        let mut consumer = Vec::new();
+        let batch = (0..255)
+            .map(|start| Candidate {
+                start,
+                frequency: 1000.,
+                score: 1.3,
+            })
+            .collect::<Vec<_>>();
+        consumer.extend(batch.into_iter());
+        assert_eq!(consumer.len(), 255);
+        let consumer_old_capacity = consumer.capacity();
+        assert_eq!(consumer_old_capacity, 255);
+        let old_consumer = consumer.clone();
+        consumer.extend(
+            vec![Candidate {
+                start: 255,
+                frequency: 1000.,
+                score: 1.3,
+            }]
+            .into_iter(),
+        );
+        assert_eq!(consumer.len(), 256);
+        assert!(consumer.capacity() >= 510);
+        output_traces.push(vec![
+            serde_json::json!({"op":"extend_into_iter","count":255,"len":255,"old_capacity":0,"new_capacity":consumer_old_capacity}),
+            serde_json::json!({"op":"extend_into_iter","count":1,"len":256,"old_capacity":consumer_old_capacity,"new_capacity":consumer.capacity()})]);
+        outputs.push(consumer);
+        outputs.push(old_consumer);
         let lower = 1000. - Mode::Ft4.spacing() / 2.;
         let upper = 1000. + Mode::Ft4.spacing() / 2.;
         let step = 6000. / 60480.;
@@ -154,6 +183,8 @@ impl Ft4CapacityReserve {
             "powers_logical_upper":powers.len(),"powers_growth":powers_trace,"powers_capacity":powers.capacity(),
             "old_powers_capacity":old_powers.capacity(),"candidate_output_growth":output_traces,
             "candidate_buffer_capacities":outputs.iter().map(Vec::capacity).collect::<Vec<_>>(),
+            "candidate_buffer_roles":["producer_push_new","producer_push_old","consumer_extend_new","consumer_extend_old"],
+            "consumer_255_then_1_is_capacity_upper_witness_not_signal_attainment":true,
             "refinement_growth":refinement_trace,"refinement_capacity":refinement.capacity(),
             "old_refinement_capacity":old_refinement.capacity(),"is_decoded_success":false,
             "all_are_prepared_capacity_owners":true}),
