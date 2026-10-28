@@ -29,7 +29,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     def test_complete_resolved_deployment(self):
         self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
         counts = tool.architecture_integrity(self.accepted.stdout)
-        self.assertEqual(counts, {"parts": 33, "references": 8, "ports": 74, "connections": 63})
+        self.assertEqual(counts, {"parts": 27, "references": 8, "ports": 54, "connections": 45})
 
     def reject(self, original, replacement, diagnostic):
         self.assertIn(original, self.source, "mutation no longer targets the accepted architecture")
@@ -82,10 +82,34 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.reject("connection encodeModem connect transmit.encode to modes.encode;", "", "missing required connection")
 
     def test_control_bypasses_common_authority(self):
-        self.reject("connect radioControl.backend to authorityRequest;", "connect radioControl.backend to radioAdapter.control;", "missing required connection")
+        self.reject("connect radioControl.backend to authorityRequest;", "connect radioControl.backend to catAdapter.authorized;", "missing required connection")
 
-    def test_duplicate_selected_backend(self):
-        self.reject("part profile : PersistedProfile;", "part profile : PersistedProfile; part duplicateBackend : StandardBackend;", "duplicate or detached backend")
+    def test_duplicate_audio_adapter(self):
+        self.reject("part audioAdapter : AudioDeviceAdapter;", "part audioAdapter : AudioDeviceAdapter; part duplicateAudio : AudioDeviceAdapter;", "duplicate or detached audioAdapter")
+
+    def test_duplicate_cat_adapter(self):
+        self.reject("part catAdapter : RustRadioDriver;", "part catAdapter : RustRadioDriver; part duplicateCat : RustRadioDriver;", "duplicate or detached catAdapter")
+
+    def test_audio_adapter_must_be_single(self):
+        self.reject("part audioAdapter : AudioDeviceAdapter;", "part audioAdapter[0..1] : AudioDeviceAdapter;", "exactly one direct audioAdapter")
+
+    def test_cat_adapter_must_be_single(self):
+        self.reject("part catAdapter : RustRadioDriver;", "part catAdapter[0..1] : RustRadioDriver;", "exactly one direct catAdapter")
+
+    def test_audio_adapter_wrong_port(self):
+        self.reject("connect audio.backend to audioAdapter.host;", "connect audio.backend to audioAdapter.radio;", "missing required connection")
+
+    def test_cat_adapter_wrong_port(self):
+        self.reject("connect authorizedControl to catAdapter.authorized;", "connect authorizedControl to catAdapter.radio;", "missing required connection")
+
+    def test_audio_cat_paths_cannot_be_mixed(self):
+        self.reject("connect audio.backend to audioAdapter.host;", "connect audio.backend to catAdapter.authorized;", "missing required connection")
+
+    def test_audio_attachment_selects_bound_radio(self):
+        self.reject("connect station.audioAdapter.radio to station.radioBinding.radio.audio;", "connect station.audioAdapter.radio to physicalStation.radio.audio;", "missing required connection")
+
+    def test_cat_attachment_selects_bound_radio(self):
+        self.reject("connect station.catAdapter.radio to station.radioBinding.radio.control;", "connect station.catAdapter.radio to physicalStation.radio.control;", "missing required connection")
 
     def test_split_shared_authority(self):
         self.reject("ref part authority : RadioAuthority :> physicalStation.backend.radioAuthority;", "part authority : RadioAuthority;", "one effective authority")
@@ -94,7 +118,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.reject("ref part station : StationProcess :> physicalStation.backend.stations;", "ref part station : StationProcess :> physicalStation.backend.mcpAttachments.station;", "invalid endpoint/resource/authority association")
 
     def test_wrong_requesting_resource_context(self):
-        self.reject("binding backendContext bind radioAdapter.control.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding backendContext bind radioAdapter.control.request.resourceContext = otherContext;", "missing required binding")
+        self.reject("binding catContext bind catAdapter.authorized.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding catContext bind catAdapter.authorized.request.resourceContext = otherContext;", "missing required binding")
 
     def test_wrong_waveform_direction(self):
         self.reject("in item waveform : Waveform;", "out item waveform : Waveform;", "wrong exchange direction")

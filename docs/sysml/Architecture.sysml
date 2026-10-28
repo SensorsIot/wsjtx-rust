@@ -274,11 +274,12 @@ package WstxArchitecture {
     requirement StationResourceIdentity {
         doc /* Architectural refinement of WstxProfiles and
              WstxProductScope::NativeFlexBoundary: each station MUST compose one profile,
-             one selected radio-adapter variation and one selected-radio binding, and
+             one audio device adapter, one CAT driver and one selected-radio binding, and
              reference the common authority contained in Backend. All control requests
              and outcomes MUST retain request/resource identity through that authority
-             to the selected radio adapter. A radio adapter or native session MUST NOT
-             introduce an authority bypass. */
+             to the selected CAT driver. Audio and CAT MUST be separate direct station parts,
+             with no combined radio-backend wrapper or variation. Both adapters MUST
+             attach to the same selected radio and MUST NOT bypass the common authority. */
     }
     requirement ResponsibilityAndExchangeBoundaries {
         doc /* Architectural refinement of WstxProductScope::SharedDataOwnership,
@@ -300,17 +301,24 @@ package WstxArchitecture {
              device or runtime service. Resolve the accepted model and legal negative
              mutations with the pinned semantic validator. Independent expectations are
              literal required endpoints, complete item-kind/direction signatures,
-             population/reference subsets, backend alternatives and identity bindings
+             population/reference subsets, separate audio/CAT adapter ownership and identity
+             bindings
              in the existing architecture integrity oracle, not candidate-derived counts.
              Expect user-to-selected-browser and selected-browser-to-web/station direct
              connections through portless associations; frontend/backend containers MUST
-             have no forwarding ports. Expect separate selected-radio-adapter-to-radio
-             audio/control paths; upload-to-profile-to-receive,
+             have no forwarding ports. Expect exactly one AudioDeviceAdapter and one
+             RustRadioDriver directly
+             composed by each station, without combined backend or native-Flex topology;
+             audio.backend connects to audioAdapter.host and authorizedControl connects
+             to catAdapter.authorized. Their radio ports connect respectively to the
+             same selected radio audio/control ports; upload-to-profile-to-receive,
              receive-to-mode and encode-to-mode paths; exactly one effective authority
-             whose bound request/outcome and resource context reach that same radio adapter.
+             whose bound request/outcome and resource context reach that CAT driver.
              Missing direct browser/encode connections, added container forwarding ports,
              reversed provider/waveform direction, wrong item kind, redirected association
-             or context, weakened identity binding, split or bypassed authority, duplicate backend, detached stations and view-created
+             or context, weakened identity binding, split or bypassed authority, missing,
+             duplicate or detached audio/CAT adapters, mixed audio/CAT paths, detached
+             stations and view-created
              structure MUST be rejected even if legal SysML. Four deployment participants
              and three portless association populations retain selected endpoint identity;
              counts alone are insufficient. This case checks structure, not runtime
@@ -469,8 +477,6 @@ package WstxArchitecture {
     item def Waveform;
     item def ProfileRequest;
     item def ProfileOutcome;
-    item def NativeSessionOperation;
-    item def NativeSessionOutcome;
 
     port def LocalInteraction {
         out item request : OperatorRequest;
@@ -511,11 +517,6 @@ package WstxArchitecture {
         in item outcome : ControlOutcome;
         binding replyContext bind outcome.request = request;
     }
-    port def SessionAccess {
-        out item operation : NativeSessionOperation;
-        in item outcome : NativeSessionOutcome;
-    }
-
     part def User { port interaction : LocalInteraction; }
     part def BrowserClient {
         attribute localDisplayLevels : WstxRecordingReceive::DisplayLevels;
@@ -589,11 +590,11 @@ package WstxArchitecture {
     }
     part def RadioAudioAttachment {
         ref part station : StationProcess :> physicalStation.backend.stations;
-        connection audioDelegation connect station.radioAdapter.radioAudio to station.radioBinding.radio.audio;
+        connection audioDelegation connect station.audioAdapter.radio to station.radioBinding.radio.audio;
     }
     part def RadioControlAttachment {
         ref part station : StationProcess :> physicalStation.backend.stations;
-        connection controlDelegation connect station.radioAdapter.radioControl to station.radioBinding.radio.control;
+        connection controlDelegation connect station.catAdapter.radio to station.radioBinding.radio.control;
     }
     part def RadioAuthority {
         doc /* One effective authority for constrained resources and transmit access across
@@ -765,48 +766,6 @@ package WstxArchitecture {
         port authorized : ~RadioControl;
         port radio : RadioControl;
     }
-    abstract part def RadioBackend {
-        port audio : ~AudioExchange;
-        port control : ~RadioControl;
-        port radioAudio : AudioExchange;
-        port radioControl : RadioControl;
-    }
-    part def StandardBackend :> RadioBackend {
-        doc /* Standard selected audio devices and optional CAT/PTT capabilities. Logical
-             driver existence does not assert connected/available control or ready TX. */
-        part audioDevices : AudioDeviceAdapter;
-        part controlDriver : RustRadioDriver;
-        connection audioHost connect audio to audioDevices.host;
-        connection audioRadio connect audioDevices.radio to radioAudio;
-        connection controlHost connect control to controlDriver.authorized;
-        connection controlRadio connect controlDriver.radio to radioControl;
-    }
-    part def NativeAudio :> AudioDeviceAdapter { port session : SessionAccess; }
-    part def NativeControl :> RustRadioDriver { port session : SessionAccess; }
-    part def NativeSession {
-        doc /* A managed native session may serve audio and control. It is not a second
-             arbitration authority. WstxProductScope::NativeFlexBoundary leaves session
-             ownership/sharing/lifetime unresolved; this provider type does not require
-             a separate session per station. */
-        port audio : ~SessionAccess;
-        port control : ~SessionAccess;
-    }
-    part def NativeBackend :> RadioBackend {
-        doc /* Optional Phase 2 alternate without external SmartSDR/CAT/DAX bridges.
-             Logical associations select no native API schema or physical streams.
-             The session is referenced, not composed by this backend. Required
-             ownership/sharing/lifetime decisions in WstxProductScope::NativeFlexBoundary
-             remain prerequisites; this alternative does not assert full native delivery. */
-        part audioDevices : NativeAudio;
-        part controlDriver : NativeControl;
-        ref part session : NativeSession;
-        connection audioHost connect audio to audioDevices.host;
-        connection audioRadio connect audioDevices.radio to radioAudio;
-        connection controlHost connect control to controlDriver.authorized;
-        connection controlRadio connect controlDriver.radio to radioControl;
-        connection audioSession connect audioDevices.session to session.audio;
-        connection controlSession connect controlDriver.session to session.control;
-    }
     part def StationProcess {
         part profile : PersistedProfile;
         part station : StationService;
@@ -822,12 +781,12 @@ package WstxArchitecture {
         ref part authority : RadioAuthority :> physicalStation.backend.radioAuthority;
         port authorityRequest : RadioControl;
         port authorizedControl : ~RadioControl;
-        variation part radioAdapter : RadioBackend {
-            doc /* Exactly one backend selection per station; alternatives are not concurrent
-                 instances. Cardinality/selection are structural review obligations. */
-            variant part standardDevices : StandardBackend;
-            variant part nativeFlex : NativeBackend;
-        }
+        doc /* Phase 1 radio-facing parts are independent audio and CAT adapters.
+             Logical driver existence does not assert connected control or ready TX.
+             Native Flex remains planned in FR-023 and NativeFlexBoundary; no current
+             native session or combined backend is composed here. */
+        part audioAdapter : AudioDeviceAdapter;
+        part catAdapter : RustRadioDriver;
         connection webOperations connect web.station to station.webOperations;
         connection mcpOperations connect mcp.station to station.mcpOperations;
         connection profileContext connect station.profile to profile.context;
@@ -845,19 +804,18 @@ package WstxArchitecture {
         connection validatedRecording connect station.acceptedRecording to profile.upload;
         connection recordedInput connect profile.recordedSamples to audio.recorded;
         connection contactStorage connect qso.contacts to profile.contacts;
-        connection selectedAudio connect audio.backend to radioAdapter.audio;
+        connection selectedAudio connect audio.backend to audioAdapter.host;
         connection authorityRequestDelegation connect radioControl.backend to authorityRequest;
-        connection authorizedControlDelegation connect authorizedControl to radioAdapter.control;
+        connection authorizedControlDelegation connect authorizedControl to catAdapter.authorized;
         connection commonAuthority connect authorityRequest to authority.requests;
         connection authorizedBackend connect authority.authorized to authorizedControl;
         binding requestContext bind authorityRequest.request.resourceContext = radioBinding;
-        binding backendContext bind radioAdapter.control.request.resourceContext = radioBinding;
+        binding catContext bind catAdapter.authorized.request.resourceContext = radioBinding;
     }
 
     dependency audioPromise from AudioInterface to WstxRequirements::'FR-002';
     dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
     dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
-    dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
     doc /* Responsibility traces identify the owning boundary for an existing requirement,
          not delivered capability or an executed verification. */
     dependency configurationPromise from StationService to WstxRequirements::'FR-001';
