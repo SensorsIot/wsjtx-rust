@@ -417,4 +417,9 @@ package WstxArchitecture {
         dependency statusScope from StatusServer to WstxRequirements::'CL-003-01';
         dependency statusProtocol from StatusServer to WstxRequirements::'CL-003-02';
     }
+    dependency coordinatedReceivePromise from ReceivePipeline to WstxRequirements::'CL-008-07';
+    doc /* FSD4.7.5/12.8.1 coordinated receive controls reuse this existing receive
+         and radio authority path. No additional station/backend/physical connector,
+         sample source or deployment is introduced. WstxOperatingReceive models the
+         single-owner release/setup/readback/restart and cancellation fences. */
 }

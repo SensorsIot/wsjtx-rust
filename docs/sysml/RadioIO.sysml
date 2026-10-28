@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 92901ab110ef5d48cbef5e4e949553b6a556b2990e8eba1a49f484361e6d6fcd
+// Canonical FSD slices SHA256: 12ecba995bae3f5e62c87997cdac72ee20f8b10516a1a1c418a940c29723037d
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.
@@ -606,4 +606,9 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
 
 
     */
+    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+         WstxOperatingReceive. This companion retains the unchanged legacy strict
+         receive/radio/result shapes and owner/cancellation/source contracts.
+         New selection uses the same authority, explicit actual release before
+         setters/new capture and a fresh context, not a second pipeline or actor. */
 }

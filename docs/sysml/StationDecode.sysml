@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 6c75148d3aba53332b514fe22c31ca553932927f39514b7b052c01ec53c81c1d
+// Canonical FSD slices SHA256: 81569872d62c5b095a9fa9b6514b80fa78859f7b11d6c28de6639626c212a67b
 package WstxOfflineDecode {
     private import ScalarValues::*;
     doc /* Target implementation contract, NOT implemented decoder behavior or test results.
@@ -1009,4 +1009,9 @@ package WstxOfflineDecode {
         dependency simulatorRefusalCases from simulatorFixtureRefusals to WstxRequirements::'TC-004-003';
     }
 
+    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+         WstxOperatingReceive. This companion retains the unchanged legacy strict
+         receive/radio/result shapes and owner/cancellation/source contracts.
+         New selection uses the same authority, explicit actual release before
+         setters/new capture and a fresh context, not a second pipeline or actor. */
 }

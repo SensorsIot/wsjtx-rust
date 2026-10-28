@@ -1269,10 +1269,11 @@ interface owns a second profile store, receive job authority, decoder or transmi
 |---|---|---|---|
 | CL-008-01 | FR-001, FR-002, FR-009, FR-022 | Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. | TC-002-001; TC-009-001 |
 | CL-008-02 | FR-002, FR-003, FR-004 | Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. | TC-002-001; TC-002-003; TC-009-002 |
-| CL-008-03 | FR-002, FR-009, FR-019, FR-021 | Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. | TC-002-001; TC-009-001; TC-009-004 |
+| CL-008-03 | FR-002, FR-009, FR-019, FR-021 | Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. | TC-002-001; TC-009-001; TC-009-004; TC-009-005 |
 | CL-008-04 | FR-002, FR-009 | Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. | TC-009-001; TC-009-002 |
-| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004; TC-009-002 |
+| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004; TC-009-002; TC-009-005 |
 | CL-008-06 | FR-009 | Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. | TC-009-001; TC-009-003 |
+| CL-008-07 | FR-002, FR-009, FR-019, FR-021 | Coordinate receive-only operating mode and preferred band changes through the existing station/receive owner and typed CAT actor, with explicit nominal/observed truth, actual release barriers, per-query provenance and cancellation fencing. | TC-009-005; TC-009-002 |
 
 **Ownership and implementation boundary.** The station `recording` receive owner
 keeps its single source/job/generation lifecycle for recorded spectrum or
@@ -1451,7 +1452,7 @@ transmit authority and halt. Optional native FlexRadio remains the later #13 ada
 |---|---|---|---|---|
 | TC-002-001 — Canonical live audio | CL-008-01, CL-008-02, CL-008-03 | Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently. | Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT. | 2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. |
 | TC-009-001 — Typed radio control | CL-008-01, CL-008-03, CL-008-04, CL-008-06 | Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send. | Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource. | 2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. |
-| TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
+| TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05, CL-008-07 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
 | TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
 | TC-009-003 — Control without audio | CL-008-05, CL-008-06 | Exercise every supported query and receive setter while audio is closed/unavailable. | Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations. | 2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. |
 | TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05, CL-010-05, CL-010-07, CL-010-08 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. Hold and release result-page/snapshot responses across a confirmed cancellation and unknown Start outcome; inject a current live frame while the recorded-input job is null. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. Delayed pages preserve newer confirmed lifecycle/error state and do not advance cursors; pre-mutation reads cannot clear the unknown-outcome control barrier, while a later explicit reconciliation can. Live progress updates only its matching live owner, with no exception or false disconnection when the recorded-input job is absent. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
@@ -1525,6 +1526,7 @@ independent-review or acceptance verdict.
 | `CL-008-04` | partial |
 | `CL-008-05` | partial |
 | `CL-008-06` | partial |
+| `CL-008-07` | target |
 | `CL-010-05` | partial |
 | `CL-010-07` | partial |
 | `CL-010-08` | partial |
@@ -1541,6 +1543,7 @@ independent-review or acceptance verdict.
 | `TC-009-002` | partial |
 | `TC-009-003` | partial |
 | `TC-009-004` | partial |
+| `TC-009-005` | planned |
 | `TC-021-005` | implemented |
 | `TC-021-006` | implemented |
 | `TC-021-007` | implemented |
@@ -1586,15 +1589,16 @@ Imported model definitions retain their own declared source dependencies.
 | `StationDecode.sysml` | 4.4, 6.4, 12.7, 12.8, 13.6 |
 | `RadioIO.sysml` | 4.5, 12.8 |
 | `OperatingLayout.sysml` | 4.4, 4.7, 6.6, 12.7, 12.8 |
+| `OperatingReceive.sysml` | 4.7.5, 6.6, 12.8.1 |
 
 ### 4.7 Browser operating composition
 
 | Clause | Requirement | Required behavior | Verification |
 |---|---|---|---|
-| CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002; TC-009-004 |
-| CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002; TC-009-004 |
+| CL-010-05 | FR-010, FR-019 | Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. | TC-007-002; TC-009-004; TC-009-005 |
+| CL-010-07 | FR-001, FR-008, FR-009, FR-019 | Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. | TC-007-002; TC-009-004; TC-009-005 |
 | CL-010-09 | FR-010, FR-019 | Band Activity shows only the latest published decode period and signed station timing relative to our clock, selectable presentation sorting and explicit partial/unavailable states. | TC-007-006 |
-| CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002; TC-009-004 |
+| CL-010-08 | FR-019, FR-021 | Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. | TC-007-002; TC-009-004; TC-009-005 |
 
 #### 4.7.1 Read-only operating composition
 
@@ -1614,12 +1618,14 @@ Dial frequency and mode are labelled unavailable when the server does not provid
 them. Audio, CAT, decoding and transmission have independent unavailable explanations;
 a connected status link is not evidence that any radio capability is available.
 Enable Tx, Halt Tx, Auto Seq, contact selection and logging controls are visibly
-disabled with adjacent reasons while unsupported. No new station commands are sent.
+disabled with adjacent reasons while unsupported. Unsupported controls send no station commands. Supported receive operations follow
+12.8 and4.7.5 without enabling the unsupported TX/QSO/log actions.
 This slice neither implements a second radio/QSO authority nor supplies a fake service.
 
 When the server exposes the live receive contract in12.8, the same page offers
-explicit Start/Stop receive and spectrum/FT4/FT8 selection. Selection applies to the
-next job; displaying settings and selecting a mode never opens audio. Start uses
+explicit Start/Stop receive and spectrum/FT4/FT8 selection. The control labelled **Next receive mode** applies to the
+next job; displaying settings or changing that control never opens audio. The
+separate operating mode and band controls follow4.7.5 and12.8.1. Start uses
 the saved input and current profile revision. Stop invalidates publication before
 acknowledgement. Band Activity presents actual12.7 decoded records fetched through
 12.8, with UTC period time and signed relative DT when correlated to the station clock,
@@ -1774,6 +1780,110 @@ The selected field/direction persist in this page through new decode periods, mo
 changes and reconnects to the same profile. Only a different validated profile UUID resets
 to Frequency/ascending. No new server operation, decoder filtering or browser storage
 is introduced. Controls remain keyboard accessible and readable at360px/200%text.
+
+#### 4.7.5 Receive operating controls and preferred mode/band selection
+
+This target slice implements CL-008-07 using the existing station, receive manager,
+converter, decoder and typed IC-7300 actor. It does not establish a second owner or
+enable transmission. Audio-only reception remains available independently of CAT.
+The existing **Next receive mode** selector remains next-job-only and distinct from
+**Operating mode** (FT4/FT8). Ordinary operating mode/band selection requests monitoring
+on, including when monitoring was off. A pending transition is visibly Switching;
+there is no claim of uninterrupted samples across a mode change or physical retune.
+
+**Monitor and Stop.** Monitor starts through the existing12.8 Start only after a
+validated current profile/boot/receive snapshot establishes no active job and actual
+release of any previous worker/native audio owner. A terminal failed job alone does
+not establish release. With a running current job, Monitor turns reception off through
+the same exact-tuple Stop as the dedicated Stop button. Pending/unknown mutations
+block conflicting controls; a lost response is never automatically replayed. Retain
+verified latest-period partial output after Stop; a new identity clears it under4.7.1.
+Refresh, reconnect and browser close never start reception automatically. Monitor's
+accessible state comes from the authoritative lifecycle, not button highlighting.
+Stop during a mode/band operation uses its targeted cancellation in12.8.1; it never
+means transmit halt, disarm or QSO cancellation. Keyboard,360px/200% text and persistent
+unsupported Halt Tx remain accessible. No device enumeration or default/camera-input
+substitution is implicit in these controls.
+
+**Preferred table.** The immutable ordinary table below is derived independently
+from WSJT-X3.3.0-beta4 commit`0f7d5928449ec747c3d1f6da1306f8c94404c3a9`,
+`models/FrequencyList.cpp` (SHA256`e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4`).
+The reference's missing Region/table settings select ALL/defaults. A mode selection
+uses the committed admitted current band, or a fresh exact typed readback matching
+a uniquely labelled table row. Otherwise it refuses select_band_first before any
+stop, start, CAT bytes or revision change. A band action supplies that band explicitly.
+No guessed20m, approximate band classifier or inference of digital mode from RF alone
+is permitted. Filtered same-band preferred entry wins; nearest same-band/first sorted
+tie is the reference rule, but this bounded table admits only its preferred entries.
+Missing entries are explicitly unsupported, without a synthesized fallback. Frequencies
+are integer Hz; '-' means unsupported. ALL accepts the R1-labelled4m row as well;
+this is a reference receive default, not jurisdictional permission to transmit.
+
+| Band | FT8 Hz | FT4 Hz |
+|---|---|---|
+| 160m | 1840000 | - |
+| 80m | 3573000 | 3575000 |
+| 60m | 5357000 | 5357000 |
+| 40m | 7074000 | 7047500 |
+| 30m | 10136000 | 10140000 |
+| 20m | 14074000 | 14080000 |
+| 17m | 18100000 | 18104000 |
+| 15m | 21074000 | 21140000 |
+| 12m | 24915000 | 24919000 |
+| 10m | 28074000 | 28180000 |
+| 6m | 50313000 | 50318000 |
+| 4m | 70154000 | - |
+
+The table is constrained by the selected backend's admitted range. Alternative,
+custom/direct-entry, absent-entry fallback, remembered-frequency, transverter and
+transmit interactions are outside this bounded control slice; they remain separate
+unfinished behavior within the broader product goals. No unsupported control implies
+that those flows were delivered. Source reference anchors: FrequencyList.cpp546–600,
+650–681; widgets/mainwindow.cpp12169–12203,12611–12683; widgets/mainwindow_slots.cpp921–973;
+RigFrequencyChangePolicy.hpp100–110. Actual receive-only reference observations support
+20m FT4→FT8 nominal14.080→14.074MHz,40m FT8 nominal7.074MHz, and Monitor-off→band/mode
+starting Monitor. Rig=None observations establish nominal behavior, not physical tuning
+or native handle release.
+
+**Truth and transition.** Keep requested, committed nominal and dated physical
+observations distinct. Control-disabled manual selection emits no serial opens/bytes
+and labels the dial nominal/manual, actual rig unconfirmed. Configured but unavailable
+CAT does not silently become manual success. Connecting CAT is an explicit12.8 request
+with receive_only_verified=true after4.5's physical precondition; mode/band selection
+does not implicitly connect it or manufacture verification.
+
+Validate target, saved revision, identities, capabilities and conflicts before
+admission. Then atomically invalidate old receive publication, capture the operation
+token/revision and stop the existing owner. Actual joined worker AND native owner
+release authorize progression; the normal250ms bound or failed job state is not a
+substitute. Failed close retains resources and reports release_blocked, with no CAT
+write or new capture. Do not hold profile/serial locks across release or DSP waits.
+
+After release, require a current typed ReadRxTx showing RX before any receive setter.
+Use the same actor's ReceiveSetup for USB/FIL1, DATA-on/FIL1 and selected frequency,
+with final ReadMode/ReadData/ReadFrequency matching this operation exactly. Preserve
+existing1s exchange,50ms cancellation slices and5s composite bounds; no new total
+transition deadline or deadline renewal is implied. FIL1 selects a filter; it does
+not prove fresh numeric3000Hz width. This slice does not alter width, notches or PBT.
+No raw COM endpoint, PTT/VOX/Tune/keying/split setter or second connector is authorized.
+
+On successful readback/manual acceptance commit the nominal selection, then admit
+Start through the same receive manager using the saved exact endpoint/current revision
+and a fresh source/job/generation. Reset converter, spectrum and decoder history;
+never relabel FT8 windows as FT4 or bridge a retune as continuous RF context. Preserve
+FT8 trailing up-to30s/15s steps and FT4 up-to15s/7.5s steps. Operation success means
+selection committed and Start admitted; actual audio opening/running remains its
+own truthful state. Radio applied but audio Start failed remains committed with an
+explicit receive failure. Partial CAT failure preserves last committed nominal plus
+requested/error and actual dated facts; no fake rollback, restoring writes, setter
+retry, automatic restart or fallback. Explicit reconciliation refreshes only queried
+facts; a fresh user command decides subsequent mutations.
+
+Stop/cancel clears resume and invalidates the token synchronously, cancels pending
+typed work and suppresses every late restart. Already-sent writes may have applied.
+Profile revision changes invalidate captured operations without undoing the persisted
+edit. Old callbacks/pages/sockets cannot publish into or cancel a later context.
+The exact cancellation/fencing, query provenance and wire bounds are12.8.1.
 
 ## 5. Proposed quality and compatibility requirements
 
@@ -2424,6 +2534,71 @@ styles against16CSSpx normal/time/numeric/message and14CSSpx label minima, rem-s
 at200% text enlargement, and8CSSpx vertical padding.
 All widths retain these minima; long text wraps without page overflow. Existing splitter, keyboard, capability and transport assertions remain.
 These style oracles come from the stated presentation values, not candidate CSS. Verify the dominant/full-width Band Activity proportions and labelled responsive rows at360/720/1200/1440/1600CSSpx and1x/2x text. Use captured physical FT4 message text strictly as a labelled presentation fixture, plus independent edge strings:3499.9Hz, signed SNR/DT, long callsigns/full messages, large source seconds, UTC-formatted text and every result status. All six values remain literal and inside their own cells; numbers never split, message tokens wrap only when needed, and table labels remain accessible. This fixture is not decoder/RF truth. Capture desktop/narrow/2x screenshots; retain the separate actual nativeFT4/FT8 decoder/browser proofs.
+
+#### TC-009-005 — Coherent receive operating controls
+
+Proves CL-008-03/05/07 and CL-010-05/07/08. Cost2, isolated Windows development PC:
+actual station/receive manager, converter, decoder, HTTPS API and Chromium, independent
+native/CI-V fixtures and the existing encrypted-link model. This is planned coverage,
+not an execution verdict. TC-009-002 remains the separate authorized cost4 physical
+IC-7300/browser readback check. All existing cases remain required.
+
+1. From a validated stopped snapshot, Monitor uses the existing Start, then Monitor
+   and Stop each cancel the exact running tuple. Hold native close and inject failed
+   close: Start stays blocked until real release. Next receive mode starts nothing;
+   active mode remains authoritative. Retain partial latest-period rows after Stop,
+   clear on a fresh identity. Unsupported/invalid audio, CAT-disabled, stale snapshot,
+   lost response, pre-intent read and reconnect cases never create a second owner,
+   implicit input selection, automatic restart or mutation retry. Keyboard/360px/200%
+   text retains accessible Monitor/Stop/state and persistent unsupported Halt Tx.
+2. Use the complete4.7.5 table as fixed independent integer truth. Test every admitted
+   preferred band/mode plus missing160m/4m FT4, backend range edges and wrong enum.
+   Expect20m14074000/14080000 and40m7074000/7047500. Cold unknown band/nominal mode
+   selection returns409select_band_first with zero revision/device/stop/start effects;
+   fresh unique exact readback can resolve the explicit mode, stale/off-grid cannot.
+   Manual Monitor-off→band and off→mode start the actual new receive mode without CAT;
+   a fixed independently known native FT4/FT8 payload traverses the real pipeline and
+   appears literally in the browser. No positive mock decoder or fabricated rows.
+3. Independent fragmented CI-V replies prove ReadRxTx RX, exact ReceiveSetup and final
+   per-field readback. ACK, echo, foreign/broadcast/stale reply and unrelated query do
+   not refresh another field. Verify original timestamps remain, connection replacement
+   clears facts, and partial setter failures mark all possibly touched facts unconfirmed.
+   Mismatch,NG,timeout,busy alias,unverified receive-only and configured-unavailable CAT
+   refuse truthfully with no automatic manual fallback, replay or restoring writes.
+4. Hold old worker/release, then release or fail it: no setters/new input before actual
+   release. Inject CAT-applied/audio-start failure, Stop before/after sent writes,
+   profile edit and late setup/page/old job callback. Expect exactly4.7.5 lifecycle,
+   unchanged250ms/2s bounds, fresh context and no cross-retune windows or stale restart.
+5. Exercise each12.8.1 request union: missing/unknown/duplicate keys, malformed UUID,
+   enums,1024/1025 bytes, required media/Origin/auth/profile/boot/revision/generation,
+   safe counter maximum/one-over and exhaustion. Refusals occur before device effects.
+   Build maximum valid receipt/snapshot/metadata shapes and check384/3072/4096 byte
+   caps without truncation. Two authenticated browsers racing commands admit one.
+6. Delay the original POST body until after an empty GET: that GET cannot clear the
+   unknown barrier. An explicit unseen-command fence increments revision, returns
+   phase cancelled and cancellation.result=fenced, creates no normal operation, and
+   causes delayed old POST refusal. Same cancel replay returns200 without effects;
+   changed body with retained ID conflicts. Before/after-job target cancellation may
+   stop only its own current tuple; superseded target cannot stop a later job. Old
+   boot/pre-intent reads never clear newer intent. Test profile edit/intervening fence.
+7. New server/old strict client keeps all old shapes; old server/new client disables
+   only unsupported operating controls. Invalid schema/identity is stale/error, never
+   manual fallback. Include actual allowed8s passive/4s pending Thin/Off selection
+   polls, normal receive/results/status, mode/band traffic, stalls and explicit Stop
+   in the existing two-browser32kbit/s TLS workload. Assert each-direction mean<=3000B/s,
+   visible status<=2s, one pending selection read/ordinary mutation, status/control
+   priority and no backlog. Detailed2s/500ms is separately labelled fast-link coverage.
+
+Independent oracles are the pinned source/table and observed default flow, manually
+derived CI-V exchanges, independently fixed waveform payloads, exact wire schemas and
+the pre-existing lifecycle/identity/resource bounds. Expected records are not derived
+from candidate output. Placement: wstx-rust typed/control/receive tests, protocol and
+live-browser/profile regressions, recording-thin encrypted transport tests and layout
+accessibility cases; additive wiring must preserve every existing suite and assertion.
+Physical TC-009-002 checks actual receive-only settings, numeric width/notches/PBT
+independently when available, physical frequency/USB/DATA/FIL versus browser facts,
+mode/band changes and Stop, with verified restoration. A quiet band is not fabricated
+as successful decoding; fixture proof and actual RF observations are labelled separately.
 
 #### TC-007-006 — Latest decode and signed relative timing
 
@@ -3791,6 +3966,219 @@ returns `{v,profile_id,boot_id,connection_generation,operation,observation}` aft
 Failure uses the existing error envelope; a request timeout cannot justify retrying a
 setter. Connection generation is independent of receive generation, so audio lifecycle
 changes do not invalidate an in-progress control operation. CAT never opens audio.
+
+
+#### 12.8.1 Coordinated receive operating selection — target extension
+
+This target interface implements4.7.5/CL-008-07 through the same station owner and
+typed radio actor. TC-009-005 defines independent verification. It specifies required
+behavior, not an implementation or physical acceptance claim. S1–S7 are local interface
+anchors, not separate requirement identifiers.
+
+**S1. Compatibility and explicit admission.** Existing `/receive`, `/receive/start`,
+`/receive/stop`, `/receive/results`, `/audio/devices` and the canonical target `/radio`,
+`/radio/connect`, `/radio/disconnect`, `/radio/operation` retain their exact version1
+shapes, bounds, authentication, Origin and error semantics. Do not add fields to their
+strict objects. Explicit CAT connection still requires `receive_only_verified=true`
+after4.5's physical precondition; selection never opens a closed configured connection.
+Configured but unready CAT returns radio_unavailable before disturbing receive. Manual,
+control-disabled operation remains CAT-independent.
+
+Add `GET /receive/selection` and `POST /receive/select` through the existing station
+owner for ordinary preferred mode/band selection and targeted cancellation. Keep legacy
+**Next receive mode** next-job-only; separate **Operating mode** uses the new route and
+is the primary digital mode control when supported. Legacy Start during a transition
+returns busy. Matching legacy Stop also clears the owning transition's resume intent;
+stale old-tuple Stop still refuses. Targeted cancel covers no-job/unknown-transition
+cases without weakening legacy Stop identity.
+
+At startup, selection mode may be FT8 or the current digital job mode while band and
+nominal frequency are null. Unknown is neither0 nor guessed20m. Mode action requires
+a committed admitted band or fresh current exact typed readback equal to a uniquely
+band-labelled preferred entry. Otherwise409select_band_first precedes any stop/start,
+device bytes, connection or revision change. A band action supplies its band. Fresh
+readback can resolve that explicit action but does not automatically commit selection
+on a GET. No approximate band classifier or digital-mode inference from RF alone.
+
+**S2. Validation and authority.** These new routes exist only in selected-profile mode;
+environment-only mode returns404not_found. Validation order is route/method, exact
+Origin (GET may omit; mutations require; duplicates/mismatch403), TLS/session401,
+body-size/media/syntax, version/enums/UUID/safe integers, profile403, boot/revisions/
+generation409, capability and current owner admission. Requests are at most1024UTF-8
+bytes with exact keys, duplicate rejection and JSON media under12.8. Version is1; UUIDs
+use the existing profile grammar; counters are0..9007199254740991 without wrapping.
+Errors contain bounded codes, never credentials, raw device strings or native exceptions.
+
+The station owns `operating_revision`, initially0 per boot. Increment once on normal
+admission and once per accepted cancellation/fence. A successful profile revision change
+invalidates captured operations and advances it unless already exhausted; at exhaustion
+keep the terminal counter, invalidate the token and refuse new selections, without
+undoing or blocking the existing successful profile edit. Fact polling does not. Refuse any
+mutation needing another revision if exhausted, before new IDs or effects. Compare
+this revision, profile revision and receive generation atomically at admission. The
+caller UUID is correlation, not authority. Retain only one normal operation and one
+cancel receipt, at most4096encoded metadata bytes total. No command queue. An active
+ordinary operation blocks ordinary commands but never its targeted cancellation/Stop.
+
+**S3. Exact requests and receipts.** `POST /receive/select` has three exact alternatives
+(listed names are JSON keys; all are required):
+
+- Mode: `{v,profile_id,boot_id,command_id,action,profile_revision,generation,operating_revision,mode}`,
+  action=`mode`, mode=`ft4|ft8`.
+- Band: `{v,profile_id,boot_id,command_id,action,profile_revision,generation,operating_revision,band}`,
+  action=`band`, band one of`160m,80m,60m,40m,30m,20m,17m,15m,12m,10m,6m,4m`.
+  Require a preferred entry for the current mode/backend; otherwise409selection_unavailable.
+- Cancel: `{v,profile_id,boot_id,command_id,action,operating_revision,target_command_id}`,
+  action=`cancel`. It targets one current-boot operation, not whichever later job exists.
+  No caller device/PTT fields or guessed job identity; see S5.
+
+Normal admission returns202 exact
+`{v:1,profile_id,boot_id,command_id,operating_revision,accepted:true,phase}`, at most384
+encoded bytes. Its phase is the retained operation phase. Every successful cancel/fence
+receipt uses exactly `phase:cancelled`, an acknowledgement of cancellation/fencing,
+not a phantom normal operation. Identical retained cancel ID+target may return200 with
+the same receipt/revision and no repeated effect. A different body using that retained
+ID returns409state_conflict. Never automatically replay a normal mutation.
+
+Admission means accepted/old publication invalidated, not physical tuning or running
+audio. Post-admission failure is retained in the operation, not converted to invented
+success. All failures use exact `{error:{code,field:null}}`. The additional catalogue is
+400invalid_request/unsupported_version;403forbidden_origin/wrong_profile;
+401unauthorized;404not_found;413request_too_large;415unsupported_media_type;
+409state_conflict/busy/counter_exhausted/select_band_first/selection_unavailable/
+radio_unavailable/receive_only_unverified/operation_superseded. Snapshot overflow uses
+503snapshot_limit. Pre-admission refusal emits no bytes or source invalidation.
+Operation error also permits audio_unavailable, audio_unconfigured, release_failed,
+readback_mismatch, radio_rejected, radio_timeout, radio_failed_close and cancelled;
+map other actual device errors to bounded existing safe enum codes, not exception text.
+
+**S4. Exact snapshot and provenance.** `GET /receive/selection` returns200 exact
+`{v:1,profile_id,boot_id,profile_revision,generation,operating_revision,snapshot_sequence,monotonic_ms,control,selection,available_bands,operation,cancellation,receive,radio}`.
+Atomically capture station state without holding locks across audio/serial waits.
+`snapshot_sequence` is a safe counter advancing on material selection/operation/receive
+identity or published radio fact changes, not heartbeat-age-only changes.
+`monotonic_ms` is safe boot-relative station milliseconds, not browser time. GET has no
+connect/capture/reconcile mutation. Encoded response is at most3072UTF-8bytes; overflow
+returns503snapshot_limit without truncation. Verify the maximum valid shape before
+admitting a candidate; truncating entries is not a size policy.
+
+`control` is exactly `manual|cat` from current saved settings, independent of availability.
+`selection` is exactly `{mode,band,nominal_hz,origin,confirmed_command_id}`: mode ft4|ft8;
+band nullable admitted enum; nominal_hz nullable integer30000..74800000; band/nominal
+are both null or both known and name the same admitted row for that mode. Origin is
+unknown|manual|cat_readback. confirmed_command_id is UUID/null for the last successful
+nominal commit, not a claim that the physical dial remains locked. Current digital job
+mode may populate mode without a frequency claim. At startup, fresh readback may resolve
+an explicit action but does not populate committed band/nominal merely from polling.
+
+`available_bands` is a unique array in the12-band strip order of S3 containing only
+preferred entries admitted for selection.mode/backend. Manual uses the same initial
+table capability. Its nonempty value does not authorize a mode action with unknown band.
+No raw table import is accepted through these routes.
+
+`operation` is null until normal admission, else exactly
+`{command_id,base_revision,revision,action,requested,phase,result,error,monitor_before,monitor_wanted,old_job_id,new_job_id}`.
+Action is mode|band; requested is exact `{mode,band,nominal_hz}` resolved before admission.
+Phase is releasing|applying|restarting|applied|failed|release_blocked|cancelled; result
+pending|success|failed|cancelled; error bounded code/null; monitor fields booleans;
+job fields UUID/null. Applied/success requires nominal commit plus actual Start
+admission when wanted, not running audio. CAT committed/audio Start failed preserves
+that committed selection with failed result. Retain the last normal operation until
+the next normal admission or boot. Its base/admission revisions never change on cancel.
+A completed operation's recorded new job may be stopped only while the current full
+tuple still belongs to it. Historical job IDs are not current-job authority.
+
+`cancellation` is null or exactly `{command_id,target_command_id,revision,result}`,
+result cancelled|fenced|already_cancelled. It is separate from the normal operation.
+`receive` is exactly `{job_id,mode,state,audio_state,owner_released}`: job UUID/null;
+mode spectrum|ft4|ft8|null; state null|running|cancelling|completed|cancelled|failed;
+audio_state closed|opening|running|closing|unavailable. `owner_released` is actual joined
+worker/native-owner release, never a failed state or deadline. Generation is the
+top-level receive generation. Complete source/result/clock objects remain on `/receive`.
+
+`radio` is exactly `{connection_generation,state,error,observations}`. Generation is
+safe integer0 before connection, positive for an actual connection; state is
+closed|connecting|ready|closing|unavailable; error bounded mapped code/null. Observations
+is exactly `{frequency,mode,data,rx_tx,split}`. Each fact is exactly
+`{value,query_sequence,observed_at_ms,confirmed}`. Unknown has all three nullable fields
+null and confirmed=false. Known frequency is integer30000..74800000; mode value exact
+`{mode,filter}` with mode USB|LSB|uppercase two-hex unknown and filter0..255 (only1..3
+admitted for requested readiness); data exact `{enabled,filter}`, boolean/0..3;
+rx_tx RX|TX; split boolean. Query sequence is a positive safe integer per connection;
+observed_at_ms is boot-relative integer0..snapshot.monotonic_ms. Clear facts before any
+new connection's query. Closed/closing/unavailable marks retained facts unconfirmed,
+preserving their dated value/query provenance. Cached values do not establish readiness.
+
+**S5. Cancellation, unknown outcomes and fencing.** Atomically distinguish:
+
+- Unseen command: expected operating revision equals current, target unseen, no different
+  active operation. Increment revision, retain result=fenced and acknowledge phase=cancelled.
+  Do not create/replace a normal operation or stop an unrelated job. A delayed original
+  POST using its old base then returns409state_conflict before effects. Empty GET alone
+  cannot prove an original POST will never arrive; explicit fencing resolves that case.
+- Last normal command: target matches it; expected revision equals current OR its base;
+  current still equals its admission revision, with no intervening operation/profile
+  edit/fence. Clear resume and invalidate token synchronously, advance revision and
+  cancel pending typed work/its own current job only. Sent writes may remain applied;
+  no restoring writes. Retained normal phase/result becomes cancelled, monitor_wanted=false,
+  original admission revision retained; cancel receipt carries the new revision. Every
+  callback checks the live token, not just admission revision.
+- Superseded target: another operation/profile edit/fence advanced revision. Return
+  409operation_superseded without effects on the later job. A fresh GET showing a newer
+  revision proves the old base cannot admit. Exact retained cancel duplicates are
+  idempotent and do not advance a revision, resend bytes or cancel another generation.
+
+A read initiated after an unknown outcome may clear its barrier when it shows the
+matching operation or revision greater than the original base. Same revision/absent
+command keeps it blocked until an explicit fence succeeds. A pre-intent read cannot
+clear the barrier even if delivered late. Changed boot invalidates old POST; discard
+old context and fetch current profile/receive before control. No automatic mutation
+replay or Stop/Start loop. Matching legacy Stop clears owning-transition resume as well
+as its job; stale tuple refuses. When no matching job exists during a transition, the
+operating Stop targets that command through cancel. Successful profile PUT keeps its
+own persistence contract but invalidates the operation before later write/restart and
+advances operating revision. Explicit normal selections desire Monitor ON; cancel OFF.
+
+**S6. Same actor, per-query truth.** The aggregate `Observation.observed_at` cannot
+freshen unqueried cached fields. Extend the existing actor/executor's safe completion
+boundary with connection generation, positive query sequence, typed query kind, typed
+decoded value and monotonic observation time. Emit only after a valid addressed reply
+consumed by that query; ACK, echo, broadcast or setter completion is not a fresh fact.
+Each query updates only its fact. On failed setter/timeout, mark every field possibly
+touched by the composite unconfirmed immediately, retaining original dated values.
+Successful final ReceiveSetup ReadMode/ReadData/ReadFrequency confirms those three
+actual facts and selection only if all match this operation. It never freshens RX/split.
+
+The serial actor alone owns physical identity/bytes/connection generation; the existing
+Recording receive state owns operation token, captured profile/receive/operating identity,
+lease, cancellation and publication. The station context retains the same actor handle.
+Capture identity under its locks, release them, await actual release/CAT, then compare
+token/revisions before commit/restart. Never execute bytes or callbacks while holding
+profile/Recording locks; no owner calls another while holding its own I/O lock.
+Existing read-only refresh remains at most1Hz and does not retry setters. `/radio`
+keeps its dated aggregate version1 shape; per-field facts are on this new endpoint.
+The existing actor lease plus transition lease returns busy to conflicting operations,
+without a queue. Direct setters must use the same RF-context invalidation/release
+barrier; keep those generic bindings unsupported until it exists. The initial UI
+exposes mode/band only through coordinated selection, with no raw setter bypass.
+
+**S7. Discovery, scheduling and measured traffic.** After authenticated current profile/
+status/receive, discover with GET selection.404not_found,400unsupported_version or a
+well-formed unsupported version disables new operating controls with an explanation;
+legacy Start/Stop/Next receive and signal controls continue. Invalid schema or identity
+is stale/error, not silent manual fallback. No existing status/WebSocket envelope
+changes or unsolicited stream. Polling never opens devices or asks for permission.
+
+At most one selection read and one ordinary mutation are pending in the browser,
+sharing existing HTTP priority. Status/control precede optional visualization/results;
+no added result parallelism. Thin/Off passive selection polling is no faster than8s,
+pending-operation polling4s; Detailed fast-link passive2s/pending500ms. One explicit
+reconciliation read is allowed when needed, not a retry loop. A stalled read prevents
+further optional polling; Stop is not held behind a result read. No audio/fixture data
+is transported. Existing32kbit/s Thin/Off <=3000B/s mean each direction and <=2s visible
+status acceptance must include actual allowed selection polls and mode/band traffic,
+all TLS/headers/transport, on the exact candidate. Body arithmetic is not bandwidth
+proof. Fast-link cadence is not a32kbit/s promise.
 
 
 ## 13. FT8 sample recordings and provenance

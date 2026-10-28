@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 6392b35de3be02c440d4e30896b1af97c20a66fb2c7663a33637fc0bc32e933d
+// Canonical FSD slices SHA256: 16ca376306f570171b9d3cb5d55f6c87d3ccf4e29f7dede82332b7a20083fe15
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -1190,4 +1190,9 @@ package WstxRecordingReceive {
          authoritative RGB palette and prescribed integer geometry. No implicit changes
          to wire/schema/state/units/bounds/authority/errors/oracles, extra dependencies,
          speculative FFT wrapper, device capabilities or transmit lifecycle. */
+    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+         WstxOperatingReceive. This companion retains the unchanged legacy strict
+         receive/radio/result shapes and owner/cancellation/source contracts.
+         New selection uses the same authority, explicit actual release before
+         setters/new capture and a fresh context, not a second pipeline or actor. */
 }

@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: a460eddff53b79940a69767d8ccc9af972f014df64be3f198d06fd9308851154
+// Canonical FSD slices SHA256: 188e39d7a8671fb60722a94aa8be20ce732373b1cc3582a29150579da02665f9
 package WstxOperatingLayout {
     private import ScalarValues::*;
 
@@ -43,7 +43,8 @@ package WstxOperatingLayout {
              With liveResultInterfaceAvailable,12.8 explicit Start/Stop and next-job
              spectrum/FT4/FT8 selection use the saved endpoint/current revision.
              Device enumeration requires an operator action; viewing settings or
-             choosing a mode never opens audio. Actual12.7 records alone populate
+             choosing Next receive mode never opens audio. Separate operating mode/band
+             behavior is WstxOperatingReceive/FSD4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
              no fabricated UTC/DT, message text or resolved hash. Full source/job/
              generation/sequence binds each row; new identity clears rows, stale
@@ -161,7 +162,9 @@ attribute def ActivityOrdering {
             mayUpdateLiveProgress == (otherwiseValid and matchingLiveOwner) and
             not updatesRecordedProgress
         }
-        doc /* FSD4.7.1 and TC009004. Intervening events are relative to request
+        doc /* FSD4.7.1 and TC009004 legacy Start/Stop only. Coordinated
+             selection unknown outcomes use FSD12.8.1 fencing, not this legacy guard.
+             Intervening events are relative to request
              initiation. Otherwise-valid includes existing station/source/job/
              generation and wire validation rules. Rejected stale pages change
              neither lifecycle/error state nor cursors. A pre-mutation read is not
@@ -318,4 +321,9 @@ attribute def ActivityOrdering {
     }
     dependency agreedDesignCase from agreedDesignPresentation
         to WstxRequirements::'TC-007-002';
+    doc /* FSD4.7.5/12.8.1 coordinated operating selection is modeled by
+         WstxOperatingReceive. This companion retains the unchanged legacy strict
+         receive/radio/result shapes and owner/cancellation/source contracts.
+         New selection uses the same authority, explicit actual release before
+         setters/new capture and a fresh context, not a second pipeline or actor. */
 }
