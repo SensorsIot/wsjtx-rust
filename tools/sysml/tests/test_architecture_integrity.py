@@ -17,7 +17,14 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         cls.cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         cls.source = (tool.MODELS / "Architecture.sysml").read_text(encoding="utf-8")
         cls.requirements = tool.MODELS / "Requirements.sysml"
-        cls.accepted = tool.validate([cls.requirements, tool.MODELS / "Architecture.sysml"], cls.cache, inventory=True)
+        cls.accepted = tool.validate(cls.model_paths(), cls.cache, inventory=True)
+
+    @classmethod
+    def model_paths(cls, architecture=None):
+        original = tool.MODELS / "Architecture.sysml"
+        companions = sorted(path for path in tool.MODELS.glob("*.sysml")
+                            if path not in (cls.requirements, original))
+        return [cls.requirements, architecture or original, *companions]
 
     def test_complete_resolved_deployment(self):
         self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
@@ -31,11 +38,34 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "Architecture.sysml"
             model.write_text(mutated, encoding="utf-8")
-            result = tool.validate([self.requirements, model], self.cache, inventory=True)
+            result = tool.validate(self.model_paths(model), self.cache, inventory=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("syntax/name/semantic validation passed", result.stdout)
         with self.assertRaisesRegex(ValueError, diagnostic):
             tool.architecture_integrity(result.stdout)
+
+    def test_companion_property_type_resolves_without_changing_architecture(self):
+        mutated = self.source.replace("package WstxArchitecture {", "package WstxArchitecture {\n"
+                                      "    attribute propertyOwnerProbe : WstxProfiles::Settings;", 1)
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "Architecture.sysml"
+            model.write_text(mutated, encoding="utf-8")
+            result = tool.validate(self.model_paths(model), self.cache, inventory=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("syntax/name/semantic validation passed", result.stdout)
+        self.assertEqual(tool.architecture_integrity(result.stdout),
+                         tool.architecture_integrity(self.accepted.stdout))
+
+    def test_undefined_property_type_fails_full_validation(self):
+        mutated = self.source.replace("package WstxArchitecture {", "package WstxArchitecture {\n"
+                                      "    attribute propertyOwnerProbe : WstxProfiles::UndefinedPropertyType;", 1)
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "Architecture.sysml"
+            model.write_text(mutated, encoding="utf-8")
+            result = tool.validate(self.model_paths(model), self.cache, inventory=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Couldn't resolve reference to Type 'WstxProfiles::UndefinedPropertyType'", result.stdout)
+        self.assertNotIn("syntax/name/semantic validation passed", result.stdout)
 
     def test_removed_physical_delegation_is_legal_sysml_but_fails_integrity(self):
         self.reject("connection webDelegation connect clientBoundary to station.web.client;", "", "missing required connection")
