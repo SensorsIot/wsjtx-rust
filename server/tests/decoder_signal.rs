@@ -829,6 +829,50 @@ fn resource_line(reader: &mut impl BufRead) -> Result<Option<Vec<u8>>, String> {
         }
     }
 }
+fn resource_guardian_before_probes(case: &str) {
+    assert!(matches!(case, "matrix" | "busy"));
+    assert_eq!(
+        std::env::var("WSTX_RESOURCE_GUARDIAN_CASE").as_deref(),
+        Ok(case),
+        "resource selection requires its exact guardian context before probes"
+    );
+    let nonce = std::env::var("WSTX_RESOURCE_GUARDIAN_NONCE")
+        .expect("resource selection requires a guardian nonce before probes");
+    assert!(
+        nonce.len() == 32
+            && nonce
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "guardian nonce must be32 lowercase hexadecimal characters"
+    );
+    let ready = serde_json::to_vec(&serde_json::json!({
+        "v":1,"case":case,"nonce":nonce,"pid":std::process::id()
+    }))
+    .unwrap();
+    assert!(ready.len() <= 512);
+    eprintln!("WSTX_GUARDIAN_READY {}", String::from_utf8(ready).unwrap());
+    std::io::stderr().flush().unwrap();
+    let stdin = std::io::stdin();
+    let line = resource_line(&mut stdin.lock())
+        .expect("bounded guardian GO line")
+        .expect("guardian stdin closed before GO");
+    let payload = line
+        .strip_prefix(b"WSTX_GUARDIAN_GO ")
+        .expect("guardian GO prefix");
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct GuardianGo {
+        v: u8,
+        case: String,
+        nonce: String,
+    }
+    let go: GuardianGo = serde_json::from_slice(payload).expect("guardian GO JSON");
+    assert_eq!(
+        (go.v, go.case.as_str(), go.nonce.as_str()),
+        (1, case, nonce.as_str()),
+        "guardian GO must have exactly the expected version, case and nonce"
+    );
+}
 fn resource_emit(value: Value) {
     let bytes = serde_json::to_vec(&value).unwrap();
     assert!(bytes.len() <= 8000);
@@ -937,7 +981,7 @@ fn resource_metrics_source_identity() -> Value {
     let identity: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         identity["canonical_lf_sha256"],
-        "a42a6cfc663b43b75936e1a663974eacdc6eafeeea1a18bdf73c3cbb7114a0d8",
+        "1d94a699e6f219c03a869313b7dd0f0e0d3eeabd8f6911a4188134e1c23e403e",
         "reviewed named metrics source; only CRLF/LF representation may differ"
     );
     identity
@@ -1152,6 +1196,7 @@ fn resource_concurrency_qualification_rejects_serial_work_and_clock_faults() {
     assert!(std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2], &valid[..3])).is_err());
 }
 fn resource_runtime_parent() {
+    resource_guardian_before_probes("matrix");
     assert!(
         cfg!(windows) && usize::BITS == 64,
         "resource acceptance requires recorded64bit Windows host"
@@ -1747,6 +1792,7 @@ fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &st
 #[test]
 #[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
 fn resource_busy_live_overlap_and_pending_cancel() {
+    resource_guardian_before_probes("busy");
     assert!(
         cfg!(windows) && usize::BITS == 64,
         "recorded Windows resource diagnostic"

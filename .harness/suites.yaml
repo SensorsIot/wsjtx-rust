@@ -186,7 +186,13 @@
 
 - suite: decoder-quality
   cost: 2
-  run: cargo test --release --locked --test decoder_signal -- --test-threads=1
+  run: |
+    set -euo pipefail
+    run_dir=$(mktemp -d "${HARNESS_LEDGER_DIR:?}/decoder-resource.XXXXXX")
+    python -m unittest discover -s tools -p test_windows_resource_job.py -q
+    python -m unittest discover -s tools -p test_windows_process_metrics.py -q
+    cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
+    python tools/windows_resource_job.py run --case matrix --artifact-receipt "$run_dir/artifact.json"
   paths:
   - server/src/decoder/
   - server/src/lib.rs
@@ -196,6 +202,10 @@
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
+  - tools/windows_resource_job.py
+  - tools/test_windows_resource_job.py
+  - tools/windows_process_metrics.py
+  - tools/test_windows_process_metrics.py
   select:
   - server/src/decoder/
   - server/src/lib.rs
@@ -205,7 +215,11 @@
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
-  needs: Pinned Rust and Python. Windows PC; all frozen decoder waveform, quality, rejection and runtime cases in release mode. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 must name verified reference recordings; optional verified WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION reuse immutable inputs. No diagnostic case filter, radio, audio device or network download.
+  - tools/windows_resource_job.py
+  - tools/test_windows_resource_job.py
+  - tools/windows_process_metrics.py
+  - tools/test_windows_process_metrics.py
+  needs: Pinned Rust and Python, 64-bit Windows. Preserve all original13 quality cases plus cleanup/concurrency controls; one release Cargo producer binds all14 ordinary named passes and the exact artifact, then the same original runtime case runs under the owned Job with16 configurations/40 workers/160 rounds/400 completions. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
   cost: 2
