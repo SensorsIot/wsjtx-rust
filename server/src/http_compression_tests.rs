@@ -38,21 +38,108 @@ async fn standard_layer_supports_one_existing_axum_response() {
     assert_eq!(&bytes[..3], &[0x1f, 0x8b, 8]);
 }
 
-#[tokio::test]
-async fn pinned_library_matches_all_49_independent_negotiations() {
-    let fsd = include_str!("../../docs/WSTX Rust FSD.md");
-    let mut count = 0;
-    for row in fsd
-        .lines()
-        .filter(|line| line.starts_with("| ") && line.contains(" | `["))
-    {
-        let columns: Vec<_> = row.split('|').collect();
-        if columns.len() != 5 || columns[1].trim().parse::<usize>().is_err() {
+// Proves: CL-003-08, CL-008-07; TC-009-005 case8. Read only the reviewed,
+// fixed-shape SysML oracle declarations, never the implementation negotiator.
+fn canonical_negotiations(source: &str) -> Result<Vec<(Vec<String>, &'static str)>, &'static str> {
+    fn value<'a>(line: Option<&'a str>, prefix: &str) -> Result<&'a str, &'static str> {
+        line.and_then(|line| line.strip_prefix(prefix))
+            .and_then(|line| line.strip_suffix(';'))
+            .ok_or("malformed canonical negotiation field")
+    }
+    for (name, expected) in [
+        (
+            "negotiationSourceSha256",
+            "329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56",
+        ),
+        (
+            "originalVectorArtifactSha256",
+            "d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9",
+        ),
+    ] {
+        let prefix = format!("attribute {name} : String = ");
+        let mut declarations = source
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with(&prefix));
+        let raw = value(declarations.next(), &prefix)?;
+        let actual: String =
+            serde_json::from_str(raw).map_err(|_| "malformed oracle provenance")?;
+        if actual != expected || declarations.next().is_some() {
+            return Err("missing, changed or duplicate oracle provenance");
+        }
+    }
+    let mut lines = source.lines().map(str::trim);
+    let mut vectors = Vec::new();
+    while let Some(line) = lines.next() {
+        if !line.contains(": NegotiationOracleVector") {
             continue;
         }
+        let name = line
+            .strip_prefix("attribute negotiation")
+            .and_then(|line| line.strip_suffix(" : NegotiationOracleVector {"))
+            .ok_or("malformed canonical negotiation declaration")?;
+        let ordinal: usize = name.parse().map_err(|_| "invalid negotiation ordinal")?;
+        if name != format!("{ordinal:02}") || ordinal != vectors.len() + 1 {
+            return Err("missing, duplicate or reordered negotiation case");
+        }
+        let case_id = value(lines.next(), "attribute :>> caseId = ")?
+            .parse::<usize>()
+            .map_err(|_| "invalid negotiation case ID")?;
+        if case_id != ordinal {
+            return Err("negotiation declaration and case ID differ");
+        }
+        let encoded: String = serde_json::from_str(value(
+            lines.next(),
+            "attribute :>> orderedRawHeaderFieldsJson = ",
+        )?)
+        .map_err(|_| "malformed SysML oracle string")?;
         let fields: Vec<String> =
-            serde_json::from_str(columns[2].trim().trim_matches('`')).unwrap();
-        let expected = columns[3].trim();
+            serde_json::from_str(&encoded).map_err(|_| "invalid ordered raw-header array")?;
+        let expected = match value(
+            lines.next(),
+            "attribute :>> expected = HttpCodingSelection::",
+        )? {
+            "gzip" => "gzip",
+            "identity" => "identity",
+            "noAcceptable" => "406",
+            _ => return Err("unknown independently specified outcome"),
+        };
+        if lines.next() != Some("}") {
+            return Err("extra or missing negotiation fields");
+        }
+        vectors.push((fields, expected));
+    }
+    if vectors.len() != 49 {
+        return Err("all 49 canonical negotiation cases are required");
+    }
+    Ok(vectors)
+}
+
+#[test]
+fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
+    let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
+    assert_eq!(canonical_negotiations(source).unwrap().len(), 49);
+    for damaged in [
+        source.replace("attribute negotiation01 :", "attribute omitted01 :"),
+        source.replace("attribute :>> caseId = 2;", "attribute :>> caseId = 1;"),
+        source.replace(
+            "HttpCodingSelection::noAcceptable;",
+            "HttpCodingSelection::unknown;",
+        ),
+        source.replace(
+            "329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56",
+            "changed",
+        ),
+    ] {
+        assert!(canonical_negotiations(&damaged).is_err());
+    }
+}
+
+#[tokio::test]
+async fn pinned_library_matches_all_49_independent_negotiations() {
+    let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
+    let mut count = 0;
+    for (fields, expected) in canonical_negotiations(source).unwrap() {
         let mut request = Request::new(Body::empty());
         for field in fields {
             request

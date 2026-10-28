@@ -1,4 +1,4 @@
-//! Original FSD 4.4/6.4/12.6 independent byte/math/state oracles. Cost 2, Windows PC; no hardware.
+//! Canonical SysML recording/display independent byte/math/state oracles. Cost 2, Windows PC; no hardware.
 use super::*;
 use std::cell::Cell;
 thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
@@ -669,42 +669,105 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
 }
 
-// Proves: CL-008-07; TC-009-005 case2. Expectations are parsed from the separately
-// reviewed authoritative FSD table, never generated from the implementation table.
-#[test]
-fn selection_preferred_entries_match_complete_canonical_integer_table() {
-    let text = include_str!("../../docs/WSTX Rust FSD.md");
-    let section = text
-        .split("#### 4.7.5 ")
-        .nth(1)
-        .unwrap()
-        .split("## 5.")
-        .next()
-        .unwrap();
-    let mut rows = 0;
-    for line in section.lines().filter(|line| line.starts_with("| ")) {
-        let cells: Vec<_> = line.trim_matches('|').split('|').map(str::trim).collect();
-        if cells.len() != 3 || !selection::BANDS.contains(&cells[0]) {
+// Proves: CL-008-07; TC-009-005 case2. Independent canonical SysML data,
+// never generated from the implementation's band/frequency table.
+type CanonicalBandEntry = (String, u64, Option<u64>);
+
+fn canonical_preferred_entries(
+    source: &str,
+) -> std::result::Result<Vec<CanonicalBandEntry>, &'static str> {
+    fn value<'a>(
+        line: Option<&'a str>,
+        prefix: &str,
+    ) -> std::result::Result<&'a str, &'static str> {
+        line.and_then(|line| line.strip_prefix(prefix))
+            .and_then(|line| line.strip_suffix(';'))
+            .ok_or("malformed canonical preferred-band field")
+    }
+    let prefix = "attribute preferredTableSourceSha256 : String = ";
+    let mut pins = source
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with(prefix));
+    let pin: String = serde_json::from_str(value(pins.next(), prefix)?)
+        .map_err(|_| "invalid preferred-table source pin")?;
+    if pin != "e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4"
+        || pins.next().is_some()
+    {
+        return Err("missing, changed or duplicate preferred-table source pin");
+    }
+    let mut lines = source.lines().map(str::trim);
+    let mut rows = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(line) = lines.next() {
+        if !line.contains(": PreferredBandEntry") {
             continue;
         }
-        assert_eq!(selection::BANDS[rows], cells[0]);
-        rows += 1;
-        for (mode, value) in [("ft8", cells[1]), ("ft4", cells[2])] {
-            let expected = if value == "-" {
-                None
-            } else {
-                Some(value.parse::<u64>().unwrap())
-            };
-            assert_eq!(
-                selection::frequency(mode, cells[0]),
-                expected,
-                "{mode} {}",
-                cells[0]
-            );
+        let label = line
+            .strip_prefix("attribute preferred")
+            .and_then(|line| line.strip_suffix(" : PreferredBandEntry {"))
+            .ok_or("malformed canonical preferred-band declaration")?;
+        let band: String = serde_json::from_str(value(lines.next(), "attribute :>> band = ")?)
+            .map_err(|_| "invalid canonical band label")?;
+        if band.is_empty() || band != label || !seen.insert(band.clone()) {
+            return Err("missing, duplicate or mismatched band label");
+        }
+        let ft8 = value(lines.next(), "attribute :>> ft8Hz = ")?
+            .parse::<u64>()
+            .map_err(|_| "invalid FT8 integer frequency")?;
+        let ft4 = match value(lines.next(), "attribute :>> ft4Hz = ")? {
+            "null" => None,
+            number => Some(
+                number
+                    .parse::<u64>()
+                    .map_err(|_| "invalid FT4 integer frequency")?,
+            ),
+        };
+        if ft8 == 0 || ft4 == Some(0) || lines.next() != Some("}") {
+            return Err("extra, missing or zero-valued preferred-band field");
+        }
+        rows.push((band, ft8, ft4));
+    }
+    if rows.len() != 12 || rows.iter().filter(|row| row.2.is_none()).count() != 2 {
+        return Err("all 12 band rows and both unsupported FT4 cells are required");
+    }
+    Ok(rows)
+}
+
+#[test]
+fn canonical_preferred_table_rejects_missing_malformed_and_duplicate_data() {
+    let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
+    assert_eq!(canonical_preferred_entries(source).unwrap().len(), 12);
+    for damaged in [
+        source.replace("attribute preferred160m :", "attribute omitted160m :"),
+        source.replace(
+            "attribute :>> band = \"80m\";",
+            "attribute :>> band = \"160m\";",
+        ),
+        source.replace(
+            "attribute :>> ft8Hz = 1840000;",
+            "attribute :>> ft8Hz = invalid;",
+        ),
+        source.replace("attribute :>> ft4Hz = null;", "attribute :>> ft4Hz = 1;"),
+    ] {
+        assert!(canonical_preferred_entries(&damaged).is_err());
+    }
+}
+
+#[test]
+fn selection_preferred_entries_match_complete_canonical_integer_table() {
+    let rows = canonical_preferred_entries(include_str!("../../docs/sysml/OperatingReceive.sysml"))
+        .unwrap();
+    assert_eq!(selection::BANDS.len(), rows.len());
+    for (index, (band, ft8, ft4)) in rows.iter().enumerate() {
+        assert_eq!(selection::BANDS[index], band);
+        for (mode, expected) in [("ft8", Some(*ft8)), ("ft4", *ft4)] {
+            assert_eq!(selection::frequency(mode, band), expected, "{mode} {band}");
         }
     }
     assert_eq!(
-        rows, 12,
+        rows.len(),
+        12,
         "the entire independent table, including both unsupported cells, was tested"
     );
 }

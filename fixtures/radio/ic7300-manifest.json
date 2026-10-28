@@ -235,7 +235,7 @@
     "hardware_acceptance": "Controlled receive/CAT plan and separate operator consent remain required; no RF testing performed."
   },
   "ownership_boundary": {
-    "canonical_functional_contract": "docs/WSTX Rust FSD.md; this manifest does not replace or amend it.",
+    "canonical_functional_contract": "docs/sysml/ProductScope.sysml and docs/sysml/RadioIO.sysml; this manifest does not replace or amend the canonical SysML model.",
     "issue_8": "Device producer, device-format adaptation and independent CAT adapter preparation.",
     "consume_issue_6": "Shared immutable sample blocks, source/profile/job identity, sample positions, discontinuity and bounded receive lifecycle.",
     "consume_issue_7": "Common receive preprocessing and any required rate conversion; no adapter-owned modem resampler.",

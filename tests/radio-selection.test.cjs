@@ -1,5 +1,5 @@
 'use strict';
-// Independent oracle: FSD4.7.5/12.8.1. Disposable authenticated TLS station only.
+// Independent oracle: canonical SysML receive-selection contract. Disposable authenticated TLS station only.
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
@@ -119,9 +119,47 @@ test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000
   }
 });
 
+// Read the reviewed fixed-shape SysML oracle, never candidate negotiation output.
+function canonicalNegotiations(source){
+  const lines=source.split(/\r?\n/).map(line=>line.trim()),vectors=[];
+  const value=(line,prefix)=>{assert.ok(line?.startsWith(prefix)&&line.endsWith(';'),'malformed canonical negotiation field');return line.slice(prefix.length,-1);};
+  for(const [name,expected]of [
+    ['negotiationSourceSha256','329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56'],
+    ['originalVectorArtifactSha256','d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9'],
+  ]){
+    const prefix=`attribute ${name} : String = `,pins=lines.filter(line=>line.startsWith(prefix));
+    assert.equal(pins.length,1,'one independently pinned provenance value');assert.equal(JSON.parse(value(pins[0],prefix)),expected);
+  }
+  for(let index=0;index<lines.length;index++){
+    const line=lines[index];if(!line.includes(': NegotiationOracleVector'))continue;
+    const match=/^attribute negotiation(\d{2}) : NegotiationOracleVector \{$/.exec(line);
+    assert.ok(match,'malformed canonical negotiation declaration');const id=Number(match[1]);
+    assert.equal(id,vectors.length+1,'all cases occur once in canonical order');
+    assert.equal(value(lines[++index],'attribute :>> caseId = '),String(id),'declaration and case ID agree');
+    const encoded=JSON.parse(value(lines[++index],'attribute :>> orderedRawHeaderFieldsJson = '));assert.equal(typeof encoded,'string');
+    const fields=JSON.parse(encoded);assert.ok(Array.isArray(fields)&&fields.every(field=>typeof field==='string'),'ordered raw-header string array');
+    const outcome=value(lines[++index],'attribute :>> expected = HttpCodingSelection::');assert.ok(['gzip','identity','noAcceptable'].includes(outcome),'known independent outcome');
+    assert.equal(lines[++index],'}','no extra or missing oracle fields');
+    vectors.push({fields,expected:outcome==='noAcceptable'?'406':outcome});
+  }
+  assert.equal(vectors.length,49,'all 49 frozen cases must execute');return vectors;
+}
+
+test('TC-009-005 SysML negotiation reader refuses missing malformed and duplicate oracles',async()=>{
+  const source=await fs.readFile(path.join(__dirname,'../docs/sysml/OperatingReceive.sysml'),'utf8');
+  assert.equal(canonicalNegotiations(source).length,49);
+  for(const damaged of [
+    source.replace('attribute negotiation01 :','attribute omitted01 :'),
+    source.replace('attribute :>> caseId = 2;','attribute :>> caseId = 1;'),
+    source.replace('attribute :>> orderedRawHeaderFieldsJson = "[]";','attribute :>> orderedRawHeaderFieldsJson = "{bad}";'),
+    source.replace('HttpCodingSelection::noAcceptable;','HttpCodingSelection::unknown;'),
+    source.replace('329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56','changed'),
+  ])assert.throws(()=>canonicalNegotiations(damaged));
+});
+
 test('TC-009-005 H1 all 49 ordered header cases use the real authenticated TLS router',{timeout:30000},async t=>{
-  const {request}=await station(t),source=await fs.readFile(path.join(__dirname,'../docs/WSTX Rust FSD.md'),'utf8');
-  const vectors=source.split('\n').filter(line=>/^\| \d+ \| `\[/.test(line)).map(line=>{const columns=line.split('|');return {fields:JSON.parse(columns[2].trim().slice(1,-1)),expected:columns[3].trim()};});
+  const {request}=await station(t),source=await fs.readFile(path.join(__dirname,'../docs/sysml/OperatingReceive.sysml'),'utf8');
+  const vectors=canonicalNegotiations(source);
   assert.equal(vectors.length,49);const identity=await request('/profile');assert.equal(identity.status,200);
   for(const [index,vector]of vectors.entries()){
     const actual=await request('/profile','GET',undefined,vector.fields.length?{'Accept-Encoding':vector.fields}:{});
