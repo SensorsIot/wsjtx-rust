@@ -85,6 +85,79 @@ fn envelope_cancellation_matches_scalar_convolution_and_edges() {
         }
     }
 }
+// Proves: CL-007-04; TC-004-003. The existing direct-convolution positive stays intact.
+#[test]
+#[cfg(not(debug_assertions))]
+fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
+    use crate::decoder::resource_observer::{self, Phase};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        let frame = mode.symbol_frames() * mode.symbol_count();
+        let wave = (0..frame)
+            .map(|k| {
+                let phase = 2. * PI * 1000. * (k + 1) as f64 / 12000. + 0.31;
+                [phase.cos() as f32, phase.sin() as f32]
+            })
+            .collect::<Vec<_>>();
+        let start = 13;
+        let mut original = vec![0.123f32; frame + 29];
+        for (k, q) in wave.iter().enumerate() {
+            let t = k as f64 / 12000.;
+            original[start + k] = ((0.35 + 0.1 * (2. * PI * 0.7 * t).cos()) * q[0] as f64
+                + (0.2 - 0.05 * (2. * PI * 0.4 * t).sin()) * q[1] as f64
+                + 0.001 * (2. * PI * 3000. * t + 0.6).cos())
+                as f32;
+        }
+        for scalar in [false, true] {
+            let mut subtractor = Subtractor::new(mode, scalar).unwrap();
+            let mut actual = original.clone();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let observed =
+                resource_observer::install(cancel.clone(), Some(Phase::SubtractionForward));
+            let is_cancelled = || cancel.load(Ordering::SeqCst);
+            let mut budget = CpuBudget::new(&is_cancelled);
+            assert_eq!(
+                complete(subtractor.subtract(&mut actual, start, &wave, &mut budget)),
+                Err(DecodeError::Cancelled)
+            );
+            assert_eq!(
+                observed.report().counts[Phase::SubtractionForward as usize],
+                1
+            );
+            assert_eq!(
+                observed.report().counts[Phase::SubtractionCommit as usize],
+                0
+            );
+            assert_eq!(actual, original);
+            drop(observed);
+            let never = || false;
+            let mut positive_budget = CpuBudget::new(&never);
+            complete(subtractor.subtract(&mut actual, start, &wave, &mut positive_budget)).unwrap();
+            let radius = if mode == Mode::Ft8 { 2000 } else { 700 };
+            for k in [
+                0,
+                1,
+                radius - 1,
+                radius,
+                radius + 1,
+                frame / 2,
+                frame - radius - 2,
+                frame - radius - 1,
+                frame - 2,
+                frame - 1,
+            ] {
+                assert!(
+                    (actual[start + k] as f64 - expected_at(&original, start, &wave, k, mode))
+                        .abs()
+                        <= 1e-7
+                );
+            }
+        }
+    }
+}
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn cancelled_or_incomplete_subtraction_leaves_input_unchanged() {

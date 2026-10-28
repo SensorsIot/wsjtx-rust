@@ -9,6 +9,64 @@ struct PublicationKey {
     frequency: f64,
     reserved_bytes: usize,
 }
+
+#[cfg(test)]
+#[test]
+fn resource_history_capacity_counts_reserved_key_storage() {
+    let mut history = DecodeState::new_live(Mode::Ft8);
+    let mut publications = 0;
+    for index in 0..2048usize {
+        let bits = std::array::from_fn(|j| {
+            if j < 11 {
+                ((index >> (10 - j)) & 1) as u8
+            } else {
+                0
+            }
+        });
+        let record = Decode {
+            payload: super::unpack(&bits),
+            start_frame: 1000,
+            frequency_hz: 1000.,
+            snr_db: Some(-20.),
+        };
+        history
+            .publish_if_new(&record, &mut |_| {
+                publications += 1;
+                Ok(())
+            })
+            .unwrap();
+    }
+    assert_eq!(publications, 2048);
+    assert_eq!(history.available_count(), 2048);
+    assert!(history.encoded_bytes() <= 2 * 1024 * 1024);
+    let keys_reserved = history.published.capacity() * std::mem::size_of::<PublicationKey>();
+    let strings_reserved = history
+        .published
+        .iter()
+        .map(|key| key.payload.capacity())
+        .sum::<usize>();
+    assert!(keys_reserved > 0 && strings_reserved >= 2048 * 77);
+    eprintln!(
+        "RESOURCE_CAPACITY {}",
+        serde_json::json!({
+            "owner":"modem_history", "records":2048,"key_vector_capacity":history.published.capacity(),
+            "key_vector_reserved_bytes":keys_reserved,"payload_reserved_bytes":strings_reserved,
+            "encoded_charge_bytes":history.encoded_bytes(),"is_decoded_success":false,
+            "whole_workspace_proved":false,
+        })
+    );
+    let extra = Decode {
+        payload: super::unpack(&[1; 77]),
+        start_frame: 1000,
+        frequency_hz: 1000.,
+        snr_db: None,
+    };
+    assert_eq!(
+        history.publish_if_new(&extra, &mut |_| panic!("over-cap record cannot publish")),
+        Err(DecodeError::DecodeLimit)
+    );
+    assert_eq!(history.available_count(), 2048);
+}
 /// Modem observations only: no station/source identity, wire cursor or worker authority.
 pub struct DecodeState {
     mode: Mode,

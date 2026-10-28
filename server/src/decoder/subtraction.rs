@@ -88,6 +88,8 @@ impl Subtractor {
         }
         self.forward
             .process_with_scratch(&mut self.buffer, &mut self.scratch);
+        #[cfg(test)]
+        super::resource_observer::hit(super::resource_observer::Phase::SubtractionForward);
         budget.checkpoint().await?;
         for (z, &filter) in self.buffer.iter_mut().zip(&self.kernel) {
             *z *= filter;
@@ -105,6 +107,8 @@ impl Subtractor {
             let value = 2. * (q[0] as f64 * self.buffer[k].re - q[1] as f64 * self.buffer[k].im);
             samples[start + k] -= value as f32;
         }
+        #[cfg(test)]
+        super::resource_observer::hit(super::resource_observer::Phase::SubtractionCommit);
         budget.checkpoint().await?;
         Ok(())
     }

@@ -9,6 +9,8 @@ mod history;
 mod payload;
 mod physical_ft4;
 mod physical_sync;
+#[cfg(test)]
+mod resource_observer;
 mod search;
 mod subtraction;
 mod synchronization;

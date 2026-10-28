@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "payload77": "00000000000000000000000000100000010011011110111100011010100010100001100110001",
+  "samples": [
+    {"mode": "ft8", "id": "ft8-strong-00", "frames": 180000, "sha256": "02525d0ebe7661935d52e60f169501aae2428983a72a1e1a0c8087ddce322d51"},
+    {"mode": "ft4", "id": "ft4-strong-00", "frames": 90000, "sha256": "17efa54767abee26df1116894f84c56c014135ac6aabf17277358d6ca55d7f36"}
+  ],
+  "fec": {
+    "recipe": "174 little-endian float32; index0=-12; every other index=1",
+    "sha256": "a8c2341a33e0bba5e28fa10adc853c677d7d27423abe82a110f03c227833df20",
+    "matrix": "protocol-data/parity.dat",
+    "matrix_sha256": "bfee9dee04bb7b59a45c8ee61f0dd524dc85d4de777a631a3d66511948c1075a",
+    "first_hard_one_indices": [0],
+    "first_unsatisfied_rows": [15, 44, 72],
+    "minimum_absolute_rational_posterior": "9/5",
+    "derivation": "Each column has degree3; alpha4/5. Error posterior=-12+3*4/5=-48/5. Other j posterior=1+(3-2*shared_checks(j,0))*4/5. H alone fixes the first hardword and nonzero syndrome, without candidate execution."
+  },
+  "recovery": {
+    "recipe": "174 little-endian float32 +1; use as both LLR and posterior for direct private OSD",
+    "sha256": "bf91fc51d94643efb5e31836111848f3d75bfdaf35c8b780d84082db9ef0e404",
+    "expected_word": "all zero, independently channel-valid and unique zero weighted-disagreement cost",
+    "does_not_claim": "that BP fails on this input"
+  },
+  "subtraction": {
+    "oracle": "existing envelope_cancellation_matches_scalar_convolution_and_edges input and independent expected_at direct convolution",
+    "original_source_sha256": "e6b869f0e5a09f51330194e8c2aa7dea0fc74ef5120d2c056dc56a74d1872ab9"
+  }
+}

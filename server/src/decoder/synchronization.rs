@@ -131,6 +131,8 @@ impl Spectrum {
                         Complex32::new(z.re as f32, z.im as f32);
                 }
             }
+            #[cfg(test)]
+            super::resource_observer::hit(super::resource_observer::Phase::DetectionRow);
         }
         budget.checkpoint().await?;
         let sync = mode.sync();

@@ -147,6 +147,8 @@ impl Channel {
             .collect::<Vec<_>>();
         let mut posterior = *llr;
         for _ in 0..50 {
+            #[cfg(test)]
+            super::resource_observer::hit(super::resource_observer::Phase::FecCheck);
             if cancel() {
                 return (None, *llr);
             }
@@ -168,8 +170,12 @@ impl Channel {
                     outgoing[c][k] = r;
                     sum[j] += r;
                 }
+                #[cfg(test)]
+                super::resource_observer::hit(super::resource_observer::Phase::FecRow);
             }
             let hard = std::array::from_fn(|i| u8::from(sum[i] < 0.));
+            #[cfg(test)]
+            super::resource_observer::fec_word(hard);
             if self.valid(&hard) {
                 return (Some(hard), sum);
             }
@@ -219,6 +225,8 @@ impl Channel {
         if basis.len() != 77 {
             return None;
         }
+        #[cfg(test)]
+        super::resource_observer::hit(super::resource_observer::Phase::RecoveryRank);
         let mut least = (0..77).collect::<Vec<_>>();
         least.sort_by(|&a, &b| {
             posterior[basis[a]]
@@ -239,6 +247,8 @@ impl Channel {
         let mut best = None;
         let mut best_cost = f32::INFINITY;
         for flips in trials {
+            #[cfg(test)]
+            super::resource_observer::hit(super::resource_observer::Phase::RecoveryCheck);
             if cancel() {
                 return None;
             }
@@ -266,7 +276,13 @@ impl Channel {
                     best = Some(word);
                 }
             }
+            #[cfg(test)]
+            super::resource_observer::hit(super::resource_observer::Phase::RecoveryTrial);
         }
         best
     }
 }
+
+#[cfg(test)]
+#[path = "channel_resource_test.rs"]
+mod resource_tests;

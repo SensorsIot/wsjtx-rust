@@ -1,4 +1,93 @@
 use super::*;
+// Proves: CL-007-04; TC-004-003. Capacity setup is not a decoded-success fixture.
+#[test]
+fn resource_candidate_and_sic_reserved_storage_ledger() {
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        let candidates = (0..256)
+            .map(|index| Candidate {
+                start: index,
+                frequency: 1000.,
+                score: 1.,
+            })
+            .collect::<Vec<_>>();
+        let pending = (0..32)
+            .map(|index| Subtraction {
+                start: index,
+                frequency: 1000.,
+                tones: vec![0u8; mode.symbol_count()],
+            })
+            .collect::<Vec<_>>();
+        let window_seen = (0..256)
+            .map(|index| (format!("{index:077b}"), index as u64))
+            .collect::<Vec<_>>();
+        let bytes = candidates.capacity() * std::mem::size_of::<Candidate>()
+            + pending.capacity() * std::mem::size_of::<Subtraction>()
+            + pending
+                .iter()
+                .map(|item| item.tones.capacity())
+                .sum::<usize>()
+            + window_seen.capacity() * std::mem::size_of::<(String, u64)>()
+            + window_seen
+                .iter()
+                .map(|item| item.0.capacity())
+                .sum::<usize>();
+        assert_eq!(candidates.len(), 256);
+        assert_eq!(pending.len(), 32);
+        assert_eq!(window_seen.len(), 256);
+        assert!(bytes > 256 * std::mem::size_of::<Candidate>());
+        eprintln!(
+            "RESOURCE_CAPACITY {}",
+            serde_json::json!({
+                "owner":"candidate_suppression_sic", "mode":mode, "reserved_bytes":bytes,
+                "candidates":256,"pending_sic":32,"window_seen":256,
+                "is_decoded_success":false,"whole_workspace_proved":false,
+                "separate_owners":["input_window_ring","channel_matrices_recovery","band_plans_rustfft_internal_and_scratch","current_pass_fft","subtractor_and_waveform","modem_history","station_result_ring","teardown_overlap"],
+            })
+        );
+        std::hint::black_box((&candidates, &pending, &window_seen));
+    }
+}
+// Proves: CL-007-04; TC-004-003. Cancels only after a real completed spectrum row.
+#[test]
+#[cfg(not(debug_assertions))]
+fn resource_phase_detection_observes_work_without_publishing() {
+    use crate::decoder::resource_observer::{self, Phase};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        let samples = resource_observer::pinned_samples(mode);
+        for scalar in [false, true] {
+            let decoder = if scalar {
+                Decoder::with_scalar_transform()
+            } else {
+                Decoder::new()
+            };
+            let expected = decoder.decode(&samples, mode, &|| false).unwrap();
+            assert_eq!(expected.len(), 1);
+            assert_eq!(
+                expected[0].payload.payload77,
+                resource_observer::cases()["payload77"].as_str().unwrap()
+            );
+            let cancel = Arc::new(AtomicBool::new(false));
+            let observed = resource_observer::install(cancel.clone(), Some(Phase::DetectionRow));
+            let mut published = 0;
+            let outcome = complete(decoder.decode_into_async(
+                &samples,
+                mode,
+                &|| cancel.load(Ordering::SeqCst),
+                &mut |_| {
+                    published += 1;
+                    Ok(())
+                },
+            ));
+            assert_eq!(outcome, Err(DecodeError::Cancelled));
+            assert_eq!(observed.report().counts[Phase::DetectionRow as usize], 1);
+            assert_eq!(published, 0);
+        }
+    }
+}
 // Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn sampled_gram_projection_matches_independent_alias_oracles() {
