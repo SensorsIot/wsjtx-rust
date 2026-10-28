@@ -1,5 +1,275 @@
 use super::*;
 
+/// Finite receive allocation-path witnesses, not TX surface-grammar or DSP successes.
+#[cfg(not(debug_assertions))]
+fn payload_layout_witnesses() -> Vec<(String, &'static str, Decode)> {
+    use crate::decoder::{Fields, PayloadStatus};
+    fn cq(word: &str) -> u128 {
+        assert!((1..=4).contains(&word.len()) && word.bytes().all(|c| c.is_ascii_uppercase()));
+        1003 + word.bytes().fold(0, |v, c| v * 27 + (c - b'A' + 1) as u128)
+    }
+    fn call(text: &str) -> u128 {
+        let mut padded = if text.as_bytes()[1].is_ascii_digit() {
+            format!(" {text}")
+        } else {
+            text.to_string()
+        };
+        while padded.len() < 6 {
+            padded.push(' ');
+        }
+        assert_eq!(padded.len(), 6);
+        let alphabets: [&[u8]; 6] = [
+            b" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            b"0123456789",
+            b" ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            b" ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            b" ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        ];
+        6257896
+            + padded.bytes().zip(alphabets).fold(0, |v, (c, a)| {
+                v * a.len() as u128 + a.iter().position(|x| *x == c).unwrap() as u128
+            })
+    }
+    let mut out = vec![];
+    let mut add = |label: String,
+                   variant: &'static str,
+                   fields: &[(usize, usize, u128)],
+                   expected: String,
+                   owners: usize| {
+        let mut bits = [0u8; 77];
+        for &(start, width, value) in fields {
+            assert!(start + width <= 77 && value < (1u128 << width));
+            for j in 0..width {
+                bits[start + j] = ((value >> (width - 1 - j)) & 1) as u8;
+            }
+        }
+        let record = Decode {
+            payload: unpack(&bits),
+            start_frame: 0,
+            frequency_hz: 1000.,
+            snr_db: Some(-20.),
+        };
+        assert_eq!(record.payload.status, PayloadStatus::Decoded, "{label}");
+        let actual = match record.payload.fields.as_ref().unwrap() {
+            Fields::FreeText { .. } => "free_text",
+            Fields::Telemetry { .. } => "telemetry",
+            Fields::Standard { .. } => "standard",
+            Fields::Dxpedition { .. } => "dxpedition",
+            Fields::FieldDay { .. } => "field_day",
+            Fields::Rtty { .. } => "rtty",
+            Fields::Nonstandard { .. } => "nonstandard",
+            Fields::Vhf { .. } => "vhf",
+        };
+        assert_eq!(actual, variant, "{label}");
+        assert_eq!(
+            record.payload.text.as_deref(),
+            Some(expected.as_str()),
+            "{label}"
+        );
+        let paths = crate::decoder::history::record_string_paths(&record);
+        assert_eq!(paths.len(), owners, "{label}");
+        assert!(
+            paths
+                .iter()
+                .all(|(_, s)| s.is_ascii() && s.len() <= s.capacity())
+        );
+        out.push((label, variant, record));
+    };
+    // Actual trailing-trim path: n question marks followed by13-n radix42 spaces.
+    for n in 1..=13u32 {
+        add(
+            format!("free_width_{n}"),
+            "free_text",
+            &[(0, 71, (42u128.pow(n) - 1) * 42u128.pow(13 - n))],
+            "?".repeat(n as usize),
+            3,
+        );
+    }
+    for body in [0, 1, 15, 16, (1u128 << 71) - 1] {
+        add(
+            format!("telemetry_body_{body}"),
+            "telemetry",
+            &[(0, 71, body), (71, 3, 5)],
+            format!("{body:018X}"),
+            3,
+        );
+    }
+    for base in ["A0A", "AA0A", "AA0AA", "ZZ9ZZZ"] {
+        for (tag, flag, suffix) in [(1, 0, ""), (1, 1, "/R"), (2, 1, "/P")] {
+            for (raw, exchange, owners) in [
+                (32399, "RR99", 5),
+                (32403, "RR73", 5),
+                (32485, "+50", 4),
+                (32486, "-50", 4),
+                (32401, "", 4),
+            ] {
+                let named = format!("{base}{suffix}");
+                let expected = if exchange.is_empty() {
+                    format!("{named} {named} R")
+                } else {
+                    format!("{named} {named} R {exchange}")
+                };
+                add(
+                    format!("standard_{base}_{tag}_{flag}_{raw}"),
+                    "standard",
+                    &[
+                        (0, 28, call(base)),
+                        (28, 1, flag),
+                        (29, 28, call(base)),
+                        (57, 1, flag),
+                        (58, 1, 1),
+                        (59, 15, raw),
+                        (74, 3, tag),
+                    ],
+                    expected,
+                    owners,
+                );
+            }
+        }
+    }
+    // RX c28 accepts tokens in either role; TX restrictions are intentionally irrelevant.
+    for (value, text) in [
+        (0, "DE"),
+        (1, "QRZ"),
+        (2, "CQ"),
+        (10, "CQ 007"),
+        (cq("A"), "CQ A"),
+        (cq("AA"), "CQ AA"),
+        (cq("AAA"), "CQ AAA"),
+        (cq("AAAA"), "CQ AAAA"),
+    ] {
+        for second in [false, true] {
+            let (to, from, to_text, from_text) = if second {
+                (call("ZZ9ZZZ"), value, "ZZ9ZZZ", text)
+            } else {
+                (value, call("ZZ9ZZZ"), text, "ZZ9ZZZ")
+            };
+            add(
+                format!("standard_token_{value}_second_{second}"),
+                "standard",
+                &[(0, 28, to), (29, 28, from), (59, 15, 32399), (74, 3, 1)],
+                format!("{to_text} {from_text} RR99"),
+                5,
+            );
+        }
+    }
+    add(
+        "dxpedition_max_display".into(),
+        "dxpedition",
+        &[
+            (0, 28, cq("AAAA")),
+            (28, 28, cq("ZZZZ")),
+            (56, 10, 1023),
+            (66, 5, 31),
+            (71, 3, 1),
+        ],
+        "CQ AAAA RR73; CQ ZZZZ <...> +32".into(),
+        4,
+    );
+    for tu in [0, 1] {
+        for ack in [0, 1] {
+            for (raw, exchange, owners) in [(7999, "7999", 4), (8059, "NWT", 5)] {
+                add(
+                    format!("rtty_tu_{tu}_ack_{ack}_exchange_{raw}"),
+                    "rtty",
+                    &[
+                        (0, 1, tu),
+                        (1, 28, cq("AAAA")),
+                        (29, 28, cq("ZZZZ")),
+                        (57, 1, ack),
+                        (58, 3, 7),
+                        (61, 13, raw),
+                        (74, 3, 3),
+                    ],
+                    format!(
+                        "{}CQ AAAA CQ ZZZZ{} 599 {exchange}",
+                        if tu == 1 { "TU; " } else { "" },
+                        if ack == 1 { " R" } else { "" }
+                    ),
+                    owners,
+                );
+            }
+        }
+    }
+    for (n3, transmitters) in [(3, 16), (4, 32)] {
+        add(
+            format!("field_day_subtype_{n3}"),
+            "field_day",
+            &[
+                (0, 28, cq("AAAA")),
+                (28, 28, cq("ZZZZ")),
+                (56, 1, 1),
+                (57, 4, 15),
+                (61, 3, 5),
+                (64, 7, 11),
+                (71, 3, n3),
+            ],
+            format!("CQ AAAA CQ ZZZZ R {transmitters}F EMA"),
+            6,
+        );
+    }
+    for cq_flag in [0, 1] {
+        for second in [0, 1] {
+            let full = "/".repeat(11);
+            let expected = if cq_flag == 1 {
+                format!("CQ {full}")
+            } else if second == 1 {
+                format!("{full} <...> RR73")
+            } else {
+                format!("<...> {full} RR73")
+            };
+            add(
+                format!("nonstandard_cq_{cq_flag}_hash_second_{second}"),
+                "nonstandard",
+                &[
+                    (0, 12, 4095),
+                    (12, 58, 38u128.pow(11) - 1),
+                    (70, 1, second),
+                    (71, 2, 2),
+                    (73, 1, cq_flag),
+                    (74, 3, 4),
+                ],
+                expected,
+                4,
+            );
+        }
+    }
+    for serial in [0, 9, 10, 999, 1000, 2047] {
+        add(
+            format!("vhf_serial_{serial}"),
+            "vhf",
+            &[
+                (0, 12, 4095),
+                (12, 22, (1 << 22) - 1),
+                (34, 1, 1),
+                (35, 3, 7),
+                (38, 11, serial),
+                (49, 25, 18662399),
+                (74, 3, 5),
+            ],
+            format!("<...> <...> R 59{serial:04} RR99XX"),
+            3,
+        );
+    }
+    assert_eq!(out.len(), 115);
+    assert_eq!(
+        out.iter()
+            .map(|(_, v, _)| *v)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        8
+    );
+    assert_eq!(
+        out.iter()
+            .map(|(label, _, _)| label)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        115
+    );
+    out
+}
+
 // Direct library capacity evidence. Never invoked by an ordinary test selection.
 #[test]
 #[ignore = "requires reviewed retained-handle parent and pinned inputs"]
@@ -23,6 +293,60 @@ fn resource_capacity_owned_child() {
         assert_eq!(line.trim_end(), format!("{reply} {nonce}"));
     };
     handshake("READY", "START");
+    {
+        // Mode-independent unpack allocation witnesses are measured once, then dropped.
+        let layouts = payload_layout_witnesses();
+        assert_eq!(
+            layouts
+                .iter()
+                .map(|(_, _, r)| r.payload.text.as_ref().unwrap().len())
+                .max(),
+            Some(31)
+        );
+        assert_eq!(
+            layouts
+                .iter()
+                .map(|(_, _, r)| history::record_string_paths(r).len())
+                .max(),
+            Some(6)
+        );
+        assert_eq!(
+            layouts
+                .iter()
+                .map(|(_, _, r)| history::record_string_paths(r)
+                    .iter()
+                    .map(|(_, s)| s.len())
+                    .sum::<usize>())
+                .max(),
+            Some(123)
+        );
+        let mut largest = None;
+        for chunk in layouts.chunks(8) {
+            let rows = chunk
+                .iter()
+                .map(|(label, variant, record)| {
+                    let bytes = history::retained_record_bytes(record);
+                    if largest.as_ref().is_none_or(|(_, max)| bytes > *max) {
+                        largest = Some((label.clone(), bytes));
+                    }
+                    history::string_layout_ledger(label, variant, record)
+                })
+                .collect::<Vec<_>>();
+            let event = serde_json::json!({"owner":"receive_payload_string_paths","witnesses":rows,
+                "global_maximum_proved":false,"unexercised_allocation_residual_bytes":null});
+            let encoded = serde_json::to_string(&event).unwrap();
+            assert!(encoded.len() < 16000);
+            eprintln!("RESOURCE_CAPACITY {encoded}");
+        }
+        eprintln!(
+            "RESOURCE_CAPACITY {}",
+            serde_json::json!({"owner":"attained_payload_layout_summary",
+            "witness_count":layouts.len(),"variant_count":8,"batch_events":layouts.len().div_ceil(8),
+            "largest_attained_label_and_nested_bytes":largest,"global_maximum_proved":false,
+            "unexercised_allocation_residual_bytes":null,"prepared_not_dsp_decodes":true})
+        );
+        drop(layouts);
+    }
     for mode in [Mode::Ft8, Mode::Ft4] {
         let (mut retained_state, records, history_ledger) = history::capacity_state(mode);
         eprintln!("RESOURCE_CAPACITY {}", history_ledger);

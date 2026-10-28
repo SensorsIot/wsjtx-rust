@@ -4,6 +4,115 @@ use serde::Serialize;
 
 const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
 
+/// Inspect only real unpack-created String owners; inline enums are not heap owners.
+#[cfg(test)]
+pub(super) fn record_string_paths(record: &Decode) -> Vec<(&'static str, &String)> {
+    use super::{Call, Exchange, Fields};
+    fn call<'a>(out: &mut Vec<(&'static str, &'a String)>, path: &'static str, call: &'a Call) {
+        if let Some(s) = &call.text {
+            out.push((path, s));
+        }
+    }
+    fn exchange<'a>(out: &mut Vec<(&'static str, &'a String)>, e: &'a Exchange) {
+        match e {
+            Exchange::Grid(s) => out.push(("fields.exchange.grid", s)),
+            Exchange::Roger(s) => out.push(("fields.exchange.roger", s)),
+            Exchange::State(s) => out.push(("fields.exchange.state", s)),
+            _ => {}
+        }
+    }
+    let p = &record.payload;
+    let mut out = vec![("payload77", &p.payload77)];
+    if let Some(s) = &p.text {
+        out.push(("text", s));
+    }
+    if let Some(f) = &p.fields {
+        match f {
+            Fields::FreeText { value } | Fields::Telemetry { value } => {
+                out.push(("fields.value", value))
+            }
+            Fields::Standard {
+                to,
+                from,
+                exchange: e,
+                ..
+            }
+            | Fields::Rtty {
+                to,
+                from,
+                exchange: e,
+                ..
+            } => {
+                call(&mut out, "fields.to.text", to);
+                call(&mut out, "fields.from.text", from);
+                exchange(&mut out, e);
+            }
+            Fields::Dxpedition {
+                first,
+                second,
+                hashed,
+                ..
+            } => {
+                call(&mut out, "fields.first.text", first);
+                call(&mut out, "fields.second.text", second);
+                call(&mut out, "fields.hashed.text", hashed);
+            }
+            Fields::FieldDay {
+                to,
+                from,
+                class_name,
+                section,
+                ..
+            } => {
+                call(&mut out, "fields.to.text", to);
+                call(&mut out, "fields.from.text", from);
+                out.push(("fields.class_name", class_name));
+                out.push(("fields.section", section));
+            }
+            Fields::Nonstandard {
+                full_call,
+                hashed_call,
+                roger,
+                ..
+            } => {
+                call(&mut out, "fields.full_call.text", full_call);
+                call(&mut out, "fields.hashed_call.text", hashed_call);
+                out.push(("fields.roger", roger));
+            }
+            Fields::Vhf { to, from, grid, .. } => {
+                call(&mut out, "fields.to.text", to);
+                call(&mut out, "fields.from.text", from);
+                out.push(("fields.grid", grid));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+pub(super) fn string_layout_ledger(
+    label: &str,
+    variant: &str,
+    record: &Decode,
+) -> serde_json::Value {
+    let strings = record_string_paths(record);
+    let reserved = strings.iter().map(|(_, s)| s.capacity()).sum::<usize>();
+    assert_eq!(reserved, retained_record_bytes(record));
+    #[derive(Serialize)]
+    struct Numbered<'a> {
+        sequence: u64,
+        #[serde(flatten)]
+        record: &'a Decode,
+    }
+    serde_json::json!({"label":label,"variant":variant,"payload77":record.payload.payload77,
+        "text":record.payload.text,"status":record.payload.status,"is_decoded_success":false,
+        "owner_count":strings.len(),"string_lengths_sum":strings.iter().map(|(_,s)|s.len()).sum::<usize>(),
+        "string_capacities_sum":reserved,"inline_decode_bytes":std::mem::size_of::<Decode>(),
+        "record_serialized_bytes":serde_json::to_vec(record).unwrap().len(),
+        "live_history_semantic_charge_bytes":serde_json::to_vec(&Numbered { sequence: MAX_SAFE_SEQUENCE, record }).unwrap().len(),
+        "strings":strings.iter().map(|(path,s)|serde_json::json!({"path":path,"len":s.len(),"capacity":s.capacity()})).collect::<Vec<_>>()})
+}
+
 /// Actual heap capacities, not serialized byte charges or decoded observations.
 #[cfg(test)]
 pub(super) fn retained_record_bytes(record: &Decode) -> usize {
