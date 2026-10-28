@@ -195,7 +195,7 @@ redefine its wire format or numeric limits.
 | CL-003-05 | FR-021 | The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model and meet its traffic and visible-response budgets. Tests MUST distinguish cold page/assets loading, protocol connection and displayed-status timing, and identify the measurement layer. | TC-021-008 |
 | CL-003-06 | FR-021 | Application output buffering and active connections MUST have explicit bounds. An unresponsive client MUST be removed under the contract's liveness/write limits without blocking another client's status requests. Test results MUST distinguish observed liveness removal from an unobserved send-timeout branch or total-memory bound. | TC-021-008, stalled-reader variant; contract/source review |
 | CL-003-07 | FR-021 | Remote access MUST use the contract's authenticated TLS path and exact Origin validation. The browser MUST offer token login, and invalid or oversized login requests MUST be refused. Insecure remote startup and invalid access settings MUST fail closed. Explicit loopback development MAY remain unauthenticated. | TC-021-009 |
-| CL-003-08 | FR-019, FR-021 | Status MUST use initial/reconnection snapshots, explicit refresh requests and event-driven updates when state changes exist. The client MUST avoid constant status polling and tolerate protocol heartbeats between responses. The initial profile MUST carry no raw audio or spectrum stream and use no application-level compression. | TC-021-007; TC-021-008; peer-helper fixture; protocol/source review |
+| CL-003-08 | FR-019, FR-021 | Status MUST use initial/reconnection snapshots, explicit refresh requests and event-driven updates when state changes exist. The client MUST avoid constant status polling and tolerate protocol heartbeats between responses. The initial profile MUST carry no raw audio or spectrum stream and use no application payload codec or negotiated WebSocket compression. Bounded negotiated HTTP content coding is permitted only by12.1.1. | TC-009-005; TC-021-007; TC-021-008; peer-helper fixture; protocol/source review |
 
 The initial workflow is open the station page, authenticate when TLS mode requires it,
 receive a status snapshot, optionally refresh status and recover from connection loss.
@@ -1589,7 +1589,7 @@ Imported model definitions retain their own declared source dependencies.
 | `StationDecode.sysml` | 4.4, 6.4, 12.7, 12.8, 13.6 |
 | `RadioIO.sysml` | 4.5, 12.8 |
 | `OperatingLayout.sysml` | 4.4, 4.7, 6.6, 12.7, 12.8 |
-| `OperatingReceive.sysml` | 4.7.5, 6.6, 12.8.1 |
+| `OperatingReceive.sysml` | 4.7.5, 6.6, 12.1.1, 12.8.1 |
 
 ### 4.7 Browser operating composition
 
@@ -1992,6 +1992,9 @@ Screenshots are `test-results/station-desktop.png` and `test-results/station-mob
 
 #### TC-021-007 — Disconnect, retry and state resynchronization
 
+Application payload codecs and negotiated WebSocket compression remain excluded.
+HTTP content coding12.1.1 changes no reconnect, snapshot, event or status deadline.
+
 **Clauses:** CL-003-04, CL-003-08. **Promise:** FR-021.
 **Level:** 2 — Isolated automated tests.
 **Where it runs:** Windows PC, actual candidate server and real browser through a
@@ -2039,8 +2042,10 @@ independent local WebSocket peers against the actual server.
 3. Click Refresh status concurrently in both existing clients. Expect each visible
    Last updated value to change within the connected-response limit, using the existing
    WebSocket connections rather than creating replacement test connections.
-4. The minimal profile MUST contain no audio/spectrum stream or application compression;
-   verify that scope against the protocol and implementation. Missing browser, simulator
+4. The minimal profile MUST contain no audio/spectrum stream, application payload codec
+   or negotiated WebSocket compression; verify that scope against the protocol and
+   implementation. HTTP content coding is only the bounded12.1.1 exception, verified
+   separately by TC-009-005 case8; this does not replace the existing cold/status tests. Missing browser, simulator
    or measurement prerequisites MUST fail verification rather than silently skip it.
 
 **Stalled-reader variant — inputs/actions and expected results:**
@@ -2537,7 +2542,7 @@ These style oracles come from the stated presentation values, not candidate CSS.
 
 #### TC-009-005 — Coherent receive operating controls
 
-Proves CL-008-03/05/07 and CL-010-05/07/08. Cost2, isolated Windows development PC:
+Proves CL-003-08, CL-008-03/05/07 and CL-010-05/07/08. Cost2, isolated Windows development PC:
 actual station/receive manager, converter, decoder, HTTPS API and Chromium, independent
 native/CI-V fixtures and the existing encrypted-link model. This is planned coverage,
 not an execution verdict. TC-009-002 remains the separate authorized cost4 physical
@@ -2588,6 +2593,18 @@ IC-7300/browser readback check. All existing cases remain required.
    in the existing two-browser32kbit/s TLS workload. Assert each-direction mean<=3000B/s,
    visible status<=2s, one pending selection read/ordinary mutation, status/control
    priority and no backlog. Detailed2s/500ms is separately labelled fast-link coverage.
+
+8. Bounded HTTP content coding12.1.1 (same cost2 boundary):
+   A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
+   B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings.
+   C. Every excluded method/path including POST/session, PUT/profile, POST/receive/select and /radio operations remains unencoded and byte/schema compatible; no duplicate mutation effects. Authenticate cookies/tokens never appear in body/debug logs. Authenticated eligible snapshots contain no credential fields; malicious literal decoded text is unchanged. Oversized logical result rejected/capped BEFORE gzip, encoded size cannot admit extra rows; valid max logical result still decodes within original cap. Request Content-Encoding:gzip must not add support or bypass request body limit. HEAD/no-body/range/already-encoded cases must not be double-compressed or misframed.
+   D. Actual two Chromium browsers on unchanged shared4000B/s/direction+150ms TLS model, actual native FT4/FT8 + CAT transitions and mode-appropriate fixtures, actual status, pending/passive reads, records and source/operation identities. Preserve all Thin75s/Off75s windows and >=60 checks, five CQ records, status/pending/cadence/original WS oracles. Record Content-Encoding from real response headers, raw encoded sizes via CDP as attribution, and unchanged actual proxy TLS/model counters as sole bandwidth oracle; BOTH directions <=3000B/s and existing Off requirement, all status<=2s. No arithmetic compression estimate counts as PASS. Run original14+new15 suite through ordinary integration/prepush as selected; separate old10s Connected-after-load remains required. Identity path correctness is mandatory; identity workload bandwidth remains unproven unless separately measured.
+   Include tiny `{}` (2bytes) with `identity;q=0,gzip`; selected gzip must encode
+   it despite a default library minimum-size predicate. HEAD/204/304/range/already-
+   encoded responses bypass negotiation even when all encodings are forbidden.
+   Preserve Vary fields `[Origin,X-Accept-Encoding-Other]` and append the exact
+   Accept-Encoding token; existing case-insensitive exact token and Vary:* remain.
+   Preserve security/cache headers. Every table row retains actual multiheader order.
 
 Independent oracles are the pinned source/table and observed default flow, manually
 derived CI-V exchanges, independently fixed waveform payloads, exact wire schemas and
@@ -3392,6 +3409,140 @@ and restart to invalidate existing credentials; disconnect existing processes wh
 There is no user-account database or transmit authority in this CR. Static assets contain
 no station data and can be loaded before login. Authentication failures do not reveal tokens.
 
+#### 12.1.1. Bounded HTTP snapshot content coding (H1)
+
+Derived from the measured combined native/CAT/browser workload; governed by
+CL-003-08 and CL-008-07, verified by TC-009-005 case8. This is a target contract,
+not an implementation or bandwidth verdict. HTTP content coding changes the transfer
+representation, not application JSON or WebSocket payload coding.
+
+Successful authenticated GET responses only for exact paths /receive/selection, /receive,
+/receive/results (valid query retained), /profile, /radio and /recording may use negotiated gzip
+HTTP Content-Encoding. These are snapshot/result representations already consumed by the
+measured workload, not credential responses. Logical response bytes after decompression,
+required fields/nulls/types, timestamps, query provenance, actor ownership, errors and existing
+uncompressed logical body caps remain exactly governed by existing contracts. Successful gzip
+for ordinary eligible application/json bodies is required when gzip is acceptable and preferred
+over identity under the established negotiator; every eligible nonempty JSON response selected
+as gzip MUST be gzip, regardless of the library default minimum size. HEAD, no-body, existing
+Content-Encoding and Content-Range responses bypass negotiation entirely and preserve original
+semantics. No lossy packing, changed clocks or cached facts.
+
+Negotiation is frozen to tower-http0.7.1 content_encoding.rs (local upstream copy
+SHA329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56). the ordered negotiation
+table below is the exact independent source-derived oracle for raw header fields, malformed q,
+duplicates, wildcards and multiheaders. These are established-library compatibility semantics,
+not a new parser or a claim arbitrary conflicting duplicates have a unique RFC interpretation.
+Identity fallback occurs ONLY when selected/acceptable by that pinned algorithm;
+identity;q=0,gzip;q=bad produces406. Without wildcard it selects highest positive explicit
+supported encoding (gzip wins a quality tie); only when none remains does it fall back to
+identity unless a valid identity;q=0 rejects it. With wildcard it uses the FIRST valid explicit
+q for each supported encoding, otherwise the FIRST valid wildcard q, then highest positive
+quality with gzip tie preference. Invalid tokens/q entries are ignored, not converted into
+positive acceptance; later valid duplicates can still select the same encoding. No implicit
+identity q=1 is inserted into the explicit-only competition. Unsupported algorithms never
+selected. Explicit no acceptable selection yields406 ONLY after the eligible-success boundary,
+never over auth/errors. Wire-invalid headers remain the HTTP stack's existing refusal. No
+handwritten Accept-Encoding parser, no request decompression.
+
+Encoded response Content-Encoding:gzip, correct existing Content-Type and Vary:Accept-Encoding
+(merge exact comma-delimited case-insensitive tokens across ALL existing Vary fields; trim OWS,
+preserve unrelated field values and Vary:*, do not overwrite). An existing
+X-Accept-Encoding-Other token is NOT Accept-Encoding. If Vary:* already exists it dominates and
+is retained; otherwise append the exact token only if absent. Do not rely on upstream substring
+matching for this contract identify the representation. Remove stale uncompressed Content-Length
+on encoded responses; actual encoded length if supplied must be correct, otherwise normal
+streaming/chunked framing. Identity Content-Length remains correct. Do not reuse a strong
+validator across unequal encoded bytes; current routes have no new ETag/conditional caching
+promise. Preserve existing Cache-Control/security/CORS/auth headers. Vary does not grant
+cacheability; authenticated snapshots must not become public/shared-cacheable. No shared
+compressed-body cache or stale snapshot reuse is introduced. Compression context is fresh per
+response, never shared across requests/users.
+
+No compression for /session, any non-GET including PUT /profile and POST control/mutations, /ws
+handshakes/messages, authentication/error responses, or credential/authority material. A client
+supplying Cookie/Authorization to authenticate an eligible GET is not itself disqualifying:
+credential headers are never included in its JSON. The eligibility allowlist must be reviewed if
+a future response gains secrets; this contract does not blanket-authorize compression for future
+TX/QSO/MCP routes. HEAD remains existing correct no-body semantics, outside compression
+admission. No request decompression. Static /,/app.js,/recording.js,/style.css,/recording.css
+are excluded: their Cold optimization is not required to address measured steady-state failure
+and would enlarge scope without current proof of need.
+
+Existing HTTP identity representation remains correct and supported; 32kbit Thin/Off combined
+workload proof is specifically for real browsers negotiating supported gzip, documented in
+receipt. Do not claim identity has passed identical traffic budgets without actual measurement.
+Existing <=3000B/s per direction, <=2s connected status, WS payload/cadence/queue bounds,
+polling8s/4s, actual worker transitions and legacy status-after-load10s tests remain unchanged.
+Cold metrics remain separate; no extension of measured windows or lowering actual work/records.
+Old14 suite registrations and all original assertions remain required, plus actual15th selection
+workload.
+
+The existing handler is evaluated exactly once. Authentication, original errors,
+logical caps and response eligibility are established BEFORE encoding negotiation;
+a no-acceptable-encoding result must not replace an excluded response. A library
+response predicate evaluated after negotiation is insufficient. The same response
+passes through one integration boundary, without another auth/handler/actor dispatch.
+
+**Independent ordered negotiation oracle.** Fields are separate raw
+Accept-Encoding header values in insertion order; `[]` means absent. Outcomes apply
+only to otherwise eligible successful nonempty JSON GET responses. `noAcceptable`
+means406. This table was independently derived from pinned source, not candidate
+output (source SHA256 `329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56`;
+original vector artifact SHA256 `d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9`).
+
+| Case | Ordered header fields (JSON) | Selection |
+|---|---|---|
+| 1 | `[]` | identity |
+| 2 | `[""]` | identity |
+| 3 | `["identity"]` | identity |
+| 4 | `["gzip"]` | gzip |
+| 5 | `["GZip"]` | gzip |
+| 6 | `["x-gzip"]` | gzip |
+| 7 | `["gzip;q=0"]` | identity |
+| 8 | `["gzip;q=0,identity;q=0"]` | 406 |
+| 9 | `["identity;q=0,gzip;q=bad"]` | 406 |
+| 10 | `["gzip;q=bad"]` | identity |
+| 11 | `["br"]` | identity |
+| 12 | `["br,identity;q=0"]` | 406 |
+| 13 | `["gzip;q=0.5"]` | gzip |
+| 14 | `["gzip;q=0.5,identity;q=1"]` | identity |
+| 15 | `["gzip;q=0.5,identity;q=0.5"]` | gzip |
+| 16 | `["identity;q=0,gzip"]` | gzip |
+| 17 | `["gzip;q=0."]` | identity |
+| 18 | `["gzip;q=1."]` | gzip |
+| 19 | `["gzip;Q=0.500"]` | gzip |
+| 20 | `[" gzip\t; q=0.5 "]` | gzip |
+| 21 | `["gzip;q =0.5"]` | identity |
+| 22 | `["gzip;q= 0.5"]` | identity |
+| 23 | `["gzip;q=.5"]` | identity |
+| 24 | `["gzip;q=00.5"]` | identity |
+| 25 | `["gzip;q=0.5000"]` | identity |
+| 26 | `["gzip;q=1.001"]` | identity |
+| 27 | `["gzip;q=-0.1"]` | identity |
+| 28 | `["gzip;q=0.5;foo=bar"]` | identity |
+| 29 | `["*"]` | gzip |
+| 30 | `["*;q=0"]` | 406 |
+| 31 | `["*;q=0.5"]` | gzip |
+| 32 | `["*;q=0,gzip;q=0.5"]` | gzip |
+| 33 | `["*;q=1,gzip;q=0"]` | identity |
+| 34 | `["*;q=1,identity;q=0"]` | gzip |
+| 35 | `["*;q=0,identity;q=1"]` | identity |
+| 36 | `["*;q=bad"]` | identity |
+| 37 | `["*;q=bad,identity;q=0"]` | 406 |
+| 38 | `["gzip;q=0,gzip;q=1"]` | gzip |
+| 39 | `["gzip;q=1,gzip;q=0"]` | gzip |
+| 40 | `["gzip;q=0,gzip;q=1,*;q=0"]` | 406 |
+| 41 | `["gzip;q=1,gzip;q=0,*;q=0"]` | gzip |
+| 42 | `["*;q=0,*;q=1"]` | 406 |
+| 43 | `["*;q=1,*;q=0"]` | gzip |
+| 44 | `["*;q=bad,*;q=1"]` | gzip |
+| 45 | `["gzip;q=0", "gzip;q=1"]` | gzip |
+| 46 | `["gzip;q=0", "gzip;q=1,*;q=0"]` | 406 |
+| 47 | `["br;q=1", "gzip;q=0.4"]` | gzip |
+| 48 | `["identity;q=0", "gzip;q=bad"]` | 406 |
+| 49 | `["gzip;q=bad,gzip;q=0.7"]` | gzip |
+
 ### 12.2. Messages and validation
 
 Messages MUST be UTF-8 JSON text, at most 1,024 bytes per incoming message/frame and
@@ -3433,7 +3584,8 @@ Errors have this envelope:
 
 The server validates request shape, version, then command in that order. Recoverable
 JSON errors leave the connection open. No stack traces or internal exception details
-are returned. There is no application or negotiated WebSocket compression.
+are returned. There is no application payload codec or negotiated WebSocket compression.
+The distinct HTTP content-coding exception is limited to12.1.1.
 
 ### 12.3. Liveness and resource limits
 
@@ -3767,6 +3919,8 @@ each0..120. Reject wrong alphabet/padding/length/noncanonical pad bits, values>1
 unknown/missing fields, unsafe/out-of-range sequence/interval or stale identity/socket;
 never render partially accepted data. Every encoded Detailed event is<=2048 UTF-8
 bytes; no binary messages, lossy nibble packing or application compression.
+These application-payload and WebSocket exclusions do not prohibit the bounded
+HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
 
 One replaceable pending display event per peer, of its selected profile, and <=1 Thin
 or <=5 Detailed sends per second; no replay of old
@@ -4179,6 +4333,12 @@ is transported. Existing32kbit/s Thin/Off <=3000B/s mean each direction and <=2s
 status acceptance must include actual allowed selection polls and mode/band traffic,
 all TLS/headers/transport, on the exact candidate. Body arithmetic is not bandwidth
 proof. Fast-link cadence is not a32kbit/s promise.
+Negotiated HTTP snapshot content coding is limited to12.1.1. The combined32kbit/s
+proof uses real browsers negotiating supported gzip and records actual response
+Content-Encoding; identity remains correct but has no identical-workload bandwidth
+PASS without separate measurement. Existing caps refer to logical uncompressed JSON.
+All previous14 suite registrations/assertions and the additive selection suite remain
+required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxed.
 
 
 ## 13. FT8 sample recordings and provenance

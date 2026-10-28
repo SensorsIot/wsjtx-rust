@@ -1,7 +1,11 @@
-// Canonical FSD slices SHA256: 47baf32460894549b36b0a2b874581d41996b89b25b3e4b097dd043a12f6269e
+// Canonical FSD slices SHA256: 63067c8a11300e96e69ac4bc384ae450aef0b2835274dc16ce7f1f53e98e8f3a
 package WstxProfiles {
     private import ScalarValues::*;
 
+    doc /* FSD12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
+         Existing handler/auth/errors/caps precede negotiation, exactly one dispatch.
+         WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
+         selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
     doc /* Implementation contract for the delivered CR #5 profile functionality. Review,
          validation and acceptance evidence remains on issue #5; no modeled verification verdict is asserted. Markdown remains authoritative:
          docs/WSTX Rust FSD.md 4.2 (selection/schema/ownership), 6.2 (independent cases),

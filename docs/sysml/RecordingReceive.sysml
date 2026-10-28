@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 16ca376306f570171b9d3cb5d55f6c87d3ccf4e29f7dede82332b7a20083fe15
+// Canonical FSD slices SHA256: b50034fbb3c2fc9b2f0449e1d587ad89ca1747131ef9be82dfb30e66e04c3a6e
 package WstxRecordingReceive {
     private import ScalarValues::*;
     doc /* Implementation contract from authoritative FSD4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
@@ -786,6 +786,8 @@ package WstxRecordingReceive {
              unknown/missing fields, unsafe/out-of-range sequence/interval or stale identity/socket;
              never render partially accepted data. Every encoded Detailed event is<=2048 UTF-8
              bytes; no binary messages, lossy nibble packing or application compression.
+These application-payload and WebSocket exclusions do not prohibit the bounded
+HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
 
              One replaceable pending display event per peer, of its selected profile, and <=1 Thin
              or <=5 Detailed sends per second; no replay of old

@@ -1,4 +1,4 @@
-// Canonical FSD slices SHA256: 12ecba995bae3f5e62c87997cdac72ee20f8b10516a1a1c418a940c29723037d
+// Canonical FSD slices SHA256: 86d1249132545ca51b58e4f0c49d319ee643586ea00bd2ee1a637d055d49d6fa
 package WstxRadioIO {
     private import ScalarValues::*;
     doc /* Target implementation contract, not implemented hardware support.

@@ -1,6 +1,49 @@
-// Canonical FSD slices SHA256: 436fdc78cf44de9d3ee47d87f29296495aa10b0ac6c8aa90bf3319523a58de98
+// Canonical FSD slices SHA256: bb770b27c4dc6763319008a5ea5558acc659cd61eb0d116d1305a9c0eb5c95ad
 package WstxOperatingReceive {
     private import ScalarValues::*;
+
+
+    enum def HttpCodingSelection { identity; gzip; noAcceptable; }
+    part def HttpContentCodingBoundary {
+        attribute exactAllowedGet : Boolean;
+        attribute authenticated : Boolean;
+        attribute successfulJson : Boolean;
+        attribute containsCredentials : Boolean;
+        attribute logicalCapsSatisfied : Boolean;
+        attribute nonempty : Boolean;
+        attribute headOrNoBody : Boolean;
+        attribute alreadyEncoded : Boolean;
+        attribute contentRange : Boolean;
+        attribute eligible : Boolean;
+        attribute selection : HttpCodingSelection;
+        attribute compressed : Boolean;
+        attribute status406 : Boolean;
+        constraint eligibility { eligible ==
+            (exactAllowedGet and authenticated and successfulJson and
+             not containsCredentials and logicalCapsSatisfied and nonempty and
+             not headOrNoBody and not alreadyEncoded and not contentRange) }
+        constraint exactCompression { compressed ==
+            (eligible and selection == HttpCodingSelection::gzip) }
+        constraint exactRefusal { status406 ==
+            (eligible and selection == HttpCodingSelection::noAcceptable) }
+        constraint excludedPreservation { not eligible implies
+            (not compressed and not status406) }
+        // HttpCodingSelection comes from pinned tower-http0.7.1, FSD12.1.1 ordered table; no custom parser.
+        // ALL eligible nonempty selected-gzip JSON encoded even <32bytes.
+        // Ineligible responses preserve original status/bytes/headers before negotiation.
+        // Vary exact-token merge BEFORE library; no substring comparison.
+        // Logical schemas/caps/provenance/owner and WS/request representations unchanged.
+    }
+    verification def HttpNegotiationAndIdentity { doc /* TC009005case8 A/B: every pinned
+       FSD12.1.1 ordered table vector incl field order, duplicate/wildcard/malformed q; identity
+       only when selected; noAcceptable406. Raw gzip/independent decoder, exact JSON,
+       tiny2bytebody, correct Vary token merge and framing. */ }
+    verification def HttpExcludedAndCaps { doc /* case8 C: HEAD/no-body/already-encoded/range,
+       auth/errors/secrets/mutations bypass BEFORE negotiation, even all-encodings-forbidden;
+       no duplicate effects, logical caps before compression, no request decompression. */ }
+    verification def HttpActualCombinedTls { doc /* case8 D: real two-browser native/CAT75s
+       Thin and75sOff, unchanged TLS accounting/status/cadences/oracles; no estimated PASS. */ }
+
     doc /* Target implementation contract for FSD4.7.5/6.6 TC009005/12.8.1.
          Markdown remains authoritative; no execution or implementation verdict.
          One existing station/receive authority and one typed radio Actor are reused.
@@ -668,6 +711,12 @@ is transported. Existing32kbit/s Thin/Off <=3000B/s mean each direction and <=2s
 status acceptance must include actual allowed selection polls and mode/band traffic,
 all TLS/headers/transport, on the exact candidate. Body arithmetic is not bandwidth
 proof. Fast-link cadence is not a32kbit/s promise.
+Negotiated HTTP snapshot content coding is limited to12.1.1. The combined32kbit/s
+proof uses real browsers negotiating supported gzip and records actual response
+Content-Encoding; identity remains correct but has no identical-workload bandwidth
+PASS without separate measurement. Existing caps refer to logical uncompressed JSON.
+All previous14 suite registrations/assertions and the additive selection suite remain
+required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxed.
 
 
     */

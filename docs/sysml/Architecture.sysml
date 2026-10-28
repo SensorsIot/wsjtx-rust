@@ -1,5 +1,9 @@
-// Canonical FSD slices SHA256: 8c05d940d6b04236b0655333f498f5397eca2ff59a00590a611c49b81afabd3c
+// Canonical FSD slices SHA256: 8cfdea55943bb150fffcf0ee59a901614d8c30b1812779a691f022b232603f67
 package WstxArchitecture {
+    doc /* FSD12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
+         Existing handler/auth/errors/caps precede negotiation, exactly one dispatch.
+         WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
+         selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
     doc /* Target architecture from docs/WSTX Rust FSD.md chapter 11, which remains authoritative.
          One physical deployment with software decomposition; not implemented radio support.
          Items are semantic responsibilities, not wire schemas or Rust API definitions.
