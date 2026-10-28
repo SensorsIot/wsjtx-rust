@@ -62,7 +62,7 @@ class RadioPropertyTests(unittest.TestCase):
                 cap_owner = "Radio" + group[0].upper() + group[1:] + "Capabilities"
                 value_owner = "RadioVfoValues" if group == "tuning" else field(body(self.code, "Radio"), names[0])
                 value_type = field(body(self.code, value_owner), member)
-                readonly = "ReadOnly" if group == "meters" or member in ("audioPresent", "firmwareIdentity") else ""
+                readonly = "ReadOnly" if group == "meters" or member in ("audioPresent", "firmwareIdentity", "ctcssDetected", "dcsDetected") else ""
                 self.assertEqual(field(body(self.code, cap_owner), member + "Domain"), readonly + value_type + "Capability")
                 self.assertIn("from " + cap_owner + "::" + member + "Domain to " + value_owner + "::" + member + ";", self.code)
 
@@ -127,6 +127,19 @@ class RadioPropertyTests(unittest.TestCase):
         self.assertEqual(field(body(self.code, "RadioReceiverSettings"), "filterLowCutoffHz"), "HertzValue")
         self.assertEqual(field(body(self.code, "RadioReceiverSettings"), "squelchMonitorEnabled"), "Boolean")
         self.assertIn("No claim of", self.text)
+        # Independent source-family representatives must remain storable by name.
+        for record, group, member, expected in (
+            ("StoredRadioFunctions", "scope", "enabled", "Boolean"),
+            ("StoredRadioFunctions", "scanning", "autoResume", "Boolean"),
+            ("StoredRadioFunctions", "frontPanel", "transceiveEnabled", "Boolean"),
+            ("StoredRadioLevels", "frontPanel", "selectedMeter", "String"),
+            ("StoredRadioExtensions", "tuning", "vfoLinking", "Boolean"),
+            ("StoredRadioExtensions", "scope", "videoBandwidth", "String"),
+            ("StoredRadioExtensions", "transmitter", "driveGainLevel", "Real"),
+        ):
+            nested = body(self.code, field(body(self.code, record), group))
+            self.assertEqual(field(nested, member), expected)
+
 
     def test_oracles_detect_removed_misrouted_and_mistyped_ownership(self):
         receiver = body(self.code, "RadioReceiverSettings")

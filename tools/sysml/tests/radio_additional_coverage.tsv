@@ -11,14 +11,14 @@ rigs/icom/icom.c:ipPlus|receiver.ipPlus|Boolean
 rigs/icom/icom.c:txInhibit|transmitter.inhibited|Boolean
 rigs/icom/icom.c:predistortion|transmitter.digitalPredistortion|Boolean
 rigs/icom/icom.c:pw2|transmitter.externalAmplifierEnabled|Boolean
-rigs/icom/icom.c:drive|transmitter.driveGainFraction|Real
+rigs/icom/icom.c:drive|transmitter.driveGainLevel|Real
 rigs/icom/icom.c:scopeReceiver|scope.receiverSelection|String
 rigs/icom/icom.c:dualScope|scope.dualScope|Boolean
 rigs/icom/icom.c:fixedEdge|scope.fixedEdgePreset|String
 rigs/icom/icom.c:scopeOnTx|scope.onTransmit|Boolean
 rigs/icom/icom.c:scopeCenter|scope.centerReference|String
-rigs/icom/icom.c:videoBandwidth|scope.videoBandwidthHz|HertzValue
-rigs/icom/icom.c:resolutionBandwidth|scope.resolutionBandwidthHz|HertzValue
+rigs/icom/icom.c:videoBandwidth|scope.videoBandwidth|String
+rigs/icom/icom.c:resolutionBandwidth|scope.resolutionBandwidth|String
 rigs/icom/icom.c:dstarSquelch|digital.dstarSquelchMode|String
 rigs/icom/icom.c:dstarCode|digital.dstarCode|String
 rigs/icom/ic746.c:bass|transmitter.bassLevel|Real
@@ -49,3 +49,5 @@ rigs/yaesu/ftdx101.c:apfOffset|receiver.audioPeakFilterOffset|Real
 rigs/yaesu/ftdx101.c:contourWidth|receiver.contourWidth|Real
 rigs/simplecat/simplecat.c:txOffset|tuning.vfos.transmitOffsetHz|HertzValue
 rigs/simplecat/simplecat.c:firmware|frontPanel.firmwareIdentity|String
+rigs/icom/optoscan.c:ctcssActive|tones.ctcssDetected|Boolean
+rigs/icom/optoscan.c:dcsActive|tones.dcsDetected|Boolean
