@@ -1,25 +1,31 @@
 package WstxArchitecture {
-    doc /* contract 12.1.1 H1 adds only bounded negotiated HTTP GET JSON content coding.
-         Existing handler/auth/errors/caps precede negotiation, exactly one dispatch.
-         WstxOperatingReceive::HttpContentCodingBoundary formalizes eligibility,
-         selected gzip and406 exclusion; no new owner, actor, wire JSON or WS codec. */
-    doc /* Target architecture from WstxProductScope::ContractIndex chapter 11, with semantic obligations in WstxProductScope.
-         One physical deployment with software decomposition; runtime capability/status and
-         remaining target boundaries are declared in WstxRequirements and WstxProductScope.
-         Items are semantic responsibilities, not wire schemas or Rust API definitions.
-         CR #6 concrete data/state/HTTP/display/oracles refine existing usages in
-         WstxRecordingReceive (RecordingReceive.sysml), contract 4.4/6.4/12.6. This recorded
-         input/display slice is delivered; review, validation and acceptance evidence remains on issue #6. */
-
-    doc /* Approved CR #5 profile behavior/data/state/HTTP/session implementation
-         contract is WstxProfiles in Profiles.sysml. It refines the existing station
-         profile/service/web and viewer browser usages below without adding another
-         deployment, runtime part, hardware capability or view. Four independent
-         servers suffice for CR #5 acceptance; stations[*] remains variable. */
+    private import ScalarValues::*;
+    doc /* Product structure: one selected-radio deployment context, its four physical
+         participants, software owners and typed exchanges. The viewer may run locally
+         on the controller computer or remotely over the station link; the logical
+         roles and profile-scoped protocol remain the same. Windows x64/MSVC is the
+         first desktop target; portability and later platforms follow
+         WstxProductScope::ReleasePolicy, not an assertion of platform acceptance.
+         WstxRequirements owns stable capability/status and verification declarations.
+         WstxProductScope owns capability scope, shared data ownership, processing/halt,
+         remote delivery and transmit safety policies. This structure includes target
+         responsibilities; a part or connection does not assert delivered capability.
+         System processes classify technical capabilities in the existing receive,
+         mode, transport and device owners. Operating workflows classify operator
+         QSO actions in station/transmit/QSO and browser responsibilities; configuration
+         workflows classify persisted settings in profile/station responsibilities.
+         Strategy workflows classify objectives, ranking and automation, all target
+         only; selection/ownership policies remain planned. These four behavioural
+         groups do not introduce additional runtime services or a strategy engine.
+         Items below describe semantic responsibilities, not wire schemas or Rust APIs.
+         Detailed behaviour stays with WstxStationProtocol, WstxProfiles,
+         WstxRecordingReceive, WstxOfflineDecode, WstxRadioIO,
+         WstxOperatingLayout and WstxOperatingReceive. */
 
     part physicalStation {
-        doc /* contract 11.9: one selected-radio reference context with four physical roles,
-             not universal radio cardinality or a radio count derived from station count. */
+        doc /* One selected-radio reference context with user, viewer, controller and radio
+             roles. Viewer/controller roles may share a computer. This is not universal
+             radio cardinality or a radio count derived from station count. */
         part user : Operator;
         part viewer : ViewerComputer;
         part controller : StationControllerComputer;
@@ -39,36 +45,119 @@ package WstxArchitecture {
         expose physicalStation::*;
     }
 
+    requirement PhysicalDeploymentStructure {
+        doc /* Architectural refinement of the existing deployment scope: the model MUST
+             contain the user/viewer/controller/radio context and its operator, station,
+             separate audio and control paths, with profile-scoped endpoint selection.
+             Variable browser and station populations MUST NOT become a fixed station
+             count, all-to-all routing, or an additional detached deployment. */
+    }
+    requirement StationResourceIdentity {
+        doc /* Architectural refinement of WstxProfiles and
+             WstxProductScope::NativeFlexBoundary: each station MUST compose one profile,
+             one selected backend variation and one selected-radio binding, and reference
+             the controller's common authority. All control requests/outcomes MUST retain
+             request/resource identity through that authority to the selected backend.
+             A backend or native session MUST NOT introduce an authority bypass. */
+    }
+    requirement ResponsibilityAndExchangeBoundaries {
+        doc /* Architectural refinement of WstxProductScope::SharedDataOwnership,
+             ProcessingAndHaltOwnership, RemoteDeliveryPolicy and TransmitSafetyPolicy:
+             the declared owners MUST retain their separate typed/directed exchanges.
+             Recording storage MUST feed the common receive path; receive and encode
+             MUST connect to pure mode functions; audio and control MUST stay separate.
+             Browser/MCP adapters MUST use station operations rather than direct backend
+             access. The ownership explanations and existing policy contracts apply
+             together; target parts do not claim runtime delivery or settled policy. */
+    }
+    dependency deploymentOwnership from physicalStation to PhysicalDeploymentStructure;
+    dependency stationIdentityOwnership from physicalStation::controller::stations to StationResourceIdentity;
+    dependency boundaryOwnership from physicalStation::controller::stations to ResponsibilityAndExchangeBoundaries;
+
+    verification ResolvedArchitectureGraph {
+        subject deployment :> physicalStation;
+        doc /* Level 2 isolated automated model test on the development PC; no radio,
+             device or runtime service. Resolve the accepted model and legal negative
+             mutations with the pinned semantic validator. Independent expectations are
+             literal required endpoints, complete item-kind/direction signatures,
+             population/reference subsets, backend alternatives and identity bindings
+             in the existing architecture integrity oracle, not candidate-derived counts.
+             Expect user-to-viewer, profile-selected viewer-to-web/station and separate
+             backend-to-selected-radio audio/control paths; upload-to-profile-to-receive,
+             receive-to-mode and encode-to-mode paths; exactly one effective authority
+             whose bound request/outcome and resource context reach that same backend.
+             Missing delegation/encode, reversed provider/waveform direction, wrong item
+             kind, redirected association/context, weakened identity binding, split or
+             bypassed authority, duplicate backend, detached stations and view-created
+             structure MUST be rejected even if legal SysML. The unchanged graph has
+             33 parts, 8 references, 80 ports and 69 connections; counts alone are
+             insufficient. This case checks structure, not runtime timing, persistence,
+             failure handling, platform operation or RF safety. */
+        objective {
+            verify PhysicalDeploymentStructure;
+            verify StationResourceIdentity;
+            verify ResponsibilityAndExchangeBoundaries;
+        }
+        attribute automation : WstxRequirements::AutomationState = WstxRequirements::AutomationState::implemented;
+        attribute executable : String = "tools/sysml.py check; tools/sysml/tests/test_architecture_integrity.py";
+        attribute executionStatus : String = "defined automated companion; declaration records no execution verdict";
+    }
+    verification ArchitecturalOwnershipReview {
+        subject deployment :> physicalStation;
+        doc /* Manual contract review on the development PC, without external effects.
+             Compare this decomposition with WstxProductScope::ReleasePolicy,
+             SharedDataOwnership, ProcessingAndHaltOwnership, RemoteDeliveryPolicy,
+             TransmitSafetyPolicy and NativeFlexBoundary, plus existing FR responsibility
+             dependencies below and their canonical verification cases. Independently
+             expect server-owned state/results/contacts, profile-owned storage, pure
+             mode calculations, one conversion owner, independent audio/CAT failure
+             boundaries, station-scoped browser/MCP access and priority halt outside
+             receive/display work. Check local/remote roles and Windows-first scope
+             without asserting later-platform acceptance, fixed radio capacity or
+             native-session lifetime decisions. Strategy remains target and introduces
+             no service or selection policy. Reject duplicate policy definitions,
+             inferred delivery or any ownership/safety weakening.
+             ResolvedArchitectureGraph covers only graph/signature/identity obligations;
+             this review covers responsibility prose and policy correspondence. Existing
+             WstxRequirements cases own executable product behaviour coverage. Target
+             TX/MCP/native and future-platform acceptance remain planned where declared
+             there; neither this review nor semantic validation executes those cases. */
+        objective {
+            verify PhysicalDeploymentStructure;
+            verify StationResourceIdentity;
+            verify ResponsibilityAndExchangeBoundaries;
+        }
+        attribute method : String = "manual independent contract correspondence review";
+        attribute executionStatus : String = "planned review; no verdict recorded by this declaration";
+    }
+
     item def OperatorRequest;
     item def Presentation;
     item def StationRequest;
     item def StationOutcome;
     item def Recording;
     item def SampleBlock {
-        doc /* contract 11.3 shared receive data: #6 owns one typed immutable sample contract;
-             #6 recorded and #8 live producers feed the existing receive path. Element
-             type/units, rate, frame clock, optional UTC, discontinuity, buffer owner,
-             lifetime, bounds, version and backpressure must be settled before code.
-             Concrete version1 recorded samples and spectrum-path bounds are defined by
-             WstxRecordingReceive::SampleBlock and contract 4.4; #8 live details remain gated. */
+        doc /* Immutable recorded and live samples feed the same receive boundary.
+             WstxRecordingReceive::SampleBlock owns concrete recorded element units,
+             clocks, ownership/lifetime and bounds; WstxRadioIO owns live adaptation.
+             Source-specific metadata and discontinuities must be explicit; a generic
+             architectural item does not settle every future live format. */
     }
     item def AudioOutcome;
     item def ControlRequest { ref part resourceContext : RadioBinding; }
     item def ControlOutcome { ref item request : ControlRequest; }
     item def ProcessingRequest {
-        doc /* contract 11.3/11.7: #6 owns receive job/cancel lifecycle only. Profile, boot,
-             source, job and generation correlate immutable settings and results;
-             concrete recorded spectrum types/lifetimes/bounds/cancellation are defined
-             in RecordingReceive.sysml; #7 target mode settings/results refine that same
-             lifecycle in StationDecode.sysml, pending independent readiness review.
-             Receive jobs do not own transmit lifecycle or independent halt. */
+        doc /* Receive job/cancel lifecycle correlates profile, boot, source, job and
+             generation with immutable settings/results. WstxRecordingReceive owns
+             recorded spectrum lifetimes, bounds and cancellation; WstxOfflineDecode
+             refines mode settings/results on that lifecycle. Transmit lifecycle and
+             independent halt remain outside receive jobs. */
     }
     item def ProcessingResult {
-        doc /* contract 11.3: #7 owns mode-specific decoded payload/units/oracles and required
-             result delivery/retention; #6 owns spectrum frame units/identity/bounds and
-             replaceable display delivery. Concrete spectrum schema/lifetimes are WstxRecordingReceive::SpectrumFrame;
-             #7 target decoded payload/retention is WstxOfflineDecode::ResultRecord and
-             ResultPage, contract 4.4/6.4/12.7; implementation/readiness not asserted. */
+        doc /* WstxRecordingReceive::SpectrumFrame owns spectrum units, identity,
+             bounds and replaceable display delivery. WstxOfflineDecode::ResultRecord
+             and ResultPage own mode payloads and required result delivery/retention.
+             These have different delivery obligations despite sharing processing. */
     }
     item def EncodeRequest;
     item def Waveform;
@@ -141,24 +230,21 @@ package WstxArchitecture {
     }
     part def StationControllerComputer {
         doc /* One controller role hosts variable N station processes. The common authority
-             denotes the effective shared-radio responsibility, not an in-process mutex.
-             #8/#13 settle cross-process placement/leases and actual hardware limits.
-             Browser routing is profile-scoped; these population connections do not assert
-             all-to-all request delivery or simultaneous transmission. */
+             is effective shared-radio responsibility, not a per-process mutex.
+             Cross-process placement/leases and actual hardware capacity are constrained
+             by WstxProductScope::NativeFlexBoundary and WstxRadioIO. Profile-scoped
+             routing is not all-to-all delivery or simultaneous transmission. */
         port viewerLink : ~BrowserExchange;
         port radioAudio : AudioExchange;
         port radioControl : RadioControl;
         part stations[*] : StationProcess;
         ref part mcpClients[*] : McpClient;
-        doc /* contract 11.9: client references do not compose clients onto this computer.
-             Controller-level attachments own routing associations only. #12 client
-             placement/authority remains unresolved and is not implementation-ready. */
+        doc /* MCP clients are referenced, not deployed onto this computer by composition.
+             Controller attachments own routing associations only. Client placement and
+             detailed authority remain unresolved before MCP implementation. */
         part radioAuthority : RadioAuthority;
 
         part mcpAttachments[*] : McpAttachment;
-
-
-
 
     }
     part def BrowserAttachment {
@@ -176,8 +262,9 @@ package WstxArchitecture {
         connection mcpClientOperations connect client.station to station.mcp.client;
     }
     part def RadioBinding {
-        doc /* Persisted intent resolves a selected physical radio/resource at connection.
-             Native slice/handle schema and actual radio capacity remain #13 decisions. */
+        doc /* Persisted intent resolves the selected physical radio/resource at connection.
+             WstxProductScope::NativeFlexBoundary leaves native slice/handle schema
+             and actual radio capacity as implementation prerequisites. */
         ref part radio : Radio :> physicalStation.radio;
     }
     part def RadioAudioAttachment {
@@ -213,8 +300,10 @@ package WstxArchitecture {
     }
     part def WebAdapter {
         doc /* Own embedded client, HTTP/file transfer/versioned WebSocket, transport authentication and Origin checks; no second QSO/modem engine or direct radio writes. */
-        doc /* contract 11.3/11.7: extend existing shared profile/auth/Origin/HTTP/WebSocket
-             services once; dependent issues do not add parallel transport authorities. */
+        doc /* WstxStationProtocol owns shared authentication, Origin and HTTP/WebSocket
+             semantics. WstxOperatingReceive::HttpContentCodingBoundary refines bounded
+             GET coding after handler/auth/errors/caps, with one dispatch and unchanged
+             JSON/WebSocket identity; it creates no second transport authority. */
         port client : ~BrowserExchange;
         port station : StationOperations;
         port recording : RecordingTransfer;
@@ -226,8 +315,9 @@ package WstxArchitecture {
     }
     part def PersistedProfile {
         doc /* Bootstrap/profile owns selection, stable identity, endpoints, exclusive ownership, validation and storage; not DSP or browser state. */
-        doc /* Exactly one explicitly selected profile per process, exclusive ownership,
-             stable identity, configuration/contact/recording storage. #5 owns schema. */
+        doc /* Exactly one explicitly selected profile per process owns stable identity,
+             configuration, contacts and recordings. WstxProfiles owns its schema,
+             persistence, validation and session behaviour. */
         port context : ~ProfileAccess;
         port contacts : ~ProfileAccess;
         port upload : ~RecordingTransfer;
@@ -244,36 +334,32 @@ package WstxArchitecture {
     }
     part def ReceivePipeline {
         doc /* Own sample-window handling, normalization/resampling and bounded jobs/spectrum; not file dialogs, HTTP, CAT or UI rendering. PCM-unit mapping is not gain control and native conversion has one owner. */
-        doc /* contract 11.3/11.7/11.8: #6 establishes common sample and receive job contracts;
-             #8 owns one common native-format/rate conversion stage; #7 consumes canonical
-             12k samples. PCM unit mapping is distinct from AGC
-             or modem normalization. No source-specific modem resamplers. #6/#7 settle
-             one shared FFT provider, ordering/scaling, buffer policy and independent
-             oracles before either writes FFT code; no speculative wrapper is required.
-             contract 4.4 and RecordingReceive.sysml now select shared RustFFT6.4.1 and the
-             delivered recorded spectrum contract; review and acceptance evidence remains on issue #6.
-             #7 target sizes/history/decoderquanta are in StationDecode.sysml; its independent
-             readiness review and #8 live adapter contract remain separate gates. */
+        doc /* One shared native-format/rate conversion owner feeds canonical samples;
+             no source-specific modem resamplers. PCM unit mapping differs from AGC
+             and modem normalization. WstxRecordingReceive owns recorded spectrum,
+             shared RustFFT 6.4.1 ordering/scaling and buffer obligations;
+             WstxOfflineDecode owns mode window/history/decoder quanta and independent
+             vectors; WstxRadioIO owns live adapter/conversion semantics. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
         port processing : ReceiveProcessing;
     }
     part def ModeFunctions {
         doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
-        doc /* Pure receive calculations and encoding/waveform generation. No device,
-             filesystem, wall-clock or network dependency; mode support is CR-specific.
-             contract 11.3/11.7: #7 owns pure receive functions and mode result payloads;
-             hardware/device-format adaptation and common rate conversion stay outside. */
+        doc /* Pure receive calculations and encoding/waveform generation depend on no
+             device, filesystem, wall-clock or network. WstxOfflineDecode owns concrete
+             mode contracts and status; hardware format adaptation and common rate
+             conversion remain outside this boundary. */
         port receive : ~ReceiveProcessing;
         port encode : ~EncodeProcessing;
     }
     part def TransmitService {
         doc /* Own UTC scheduling, transmit state, audio/PTT coordination and priority halt; no browser timer or visualization-queue dependency. Defaults UNARMED on startup. Halt never waits for decode, receive cancellation or congestion. Controller/device loss and authority-expiry policy are settled before hardware TX and cannot be replaced in MCP. */
-        doc /* UTC mapping/scheduling, operation authority, bounded halt and audio/PTT
-             coordination. #9 settles deadlines/controller-loss policy before hardware TX.
-             contract 11.3/11.7: transmit lifecycle/halt is distinct from #6 receive jobs;
-             halt cannot wait for receive cancellation, work or congestion. Existing
-             context/resource authority is reused rather than recreated. */
+        doc /* UTC scheduling, operation authority and audio/PTT coordination reuse the
+             common resource context. WstxProductScope::TransmitSafetyPolicy owns
+             unresolved deadlines/controller-loss/expiry policy before hardware TX;
+             WstxProductScope::ProcessingAndHaltOwnership separates priority halt from
+             receive completion/cancellation and optional display congestion. */
         port operations : ~StationOperations;
         port encode : EncodeProcessing;
         port audio : AudioExchange;
@@ -329,18 +415,19 @@ package WstxArchitecture {
     part def NativeAudio :> AudioDeviceAdapter { port session : SessionAccess; }
     part def NativeControl :> RustRadioDriver { port session : SessionAccess; }
     part def NativeSession {
-        doc /* A managed native session may serve both implementations. This session is
-             not a second arbitration authority and cannot bypass the common authority.
-             Session ownership/sharing/lifetime remain #13 decisions; this is a provider
-             type, not a requirement for a separate session per station. */
+        doc /* A managed native session may serve audio and control. It is not a second
+             arbitration authority. WstxProductScope::NativeFlexBoundary leaves session
+             ownership/sharing/lifetime unresolved; this provider type does not require
+             a separate session per station. */
         port audio : ~SessionAccess;
         port control : ~SessionAccess;
     }
     part def NativeBackend :> RadioBackend {
-        doc /* Optional Phase 2 alternate, no external SmartSDR/CAT/DAX bridge required.
-             These logical associations select no native API schema or physical streams.
-             The session is referenced, not composed by the backend. #13 is not
-             implementation-ready until ownership/sharing/lifetime are settled in the canonical contract. */
+        doc /* Optional Phase 2 alternate without external SmartSDR/CAT/DAX bridges.
+             Logical associations select no native API schema or physical streams.
+             The session is referenced, not composed by this backend. Required
+             ownership/sharing/lifetime decisions in WstxProductScope::NativeFlexBoundary
+             remain prerequisites; this alternative does not assert full native delivery. */
         part audioDevices : NativeAudio;
         part controlDriver : NativeControl;
         ref part session : NativeSession;
@@ -402,8 +489,8 @@ package WstxArchitecture {
     dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
     dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
-    doc /* Target responsibility traces from contract 11.10. Dependencies identify the
-         responsible boundary, not delivered capability or an executed verification. */
+    doc /* Responsibility traces identify the owning boundary for an existing requirement,
+         not delivered capability or an executed verification. */
     dependency configurationPromise from StationService to WstxRequirements::'FR-001';
     dependency receivePromise from ReceivePipeline to WstxRequirements::'FR-003';
     dependency decodePromise from ModeFunctions to WstxRequirements::'FR-004';
@@ -425,15 +512,16 @@ package WstxArchitecture {
     dependency mcpPromise from McpAdapter to WstxRequirements::'FR-020';
     dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
     package ImplementedStatusSlice {
-        doc /* Legacy status/TLS subset retained alongside Profiles.sysml's implemented
-             CR #5 profile functionality. Target deployment does not assert full radio/modem or MCP delivery. */
+        doc /* Implemented status/TLS subset alongside WstxProfiles profile functionality.
+             The target deployment does not assert full radio/modem or MCP delivery;
+             detailed coverage remains in WstxRequirements and the owning packages. */
         part def StatusServer;
         dependency statusScope from StatusServer to WstxRequirements::'CL-003-01';
         dependency statusProtocol from StatusServer to WstxRequirements::'CL-003-02';
     }
     dependency coordinatedReceivePromise from ReceivePipeline to WstxRequirements::'CL-008-07';
-    doc /* contract 4.7.5/12.8.1 coordinated receive controls reuse this existing receive
-         and radio authority path. No additional station/backend/physical connector,
-         sample source or deployment is introduced. WstxOperatingReceive models the
-         single-owner release/setup/readback/restart and cancellation fences. */
+    doc /* WstxOperatingReceive refines coordinated receive controls on the existing
+         receive and radio authority path: single-owner release/setup/readback/restart
+         and cancellation fences. It introduces no additional station/backend/physical
+         connector, sample source or deployment. */
 }
