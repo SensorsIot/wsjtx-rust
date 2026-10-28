@@ -356,7 +356,7 @@ package WstxArchitecture {
             doc /* Meaning: associated value. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: float val. Owner: physicalRadio/model definition. Context: cal_table_float record context. Source: include/hamlib/rig.h:1867. */
         }
-        attribute 'hamlib.struct.cal_table_float.table' : HamlibUnresolvedProperty[0..1] {
+        attribute 'hamlib.struct.cal_table_float.table' : HamlibUnresolvedProperty[*] {
             doc /* Meaning: table of plots. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: table[HAMLIB_MAX_CAL_LENGTH]. Owner: physicalRadio/model definition. Context: cal_table_float record context. Source: include/hamlib/rig.h:1868. */
         }
@@ -374,7 +374,7 @@ package WstxArchitecture {
             doc /* Meaning: associated value, basically the measured dB value. Unit: dB. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: int val. Owner: physicalRadio/model definition. Context: cal_table record context. Source: include/hamlib/rig.h:1837. */
         }
-        attribute 'hamlib.struct.cal_table.table' : HamlibUnresolvedProperty[0..1] {
+        attribute 'hamlib.struct.cal_table.table' : HamlibUnresolvedProperty[*] {
             doc /* Meaning: table of plots. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: table[HAMLIB_MAX_CAL_LENGTH]. Owner: physicalRadio/model definition. Context: cal_table record context. Source: include/hamlib/rig.h:1838. */
         }
@@ -580,7 +580,7 @@ package WstxArchitecture {
             doc /* Meaning: Function status. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: setting_t funcs. Owner: physicalRadio/model definition. Context: channel record context. Source: include/hamlib/rig.h:1674. */
         }
-        attribute 'hamlib.struct.channel.levels' : HamlibUnresolvedProperty[0..1] {
+        attribute 'hamlib.struct.channel.levels' : HamlibUnresolvedProperty[*] {
             doc /* Meaning: Level values. Unit: unspecified; do not infer units. Access/role: record member; capability/configuration/state according to containing record.
                  Source type: value_t levels[RIG_SETTING_MAX]. Owner: physicalRadio/model definition. Context: channel record context. Source: include/hamlib/rig.h:1675. */
         }
@@ -1953,8 +1953,32 @@ package WstxArchitecture {
                  Source type: vfo_op_t vfo_ops. Owner: physicalRadio/model definition. Context: model-specific. Source: include/hamlib/rig.h:2409. */
         }
     }
+    attribute def RadioAntennaSelectionRecord {
+        attribute vfoSelector : Integer[0..1];
+        attribute selectedAntenna : Integer[0..1];
+        attribute option : HamlibUnresolvedProperty[0..1];
+        attribute currentAntenna : Integer[0..1];
+        attribute transmitAntenna : Integer[0..1];
+        attribute receiveAntenna : Integer[0..1];
+        doc /* Independent ant_t selectors and model-specific value_t option from
+             rig_set_ant/rig_get_ant, pinned rig.h3380..3392. Selectors retain source
+             enum/bitmask domains without packing fields into one integer. The input
+             antenna selection differs from current/TX/RX observation outputs; no output
+             is inferred from a request. Unknown option union representation remains
+             explicit until the selected model supplies its meaning. */
+    }
+    attribute def RadioSplitVfoRecord {
+        attribute receiveVfoSelector : Integer[0..1];
+        attribute splitEnabled : Boolean[0..1];
+        attribute transmitVfoSelector : Integer[0..1];
+        doc /* rig_set_split_vfo/rig_get_split_vfo, pinned rig.h3203..3212, carry
+             receive-VFO context, independent split_t off/on state and a TX-VFO selector.
+             splitEnabled is the normalized off/on meaning, not a C enum ordinal cast;
+             VFO selectors retain their source enum/alias/bitmask context. Requested
+             values do not imply confirmed observations. No compound integer encoding. */
+    }
     attribute def HamlibOperatingProperties {
-        attribute 'radio.antennaSelection' : Integer[0..1] {
+        attribute 'radio.antennaSelection' : RadioAntennaSelectionRecord[0..1] {
             doc /* Meaning: antennaSelection. Unit: unspecified; do not infer units. Access/role: requested and/or observed; retain separately with status/freshness.
                  Source type: record(ant_t, value_t option, current/TX/RX). Owner: physicalRadio. Context: VFO. Source: include/hamlib/rig.h:3380; include/hamlib/rig.h:3385. */
         }
@@ -2030,7 +2054,7 @@ package WstxArchitecture {
             doc /* Meaning: spectrumSnapshot. Unit: frequency Hz; level source-defined. Access/role: requested and/or observed; retain separately with status/freshness.
                  Source type: rig_spectrum_line record. Owner: physicalRadio. Context: scope/VFO. Source: include/hamlib/rig.h:3592. */
         }
-        attribute 'radio.splitEnabledAndTxVfo' : Integer[0..1] {
+        attribute 'radio.splitEnabledAndTxVfo' : RadioSplitVfoRecord[0..1] {
             doc /* Meaning: splitEnabledAndTxVfo. Unit: unspecified; do not infer units. Access/role: requested and/or observed; retain separately with status/freshness.
                  Source type: record(split_t,vfo_t). Owner: physicalRadio. Context: RX/TX VFO pair. Source: include/hamlib/rig.h:3203; include/hamlib/rig.h:3208. */
         }
