@@ -41,7 +41,7 @@ test('TC-009-005 network lifetime and correlated Off oracle reject true violatio
   const boundary=structuredClone(transfers);boundary[1].started=boundary[0].ended;assert.equal(selectionNetworkSummary(boundary,245000,248000).maxActive,1);
   assert.ok(41670.0860<41671.8184,'old parsed-body completion would falsely report overlap');
   const requests=[{socket:2,id:17,profile:'off',at:10}],acks=[{socket:2,id:16,profile:'off',at:11},{socket:3,id:17,profile:'off',at:12},{socket:2,id:17,profile:'thin',at:13}];
-  assert.equal(correlatedOffAck(requests,acks,9),null);acks.push({socket:2,id:17,profile:'off',at:14});const ack=correlatedOffAck(requests,acks,9);assert.equal(ack.id,17);
+  assert.equal(correlatedOffAck(requests,acks,9),null);acks.push({socket:2,id:17,profile:'off',at:14});const ack=correlatedOffAck(requests,acks,9);assert.equal(ack.id,17);assert.equal(assertOffAckDeadline({requestedAt:10,ackAt:2010}),2000);assert.throws(()=>assertOffAckDeadline({requestedAt:10,ackAt:2010.001}),/Off acknowledgement/);
   const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
 });
 
@@ -246,6 +246,7 @@ function correlatedOffAck(requests,acks,after){
   }
   return null;
 }
+function assertOffAckDeadline(ack){const elapsed=ack.ackAt-ack.requestedAt;assert.ok(Number.isFinite(elapsed)&&elapsed>=0&&elapsed<=2000,`actual Off acknowledgement ${elapsed}ms exceeds2000ms`);return elapsed;}
 function optionalAfterOff(frames,ack){return frames.filter(frame=>frame.socket===ack.socket&&frame.at>ack.ackAt&&['spectrum.frame','spectrum.detail.frame'].includes(frame.type));}
 
 function liveSelectionFixture(){
@@ -353,7 +354,7 @@ function liveSelectionFixture(){
     await command('band','40m','ft8',7074000);
     async function measure(profile,steps){
       const offProofs=[];
-      for(const [index,page]of pages.entries()){const after=performance.now();await page.locator('[data-region=client-preferences]').first().click();await page.selectOption('#display-profile',profile);await page.locator('.op-secondary:not([hidden]) .return-operate').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);}}
+      for(const [index,page]of pages.entries()){const after=performance.now();await page.locator('[data-region=client-preferences]').first().click();await page.selectOption('#display-profile',profile);await page.locator('.op-secondary:not([hidden]) .return-operate').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
       await sleep(500);const baseline={...proxy.counters},start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
       const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
