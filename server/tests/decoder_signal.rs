@@ -907,6 +907,22 @@ fn resource_hash(path: &Path) -> String {
     assert!(output.status.success());
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
+fn resource_metrics_source_identity() -> Value {
+    let output = resource_capture(
+        Command::new(resource_python())
+            .args(["-c", "import hashlib,json,pathlib,sys; raw=pathlib.Path(sys.argv[1]).read_bytes(); canonical=raw.replace(b'\\r\\n',b'\\n'); assert b'\\r' not in canonical, 'bare CR is not an admitted source representation'; print(json.dumps({'raw_sha256':hashlib.sha256(raw).hexdigest(),'canonical_lf_sha256':hashlib.sha256(canonical).hexdigest()}))"])
+            .arg(resource_helper()),
+        10,
+    );
+    assert!(output.status.success());
+    let identity: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        identity["canonical_lf_sha256"],
+        "1e264d950b8055832b5bb21757dc2a96234ec73db41cb17225df952d795eca51",
+        "reviewed named metrics source; only CRLF/LF representation may differ"
+    );
+    identity
+}
 fn resource_source() -> String {
     let clean = resource_capture(
         Command::new("git")
@@ -951,11 +967,7 @@ fn resource_runtime_parent() {
     let executable = std::env::current_exe().unwrap();
     let executable_hash = resource_hash(&executable);
     let source = resource_source();
-    assert_eq!(
-        resource_hash(&resource_helper()),
-        "1e264d950b8055832b5bb21757dc2a96234ec73db41cb17225df952d795eca51",
-        "reviewed metrics source"
-    );
+    let metrics_source_identity = resource_metrics_source_identity();
     let compiler = resource_capture(Command::new("rustc").args(["--version", "--verbose"]), 10);
     assert!(compiler.status.success());
     let power = resource_capture(Command::new("powercfg").arg("/getactivescheme"), 10);
@@ -969,7 +981,8 @@ fn resource_runtime_parent() {
         "os_version":String::from_utf8_lossy(&os_version.stdout),"build_profile":"release",
         "arch":std::env::consts::ARCH,"processor_identifier":std::env::var("PROCESSOR_IDENTIFIER").unwrap_or_default(),
         "parallelism":std::thread::available_parallelism().unwrap().get(),"power_scheme":String::from_utf8_lossy(&power.stdout),
-        "host_scope":"supplemental actual host; not a5950X claim","full_station_proof":false})
+        "host_scope":"supplemental actual host; not a5950X claim","full_station_proof":false,
+        "metrics_source_identity":metrics_source_identity})
     );
     let mut completed_configurations = 0;
     let mut baselines = std::collections::BTreeMap::<(String, bool), Value>::new();
@@ -1300,18 +1313,14 @@ fn resource_repeat(
 fn resource_compare_baseline(expected: &Value, actual: &Value, mode: &str) {
     let mut expected = expected.as_array().unwrap().iter().collect::<Vec<_>>();
     let mut actual = actual.as_array().unwrap().iter().collect::<Vec<_>>();
-    expected.sort_by_key(|record| {
-        (
-            record["payload77"].as_str().unwrap(),
-            record["start_frame"].as_u64().unwrap(),
-        )
-    });
-    actual.sort_by_key(|record| {
-        (
-            record["payload77"].as_str().unwrap(),
-            record["start_frame"].as_u64().unwrap(),
-        )
-    });
+    let order = |a: &&Value, b: &&Value| {
+        a["payload77"]
+            .as_str()
+            .cmp(&b["payload77"].as_str())
+            .then(a["start_frame"].as_u64().cmp(&b["start_frame"].as_u64()))
+    };
+    expected.sort_by(order);
+    actual.sort_by(order);
     assert_eq!(actual.len(), expected.len());
     for (a, b) in actual.into_iter().zip(expected) {
         assert_eq!(a["payload77"], b["payload77"]);
