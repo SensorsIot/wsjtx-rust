@@ -73,6 +73,24 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
     assert.equal(cadenceCaller(initiator(759),origin,mapping),'automatic');for(const line of [700,713,726,732,742,744,752,761])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(758),origin,mapping),/unknown/);
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
+  await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
+    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js')));
+    const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
+    const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
+    assert.equal(mapping.valid(snapshot),true,'negative controls begin with a fully valid browser schema');
+    const expected={profile_id:uuid,boot_id:uuid,profile_revision:3};
+    const event={at:900,epoch:0,connected:true,sameSocket:true,acceptedSequence:20,...expected};
+    const q=()=>({expected,events:[event,{...event,at:6000,acceptedSequence:21}]});
+    const request={wallStarted:1000,wallEnded:1800},next={wallStarted:5000};
+    assert.equal(cadenceAccepted(snapshot,request,next,q()).acceptedSequence,21);
+    for(const key of ['profile_id','boot_id','profile_revision']){const wrong=structuredClone(snapshot);wrong[key]=key==='profile_revision'?4:'00000000-0000-4000-8000-000000000002';assert.equal(mapping.valid(wrong),true);assert.throws(()=>cadenceAccepted(wrong,request,next,q()),/expected/);}
+    const invalid=q();invalid.events.splice(1,0,{...event,at:1500,epoch:1,acceptedSequence:20});assert.throws(()=>cadenceAccepted(snapshot,request,next,invalid),/discarded|unproven/);
+    const socket=q();socket.events.splice(1,0,{...event,at:1500,sameSocket:false});assert.throws(()=>cadenceAccepted(snapshot,request,next,socket),/socket/);
+    const unproven=q();unproven.events[1].acceptedSequence=20;assert.throws(()=>cadenceAccepted(snapshot,request,null,unproven),/unproven/);
+    const after=q();after.events.splice(1,0,{...event,at:2000,epoch:1,acceptedSequence:21});assert.equal(cadenceAccepted(snapshot,request,next,after).proof,'accepted state at invalidating action');
+    const stale=structuredClone(snapshot);stale.snapshot_sequence=19;assert.equal(mapping.valid(stale),true);
+    assert.throws(()=>cadenceAccepted(stale,request,next,q()),/stale sequence/);
+  });
 });
 
 test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
@@ -311,6 +329,42 @@ function cadencePair(previous,current,mutations){
   }
   pair.eligible=true;pair.pendingCoverage=pending&&gap<7950;pair.passiveCoverage=!pending;return pair;
 }
+function cadenceAccepted(body,request,next,qualification){
+  const {expected,events}=qualification;
+  for(const key of ['profile_id','boot_id','profile_revision'])assert.equal(body[key],expected[key],`source acceptance expected ${key}`);
+  const before=events.filter(e=>e.at<=request.wallStarted).at(-1);
+  assert.ok(before&&before.connected&&before.sameSocket,'proven connected socket at dispatch');
+  assert.ok(before.acceptedSequence===null||body.snapshot_sequence>=before.acceptedSequence,'source stale sequence guard');
+  const boundary=next?.wallStarted??events.at(-1).at;
+  const during=events.filter(e=>e.at>request.wallStarted&&e.at<=boundary);
+  for(const event of during){
+    assert.ok(event.connected&&event.sameSocket,'source socket context invalidated');
+    if(event.epoch!==before.epoch){
+      // A synchronous action checkpoint can prove acceptance BEFORE that action
+      // increments the epoch. Otherwise network completion alone is insufficient.
+      assert.equal(event.acceptedSequence,body.snapshot_sequence,'source epoch discarded or acceptance unproven');
+      assert.ok(request.wallEnded!==null&&request.wallEnded<=event.at,'mutation before response completion');
+      return {epoch:before.epoch,proof:'accepted state at invalidating action',acceptedSequence:event.acceptedSequence};
+    }
+  }
+  assert.ok(next||events.at(-1).acceptedSequence===body.snapshot_sequence,'final response acceptance unproven');
+  return {epoch:before.epoch,proof:next?'frozen guards and next sequential dispatch':'accepted final checkpoint',acceptedSequence:body.snapshot_sequence};
+}
+function cadenceQualification(seen){
+  const q=seen.acceptance,events=q.events;
+  assert.ok(events.length>=2);assert.equal(seen.sockets.length,1,'fixed workload has one stable socket');assert.equal(seen.sockets[0].closed,null);
+  let epoch=events[0].epoch,actions=0;
+  for(const event of events){
+    assert.ok(event.connected&&event.sameSocket,'fixed workload socket/context changed');
+    for(const key of ['profile_id','boot_id','profile_revision'])assert.equal(event[key],q.expected[key],`fixed workload expected ${key}`);
+    if(event.action){epoch++;actions++;}assert.equal(event.epoch,epoch,'all source epoch changes accounted for');
+  }
+  for(const profile of seen.profileBodies)for(const [key,field]of [['profile_id','profile_id'],['boot_id','boot_id'],['profile_revision','revision']])assert.equal(profile[field],q.expected[key],'authoritative profile remains fixed');
+  const mutations=seen.transfers.filter(r=>r.wallStarted>=events[0].at&&!['GET','HEAD'].includes(r.method));
+  assert.equal(mutations.length,actions,'each epoch action has exactly one actual mutation');
+  assert.ok(mutations.every(r=>r.method==='POST'&&r.route==='/receive/select'),'no unaccounted epoch-changing mutation');
+  return q;
+}
 function cadenceJoin(seen,origin,mapping){
   const network=seen.transfers.filter(r=>r.route==='/receive/selection'&&r.method==='GET');
   assert.equal(network.length,seen.reads.length,'complete ordered page/CDP selection join');
@@ -327,7 +381,8 @@ function cadenceJoin(seen,origin,mapping){
     if(priorBody&&read.body&&priorBody.boot_id===read.body.boot_id)assert.ok(read.body.snapshot_sequence>=priorBody.snapshot_sequence,'fail closed on a snapshot the browser would reject as old');
     // The source cannot dispatch the next read until response.text, validation and
     // operatingState assignment finish. Observer JSON callbacks may finish later.
-    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,observerParsedAt:read.ended};
+    const acceptance=read.body&&transfer.wallStarted>=seen.acceptance.events[0].at?cadenceAccepted(read.body,transfer,network[index+1],seen.acceptance):null;
+    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,acceptance,observerParsedAt:read.ended};
   });
 }
 function assertCadenceCoverage(pairs,label){
@@ -363,10 +418,10 @@ function liveSelectionFixture(){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const session=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token,timeout:20000});assert.equal(session.status(),204);
       const page=await context.newPage();pages.push(page);
-      const seen={reads:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[]};observations.push(seen);
+      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[]};observations.push(seen);
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
-      cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
-      cdp.on('Network.loadingFinished',event=>{const transfer=transfers.get(event.requestId);if(transfer&&transfer.ended===null){transfer.ended=performance.now();transfer.browserEnded=event.timestamp;transfer.encodedBytes=event.encodedDataLength;}});
+      cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,wallStarted:event.wallTime*1000,wallEnded:null,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
+      cdp.on('Network.loadingFinished',event=>{const transfer=transfers.get(event.requestId);if(transfer&&transfer.ended===null){transfer.ended=performance.now();transfer.browserEnded=event.timestamp;transfer.wallEnded=transfer.wallStarted+(event.timestamp-transfer.browserStarted)*1000;transfer.encodedBytes=event.encodedDataLength;}});
       cdp.on('Network.loadingFailed',event=>{const transfer=transfers.get(event.requestId);if(transfer&&transfer.ended===null){transfer.ended=performance.now();transfer.browserEnded=event.timestamp;transfer.failure=event.errorText;}});
       page.on('pageerror',error=>errors.push(error.message));
       const reads=new Map();
@@ -379,6 +434,7 @@ function liveSelectionFixture(){
       page.on('response',async response=>{
         const route=new URL(response.url()).pathname;
         if(route==='/recording.js'){seen.cadenceSource=await response.body();return;}
+        if(route==='/profile'&&response.status()===200)seen.profileBodies.push(await response.json());
         const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         try{const text=await response.text();entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);
@@ -404,6 +460,19 @@ function liveSelectionFixture(){
       report.cold={state:'failed',elapsedMs:performance.now()-coldStarted,error:error.message,errors,diagnostics:state};await save();throw error;
     }
     coldRemaining();
+    for(const [index,page]of pages.entries()){
+      const authoritative=observations[index].profileBodies.at(-1);assert.ok(authoritative,'authoritative setup profile observed');
+      observations[index].acceptance={expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
+        const initialSocket=socket,events=[];
+        const snapshot=action=>{events.push({at:performance.timeOrigin+performance.now(),action,epoch:operatingEpoch,connected:connection.dataset.state==='connected',sameSocket:socket===initialSocket&&socket.readyState===WebSocket.OPEN,profile_id:profileData.profile_id,boot_id:profileData.boot_id,profile_revision:profileData.revision,acceptedSequence:operatingState?.snapshot_sequence??null});};
+        snapshot(false);
+        addEventListener('station-ready',()=>snapshot(false));addEventListener('station-stale',()=>snapshot(false));
+        // Bubble after the source handler's synchronous epoch increment. This
+        // observes only the two existing selections; it does not wrap fetch.
+        document.addEventListener('change',event=>{if(['operating-mode','operating-band'].includes(event.target.id))snapshot(true);});
+        window.__cadenceAcceptanceCheckpoint=()=>{snapshot(false);return events;};return events;
+      })};
+    }
     report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),countedBytes:{...proxy.counters},pages:observations.map(seen=>({navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
@@ -461,16 +530,20 @@ function liveSelectionFixture(){
       report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
       for(const seen of observations){const replies=seen.http.filter(r=>r.at>=start&&r.status===200&&['/receive/selection','/receive','/receive/results','/profile','/radio','/recording'].includes(r.route));assert.ok(replies.length>0);assert.ok(replies.every(r=>r.contentEncoding==='gzip'),'actual browser negotiated gzip on every eligible response');}
       assert.ok(traffic.up<=3000,`${profile} actual counted uplink ${traffic.up}`);assert.ok(traffic.down<=3000,`${profile} actual counted downlink ${traffic.down}`);assert.equal(latencies.length,26);
-      report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),reads:seen.reads,transfers:seen.transfers}));await save();
+      for(const [index,page]of pages.entries())observations[index].acceptance.events=await page.evaluate(()=>window.__cadenceAcceptanceCheckpoint());
+      report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),acceptance:seen.acceptance,profileBodies:seen.profileBodies,reads:seen.reads,transfers:seen.transfers}));await save();
       const evidence=observations.map(seen=>{
         const evidence={joined:[],pairs:[],errors:[]};
         try{
           const mapping=cadenceSource(seen.cadenceSource);evidence.sourceSha256=mapping.sha256;
+          cadenceQualification(seen);
           evidence.joined=cadenceJoin(seen,origin,mapping);
           const mutations=observations.flatMap(o=>o.transfers).filter(r=>!['GET','HEAD'].includes(r.method));
           for(let n=1;n<evidence.joined.length;n++){
             const previous=evidence.joined[n-1],current=evidence.joined[n];
             if(previous.started<start||current.started>=start+seconds*1000)continue;
+            assert.ok(previous.acceptance,'prior selection acceptance proven');
+            if(current.body)assert.ok(current.acceptance,'successor selection acceptance proven');
             try{evidence.pairs.push(cadencePair(previous,current,mutations));}
             catch(error){evidence.errors.push({message:error.message,previous,current});}
           }
