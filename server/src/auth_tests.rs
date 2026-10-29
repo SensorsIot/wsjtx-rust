@@ -71,7 +71,14 @@ impl HttpFixture {
         let directory =
             std::env::temp_dir().join(format!("wstx-auth-http-{}", profile::new_uuid().unwrap()));
         profile::Store::create(&directory).unwrap();
-        let (mut store, _) = profile::Store::open(&directory).unwrap();
+        let (store, _) = profile::Store::open(&directory).unwrap();
+        let app = Self::app_from_store(store, &directory, origin);
+        Self {
+            app: Some(app),
+            directory,
+        }
+    }
+    fn app_from_store(mut store: profile::Store, directory: &std::path::Path, origin: &str) -> App {
         let id = store.document.profile_id.clone();
         let boot = profile::new_uuid().unwrap();
         let authority = authorization_http::Service::initialize(&mut store, origin).unwrap();
@@ -92,10 +99,14 @@ impl HttpFixture {
             connections: Arc::new(Semaphore::new(16)),
             login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
         };
-        Self {
-            app: Some(app),
-            directory,
-        }
+        app
+    }
+    fn reopen(&mut self) {
+        let old = self.app.take().unwrap();
+        let origin = old.origin.clone();
+        drop(old); // Release the existing Store/UUID locks before opening again.
+        let (store, _) = profile::Store::open(&self.directory).unwrap();
+        self.app = Some(Self::app_from_store(store, &self.directory, &origin));
     }
     fn app(&self) -> &App {
         self.app.as_ref().unwrap()
@@ -702,10 +713,31 @@ async fn http_auth_safety_edit_preserves_key_identity_but_advances_scope_and_cle
     assert_eq!(response.json()["condition"], "commissioningRequired");
     assert_eq!(response.json()["scope"]["safety_revision"], 2);
     let before = std::fs::read(f.directory.join("authorization.json")).unwrap();
-    assert_eq!(f.post("/authorization/v1/commission",json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":response.json()["scope"],"receive_only_confirmed":true}),Some(&new_cookie)).await.status,StatusCode::CONFLICT,"unwired setup must never return a fabricated commitment");
-    assert_eq!(
+    let operation_id = profile::new_uuid().unwrap();
+    let confirmed = f.post("/authorization/v1/commission",json!({"version":1,"operation_id":operation_id,"scope":response.json()["scope"],"receive_only_confirmed":true}),Some(&new_cookie)).await;
+    assert_eq!(confirmed.status, StatusCode::OK);
+    assert_eq!(confirmed.json()["operation_id"], operation_id);
+    assert_eq!(confirmed.json()["scope"], response.json()["scope"]);
+    assert_ne!(
         std::fs::read(f.directory.join("authorization.json")).unwrap(),
         before
+    );
+    let committed: authorization::Record =
+        serde_json::from_slice(&std::fs::read(f.directory.join("authorization.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        committed.commissioning.as_ref().unwrap().control,
+        settings.control
+    );
+    assert_eq!(
+        committed
+            .commissioning
+            .as_ref()
+            .unwrap()
+            .scope
+            .wire
+            .safety_revision,
+        2
     );
 }
 
@@ -913,4 +945,794 @@ async fn http_review_authority_wait_yields_to_heartbeat_and_cancel_then_returns_
         );
         drop(pending);
     }
+}
+
+fn commission_body(g: &BrowserGrant, operation_id: &str) -> Value {
+    json!({"version":1,"operation_id":operation_id,"scope":g.scope,"receive_only_confirmed":true})
+}
+
+// Proves: CL-022-02/03; TC-022-007. Literal persisted acknowledgement, not a status-only oracle.
+#[tokio::test]
+async fn commission_http_commits_exact_disabled_configuration_and_retained_duplicate_is_read_only()
+{
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let operation = profile::new_uuid().unwrap();
+    let public = std::fs::read(f.directory.join("profile.json")).unwrap();
+    let prior: Value =
+        serde_json::from_slice(&std::fs::read(f.directory.join("authorization.json")).unwrap())
+            .unwrap();
+    let access = authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap();
+    let response = f
+        .post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie),
+        )
+        .await;
+    assert_eq!(response.status, StatusCode::OK);
+    let expected = json!({"version":1,"operation_id":operation,"scope":g.scope,"outcome":"committed","grant_id":g.id});
+    assert_eq!(response.json(), expected);
+    assert_eq!(response.headers[header::CACHE_CONTROL], "no-store");
+    assert!(!response.headers.contains_key(header::CONTENT_ENCODING));
+    assert!(response.body.len() <= 1024);
+    let bytes = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    let committed: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        committed["commissioning"],
+        json!({"scope":prior["current_scope"],"receive_only_confirmed":true,"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}})
+    );
+    assert_eq!(committed["grants"], prior["grants"]);
+    assert_eq!(
+        committed["revocation_generation"],
+        prior["revocation_generation"]
+    );
+    assert_eq!(committed["checked_control"], prior["checked_control"]);
+    assert_eq!(committed["operation_receipts"].as_array().unwrap().len(), 2);
+    assert_eq!(committed["operation_receipts"][1]["kind"], "commission");
+    assert_eq!(
+        committed["operation_receipts"][1]["owner_verifier"],
+        prior["grants"][0]
+    );
+    assert_eq!(
+        committed["operation_receipts"][1]["identity_request"],
+        Value::Null
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("profile.json")).unwrap(),
+        public
+    );
+    assert_eq!(
+        authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap(),
+        access
+    );
+    let duplicate = f
+        .post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie),
+        )
+        .await;
+    assert_eq!(duplicate.status, StatusCode::OK);
+    assert_eq!(duplicate.json(), expected);
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        bytes
+    );
+    // A write checkpoint remains armed: a duplicate must bypass persistence entirely.
+    let duplicate = authorization_http::commission_with_fault(
+        f.app().clone(),
+        f.headers(Some(&g.cookie)),
+        Bytes::from(serde_json::to_vec(&commission_body(&g, &operation)).unwrap()),
+        "write",
+    )
+    .await;
+    assert_eq!(duplicate.status(), StatusCode::OK);
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap(),
+        access
+    );
+}
+
+// Proves: CL-022-02; TC-022-007. Each invalid request has an independent pristine fixture.
+#[tokio::test]
+async fn commission_http_strict_negatives_never_change_acknowledgement_or_files() {
+    for case in [
+        "false",
+        "missing",
+        "duplicate",
+        "extra",
+        "type",
+        "scope_null",
+        "scope_stale",
+        "profile",
+        "missing_cookie",
+        "legacy_cookie",
+        "duplicate_cookie",
+        "wrong_origin",
+        "oversize",
+    ] {
+        let f = HttpFixture::new("https://localhost:8080");
+        let g = f.authorize().await;
+        let mut value = commission_body(&g, &profile::new_uuid().unwrap());
+        let mut headers = f.headers(Some(&g.cookie));
+        let expected = match case {
+            "false" => {
+                value["receive_only_confirmed"] = json!(false);
+                StatusCode::BAD_REQUEST
+            }
+            "missing" => {
+                value
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("receive_only_confirmed");
+                StatusCode::BAD_REQUEST
+            }
+            "extra" => {
+                value["control"] = json!({"mode":"disabled"});
+                StatusCode::BAD_REQUEST
+            }
+            "type" => {
+                value["receive_only_confirmed"] = json!("true");
+                StatusCode::BAD_REQUEST
+            }
+            "scope_null" => {
+                value["scope"] = Value::Null;
+                StatusCode::BAD_REQUEST
+            }
+            "scope_stale" => {
+                value["scope"]["safety_revision"] = json!(2);
+                StatusCode::CONFLICT
+            }
+            "profile" => {
+                value["scope"]["profile_id"] = json!("00000000-0000-4000-8000-000000000099");
+                StatusCode::CONFLICT
+            }
+            "missing_cookie" => {
+                headers.remove(header::COOKIE);
+                StatusCode::UNAUTHORIZED
+            }
+            "legacy_cookie" => {
+                headers.insert(
+                    header::COOKIE,
+                    format!(
+                        "wstx_session_{}={}.legacy",
+                        g.scope.profile_id, g.scope.profile_id
+                    )
+                    .parse()
+                    .unwrap(),
+                );
+                StatusCode::UNAUTHORIZED
+            }
+            "duplicate_cookie" => {
+                headers.append(header::COOKIE, g.cookie.parse().unwrap());
+                StatusCode::UNAUTHORIZED
+            }
+            "wrong_origin" => {
+                headers.insert(header::ORIGIN, "https://wrong.example".parse().unwrap());
+                StatusCode::FORBIDDEN
+            }
+            "oversize" => StatusCode::PAYLOAD_TOO_LARGE,
+            "duplicate" => StatusCode::BAD_REQUEST,
+            _ => unreachable!(),
+        };
+        let mut raw = serde_json::to_string(&value).unwrap();
+        if case == "duplicate" {
+            raw.pop();
+            raw.push_str(",\"receive_only_confirmed\":true}");
+        }
+        if case == "oversize" {
+            raw.push_str(&" ".repeat(1025));
+        }
+        let public = std::fs::read(f.directory.join("profile.json")).unwrap();
+        let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+        let response = f
+            .request(
+                axum::http::Method::POST,
+                "/authorization/v1/commission",
+                raw,
+                headers,
+            )
+            .await;
+        assert_eq!(response.status, expected, "{case}");
+        assert_eq!(
+            std::fs::read(f.directory.join("profile.json")).unwrap(),
+            public,
+            "{case}"
+        );
+        assert_eq!(
+            std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            private,
+            "{case}"
+        );
+    }
+    let f = HttpFixture::new("http://localhost:8080");
+    let response = f
+        .post("/authorization/v1/commission", json!({}), None)
+        .await;
+    assert_eq!(response.status, StatusCode::FORBIDDEN);
+    assert!(!f.directory.join("authorization.json").exists());
+    let f = HttpFixture::new("https://localhost:8080");
+    let response = f
+        .request(
+            axum::http::Method::POST,
+            "/session",
+            f.app().token.clone().unwrap(),
+            f.headers(None),
+        )
+        .await;
+    let bootstrap = response.cookie();
+    let selected = f
+        .app()
+        .profile
+        .as_ref()
+        .unwrap()
+        .authorization
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .authority
+        .record()
+        .current_scope
+        .clone()
+        .unwrap();
+    let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    let response = f.post("/authorization/v1/commission", json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":selected.wire,"receive_only_confirmed":true}), Some(&bootstrap)).await;
+    assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        private
+    );
+}
+
+// Proves: CL-022-02; only the original current owner/kind/scope can reconcile a retained ID.
+#[tokio::test]
+async fn commission_http_retained_id_cannot_rebind_owner_kind_or_new_safety_scope() {
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    assert_eq!(
+        f.post(
+            "/authorization/v1/commission",
+            commission_body(&g, &g.operation),
+            Some(&g.cookie)
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        private
+    );
+    let operation = profile::new_uuid().unwrap();
+    assert_eq!(
+        f.post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie)
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    let key = authorization::authorization_tests::peer_key();
+    let mut id = [0; 32];
+    ring::rand::SystemRandom::new().fill(&mut id).unwrap();
+    let id = URL_SAFE_NO_PAD.encode(id);
+    let second_operation = profile::new_uuid().unwrap();
+    // Use the SAME enrollment core to set up the second owner without relaxing the
+    // separately verified 10/60 HTTP budget merely to arrange this boundary test.
+    {
+        let state = f.app().profile.as_ref().unwrap();
+        let mut store = state.store.lock().unwrap();
+        let mut owner = state.authorization.lock().unwrap();
+        owner
+            .as_mut()
+            .unwrap()
+            .authority
+            .enroll(
+                &mut store,
+                authorization::Verifier {
+                    grant_id: id.clone(),
+                    enrollment_operation_id: second_operation.clone(),
+                    public_key: URL_SAFE_NO_PAD.encode(key.public_key().as_ref()),
+                    scope: g
+                        .scope
+                        .clone()
+                        .in_validated_origin(&f.app().origin)
+                        .unwrap(),
+                },
+            )
+            .unwrap();
+    }
+    let mut second = BrowserGrant {
+        key,
+        id,
+        operation: second_operation,
+        scope: g.scope.clone(),
+        cookie: String::new(),
+    };
+    second.cookie = f.renew(&second).await;
+    let before_refusal = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    assert_ne!(
+        before_refusal, private,
+        "second verifier setup was a real persisted enrollment"
+    );
+    assert_eq!(
+        f.post(
+            "/authorization/v1/commission",
+            commission_body(&second, &operation),
+            Some(&second.cookie)
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        before_refusal
+    );
+
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let operation = profile::new_uuid().unwrap();
+    assert_eq!(
+        f.post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie)
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    let state = f.app().profile.as_ref().unwrap();
+    {
+        let mut store = state.store.lock().unwrap();
+        let mut settings = store.document.settings();
+        settings.control = profile::Control {
+            mode: "cat".into(),
+            endpoint: Some("fixture-cat".into()),
+            ptt: "disabled".into(),
+        };
+        store.save(settings).unwrap();
+        state
+            .authorization
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .authority
+            .reconcile_control(&mut store)
+            .unwrap();
+    }
+    let new_cookie = f.renew(&g).await;
+    let bytes = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    assert_eq!(
+        f.post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&new_cookie)
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    let mut new_body = commission_body(&g, &operation);
+    new_body["scope"]["safety_revision"] = json!(2);
+    assert_eq!(
+        f.post("/authorization/v1/commission", new_body, Some(&new_cookie))
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        bytes
+    );
+}
+
+// Proves: CL-022-02; the real queued handler cannot acknowledge after a competing commit.
+#[tokio::test]
+async fn commission_http_revoke_or_safety_edit_wins_queued_acknowledgement_without_writes() {
+    use std::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    for change in ["revoke", "configuration"] {
+        let f = HttpFixture::new("https://localhost:8080");
+        let g = f.authorize().await;
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let (mut queued, public, private) = {
+            let mut store = state.store.lock().unwrap();
+            let mut queued = Box::pin(authorization_http::commission(
+                State(f.app().clone()),
+                f.headers(Some(&g.cookie)),
+                axum::extract::RawQuery(None),
+                Ok(Bytes::from(
+                    serde_json::to_vec(&commission_body(&g, &profile::new_uuid().unwrap()))
+                        .unwrap(),
+                )),
+            ));
+            assert!(matches!(
+                queued
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop())),
+                Poll::Pending
+            ));
+            let mut owner = state.authorization.lock().unwrap();
+            let a = &mut owner.as_mut().unwrap().authority;
+            if change == "revoke" {
+                a.revoke(&mut store, &g.id, &profile::new_uuid().unwrap(), false)
+                    .unwrap();
+            } else {
+                let mut settings = store.document.settings();
+                settings.control = profile::Control {
+                    mode: "cat".into(),
+                    endpoint: Some("fixture-cat".into()),
+                    ptt: "disabled".into(),
+                };
+                store.save(settings).unwrap();
+                a.reconcile_control(&mut store).unwrap();
+            }
+            (
+                queued,
+                std::fs::read(f.directory.join("profile.json")).unwrap(),
+                std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            )
+        };
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), queued.as_mut())
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED,
+            "{change}"
+        );
+        assert_eq!(
+            std::fs::read(f.directory.join("profile.json")).unwrap(),
+            public
+        );
+        assert_eq!(
+            std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            private
+        );
+        drop(queued);
+        drop(state);
+    }
+}
+
+// Proves: CL-022-02. Both controls are valid individually; the mismatch is semantic corruption.
+#[tokio::test]
+async fn commission_http_corrupt_acknowledgement_watermark_is_rejected_on_save_and_reopen() {
+    for field in ["commissioning", "checked_control"] {
+        let mut f = HttpFixture::new("https://localhost:8080");
+        let g = f.authorize().await;
+        assert_eq!(
+            f.post(
+                "/authorization/v1/commission",
+                commission_body(&g, &profile::new_uuid().unwrap()),
+                Some(&g.cookie)
+            )
+            .await
+            .status,
+            StatusCode::OK
+        );
+        let public = std::fs::read(f.directory.join("profile.json")).unwrap();
+        let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+        let mut value: Value = serde_json::from_slice(&private).unwrap();
+        let different = json!({"mode":"cat","endpoint":"other-fixture-port","ptt":"disabled"});
+        if field == "commissioning" {
+            value["commissioning"]["control"] = different;
+        } else {
+            value["checked_control"] = different;
+        }
+        let invalid: authorization::Record = serde_json::from_value(value.clone()).unwrap();
+        assert!(invalid.validate(&g.scope.profile_id).is_err());
+        assert!(
+            f.app()
+                .profile
+                .as_ref()
+                .unwrap()
+                .store
+                .lock()
+                .unwrap()
+                .save_authorization(&invalid)
+                .is_err()
+        );
+        assert_eq!(
+            std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            private
+        );
+        let corrupt = serde_json::to_vec(&value).unwrap();
+        f.app.take();
+        std::fs::write(f.directory.join("authorization.json"), &corrupt).unwrap();
+        assert!(matches!(
+            profile::Store::open(&f.directory),
+            Err("resource_unavailable")
+        ));
+        assert_eq!(
+            std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            corrupt
+        );
+        assert_eq!(
+            std::fs::read(f.directory.join("profile.json")).unwrap(),
+            public
+        );
+    }
+}
+
+impl HttpFixture {
+    async fn receipt_for(&self, g: &BrowserGrant, operation: &str) -> HttpReply {
+        let challenge = self
+            .post(
+                "/authorization/v1/challenge",
+                json!({"version":1,"operation_id":operation,"scope":g.scope}),
+                None,
+            )
+            .await;
+        if challenge.status != StatusCode::OK {
+            return challenge;
+        }
+        let value = challenge.json();
+        let nonce = value["nonce"].as_str().unwrap();
+        let scope = g
+            .scope
+            .clone()
+            .in_validated_origin(&self.app().origin)
+            .unwrap();
+        let signature = authorization::authorization_tests::peer_sign(
+            &g.key,
+            &scope,
+            &g.id,
+            nonce,
+            Some(operation),
+        );
+        self.post("/authorization/v1/receipt", json!({"version":1,"operation_id":operation,"scope":g.scope,"grant_id":g.id,"nonce":nonce,"signature":signature}), None).await
+    }
+}
+
+// Proves: CL-022-02; receipt-purpose proof recovers an ACK without reviving revoked control.
+#[tokio::test]
+async fn commission_http_read_only_receipt_survives_logout_without_mutation_replay() {
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let operation = profile::new_uuid().unwrap();
+    let confirmed = f
+        .post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie),
+        )
+        .await;
+    assert_eq!(confirmed.status, StatusCode::OK);
+    let expected = confirmed.json();
+    let revoked=f.post("/authorization/v1/revoke",json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":g.scope,"all_for_radio":false}),Some(&g.cookie)).await;
+    assert_eq!(revoked.status, StatusCode::OK);
+    let before = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    let receipt = f.receipt_for(&g, &operation).await;
+    assert_eq!(receipt.status, StatusCode::OK);
+    assert_eq!(receipt.json(), expected);
+    assert!(!receipt.headers.contains_key(header::SET_COOKIE));
+    assert_eq!(
+        f.post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie)
+        )
+        .await
+        .status,
+        StatusCode::UNAUTHORIZED,
+        "retained receipt must not bypass current grant admission"
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        before
+    );
+    assert!(
+        f.app()
+            .profile
+            .as_ref()
+            .unwrap()
+            .authorization
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .authority
+            .record()
+            .grants
+            .is_empty()
+    );
+}
+
+// Proves: CL-022-02; the transaction and SAME production completion mapping, not Router admission.
+#[tokio::test]
+async fn commission_http_transaction_faults_never_ack_and_store_reopen_reads_only_committed_outcome()
+ {
+    for stage in [
+        "write",
+        "flush",
+        "replace",
+        "before_replace",
+        "after_replace",
+    ] {
+        let mut f = HttpFixture::new("https://localhost:8080");
+        let g = f.authorize().await;
+        let operation = profile::new_uuid().unwrap();
+        let public = std::fs::read(f.directory.join("profile.json")).unwrap();
+        let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+        let failed = authorization_http::commission_with_fault(
+            f.app().clone(),
+            f.headers(Some(&g.cookie)),
+            Bytes::from(serde_json::to_vec(&commission_body(&g, &operation)).unwrap()),
+            stage,
+        )
+        .await;
+        assert_eq!(failed.status(), StatusCode::SERVICE_UNAVAILABLE, "{stage}");
+        assert!(!failed.headers().contains_key(header::SET_COOKIE));
+        assert_eq!(
+            std::fs::read(f.directory.join("profile.json")).unwrap(),
+            public
+        );
+        let committed = std::fs::read(f.directory.join("authorization.json")).unwrap();
+        if stage == "after_replace" {
+            assert_ne!(committed, private);
+            let value: Value = serde_json::from_slice(&committed).unwrap();
+            assert_eq!(value["commissioning"]["receive_only_confirmed"], true);
+            assert_eq!(value["operation_receipts"][1]["operation_id"], operation);
+        } else {
+            assert_eq!(committed, private, "{stage}");
+        }
+        assert_eq!(
+            f.post(
+                "/authorization/v1/status",
+                json!({"version":1}),
+                Some(&g.cookie)
+            )
+            .await
+            .status,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "current process must remain quarantined after {stage}"
+        );
+        f.reopen(); // Store/owner reload, NOT an actual process or browser restart.
+        let recovered = f.receipt_for(&g, &operation).await;
+        if stage == "after_replace" {
+            assert_eq!(recovered.status, StatusCode::OK);
+            assert_eq!(
+                recovered.json(),
+                json!({"version":1,"operation_id":operation,"scope":g.scope,"outcome":"committed","grant_id":g.id})
+            );
+            assert!(!recovered.headers.contains_key(header::SET_COOKIE));
+        } else {
+            assert_eq!(
+                recovered.status,
+                StatusCode::CONFLICT,
+                "missing receipt is unknown, never synthetic success"
+            );
+        }
+        assert_eq!(
+            std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            committed
+        );
+        assert_eq!(
+            f.post(
+                "/authorization/v1/status",
+                json!({"version":1}),
+                Some(&g.cookie)
+            )
+            .await
+            .status,
+            StatusCode::UNAUTHORIZED,
+            "volatile transport must not survive Store/service reopen"
+        );
+        let cookie = f.renew(&g).await;
+        let current = f
+            .post(
+                "/authorization/v1/status",
+                json!({"version":1}),
+                Some(&cookie),
+            )
+            .await;
+        assert_eq!(current.status, StatusCode::OK);
+        assert_eq!(current.json()["commissioned"], stage == "after_replace");
+        assert_eq!(
+            std::fs::read(f.directory.join("authorization.json")).unwrap(),
+            committed,
+            "proof/receipt recovery must not recommit the mutation"
+        );
+    }
+}
+
+// The selected release-prefix wrapper invokes this SAME HTTP fixture and existing Rig.
+#[cfg(all(test, not(debug_assertions)))]
+pub(crate) async fn commission_zero_native_io_case() {
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let state = f.app().profile.as_ref().unwrap().clone();
+    let revision = state.store.lock().unwrap().document.revision;
+    let (actor, rig) = crate::radio_http_tests::actor(
+        g.scope.profile_id.clone(),
+        state.boot.clone(),
+        revision,
+        false,
+    );
+    state.recording.fixture_radio(actor.clone());
+    // Suppress the fixture Actor's independent periodic refresh; reserving this
+    // existing lease executes no setup/setter and creates no maintenance owner.
+    let lease = actor.reserve_transition().unwrap();
+    let before = {
+        let r = rig.lock().unwrap();
+        (
+            r.writes.clone(),
+            r.exchanges.clone(),
+            r.setups.clone(),
+            r.closed,
+        )
+    };
+    let authority_before = actor.snapshot().unwrap().authority;
+    let operation = profile::new_uuid().unwrap();
+    let response = f
+        .post(
+            "/authorization/v1/commission",
+            commission_body(&g, &operation),
+            Some(&g.cookie),
+        )
+        .await;
+    let after = {
+        let r = rig.lock().unwrap();
+        (
+            r.writes.clone(),
+            r.exchanges.clone(),
+            r.setups.clone(),
+            r.closed,
+        )
+    };
+    let same = state
+        .recording
+        .radio_actor()
+        .is_some_and(|installed| Arc::ptr_eq(&installed, &actor));
+    let authority_after = actor.snapshot().unwrap().authority;
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.directory.join("authorization.json")).unwrap())
+            .unwrap();
+    drop(lease);
+    actor.request_close();
+    let deadline = Instant::now() + Duration::from_millis(250);
+    while !actor.close_complete() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    let released = actor.close_complete();
+    let closed = rig.lock().unwrap().closed;
+    drop(state);
+    drop(actor);
+    drop(rig);
+    // Perform assertions after explicit owned release even on the pre-feature RED.
+    assert!(
+        released && closed,
+        "owned fixture must acknowledge release within original budget"
+    );
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(
+        after, before,
+        "confirmation itself must issue ZERO native writes/exchanges/setups/close"
+    );
+    assert!(same);
+    assert_eq!(authority_after, authority_before);
+    assert_eq!(saved["commissioning"]["receive_only_confirmed"], true);
+    assert_eq!(
+        saved["operation_receipts"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["operation_id"],
+        operation
+    );
 }

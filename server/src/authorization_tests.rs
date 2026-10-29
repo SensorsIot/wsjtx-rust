@@ -709,6 +709,7 @@ fn repair_semantically_corrupt_commissioning_and_identity_journal_fail_closed_wi
                 ptt: "disabled".into(),
             },
         });
+        record.checked_control = record.commissioning.as_ref().unwrap().control.clone();
         let operation_id = profile::new_uuid().unwrap();
         record.operation_receipts.push_back(JournalEntry {
             operation_id: operation_id.clone(),
@@ -798,11 +799,7 @@ fn repair_valid_same_radio_older_verifier_and_receipt_remain_valid() {
     record.commissioning = Some(Commissioning {
         scope: record.current_scope.clone().unwrap(),
         receive_only_confirmed: true,
-        control: profile::Control {
-            mode: "cat".into(),
-            endpoint: Some("fixture-cat".into()),
-            ptt: "disabled".into(),
-        },
+        control: record.checked_control.clone(),
     });
     store.save_authorization(&record).unwrap();
     f.reopen().unwrap();

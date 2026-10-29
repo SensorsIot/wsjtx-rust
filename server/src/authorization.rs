@@ -298,7 +298,10 @@ impl Record {
             }
         }
         if let Some(c) = &self.commissioning {
-            if !c.receive_only_confirmed || self.current_scope.as_ref() != Some(&c.scope) {
+            if !c.receive_only_confirmed
+                || self.current_scope.as_ref() != Some(&c.scope)
+                || c.control != self.checked_control
+            {
                 return Err(Error::Invalid);
             }
             check_scope(&c.scope)?;
@@ -833,6 +836,66 @@ impl Authority {
             return Err(Error::Unauthorized);
         }
         Ok(())
+    }
+    /// Explicit receive-only acknowledgement; never opens or controls a device.
+    pub fn commission(
+        &mut self,
+        store: &mut profile::Store,
+        access: &Access,
+        operation_id: &str,
+    ) -> Result<JournalEntry, Error> {
+        if !profile::valid_uuid(operation_id) {
+            return Err(Error::Invalid);
+        }
+        // Unlike identity receipt recovery, commissioning always requires CURRENT
+        // authority before any retained-operation lookup.
+        self.recheck_dispatch(access)?;
+        let control = store.document.control.clone();
+        control.validate().map_err(|_| Error::Invalid)?;
+        if self.record.checked_control != control {
+            return Err(Error::Conflict);
+        }
+        let verifier = self
+            .record
+            .grants
+            .iter()
+            .find(|v| v.grant_id == access.grant_id && v.scope.same_radio(&access.scope))
+            .ok_or(Error::Unauthorized)?
+            .clone();
+        if let Some(entry) = self
+            .record
+            .operation_receipts
+            .iter()
+            .find(|e| e.operation_id == operation_id)
+        {
+            return if entry.kind == OperationKind::Commission
+                && entry.scope == access.scope
+                && entry.grant_id.as_ref() == Some(&access.grant_id)
+                && entry.owner_verifier.as_ref() == Some(&verifier)
+                && entry.identity_request.is_none()
+            {
+                Ok(entry.clone())
+            } else {
+                Err(Error::Conflict)
+            };
+        }
+        let entry = JournalEntry {
+            operation_id: operation_id.into(),
+            scope: access.scope.clone(),
+            kind: OperationKind::Commission,
+            grant_id: Some(access.grant_id.clone()),
+            owner_verifier: Some(verifier),
+            identity_request: None,
+        };
+        let mut next = self.record.clone();
+        next.commissioning = Some(Commissioning {
+            scope: access.scope.clone(),
+            receive_only_confirmed: true,
+            control,
+        });
+        next.receipt(entry.clone());
+        self.persist(store, next)?;
+        Ok(entry)
     }
     pub fn revoke(
         &mut self,
