@@ -1726,6 +1726,19 @@ package WstxRequirements {
              Missing/expired/duplicate/cross-profile bootstrap401, wrong Origin403, bad
              TLS/type/unknown/duplicate fields/body/rate bounds have zero effects. Race
              a configuration edit after scope read: stale enrollment409 and no verifier.
+             Scope wire oracle is exactly profile_id/radio_id/safety_revision, never
+             body Origin; reject body-origin/extra/duplicate keys. Independently use
+             valid long saved-origin admission fixtures up to the existing6174 escaped
+             origin-byte allowance; exact Origin header is still required, signed
+             bytes contain that full origin, compact auth bodies do not echo it.
+             Hand-count canonical ASCII widths (UUID36/revision16/IDs43/key87/signature86),
+             including JSON quotes/punctuation: scope138, enrollment374, receipt-proof426,
+             challenge-response396, conservative receipt302 and bootstrap response440
+             with BOTH current and receipt scopes. Require actual compact serialization
+             <= these envelopes and <=1024; no candidate serializer as expected oracle.
+             Full status still includes bounded receive/error fields within1024, not
+             truncation or a weakened origin/profile domain. Whitespace-padded request
+             exactly1024 accepted when otherwise valid,1025 rejected before effects.
              Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s

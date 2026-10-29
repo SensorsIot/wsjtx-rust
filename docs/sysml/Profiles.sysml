@@ -686,6 +686,42 @@ package WstxProfiles {
         attribute safetyRevision : Integer;
         attribute httpsOrigin : String;
     }
+    attribute def AuthWireScope {
+        doc /* Every auth-v1 JSON scope/current_scope/expected_scope, including
+             bootstrap/status/challenge/receipt/identity projections, is EXACTLY
+             {profile_id,radio_id,safety_revision}; no https_origin/origin/extra keys.
+             This is an ephemeral wire projection of SelectedRadioAuthorizationScope,
+             not another selected-radio identity/current-value owner. Copy UUID/revision
+             unchanged. In a request, first validate TLS and exact HTTP Origin against
+             the selected Endpoint; reconstruct httpsOrigin only from that validated
+             effective origin, never a body field. In responses browser already knows
+             its exact location.origin. Reconstruction is lossless within this required
+             endpoint context; the projection alone is not globally authoritative.
+             Internal scope, persistence and both signed proof-purpose payloads KEEP
+             the full exact origin and its length-prefixed signed bytes unchanged.
+             For a new operation compare reconstructed profile/radio/revision with the
+             current authority snapshot; stale tuple409/no effect. Explicit receipt
+             reconciliation instead compares its stored operation tuple and never
+             grants current control. Wrong transport Origin remains403 before auth;
+             public profile origin domains/ResponseBudgetAdmission remain unchanged.
+             Fixed UUID36/revision<=9007199254740991 give scope138UTF8bytes including
+             all JSON punctuation/quotes. Compact-output independent width bounds:
+             enrollment374, ordinary proof225, receipt proof426, identity request242,
+             commissioning244, revoke236, challenge response396, receipt response<=302
+             (conservative18ASCII outcome/43grantId), bootstrap receipt query67.
+             Bootstrap response including current scope AND identity-receipt scope is
+             440bytes (two138 scopes +164fixed fields/UUID/outcome/nullgrant); absent
+             scope/receipt only shortens it. All below unchanged1024 logical-byte cap.
+             These bounds are for compact server JSON; input whitespace may consume
+             the remaining request allowance but total>1024 still413. All bounded
+             strings here are canonical ASCII, so no hidden UTF8/escape growth.
+             Status scope is likewise138, not an origin echo; its existing complete
+             response<=1024 admission still includes condition/error/receive summary.
+             No unbounded native text or copied numerical/result state is permitted. */
+        attribute profileId : String;
+        attribute radioId : String;
+        attribute safetyRevision : Integer;
+    }
     attribute def BrowserPublicVerifier {
         doc /* Public, not a secret. GrantId is fresh CSPRNG256bits encoded unpadded
              base64url43characters; never recycled. P256 SEC1 uncompressed public key
@@ -742,7 +778,7 @@ package WstxProfiles {
              Receipt.scope identifies that operation, not necessarily current scope.
              No grant/verifier enumeration, cookies, keys or credentials in response. */
         attribute version : Integer = 1;
-        attribute currentScope : SelectedRadioAuthorizationScope[0..1];
+        attribute currentScope : AuthWireScope[0..1];
         attribute identityReceipt : AuthOperationReceipt[0..1];
     }
     attribute def RadioIdentityRequest {
@@ -754,7 +790,7 @@ package WstxProfiles {
              reconnect, endpoint edit, commissioning or automatic browser recovery. */
         attribute version : Integer = 1;
         attribute operationId : String;
-        attribute expectedScope : SelectedRadioAuthorizationScope[0..1];
+        attribute expectedScope : AuthWireScope[0..1];
         attribute change : RadioIdentityChange;
     }
     action def ReadBootstrapScope {
@@ -840,7 +876,7 @@ package WstxProfiles {
              authorizes this one exact scope; never grants another radio implicitly. */
         attribute version : Integer = 1;
         attribute operationId : String;
-        attribute scope : SelectedRadioAuthorizationScope;
+        attribute scope : AuthWireScope;
         attribute grantId : String;
         attribute publicKeyBase64url : String;
     }
@@ -855,7 +891,9 @@ package WstxProfiles {
     }
     attribute def AuthOperationReceipt {
         doc /* Public strict response version1,operation_id,scope,outcome,grant_id;
-             grant_id nullable. No token,cookie,signature,nonce or private material.
+             grant_id nullable; scope uses AuthWireScope on the wire, while journal
+             scope below retains full internal context. No token,cookie,signature,nonce
+             or private material.
              Receipt reconciliation identifies a committed operation, not authorization
              itself. Lost enrollment ACK retains a committed verifier; browser remains
              unknown/unauthorized until same operation receipt and scoped proof recover.
@@ -919,7 +957,8 @@ package WstxProfiles {
              never reports success (503persistence failure,409identity/unknown conflict).
              Missing/unknown/revoked/mismatched grant or cookie401. New challenge returns
              200 strict {version,grant_id,scope,public_key,nonce,lifetime_seconds},
-             projecting AuthChallenge.currentScope and public verifier metadata.
+             projecting AuthChallenge.currentScope through AuthWireScope and public
+             verifier metadata; no origin is echoed or removed from signed bytes.
              Receipt uses same operationId only and is read-only even though POST.
              Bootstraprotation is explicit revoke-allprofile; process restart is not.
              Before protected HTTP/WS/native dispatch, station authority serializes
