@@ -667,7 +667,7 @@ package WstxProfiles {
          source-scope admission. They reuse selected profile/station authority; no new
          physical component or public-profile schema field is introduced. */
     enum def GrantCondition { enum unauthorized; enum authorized; enum revoked; enum unknown; }
-    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum radioIdentity; }
+    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum radioIdentity; enum status; }
     enum def AuthOperationOutcome { enum committed; enum proofRequired; enum unauthorized; enum wrongOrigin; enum invalid; enum saturated; enum persistenceFailed; enum unknown; }
     enum def RadioIdentityChange { enum add; enum replace; enum remove; }
     attribute maxActiveBrowserGrants : Integer = 64;
@@ -917,7 +917,7 @@ package WstxProfiles {
     }
     action def HandleScopedAuthorization {
         doc /* Target strict auth API v1. Exact paths POST /authorization/v1/bootstrap-scope,
-             /radio-identity,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
+             /radio-identity,/status,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
              Existing POST /session stays raw-token, never accepts JSON extension keys.
              Every new request exactly version1 plus its listed fields; unknown,
              missing,duplicate keys/wrongtype/noncanonicalencoding400, contenttype
@@ -927,6 +927,8 @@ package WstxProfiles {
              uncompressed, no auth material in errors/logs. No endpoint opens CAT.
              bootstrap-scope: BootstrapScopeRequest/Response via ReadBootstrapScope;
              radio-identity: RadioIdentityRequest via ChangeSelectedRadioIdentity;
+             status: WstxOperatingReceive::AuthStatusRequest, read-only active-grant
+             snapshot per AutomaticCatStatus, no effects and no GET fallback;
              enroll: AuthEnrollmentRequest, ephemeral bootstrap cookie required;
              non-null current scope and exact bootstrap-scope binding required, stale
              tuple409, no grant. A removed scope cannot enroll or prove readiness;

@@ -1226,14 +1226,25 @@ required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxe
 
     enum def AutomaticCatCondition { enum disabled; enum unauthorized; enum commissioningRequired; enum waitingForDevice; enum connecting; enum ready; enum retryWaiting; enum closing; enum quarantined; }
     enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
+    attribute def AuthStatusRequest {
+        doc /* Strict read-only POST /authorization/v1/status JSON {version:1};
+             no scope/operation/extra keys. GET on this new path405/no effects. */
+        attribute version : Integer = 1;
+    }
     attribute def AutomaticCatStatus {
         doc /* Target current condition, not behavioral states or another actor. One
              authority-owned observation per selected radio; boot/connection generation
              and query sequence still fence every fact. A retained frequency is not
              fresh in any condition except ready with its matching observation proof.
              Existing strict version1 status objects remain unchanged; expose this
-             additive target status via GET /authorization/v1/status with exact Origin
-             and active scoped grant (401 otherwise), strict version1,scope,condition,
+             additive target status via POST /authorization/v1/status with
+             AuthStatusRequest; same-origin browser POST supplies actual Origin, not a
+             script-forged header. Preserve exact Origin/TLS before auth, active scoped
+             grant (401 otherwise), no CORS and Cache-Control:no-store. Missing/wrong
+             Origin on accepted POST403; legacy GET/profile absence policy is unchanged.
+             Read-only snapshot: no identity/grant/session/receipt/native effects or
+             CAT retry scheduling. GET on this new path405/no effects; no fallback.
+             Strict response version1,scope (AuthWireScope projection),condition,
              error,retry_after_ms,commissioned,receive_state. Error is bounded mapped
              code/null, retry_after_ms safe integer0..8000/null, commissioned Boolean;
              receive_state is existing authoritative audio/decoder summary, no copied

@@ -1808,7 +1808,14 @@ package WstxRequirements {
     verification 'TC-022-008' {
         doc /* TC-022-008 CL-022-05 cost2 actual TLS browser. Preserve original missing-cookie/
              openWS reproduction and held-old-response cases; prove401 invalidation and
-             proof recovery with independent network observations. Dated real freeze
+             proof recovery with independent network observations. Actual same-origin
+             browser POST /authorization/v1/status sends only {version:1}; independently
+             observe its automatically supplied exact Origin and current-grant200, with
+             no identity/session/native effects. Independent TLS peer missing/wrong
+             Origin403 before auth, invalid grant401, extra/duplicate/missing fields400,
+             wrong media415,1025bytes413; GETnewstatus405/no effects/no fallback. Existing
+             GET/profile permits absent Origin as before, not a relaxed POST policy.
+             Dated real freeze
              reproduction and cause tracing remain separate required evidence, not
              replaced by this constructed case. Existing issue10 barriers/unknown state
              assertions remain. Add auth recovery to existing Thin/Off accounted-traffic
