@@ -286,6 +286,28 @@ enum Operation {
     RadioIdentity,
 }
 
+async fn finish_operation(job: tokio::task::JoinHandle<Result<Response, Error>>) -> Response {
+    match job.await {
+        Ok(Ok(response)) => response,
+        Ok(Err(e)) => mapped(e),
+        Err(_) => mapped(Error::PersistenceFailed),
+    }
+}
+
+// Transaction/HTTP-completion fault seam only; Router admission is tested separately.
+#[cfg(test)]
+pub(crate) async fn commission_with_fault(
+    app: App,
+    headers: HeaderMap,
+    body: Bytes,
+    stage: &'static str,
+) -> Response {
+    finish_operation(tokio::task::spawn_blocking(move || {
+        profile::tests::with_fault(stage, || operate(Operation::Commission, app, headers, body))
+    }))
+    .await
+}
+
 macro_rules! handler {
     ($name:ident, $kind:ident) => {
         pub(crate) async fn $name(
@@ -310,13 +332,10 @@ macro_rules! handler {
                 Ok(b) if b.len() <= 1024 => b,
                 _ => return failure(StatusCode::PAYLOAD_TOO_LARGE, "request_too_large"),
             };
-            match tokio::task::spawn_blocking(move || operate(Operation::$kind, app, headers, body))
-                .await
-            {
-                Ok(Ok(response)) => response,
-                Ok(Err(e)) => mapped(e),
-                Err(_) => mapped(Error::PersistenceFailed),
-            }
+            finish_operation(tokio::task::spawn_blocking(move || {
+                operate(Operation::$kind, app, headers, body)
+            }))
+            .await
         }
     };
 }
