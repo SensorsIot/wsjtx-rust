@@ -358,6 +358,9 @@ package WstxProfiles {
              Wrong/legacy token-valued cookies are not migrated into grants. Other
              names ignored. Expiry only removes transport readiness; retained key proof
              restores it automatically without another bootstrap submission.
+             Transport handles follow RotateScopedTransport below; at most one current
+             handle per grant and64 overall, elapsed monotonic lifetime28800seconds.
+             Grant persistence is independent of transport rotation or expiry.
              One narrow new credential exception permits only a nonextractable P256
              signing CryptoKey in origin-scoped IndexedDB; no bootstrap token, private
              key export or token persistence in localStorage/sessionStorage/public
@@ -673,6 +676,51 @@ package WstxProfiles {
     attribute maxActiveBrowserGrants : Integer = 64;
     attribute maxPendingProofChallenges : Integer = 64;
     attribute proofChallengeLifetimeSeconds : Integer = 60;
+    attribute maxActiveTransportHandles : Integer = 64;
+    attribute maxTransportHandlesPerGrant : Integer = 1;
+    attribute transportLifetimeSeconds : Integer = 28800;
+    action def RotateScopedTransport {
+        doc /* Issue22 target behavior, not an implementation declaration. The volatile
+             transport table is owned by the same selected-station authorization
+             authority, not another credential store or lifecycle owner. It contains
+             at most one current handle per existing unrevoked verifier grant and at
+             most64 entries overall; no disk transport persistence or verifier eviction.
+             Successful ordinary grant proof serializes current scope/grant/revocation
+             validation, one-use challenge consumption and installation of a new
+             CSPRNG256bit opaque handle. Installation atomically replaces the previous
+             current handle for that SAME grant only. It does not replace a verifier,
+             advance revocation generation, revoke another grant, change commissioning
+             or disconnect CAT/audio. Other grants/profile processes remain unchanged.
+             Replay or invalid/expired/wrong-Origin/wrong-scope proof never replaces a
+             current handle. Random-generation or response-preparation failure fails
+             closed without installing a handle or invalidating the prior current one;
+             an already consumed nonce requires a new challenge, never proof replay.
+             Installed handles expire after28800 elapsed monotonic seconds, never
+             extended by use; cookie Max-Age remains28800. Expired/replaced/revoked/
+             wrong-scope handles return401 for new protected HTTP requests/WS upgrades.
+             Purge, rotation, expiry and ordinary restart do not delete or age-evict a
+             verifier, operation receipt or commissioning. Restart drops only volatile
+             transport; retained-key proof recovers without another bootstrap token.
+             Receipt-purpose proof NEVER installs or replaces transport. Revocation or
+             radio removal still invalidates dependent handles and existing effects/WS
+             according to the existing authority/cancellation rules.
+             Rotation is distinct from revocation: an already authenticated WS retains
+             only its existing grant/scope/revocation authority and existing dispatch
+             checks; rotation alone neither grants a new effect nor revokes its grant.
+             An open socket never establishes current browser authorization readiness.
+             Concurrent same-key proofs serialize; last committed proof determines the
+             sole current handle. HTTP delivery can be reordered or lost, so204 alone
+             does not prove the last-delivered cookie is current. The client shares its
+             existing readiness promise within a document and checks protected read-only
+             status after renewal. A401 or lost renewal response leaves readiness
+             unavailable/unknown and recovers through fresh challenge/proof/status using
+             the retained key, without bootstrap resubmission or user-mutation replay.
+             Same-origin tabs share cookie storage; once overlapping responses quiesce,
+             any tab can recover through fresh proof/status. Rotation by another tab
+             never deletes the retained key or claims revocation. No cross-tab framework
+             or additional credential store is introduced. Existing<=2s truthfulness,
+             rate10/60, TLS/Origin/profile checks and1024byte auth bounds all remain. */
+    }
     attribute def SelectedRadioAuthorizationScope {
         doc /* ProfileId is the persisted logical station identity in this phase;
              HTTPS origin is exact effective Endpoint.origin including port. UUIDs are

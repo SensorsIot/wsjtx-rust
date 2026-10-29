@@ -1739,6 +1739,24 @@ package WstxRequirements {
              Full status still includes bounded receive/error fields within1024, not
              truncation or a weakened origin/profile domain. Whitespace-padded request
              exactly1024 accepted when otherwise valid,1025 rejected before effects.
+             Independently count volatile transport entries: two valid proofs for A
+             leave exactly one current handle, old cookie401/new cookie200, B unchanged;
+             <=64 entries, no verifier eviction. Verify durable verifier/receipt bytes,
+             revocation generation and commissioning unchanged, with zero independently
+             counted native open/query/set/PTT/close effects. Invalid/replayed/expired/
+             wrong-Origin/wrong-scope proof and failed randomness/response preparation
+             retain the prior current handle. Receipt-purpose proof never rotates it.
+             At exact monotonic28800 expiry only transport becomes unusable; purge and
+             restart retain grants/receipts/commissioning. Use two ACTUAL tabs sharing
+             one context to overlap valid proofs and hold/reverse Set-Cookie responses:
+             last committed proof owns the sole handle, while late delivery can yield401.
+             Include lost204, existing openWS and queued user mutation; after held
+             responses quiesce, fresh proof AND protected read-only status restore the
+             shared cookie without key deletion/token prompt or automatic mutation
+             replay. UI truth remains<=2s; rotation alone does not revoke an existing
+             WS grant or disconnect CAT/audio, while actual revoke still fences effects
+             and closes affected WS. Same-document readiness sharing is not a claimed
+             cross-tab lock; keep rate10/60 and all other caps/budgets unchanged.
              Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
