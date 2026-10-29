@@ -854,26 +854,26 @@ package WstxRequirements {
              requests, and station 1's session value under station 2's expected cookie name. Supply
              a legacy `wstx_session` cookie and duplicate expected-name cookies. Exercise missing/
              wrong Origin on login, PUT and upgrade, including another station's port and an unrelated
-             origin. Rotate only profile 1's runtime token, stop/restart it and repeat authentication;
+             origin. Explicitly revoke all grants only for profile 1, rotate its bootstrap token and restart;
              query other stations throughout. Run local and cross-station negatives with the same
-             four-server fixture. Exercise namespaced cookie expiry and re-login without clearing others.
+             four-server fixture. Exercise namespaced transport-cookie expiry and automatic retained-key proof recovery without clearing others; ordinary restart does not revoke grants.
+
+             **Target amendment:** Existing executable companions prove the delivered isolation subset only; new persistent proof/revocation cases TC-022-006/007 remain planned.
 
              **Oracle/outcome:** Exactly one expected namespaced session per logged-in UUID exists
              with the 12.1 attributes and no Domain attribute. All independent sessions survive other
              ports' logins/reconnects. Missing/wrong/duplicated/cross-profile cookies yield 401; wrong
              Origin yields 403 before credentials or settings are accepted. Wrong-station token login
-             returns 401. The required HttpOnly cookie is the only permitted browser-persisted
-             credential. No secret appears in localStorage/sessionStorage, profile JSON, retained
+             returns 401. Only the HttpOnly transport cookie and CL-022-01 nonextractable IndexedDB signing key are permitted browser-persisted credentials. No secret appears in localStorage/sessionStorage, profile JSON, retained
              form/page state after login submission, URLs, stdout or test reports. Reports inspect
              cookie names/attributes only; the test may transfer values internally for negative cases.
-             The old token/session for restarted profile 1 is refused; re-login with its new token
-             succeeds while others keep working. Exact-own-Origin authenticated saves succeed only
+             The explicitly revoked profile1 grant and old bootstrap token are refused; fresh enrollment with its new token succeeds while other profiles keep working. Ordinary restart preserves unrevoked grants. Exact-own-Origin authenticated saves succeed only
              at their selected profile, and a different profile's UUID in the HTTP PUT body's
              `profile_id` is denied. Numeric WebSocket correlation IDs retain 12.2's unchanged
              connection-local meaning and are not profile identities. Verify 12.1's body
              and per-process rate limits independently of other profiles. Same-host cookie transport
              is explicitly observed; it is not proof against a hostile service on that hostname. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-03';
             verify 'CL-005-04';
@@ -1517,4 +1517,313 @@ package WstxRequirements {
     dependency CL_013_05_verified_by_TC_023_003 from 'CL-013-05' to 'TC-023-003';
     dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
     dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
+
+    doc /* Issue22 target contract, not delivered behavior. CL-022-01..05 and
+         TC-022-006..010 are target/planned. Existing99 identities retain meaning and
+         numbering; the changed authentication expectations of TC-022-004 are partial
+         until its companions implement this contract. Independent exact meaning review,
+         supported-browser primitive evidence and source-scope admission precede coding.
+         No parser, model declaration or issue checkpoint proves execution/acceptance. */
+    requirement 'CL-022-01' {
+        doc /* Initial bootstrap authorization enrolls one browser proof key for an
+             exact station/profile/radio tuple. Grant validity has no time expiry.
+             Target credential mechanism; independent meaning/security review is
+             required before implementation: browser creates an ECDSA P-256 signing key through WebCrypto;
+             private CryptoKey extractable=false, usages=sign only, persisted solely
+             in origin-scoped IndexedDB. Public verifier and random grant identifier
+             are enrolled over TLS after existing raw-token authorization succeeds.
+             Bootstrap token is never put in IndexedDB or other browser stores.
+             No export/wrap/postMessage/worker transfer of private key is permitted.
+             This deliberately adds one narrowly named browser credential store;
+             it does not claim that existing HttpOnly-only policy already permits it.
+             localStorage/sessionStorage/URLs/public JSON/logs remain forbidden.
+             Non-extractability is an API export barrier, not protection against
+             same-origin injected script, browser compromise or disk administrators.
+             Existing script/input/Origin/TLS protections remain mandatory.
+
+             Existing 28800-second HttpOnly Secure SameSite=Strict host-only cookie
+             becomes a replaceable transport credential, not grant lifetime. Its
+             random 256-bit handle refers to the exact active grant; no runtime
+             bootstrap token appears in that cookie. On missing/expired transport
+             cookie, browser automatically proves its retained key, without token
+             entry, before re-establishing HTTP/WS readiness. Thus a closed browser
+             needs no background renewal and may return after arbitrary elapsed
+             inactivity while its browser profile/key and server grant are retained.
+             A finite cookie extension is not the persistence mechanism.
+             Credential erasure/eviction, private-mode loss, origin change and lost
+             browser profile are reported as lost credentials, never fabricated as
+             revocation or recovered by an embedded bootstrap secret. Browser storage
+             retention cannot be guaranteed against erasure by the user agent/OS;
+             supported acceptance retains the same ordinary persistent profile.
+
+             Renewal uses a fresh cryptographically random 32-byte one-use challenge
+             valid for60seconds, bound to exact HTTPS origin, station/profile/radio,
+             grant identifier and protocol version. Signed payload is unambiguous
+             length-delimited canonical bytes including the challenge; no arbitrary
+             signing oracle. Server consumes a valid challenge atomically before
+             cookie issuance; replay/wrong tuple/wrong origin/expired challenge fails.
+             Exact Origin is required on enrollment/challenge/proof/revocation; no
+             credentialed CORS. Preserve existing TLS and10attempts/60seconds per
+             process admission ceiling and1024-byte authentication payload cap.
+             New strict typed auth payloads/endpoints are explicit canonical API
+             additions, not extra keys silently accepted by old POST /session.
+             Cookie missing/duplicate/malformed/wrong profile remains401; automatic
+             proof recovery is a separate authenticated transition, not a401 bypass.
+             At most64 active grants and64 pending challenges per profile process;
+             challenge saturation fails closed429, new enrollment beyond grant cap
+             fails explicitly and never expires/evicts an existing unrevoked grant.
+             Expired/consumed challenges and expired transport handles are removed;
+             no background elapsed-time deletion of active grant verifiers. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_022_01_to_FR_019 from 'CL-022-01' to 'FR-019';
+    dependency CL_022_01_to_FR_021 from 'CL-022-01' to 'FR-021';
+    dependency CL_022_01_to_FR_022 from 'CL-022-01' to 'FR-022';
+    requirement 'CL-022-02' {
+        doc /* SelectedRadioId is a station-assigned random UUID persisted with the
+             selected radio configuration, separate from profile UUID, COM endpoint,
+             browser identity, boot/generation and radio-model label. Existing station
+             authority alone owns it; audio/CAT adapters refer to that same identity.
+             Initial migration assigns one UUID to the existing selected configuration,
+             but creates NO authorization grant or commissioning acknowledgement.
+             Explicit Add/Replace radio assigns a new UUID. Endpoint/model/PTT edits
+             preserve selected UUID but increment SafetyConfigurationRevision and
+             invalidate commissioning; they cannot make a newly configured device
+             usable until explicit re-commissioning. Endpoint reversion also needs
+             re-commissioning. USB disappearance/reappearance at unchanged configured
+             endpoint does not change UUID/revision. No claim of cryptographic hardware
+             identification: substituted hardware at the same endpoint is within the
+             existing trusted operator physical-configuration boundary. Radio identity
+             here is the selected configured asset, not an inferred COM3 hardware ID.
+
+             Durable store is one versioned atomic record per profile under
+             its existing private OS-protected service data, separate from public
+             profile JSON: radio identities/revisions, commissioning record, grant
+             public verifiers/IDs and revocation generation. No private browser key
+             or bootstrap token is persisted there by this change. Existing atomic
+             acknowledged-write protocol and OS ACL boundary apply; no new database
+             service or shared writer. Enrollment/revocation/commissioning success is
+             acknowledged only after durable commit. Corrupt/unreadable/unwritable
+             store fails closed with explicit reason; never synthesize empty/default
+             authorization. Uncommitted enrollment is unusable after restart.
+             A durably committed enrollment whose success response was lost remains
+             retained after restart; response delivery is not a server-observable
+             commit condition. Its browser remains unauthorized/unknown and queues
+             no CAT effects until read-only reconciliation of the same enrollment
+             operation ID proves the committed tuple/verifier and completes scoped
+             proof recovery. Do not replay enrollment or infer success from status.
+
+             Logout revokes this browser grant for the selected tuple and deletes its
+             matching cookie/key only after reconciliation; other browser grants and
+             other radios/profiles remain usable. Explicit Revoke all for this radio
+             deletes all matching verifiers and increments durable generation.
+             Bootstrap rotation is an explicit operator revoke-all operation for this
+             profile; ordinary restart neither rotates bootstrap nor revokes grants.
+             Removing a radio deletes its verifiers; recreating it assigns a new UUID.
+             Deleted verifier IDs never become valid by renewal; re-enrollment needs
+             fresh bootstrap authorization. No unbounded revoked-ID tombstone list:
+             unknown/deleted grant ID always rejects, including old cookies/signatures.
+
+             Station authority serializes grant validation and protected-effect
+             dispatch with selection/revocation transitions. The revocation commit is
+             the linearization point: queued effects not dispatched before it are
+             rejected; already-dispatched I/O cannot be retroactively undone and is
+             cancelled using existing acknowledged-release rules without unsafe replay.
+             Existing affected sockets close and new HTTP/WS effects fail. Revocation
+             write failure quarantines affected access in memory immediately, reports
+             NOT durably revoked, and requires successful retry before acknowledgement;
+             restart can restore the last committed grant, which UI must disclose.
+             Lost acknowledgement uses idempotent operation ID and read-only receipt
+             reconciliation; no blind new enrollment or mutation replay. If response
+             reconciliation is unavailable, browser stays unauthorized/unknown until
+             resolved. Server restart reloads only committed state. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
+    dependency CL_022_02_to_FR_021 from 'CL-022-02' to 'FR-021';
+    dependency CL_022_02_to_FR_022 from 'CL-022-02' to 'FR-022';
+    requirement 'CL-022-03' {
+        doc /* Target replacement for explicit Connect/per-click receive_only_verified:
+             configuration UI has a one-time per-safety-revision action 'Confirm
+             receive-only setup', showing selected radio, endpoint, model and PTT
+             configuration. It requires a valid matching grant, explicit operator
+             acknowledgement and durable commit. It never opens CAT or transmits as
+             part of confirmation. Existing transceiver-test consent is not silently
+             converted into a persisted acknowledgement; migration starts unconfirmed.
+             Invalidated commissioning displays 'Confirm changed receive-only setup'
+             and exposes that same recovery action; no normal Connect/Disconnect CAT
+             buttons. CAT disabled remains disabled. No serial enumeration/fallback.
+             Missing/revoked/mismatched grant, missing/invalid commissioning, disabled
+             CAT and corrupt authorization store cause zero automatic native open,
+             query, setter or PTT bytes. One matching unrevoked grant plus valid
+             commissioning authorizes the station's automatic read-only CAT lifecycle
+             even when that browser is closed; it does not authorize another browser's
+             HTTP controls. Last-grant revocation cancels that lifecycle and releases
+             the native owner through existing rules. Station startup/radio return
+             obtains actual fresh readback automatically after preconditions hold.
+             Selection/query/set refer to the same current observable values and
+             identity/provenance. Automatic lifecycle never sends a setter/PTT command,
+             replays user commands, starts audio/decoder or grants transmit authority. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
+    dependency CL_022_03_to_FR_009 from 'CL-022-03' to 'FR-009';
+    dependency CL_022_03_to_FR_021 from 'CL-022-03' to 'FR-021';
+    requirement 'CL-022-04' {
+        doc /* Selected target cadence: after confirmed released failed attempt wait
+             1,2,4,8seconds on successive failures, then8seconds capped. Use one timer
+             and one in-flight task under existing station authority; no catch-up or
+             backlog. Delays use monotonic time, start after attempt completion and
+             confirmed release; reset only after actual fresh successful readback.
+             Startup/explicit enable/new valid selected configuration gets one immediate
+             attempt; disable/identity change/revocation/invalid commissioning cancels
+             timer and current attempt. Re-enable starts a fresh series only after
+             release confirmation. Simultaneous browsers do not create extra attempts.
+             Preserve setup<=5s, exchange<=1s, cancellation checkpoint<=50ms and ordinary
+             RF-context release<=250ms. Bounds are not permissions to assume release.
+             Real close failure quarantines the resource; no timed reopen until an
+             explicit recovery proves release. Stop/Halt invalidates relevant receive/
+             RF-operation tokens and pending resume; CAT housekeeping may not restart
+             audio or setters. Late results are identity/generation fenced. Existing
+             shared native owner/resource arbitration with RF work stays authoritative.
+             This is the target cadence, not a claim that current runtime implements it. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
+    dependency CL_022_04_to_FR_009 from 'CL-022-04' to 'FR-009';
+    dependency CL_022_04_to_FR_021 from 'CL-022-04' to 'FR-021';
+    requirement 'CL-022-05' {
+        doc /* Session, CAT and audio/decoder health remain distinct current observations. HTTP401 marks
+             session authorization unavailable within existing<=2s visible-status
+             acceptance even if WS still open; retained key proof may recover it.
+             Show proof retry/revocation/lost credential/persistence failure distinctly.
+             CAT waiting/connecting/retry/unavailable/quarantined never labels retained
+             frequency fresh. Audio/decoder state remains separate. No new status poll
+             stream; reuse versioned status publication/heartbeat. Existing Thin/Off
+             32kbit/s accounted-traffic regressions include new auth/recovery/status
+             messages, explicit errors and multi-peer recovery. Issue10 existing
+             continuity/stale fixes are reused; this proposal adds no duplicate helper.
+             Actual dated freeze reproduction/root-cause trace remains outstanding. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
+    dependency CL_022_05_to_FR_010 from 'CL-022-05' to 'FR-010';
+    dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
+    verification 'TC-022-006' {
+        doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
+             using existing TLS/browser helpers. Authorize A once; preserve ordinary
+             browser profile/key, close actual browser process, remove/expire only its
+             transport cookie under test control, advance injected times across28800s
+             and browser-cookie retention boundary, restart server/browser. A becomes
+             usable through signed proof with zero bootstrap submissions; no long real
+             wait claimed. Test retained identity/revision vs Add/Replace radio, other
+             profile/origin, malformed/duplicate cookies, stale/replayed/wrong tuple/
+             expired signatures, consumed nonce and challenge saturation. Independently
+             fixed tuples/challenge bytes and effect counters are oracle, not server
+             status. Erase stored key: explicit lost credential, zero silent recreation.
+             Block/corrupt IndexedDB, verifier read/write/commit: explicit failure, no
+             unauthorized enrollment or CAT I/O. Reject export/wrap/transfer of key by
+             application paths. Verify new-browser bootstrap still required.
+             Lost-enrollment-response oracle: hold response independently, persist
+             enrollment then drop response and restart server/browser with same
+             profile/key/operation ID. Independently inspect committed-store fixture
+             and native peer: one retained grant, no duplicate enrollment and zero
+             queued browser CAT effects while unauthorized/unknown. Read-only receipt
+             reconciliation identifies the exact committed tuple/verifier, then scoped
+             proof establishes readiness. Contrast pre-commit failure: no retained
+             grant after restart and no successful receipt/proof. No assumption that
+             server can observe browser receipt of a success response is allowed.
+             Planned companions: tests/profiles.test.cjs and tests/communication.test.cjs; no executable binding is claimed yet. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-022-01';
+            verify 'CL-022-02';
+        }
+    }
+    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
+    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
+    verification 'TC-022-007' {
+        doc /* TC-022-007, CL-022-02; cost2 profiles/protocol and station authority companions.
+             Two A browser grants plus B; logout one A leaves otherA/B; revoke-allA
+             removes bothA only; restart cannot revive acknowledged revocation. Race
+             queued HTTP/WS mutations and selection against revocation with independently
+             held dispatch barrier and peer counters: none dispatches after commit;
+             pre-dispatched effects follow cancellation/release rather than fabricated
+             rollback. Drop ack before/after commit, retry same operation ID, reload
+             receipt; no duplicate operation or new credential. Inject durable-write
+             failure/restart and verify documented last-committed-state limitation and
+             failclosed current process. Cap64 grants without evicting active grants;
+             delete verifier and replay old proof/cookie: rejected, no tombstone growth.
+             Planned companions: tests/profiles.test.cjs, server/src/auth_tests.rs and station-authority unit tests; no executable binding is claimed yet. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-022-02';
+        }
+    }
+    dependency CL_022_02_verified_by_TC_022_007 from 'CL-022-02' to 'TC-022-007';
+    verification 'TC-022-008' {
+        doc /* TC-022-008 CL-022-05 cost2 actual TLS browser. Preserve original missing-cookie/
+             openWS reproduction and held-old-response cases; prove401 invalidation and
+             proof recovery with independent network observations. Dated real freeze
+             reproduction and cause tracing remain separate required evidence, not
+             replaced by this constructed case. Existing issue10 barriers/unknown state
+             assertions remain. Add auth recovery to existing Thin/Off accounted-traffic
+             companion tests/recording.test.cjs TC-010-002 and communication tests;
+             same ceilings/windows/controls, no assertion or source-pin weakening.
+             Planned companions: tests/communication.test.cjs and tests/recording.test.cjs TC-010-002; same traffic windows and ceilings. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-022-05';
+        }
+    }
+    dependency CL_022_05_verified_by_TC_022_008 from 'CL-022-05' to 'TC-022-008';
+    verification 'TC-022-009' {
+        doc /* TC-022-009 CL-022-03/04 cost2 existing station/native scripted peer + injected
+             monotonic time. Test immediate available startup, absent/openfail/timeout/
+             removal/return, concurrent observers/RF work, identity change mid-attempt,
+             exact1/2/4/8/8 scheduling/reset/disable/re-enable, one timer/owner, no catchup,
+             late completion and failedclose zero subsequent opens. Test missing/revoked/
+             wrong grant, corrupt store, disabled CAT, absent/invalidation commissioning
+             with zero native open/query/set/PTT; explicit confirmation persists only
+             after commit, no native I/O in confirmation. Endpoint/model/PTT edit needs
+             re-confirmation; ordinary USB return does not. Independent raw-byte peer
+             rejects all setter/PTT, not merely reported TX=false. Separate real Windows
+             cost2 native fixture release/cancel measurements prove unchanged250/50ms
+             bounds and required four-profile workload; injected time is no substitute.
+             Use R4 provider/consumer fixtures, no second native builder.
+             Planned companions: server/src/radio_http_tests.rs and server/tests/radio_native.rs using the existing R4 providers; no execution is claimed. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-022-03';
+            verify 'CL-022-04';
+        }
+    }
+    dependency CL_022_03_verified_by_TC_022_009 from 'CL-022-03' to 'TC-022-009';
+    dependency CL_022_04_verified_by_TC_022_009 from 'CL-022-04' to 'TC-022-009';
+    verification 'TC-022-010' {
+        doc /* TC-022-010 CL-022-01..05 authorized cost4 IC7300 receive-only acceptance. Record the actual deployed SHA/receipt/fresh radio identity and preserve official
+             WSJTX noCAT/PTT comparison. Observe explicit initial commissioning once,
+             ordinary startup/reconnect with no Connect buttons, unavailable/return/
+             cable/server/browser restart, truthful independent health/freshness and
+             latest real decode rows. Retained-browser proof after controlled cookie
+             expiry is observed; simulated clock boundary labelled simulated. PTT
+             remains released; zero transmit acceptance is added. Missing physical
+             cases/freeze evidence remain missing. Independent source/model review,
+             red-on-parent, exact ordinary gates and actual acceptance all required.
+             Where: HB9BLA installed exact gated candidate, actual IC-7300 COM3/USB Audio CODEC and authenticated browser. Physical acceptance is planned and consent-bound, not an automated simulator verdict. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-022-01';
+            verify 'CL-022-02';
+            verify 'CL-022-03';
+            verify 'CL-022-04';
+            verify 'CL-022-05';
+        }
+    }
+    dependency CL_022_01_verified_by_TC_022_010 from 'CL-022-01' to 'TC-022-010';
+    dependency CL_022_02_verified_by_TC_022_010 from 'CL-022-02' to 'TC-022-010';
+    dependency CL_022_03_verified_by_TC_022_010 from 'CL-022-03' to 'TC-022-010';
+    dependency CL_022_04_verified_by_TC_022_010 from 'CL-022-04' to 'TC-022-010';
+    dependency CL_022_05_verified_by_TC_022_010 from 'CL-022-05' to 'TC-022-010';
+
 }

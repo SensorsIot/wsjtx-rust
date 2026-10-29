@@ -496,8 +496,7 @@ package WstxOperatingReceive {
              tupleStop. Unknownmutation blocksconflicts,no automaticreplay. Stop retainspartial
              latestrows; newidentity clears. Refresh/reconnect/browserclose neverauto-start,
              buttonhighlight is not authoritative. No implicitenumeration/default/camera input.
-             Targetedoperationcancel does not meanTXhalt/disarm/QSOcancel. PhysicalCAT connection
-             requires explicit verified receive-only precondition; no implicitconnect/manualfallback.
+             Targetedoperationcancel does not meanTXhalt/disarm/QSOcancel. AutomaticCAT connection requires CL-022-03 persisted identity-scoped receive-only commissioning and grant; no unsafe fallback.
              Truth/transition/fencing and exactwire unions remain the typed contract below. */
     }
     enum def Mode { enum ft4; enum ft8; }
@@ -607,7 +606,7 @@ package WstxOperatingReceive {
     action def ApplyTypedReceiveSetup {
         doc /* contract 4.7.5: sameActorphysicalidentity/onelease; freshReadRxTxRX before
              setters; existingUSB/FIL1,DATAon/FIL1,frequencyfinalexactreadback<=5s,
-             individualexchange1s/cancel50ms,explicitcanonicalconnectonly; selectionneveropensCAT. NoPTT/raw
+             individualexchange1s/cancel50ms; CL-022-03/04 automatic housekeeping alone opens CAT after grant/commissioning; selection never directly opens it. NoPTT/raw
              serial/width/notch/PBTchange. Requestedmode/nominalpendinguntilconfirmation.
              Freshness trackedperquery;manualretuneafterobservationisnottransactionlock. */
     }
@@ -620,7 +619,7 @@ package WstxOperatingReceive {
     action def ReconcilePartialFailure {
         doc /* contract 4.7.5: preservelastcommittednominal,requestederror,actualknown
              partialfacts;readonlyqueriesrefreshonlyqueriedfields. No automatic
-             restoringwrites,retryorreceive restart. Explicitnewoperationrequired.
+             restoringwrites, user-operation retry or receive restart. Explicit new user operation required; CL-022-04 read-only CAT housekeeping is separate.
              12.8.1 matchingrecord/newerrevisionorfence resolvesunknownoutcome barrier;
              preintent/oldcontextread cannot undoStop or triggerrestart. */
     }
@@ -765,8 +764,7 @@ package WstxOperatingReceive {
         return admitted : Boolean = authenticatedContext and profileMatches and
             generationMatches and revisionMatches and not activeOperation and
             targetResolved and controlReadyOrManual and counterAvailable;
-        doc /* S1/S2: configuredCATmustalreadyreadyviacanonicalexplicitconnect
-             withreceive_only_verifiedprecondition;neverimplicitconnectproof.
+        doc /* S1/S2: configuredCAT must become ready through the single CL-022-03 commissioned automatic lifecycle; selection cannot fabricate connection proof.
              Admissionatomicallyincrementsrevision,invalidatesoldreceivepublication.
              Oneoperation/noqueue;activequerybusycannotbecomenewrawserialconnection. */
     }
@@ -969,7 +967,7 @@ package WstxOperatingReceive {
              and CAT, then CAS current token+revisions before commit/restart. No serial
              bytes or actor callbacks under profile/Recording locks, no nested owner or
              alternate converter/modem. Direct setters remain unsupported until they use
-             the same RF-context barrier; queries/connect/disconnect retain12.8 contract. */
+             the same RF-context barrier; queries retain12.8 authority; automatic connection lifecycle follows CL-022-03/04. */
     }
     verification def CoherentReceiveControls {
         objective {
@@ -1007,9 +1005,12 @@ anchors, not separate requirement identifiers.
 **S1. Compatibility and explicit admission.** Existing `/receive`, `/receive/start`,
 `/receive/stop`, `/receive/results`, `/audio/devices` and the canonical target `/radio`,
 `/radio/connect`, `/radio/disconnect`, `/radio/operation` retain their exact version1
-shapes, bounds, authentication, Origin and error semantics. Do not add fields to their
-strict objects. Explicit CAT connection still requires `receive_only_verified=true`
-after4.5's physical precondition; selection never opens a closed configured connection.
+shapes and bounds. Origin/error protections remain except the explicitly amended
+authentication and deprecated manual CAT lifecycle below. Do not add fields to their
+strict objects. The issue22 target replaces normal manual Connect/Disconnect with the
+commissioned automatic CL-022-03/04 lifecycle. Deprecated version1 connect/disconnect
+routes are not normal UI controls and may only refuse with409 automatic_lifecycle;
+they never create another owner or bypass commissioning. Selection never directly opens CAT.
 Configured but unready CAT returns radio_unavailable before disturbing receive. Manual,
 control-disabled operation remains CAT-independent.
 
@@ -1222,4 +1223,48 @@ required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxe
 
 
     */
+
+    enum def AutomaticCatCondition { enum disabled; enum unauthorized; enum commissioningRequired; enum waitingForDevice; enum connecting; enum ready; enum retryWaiting; enum closing; enum quarantined; }
+    enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
+    attribute def AutomaticCatStatus {
+        doc /* Target current condition, not behavioral states or another actor. One
+             authority-owned observation per selected radio; boot/connection generation
+             and query sequence still fence every fact. A retained frequency is not
+             fresh in any condition except ready with its matching observation proof.
+             Existing strict version1 status objects remain unchanged; expose this
+             additive target status via GET /authorization/v1/status with exact Origin
+             and active scoped grant (401 otherwise), strict version1,scope,condition,
+             error,retry_after_ms,commissioned,receive_state. Error is bounded mapped
+             code/null, retry_after_ms safe integer0..8000/null, commissioned Boolean;
+             receive_state is existing authoritative audio/decoder summary, no copied
+             numerical/result state. Logical response<=1024bytes, reuse existing status
+             publication/heartbeat and accounting; no parallel timer/poll stream. */
+        attribute scope : WstxProfiles::SelectedRadioAuthorizationScope;
+        attribute condition : AutomaticCatCondition;
+        attribute retryAfterMilliseconds : Integer[0..1];
+        attribute errorCode : String[0..1];
+    }
+    action def MaintainCommissionedCat {
+        doc /* Target CL-022-03/04 action under existing selected-radio authority and
+             radio actor/executor. Preconditions: control enabled, matching unrevoked
+             grant, durable current commissioning and confirmed resource release.
+             One immediate attempt at eligible startup/enable/new valid configuration;
+             absence/open failure/timeout retries after confirmed failure release at
+             1,2,4,8,8seconds monotonic delays. One timer and task across all browsers;
+             no catch-up, backlog, extra actor/native builder or endpoint discovery.
+             Reset series only on actual fresh readback. Disable/last-grant revocation/
+             invalid commissioning/identity change cancels timer and task; re-enable
+             waits for release. Existing setup5s/exchange1s/cancel50ms/RFrelease250ms
+             remain hard bounds. Failed close quarantines; no timed reopen until
+             explicit recovery proves release. Late completions are identity fenced.
+             Automatic I/O is read-only queries only, no setters/PTT/audio start or
+             replay. Stop/Halt clears receive/RF tokens and pending resume; background
+             CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
+             zero native open/query/set/PTT. Confirmation itself has no native effect.
+             This target does not claim current source has a reconnect loop. */
+        in scope : WstxProfiles::SelectedRadioAuthorizationScope;
+        in commissioning : WstxProfiles::RadioCommissioningRecord;
+        out current : AutomaticCatStatus;
+    }
+
 }
