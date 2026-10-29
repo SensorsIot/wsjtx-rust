@@ -350,7 +350,8 @@ package WstxProfiles {
              Successful bootstrap creates only a random256-bit ephemeral bootstrap
              context (60seconds), never a runtime-token cookie or ordinary-control grant.
              Host-only wstx_bootstrap_<UUID>, Path=/, Secure, HttpOnly, SameSite=Strict;
-             its sole use is the new strict enrollment operation below.
+             its only uses are strict enrollment and the explicit bootstrap scope/identity
+             setup operations below; it never authorizes ordinary control.
              Normal wstx_session_<UUID> contains a random256-bit opaque transport handle
              bound to one unrevoked scoped grant, Max-Age=28800. Verify exactly one
              expected cookie; malformed/duplicate/missing/cross-profile cookies401.
@@ -666,8 +667,9 @@ package WstxProfiles {
          source-scope admission. They reuse selected profile/station authority; no new
          physical component or public-profile schema field is introduced. */
     enum def GrantCondition { enum unauthorized; enum authorized; enum revoked; enum unknown; }
-    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; }
+    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum radioIdentity; }
     enum def AuthOperationOutcome { enum committed; enum proofRequired; enum unauthorized; enum wrongOrigin; enum invalid; enum saturated; enum persistenceFailed; enum unknown; }
+    enum def RadioIdentityChange { enum add; enum replace; enum remove; }
     attribute maxActiveBrowserGrants : Integer = 64;
     attribute maxPendingProofChallenges : Integer = 64;
     attribute proofChallengeLifetimeSeconds : Integer = 60;
@@ -718,11 +720,95 @@ package WstxProfiles {
              grants; grant-cap failure never evicts active grants. Existing trusted-OS
              persistence boundary remains; no universal power-loss durability claim. */
         attribute schemaVersion : Integer = 1;
-        attribute currentScope : SelectedRadioAuthorizationScope;
-        attribute commissioning : RadioCommissioningRecord;
+        attribute currentScope : SelectedRadioAuthorizationScope[0..1];
+        attribute commissioning : RadioCommissioningRecord[0..1];
         attribute grants : BrowserPublicVerifier[0..64];
         attribute revocationGeneration : Integer;
         attribute operationReceipts : AuthOperationReceipt[0..64];
+    }
+    attribute def BootstrapScopeRequest {
+        doc /* Exact POST /authorization/v1/bootstrap-scope request is {version:1};
+             read-only identity-receipt reconciliation additionally has operation_id
+             (UUIDv4). No other optional/unknown/duplicate fields. */
+        attribute version : Integer = 1;
+        attribute operationId : String[0..1];
+    }
+    attribute def BootstrapScopeResponse {
+        doc /* Strict200 {version,current_scope,identity_receipt}; optional model
+             features serialize as explicit JSON null. Scope is the station-authority
+             snapshot, never a browser-supplied tuple; receipt is null on initial read.
+             Reconciliation returns only the matching radioIdentity-kind receipt;
+             absent/evicted/wrong-kind operation409 unknown, not fabricated success.
+             Receipt.scope identifies that operation, not necessarily current scope.
+             No grant/verifier enumeration, cookies, keys or credentials in response. */
+        attribute version : Integer = 1;
+        attribute currentScope : SelectedRadioAuthorizationScope[0..1];
+        attribute identityReceipt : AuthOperationReceipt[0..1];
+    }
+    attribute def RadioIdentityRequest {
+        doc /* Exact POST /authorization/v1/radio-identity JSON fields:
+             version,operation_id,expected_scope,change. expected_scope is explicit
+             null or the full last-authoritative scope; change is add/replace/remove.
+             operation_id is browser-generated UUIDv4 retained through unknown outcome.
+             This is explicit Add/Replace/Remove radio setup intent, not disable,
+             reconnect, endpoint edit, commissioning or automatic browser recovery. */
+        attribute version : Integer = 1;
+        attribute operationId : String;
+        attribute expectedScope : SelectedRadioAuthorizationScope[0..1];
+        attribute change : RadioIdentityChange;
+    }
+    action def ReadBootstrapScope {
+        doc /* Valid unexpired ephemeral bootstrap cookie for this selected profile
+             required (missing/duplicate/wrong-profile401), exact Origin/TLS and all
+             strict auth-v1 request/response/rate bounds apply. Cache-Control:no-store.
+             POST is read-only: no identity/grant/receipt/challenge mutation, transport
+             issuance, CAT/native I/O or implicit enrollment. After POST/session204,
+             a fresh browser reads this response, then enrolls its exact non-null scope.
+             Removed radio yields null; Add is explicit before enrollment, never inferred.
+             Scope may race configuration: enrollment still compares authoritative
+             scope and bootstrap binding at dispatch; stale tuple409, no effect.
+             A read never rebinds a bootstrap context or broadens its enrollment scope. */
+        in request : BootstrapScopeRequest;
+        out response : BootstrapScopeResponse;
+    }
+    action def ChangeSelectedRadioIdentity {
+        doc /* Same-profile unexpired bootstrap cookie and explicit setup intent are
+             required; an ordinary grant/transport cookie alone is insufficient401.
+             Strict auth-v1 bounds/errors apply. Before current-scope comparison,
+             a committed same operation ID/equal parsed request returns its receipt
+             without effects; different fields409. For a new operation compare
+             expected_scope under existing station authority; add requires no current scope, replace/remove require
+             exact current scope. Wrong presence/tuple or reused operation ID with
+             different parsed fields409, no change. Initial selected-profile migration
+             may assign its first logical UUID without a grant; Add is used after
+             explicit removal, never repeated for an already selected identity.
+             Fence access/automatic retry, use existing acknowledged close/cancellation
+             before identity commit, without scan/query/set/PTT. No parallel native owner.
+             Failed close retains quarantine and returns409 resource_quarantined, no
+             identity commit. After confirmed release, recheck scope/configuration and
+             atomically commit under the existing single profile writer: delete old
+             grants/commissioning, advance revocation generation, and retain operation
+             receipt/request in the existing bounded64-entry FIFO journal. Add/replace
+             allocate fresh radio UUID, safetyRevision1 and exact current effective
+             safety configuration; remove leaves no current scope/commissioning/grant.
+             Public profile JSON/configuration is unchanged. With no selected scope,
+             CAT stays disabled regardless of saved control settings; settings edits
+             cannot silently Add. Ordinary disable/re-enable/USB return preserve UUID;
+             endpoint/model/PTT edit only advances its safety revision as CL-022-02.
+             Commit success rebinds only this explicit operation's bootstrap context
+             to its resulting scope (null on removal), without extending its60s life;
+             this is not a grant. New radio needs fresh enrollment and explicit current
+             commissioning; no old proof/cookie/acknowledgement transfers. Return200
+             AuthOperationReceipt: scope is resulting scope for add/replace, old scope
+             for remove; grant_id null. Failed write503 keeps last committed identity
+             and current-process access quarantined, never claims durable completion.
+             Retain parsed request for same-operation equality; the browser never
+             automatically resubmits this mutation. Lost response uses read-only
+             bootstrap-scope(operation_id); after bootstrap expiry/restart, explicit
+             bootstrap reauthorization permits reconciliation, not mutation replay.
+             Missing/evicted receipt409 leaves operation outcome unknown. */
+        in request : RadioIdentityRequest;
+        out receipt : AuthOperationReceipt;
     }
     attribute def AuthChallenge {
         doc /* Server CSPRNG32byte nonce, canonical unpadded base64url43characters,
@@ -775,6 +861,10 @@ package WstxProfiles {
              unknown/unauthorized until same operation receipt and scoped proof recover.
              Uncommitted enrollment is unusable after restart. Revocation commit fences
              queued effects; already-dispatched I/O follows acknowledged cancellation.
+             Verifier-owned entries require ownerVerifier and no identityRequest;
+             radioIdentity entries require identityRequest, no ownerVerifier and null
+             grant_id. Only bootstrap-scope may reconcile the latter; proof/receipt
+             paths reject them and cannot turn setup receipts into control authority.
              A failed revocation write quarantines current-process access but discloses
              NOT durably revoked; restart may restore last committed grant. */
         attribute version : Integer = 1;
@@ -782,11 +872,14 @@ package WstxProfiles {
         attribute scope : SelectedRadioAuthorizationScope;
         attribute outcome : AuthOperationOutcome;
         attribute grantId : String[0..1];
-        attribute ownerVerifier : BrowserPublicVerifier;
+        // Internal journal discriminator/owner; not additional public response keys.
+        attribute operationKind : AuthOperationKind;
+        attribute ownerVerifier : BrowserPublicVerifier[0..1];
+        attribute identityRequest : RadioIdentityRequest[0..1];
     }
     action def HandleScopedAuthorization {
-        doc /* Target strict auth API v1. Exact paths POST /authorization/v1/enroll,
-             /challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
+        doc /* Target strict auth API v1. Exact paths POST /authorization/v1/bootstrap-scope,
+             /radio-identity,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
              Existing POST /session stays raw-token, never accepts JSON extension keys.
              Every new request exactly version1 plus its listed fields; unknown,
              missing,duplicate keys/wrongtype/noncanonicalencoding400, contenttype
@@ -794,7 +887,11 @@ package WstxProfiles {
              required before accepting credentials. At most10authattempts/60s/process;
              grant/challenge caps64, saturation429. All responses<=1024UTF8bytes,
              uncompressed, no auth material in errors/logs. No endpoint opens CAT.
+             bootstrap-scope: BootstrapScopeRequest/Response via ReadBootstrapScope;
+             radio-identity: RadioIdentityRequest via ChangeSelectedRadioIdentity;
              enroll: AuthEnrollmentRequest, ephemeral bootstrap cookie required;
+             non-null current scope and exact bootstrap-scope binding required, stale
+             tuple409, no grant. A removed scope cannot enroll or prove readiness;
              challenge: {version,grant_id}, exact Origin and known verifier required;
              proof: AuthProofRequest; successful204 issues only new opaque transport;
              revoke: {version,operation_id,scope,all_for_radio}, matching active grant
@@ -804,11 +901,12 @@ package WstxProfiles {
              receipt: {version,operation_id,scope,grant_id,nonce,signature}; one-use
              receipt-purpose proof validates the operation owner, not ordinary-control
              authorization. Retain a bounded64-entry FIFO public receipt journal with
-             original verifier and committed outcome; it cannot authorize control or
-             revive a revoked grant. Evicted/absent receipt returns409 unknown and
+             original verifier for verifier-owned entries and committed outcome; it
+             cannot authorize control or revive a revoked grant. Evicted/absent receipt returns409 unknown and
              browser remains unknown, never fabricates durable success. Journal entries
-             persist atomically with their mutation and carry only public key/scope/
-             operationId/outcome; no unbounded tombstones. A separate challenge request
+             persist atomically with their mutation and carry only bounded public
+             verifier/scope/operation/outcome metadata or the parsed identityRequest;
+             no bootstrap secret or unbounded tombstones. A separate challenge request
              {version,operation_id,scope} addresses a known receipt. Its payload uses
              UTF8 WSTX-AUTH-RECEIPT then byte01, followed by the same six length-prefixed
              proof fields plus operationId before nonce. Only receipt consumes this
@@ -829,7 +927,7 @@ package WstxProfiles {
              session readiness from an open WS. Disconnect/401 is truthful<=2s and
              automatic retained-key proof does not replay a user mutation. */
         in kind : AuthOperationKind;
-        in selected : SelectedRadioAuthorizationScope;
+        in selected : SelectedRadioAuthorizationScope[0..1];
         out receipt : AuthOperationReceipt;
     }
 

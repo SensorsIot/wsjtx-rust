@@ -1586,7 +1586,15 @@ package WstxRequirements {
              authority alone owns it; audio/CAT adapters refer to that same identity.
              Initial migration assigns one UUID to the existing selected configuration,
              but creates NO authorization grant or commissioning acknowledgement.
-             Explicit Add/Replace radio assigns a new UUID. Endpoint/model/PTT edits
+             Explicit Add/Replace/Remove uses WstxProfiles::ChangeSelectedRadioIdentity,
+             not an inferred control-settings edit. Fresh bootstrap alone grants no
+             control: ReadBootstrapScope provides its read-only authority tuple before
+             enrollment. Add only from absent scope; Replace/Remove require exact current
+             scope. Add/Replace assign new UUID/revision1, remove leaves absent scope;
+             both invalidate old grants/commissioning atomically after confirmed native
+             release, with bounded operation receipt and no automatic mutation replay.
+             Subsequent enrollment/commissioning is required; disabled/re-enable alone
+             never removes or replaces identity. Endpoint/model/PTT edits
              preserve selected UUID but increment SafetyConfigurationRevision and
              invalidate commissioning; they cannot make a newly configured device
              usable until explicit re-commissioning. Endpoint reversion also needs
@@ -1711,7 +1719,14 @@ package WstxRequirements {
     dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
     verification 'TC-022-006' {
         doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
-             using existing TLS/browser helpers. Authorize A once; preserve ordinary
+             using existing TLS/browser helpers. Fresh-browser initial journey: POST
+             session204 then bootstrap-scope200 with strict independently expected tuple;
+             no ordinary status/grant, challenge/transport or CAT I/O is created by read.
+             Enroll that exact scope, prove key possession, then grant status is usable.
+             Missing/expired/duplicate/cross-profile bootstrap401, wrong Origin403, bad
+             TLS/type/unknown/duplicate fields/body/rate bounds have zero effects. Race
+             a configuration edit after scope read: stale enrollment409 and no verifier.
+             Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
              and browser-cookie retention boundary, restart server/browser. A becomes
@@ -1744,6 +1759,22 @@ package WstxRequirements {
     dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
     verification 'TC-022-007' {
         doc /* TC-022-007, CL-022-02; cost2 profiles/protocol and station authority companions.
+             With independent durable-state/native-peer oracles exercise explicit
+             radio-identity add/replace/remove and bootstrap-scope receipt recovery.
+             Add with present scope, replace/remove with absent/stale scope, ordinary
+             transport without bootstrap and cross-profile context refuse with no state
+             commit/native bytes. Disable/re-enable and endpoint edit preserve UUID;
+             endpoint change advances safety revision/invalidates commissioning only.
+             Replace at identical endpoint yields different UUID and no inherited
+             grant/commissioning; Remove yields null current scope and zero CAT attempts
+             despite saved enabled settings. Explicit Add creates another UUID; no
+             timer/settings edit auto-Adds. Hold close/fail close: no identity commit,
+             quarantine never clears on retry. Fail atomic write: no acknowledged new
+             identity; inspect last committed record. Lose response after commit/restart,
+             bootstrap again and query same operation receipt: one UUID allocation,
+             old grants deleted, no repeated mutation or queued CAT effects. Contrast
+             precommit failure/evicted receipt with409 unknown, never claimed success.
+             A setup receipt cannot satisfy verifier proof/receipt or grant authority.
              Two A browser grants plus B; logout one A leaves otherA/B; revoke-allA
              removes bothA only; restart cannot revive acknowledged revocation. Race
              queued HTTP/WS mutations and selection against revocation with independently
