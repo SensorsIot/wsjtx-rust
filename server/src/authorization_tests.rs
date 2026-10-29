@@ -10,7 +10,7 @@ const SIGNATURE: &str =
 const OP: &str = "00000000-0000-4000-8000-000000000003";
 const ORIGIN: &str = "https://station.example:18081";
 
-fn peer_key() -> signature::EcdsaKeyPair {
+pub(crate) fn peer_key() -> signature::EcdsaKeyPair {
     let rng = SystemRandom::new();
     let pkcs8 =
         signature::EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
@@ -40,6 +40,20 @@ fn peer_request(
 ) -> ProofRequest {
     let nonce = a.challenge(grant_id, ORIGIN, operation, now).unwrap();
     let c = a.challenges.iter().find(|c| c.nonce == nonce).unwrap();
+    ProofRequest {
+        version: 1,
+        grant_id: grant_id.into(),
+        nonce: nonce.clone(),
+        signature: peer_sign(key, &c.scope, grant_id, &nonce, operation),
+    }
+}
+pub(crate) fn peer_sign(
+    key: &signature::EcdsaKeyPair,
+    scope: &Scope,
+    grant_id: &str,
+    nonce: &str,
+    operation: Option<&str>,
+) -> String {
     // Test peer independently frames the protocol; never calls candidate signed_payload.
     let mut bytes = if operation.is_some() {
         b"WSTX-AUTH-RECEIPT".to_vec()
@@ -48,26 +62,21 @@ fn peer_request(
     };
     bytes.push(1);
     let mut fields = vec![
-        c.scope.https_origin.clone().into_bytes(),
-        c.scope.wire.profile_id.clone().into_bytes(),
-        c.scope.wire.radio_id.clone().into_bytes(),
-        c.scope.wire.safety_revision.to_string().into_bytes(),
+        scope.https_origin.clone().into_bytes(),
+        scope.wire.profile_id.clone().into_bytes(),
+        scope.wire.radio_id.clone().into_bytes(),
+        scope.wire.safety_revision.to_string().into_bytes(),
         grant_id.as_bytes().to_vec(),
     ];
     if let Some(id) = operation {
         fields.push(id.as_bytes().to_vec());
     }
-    fields.push(URL_SAFE_NO_PAD.decode(&nonce).unwrap());
+    fields.push(URL_SAFE_NO_PAD.decode(nonce).unwrap());
     for field in fields {
         bytes.extend_from_slice(&(field.len() as u32).to_be_bytes());
         bytes.extend_from_slice(&field);
     }
-    ProofRequest {
-        version: 1,
-        grant_id: grant_id.into(),
-        nonce,
-        signature: URL_SAFE_NO_PAD.encode(key.sign(&SystemRandom::new(), &bytes).unwrap().as_ref()),
-    }
+    URL_SAFE_NO_PAD.encode(key.sign(&SystemRandom::new(), &bytes).unwrap().as_ref())
 }
 
 fn scope(profile_id: &str) -> Scope {
@@ -867,4 +876,54 @@ fn repair_valid_add_replace_remove_identity_receipts_survive_reopen() {
         f.reopen().unwrap();
         assert_eq!(f.authority.as_ref().unwrap().record, record);
     }
+}
+
+#[test]
+fn safety_watermark_reconciles_public_private_commit_gap_once_after_failed_private_write() {
+    let mut f = Fixture::new();
+    let (store, a) = f.parts();
+    let grant = verifier(a.record.current_scope.clone().unwrap());
+    a.enroll(store, grant.clone()).unwrap();
+    let old = a.record.clone();
+    let mut settings = store.document.settings();
+    settings.control = profile::Control {
+        mode: "cat".into(),
+        endpoint: Some("fixture-cat".into()),
+        ptt: "disabled".into(),
+    };
+    store.save(settings).unwrap();
+    let result = profile::tests::with_fault("write", || a.reconcile_control(store));
+    assert_eq!(result, Err(Error::PersistenceFailed));
+    assert_eq!(
+        a.challenge(&grant.grant_id, ORIGIN, None, Instant::now()),
+        Err(Error::PersistenceFailed)
+    );
+    let saved: Record =
+        serde_json::from_slice(&fs::read(f.directory.join("authorization.json")).unwrap()).unwrap();
+    assert_eq!(
+        saved, old,
+        "a failed second-file write must not claim cross-file atomicity"
+    );
+    f.reopen().unwrap();
+    let current = f.authority.as_ref().unwrap().record.clone();
+    assert_eq!(
+        current.current_scope.as_ref().unwrap().wire.radio_id,
+        grant.scope.wire.radio_id
+    );
+    assert_eq!(
+        current.current_scope.as_ref().unwrap().wire.safety_revision,
+        2
+    );
+    assert_eq!(current.grants, vec![grant]);
+    assert!(current.commissioning.is_none());
+    assert_eq!(
+        current.checked_control,
+        f.store.as_ref().unwrap().document.control
+    );
+    f.reopen().unwrap();
+    assert_eq!(
+        f.authority.as_ref().unwrap().record,
+        current,
+        "reopen cannot increment twice for one committed control configuration"
+    );
 }

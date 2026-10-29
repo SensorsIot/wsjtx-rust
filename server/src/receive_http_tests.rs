@@ -200,6 +200,7 @@ async fn live_native_browser_mode(mode: &str) {
         origin: origin.clone(),
         profile: Some(Arc::new(ProfileState {
             store: Mutex::new(store),
+            authorization: Mutex::new(None),
             boot,
             recording: recording.clone(),
         })),

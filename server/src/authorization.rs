@@ -12,7 +12,7 @@ use crate::profile;
 
 #[cfg(test)]
 #[path = "authorization_tests.rs"]
-mod authorization_tests;
+pub(crate) mod authorization_tests;
 
 const CAP: usize = 64;
 const CHALLENGE_LIFE: Duration = Duration::from_secs(60);
@@ -229,6 +229,8 @@ pub struct JournalEntry {
 #[serde(deny_unknown_fields)]
 pub struct Record {
     pub schema_version: u8,
+    // Durable reconciliation watermark, not another current configuration owner.
+    pub checked_control: profile::Control,
     #[serde(deserialize_with = "required_nullable")]
     pub current_scope: Option<Scope>,
     #[serde(deserialize_with = "required_nullable")]
@@ -243,6 +245,11 @@ impl Record {
         scope.validate()?;
         Ok(Self {
             schema_version: 1,
+            checked_control: profile::Control {
+                mode: "disabled".into(),
+                endpoint: None,
+                ptt: "disabled".into(),
+            },
             current_scope: Some(scope),
             commissioning: None,
             grants: Vec::new(),
@@ -251,6 +258,9 @@ impl Record {
         })
     }
     pub fn validate(&self, profile_id: &str) -> Result<(), Error> {
+        self.checked_control
+            .validate()
+            .map_err(|_| Error::Invalid)?;
         if self.schema_version != 1
             || self.grants.len() > CAP
             || self.operation_receipts.len() > CAP
@@ -492,11 +502,57 @@ impl Authority {
         let record = store
             .load_authorization(initial)
             .map_err(|_| Error::PersistenceFailed)?;
-        Ok(Self {
+        let mut owner = Self {
             record,
             quarantined: false,
             challenges: Vec::new(),
             transports: Vec::new(),
+        };
+        owner.reconcile_control(store)?;
+        Ok(owner)
+    }
+    pub fn reconcile_control(&mut self, store: &mut profile::Store) -> Result<(), Error> {
+        self.available()?;
+        if self.record.checked_control == store.document.control {
+            return Ok(());
+        }
+        let mut next = self.record.clone();
+        next.checked_control = store.document.control.clone();
+        if let Some(scope) = &mut next.current_scope {
+            scope.wire.safety_revision = scope
+                .wire
+                .safety_revision
+                .checked_add(1)
+                .filter(|n| *n <= profile::MAX_REVISION)
+                .ok_or(Error::Conflict)?;
+        }
+        next.commissioning = None;
+        self.persist(store, next)?;
+        self.challenges.clear();
+        self.transports.clear();
+        Ok(())
+    }
+    pub fn challenge_details(&self, nonce: &str) -> Option<(&Scope, &Verifier)> {
+        self.challenges
+            .iter()
+            .find(|c| c.nonce == nonce)
+            .map(|c| (&c.scope, &c.verifier))
+    }
+    /// A WS retains its grant context, not its rotated/expired HTTP transport handle.
+    pub fn current_grant(&self, prior: &Access) -> Result<Access, Error> {
+        self.available()?;
+        if self.record.current_scope.as_ref() != Some(&prior.scope)
+            || !self
+                .record
+                .grants
+                .iter()
+                .any(|g| g.grant_id == prior.grant_id && g.scope.same_radio(&prior.scope))
+        {
+            return Err(Error::Unauthorized);
+        }
+        Ok(Access {
+            generation: self.record.revocation_generation,
+            ..prior.clone()
         })
     }
     fn available(&self) -> Result<(), Error> {

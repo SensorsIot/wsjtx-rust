@@ -318,8 +318,9 @@ impl Store {
         if let Some(saved) = read_authorization(&self.directory, &self.document.profile_id)? {
             return Ok(saved);
         }
-        let initial = crate::authorization::Record::initial(initial)
+        let mut initial = crate::authorization::Record::initial(initial)
             .map_err(|_| std::io::Error::other("invalid authorization scope"))?;
+        initial.checked_control = self.document.control.clone();
         initial
             .validate(&self.document.profile_id)
             .map_err(|_| std::io::Error::other("invalid authorization scope"))?;

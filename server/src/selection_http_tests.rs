@@ -241,6 +241,7 @@ async fn live_native_selection_tls_thin_and_off() {
         origin: origin.clone(),
         profile: Some(Arc::new(ProfileState {
             store: Mutex::new(store),
+            authorization: Mutex::new(None),
             boot,
             recording: recording.clone(),
         })),

@@ -47,8 +47,13 @@ pub(crate) fn authorize(
     if (mutation || headers.contains_key(header::ORIGIN)) && !allowed_origin(headers, app) {
         return Err("forbidden_origin");
     }
-    if !authenticated(headers, app) {
+    if authorization_http::access(headers, app).is_err() {
         return Err("unauthorized");
+    }
+    // WIP fail-closed boundary: native/storage mutation dispatch fencing is the
+    // next slice. A transport proof alone never activates the older mutation routes.
+    if mutation {
+        return Err("state_conflict");
     }
     Ok(state.recording.clone())
 }
