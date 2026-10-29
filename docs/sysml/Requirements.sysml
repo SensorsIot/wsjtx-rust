@@ -389,7 +389,7 @@ package WstxRequirements {
         doc /* TC-009-001 — Typed radio control
              CL-008-01, CL-008-03, CL-008-04, CL-008-06
              Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send.
-             Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource.
+             Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource.
              2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
