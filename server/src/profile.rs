@@ -111,17 +111,25 @@ impl Settings {
                 return Err(field);
             }
         }
-        if !["disabled", "cat"].contains(&self.control.mode.as_str()) {
+        self.control.validate()
+    }
+}
+
+impl Control {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        let text = |s: &str, maximum| {
+            !s.is_empty() && s.len() <= maximum && !s.chars().any(char::is_control)
+        };
+        if !["disabled", "cat"].contains(&self.mode.as_str()) {
             return Err("control.mode");
         }
-        if (self.control.mode == "disabled" && self.control.endpoint.is_some())
-            || (self.control.mode == "cat"
-                && self.control.endpoint.as_ref().is_none_or(|s| !text(s, 256)))
+        if (self.mode == "disabled" && self.endpoint.is_some())
+            || (self.mode == "cat" && self.endpoint.as_ref().is_none_or(|s| !text(s, 256)))
         {
             return Err("control.endpoint");
         }
-        if !["disabled", "cat"].contains(&self.control.ptt.as_str())
-            || (self.control.ptt == "cat" && self.control.mode != "cat")
+        if !["disabled", "cat"].contains(&self.ptt.as_str())
+            || (self.ptt == "cat" && self.mode != "cat")
         {
             return Err("control.ptt");
         }

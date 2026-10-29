@@ -622,3 +622,249 @@ fn caps_do_not_evict_active_grants_and_monotonic_attempt_window_is_bounded() {
     );
     assert!(budget.admit(now + Duration::from_secs(60)).is_ok());
 }
+
+#[test]
+fn repair_retained_revoked_grant_id_cannot_bind_different_key_or_operation_after_reopen() {
+    let mut f = Fixture::new();
+    let first_key = peer_key();
+    let second_key = peer_key();
+    let (store, a) = f.parts();
+    let first = peer_verifier(a.record.current_scope.clone().unwrap(), &first_key);
+    let original_receipt = a.enroll(store, first.clone()).unwrap();
+    a.revoke(store, &first.grant_id, &profile::new_uuid().unwrap(), false)
+        .unwrap();
+    f.reopen().unwrap();
+    let before = fs::read(f.directory.join("authorization.json")).unwrap();
+    let before_hash = ring::digest::digest(&ring::digest::SHA256, &before);
+    let (store, a) = f.parts();
+    assert_eq!(
+        a.enroll(store, first.clone()).unwrap(),
+        original_receipt,
+        "exact operation reconciles without reviving control"
+    );
+    let replacement = peer_verifier(first.scope.clone(), &second_key);
+    assert_ne!(replacement.public_key, first.public_key);
+    assert_ne!(
+        replacement.enrollment_operation_id,
+        first.enrollment_operation_id
+    );
+    assert_eq!(replacement.grant_id, first.grant_id);
+    assert_eq!(a.enroll(store, replacement), Err(Error::Conflict));
+    assert!(a.record.grants.is_empty());
+    assert_eq!(
+        ring::digest::digest(
+            &ring::digest::SHA256,
+            &fs::read(f.directory.join("authorization.json")).unwrap()
+        )
+        .as_ref(),
+        before_hash.as_ref()
+    );
+    f.reopen().unwrap();
+    assert!(f.authority.as_ref().unwrap().record.grants.is_empty());
+    assert_eq!(
+        fs::read(f.directory.join("authorization.json")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn repair_semantically_corrupt_commissioning_and_identity_journal_fail_closed_without_rewrite() {
+    let changes = [
+        ("commission", "mode", serde_json::json!("bogus")),
+        ("commission", "endpoint", serde_json::Value::Null),
+        ("commission", "ptt", serde_json::json!("rts")),
+        (
+            "commission",
+            "disabled_with_endpoint",
+            serde_json::Value::Null,
+        ),
+        ("identity", "add_present", serde_json::Value::Null),
+        ("identity", "replace_null", serde_json::Value::Null),
+        ("identity", "remove_null", serde_json::Value::Null),
+        ("identity", "wrong_profile", serde_json::Value::Null),
+        ("identity", "remove_wrong_receipt", serde_json::Value::Null),
+        ("identity", "replace_same_radio", serde_json::Value::Null),
+        ("identity", "add_revision_two", serde_json::Value::Null),
+    ];
+    for (kind, field, value) in changes {
+        let mut f = Fixture::new();
+        let (_, a) = f.parts();
+        let mut record = a.record.clone();
+        let selected = record.current_scope.clone().unwrap();
+        record.commissioning = Some(Commissioning {
+            scope: selected.clone(),
+            receive_only_confirmed: true,
+            control: profile::Control {
+                mode: "cat".into(),
+                endpoint: Some("fixture-cat".into()),
+                ptt: "disabled".into(),
+            },
+        });
+        let operation_id = profile::new_uuid().unwrap();
+        record.operation_receipts.push_back(JournalEntry {
+            operation_id: operation_id.clone(),
+            scope: selected.clone(),
+            kind: OperationKind::RadioIdentity,
+            grant_id: None,
+            owner_verifier: None,
+            identity_request: Some(IdentityRequest {
+                version: 1,
+                operation_id,
+                expected_scope: None,
+                change: IdentityChange::Add,
+            }),
+        });
+        // Independent JSON edits exercise semantic read/write validation, not just Rust construction.
+        let mut json = serde_json::to_value(&record).unwrap();
+        if kind == "commission" {
+            if field == "disabled_with_endpoint" {
+                json["commissioning"]["control"]["mode"] = serde_json::json!("disabled");
+            } else {
+                json["commissioning"]["control"][field] = value;
+            }
+        } else {
+            let request = &mut json["operation_receipts"][0]["identity_request"];
+            match field {
+                "add_present" => {
+                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap()
+                }
+                "replace_null" => request["change"] = serde_json::json!("replace"),
+                "remove_null" => request["change"] = serde_json::json!("remove"),
+                "wrong_profile" => {
+                    request["change"] = serde_json::json!("remove");
+                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap();
+                    request["expected_scope"]["profile_id"] =
+                        serde_json::json!("00000000-0000-4000-8000-000000000099");
+                }
+                "remove_wrong_receipt" => {
+                    request["change"] = serde_json::json!("remove");
+                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap();
+                    request["expected_scope"]["safety_revision"] = serde_json::json!(2);
+                }
+                "replace_same_radio" => {
+                    request["change"] = serde_json::json!("replace");
+                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap();
+                }
+                "add_revision_two" => (),
+                _ => unreachable!(),
+            }
+            if field == "add_revision_two" {
+                json["operation_receipts"][0]["scope"]["wire"]["safety_revision"] =
+                    serde_json::json!(2);
+            }
+        }
+        let invalid: Record = serde_json::from_value(json.clone()).unwrap();
+        let committed = fs::read(f.directory.join("authorization.json")).unwrap();
+        let (store, _) = f.parts();
+        assert!(
+            store.save_authorization(&invalid).is_err(),
+            "accepted semantic corruption {field}"
+        );
+        assert_eq!(
+            fs::read(f.directory.join("authorization.json")).unwrap(),
+            committed
+        );
+        let corrupt_bytes = serde_json::to_vec(&json).unwrap();
+        fs::write(f.directory.join("authorization.json"), &corrupt_bytes).unwrap();
+        assert_eq!(
+            f.reopen(),
+            Err(Error::PersistenceFailed),
+            "reopen accepted {field}"
+        );
+        assert_eq!(
+            fs::read(f.directory.join("authorization.json")).unwrap(),
+            corrupt_bytes
+        );
+    }
+}
+
+#[test]
+fn repair_valid_same_radio_older_verifier_and_receipt_remain_valid() {
+    let mut f = Fixture::new();
+    let (store, a) = f.parts();
+    let v = verifier(a.record.current_scope.clone().unwrap());
+    a.enroll(store, v).unwrap();
+    let mut record = a.record.clone();
+    record.current_scope.as_mut().unwrap().wire.safety_revision = 2;
+    record.commissioning = Some(Commissioning {
+        scope: record.current_scope.clone().unwrap(),
+        receive_only_confirmed: true,
+        control: profile::Control {
+            mode: "cat".into(),
+            endpoint: Some("fixture-cat".into()),
+            ptt: "disabled".into(),
+        },
+    });
+    store.save_authorization(&record).unwrap();
+    f.reopen().unwrap();
+    assert_eq!(
+        f.authority.as_ref().unwrap().record.grants[0]
+            .scope
+            .wire
+            .safety_revision,
+        1
+    );
+    assert_eq!(
+        f.authority.as_ref().unwrap().record.operation_receipts[0]
+            .scope
+            .wire
+            .safety_revision,
+        1
+    );
+    assert_eq!(
+        f.authority
+            .as_ref()
+            .unwrap()
+            .record
+            .current_scope
+            .as_ref()
+            .unwrap()
+            .wire
+            .safety_revision,
+        2
+    );
+}
+
+#[test]
+fn repair_valid_add_replace_remove_identity_receipts_survive_reopen() {
+    for change in [
+        IdentityChange::Add,
+        IdentityChange::Replace,
+        IdentityChange::Remove,
+    ] {
+        let mut f = Fixture::new();
+        let (store, a) = f.parts();
+        let mut record = a.record.clone();
+        let old = record.current_scope.clone().unwrap();
+        let mut result = old.clone();
+        if change == IdentityChange::Replace {
+            result.wire.radio_id = profile::new_uuid().unwrap();
+        }
+        record.current_scope = if change == IdentityChange::Remove {
+            None
+        } else {
+            Some(result.clone())
+        };
+        let operation_id = profile::new_uuid().unwrap();
+        record.operation_receipts.push_back(JournalEntry {
+            operation_id: operation_id.clone(),
+            scope: result,
+            kind: OperationKind::RadioIdentity,
+            grant_id: None,
+            owner_verifier: None,
+            identity_request: Some(IdentityRequest {
+                version: 1,
+                operation_id,
+                expected_scope: if change == IdentityChange::Add {
+                    None
+                } else {
+                    Some(old.wire)
+                },
+                change,
+            }),
+        });
+        store.save_authorization(&record).unwrap();
+        f.reopen().unwrap();
+        assert_eq!(f.authority.as_ref().unwrap().record, record);
+    }
+}

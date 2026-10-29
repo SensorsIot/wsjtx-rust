@@ -6,6 +6,7 @@ use std::{
     collections::VecDeque,
     time::{Duration, Instant},
 };
+use subtle::ConstantTimeEq;
 
 use crate::profile;
 
@@ -291,6 +292,7 @@ impl Record {
                 return Err(Error::Invalid);
             }
             check_scope(&c.scope)?;
+            c.control.validate().map_err(|_| Error::Invalid)?;
         }
         for (i, entry) in self.operation_receipts.iter().enumerate() {
             check_scope(&entry.scope)?;
@@ -312,6 +314,25 @@ impl Record {
                     {
                         return Err(Error::Invalid);
                     }
+                    if self
+                        .grants
+                        .iter()
+                        .any(|g| g.grant_id == v.grant_id && g != v)
+                        || self
+                            .operation_receipts
+                            .iter()
+                            .take(i)
+                            .filter_map(|e| e.owner_verifier.as_ref())
+                            .any(|g| g.grant_id == v.grant_id && g != v)
+                    {
+                        return Err(Error::Invalid);
+                    }
+                    if entry.kind == OperationKind::Enroll
+                        && (entry.operation_id != v.enrollment_operation_id
+                            || entry.scope != v.scope)
+                    {
+                        return Err(Error::Invalid);
+                    }
                 }
                 (None, Some(r))
                     if entry.kind == OperationKind::RadioIdentity && entry.grant_id.is_none() =>
@@ -321,6 +342,20 @@ impl Record {
                     }
                     if let Some(scope) = &r.expected_scope {
                         scope.validate()?;
+                        if scope.profile_id != profile_id {
+                            return Err(Error::Invalid);
+                        }
+                    }
+                    match (r.change, &r.expected_scope) {
+                        (IdentityChange::Add, None) if entry.scope.wire.safety_revision == 1 => (),
+                        (IdentityChange::Replace, Some(old))
+                            if entry.scope.wire.safety_revision == 1
+                                && old.radio_id != entry.scope.wire.radio_id =>
+                        {
+                            ()
+                        }
+                        (IdentityChange::Remove, Some(old)) if old == &entry.scope.wire => (),
+                        _ => return Err(Error::Invalid),
                     }
                 }
                 _ => return Err(Error::Invalid),
@@ -512,6 +547,12 @@ impl Authority {
             .grants
             .iter()
             .any(|g| g.grant_id == verifier.grant_id)
+            || self
+                .record
+                .operation_receipts
+                .iter()
+                .filter_map(|e| e.owner_verifier.as_ref())
+                .any(|g| g.grant_id == verifier.grant_id)
         {
             return Err(Error::Conflict);
         }
@@ -703,7 +744,7 @@ impl Authority {
         let t = self
             .transports
             .iter()
-            .find(|t| t.token == token)
+            .find(|t| bool::from(t.token.as_bytes().ct_eq(token.as_bytes())))
             .ok_or(Error::Unauthorized)?;
         if now >= t.deadline
             || t.scope.https_origin != origin
