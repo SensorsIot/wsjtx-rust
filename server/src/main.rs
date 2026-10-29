@@ -354,7 +354,7 @@ fn authenticated(headers: &HeaderMap, app: &App) -> bool {
     // Trusted plaintext loopback configuration GET/PUT remains a separate contract.
     // A selected HTTPS profile never inherits the old runtime-token cookie.
     if app.profile_id.is_some() && app.origin.starts_with("https://") {
-        return authorization_http::access(headers, app).is_ok();
+        return false;
     }
     let Some(token) = &app.token else {
         return true;
@@ -397,11 +397,18 @@ async fn get_profile(State(app): State<App>, headers: HeaderMap) -> Response {
     if headers.contains_key(header::ORIGIN) && !allowed_origin(&headers, &app) {
         return profile_error(StatusCode::FORBIDDEN, "forbidden_origin", None);
     }
-    if !authenticated(&headers, &app) {
-        return profile_error(StatusCode::UNAUTHORIZED, "unauthorized", None);
-    }
     match tokio::task::spawn_blocking(move || match state.store.lock() {
-        Ok(store) => Json(representation(&state, &store.document, &app.origin)).into_response(),
+        Ok(store) => {
+            let Ok(owner) = state.authorization.lock() else {
+                return authorization_http::mapped(authorization::Error::PersistenceFailed);
+            };
+            if let Err(error) =
+                authorization_http::configuration_access(&headers, &app, owner.as_ref())
+            {
+                return authorization_http::mapped(error);
+            }
+            Json(representation(&state, &store.document, &app.origin)).into_response()
+        }
         Err(_) => profile_error(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable", None),
     })
     .await
@@ -432,59 +439,75 @@ async fn put_profile(
     if !allowed_origin(&headers, &app) {
         return profile_error(StatusCode::FORBIDDEN, "forbidden_origin", None);
     }
-    if !authenticated(&headers, &app) {
-        return profile_error(StatusCode::UNAUTHORIZED, "unauthorized", None);
-    }
-    if !json_media_type(&headers) {
-        return profile_error(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "unsupported_media_type",
-            None,
-        );
-    }
-    let Ok(body) = body else {
-        return profile_error(StatusCode::PAYLOAD_TOO_LARGE, "request_too_large", None);
-    };
-    let mut deserializer = serde_json::Deserializer::from_slice(&body);
-    let edit: profile::Edit = match serde_path_to_error::deserialize(&mut deserializer) {
-        Ok(value) => value,
-        Err(error) => {
-            let path = error.path().to_string();
-            let known = [
-                "profile_id",
-                "revision",
-                "settings",
-                "settings.display_name",
-                "settings.callsign",
-                "settings.locator",
-                "settings.audio",
-                "settings.audio.input_device",
-                "settings.audio.output_device",
-                "settings.control",
-                "settings.control.mode",
-                "settings.control.endpoint",
-                "settings.control.ptt",
-            ];
-            return profile_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_settings",
-                known.contains(&path.as_str()).then_some(path.as_str()),
-            );
-        }
-    };
-    if deserializer.end().is_err()
-        || !profile::valid_uuid(&edit.profile_id)
-        || edit.revision > profile::MAX_REVISION
-    {
-        return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", None);
-    }
-    if let Err(field) = edit.settings.validate() {
-        return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", Some(field));
-    }
     match tokio::task::spawn_blocking(move || {
         let Ok(mut store) = state.store.lock() else {
             return profile_error(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable", None);
         };
+        let Ok(mut authorization) = state.authorization.lock() else {
+            return authorization_http::mapped(authorization::Error::PersistenceFailed);
+        };
+        let context = match authorization_http::configuration_access(
+            &headers,
+            &app,
+            authorization.as_ref(),
+        ) {
+            Ok(context) => context,
+            Err(error) => return authorization_http::mapped(error),
+        };
+        if let Some(context) = context {
+            let Some(service) = authorization.as_ref() else {
+                return authorization_http::mapped(authorization::Error::Unauthorized);
+            };
+            if let Err(error) = service.authority.recheck_dispatch(&context) {
+                return authorization_http::mapped(error);
+            }
+        }
+        if !json_media_type(&headers) {
+            return profile_error(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "unsupported_media_type",
+                None,
+            );
+        }
+        let Ok(body) = body else {
+            return profile_error(StatusCode::PAYLOAD_TOO_LARGE, "request_too_large", None);
+        };
+        let mut deserializer = serde_json::Deserializer::from_slice(&body);
+        let edit: profile::Edit = match serde_path_to_error::deserialize(&mut deserializer) {
+            Ok(value) => value,
+            Err(error) => {
+                let path = error.path().to_string();
+                let known = [
+                    "profile_id",
+                    "revision",
+                    "settings",
+                    "settings.display_name",
+                    "settings.callsign",
+                    "settings.locator",
+                    "settings.audio",
+                    "settings.audio.input_device",
+                    "settings.audio.output_device",
+                    "settings.control",
+                    "settings.control.mode",
+                    "settings.control.endpoint",
+                    "settings.control.ptt",
+                ];
+                return profile_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_settings",
+                    known.contains(&path.as_str()).then_some(path.as_str()),
+                );
+            }
+        };
+        if deserializer.end().is_err()
+            || !profile::valid_uuid(&edit.profile_id)
+            || edit.revision > profile::MAX_REVISION
+        {
+            return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", None);
+        }
+        if let Err(field) = edit.settings.validate() {
+            return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", Some(field));
+        }
         if store.document.profile_id != edit.profile_id {
             return profile_error(StatusCode::FORBIDDEN, "wrong_profile", None);
         }
@@ -497,9 +520,6 @@ async fn put_profile(
         if store.save(edit.settings).is_err() {
             return profile_error(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable", None);
         }
-        let Ok(mut authorization) = state.authorization.lock() else {
-            return profile_error(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable", None);
-        };
         if let Some(service) = authorization.as_mut()
             && service.authority.reconcile_control(&mut store).is_err()
         {
@@ -541,7 +561,7 @@ async fn session(
         return StatusCode::BAD_REQUEST.into_response();
     };
     if app.profile.is_some() {
-        return authorization_http::bootstrap_session(&headers, &app, body);
+        return authorization_http::bootstrap_session_async(&headers, &app, body).await;
     }
     {
         let Ok(mut attempts) = app.login_attempts.lock() else {
@@ -577,12 +597,12 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         return StatusCode::FORBIDDEN.into_response();
     }
     let authority = if let Some(state) = &app.profile {
-        match authorization_http::access(&headers, &app) {
+        match authorization_http::access_async(&headers, &app).await {
             Ok(access) => Some(ConnectionAuthority {
                 state: state.clone(),
                 access,
             }),
-            Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
+            Err(error) => return authorization_http::mapped(error),
         }
     } else {
         if !authenticated(&headers, &app) {
@@ -724,6 +744,8 @@ struct ConnectionAuthority {
     access: authorization::Access,
 }
 impl ConnectionAuthority {
+    // Test-only synchronous observation; production uses current_async below.
+    #[cfg(test)]
     fn current(&self) -> bool {
         self.state
             .authorization
@@ -735,6 +757,26 @@ impl ConnectionAuthority {
                     .map(|s| s.authority.current_grant(&self.access).is_ok())
             })
             .unwrap_or(false)
+    }
+    async fn current_async(&self) -> Result<bool, authorization::Error> {
+        let state = self.state.clone();
+        let access = self.access.clone();
+        tokio::task::spawn_blocking(move || {
+            let owner = state
+                .authorization
+                .lock()
+                .map_err(|_| authorization::Error::PersistenceFailed)?;
+            let Some(service) = owner.as_ref() else {
+                return Ok(false);
+            };
+            match service.authority.current_grant(&access) {
+                Ok(_) => Ok(true),
+                Err(authorization::Error::Unauthorized) => Ok(false),
+                Err(error) => Err(error),
+            }
+        })
+        .await
+        .map_err(|_| authorization::Error::PersistenceFailed)?
     }
 }
 async fn connection(
@@ -758,9 +800,15 @@ async fn connection(
     receive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut receive_seen = Value::Null;
     loop {
-        if authority.as_ref().is_some_and(|context| !context.current()) {
-            break;
-        }
+        let auth_ready = if let Some(context) = &authority {
+            match context.current_async().await {
+                Ok(true) => true,
+                Ok(false) => break,
+                Err(_) => false,
+            }
+        } else {
+            true
+        };
         tokio::select! {
             biased;
             _ = tokio::time::sleep_until((optional_since.unwrap_or_else(Instant::now)+Duration::from_secs(2)).into()), if optional_since.is_some()=>break,
@@ -771,6 +819,7 @@ async fn connection(
                 if !send(&mut socket,Message::Ping(Vec::new().into())).await {break;}
             }
             _ = receive_tick.tick(), if recording.is_some() => {
+                if !auth_ready { continue; }
                 let r=recording.as_ref().unwrap();
                 let s=r.receive_snapshot();
                 let data=json!({"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"],
@@ -784,7 +833,9 @@ async fn connection(
             }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Text(text))) => {
-                    if authority.as_ref().is_some_and(|context| !context.current()) { break; }
+                    if let Some(context) = &authority {
+                        match context.current_async().await { Ok(true) => (), Ok(false) => break, Err(_) => continue }
+                    }
                     let mut value = reply(&text);
                     if value["data"]["code"] == "unknown_command" {
                         let request: Value = serde_json::from_str(&text).unwrap_or(Value::Null);

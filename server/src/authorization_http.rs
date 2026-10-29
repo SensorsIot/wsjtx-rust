@@ -104,6 +104,46 @@ pub(crate) fn access(headers: &HeaderMap, app: &App) -> Result<Access, Error> {
         .authority
         .access(&token, &app.origin, Instant::now())
 }
+/// Potential mutex waits stay wholly on Tokio's blocking pool. A busy writer
+/// remains a pending authority check, never a fabricated unauthorized result.
+pub(crate) async fn access_async(headers: &HeaderMap, app: &App) -> Result<Access, Error> {
+    let headers = headers.clone();
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || access(&headers, &app))
+        .await
+        .map_err(|_| Error::PersistenceFailed)?
+}
+pub(crate) fn configuration_access(
+    headers: &HeaderMap,
+    app: &App,
+    service: Option<&Service>,
+) -> Result<Option<Access>, Error> {
+    if app.profile_id.is_some() && app.origin.starts_with("https://") {
+        let service = service.ok_or(Error::Unauthorized)?;
+        let token = cookie(headers, &cookie_name(app))?;
+        return service
+            .authority
+            .access(&token, &app.origin, Instant::now())
+            .map(Some);
+    }
+    if authenticated(headers, app) {
+        Ok(None)
+    } else {
+        Err(Error::Unauthorized)
+    }
+}
+pub(crate) async fn bootstrap_session_async(
+    headers: &HeaderMap,
+    app: &App,
+    body: &str,
+) -> Response {
+    let headers = headers.clone();
+    let app = app.clone();
+    let body = body.to_owned();
+    tokio::task::spawn_blocking(move || bootstrap_session(&headers, &app, &body))
+        .await
+        .unwrap_or_else(|_| mapped(Error::PersistenceFailed))
+}
 
 pub(crate) fn bootstrap_session(headers: &HeaderMap, app: &App, body: &str) -> Response {
     if !allowed_origin(headers, app) || !app.origin.starts_with("https://") {
@@ -150,7 +190,7 @@ fn failure(status: StatusCode, code: &str) -> Response {
 fn strict_origin(headers: &HeaderMap, app: &App) -> bool {
     headers.get_all(header::ORIGIN).iter().count() == 1 && allowed_origin(headers, app)
 }
-fn mapped(error: Error) -> Response {
+pub(crate) fn mapped(error: Error) -> Response {
     match error {
         Error::Invalid => failure(StatusCode::BAD_REQUEST, "invalid_request"),
         Error::Unauthorized => failure(StatusCode::UNAUTHORIZED, "unauthorized"),

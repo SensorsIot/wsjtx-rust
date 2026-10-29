@@ -419,6 +419,48 @@ async fn http_auth_origin_tls_precede_credentials_and_strict_body_bounds_have_no
         StatusCode::UNAUTHORIZED,
         "configuration trust never grants native runtime access"
     );
+    let (id, settings) = {
+        let store = plaintext
+            .app()
+            .profile
+            .as_ref()
+            .unwrap()
+            .store
+            .lock()
+            .unwrap();
+        (store.document.profile_id.clone(), store.document.settings())
+    };
+    assert_eq!(
+        plaintext
+            .request(
+                axum::http::Method::PUT,
+                "/profile",
+                serde_json::to_vec(&json!({"profile_id":id,"revision":0,"settings":settings}))
+                    .unwrap(),
+                plaintext.headers(None)
+            )
+            .await
+            .status,
+        StatusCode::OK,
+        "trusted plaintext configuration PUT remains compatible"
+    );
+    assert!(
+        !plaintext.directory.join("authorization.json").exists(),
+        "plaintext config never creates a grant/identity record"
+    );
+    let malformed = f
+        .request(
+            axum::http::Method::PUT,
+            "/profile",
+            "not JSON",
+            f.headers(None),
+        )
+        .await;
+    assert_eq!(
+        malformed.status,
+        StatusCode::UNAUTHORIZED,
+        "selected grant admission precedes malformed settings"
+    );
 }
 
 #[tokio::test]
@@ -698,4 +740,177 @@ async fn http_auth_status_requires_post_and_wrong_origin_is_forbidden_before_aut
         router(app).oneshot(request).await.unwrap().status(),
         StatusCode::FORBIDDEN
     );
+}
+
+#[tokio::test]
+async fn http_review_revoke_wins_queued_real_profile_put_without_any_later_write() {
+    use std::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let state = f.app().profile.as_ref().unwrap().clone();
+    let (mut future, public_after_revoke, private_after_revoke) = {
+        let mut store = state.store.lock().unwrap();
+        let mut settings = store.document.settings();
+        settings.display_name = "Must not commit after revoke".into();
+        let body=serde_json::to_vec(&json!({"profile_id":store.document.profile_id,"revision":store.document.revision,"settings":settings})).unwrap();
+        let mut future = Box::pin(put_profile(
+            State(f.app().clone()),
+            f.headers(Some(&g.cookie)),
+            Ok(Bytes::from(body)),
+        ));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(
+            matches!(future.as_mut().poll(&mut context), Poll::Pending),
+            "the real handler must queue behind the held profile writer"
+        );
+        // Both versions have exactly one asynchronous boundary in put_profile:
+        // its spawn_blocking write. Thus the held writer is an independent barrier,
+        // not a guessed sleep between preflight and commit.
+        let mut owner = state.authorization.lock().unwrap();
+        owner
+            .as_mut()
+            .unwrap()
+            .authority
+            .revoke(&mut store, &g.id, &profile::new_uuid().unwrap(), false)
+            .unwrap();
+        drop(owner);
+        let public = std::fs::read(f.directory.join("profile.json")).unwrap();
+        let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
+        (future, public, private)
+    };
+    let response = tokio::time::timeout(Duration::from_secs(2), future.as_mut())
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "queued configuration write used revoked authority"
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("profile.json")).unwrap(),
+        public_after_revoke
+    );
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        private_after_revoke
+    );
+    assert_eq!(state.store.lock().unwrap().document.revision, 0);
+    drop(future);
+    drop(state);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn http_review_authority_wait_yields_to_heartbeat_and_cancel_then_returns_actual_grant() {
+    use std::{
+        future::Future,
+        sync::atomic::{AtomicBool, Ordering},
+        task::{Context, Poll, Waker},
+    };
+    for operation in ["get", "session"] {
+        let f = HttpFixture::new("https://localhost:8080");
+        let g = f.authorize().await;
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let released = Arc::new(AtomicBool::new(false));
+        let owned_released = released.clone();
+        let owner = std::thread::spawn(move || {
+            let guard = state.authorization.lock().unwrap();
+            held_tx.send(()).unwrap();
+            // External, bounded release guard: even the blocking parent cannot hang
+            // this current-thread runtime/test indefinitely.
+            let _ = release_rx.recv_timeout(Duration::from_millis(500));
+            drop(guard);
+            owned_released.store(true, Ordering::SeqCst);
+        });
+        held_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let heartbeat = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let hb = heartbeat.clone();
+        let cancellation = cancel.clone();
+        let progress_started = Instant::now();
+        let progress = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            hb.store(true, Ordering::SeqCst);
+            eprintln!(
+                "diagnostic heartbeat fired at {:?}",
+                progress_started.elapsed()
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            cancellation.store(true, Ordering::SeqCst);
+            eprintln!(
+                "diagnostic cancellation fired at {:?}",
+                progress_started.elapsed()
+            );
+        });
+        let mut pending: std::pin::Pin<Box<dyn Future<Output = Response>>> = if operation == "get" {
+            Box::pin(get_profile(
+                State(f.app().clone()),
+                f.headers(Some(&g.cookie)),
+            ))
+        } else {
+            Box::pin(session(
+                State(f.app().clone()),
+                f.headers(None),
+                Ok(Bytes::from(f.app().token.clone().unwrap())),
+            ))
+        };
+        let started = Instant::now();
+        let first = pending
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()));
+        let poll_elapsed = started.elapsed();
+        let initially_pending = first.is_pending();
+        tokio::time::timeout(Duration::from_secs(2), progress)
+            .await
+            .unwrap()
+            .unwrap();
+        let advanced = heartbeat.load(Ordering::SeqCst) && cancel.load(Ordering::SeqCst);
+        let observed_while_held = !released.load(Ordering::SeqCst);
+        let second = if initially_pending {
+            Some(
+                pending
+                    .as_mut()
+                    .poll(&mut Context::from_waker(Waker::noop())),
+            )
+        } else {
+            None
+        };
+        let still_pending = second.as_ref().is_some_and(Poll::is_pending);
+        eprintln!(
+            "diagnostic {operation} observation at {:?}: heartbeat={} cancellation={} authority_held={observed_while_held} first_poll={poll_elapsed:?}",
+            progress_started.elapsed(),
+            heartbeat.load(Ordering::SeqCst),
+            cancel.load(Ordering::SeqCst)
+        );
+        let _ = release_tx.send(());
+        owner.join().unwrap();
+        let response = match (first, second) {
+            (Poll::Ready(r), _) | (Poll::Pending, Some(Poll::Ready(r))) => r,
+            (Poll::Pending, _) => tokio::time::timeout(Duration::from_secs(2), pending.as_mut())
+                .await
+                .unwrap(),
+        };
+        assert_eq!(
+            response.status(),
+            if operation == "get" {
+                StatusCode::OK
+            } else {
+                StatusCode::NO_CONTENT
+            },
+            "contention must not become fake unauthorized"
+        );
+        assert!(
+            advanced
+                && observed_while_held
+                && initially_pending
+                && still_pending
+                && poll_elapsed < Duration::from_millis(200),
+            "{operation} blocked executor work: heartbeat/cancel={advanced}, held={observed_while_held}, first_poll={poll_elapsed:?}"
+        );
+        drop(pending);
+    }
 }
