@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 #[cfg(test)]
 mod auth_tests;
+mod authorization;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
