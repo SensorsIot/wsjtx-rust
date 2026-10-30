@@ -1,7 +1,9 @@
-use super::demodulation::{Demodulator, channel_gates};
-use super::fit::{fit_coefficients, fit_signal, phase_agreement};
+use super::baseband::BandPlan;
+use super::bitmetrics::{self, channel_gates};
+use super::fit::{fit_coefficients, fit_signal};
 use super::history::DecodeState;
-use super::likelihood::{LikelihoodContext, PeerNoise};
+use super::physical_sync;
+use super::subtraction::Subtractor;
 use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
 use serde::{Deserialize, Serialize};
@@ -17,7 +19,14 @@ pub(super) struct CpuBudget<'a> {
     deadline: Instant,
     resume: bool,
 }
-impl CpuBudget<'_> {
+impl<'a> CpuBudget<'a> {
+    pub(super) fn new(cancel: &'a dyn Fn() -> bool) -> Self {
+        Self {
+            cancel,
+            deadline: Instant::now() + Duration::from_millis(10),
+            resume: false,
+        }
+    }
     pub(super) async fn checkpoint(&mut self) -> Result<(), DecodeError> {
         poll_fn(|cx| {
             if (self.cancel)() {
@@ -38,7 +47,7 @@ impl CpuBudget<'_> {
         .await
     }
 }
-fn complete<T>(future: impl Future<Output = T>) -> T {
+pub(super) fn complete<T>(future: impl Future<Output = T>) -> T {
     let mut cx = Context::from_waker(Waker::noop());
     let mut future = pin!(future);
     loop {
@@ -62,11 +71,6 @@ pub enum DecodeError {
     SearchLimited,
     DecodeLimit,
 }
-struct Prepared {
-    candidate: Candidate,
-    variance: f64,
-    signal: f64,
-}
 struct Subtraction {
     start: usize,
     frequency: f64,
@@ -76,8 +80,6 @@ struct Subtraction {
 pub struct Decoder {
     channel: Channel,
     scalar: bool,
-    ft4: Demodulator,
-    ft8: Demodulator,
 }
 impl Default for Decoder {
     fn default() -> Self {
@@ -89,8 +91,6 @@ impl Decoder {
         Self {
             channel: Channel::new(),
             scalar: false,
-            ft4: Demodulator::new(Mode::Ft4),
-            ft8: Demodulator::new(Mode::Ft8),
         }
     }
     pub fn with_scalar_transform() -> Self {
@@ -175,11 +175,7 @@ impl Decoder {
             return Err(DecodeError::InvalidSamples);
         }
         state.prepare_window(origin)?;
-        let mut budget = CpuBudget {
-            cancel,
-            deadline: Instant::now() + Duration::from_millis(10),
-            resume: false,
-        };
+        let mut budget = CpuBudget::new(cancel);
         budget.checkpoint().await?;
         let mode = state.mode();
         let n = mode.symbol_frames();
@@ -187,79 +183,43 @@ impl Decoder {
         if samples.len() < frame {
             return Ok(());
         }
+        let plan = BandPlan::new(mode, samples.len(), self.scalar)?;
+        let mut subtractor = Subtractor::new(mode, self.scalar)?;
+        budget.checkpoint().await?;
         let mut subtractions = 0;
         let mut window_seen = Vec::<(String, u64)>::new();
         for _pass in 0..3 {
             let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
-            let coarse = spectrum.candidates(samples.len(), &mut budget).await?;
+            let mut physical = plan.current_pass(&samples, &mut budget).await?;
+            let candidates = if mode == Mode::Ft4 {
+                let mut candidates = vec![];
+                for frequency in
+                    super::coarse_ft4::candidates(&samples, self.scalar, &mut budget).await?
+                {
+                    candidates.extend(
+                        super::physical_ft4::qualify(
+                            &mut physical,
+                            frequency,
+                            &candidates,
+                            &mut budget,
+                        )
+                        .await?,
+                    );
+                }
+                candidates
+            } else {
+                spectrum
+                    .candidates(samples.len(), &mut physical, &mut budget)
+                    .await?
+            };
             let accepted = state.active_frequencies(origin, samples.len());
-            let mut prepared = vec![];
-            for c in coarse {
-                let c = super::synchronization::refine(&samples, mode, c, &mut budget).await?;
-                let variance = spectrum
-                    .noise_variance(c.start, frame, c.frequency, &accepted)
-                    .unwrap_or(1e-20)
-                    .max(1e-20);
-                let signal = sync_signal_energy(&samples, mode, c, spectrum.sync_wave(), variance);
-                prepared.push(Prepared {
-                    candidate: c,
-                    variance,
-                    signal,
-                });
-            }
             let mut pending = vec![];
             let mut verified = 0;
-            for current in &prepared {
+            for c in candidates {
                 budget.checkpoint().await?;
-                let c = current.candidate;
-                let peer = prepared
-                    .iter()
-                    .filter(|other| {
-                        let p = other.candidate;
-                        p.start.abs_diff(c.start) <= n / 2
-                            && (p.frequency - c.frequency).abs() >= 0.75 * mode.spacing()
-                            && (p.frequency - c.frequency).abs()
-                                <= (mode.tone_count() - 1) as f64 * mode.spacing()
-                            && other.signal >= current.variance
-                            && other.signal >= current.signal / 16.
-                    })
-                    .max_by(|a, b| {
-                        a.signal
-                            .total_cmp(&b.signal)
-                            .then(b.candidate.frequency.total_cmp(&a.candidate.frequency))
-                            .then(b.candidate.start.cmp(&a.candidate.start))
-                    })
-                    .map(|p| PeerNoise {
-                        energy: p.signal,
-                        offset: ((p.candidate.frequency - c.frequency) / mode.spacing() + 0.5)
-                            .floor() as i32,
-                    });
-                let context = LikelihoodContext {
-                    variance: current.variance,
-                    signal: current.signal,
-                    peer,
-                };
-                let demodulator = if mode == Mode::Ft4 {
-                    &self.ft4
-                } else {
-                    &self.ft8
-                };
-                let observation = demodulator
-                    .observe(
-                        &samples,
-                        c.start,
-                        c.frequency,
-                        context,
-                        &self.channel,
-                        &mut budget,
-                    )
-                    .await?;
-                let word = match observation.word {
-                    Some(word) => Some(word),
-                    None => self.channel.decode(&observation.llr, cancel),
-                };
-                budget.checkpoint().await?;
-                let Some(word) = word else {
+                let observation =
+                    bitmetrics::observe(&mut physical, c, &self.channel, &mut budget).await?;
+                let Some(word) = observation.word else {
                     continue;
                 };
                 if !channel_gates(&word, &observation.llr) {
@@ -283,13 +243,11 @@ impl Decoder {
                 }) {
                     continue;
                 }
-                let wave = quadratures(mode, &tones, fitted.frequency)
-                    .ok_or(DecodeError::InvalidSamples)?;
-                if phase_agreement(&samples, fitted.start, &wave, mode)
-                    .is_none_or(|ratio| ratio < 0.5)
-                {
+                if !physical_sync::supports(&mut physical, fitted, &mut budget).await? {
                     continue;
                 }
+                let wave = quadratures(mode, &tones, fitted.frequency)
+                    .ok_or(DecodeError::InvalidSamples)?;
                 let fit = fit_signal(&samples, fitted.start, &wave);
                 let variance =
                     spectrum.noise_variance(fitted.start, frame, fitted.frequency, &accepted);
@@ -318,16 +276,16 @@ impl Decoder {
                     });
                 }
             }
+            // Discard the immutable current-pass transform before modifying its residual.
+            drop(physical);
             for subtraction in pending {
                 budget.checkpoint().await?;
                 let wave = quadratures(mode, &subtraction.tones, subtraction.frequency)
                     .ok_or(DecodeError::InvalidSamples)?;
-                if let Some((a, b, _)) = fit_signal(&samples, subtraction.start, &wave) {
-                    for (x, q) in samples[subtraction.start..].iter_mut().zip(&wave) {
-                        *x -= (a * q[0] as f64 + b * q[1] as f64) as f32;
-                    }
-                    subtractions += 1;
-                }
+                subtractor
+                    .subtract(&mut samples, subtraction.start, &wave, &mut budget)
+                    .await?;
+                subtractions += 1;
             }
             if verified == 0 || subtractions >= 32 {
                 break;
@@ -337,53 +295,7 @@ impl Decoder {
         Ok(())
     }
 }
-fn sync_signal_energy(
-    samples: &[f32],
-    mode: Mode,
-    c: Candidate,
-    unit: &[[f32; 2]],
-    variance: f64,
-) -> f64 {
-    let n = mode.symbol_frames();
-    let starts: &[usize] = if mode == Mode::Ft8 {
-        &[0, 36, 72]
-    } else {
-        &[1, 34, 67, 100]
-    };
-    let count = if mode == Mode::Ft8 { 7 } else { 4 };
-    let mut estimates = vec![];
-    for &first in starts {
-        let lo = first * n + n / 2;
-        let hi = (first + count) * n - n / 2;
-        let angle = 2. * PI * c.frequency / 12000.;
-        let rotation = rustfft::num_complex::Complex64::from_polar(1., angle);
-        let mut oscillator =
-            rustfft::num_complex::Complex64::from_polar(1., angle * (lo + 1) as f64);
-        let mut template = Vec::with_capacity(hi - lo);
-        for w in &unit[lo..hi] {
-            let z = rustfft::num_complex::Complex64::new(w[0] as f64, w[1] as f64) * oscillator;
-            template.push([z.re as f32, z.im as f32]);
-            oscillator *= rotation;
-        }
-        if let Some((a, b, _)) = fit_signal(samples, c.start + lo, &template) {
-            let estimate =
-                (n as f64 * (a * a + b * b) / 4. - n as f64 * variance / (hi - lo) as f64).max(0.);
-            if estimate.is_finite() {
-                estimates.push(estimate);
-            }
-        }
-    }
-    if estimates.len() != starts.len() {
-        return 0.;
-    }
-    estimates.sort_by(f64::total_cmp);
-    let middle = estimates.len() / 2;
-    if estimates.len() % 2 == 0 {
-        (estimates[middle - 1] + estimates[middle]) / 2.
-    } else {
-        estimates[middle]
-    }
-}
+
 fn coherent(
     samples: &[f32],
     start: usize,
@@ -465,7 +377,6 @@ async fn refine_known(
                     start: start as usize,
                     frequency,
                     score,
-                    ..c
                 };
             }
         }
@@ -498,7 +409,6 @@ async fn refine_known(
                     start: start as usize,
                     frequency,
                     score,
-                    ..c
                 };
             }
         }
@@ -525,7 +435,6 @@ async fn refine_known(
                 start: start as usize,
                 frequency: fine.frequency,
                 score,
-                ..c
             };
         }
     }
