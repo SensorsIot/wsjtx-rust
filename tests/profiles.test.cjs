@@ -1126,7 +1126,8 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   const enrollmentSeen = new Promise(resolve => {resolveEnrollment = resolve;});
   const wire = [Array(9).fill(0), Array(9).fill(0)], attempts = [Array(9).fill(0), Array(9).fill(0)];
   const authCode = pathname => ({'/session': 1, '/authorization/v1/bootstrap-scope': 2, '/authorization/v1/enroll': 3, '/authorization/v1/challenge': 4, '/authorization/v1/proof': 5, '/authorization/v1/status': 6, '/authorization/v1/receipt': 7}[pathname] || 8);
-  let holdElapsed = -1, holdWithinDeadline = false, holdQualified = false, guardMs = -1, oldBoot;
+  let holdElapsed = -1, holdWithinDeadline = false, holdQualified = false, guardMs = -1;
+  const observedBoots = new Set(); let earlySocket = false;
   const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   function processes() {
     const quoted = profileDir.replaceAll("'", "''");
@@ -1162,7 +1163,9 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
     const page = context.pages()[0] || await context.newPage();
     await page.addInitScript(watchUnknown => {
       window.__enrollmentDcl = 0; window.__enrollmentReleased = false;
-      window.__enrollmentSafety = {earlyReady: false, earlyConnected: false, loginExposed: false, watchUnknown};
+      window.__enrollmentSafety = {earlyReady: false, earlyConnected: false, earlySocket: false, loginExposed: false, watchUnknown};
+      const NativeWebSocket = window.WebSocket;
+      window.WebSocket = new Proxy(NativeWebSocket, {construct(target, args, newTarget) {if (!window.__enrollmentReleased) window.__enrollmentSafety.earlySocket = true; return Reflect.construct(target, args, newTarget);}});
       const inspect = records => {
         const v = window.__enrollmentSafety, connection = document.querySelector('#connection'), login = document.querySelector('#login');
         if (!window.__enrollmentReleased && (connection?.dataset.state === 'connected' || records.some(r => r.target === connection && r.attributeName === 'data-state' && r.oldValue === 'connected'))) v.earlyConnected = true;
@@ -1182,8 +1185,11 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
       if (!receiptReleased && (u.pathname === '/profile' || u.pathname.startsWith('/receive/') || u.pathname.startsWith('/recordings'))) counts.protectedBeforeReceipt++;
     });
     page.on('requestfailed', req => {if (initial && new URL(req.url()).pathname === '/authorization/v1/enroll') enrollFailed = true;});
-    page.on('response', res => {const u = new URL(res.url()); if (u.origin === p.origin && (u.pathname === '/session' || u.pathname.startsWith('/authorization/v1/'))) replies.push({path: u.pathname, status: res.status(), initial});});
-    page.on('websocket', () => {counts.sockets++;});
+    page.on('response', res => {const u = new URL(res.url()); if (u.origin !== p.origin) return;
+      if (u.pathname === '/session' || u.pathname.startsWith('/authorization/v1/')) replies.push({path: u.pathname, status: res.status(), initial});
+      if (!initial && u.pathname === '/profile' && res.status() === 200) res.json().then(value => {if (typeof value.boot_id === 'string') observedBoots.add(value.boot_id);}, () => {routeError = true;});
+    });
+    page.on('websocket', () => {counts.sockets++; if (!receiptReleased) earlySocket = true;});
     await page.route(p.origin + '/authorization/v1/**', async route => {
       const req = route.request(), pathname = new URL(req.url()).pathname;
       try {
@@ -1254,16 +1260,16 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   try {await page.waitForFunction(() => document.querySelector('#login').hidden && /enrollment outcome unknown/i.test(document.querySelector('#connection').textContent), null, {timeout: 2000}); pendingUi = true;} catch {}
   assert.equal(pendingUi, true, 'pending enrollment must remain explicitly unknown without replacement login');
   const initialSafety = await page.evaluate(() => window.__enrollmentSafety);
-  assert.equal(initialSafety.earlyReady || initialSafety.earlyConnected || initialSafety.loginExposed, false);
+  assert.equal(initialSafety.earlyReady || initialSafety.earlyConnected || initialSafety.earlySocket || initialSafety.loginExposed || earlySocket, false);
   const cookieName = `wstx_session_${p.document.profile_id}`;
-  const cookies = await context.cookies(p.origin), cookie = cookies.find(v => v.name === cookieName);
+  const cookies = await context.cookies(p.origin), bootstrapName = `wstx_bootstrap_${p.document.profile_id}`, cookie = cookies.find(v => v.name === bootstrapName);
   assert.equal(Boolean(cookie?.value) && cookie.secure && cookie.httpOnly, true);
-  let oldProfile;
-  try {oldProfile = await request(p.origin, 'GET', undefined, {Cookie: `${cookieName}=${cookie.value}`});} catch {throw new Error('Original server boot inspection unavailable');}
-  oldBoot = oldProfile.body?.boot_id;
-  assert.equal(oldProfile.status === 200 && typeof oldBoot === 'string' && oldBoot.length > 0, true);
+  assert.equal(cookies.some(v => v.name === cookieName), false);
+  // No transport exists before proof: this narrow clear is deliberately a no-op, not expiry coverage.
   await context.clearCookies({name: cookieName, domain: 'localhost'});
-  assert.equal((await context.cookies(p.origin)).some(v => v.name === cookieName), false);
+  const afterClear = await context.cookies(p.origin);
+  assert.equal(afterClear.some(v => v.name === cookieName), false);
+  assert.equal(afterClear.some(v => v.name === bootstrapName && v.value === cookie.value), true);
   assert.equal(equal(await metadata(page), retained), true);
   releaseInitial(); await context.close(); context = null; const closedBrowser = processes(); assert.equal(closedBrowser.length, 0);
   assert.equal(firstBrowser.every(v => !closedBrowser.some(n => n.ProcessId === v.ProcessId && n.CreationDate === v.CreationDate)), true);
@@ -1282,13 +1288,13 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   while (performance.now() < deadline) {
     const state = await page.evaluate(() => ({ready: window.stationAuthorization.snapshot().ready, elapsed: performance.now() - window.__enrollmentDcl, open: typeof socket !== 'undefined' && socket?.readyState === WebSocket.OPEN, boot: typeof profileData !== 'undefined' && profileData?.boot_id, pendingUi: document.querySelector('#login').hidden && /enrollment outcome unknown/i.test(document.querySelector('#connection').textContent)}));
     const connectedNow = await page.locator('#connection').getAttribute('data-state') === 'connected';
-    if (state.ready && connectedNow && state.open && typeof state.boot === 'string' && state.boot !== oldBoot && !recovered) {recovered = true; recoveredMs = state.elapsed;}
+    if (state.ready && connectedNow && state.open && /^[0-9a-f]{8}-[0-9a-f-]{27}$/.test(state.boot) && observedBoots.has(state.boot) && !recovered) {recovered = true; recoveredMs = state.elapsed;}
     if (!committed) {readyEarly ||= state.ready; connectedEarly ||= connectedNow; if (state.pendingUi) unknownSeen = true; else if (unknownSeen && state.elapsed >= 2000) unknownLost = true;}
     await new Promise(r => setTimeout(r, Math.min(25, Math.max(0, deadline - performance.now()))));
   }
   if (committed && receiptHeld) assert.equal(holdQualified, true, 'receipt hold timing instrumentation must qualify before product verdict');
   const after = await metadata(page), safety = await page.evaluate(() => {window.__enrollmentInspect(); return window.__enrollmentSafety;});
-  assert.equal(safety.earlyReady || safety.earlyConnected || safety.loginExposed, false);
+  assert.equal(safety.earlyReady || safety.earlyConnected || safety.earlySocket || safety.loginExposed || earlySocket, false);
   assert.equal(wire.every(bucket => bucket.reduce((sum, n) => sum + n, 0) <= 10 && bucket[8] === 0), true);
   assert.equal(replies.some(v => v.status === 429), false);
   assert.equal(wire[0][1] === 1 && wire[0][2] === 1 && wire[0][3] === (committed ? 1 : 0), true);
@@ -1297,12 +1303,15 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   assert.equal(storeValid(await store(), committed), true);
   assert.equal((await fs.readFile(path.join(p.dir, 'authorization.json'))).equals(durableBefore), true);
   assert.equal((await fs.readFile(path.join(p.dir, 'profile.json'))).equals(profileBefore), true);
+  const finalTransport = (await context.cookies(p.origin)).filter(v => v.name === cookieName);
   if (committed) {
+    assert.equal(finalTransport.length === 1 && Boolean(finalTransport[0].value) && finalTransport[0].secure && finalTransport[0].httpOnly, true);
     assert.equal(receiptHeld && receiptReleased && holdSnapshot && rejectedIntent && holdNoEffects, true);
     assert.equal(readyEarly || connectedEarly, false); assert.equal(recovered && recoveredMs >= 0 && recoveredMs < 10000, true); assert.equal(after.pending, false);
     assert.equal(replies.some(v => !v.initial && v.path.endsWith('/proof') && v.status === 204), true);
     assert.equal(replies.some(v => !v.initial && v.path.endsWith('/status') && v.status === 200), true);
   } else {
+    assert.equal(finalTransport.length, 0);
     assert.equal(readyEarly || connectedEarly || recovered, false); assert.equal(after.pending, true); assert.equal(unknownSeen && !unknownLost, true); assert.equal(counts.sockets, 0); assert.equal(counts.protectedBeforeReceipt, 0);
     assert.equal(replies.some(v => !v.initial && ['/authorization/v1/proof','/authorization/v1/receipt'].includes(v.path) && v.status >= 200 && v.status < 300), false);
   }
