@@ -15,7 +15,7 @@ const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
 const WebSocket = require('ws');
 const {receive} = require('./peer.cjs');
-let root, browser, tls;
+let root, browser, tls, retainFixtureRoot = false;
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
 const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: `fixture-input-${i}`, output_device: `fixture-output-${i}`}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
@@ -28,7 +28,11 @@ before(async () => {
   tls = {WSTX_TLS_CERT: certPath, WSTX_TLS_KEY: keyPath};
   browser = await chromium.launch();
 });
-after(async () => {await browser?.close(); if (root) await fs.rm(root, {recursive: true, force: true});});
+after(async () => {
+  await browser?.close();
+  if (root && !retainFixtureRoot) await fs.rm(root, {recursive: true, force: true});
+  else if (root) console.error('Retained owned fixture root after unqualified persistent cleanup:', root);
+});
 async function ports(n) {
   const held = [];
   try {for (let i = 0; i < n; i++) {const s = net.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening'); held.push(s);} return held.map(s => s.address().port);}
@@ -316,7 +320,19 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
     });
   }
   const fileHashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
-  t.after(async () => {await context?.close(); assert.equal(browserProcesses().length, 0, 'all owned persistent-browser processes must exit');});
+  t.after(async () => {
+    const cleanupErrors = [];
+    try {await context?.close();} catch (error) {cleanupErrors.push(error);}
+    finally {
+      try {assert.equal(browserProcesses().length, 0, 'all owned persistent-browser processes must exit');}
+      catch (error) {cleanupErrors.push(error);}
+    }
+    if (cleanupErrors.length) {
+      retainFixtureRoot = true;
+      t.diagnostic('Persistent browser shutdown unqualified; retaining owned fixture root: ' + root);
+      throw new AggregateError(cleanupErrors, 'Persistent cleanup failed; owned fixture root retained');
+    }
+  });
   assert.equal(await fs.stat(profileDir).then(() => true, () => false), false, 'fresh exclusively owned browser profile');
   let page = await openBrowser();
   await page.locator('#login').waitFor({state: 'visible'});
