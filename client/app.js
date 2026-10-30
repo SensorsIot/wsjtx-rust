@@ -44,7 +44,7 @@ async function connect() {
     catch {
       if (attempt !== connecting) return;
       stale(); connection.textContent = 'Authorization unavailable · station data stale'; login.hidden = false;
-      timer = setTimeout(connect, 4000); return;
+      clearTimeout(timer); timer = setTimeout(connect, 4000); return;
     }
     if (attempt !== connecting || !authorized()) return;
   }
