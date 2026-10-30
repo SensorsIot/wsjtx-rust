@@ -36,7 +36,6 @@
   - tests/
   - fixtures/decoder/
   - tools/recording-fixtures.cjs
-  - docs/WSTX Rust FSD.md
   - docs/sysml/
   - .github/workflows/windows-rust.yml
   - Cargo.toml
@@ -119,7 +118,6 @@
   cost: 2
   run: python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -q
   paths:
-  - docs/WSTX Rust FSD.md
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/
@@ -128,7 +126,6 @@
   - tests/
   - .github/workflows/windows-rust.yml
   select:
-  - docs/WSTX Rust FSD.md
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/
@@ -315,7 +312,6 @@
   - fixtures/decoder/simulator-cases.json
   - fixtures/decoder/independent-vector-tool/
   - fixtures/decoder/protocol-data/
-  - docs/WSTX Rust FSD.md
   - docs/sysml/
   select:
   - tools/wsjtx_simulated_samples.py

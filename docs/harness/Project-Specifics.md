@@ -183,17 +183,16 @@ Harness instructions are not represented in product SysML.
 
 `Requirements.sysml` declares SysML authority with the exact first-level comment
 `// Canonical authority: SysML`. Canonical SysML requires the active
-`docs/WSTX Rust FSD.md` to be absent. A marker together with that active FSD fails;
-absence of both the marker and active FSD also fails. Before the paired model/archival
-cutover, an existing active FSD without the marker selects the established Markdown
-projection checks. This compatibility state does not authorize two specifications.
+`docs/WSTX Rust FSD.md` to be absent. `check`, `traces` and `fingerprints` refuse a
+missing or invalid marker and refuse an active FSD, with or without the marker; there is no Markdown
+authority or projection path.
 
 When the marker is present, only SysML owns functional requirements, architecture,
 behaviour, interfaces, constraints and durable verification definitions. Functional
 Markdown is historical archive material: it is not edited, regenerated, synchronized
 or read by preparation, implementation or validation. There is no replacement Markdown
 FSD. Optional views present existing model facts and carry no additional authority.
-The reviewed product cutover changes the marker and archives the active FSD together;
+The archived FSD lives under `docs/archive/markdown-functional-specification/`.
 HOW rollout and product publication remain separate: a harness change is reviewed and
 published, a product change follows the CR process.
 
@@ -234,15 +233,13 @@ python tools/sysml.py traces
 python -m unittest discover -s tools/sysml/tests -q
 ```
 
-`check` admits exactly one authority, checks canonical identities/states and trace
+`check` admits only canonical SysML, checks canonical identities/states and trace
 bindings, loads the complete model set in the pinned Pilot, then applies the independent
 architecture integrity oracle. `fingerprints` prints current input hashes for review;
-it never renews model approval. Canonical `sync` fails without writing any model.
+it never renews model approval. No command writes a model.
 `traces` requires canonical SysML and checks only authority, catalog and source/model
 bindings. It never invokes Java, the mutation suite or application behavior. Source-only
 edits select this fast check; model/tool changes retain the full checks as well.
-The legacy Markdown projection path remains a compatibility check only while the active
-FSD exists without the canonical marker; it is not used after cutover.
 
 The `sysml-documentation` level-2 suite owns these checks. Application outcomes remain
 in their existing functional suites and issue evidence; no duplicate application build
@@ -264,7 +261,7 @@ python tools/sysml.py validate docs/sysml/Requirements.sysml docs/sysml/Architec
 Syntax/type/reference errors fail. Missing/invalid tools, model libraries or model files,
 or missing completion evidence, fail rather than falling back to a lightweight checker.
 Self-tests feed legal, malformed and unresolved-reference fixtures to the actual Pilot.
-They also exercise authority ambiguity, missing identities/files, broken traces, archive independence and unavailable tool/library cases. Legacy source/projection mutations remain isolated compatibility fixtures.
+They also exercise authority ambiguity and refusal, missing identities/files, broken traces, archive independence and unavailable tool/library cases.
 
 The `check` command also requests a resolved semantic inventory from the same Pilot
 process. The Java adapter traverses actual usage/type/connector objects, inherited
@@ -331,22 +328,22 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 
 | ID | Clauses | Independent actions and expected observations | Method and location |
 |---|---|---|---|
-| TC-DOC-001 | CL-014-01, CL-014-02, CL-014-05 | Inspect stable IDs, declared states, scope and FR/CL/TC relationships. During the legacy compatibility state, generation preserves Markdown and IDs. Canonical state reads the model directly, checks bindings and never rewrites it or requires a Markdown view. | Automated local model/tool fixtures; independent scope/meaning review. |
-| TC-DOC-002 | CL-014-05 | Mutate declared state/identity/link or remove a required artifact and expect a named nonzero refusal. Legacy disposable Markdown fixtures still reject stale/missing projection content; their existence does not maintain an archived project specification. | Automated isolated fixtures on this PC. |
+| TC-DOC-001 | CL-014-01, CL-014-02, CL-014-05 | Inspect stable IDs, declared states, scope and FR/CL/TC relationships. Tooling reads the canonical model directly, checks bindings and never rewrites it or requires a Markdown view. | Automated local model/tool fixtures; independent scope/meaning review. |
+| TC-DOC-002 | CL-014-05 | Mutate declared state/identity/link or remove a required artifact and expect a named nonzero refusal. | Automated isolated fixtures on this PC. |
 | TC-DOC-003 | CL-014-04 | Feed the actual Pilot a valid model, malformed syntax and unresolved names/types. Accept only the valid model; other cases return diagnostics and nonzero. | Automated pinned Pilot, local fixtures. |
 | TC-DOC-004 | CL-014-04 | Remove/corrupt Java, validator/library or model paths. Required validation fails nonzero and never reports semantic PASS. | Automated tool/prerequisite fixtures on this PC. |
 | TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
 | TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | Independent reviewer traces the affected canonical contract to code boundaries and independent expected observations; missing required decisions, model/contract disagreement or a shared-only generated oracle refuse readiness. Recheck exact changes and closure reconciliation. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning review on this PC; automation cannot establish complete intended meaning. |
-| TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; canonical sync cannot rewrite the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
+| TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority and an active FSD without the marker, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; no command rewrites the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
-`tools/sysml/Validate.java` adapter. Results, independent review and first-use trial
+`tools/sysml/Validate.java` adapter. Results and independent review
 are recorded on the owning issue, never as invented model verdicts.
 
 ## Communication verification model
 
 Functional limits and measurement acceptance are specified in
-[the FSD communication chapter](../sysml/Requirements.sysml).
+[the canonical communication requirements](../sysml/Requirements.sysml).
 The following describes this project's verification machinery.
 
 The portable test proxy shapes actual TCP-stream bytes (including real TLS records
@@ -376,7 +373,7 @@ send-timeout branch or independently measure total queue memory.
 ## Recording fixture acquisition
 
 Candidate recordings and oracle limitations are specified in
-[the FSD](../sysml/Requirements.sysml).
+[the canonical model](../sysml/Requirements.sysml).
 
 - Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - Keep original WAV files and expected-output texts unchanged, with hashes and source URLs recorded in a fixture manifest when imported.
