@@ -5,6 +5,9 @@ const radio = document.querySelector('#radio');
 const login = document.querySelector('#login');
 const refresh = document.querySelector('#refresh');
 const profileMode = document.body.dataset.profile === 'true';
+const authorization = profileMode && location.protocol === 'https:' ? window.stationAuthorization : null;
+const authorized = () => !authorization || authorization.snapshot().ready;
+const stationFetch = (path, options) => authorization ? authorization.fetch(path, options) : fetch(path, options);
 const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
@@ -23,19 +26,30 @@ function disconnect(current) {
   login.hidden = location.protocol !== 'https:';
   clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
 }
-function connect() {
+let connecting = 0;
+async function connect() {
   clearTimeout(timer);
+  const attempt = ++connecting;
+  if (authorization) {
+    try {await authorization.ensureReady();}
+    catch {
+      if (attempt !== connecting) return;
+      stale(); connection.textContent = 'Authorization unavailable · station data stale'; login.hidden = false;
+      timer = setTimeout(connect, 4000); return;
+    }
+    if (attempt !== connecting || !authorized()) return;
+  }
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, 'wstx.v1');
   const current = socket;
   const profileRefresh = {initialized: false, running: null, again: false};
   const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) disconnect(current);}, 5000);
   current.onopen = () => {
     clearTimeout(openingTimer);
-    if (current !== socket) return;
+    if (current !== socket || !authorized()) return;
     lastMessage = Date.now(); requestStatus();
   };
   current.onmessage = async event => {
-    if (current !== socket) return;
+    if (current !== socket || !authorized()) return;
     try {
       const message = JSON.parse(event.data);
       if (message.v !== 1) throw new Error('Unsupported version');
@@ -51,7 +65,7 @@ function connect() {
             refreshProfile(current, profileRefresh).catch(() => disconnect(current));
           }
         }
-        if (current !== socket || current.readyState !== WebSocket.OPEN) return;
+        if (current !== socket || current.readyState !== WebSocket.OPEN || !authorized()) return;
         version.textContent = message.data.version; radio.textContent = 'Radio not configured';
         connection.textContent = 'Connected'; connection.dataset.state = 'connected';
         document.querySelector('#updated').textContent = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
@@ -69,14 +83,21 @@ setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - la
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
-  const secret = input.value; input.value = '';
+  let secret = input.value; input.value = '';
   try {
-    const response = await fetch('/session', {method: 'POST', body: secret});
-    if (!response.ok) throw new Error('Access denied');
+    if (authorization) {const submitted = authorization.bootstrap(secret); secret = null; await submitted;}
+    else {const response = await fetch('/session', {method: 'POST', body: secret}); secret = null; if (!response.ok) throw new Error('Access denied');}
     document.querySelector('#login-error').textContent = ''; clearTimeout(timer);
     if (socket && socket.readyState < WebSocket.CLOSING) { socket.onclose = null; socket.close(); }
     retry = 1000; connect();
   } catch { document.querySelector('#login-error').textContent = 'Could not authenticate. Check your token and connection.'; }
+  finally {secret = null;}
+});
+addEventListener('station-authorization', event => {
+  if (!authorization || event.detail.ready) return;
+  stale(); connection.textContent = 'Authorization unavailable · station data stale';
+  if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
+  clearTimeout(timer); timer = setTimeout(connect, 4000);
 });
 connect();
 
@@ -109,11 +130,11 @@ function refreshProfile(current, state) {
   return state.running;
 }
 async function loadProfile(reload, current) {
-  const response = await fetch('/profile', {signal: AbortSignal.timeout(10000)});
-  if (current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
+  const response = await stationFetch('/profile', {signal: AbortSignal.timeout(10000)});
+  if (!authorized() || current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
   if (!response.ok) {settingsResult.textContent = 'Could not load saved settings.'; throw new Error('Profile unavailable');}
   const data = await response.json();
-  if (current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
+  if (!authorized() || current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
   if (typeof data.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return true;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
@@ -133,13 +154,13 @@ document.querySelector('#settings-reload').addEventListener('click', async () =>
   try {await loadProfile(true); settingsResult.textContent = 'Loaded saved settings.';} catch {settingsResult.textContent = 'Could not load saved settings.';}
 });
 settingsForm.addEventListener('submit', async event => {
-  event.preventDefault(); if (!profileMode || !profileData || saving || conflict) return;
+  event.preventDefault(); if (!profileMode || !profileData || saving || conflict || !authorized()) return;
   saving = true;
   const button = document.querySelector('#settings-save');
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
   for (const [element] of controls) element.disabled = true;
   try {
-    const response = await fetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: formSettings()})});
+    const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: formSettings()})});
     const result = await response.json();
     if (!response.ok) {
       if (response.status === 409) {conflict = true; settingsResult.textContent = 'Settings changed or revision limit reached. Reload saved settings before saving.';}

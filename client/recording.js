@@ -301,7 +301,7 @@ function show() {
   if(live?.job){statusText.textContent=`Live ${live.job.mode.toUpperCase()} · ${live.audio.state} · ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`;}
 }
 async function request(path,options={}) {
-  const response=await fetch(path,{...options,signal:options.signal || AbortSignal.timeout(10000)});
+  const response=await stationFetch(path,{...options,signal:options.signal || AbortSignal.timeout(10000)});
   const data=await response.json();if(!response.ok) throw new Error(data.error?.code || 'request_failed');return data;
 }
 async function sync(current=socket) {
@@ -539,7 +539,7 @@ async function receiveResults(){
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
   try{
-    const response=await fetch(`/receive/results?${query}`,{signal:AbortSignal.timeout(10000)}),page=await response.json();
+    const response=await stationFetch(`/receive/results?${query}`,{signal:AbortSignal.timeout(10000)}),page=await response.json();
     if(current!==socket||context!==liveIdentity(live)||revision!==liveRevision||epoch!==receiveMutationEpoch)return;
     if(response.status===410){
       if(page.error?.code!=='cursor_expired'||!Number.isSafeInteger(page.first_sequence)||!Number.isSafeInteger(page.next_sequence)||page.first_sequence<0||page.first_sequence>page.next_sequence)throw new Error('Invalid expired cursor');
@@ -680,7 +680,7 @@ async function operatingSync(reconcile=false){
   if(operatingReadPending){if(reconcile)operatingReadAgain=true;return;}
   operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket;
   try{
-    const response=await fetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
+    const response=await stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
     if(epoch!==operatingEpoch||current!==socket||current.readyState!==WebSocket.OPEN||connection.dataset.state!=='connected')return;
     let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
     if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
@@ -705,7 +705,7 @@ async function operatingSelect(action,value){
   const body={v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id,action,profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,[action]:value};
   operatingIntent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
   try{
-    const response=await fetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    const response=await stationFetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
     if(epoch!==operatingEpoch)return;
     if(!response.ok){operatingFailure=`Selection refused · ${ack.error?.code??'request_failed'}`;operatingIntent=null;return;}
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||ack.command_id!==command_id||ack.accepted!==true||!operatingCounter(ack.operating_revision)||ack.operating_revision<=s.operating_revision||!['releasing','applying','restarting','applied','failed','release_blocked'].includes(ack.phase))throw new Error('Invalid admission receipt');
@@ -718,7 +718,7 @@ async function operatingStop(){
   const epoch=++operatingEpoch;receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
   try{
     const command_id=crypto.randomUUID();
-    const response=await fetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:target.boot_id,command_id,action:'cancel',operating_revision:target.base_revision,target_command_id:target.command_id}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    const response=await stationFetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:target.boot_id,command_id,action:'cancel',operating_revision:target.base_revision,target_command_id:target.command_id}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
     if(!response.ok)throw new Error(ack.error?.code??'Stop refused');
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==profileData.profile_id||ack.boot_id!==target.boot_id||ack.command_id!==command_id||ack.accepted!==true||ack.phase!=='cancelled'||!operatingCounter(ack.operating_revision))throw new Error('Invalid cancellation receipt');
     if(epoch===operatingEpoch){operatingUnknown=null;operatingIntent=null;}
@@ -733,7 +733,7 @@ document.querySelector('#operating-refresh').addEventListener('click',()=>operat
 document.querySelector('#radio-receive-only').addEventListener('change',operatingShow);
 for(const action of ['connect','disconnect'])document.querySelector('#radio-'+action).addEventListener('click',async()=>{
   const s=operatingState;if(!s||mutationPending)return;const epoch=++operatingEpoch;receiveMutationEpoch++;mutationPending=true;receiveShow();
-  try{const response=await fetch('/radio/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='connect'?{v:1,profile_id:s.profile_id,boot_id:s.boot_id,profile_revision:s.profile_revision,receive_only_verified:document.querySelector('#radio-receive-only').checked}:{v:1,profile_id:s.profile_id,boot_id:s.boot_id,connection_generation:s.radio.connection_generation}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+  try{const response=await stationFetch('/radio/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='connect'?{v:1,profile_id:s.profile_id,boot_id:s.boot_id,profile_revision:s.profile_revision,receive_only_verified:document.querySelector('#radio-receive-only').checked}:{v:1,profile_id:s.profile_id,boot_id:s.boot_id,connection_generation:s.radio.connection_generation}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
     if(!response.ok){if(!operatingShape(ack,'error')||!operatingShape(ack.error,'code,field')||typeof ack.error.code!=='string'||ack.error.field!==null)throw new Error('Invalid CAT refusal');operatingFailure=`CAT ${action} refused · ${ack.error.code}`;return;}
     if(new TextEncoder().encode(text).length>2048)throw new Error('Invalid CAT receipt size');
     if(!operatingShape(ack,'v,profile_id,boot_id,connection_generation,state,error,device_id,effective_baud,observation')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||!operatingCounter(ack.connection_generation))throw new Error('Invalid CAT receipt');

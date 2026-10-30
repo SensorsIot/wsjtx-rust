@@ -91,6 +91,52 @@ async function connected(page) {
 }
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
+// Proves the CL-022-01 browser proof path against independent cryptographic bytes.
+test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage(), proofs = [], challenges = [], enrollments = [], sessions = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/authorization/v1/proof')) proofs.push(JSON.parse(request.postData()));
+    if (request.url().endsWith('/authorization/v1/enroll')) enrollments.push(JSON.parse(request.postData()));
+    if (request.url().endsWith('/session')) sessions.push(request.method());
+  });
+  page.on('response', response => {
+    if (response.url().endsWith('/authorization/v1/challenge') && response.status() === 200) challenges.push(response.json());
+  });
+  await page.goto(p.origin);
+  await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();
+  await connected(page);
+  assert.equal(await page.locator('#token').inputValue(), '');
+  assert.equal(enrollments.length, 1); assert.equal(proofs.length, 1); assert.equal(sessions.length, 1);
+  const enrolled = enrollments[0], challenge = await challenges[0], proof = proofs[0];
+  assert.equal(challenge.grant_id, enrolled.grant_id); assert.equal(challenge.public_key, enrolled.public_key);
+  const expected = [Buffer.from('WSTX-AUTH-PROOF'), Buffer.from([1])];
+  for (const part of [Buffer.from(p.origin), Buffer.from(challenge.scope.profile_id), Buffer.from(challenge.scope.radio_id),
+    Buffer.from(String(challenge.scope.safety_revision)), Buffer.from(enrolled.grant_id), Buffer.from(challenge.nonce, 'base64url')]) {
+    const length = Buffer.alloc(4); length.writeUInt32BE(part.length); expected.push(length, part);
+  }
+  const raw = Buffer.from(enrolled.public_key, 'base64url');
+  const key = crypto.createPublicKey({format: 'jwk', key: {kty: 'EC', crv: 'P-256', x: raw.subarray(1, 33).toString('base64url'), y: raw.subarray(33).toString('base64url')}});
+  const signed = Buffer.concat(expected), signature = Buffer.from(proof.signature, 'base64url');
+  assert.equal(signature.length, 64);
+  assert.equal(crypto.verify('sha256', signed, {key, dsaEncoding: 'ieee-p1363'}, signature), true);
+  const tampered = Buffer.from(signed); tampered[0] ^= 1;
+  assert.equal(crypto.verify('sha256', tampered, {key, dsaEncoding: 'ieee-p1363'}, signature), false);
+  await context.clearCookies(); await page.reload(); await connected(page);
+  assert.equal(enrollments.length, 1, 'transport recovery does not enroll another grant');
+  assert.equal(sessions.length, 1, 'transport recovery never resubmits the bootstrap token');
+  assert.equal(proofs.length, 2); assert.equal(proofs[1].grant_id, enrolled.grant_id);
+  assert.notEqual(proofs[1].nonce, proof.nonce);
+  assert.equal(await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {const request = indexedDB.open('wstx-authorization-v1', 1); request.onsuccess = () => resolve(request.result); request.onerror = reject;});
+    const value = await new Promise((resolve, reject) => {const request = db.transaction('credential').objectStore('credential').get('current'); request.onsuccess = () => resolve(request.result); request.onerror = reject;});
+    db.close();
+    try {await crypto.subtle.exportKey('pkcs8', value.key); return false;} catch {return value.key.extractable === false && value.key.usages.join(',') === 'sign';}
+  }), true);
+});
+
 // Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles} = await fixture(t), beforeBytes = await savedBytes(profiles);
