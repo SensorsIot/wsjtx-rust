@@ -273,6 +273,90 @@ test('TC-022-006: simulated reservation upload intent cannot cross authorization
 });
 
 // Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.
+// Actual process persistence only; uses the existing TLS/profile fixture and its retained child handles.
+test('TC-022-006: actual browser and server process restart', {timeout: 90000}, async t => {
+  const {profiles, apps, base} = await fixture(t, true), p = profiles[0];
+  const profileDir = path.join(base, 'owned-persistent-chromium');
+  const tracked = new Map(), counts = {session: 0, enroll: 0, challenge: 0, proof: 0, status: 0, bootstrapScope: 0, profile: 0, ws: 0, wsErrors: 0};
+  let context;
+  function browserProcesses() {
+    const quoted = profileDir.replaceAll("'", "''");
+    const command = `@(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('chrome.exe','chrome-headless-shell.exe') } | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CreationDate,@{Name='OwnProfile';Expression={$_.CommandLine -like '*${quoted}*'}}) | ConvertTo-Json -Compress`;
+    const output = execFileSync('powershell.exe', ['-NoProfile', '-Command', command], {encoding: 'utf8', windowsHide: true, timeout: 5000}).trim();
+    const parsed = output ? JSON.parse(output) : [], all = Array.isArray(parsed) ? parsed : [parsed];
+    const owned = all.filter(item => item.OwnProfile || tracked.get(item.ProcessId) === item.CreationDate);
+    for (let i = 0; i < owned.length; i++) for (const child of all.filter(item => item.ParentProcessId === owned[i].ProcessId)) if (!owned.some(item => item.ProcessId === child.ProcessId)) owned.push(child);
+    for (const item of owned) tracked.set(item.ProcessId, item.CreationDate);
+    return owned;
+  }
+  function serverIdentity(app) {
+    assert.ok(Number.isInteger(app.child.pid) && app.child.pid > 0);
+    return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter 'ProcessId=${app.child.pid}' | Select-Object ProcessId,ParentProcessId,CreationDate,ExecutablePath | ConvertTo-Json -Compress`], {encoding: 'utf8', windowsHide: true, timeout: 5000}).trim());
+  }
+  async function openBrowser() {
+    context = await chromium.launchPersistentContext(profileDir, {headless: true, ignoreHTTPSErrors: true});
+    context.on('request', request => {
+      const url = new URL(request.url()); if (url.origin !== p.origin) return;
+      const key = {'/session': 'session', '/authorization/v1/enroll': 'enroll', '/authorization/v1/challenge': 'challenge', '/authorization/v1/proof': 'proof', '/authorization/v1/status': 'status', '/authorization/v1/bootstrap-scope': 'bootstrapScope', '/profile': 'profile'}[url.pathname];
+      if (key) counts[key]++;
+    });
+    const page = context.pages()[0] || await context.newPage();
+    page.on('websocket', ws => {counts.ws++; ws.on('socketerror', () => {counts.wsErrors++;});});
+    await page.goto(p.origin);
+    return page;
+  }
+  async function metadata(page) {
+    return page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {const request = indexedDB.open('wstx-authorization-v1', 1); request.onupgradeneeded = () => request.transaction.abort(); request.onerror = () => reject(new Error('Retained credential database missing')); request.onsuccess = () => resolve(request.result);});
+      try {
+        const value = await new Promise((resolve, reject) => {const request = db.transaction('credential').objectStore('credential').get('current'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('Retained credential unavailable'));});
+        if (!value || !(value.key instanceof CryptoKey)) throw new Error('Retained credential missing');
+        return {grant_id: value.grant_id, public_key: value.public_key, enrollment_id: value.enrollment_id, scope: value.scope, extractable: value.key.extractable, usages: value.key.usages};
+      } finally {db.close();}
+    });
+  }
+  const fileHashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
+  t.after(async () => {await context?.close(); assert.equal(browserProcesses().length, 0, 'all owned persistent-browser processes must exit');});
+  assert.equal(await fs.stat(profileDir).then(() => true, () => false), false, 'fresh exclusively owned browser profile');
+  let page = await openBrowser();
+  await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  assert.equal(await page.locator('#token').inputValue(), '');
+  const originalMetadata = await metadata(page), originalBoot = await page.locator('#profile-boot').textContent();
+  assert.equal(originalMetadata.extractable, false); assert.deepEqual(originalMetadata.usages, ['sign']);
+  assert.equal(counts.session, 1); assert.equal(counts.enroll, 1);
+  const firstBrowser = browserProcesses(); assert.ok(firstBrowser.some(item => item.OwnProfile), 'actual first persistent browser generation observed');
+  // Leave only about:blank in the owned profile, avoiding an unobserved restored-page request on relaunch.
+  await page.goto('about:blank'); await context.clearCookies();
+  assert.equal((await context.cookies(p.origin)).length, 0, 'transport removed without deleting IndexedDB');
+  await context.close(); context = null;
+  assert.equal(browserProcesses().length, 0, 'first browser process exits before relaunch');
+  page = await openBrowser(); await connected(page);
+  const secondBrowser = browserProcesses(); assert.ok(secondBrowser.some(item => item.OwnProfile), 'actual second persistent browser generation observed');
+  assert.ok(secondBrowser.filter(item => item.OwnProfile).every(item => !firstBrowser.some(old => old.ProcessId === item.ProcessId && old.CreationDate === item.CreationDate)), 'new process creation identities, not same-page reload');
+  assert.deepEqual(await metadata(page), originalMetadata, 'same retained origin key/grant, no injected store');
+  assert.equal(await page.locator('#profile-boot').textContent(), originalBoot, 'browser restart does not restart server');
+  assert.equal(counts.session, 1); assert.equal(counts.enroll, 1);
+  assert.equal(counts.bootstrapScope + counts.enroll + counts.challenge + counts.proof + counts.status, 8, 'five fresh plus three retained auth-v1 admissions');
+  const oldApp = p.app, oldServer = serverIdentity(oldApp), durableBefore = await fileHashes(), beforeRestart = {...counts};
+  const originalEpoch = await page.evaluate(() => window.stationAuthorization.snapshot().epoch);
+  await oldApp.close(); assert.notEqual(oldApp.child.exitCode ?? oldApp.child.signalCode, null, 'retained child has actually exited');
+  const restarted = await start(p, p.env); apps.push(restarted); p.app = restarted;
+  const restoredAt = performance.now(), deadline = restoredAt + 10000, newServer = serverIdentity(restarted);
+  assert.ok(newServer.ProcessId !== oldServer.ProcessId || newServer.CreationDate !== oldServer.CreationDate, 'actual new server process identity');
+  let recovered = true;
+  try {await page.waitForFunction(oldBoot => connection.dataset.state === 'connected' && socket?.readyState === WebSocket.OPEN && profileData?.boot_id !== oldBoot, originalBoot, {timeout: Math.max(1, deadline - performance.now())});}
+  catch {recovered = false;}
+  const observation = await page.evaluate(() => ({connection: connection.textContent, state: connection.dataset.state, socketState: socket?.readyState, boot: profileData?.boot_id, authorization: window.stationAuthorization.snapshot()}));
+  t.diagnostic(JSON.stringify({scope: 'actual browser/server process restart only', originalBoot, originalEpoch, observation, recovered, recoveryElapsedMs: performance.now() - restoredAt, counts, beforeRestart, firstBrowser, secondBrowser, oldServer, newServer}));
+  assert.deepEqual(await fileHashes(), durableBefore, 'ordinary restart/proof does not rewrite settings or verifier record');
+  assert.equal(counts.session, 1, 'no second token submission'); assert.equal(counts.enroll, 1, 'no enrollment replay');
+  assert.equal(recovered, true, 'actual server restart must recover fresh correlated profile readiness within original10s');
+  assert.notEqual(observation.boot, originalBoot); assert.equal(observation.authorization.ready, true);
+  assert.deepEqual(await metadata(page), originalMetadata);
+  assert.ok(counts.challenge > beforeRestart.challenge && counts.proof > beforeRestart.proof && counts.status > beforeRestart.status, 'new server transport map requires real retained proof/status');
+});
+
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles} = await fixture(t), beforeBytes = await savedBytes(profiles);
   const {pages, context} = await browserWindows(t, profiles);
