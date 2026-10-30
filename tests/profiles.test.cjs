@@ -1115,10 +1115,27 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
 
 // Proves CL-022-01/02/05, partial TC-022-006: browser/store loss, not native CAT or durable-write failure.
 for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committed' : 'undelivered'} enrollment survives actual process restart`, {timeout: 90000}, async t => {
+  const assets = [], assetWork = [];
+  // Completed stages: 1 initial pending/store/auth, 2 pending UI, 3 cookie, 4 processes, 5 DCL, 6 window, 7 all assertions.
+  const observation = {enrollment_observation: committed ? 1 : 2, stage: 0, assertions_passed: false, asset_error: false, assets,
+    initial_store_checked: false, initial_auth_context_checked: false, pending_ui_checked: false, cookie_checked: false,
+    process_restart_checked: false, restarted_navigation_checked: false, observation_complete: false, final_assertions_passed: false};
+  try {
   let context, fixtureValue, releaseInitial;
   const initialClosed = new Promise(resolve => {releaseInitial = resolve;});
   try {fixtureValue = await fixture(t, true);} catch {throw new Error('Enrollment fixture setup unavailable');}
   const {profiles, apps, base} = fixtureValue, p = profiles[0], profileDir = path.join(base, 'owned-enrollment-chromium');
+  const captureAssets = (target, generation) => target.on('response', response => {
+    let url, code;
+    try {url = new URL(response.url()); code = url.pathname === '/app.js' ? 1 : url.pathname === '/authorization.js' ? 2 : 0;}
+    catch {observation.asset_error = true; return;}
+    if (url.origin !== p.origin || !code) return;
+    assetWork.push((async () => {try {
+      const body = await response.body();
+      if (assets.length >= 8 || body.length > 131072) {observation.asset_error = true; return;}
+      assets.push([generation, code, response.status(), crypto.createHash('sha256').update(body).digest('hex')]);
+    } catch {observation.asset_error = true;}})());
+  });
   const tracked = new Map(), counts = {session: 0, enroll: 0, followup: 0, mutation: 0, sockets: 0, protectedBeforeReceipt: 0}, replies = [];
   let initial = true, routeError = false, forwarded = false, enrollFailed = false, enrollment, retained, receiptHeld = false, receiptReleased = false;
   let holdSnapshot = false, rejectedIntent = false, holdNoEffects = false, readyEarly = false, connectedEarly = false;
@@ -1161,6 +1178,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   async function openBrowser() {
     try {context = await chromium.launchPersistentContext(profileDir, {headless: true, ignoreHTTPSErrors: true});} catch {throw new Error('Owned browser launch unavailable');}
     const page = context.pages()[0] || await context.newPage();
+    captureAssets(page, initial ? 1 : 2);
     await page.addInitScript(watchUnknown => {
       window.__enrollmentDcl = 0; window.__enrollmentReleased = false;
       window.__enrollmentSafety = {earlyReady: false, earlyConnected: false, earlySocket: false, loginExposed: false, watchUnknown};
@@ -1254,6 +1272,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   assert.equal(replies.some(v => v.path.endsWith('/bootstrap-scope') && v.status === 200), true);
   assert.equal(replies.some(v => v.path.endsWith('/receipt') && v.status === 200), false);
   assert.equal(storeValid(await store(), committed), true);
+  observation.initial_store_checked = true; observation.initial_auth_context_checked = true; observation.stage = 1;
   const durableBefore = await fs.readFile(path.join(p.dir, 'authorization.json'));
   await page.evaluate(() => {window.__enrollmentSafety.watchUnknown = true; window.__enrollmentInspect();});
   let pendingUi = false;
@@ -1261,6 +1280,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   assert.equal(pendingUi, true, 'pending enrollment must remain explicitly unknown without replacement login');
   const initialSafety = await page.evaluate(() => window.__enrollmentSafety);
   assert.equal(initialSafety.earlyReady || initialSafety.earlyConnected || initialSafety.earlySocket || initialSafety.loginExposed || earlySocket, false);
+  observation.pending_ui_checked = true; observation.stage = 2;
   const cookieName = `wstx_session_${p.document.profile_id}`;
   const cookies = await context.cookies(p.origin), bootstrapName = `wstx_bootstrap_${p.document.profile_id}`, cookie = cookies.find(v => v.name === bootstrapName);
   assert.equal(Boolean(cookie?.value) && cookie.secure && cookie.httpOnly, true);
@@ -1271,6 +1291,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   assert.equal(afterClear.some(v => v.name === cookieName), false);
   assert.equal(afterClear.some(v => v.name === bootstrapName && v.value === cookie.value), true);
   assert.equal(equal(await metadata(page), retained), true);
+  observation.cookie_checked = true; observation.stage = 3;
   releaseInitial(); await context.close(); context = null; const closedBrowser = processes(); assert.equal(closedBrowser.length, 0);
   assert.equal(firstBrowser.every(v => !closedBrowser.some(n => n.ProcessId === v.ProcessId && n.CreationDate === v.CreationDate)), true);
   const oldServer = serverIdentity(p.app); await p.app.close();
@@ -1281,8 +1302,10 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   initial = false; page = await openBrowser(); const secondBrowser = processes();
   assert.equal(secondBrowser.length > 0 && secondBrowser.some(v => v.OwnProfile && v.ProcessId > 0 && Boolean(v.CreationDate)), true);
   assert.equal(secondBrowser.filter(v => v.OwnProfile).every(v => firstBrowser.every(old => old.ProcessId !== v.ProcessId || old.CreationDate !== v.CreationDate)), true);
+  observation.process_restart_checked = true; observation.stage = 4;
   await page.goto(p.origin, {waitUntil: 'domcontentloaded'});
   const anchor = await page.evaluate(() => window.__enrollmentDcl); assert.equal(anchor > 0, true);
+  observation.restarted_navigation_checked = true; observation.stage = 5;
   const deadline = performance.now() + await page.evaluate(at => Math.max(0, at + 10000 - performance.now()), anchor);
   let recovered = false, recoveredMs = -1, unknownSeen = false, unknownLost = false;
   while (performance.now() < deadline) {
@@ -1292,6 +1315,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
     if (!committed) {readyEarly ||= state.ready; connectedEarly ||= connectedNow; if (state.pendingUi) unknownSeen = true; else if (unknownSeen && state.elapsed >= 2000) unknownLost = true;}
     await new Promise(r => setTimeout(r, Math.min(25, Math.max(0, deadline - performance.now()))));
   }
+  observation.observation_complete = true; observation.stage = 6;
   if (committed && receiptHeld) assert.equal(holdQualified, true, 'receipt hold timing instrumentation must qualify before product verdict');
   const after = await metadata(page), safety = await page.evaluate(() => {window.__enrollmentInspect(); return window.__enrollmentSafety;});
   assert.equal(safety.earlyReady || safety.earlyConnected || safety.earlySocket || safety.loginExposed || earlySocket, false);
@@ -1315,7 +1339,12 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
     assert.equal(readyEarly || connectedEarly || recovered, false); assert.equal(after.pending, true); assert.equal(unknownSeen && !unknownLost, true); assert.equal(counts.sockets, 0); assert.equal(counts.protectedBeforeReceipt, 0);
     assert.equal(replies.some(v => !v.initial && ['/authorization/v1/proof','/authorization/v1/receipt'].includes(v.path) && v.status >= 200 && v.status < 300), false);
   }
+  observation.final_assertions_passed = true; observation.assertions_passed = true; observation.stage = 7;
   t.diagnostic(JSON.stringify({enrollment_loss: committed ? 1 : 2, qualified: true, recovered, recovered_ms: recoveredMs, bootstrap_count: counts.session, enrollment_count: counts.enroll, queued_mutations: counts.mutation, receipt_held: receiptHeld, native_observed: false, hold_ms: holdElapsed, hold_qualified: holdQualified, guard_ms: guardMs, auth_wire_counts: wire, auth_attempt_counts: attempts}));
+  } finally {
+    // Reporting must not replace the original product assertion; a missing report remains collector failure.
+    try {await Promise.all(assetWork); t.diagnostic(JSON.stringify(observation));} catch {}
+  }
 });
 
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
