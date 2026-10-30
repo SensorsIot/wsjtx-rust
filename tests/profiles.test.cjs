@@ -20,6 +20,7 @@ const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_D
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
 const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: `fixture-input-${i}`, output_device: `fixture-output-${i}`}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
 before(async () => {
+  assert.equal(['DEBUG', 'PWDEBUG', 'DEBUG_FILE', 'PLAYWRIGHT_TRACE_DIR', 'NODE_DEBUG', 'NODE_DEBUG_NATIVE', 'NODE_OPTIONS'].some(key => Boolean(process.env[key])), false, 'Credential-sensitive tracing and Node preloads are unsupported before fixture setup');
   assert.ok(await fs.stat(exe), 'compiled candidate is required');
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-profile-tests-'));
   const cert = await selfsigned.generate([{name: 'commonName', value: 'localhost'}], {days: 1, keySize: 2048, extensions: [{name: 'subjectAltName', altNames: [{type: 2, value: 'localhost'}, {type: 7, ip: '127.0.0.1'}]}]});
@@ -283,7 +284,6 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
 
 // Proves CL-022-01/02: a real proof commit is distinct from delivery of its cookie.
 test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000}, async t => {
-  assert.equal(Boolean(process.env.DEBUG || process.env.PWDEBUG || process.env.DEBUG_FILE || process.env.PLAYWRIGHT_TRACE_DIR), false, 'credential-sensitive tracing must be disabled before this fixture');
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}), page = await context.newPage();
   const cookieName = `wstx_session_${p.document.profile_id}`, timeline = [], frames = [];
