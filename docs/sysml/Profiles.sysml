@@ -389,6 +389,12 @@ package WstxProfiles {
     action def PresentAndEditProfile {
         doc /* Existing browser on embedded profile-mode flag, never error-based mode
              guessing. One real window per endpoint; operator opens readiness origin.
+             For a selected persisted profile this operational browser flow uses the
+             effective HTTPS origin and a current scoped grant/transport established by
+             AuthenticateProfile/HandleScopedAuthorization. Trusted plaintext loopback
+             GET/PUT compatibility remains the HttpProfileGet/PutDecision API contract;
+             it does not provide a separate operational browser configuration flow or
+             satisfy Connected/station-ready/optional-display prerequisites.
              Display full UUID/name/effective endpoint/boot UUID/revision with legacy
              radio/link/version; title contains display name and port. Before Connected
              require correlated status snapshot AND successful validated authenticated GET
@@ -513,7 +519,7 @@ package WstxProfiles {
     satisfy WstxRequirements::'CL-005-05' by presentAndEdit;
 
     package IndependentVerification {
-        doc /* Case identities remain WstxRequirements::TC-022-001..004, projected
+        doc /* Case identities remain WstxRequirements::TC-022-001..005, projected
              from WstxRequirements and this package. No cases/verdicts are regenerated from
              action calculations. These declarations refine their subjects/oracles.
              Delivered source/test companions, level 2 isolated automated Windows PC tests;
@@ -522,15 +528,26 @@ package WstxProfiles {
              account/external-service/duplicate hosted run. Rust profile tests in
              server/src/profile_tests.rs and server/src/auth_tests.rs; communication browser/
              process cases in tests/profiles.test.cjs, registered beside the legacy suite.
-             Case names are TC-022-001..004; run node --test --test-concurrency=1
+             Case names are TC-022-001..005; run node --test --test-concurrency=1
              tests/profiles.test.cjs after cargo build --locked. Rust companions run with
              cargo test --workspace --locked --all-targets. Execution evidence remains
              on issue #5; model declarations are not run results.
              Fixture expects UUID 00000000-0000-4000-8000-00000000000i for i=1..4,
              Station i, TESTi, JN47AA, revision0, standard, fixture-input-i/output-i,
              disabled/null/disabled control. Ports reserved+recorded independently.
-             Bind127.0.0.1, saved TLS origin https://localhost:<port>; plaintext origin
-             null =>http://127.0.0.1:<port>. Tokens independently generated, never logged.
+             Operational browser windows in TC-022-001/002/003/005 and their save/readiness
+             regressions bind127.0.0.1 with saved HTTPS origins https://localhost:<port>
+             and legitimate selected grants in the shared browser context. Initial
+             selected-configuration identity migration creates no grant or commissioning;
+             fresh setup follows AuthenticateProfile/HandleScopedAuthorization, and
+             retained setup proves its existing grant without token/enrollment replay.
+             Plaintext origin null =>http://127.0.0.1:<port> remains a separate HTTP/launch
+             compatibility variant, never a claim of Connected or protected WS readiness.
+             Preserve every API field/size/error/storage/startup variant: the full trusted
+             numeric-loopback no-cookie GET/PUT matrix and current-grant HTTPS protected
+             ordered checks are independently mandatory. The exact8192 response-budget
+             fixture remains plaintext. Tokens independently generated, never logged.
+             Auth setup cannot commission/open/query/set/close CAT/audio or key PTT.
              Hand-authored expected edit table and independently parsed JSON/file
              hashes are the oracle, NOT new code/model-produced golden outputs.
              Readiness <=10s, Refresh <=2s, recovery <=10s after detection/restored link.
@@ -540,8 +557,10 @@ package WstxProfiles {
         verification variableServers {
             subject operation : PresentAndEditProfile;
             objective { verify WstxRequirements::'CL-005-01'; verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-005-05'; }
-            doc /* TC-022-001: four PID/listener/boot-ID/visible-UUID endpoints, Refresh
-                 all. Edit only profile1: Edited station 1, changed-input-1, CAT endpoint
+            doc /* TC-022-001: operational HTTPS/grant setup and separate plaintext API
+                 compatibility use the common partition above. Four PID/listener/boot-ID/
+                 visible-UUID endpoints, Refresh all. Edit only profile1: Edited station 1,
+                 changed-input-1, CAT endpoint
                  fixture-cat-1, CAT/disabled; retain output. Second window on same
                  station reloads acknowledged revision; other three settings/bytes stable.
                  Repeat audio-only/control-only/null-audio/CAT-disabled edits. Radio
@@ -565,7 +584,9 @@ package WstxProfiles {
         verification persistence {
             subject operation : SaveSelectedProfile;
             objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-04'; verify WstxRequirements::'CL-005-05'; }
-            doc /* TC-022-002: create extra default profile, verify exact defaults/UUID,
+            doc /* TC-022-002: operational browser saves/recovery use the common HTTPS/
+                 grant partition; HTTP/startup compatibility remains independently tested.
+                 Create extra default profile, verify exact defaults/UUID,
                  no listener. Four browser saves; record independently expected fields,
                  UUIDs/revisions. Fresh processes after clearing inherited WSTX inputs
                  restore same settings/fixed endpoint/UUID/revision and fresh boot ID.
@@ -588,7 +609,9 @@ package WstxProfiles {
                  response GET, no replay. Relative path from different CWD, aliases,
                  absent parent/existing empty/nonempty create target, invalid CLI and
                  forbidden env all have mapped errors. Independent ResponseBudgetAdmission
-                 fixture: the full worst-case representation with empty origin is2018
+                 fixture remains plaintext numeric loopback with the independently sized
+                 saved Origin, no protected browser/WS claim or TLS/DNS requirement:
+                 the full worst-case representation with empty origin is2018
                  UTF-8 bytes; size the ASCII origin contents to6174 bytes. Startup and
                  actual GET/PUT bodies must fit exactly8192, including a save from
                  maxRevision-1 to maxRevision. One extra origin byte or a9000-character
@@ -600,7 +623,11 @@ package WstxProfiles {
         verification lifecycleIsolation {
             subject operation : LaunchSelectedProfile;
             objective { verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-005-04'; }
-            doc /* TC-022-003: stop/restart profile1 while other three Refresh<=2s and
+            doc /* TC-022-003: operational windows use the common HTTPS/grant partition;
+                 retain separate plaintext startup/configuration variants. Each fault
+                 starts with otherwise valid transport-specific TLS/token inputs, so a
+                 missing prerequisite cannot replace the intended single fault.
+                 Stop/restart profile1 while other three Refresh<=2s and
                  UUID/settings unchanged. Original UUID/revision returns,new boot ID.
                  Running same path/alias/copied UUID ->profile_in_use; occupied port
                  ->endpoint_in_use. Denied storage and absent/unreadable/invalid TLS file
@@ -616,17 +643,29 @@ package WstxProfiles {
             subject operation : AuthenticateProfile;
             objective { verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-005-04'; }
             doc /* TC-022-004: four TLS localhost ports/tokens, ONE Chromium cookie
-                 context. Before login GET/PUT/WS401; login all then reverse order204.
+                 context. Before authorization GET/PUT/WS401. Fresh selected authorization
+                 is session204, bootstrap-scope200 with non-null migrated scope, completed
+                 persistence of the key/grant/operation IDs before enroll200, then
+                 challenge/proof204/status200. Session204 alone grants no ordinary access.
+                 Reverse-order retained authorization proves the existing key/grant and
+                 verifies status without token reentry or enrollment replay.
                  Ordinary same-origin browser GET without manual Origin200; cookie
                  names/attributes only reported. All four Refresh/reconnect independently.
                  Station1 token to station2 login401; copied name/value or value under
                  station2's expected name401; legacy cookie or duplicate expected name401.
                  Missing/wrong Origin login/PUT/WS403, including other station port and
                  unrelated origin. Transport-cookie expiry/proof recovery does not clear other cookies; ordinary restart retains grants.
-                 Explicitly revoke station1 grants and rotate bootstrap+restart:old grants/token401,new enrollment succeeds,
-                 other three usable. Exact UUID in PUT matches selected profile; wrong
+                 Operator bootstrap rotation is explicit profile revoke-all, unlike
+                 transport rotation/expiry or ordinary restart with unchanged bootstrap.
+                 Require actual durable revoke-all commit/receipt, then rotation/restart:
+                 old grants/token401, fresh explicitly authorized enrollment succeeds,
+                 other three usable. Environment-variable change alone is not commit proof.
+                 Exact UUID in PUT matches selected profile; wrong
                  UUID403, WS numeric correlation IDs retain existing local meaning.
                  Check 12.1 login body/rate independently per process, cookie attributes,
+                 and the shared auth-v1 budget: count setup admissions and independently
+                 prove10 admitted/11th429 per process without clock/rate changes or polling.
+                 Preserve existing request/count/deadline bounds;
                  only HttpOnly handles and the CL-022-01 nonextractable IndexedDB key persist; no
                  local/sessionStorage/profileJSON/retained form/URL/log/report leakage. Failed
                  network login also clears DOM token immediately on submission.
@@ -639,6 +678,9 @@ package WstxProfiles {
             subject operation : PresentAndEditProfile;
             objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
+                 Use the common operational HTTPS/grant partition before each relevant
+                 protected socket; count profile GETs separately from auth setup, never
+                 substitute auth status for the correlated WS observation.
                  Established socket: hold GET/profile; actual correlated WS response and
                  changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
                  Refresh: one in-flight GET plus one follow-up gets independently saved

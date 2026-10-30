@@ -692,6 +692,12 @@ package WstxRequirements {
              CL-005-05. **Level:** 2 — isolated automated tests.
              **Where:** Windows PC, N real server processes and separate real browser windows.
 
+             **Setup partition:** Operational browser windows and save/readiness regressions
+             use four saved HTTPS localhost endpoints and legitimate selected grants in one
+             browser context, per WstxProfiles::IndependentVerification. Plaintext trusted
+             numeric-loopback HTTP/launch compatibility is a separate mandatory companion,
+             not an operational configuration GUI or Connected/protected-WS prerequisite.
+
              **Steps:** Launch each table profile with `--profile`; open one window per recorded
              endpoint. Match every visible full UUID, display name, endpoint, boot ID and revision
              to its fixture; require N distinct boot IDs/listeners/PIDs. Refresh every window.
@@ -707,6 +713,14 @@ package WstxRequirements {
              serial/device access is attempted. The native option is visibly reserved/disabled.
              There is no four-entry ceiling. Check the form at desktop width and 360 px: identity,
              errors and Save remain readable/reachable with keyboard input.
+
+             **Plaintext API companion:** With trusted numeric loopback, no cookie and the
+             exact saved Origin where supplied, require GET/valid durable PUT200, identical
+             JSON keys/UUID/revision/settings/size expectations, ordered errors/domain/byte
+             boundaries, unchanged file bytes on rejection and exact durable fields on success.
+             Retain the complete validation matrix below in this companion AND current-grant
+             HTTPS protected ordered checks; no auth bypass or omitted existing variant.
+             Plaintext auth-v1/protected WS/native remain denied, never operational readiness.
 
              **Validation variants:** In one isolated profile, submit every editable field's empty,
              maximum and one-beyond-maximum value from 4.2, controls/newlines, malformed callsign/
@@ -750,6 +764,12 @@ package WstxRequirements {
              **Level:** 2 — isolated automated tests. **Where:** Windows PC, disposable storage,
              N real processes/windows. No full OS reboot is required or claimed by this case.
 
+             **Setup partition:** Browser saves, recovery and restart observations use the
+             common operational HTTPS/grant fixture; trusted plaintext loopback HTTP/startup
+             compatibility remains independently mandatory, including the complete validation,
+             error/storage/file invariants and exact8192 response-budget fixture. An ordinary
+             unchanged-bootstrap restart retains unrevoked grants, without enrollment replay.
+
              **Steps:** Create an additional profile with `--create-profile`, independently check
              all creation defaults and UUID v4, and verify creation exits without listening. Save
              different editable values through each table profile's browser, record acknowledged
@@ -783,6 +803,8 @@ package WstxRequirements {
              a directory alias, absent parent on creation, existing empty/nonempty creation target,
              unknown/duplicate CLI flags and forbidden WSTX_BIND/WSTX_ORIGIN overrides. No fallback
              or mutation is permitted. This does not certify power-loss durability or WSJT-X migration.
+             The cross-field response-budget fixture remains plaintext numeric loopback with
+             an independently long saved Origin, not a protected browser/TLS/DNS/grant fixture.
              For the cross-field response budget, independently build the maximum-encoded-settings
              vector in 12.5. With the selected origin sized so its complete representation is exactly
              8,192 UTF-8 bytes, startup and GET succeed; save from revision 9,007,199,254,740,990 to
@@ -810,6 +832,11 @@ package WstxRequirements {
              **Promises:** FR-021, FR-022; CL-005-03, CL-005-04.
              **Level:** 2 — isolated automated tests. **Where:** Windows PC, N real server/browser
              instances, OS port reservations, ownership aliases/copies and disposable resource fixtures.
+
+             **Setup partition:** Operational windows use the common four-process HTTPS/
+             grant fixture; retain separate plaintext launch/configuration variants. Each
+             negative launch has otherwise valid transport-specific TLS/token inputs, so the
+             intended single fault is not replaced by a missing prerequisite or scheme mismatch.
 
              **Steps:** Stop profile 1 and query the other N-1 before, during and after its restart.
              While the original is running attempt: the same profile path, an alias to that directory,
@@ -847,14 +874,24 @@ package WstxRequirements {
              Independent contexts do not satisfy this case; tests never contact an external service.
 
              **Steps:** Before login request GET/PUT /profile and WebSocket upgrade without a cookie.
-             Log in successively to all N stations; fetch GET `/profile` using ordinary same-origin
-             browser fetch with no manually supplied Origin header and require 200. Inspect the cookie store by names/attributes only,
-             then Refresh and reconnect every window. Repeat logins in reverse order. Copy station
+             Fresh selected authorization at each station is session204, bootstrap-scope200
+             with non-null migrated scope, completed storage of key/grant/enrollment operation
+             IDs BEFORE enroll200, then challenge/proof204/status200. Session204 alone is not
+             ordinary permission. Initial migration assigns identity to existing selection even
+             with disabled control, but creates no grant/commission or native effects; explicit
+             removed/null scope cannot be invented or auto-added. Fetch GET `/profile` using
+             ordinary same-origin browser fetch with no manually supplied Origin and require200.
+             Inspect cookie names/attributes only, then Refresh/reconnect every window. Repeat
+             retained authorization in reverse order with proof/status, no token or enrollment
+             replay. Copy station
              1's token to station 2's login, cookie name/value to station 2's upgrade and /profile
              requests, and station 1's session value under station 2's expected cookie name. Supply
              a legacy `wstx_session` cookie and duplicate expected-name cookies. Exercise missing/
              wrong Origin on login, PUT and upgrade, including another station's port and an unrelated
-             origin. Explicitly revoke all grants only for profile 1, rotate its bootstrap token and restart;
+             origin. Operator bootstrap rotation is explicit profile revoke-all, unlike
+             transport-handle rotation/expiry or ordinary restart with unchanged bootstrap.
+             Require actual durable revoke-all commit/receipt for profile1, then rotate its
+             bootstrap token and restart; an environment-variable change alone is not proof;
              query other stations throughout. Run local and cross-station negatives with the same
              four-server fixture. Exercise namespaced transport-cookie expiry and automatic retained-key proof recovery without clearing others; ordinary restart does not revoke grants.
 
@@ -871,7 +908,10 @@ package WstxRequirements {
              at their selected profile, and a different profile's UUID in the HTTP PUT body's
              `profile_id` is denied. Numeric WebSocket correlation IDs retain 12.2's unchanged
              connection-local meaning and are not profile identities. Verify 12.1's body
-             and per-process rate limits independently of other profiles. Same-host cookie transport
+             and per-process rate limits independently of other profiles. Count actual auth-v1
+             setup admissions under the shared10/60 budget and prove10 admitted/11th429 per
+             process in bounded fixture subcases; no production clock/rate switch, status poll
+             stream, relaxed deadline or omitted companion. Same-host cookie transport
              is explicitly observed; it is not proof against a hostile service on that hostname. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -887,7 +927,10 @@ package WstxRequirements {
         doc /* #### TC-022-005 — Status readiness independent of settings transport
 
              Proves CL-005-02, CL-005-03 and CL-006-04. Level 2, automated Windows real Chromium/server
-             fixture in tests/profiles.test.cjs, using the common four-process profile fixture.
+             fixture in tests/profiles.test.cjs, using the common four-process operational
+             HTTPS/grant fixture before each relevant protected socket. Preserve separate
+             plaintext HTTP/launch compatibility; auth setup requests do not count as profile
+             GETs and auth status cannot replace correlated WS status.
              On an established socket hold GET /profile behind a controlled barrier, click Refresh,
              observe its actual correlated WebSocket status and require changed visible updated plus
              enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
