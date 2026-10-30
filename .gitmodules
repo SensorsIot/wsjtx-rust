@@ -1,4 +1,4 @@
 [submodule "harness"]
 	path = harness
 	url = https://github.com/SensorsIot/harness
-	branch = V2
+	branch = main
