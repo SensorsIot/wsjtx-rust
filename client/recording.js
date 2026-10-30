@@ -363,19 +363,28 @@ function startBody(){return {v:1,profile_id:snapshot.profile_id,boot_id:snapshot
 document.querySelector('#recording-import').addEventListener('click',async()=>{
   const file=document.querySelector('#recording-file').files[0];if(!file){progress.textContent='Choose a WAV recording.';return;}
   if(file.size===0||file.size>3145728){progress.textContent='request_too_large';return;}
+  const intentAuth=authorization?.snapshot(),intentProfile=profileData && JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision,profileData.settings.control]);
+  const requireIntent=()=>{
+    const now=authorization?.snapshot();
+    if(authorization&&(!now.ready||now.epoch!==intentAuth.epoch||JSON.stringify(now.scope)!==JSON.stringify(intentAuth.scope)) ||
+      intentProfile!==JSON.stringify([profileData?.profile_id,profileData?.boot_id,profileData?.revision,profileData?.settings.control]))throw new Error('Import intent changed; review current station before starting again');
+  };
+  let importFailure;
   uploading=true;stopped=false;show();
   try{
+    requireIntent();
     const operation=await request('/recording/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(startBody())});
     uploadId=operation.id;
-    if(stopped){const outcome=await request(`/recording/imports/${uploadId}`,{method:'DELETE'});await sync();importOutcome={...outcome,generation:operation.generation};show();return;}
+    if(stopped){requireIntent();const outcome=await request(`/recording/imports/${uploadId}`,{method:'DELETE'});await sync();importOutcome={...outcome,generation:operation.generation};show();return;}
     uploadAbort=new AbortController();await sync();
     for(let offset=0;offset<file.size&&!stopped;offset+=2048){
+      requireIntent();
       const end=Math.min(offset+2048,file.size);
       const result=await request(`/recording/imports/${uploadId}`,{method:'PUT',headers:{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${file.size}`},body:file.slice(offset,end),signal:uploadAbort.signal});
       progress.textContent=`${result.state} · ${end} / ${file.size} bytes`;
     }
-  }catch(error){progress.textContent=`Import outcome · ${error.message} · refresh state before starting again`;}
-  finally{uploading=false;uploadAbort=null;uploadId=null;await sync();}
+  }catch(error){importFailure=`Import outcome · ${error.message} · refresh state before starting again`;}
+  finally{uploading=false;uploadAbort=null;uploadId=null;await sync();if(importFailure)progress.textContent=importFailure;}
 });
 document.querySelector('#recording-replay').addEventListener('click',async()=>{
   try{await request('/recording/replay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...startBody(),recording_id:snapshot.recording.id})});await sync();}catch(error){progress.textContent=error.message;await sync();}

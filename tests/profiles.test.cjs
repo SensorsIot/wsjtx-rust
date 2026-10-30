@@ -138,6 +138,37 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
 });
 
 // Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.
+test('TC-022-006: upload intent cannot cross authorization renewal', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage(); await page.goto(p.origin);
+  await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  await page.locator('#recording-import').waitFor({state: 'visible'});
+  await page.waitForFunction(() => !document.querySelector('#recording-import').disabled);
+  let reserved = false, chunks = 0, heldRoute;
+  let markHeld; const held = new Promise(resolve => {markHeld = resolve;});
+  page.on('request', request => {
+    if (request.url().endsWith('/recording/imports') && request.method() === 'POST') reserved = true;
+    if (request.url().includes('/recording/imports/') && request.method() === 'PUT') chunks++;
+  });
+  await page.route('**/recording', async route => {
+    if (reserved && !heldRoute) {heldRoute = route; markHeld();} else await route.continue();
+  });
+  // The bytes must never be dispatched; this is an intent-fence fixture, not a WAV generator.
+  await page.locator('#recording-file').setInputFiles({name: 'not-dispatched.wav', mimeType: 'audio/wav', buffer: Buffer.from([0])});
+  await page.locator('#recording-import').click(); await held;
+  const oldEpoch = await page.evaluate(() => window.stationAuthorization.snapshot().epoch);
+  await context.clearCookies();
+  await page.evaluate(async () => {try {await window.stationAuthorization.fetch('/profile');} catch {}});
+  await page.waitForFunction(previous => {
+    const current = window.stationAuthorization.snapshot(); return current.ready && current.epoch > previous;
+  }, oldEpoch);
+  await heldRoute.continue();
+  await page.locator('#recording-progress').filter({hasText: 'Import intent changed'}).waitFor();
+  assert.equal(chunks, 0, 'no upload chunk from the old explicit intent may be sent after proof');
+});
+
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles} = await fixture(t), beforeBytes = await savedBytes(profiles);
   const {pages, context} = await browserWindows(t, profiles);
