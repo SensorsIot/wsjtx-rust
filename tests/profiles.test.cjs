@@ -660,7 +660,83 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     if (fault === 'retry-stale') assert.equal(events.filter(detail => detail.epoch === window.stationAuthorization.snapshot().epoch).every(detail => detail.authorizationCondition === null), true, 'stale recovery failure cannot publish over the newer explicit owner');
     checked++;
   }
-  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 49}));
+  // Exercise the actual UI consumers too: manager-only fixtures cannot prove their epoch ownership fences.
+  const appSource = await fs.readFile(path.resolve('client/app.js'), 'utf8');
+  let consumerChecked = 0;
+  for (const mode of ['owned-pending', 'busy', 'old-reject-ready', 'old-reject-recovering', 'old-resolve-ready', 'old-event', 'current-event']) {
+    const handlers = new Map(), listeners = new Map(), nodes = new Map();
+    let authView = {epoch: 1, state: 'unavailable', ready: false, scope: null}, finish;
+    let bootstrapCalls = 0, readinessCalls = 0, networkCalls = 0, closeCalls = 0, scheduled = 0, cleared = 0, staleEvents = 0, timerId = 0;
+    const delays = [];
+    for (const id of ['#connection', '#version', '#radio', '#login', '#refresh', '#settings', '#settings-result', '#settings-reload', '#token', '#login-error']) {
+      nodes.set(id, {textContent: '', dataset: {}, hidden: false, disabled: false, value: '', elements: [],
+        addEventListener(type, handler) {handlers.set(id + ':' + type, handler);}});
+    }
+    const manager = {
+      snapshot: () => Object.freeze({...authView}),
+      ensureReady() {readinessCalls++; const error = new Error('Controlled initial missing credential'); error.authorizationCondition = 'credential-missing'; return Promise.reject(error);},
+      bootstrap() {
+        bootstrapCalls++;
+        if (mode === 'busy') return Promise.reject(new Error('Controlled busy owner'));
+        authView = {...authView, epoch: authView.epoch + 1, state: 'authorizing', ready: false};
+        return new Promise((resolve, reject) => {finish = {resolve, reject};});
+      },
+      fetch() {networkCalls++; throw new Error('Unexpected consumer fixture network');}
+    };
+    const window = {stationAuthorization: manager, dispatchEvent() {staleEvents++;}};
+    const fixtureSocket = {readyState: 1, close() {closeCalls++;}};
+    class NoNetworkSocket {constructor() {networkCalls++; throw new Error('Unexpected consumer fixture socket');}}
+    Object.assign(NoNetworkSocket, {CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3});
+    const realm = vm.createContext({window, document: {body: {dataset: {profile: 'true'}}, querySelector(id) {if (!nodes.has(id)) throw new Error('Unexpected consumer fixture DOM'); return nodes.get(id);}},
+      location: {protocol: 'https:', host: 'localhost:18443'}, Event, WebSocket: NoNetworkSocket, fixtureSocket,
+      addEventListener(type, handler) {listeners.set(type, handler);},
+      setInterval() {return 1;}, setTimeout(_callback, delay) {scheduled++; delays.push(delay); return ++timerId;}, clearTimeout() {cleared++;},
+      fetch() {networkCalls++; throw new Error('Unexpected consumer fixture network');}});
+    vm.runInContext(appSource, realm, {timeout: 1000});
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(readinessCalls, 1, 'actual startup consumer reaches the controlled initial lookup');
+    assert.equal(handlers.has('#login:submit') && listeners.has('station-authorization'), true);
+    vm.runInContext('socket = fixtureSocket;', realm, {timeout: 1000});
+    authView = {epoch: 20, state: mode === 'busy' ? 'recovering' : 'ready', ready: mode !== 'busy', scope: null};
+    nodes.get('#connection').textContent = mode === 'busy' ? 'Current recovery notice' : 'Current ready notice';
+    nodes.get('#connection').dataset.state = mode === 'busy' ? 'stale' : 'connected';
+    nodes.get('#login').hidden = true; nodes.get('#login-error').textContent = 'Current operator notice'; nodes.get('#refresh').disabled = mode === 'busy';
+    readinessCalls = networkCalls = closeCalls = scheduled = cleared = staleEvents = 0; delays.length = 0;
+    const view = () => ({text: nodes.get('#connection').textContent, state: nodes.get('#connection').dataset.state, hidden: nodes.get('#login').hidden,
+      error: nodes.get('#login-error').textContent, disabled: nodes.get('#refresh').disabled});
+    const typedFailure = () => {const error = new Error('Controlled pending enrollment'); error.authorizationCondition = 'enrollment-pending'; return error;};
+    let before;
+    if (mode === 'old-event' || mode === 'current-event') {
+      if (mode === 'current-event') {authView = {...authView, state: 'unavailable', ready: false}; nodes.get('#login').hidden = false;}
+      before = view();
+      listeners.get('station-authorization')({detail: Object.freeze({...authView, epoch: mode === 'old-event' ? 19 : authView.epoch, state: 'unavailable', ready: false, authorizationCondition: 'enrollment-pending', status: null})});
+    } else {
+      if (mode === 'owned-pending') {authView = {...authView, state: 'unavailable', ready: false}; nodes.get('#login').hidden = false; nodes.get('#login-error').textContent = 'Obsolete token advice';}
+      before = view(); const submitted = handlers.get('#login:submit')({preventDefault() {}});
+      if (mode !== 'busy') {
+        assert.equal(authView.epoch, 21, 'accepted bootstrap owns exactly its new epoch');
+        authView = {...authView, epoch: mode === 'owned-pending' ? 21 : 22, state: mode === 'old-reject-recovering' ? 'recovering' : mode === 'owned-pending' ? 'unavailable' : 'ready', ready: !['owned-pending', 'old-reject-recovering'].includes(mode)};
+        if (mode === 'old-reject-recovering') {nodes.get('#connection').textContent = 'Newer recovery notice'; nodes.get('#connection').dataset.state = 'stale'; nodes.get('#refresh').disabled = true; before = view();}
+        if (mode === 'old-resolve-ready') finish.resolve(manager.snapshot()); else finish.reject(typedFailure());
+      }
+      await submitted;
+    }
+    await Promise.resolve(); await Promise.resolve();
+    if (mode === 'owned-pending' || mode === 'current-event') {
+      assert.equal(/enrollment outcome unknown/i.test(nodes.get('#connection').textContent), true, 'current pending outcome is explicit');
+      assert.equal(nodes.get('#connection').dataset.state, 'stale'); assert.equal(nodes.get('#login').hidden, true); assert.equal(nodes.get('#refresh').disabled, true);
+      if (mode === 'owned-pending') assert.equal(nodes.get('#login-error').textContent, '', 'current owned failure clears obsolete token advice');
+    } else assert.deepEqual(view(), before, 'busy or obsolete work preserves the newer UI and operator notice');
+    assert.equal(networkCalls, 0); assert.equal(readinessCalls, 0, 'presentation never starts another recovery');
+    assert.equal(bootstrapCalls, ['old-event', 'current-event'].includes(mode) ? 0 : 1);
+    assert.equal(closeCalls, mode === 'current-event' ? 1 : 0, 'only the current lifecycle owner may close its socket');
+    assert.equal(scheduled, mode === 'current-event' ? 1 : 0); assert.equal(cleared, mode === 'current-event' ? 1 : 0);
+    assert.deepEqual(delays, mode === 'current-event' ? [4000] : [], 'existing lifecycle retry timing stays owned and unchanged');
+    assert.equal(staleEvents, ['owned-pending', 'current-event'].includes(mode) ? 1 : 0);
+    if (mode === 'busy') assert.equal(authView.epoch, 20, 'a busy submission does not acquire epoch ownership');
+    consumerChecked++;
+  }
+  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 49, app_consumer_cases: consumerChecked, expected_app_consumer_cases: 7}));
 });
 
 // Proves CL-022-01/02/05: real overlapping proof delivery must not create a false-ready UI or replay Save.
