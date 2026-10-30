@@ -215,6 +215,7 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   assert.equal(oldProfile.status, 401, 'replaced transport cannot authorize a new protected request');
   assert.equal(sameCredential, true, 'same origin retains one key/grant/operation tuple across real tabs');
   assert.equal(firstCredential.extractable, false); assert.deepEqual(firstCredential.usages, ['sign']);
+  assert.deepEqual(Object.keys(firstCredential.scope).sort(), ['profile_id', 'radio_id', 'safety_revision']);
   assert.equal(firstCredential.scope.profile_id, p.document.profile_id); assert.equal(firstCredential.scope.safety_revision, 1);
   assert.match(firstCredential.scope.radio_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(sameFiles, true, 'ordinary proof/status does not rewrite durable verifier/settings/receipt bytes');
