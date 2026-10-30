@@ -1,10 +1,19 @@
 # Harness configuration (https://github.com/SensorsIot/harness, branch V2, the submodule
 # at harness/). Read by harness/core/tools/project.py.
 project: wsjtx-rust
-packs: [rust]
+packs: [rust, rust-supply-chain]
 main: master
 remote: origin
 override_env: HARNESS_GATE_OVERRIDE
+# Harness paths beyond harness/ and .harness/ (docs/harness/Harness-Overview.md). A push
+# that changes only harness paths is reviewed, not gated.
+harness_paths:
+  - docs/harness/
+  - AGENTS.md
+  - CLAUDE.md
+  - .claude/
+  - deny.toml
+  - .github/ISSUE_TEMPLATE/
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
 # Three issue workspaces; the supervisor occupies this runtime's fourth agent slot.
