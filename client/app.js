@@ -61,7 +61,7 @@ async function connect() {
     // read may observe401 and start the manager's independent coalesced renewal.
     const probe = new AbortController(); handshakeProbe?.abort(); handshakeProbe = probe;
     authorization.fetch('/profile', {cache: 'no-store', signal: AbortSignal.any([probe.signal, AbortSignal.timeout(10000)])})
-      .then(response => {response.body?.cancel().catch(() => {});})
+      .then(response => response.body?.cancel().catch(() => {}))
       .catch(() => {})
       .finally(() => {if (handshakeProbe === probe) handshakeProbe = null;});
   };
