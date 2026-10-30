@@ -743,8 +743,13 @@ package WstxRequirements {
              Repeat with the opposite response order on an unchanged revision-0 station: hold the
              Refresh response, complete the PUT and its follow-up revision-1 GET, then release the
              old response. Visible revision, saved fields and acknowledged-save feedback remain at
-             revision 1. A changed boot identity still permits restart/recovery resynchronization. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             revision 1. A changed boot identity still permits restart/recovery resynchronization.
+
+             **Automation coverage:** Existing companions retain the delivered profile,
+             domain/API and form-ordering subset. Operational HTTPS/grant fixture conversion
+             and complete separate plaintext plus protected-HTTPS validation coverage remain
+             pending; the expanded case is partial, without discarding existing assertions. */
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-01';
             verify 'CL-005-02';
@@ -855,8 +860,13 @@ package WstxRequirements {
              fault by 4.2's startup-error table; no readiness, browser attachment, settings rewrite
              or existing-session interruption occurs. Pre/post byte hashes of saved files agree.
              Killing a process releases its ownership claim; a stale marker alone does not own it.
-             A copied UUID is rejected until the owning process exits, irrespective of directory name. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             A copied UUID is rejected until the owning process exits, irrespective of directory name.
+
+             **Automation coverage:** Existing companions retain delivered profile launch,
+             fault and lifecycle-isolation subsets. The operational HTTPS/grant browser
+             fixture conversion and complete transport-partition companions remain pending;
+             the expanded case is partial, with every existing launch/error oracle retained. */
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-03';
             verify 'CL-005-04';
@@ -941,8 +951,13 @@ package WstxRequirements {
              restore Connected, replace the newer profile snapshot or overwrite its form. Fail the
              initial/background GET separately: visible failure/stale, no false configuration success.
              Oracles are these independent canonical timing/identity expectations, real WS traffic and independently
-             prepared profile revisions; barrier release happens only after the status assertion. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             prepared profile revisions; barrier release happens only after the status assertion.
+
+             **Automation coverage:** Existing companions retain the delivered legacy
+             socket/settings-readiness subset. The operational HTTPS/grant fixture conversion
+             remains pending; the expanded case is partial, with every existing timing,
+             held-response, count and stale-form assertion retained. */
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-02';
             verify 'CL-005-03';

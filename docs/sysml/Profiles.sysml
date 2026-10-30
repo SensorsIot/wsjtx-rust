@@ -522,7 +522,12 @@ package WstxProfiles {
         doc /* Case identities remain WstxRequirements::TC-022-001..005, projected
              from WstxRequirements and this package. No cases/verdicts are regenerated from
              action calculations. These declarations refine their subjects/oracles.
-             Delivered source/test companions, level 2 isolated automated Windows PC tests;
+             Source/test companions retain delivered scoped profile/API/legacy-socket
+             subsets, level 2 isolated automated Windows PC tests. The operational HTTPS/
+             grant fixture conversion and complete dual-transport companions below remain
+             pending; existing source is not complete automation of the expanded cases.
+             The independently sized plaintext8192 response-budget companion remains
+             implemented and mandatory; no existing companion or scoped evidence is discarded.
              FOUR real candidate processes, distinct saved ports/profiles, four real
              Chromium windows sharing ONE context/cookie store; no radio/device/live
              account/external-service/duplicate hosted run. Rust profile tests in
