@@ -73,11 +73,34 @@ async function fixture(t, secured = false) {
   for (const p of profiles) {const app = await start(p, p.env); apps.push(app); p.app = app;}
   return {profiles, apps, base};
 }
-function request(origin, method = 'GET', body, headers = {}) {
+function request(origin, method = 'GET', body, headers = {}, pathname = '/profile') {
   return new Promise((resolve, reject) => {
-    const req = (origin.startsWith('https') ? https : http).request(origin + '/profile', {method, rejectUnauthorized: false, agent: false, headers: {Origin: origin, ...(body !== undefined ? {'Content-Type': 'application/json'} : {}), ...headers}}, res => {
-      let data = ''; res.on('data', b => {data += b;}); res.on('end', () => resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: Buffer.byteLength(data, 'utf8'), headers: res.headers}));
-    }); req.on('error', reject); if (body !== undefined) req.write(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); req.end();
+    const proof = pathname === '/authorization/v1/proof';
+    if (pathname !== '/profile' && !proof) {reject(new Error('Unsupported test request path')); return;}
+    if (proof) {
+      const expected = new URL(origin), originHeaders = Object.entries(headers).filter(([name]) => name.toLowerCase() === 'origin');
+      const mediaHeaders = Object.entries(headers).filter(([name]) => name.toLowerCase() === 'content-type');
+      if (expected.protocol !== 'https:' || expected.origin !== origin || !['localhost', '127.0.0.1', '[::1]'].includes(expected.hostname) ||
+          method !== 'POST' || !Buffer.isBuffer(body) || !body.length || body.length > 1024 ||
+          originHeaders.length !== 1 || originHeaders[0][1] !== origin || mediaHeaders.length !== 1 || mediaHeaders[0][1] !== 'application/json') {
+        reject(new Error('Invalid proof forwarding context')); return;
+      }
+    }
+    let timer;
+    const fail = error => {if (proof) {clearTimeout(timer); reject(new Error('Proof forwarding failed'));} else reject(error);};
+    const req = (origin.startsWith('https') ? https : http).request(origin + pathname, {method, rejectUnauthorized: false, agent: false, headers: {Origin: origin, ...(body !== undefined ? {'Content-Type': 'application/json'} : {}), ...headers}}, res => {
+      let data = '', bytes = 0;
+      res.on('data', b => {bytes += b.length; if (proof && bytes > 1024) {req.destroy(); res.destroy(); fail(); return;} data += b;});
+      res.on('end', () => {
+        if (proof) clearTimeout(timer);
+        if (proof) {try {resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: bytes, headers: res.headers});} catch {fail();}}
+        else resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: Buffer.byteLength(data, 'utf8'), headers: res.headers});
+      });
+      if (proof) {res.on('error', fail); res.on('aborted', () => fail());}
+    });
+    req.on('error', fail);
+    if (proof) {timer = setTimeout(() => {req.destroy(); fail();}, 10000); req.end(body);}
+    else {if (body !== undefined) req.write(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); req.end();}
   });
 }
 const edit = (i, revision, value = settings(i), id = uuid(i)) => ({profile_id: id, revision, settings: value});
@@ -255,6 +278,118 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
     assert.equal(status.value.error, null); assert.equal(status.value.retry_after_ms, null);
     assert.deepEqual(Object.keys(status.value.receive_state).sort(), ['audio', 'decoder']);
     assert.equal(status.value.receive_state.audio, 'closed'); assert.equal(status.value.receive_state.decoder, null, 'no live job has no decoder state');
+  }
+});
+
+// Proves CL-022-01/02: a real proof commit is distinct from delivery of its cookie.
+test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000}, async t => {
+  assert.equal(Boolean(process.env.DEBUG || process.env.PWDEBUG || process.env.DEBUG_FILE || process.env.PLAYWRIGHT_TRACE_DIR), false, 'credential-sensitive tracing must be disabled before this fixture');
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}), page = await context.newPage();
+  const cookieName = `wstx_session_${p.document.profile_id}`, timeline = [], frames = [];
+  let observer, openTimer, closeTimer, deliveryTimer, routeWork, pendingRoute, forwarded;
+  let routeFailed = false, fulfilled = false, handled = false, observerForced = false;
+  const proofObservation = {phase: 'waiting', actualStatus: null, responseBytes: null, cookieCount: null};
+  let jarAbsent = null, jarMatches = null;
+  const fileHashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
+  page.on('request', request => {const url = new URL(request.url()); if (url.origin === p.origin && !url.pathname.startsWith('/assets/')) timeline.push({path: url.pathname, method: request.method(), at: performance.now()});});
+  page.on('response', response => {const url = new URL(response.url()); if (url.origin === p.origin && (url.pathname === '/session' || url.pathname.startsWith('/authorization/v1/') || url.pathname.startsWith('/receive/') || url.pathname === '/profile')) timeline.push({path: url.pathname, status: response.status(), at: performance.now()});});
+  const handler = route => {
+    if (handled) return route.continue(); handled = true; pendingRoute = route;
+    routeWork = (async () => {
+      try {
+        const original = route.request(), headers = await original.allHeaders(), body = original.postDataBuffer();
+        if (original.url() !== p.origin + '/authorization/v1/proof' || original.method() !== 'POST' ||
+            headers.origin !== p.origin || headers['content-type'] !== 'application/json' || !Buffer.isBuffer(body) || !body.length || body.length > 1024) throw new Error('Invalid original proof request');
+        proofObservation.phase = 'original-validated'; proofObservation.proofBytes = body.length;
+        const beforeFiles = await fileHashes(); // Enrollment has committed before this genuine proof exists.
+        const response = await request(p.origin, 'POST', body, {Origin: headers.origin, 'Content-Type': headers['content-type'], ...(headers.cookie ? {Cookie: headers.cookie} : {})}, '/authorization/v1/proof');
+        const cookies = response.headers['set-cookie'];
+        proofObservation.phase = 'server-replied'; proofObservation.actualStatus = response.status; proofObservation.responseBytes = response.bodyBytes; proofObservation.cookieCount = Array.isArray(cookies) ? cookies.length : 0;
+        if (response.status !== 204 || response.bodyBytes !== 0 || !Array.isArray(cookies) || cookies.length !== 1) throw new Error('Invalid actual proof response');
+        const pair = cookies[0].split(';')[0], prefix = cookieName + '=';
+        if (!pair.startsWith(prefix) || !/^[A-Za-z0-9_-]{43}$/.test(pair.slice(prefix.length))) throw new Error('Invalid actual transport cookie');
+        forwarded = {response, beforeFiles, cookie: pair.slice(prefix.length), proofBytes: body.length, heldAt: performance.now()};
+        deliveryTimer = setTimeout(() => {routeFailed = true; route.abort('failed').catch(() => {});}, 5000);
+        const beforeDelivery = (await context.cookies(p.origin)).filter(cookie => cookie.name === cookieName);
+        jarAbsent = beforeDelivery.length === 0;
+        if (!jarAbsent || routeFailed || performance.now() - forwarded.heldAt > 5000) throw new Error('Proof delivery qualification expired');
+        await route.fulfill({status: response.status, body: '', headers: {'set-cookie': cookies[0], ...(response.headers['cache-control'] ? {'cache-control': response.headers['cache-control']} : {}), ...(response.headers['content-type'] ? {'content-type': response.headers['content-type']} : {})}});
+        fulfilled = true; proofObservation.phase = 'browser-fulfilled';
+      } catch {
+        routeFailed = true; await route.abort('failed').catch(() => {});
+      } finally {clearTimeout(deliveryTimer); pendingRoute = null;}
+    })();
+    return routeWork;
+  };
+  try {
+    await page.route(p.origin + '/authorization/v1/proof', handler); await page.goto(p.origin);
+    await page.locator('#login').waitFor({state: 'visible'});
+    const statusResponse = page.waitForResponse(response => response.url() === p.origin + '/authorization/v1/status' && response.request().method() === 'POST', {timeout: 10000}).catch(() => null);
+    const selectionResponse = page.waitForResponse(response => response.url() === p.origin + '/receive/selection' && response.request().method() === 'GET', {timeout: 10000}).catch(() => null);
+    await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();
+    await connected(page); // Original browser readiness predicate must fail first on pre-client product source.
+    if (routeWork) await routeWork;
+    assert.equal(Boolean(forwarded), true, 'a real server proof reply was captured');
+    assert.equal(jarAbsent, true, 'Node proof completion must not mutate the browser cookie jar');
+    assert.equal(routeFailed, false); assert.equal(fulfilled, true);
+    const actualStatus = await statusResponse; assert.ok(actualStatus, 'actual post-delivery status must be observed');
+    const statusText = await actualStatus.text(), status = JSON.parse(statusText);
+    const actualSelection = await selectionResponse; assert.ok(actualSelection, 'normal default DETAIL selection read observed');
+    const cookies = (await context.cookies(p.origin)).filter(cookie => cookie.name === cookieName);
+    const cookieMatches = cookies.length === 1 && cookies[0].value === forwarded.cookie; jarMatches = cookieMatches;
+    const afterFiles = await fileHashes(), sameFiles = JSON.stringify(afterFiles) === JSON.stringify(forwarded.beforeFiles);
+    const state = await page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {const request = indexedDB.open('wstx-authorization-v1', 1); request.onupgradeneeded = () => request.transaction.abort(); request.onerror = () => reject(new Error('Retained store missing')); request.onsuccess = () => resolve(request.result);});
+      let credential;
+      try {credential = await new Promise((resolve, reject) => {const request = db.transaction('credential').objectStore('credential').get('current'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('Retained store unavailable'));});} finally {db.close();}
+      return {connection: connection.dataset.state, socketState: socket?.readyState, profile: profileData?.profile_id, boot: profileData?.boot_id,
+        authorization: window.stationAuthorization.snapshot(), keyPresent: credential?.key instanceof CryptoKey, extractable: credential?.key?.extractable,
+        usages: credential?.key?.usages, algorithm: credential?.key?.algorithm, pendingEnrollment: credential?.pending_enrollment,
+        loginHidden: document.querySelector('#login').hidden, tokenEmpty: document.querySelector('#token').value === '', localKeys: Object.keys(localStorage), sessionKeys: Object.keys(sessionStorage)};
+    });
+    assert.equal(actualStatus.status(), 200); assert.equal(Buffer.byteLength(statusText) <= 1024, true);
+    assert.deepEqual(Object.keys(status).sort(), ['commissioned', 'condition', 'error', 'receive_state', 'retry_after_ms', 'scope', 'version']);
+    assert.equal(status.version, 1); assert.deepEqual(Object.keys(status.scope).sort(), ['profile_id', 'radio_id', 'safety_revision']);
+    assert.equal(status.scope.profile_id, p.document.profile_id); assert.equal(status.scope.safety_revision, 1);
+    assert.match(status.scope.radio_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(status.condition, 'disabled'); assert.equal(status.commissioned, false); assert.equal(status.error, null); assert.equal(status.retry_after_ms, null);
+    assert.deepEqual(status.receive_state, {audio: 'closed', decoder: null}); // Strict no-job observer prerequisite.
+    const observerReply = await new Promise((resolve, reject) => {
+      observer = new WebSocket(p.origin.replace('https:', 'wss:') + '/ws', 'wstx.v1', {origin: p.origin, rejectUnauthorized: false, headers: {Cookie: cookieName + '=' + forwarded.cookie}});
+      observer.on('error', () => {});
+      observer.once('error', () => {clearTimeout(openTimer); reject(new Error('Owned observer upgrade failed'));});
+      observer.once('close', () => {clearTimeout(openTimer); reject(new Error('Owned observer closed before reply'));});
+      observer.on('message', data => {let value; try {value = JSON.parse(String(data));} catch {value = {};}
+        frames.push({bytes: Buffer.byteLength(data), type: value.type, id: value.id, heartbeat: value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 2 && value.v === 1 && value.type === 'heartbeat'});});
+      observer.once('open', () => {clearTimeout(openTimer); receive(observer, 2000).then(resolve, () => reject(new Error('Owned observer response failed'))); observer.send(JSON.stringify({v: 1, type: 'station.get', id: 7901}));});
+      openTimer = setTimeout(() => {observer.terminate(); reject(new Error('Owned observer upgrade exceeded5s'));}, 5000);
+    });
+    const authResponses = timeline.filter(item => item.status !== undefined && (item.path === '/session' || item.path.startsWith('/authorization/v1/')));
+    t.diagnostic(JSON.stringify({scope: 'real proof delivery baseline only; no reordering/loss claim', proofBytes: forwarded.proofBytes,
+      absentBeforeDelivery: jarAbsent, cookieMatches, sameFiles, timeline, state, status, selectionStatus: actualSelection.status(), observerFrames: frames}));
+    assert.equal(cookieMatches, true); assert.equal(cookies[0].httpOnly, true); assert.equal(cookies[0].secure, true); assert.equal(cookies[0].sameSite, 'Strict');
+    assert.equal(sameFiles, true, 'proof/status do not rewrite the already-enrolled verifier or profile');
+    assert.deepEqual(authResponses.map(item => item.status), [204, 200, 200, 200, 204, 200], 'exact6 shared admissions, including session');
+    assert.equal(actualSelection.status(), 200); assert.equal(state.connection, 'connected'); assert.equal(state.socketState, 1);
+    assert.equal(state.profile, p.document.profile_id); assert.deepEqual(state.authorization.scope, status.scope); assert.equal(state.authorization.ready, true);
+    assert.equal(state.keyPresent, true); assert.equal(state.extractable, false); assert.deepEqual(state.usages, ['sign']);
+    assert.equal(state.algorithm.name, 'ECDSA'); assert.equal(state.algorithm.namedCurve, 'P-256'); assert.equal(state.pendingEnrollment, false);
+    assert.equal(state.loginHidden, true); assert.equal(state.tokenEmpty, true); assert.deepEqual(state.localKeys, []); assert.deepEqual(state.sessionKeys, []);
+    assert.equal(observerReply.v, 1); assert.equal(observerReply.type, 'station.status'); assert.equal(observerReply.id, 7901);
+    assert.equal(observerReply.data.radio, 'unconfigured'); assert.equal(typeof observerReply.data.version, 'string');
+    assert.equal(frames.every(frame => frame.bytes <= 1024 && (frame.heartbeat || frame.type === 'station.status' && frame.id === 7901)), true);
+  } finally {
+    clearTimeout(deliveryTimer); clearTimeout(openTimer);
+    if (pendingRoute) await pendingRoute.abort('failed').catch(() => {});
+    if (routeWork) await routeWork;
+    try {
+      if (observer && observer.readyState !== WebSocket.CLOSED) await new Promise((resolve, reject) => {
+        observer.once('close', () => {clearTimeout(closeTimer); resolve();});
+        closeTimer = setTimeout(() => {observerForced = true; observer.terminate(); reject(new Error('Owned observer close exceeded5s'));}, 5000);
+        observer.close();
+      });
+    } finally {clearTimeout(closeTimer); await context.close(); t.diagnostic(JSON.stringify({scope: 'owned delivery baseline cleanup', observerForced, proofObservation, routeFailed, fulfilled, jarAbsent, jarMatches, timeline, observerFrames: frames}));}
   }
 });
 
