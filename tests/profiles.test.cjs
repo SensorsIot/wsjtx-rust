@@ -137,6 +137,32 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
   }), true);
 });
 
+test('TC-022-006: missing selected authorization asset fails closed', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage(); await page.goto(p.origin);
+  await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  let blockedAssets = 0, websocketAttempts = 0, profileReads = 0, bootstrapPosts = 0;
+  page.on('websocket', () => websocketAttempts++);
+  page.on('request', request => {
+    if (request.url().endsWith('/profile')) profileReads++;
+    if (request.url().endsWith('/session') && request.method() === 'POST') bootstrapPosts++;
+  });
+  await page.route('**/authorization.js', async route => {blockedAssets++; await route.abort();});
+  await page.reload();
+  try {await page.locator('#connection').filter({hasText: 'Authorization component unavailable'}).waitFor();}
+  catch (error) {
+    t.diagnostic(JSON.stringify({blockedAssets, websocketAttempts, profileReads, bootstrapPosts,
+      connection: await page.locator('#connection').textContent()}));
+    assert.equal(websocketAttempts, 0, 'missing selected manager must never initiate a socket'); throw error;
+  }
+  assert.equal(blockedAssets, 1);
+  assert.equal(websocketAttempts, 0); assert.equal(profileReads, 0); assert.equal(bootstrapPosts, 0);
+  assert.equal(await page.locator('#connection').getAttribute('data-state'), 'stale');
+  assert.equal(await page.locator('#login').isHidden(), true, 'a missing component cannot fall back to transient login');
+});
+
 for (const action of ['reload', 'save']) test(`TC-022-006: held ${action} body cannot cross authorization renewal`, {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());

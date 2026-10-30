@@ -5,9 +5,11 @@ const radio = document.querySelector('#radio');
 const login = document.querySelector('#login');
 const refresh = document.querySelector('#refresh');
 const profileMode = document.body.dataset.profile === 'true';
-const authorization = profileMode && location.protocol === 'https:' ? window.stationAuthorization : null;
-const authorized = () => !authorization || authorization.snapshot().ready;
-const stationFetch = (path, options) => authorization ? authorization.fetch(path, options) : fetch(path, options);
+const selectedHttps = profileMode && location.protocol === 'https:';
+const authorization = selectedHttps ? window.stationAuthorization : null;
+const authorized = () => !selectedHttps || authorization?.snapshot().ready === true;
+const stationFetch = (path, options) => authorization ? authorization.fetch(path, options) : selectedHttps ?
+  Promise.reject(new Error('Station authorization component unavailable')) : fetch(path, options);
 const stationContext = (current, authEpoch) => current === socket && current?.readyState === WebSocket.OPEN &&
   authorized() && (!authorization || authorization.snapshot().epoch === authEpoch);
 const settingsForm = document.querySelector('#settings');
@@ -32,6 +34,9 @@ let connecting = 0;
 async function connect() {
   clearTimeout(timer);
   const attempt = ++connecting;
+  if (selectedHttps && !authorization) {
+    stale(); connection.textContent = 'Authorization component unavailable · station data stale'; login.hidden = true; return;
+  }
   if (authorization) {
     try {await authorization.ensureReady();}
     catch {
@@ -87,6 +92,7 @@ login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
   let secret = input.value; input.value = '';
   try {
+    if (selectedHttps && !authorization) throw new Error('Authorization component unavailable');
     if (authorization) {const submitted = authorization.bootstrap(secret); secret = null; await submitted;}
     else {const response = await fetch('/session', {method: 'POST', body: secret}); secret = null; if (!response.ok) throw new Error('Access denied');}
     document.querySelector('#login-error').textContent = ''; clearTimeout(timer);
