@@ -393,6 +393,115 @@ test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000
   }
 });
 
+// Proves CL-022-01/02/05: actual record corruption/erasure is distinct from server-grant revocation.
+test('TC-022-006: actual browser reports corrupt and erased retained credentials', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true); let completed = 0;
+  for (const mode of [1, 2]) { // Corrupt present record FIRST; erased record second, in independent profile/process buckets.
+    const p = profiles[mode - 1], context = await browser.newContext({ignoreHTTPSErrors: true});
+    const cookieName = `wstx_session_${p.document.profile_id}`, assets = [], assetWork = [], setup = [];
+    const report = {storage_mode: mode, stage: 0, qualified: false, assertions_passed: false, asset_error: false, assets,
+      auth_requests: 0, protected_requests: 0, mutation_requests: 0, websocket_creates: 0, foreign_requests: 0};
+    let oldPage, page, beforeFiles, cookie, metadataHash, observeNetwork = true;
+    const hashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
+    const captureAssets = (target, generation) => target.on('response', response => {
+      const url = new URL(response.url()), code = url.pathname === '/app.js' ? 1 : url.pathname === '/authorization.js' ? 2 : 0;
+      if (url.origin !== p.origin || !code) return;
+      assetWork.push((async () => {try {const body = await response.body(); if (assets.length >= 8 || body.length > 131072) {report.asset_error = true; return;} assets.push([generation, code, response.status(), crypto.createHash('sha256').update(body).digest('hex')]);} catch {report.asset_error = true;}})());
+    });
+    const profileControl = async () => {try {return (await request(p.origin, 'GET', undefined, {Cookie: cookieName + '=' + cookie})).status === 200;} catch {throw new Error('Independent retained-cookie control failed');}};
+    try {
+      oldPage = await context.newPage(); captureAssets(oldPage, 1);
+      oldPage.on('response', response => {const u = new URL(response.url()); if (u.origin !== p.origin) return; const code = ({'/session': 1, '/authorization/v1/bootstrap-scope': 2, '/authorization/v1/enroll': 3, '/authorization/v1/challenge': 4, '/authorization/v1/proof': 5, '/authorization/v1/status': 6})[u.pathname]; if (code) setup.push([code, response.status()]);});
+      await oldPage.goto(p.origin); await oldPage.locator('#login').waitFor({state: 'visible'});
+      try {await oldPage.locator('#token').fill(p.env.WSTX_TOKEN); await oldPage.locator('#login button').click();} catch {throw new Error('Controlled bootstrap input failed');}
+      await connected(oldPage); await Promise.all(assetWork);
+      report.setup_six = JSON.stringify(setup) === JSON.stringify([[1, 204], [2, 200], [3, 200], [4, 200], [5, 204], [6, 200]]);
+      report.setup_selection = await oldPage.evaluate(async () => (await window.stationAuthorization.fetch('/receive/selection')).status === 200);
+      const selected = (await context.cookies(p.origin)).filter(value => value.name === cookieName);
+      if (selected.length !== 1) throw new Error('Selected transport prerequisite failed');
+      cookie = selected[0].value; report.cookie_flags = selected[0].httpOnly && selected[0].secure && selected[0].sameSite === 'Strict';
+      beforeFiles = await hashes(); report.server_cookie_before = await profileControl(); report.stage = 1;
+      const fault = await oldPage.evaluate(async mode => {
+        const db = await new Promise((resolve, reject) => {const r = indexedDB.open('wstx-authorization-v1', 1); r.onupgradeneeded = () => r.transaction.abort(); r.onerror = () => reject(new Error('Controlled credential read failed')); r.onsuccess = () => resolve(r.result);});
+        const read = () => new Promise((resolve, reject) => {const tx = db.transaction('credential', 'readonly'); let value; tx.objectStore('credential').get('current').onsuccess = e => {value = e.target.result;}; tx.oncomplete = () => resolve(value); tx.onabort = tx.onerror = () => reject(new Error('Controlled credential read failed'));});
+        const keyValid = v => Boolean(v?.key instanceof CryptoKey && v.key.type === 'private' && !v.key.extractable && v.key.algorithm.name === 'ECDSA' && v.key.algorithm.namedCurve === 'P-256' && v.key.usages.join(',') === 'sign');
+        const digest = async v => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([v.origin, v.scope, v.grant_id, v.public_key, v.enrollment_id, v.pending_enrollment])))), b => b.toString(16).padStart(2, '0')).join('');
+        try {
+          const before = await read(); const initial = Boolean(before?.version === 1 && before.origin === location.origin && before.pending_enrollment === false && keyValid(before));
+          if (!initial) throw new Error('Controlled credential prerequisite failed');
+          const metadataHash = await digest(before);
+          await new Promise((resolve, reject) => {const tx = db.transaction('credential', 'readwrite'), store = tx.objectStore('credential'); if (mode === 1) store.put({...before, version: 0}, 'current'); else store.delete('current'); tx.oncomplete = resolve; tx.onabort = tx.onerror = () => reject(new Error('Controlled credential fault failed'));});
+          const after = await read();
+          return {initial, committed: true, present: after !== undefined, actual_fault: mode === 1 ? after?.version === 0 && keyValid(after) && await digest(after) === metadataHash : after === undefined, metadata_hash: metadataHash};
+        } finally {db.close();}
+      }, mode);
+      metadataHash = fault.metadata_hash;
+      report.fault_committed = fault.initial && fault.committed && fault.actual_fault && fault.present === (mode === 1);
+      await oldPage.close(); report.old_page_closed = oldPage.isClosed(); report.stage = 2;
+      page = await context.newPage(); captureAssets(page, 2);
+      page.on('websocket', () => {if (observeNetwork) report.websocket_creates++;});
+      page.on('request', req => {if (!observeNetwork) return; const u = new URL(req.url()); if (u.origin !== p.origin) {report.foreign_requests++; return;} if (u.pathname === '/session' || u.pathname.startsWith('/authorization/v1/')) report.auth_requests++; if (u.pathname === '/profile' || u.pathname.startsWith('/receive/') || u.pathname.startsWith('/recordings')) report.protected_requests++; if (!['GET', 'HEAD'].includes(req.method())) report.mutation_requests++;});
+      await page.addInitScript(mode => {
+        const probe = window.__actualStorageFault = {mode, installed: false, observer_error: false, start: null, end: null, frozen: false,
+          opens: 0, reads: 0, writes: 0, generates: 0, initial_classification_ms: null, ready_seen: false, connected_seen: false,
+          invalid_prompt_seen: false, eligibility_changed_after_classification: false, token_input_seen: false, events: [], overflow: false, last: null, terminal: null};
+        const observing = () => !probe.frozen && (probe.start === null || performance.now() <= probe.end);
+        const sample = () => {
+          if (!observing()) return;
+          const auth = window.stationAuthorization?.snapshot(), connection = document.querySelector('#connection'), login = document.querySelector('#login'), token = document.querySelector('#token');
+          const connected = connection?.dataset.state === 'connected', hidden = Boolean(login?.hidden), reason = Boolean(connection?.textContent.includes(mode === 1 ? 'Browser credential invalid' : 'Browser credential missing'));
+          probe.ready_seen ||= Boolean(auth?.ready); probe.connected_seen ||= connected; probe.invalid_prompt_seen ||= mode === 1 && Boolean(login && !hidden); probe.token_input_seen ||= Boolean(token?.value);
+          const now = performance.now(), classified = Boolean(auth?.state === 'unavailable' && !auth.ready && !connected && login && hidden === (mode === 1) && reason);
+          if (probe.start !== null && classified && probe.initial_classification_ms === null) probe.initial_classification_ms = Math.max(0, now - probe.start);
+          if (probe.initial_classification_ms !== null && login && hidden !== (mode === 1)) probe.eligibility_changed_after_classification = true;
+          const state = ({unavailable: 1, recovering: 2, authorizing: 3, ready: 4})[auth?.state] || 0;
+          const value = [probe.start === null ? -1 : Math.round(now - probe.start), state, Number.isSafeInteger(auth?.epoch) ? auth.epoch : -1, Boolean(auth?.ready), connected, hidden, reason];
+          const last = probe.events.at(-1); if (!last || value.slice(1).some((v, i) => v !== last[i + 1])) {if (probe.events.length < 128) probe.events.push(value); else probe.overflow = true;}
+          if (probe.start !== null) probe.terminal = {at_ms: now - probe.start, ready: Boolean(auth?.ready), connected, login_hidden: hidden, reason, state};
+        };
+        try {
+          const open = IDBFactory.prototype.open; IDBFactory.prototype.open = function(...args) {if (observing() && args[0] === 'wstx-authorization-v1') probe.opens++; return Reflect.apply(open, this, args);};
+          for (const method of ['get', 'add', 'put', 'delete', 'clear']) {const original = IDBObjectStore.prototype[method]; IDBObjectStore.prototype[method] = function(...args) {try {if (observing() && this.transaction.db.name === 'wstx-authorization-v1' && this.name === 'credential') {if (method === 'get' && args[0] === 'current') probe.reads++; else if (method !== 'get') probe.writes++;}} catch {probe.observer_error = true;} return Reflect.apply(original, this, args);};}
+          const generate = SubtleCrypto.prototype.generateKey; SubtleCrypto.prototype.generateKey = function(...args) {if (observing()) probe.generates++; return Reflect.apply(generate, this, args);};
+          probe.installed = true;
+        } catch {probe.observer_error = true;}
+        addEventListener('station-authorization', sample);
+        addEventListener('DOMContentLoaded', () => {
+          probe.start = performance.now(); probe.end = probe.start + 10000;
+          for (const element of [document.querySelector('#connection'), document.querySelector('#login')]) if (element) new MutationObserver(sample).observe(element, {attributes: true, childList: true, subtree: true, characterData: true});
+          sample();
+          const timer = setInterval(() => {if (performance.now() > probe.end) {probe.frozen = true; probe.collected_at_ms = performance.now() - probe.start; clearInterval(timer);} else sample();}, 25);
+        }, {once: true});
+      }, mode);
+      await page.goto(p.origin, {waitUntil: 'domcontentloaded'}); report.stage = 3;
+      await page.waitForFunction(() => window.__actualStorageFault?.frozen === true, null, {timeout: 12000});
+      const view = await page.evaluate(() => {const p = window.__actualStorageFault; return {installed: p.installed, observer_error: p.observer_error, frozen: p.frozen, start_valid: Number.isFinite(p.start) && p.end === p.start + 10000, collected_at_ms: p.collected_at_ms, opens: p.opens, reads: p.reads, writes: p.writes, generates: p.generates, initial_classification_ms: p.initial_classification_ms, ready_seen: p.ready_seen, connected_seen: p.connected_seen, invalid_prompt_seen: p.invalid_prompt_seen, eligibility_changed_after_classification: p.eligibility_changed_after_classification, token_input_seen: p.token_input_seen, events: p.events, overflow: p.overflow, terminal: p.terminal};});
+      report.observation = view; observeNetwork = false; report.stage = 4; // Freeze counters before readonly record/server diagnostics; browser samples ended at the fixed deadline.
+      report.record_preserved = await page.evaluate(async ({mode, expected}) => {
+        const db = await new Promise((resolve, reject) => {const r = indexedDB.open('wstx-authorization-v1', 1); r.onupgradeneeded = () => r.transaction.abort(); r.onerror = () => reject(new Error('Final credential inspection failed')); r.onsuccess = () => resolve(r.result);});
+        try {const value = await new Promise((resolve, reject) => {const tx = db.transaction('credential', 'readonly'); let v; tx.objectStore('credential').get('current').onsuccess = e => {v = e.target.result;}; tx.oncomplete = () => resolve(v); tx.onabort = tx.onerror = () => reject(new Error('Final credential inspection failed'));});
+          if (mode === 2) return value === undefined;
+          if (!value || value.version !== 0 || !(value.key instanceof CryptoKey) || value.key.type !== 'private' || value.key.extractable || value.key.algorithm.name !== 'ECDSA' || value.key.algorithm.namedCurve !== 'P-256' || value.key.usages.join(',') !== 'sign') return false;
+          const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([value.origin, value.scope, value.grant_id, value.public_key, value.enrollment_id, value.pending_enrollment])))), b => b.toString(16).padStart(2, '0')).join(''); return hash === expected;
+        } finally {db.close();}
+      }, {mode, expected: metadataHash});
+      report.cookie_unchanged = (await context.cookies(p.origin)).some(value => value.name === cookieName && value.value === cookie);
+      report.files_unchanged = JSON.stringify(await hashes()) === JSON.stringify(beforeFiles); report.server_cookie_after = await profileControl();
+      await Promise.all(assetWork); report.assets_complete = [1, 2].every(generation => [1, 2].every(code => assets.filter(v => v[0] === generation && v[1] === code && v[2] === 200).length === 1));
+      report.qualified = report.setup_six && report.setup_selection && report.cookie_flags && report.server_cookie_before && report.fault_committed && report.old_page_closed && view.installed && !view.observer_error && view.frozen && view.start_valid && view.collected_at_ms >= 10000 && view.terminal?.at_ms <= 10000 && view.opens >= 2 && view.reads >= 2 && !view.overflow && !report.asset_error && report.assets_complete && report.cookie_unchanged && report.server_cookie_after;
+      assert.equal(report.qualified, true, 'real storage fault and complete observation must qualify');
+      assert.equal(view.terminal.login_hidden, mode === 1, 'present-invalid credentials cannot offer token replacement; missing credentials permit explicit authorization');
+      assert.equal(view.initial_classification_ms !== null && view.initial_classification_ms <= 2000, true, 'fresh-document credential classification remains explicit within2s');
+      assert.equal(view.terminal.reason && view.terminal.state !== 4, true); assert.equal(view.ready_seen || view.connected_seen, false); assert.equal(view.invalid_prompt_seen, false); assert.equal(view.eligibility_changed_after_classification, false); assert.equal(view.token_input_seen, false);
+      assert.equal(report.auth_requests + report.protected_requests + report.mutation_requests + report.websocket_creates + report.foreign_requests, 0);
+      assert.equal(view.writes + view.generates, 0); assert.equal(report.record_preserved, true); assert.equal(report.files_unchanged, true);
+      report.assertions_passed = true; completed++;
+    } finally {
+      await Promise.all(assetWork); t.diagnostic(JSON.stringify(report)); await context.close();
+    }
+  }
+  assert.equal(completed, 2); t.diagnostic(JSON.stringify({storage_modes_completed: completed}));
+});
 // Executes the actual authorization owner against independent platform boundaries; the browser cases separately prove real authority.
 test('TC-022-006: authorization owner distinguishes credential lookup and retained failures', {timeout: 45000}, async t => {
   const vm = require('node:vm'), source = await fs.readFile(path.resolve('client/authorization.js'), 'utf8');
