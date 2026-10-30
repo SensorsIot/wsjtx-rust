@@ -1303,6 +1303,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
     await page.addInitScript(watchUnknown => {
       window.__enrollmentDcl = 0; window.__enrollmentReleased = false;
       window.__enrollmentSafety = {earlyReady: false, earlyConnected: false, earlySocket: false, loginExposed: false, watchUnknown};
+      window.__enrollmentStartup = {event_seen: false, event_valid: false, event_condition: 0, event_status: 0, event_state: 0, event_ready: false, event_epoch: 0};
       const NativeWebSocket = window.WebSocket;
       window.WebSocket = new Proxy(NativeWebSocket, {construct(target, args, newTarget) {if (!window.__enrollmentReleased) window.__enrollmentSafety.earlySocket = true; return Reflect.construct(target, args, newTarget);}});
       const inspect = records => {
@@ -1313,7 +1314,16 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
       new MutationObserver(inspect).observe(document, {subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['data-state','hidden']});
       window.__enrollmentInspect = () => inspect([]);
       addEventListener('DOMContentLoaded', () => {window.__enrollmentDcl = performance.now(); inspect([]);}, {once: true});
-      addEventListener('station-authorization', event => {if (event.detail.ready && !window.__enrollmentReleased) window.__enrollmentSafety.earlyReady = true;});
+      addEventListener('station-authorization', event => {
+        if (event.detail.ready && !window.__enrollmentReleased) window.__enrollmentSafety.earlyReady = true;
+        try {
+          const detail = event.detail, condition = ['credential-missing','credential-invalid','credential-storage-unavailable','retained-transient','retained-rejected','enrollment-pending','explicit-in-progress'].indexOf(detail.authorizationCondition) + 1;
+          const status = [null,401,403,429,503].indexOf(detail.status) + 1, state = ['unavailable','recovering','authorizing','ready'].indexOf(detail.state) + 1;
+          const valid = (condition > 0 || detail.authorizationCondition === null) && status > 0 && state > 0 && typeof detail.ready === 'boolean' && Number.isSafeInteger(detail.epoch) && detail.epoch >= 0;
+          window.__enrollmentStartup = {event_seen: true, event_valid: valid, event_condition: valid ? condition : 0,
+            event_status: valid ? status : 0, event_state: valid ? state : 0, event_ready: valid && detail.ready, event_epoch: valid ? detail.epoch : 0};
+        } catch {window.__enrollmentStartup = {event_seen: true, event_valid: false, event_condition: 0, event_status: 0, event_state: 0, event_ready: false, event_epoch: 0};}
+      });
     }, !initial);
     page.on('request', req => {const u = new URL(req.url()); if (u.origin !== p.origin) return;
       if (u.pathname === '/session' || u.pathname.startsWith('/authorization/v1/')) {const code = authCode(u.pathname); attempts[initial ? 0 : 1][code]++; if (u.pathname === '/session') wire[initial ? 0 : 1][code]++;}
@@ -1381,7 +1391,58 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   let page = await openBrowser(); const firstBrowser = processes();
   assert.equal(firstBrowser.length > 0 && firstBrowser.some(v => v.OwnProfile && v.ProcessId > 0 && Boolean(v.CreationDate)), true);
   const profileBefore = await fs.readFile(path.join(p.dir, 'profile.json'));
-  await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible', timeout: 10000});
+  await page.goto(p.origin);
+  try {await page.locator('#login').waitFor({state: 'visible', timeout: 10000});}
+  catch (originalError) {
+    try {
+      const unknown = {manager_present: false, snapshot_available: false, snapshot_state: 0, snapshot_ready: false, snapshot_epoch: 0,
+        profile_mode: false, https: false, secure_context: false, login_present: false, login_hidden: false, display_none: false,
+        visibility_hidden: false, positive_box: false, connection_state: 0, connection_reason: 0,
+        event_seen: false, event_valid: false, event_condition: 0, event_status: 0, event_state: 0, event_ready: false, event_epoch: 0};
+      let timer, result;
+      try {
+        result = await Promise.race([
+          page.evaluate(() => {
+            const manager = window.stationAuthorization, login = document.querySelector('#login'), connection = document.querySelector('#connection');
+            let snapshot; try {snapshot = manager?.snapshot();} catch {}
+            const state = ['unavailable','recovering','authorizing','ready'].indexOf(snapshot?.state) + 1;
+            const valid = state > 0 && typeof snapshot?.ready === 'boolean' && Number.isSafeInteger(snapshot?.epoch) && snapshot.epoch >= 0;
+            const style = login ? getComputedStyle(login) : null, box = login?.getBoundingClientRect();
+            const reasons = ['Browser credential missing \u00b7 authorize this station','Browser credential invalid \u00b7 station data stale',
+              'Browser credential storage unavailable \u00b7 station data stale','Retained authorization unavailable \u00b7 retrying',
+              'Authorization rate limited \u00b7 station data stale','Authorization persistence unavailable \u00b7 station data stale',
+              'Retained authorization not accepted or identity changed \u00b7 station data stale','Authorization enrollment outcome unknown \u00b7 station data stale',
+              'Authorization in progress \u00b7 station data stale','Authorization unavailable \u00b7 station data stale',
+              'Authorization component unavailable \u00b7 station data stale','Disconnected \u00b7 stale'];
+            const event = window.__enrollmentStartup;
+            return {manager_present: Boolean(manager), snapshot_available: valid, snapshot_state: valid ? state : 0,
+              snapshot_ready: valid && snapshot.ready, snapshot_epoch: valid ? snapshot.epoch : 0,
+              profile_mode: document.body.dataset.profile === 'true', https: location.protocol === 'https:', secure_context: isSecureContext === true,
+              login_present: Boolean(login), login_hidden: login?.hidden === true, display_none: style?.display === 'none',
+              visibility_hidden: style?.visibility === 'hidden', positive_box: Boolean(box && box.width > 0 && box.height > 0),
+              connection_state: ['stale','connected'].indexOf(connection?.dataset.state) + 1, connection_reason: reasons.indexOf(connection?.textContent) + 1,
+              event_seen: event?.event_seen === true, event_valid: event?.event_valid === true,
+              event_condition: event?.event_condition ?? 0, event_status: event?.event_status ?? 0, event_state: event?.event_state ?? 0,
+              event_ready: event?.event_ready === true, event_epoch: event?.event_epoch ?? 0};
+          }).then(value => ({kind: 1, value}), () => ({kind: 2})),
+          new Promise(resolve => {timer = setTimeout(() => resolve({kind: 3}), 500);})
+        ]);
+      } finally {clearTimeout(timer);}
+      const ranges = {snapshot_state: 4, snapshot_epoch: Number.MAX_SAFE_INTEGER, connection_state: 2, connection_reason: 12,
+        event_condition: 7, event_status: 5, event_state: 4, event_epoch: Number.MAX_SAFE_INTEGER};
+      const booleanKeys = Object.keys(unknown).filter(key => !Object.hasOwn(ranges, key));
+      const value = result?.value, shape = result?.kind === 1 && value && Object.keys(value).sort().join(',') === Object.keys(unknown).sort().join(',') &&
+        booleanKeys.every(key => typeof value[key] === 'boolean') && Object.entries(ranges).every(([key, max]) => Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= max);
+      const requestCounts = [counts.session, counts.enroll, counts.followup, counts.mutation, counts.sockets, counts.protectedBeforeReceipt];
+      const countersValid = requestCounts.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 1000000);
+      const pathValid = Number.isSafeInteger(profileDir.length) && profileDir.length <= 32767;
+      t.diagnostic(JSON.stringify({startup_observation: committed ? 1 : 2, diagnostic_observed: Boolean(shape && countersValid && pathValid),
+        diagnostic_timeout: result?.kind === 3, diagnostic_error: result?.kind === 2 || (result?.kind === 1 && !shape) || !countersValid || !pathValid,
+        profile_path_length: pathValid ? profileDir.length : 0, counters_valid: countersValid, request_counts: countersValid ? requestCounts : [0,0,0,0,0,0],
+        ...(shape && countersValid && pathValid ? value : unknown)}));
+    } catch {}
+    throw originalError;
+  }
   try {await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();} catch {throw new Error('Enrollment bootstrap interaction unavailable');}
   let enrollmentTimer;
   try {await Promise.race([enrollmentSeen, new Promise((_, reject) => {enrollmentTimer = setTimeout(() => reject(new Error('Enrollment interception unavailable')), 10000);})]);} finally {clearTimeout(enrollmentTimer);}
