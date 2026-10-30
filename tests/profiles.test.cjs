@@ -398,8 +398,12 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
   const {profiles, apps} = await fixture(t, true), p = profiles[0], context = await browser.newContext({ignoreHTTPSErrors: true});
   const held = {}, firstSeen = {}, firstHandled = {}, captured = {}, ended = {}, wire = [], inFlightProofs = new Set(), requestInfo = new WeakMap();
   const statusReplies = {A: [], B: []}, pages = {}, truth = [], frames = [], counts = {A: 0, B: 0}, testProbe = {}, protectedReads = [], expectedObserverIds = new Set(), seenObserverIds = new Set();
+  // Safe timeline tuples: wall time, kind, document(1/2)/observer(3), path/id, status/count, Boolean, request id.
+  // Kinds: request/response/finish/fail=1..4, actual forwarded proof=5, watchdog=6, UI truth=7/8, socket create/close/error=9..11, action=12, terminal probe=13.
+  const timeline = []; let timelineOverflow = false, liveSockets = 0, socketSerial = 0, maxSockets = 0, requestSerial = 0;
+  const event = (kind, label, code = 0, status = 0, ok = false, requestId = 0) => {if (timeline.length < 512) timeline.push([Date.now(), kind, label === 'A' ? 1 : label === 'B' ? 2 : 3, code, status, Boolean(ok), requestId]); else timelineOverflow = true;};
   const cookieName = `wstx_session_${p.document.profile_id}`, pendingTimers = new Set();
-  let phase = 0, armed = false, t0 = -1, deadline = -1, zeroAtT0 = false, taggedAt = -1, observer, observerForced = false, originalFrozen = false;
+  let phase = 0, armed = false, t0 = -1, deadline = -1, deadlineWall = -1, zeroAtT0 = false, taggedAt = -1, observer, observerForced = false, originalFrozen = false;
   const metrics = {mode: deliveryMode === 'reverse' ? 1 : 2, qualified: false, recovered: false, route_error: false, a_pending_before_action: false, save_clicked: false, save_blocked: false, observer_before: false, observer_after: false, observer_final: false};
   const authCode = path => ({'/session': 1, '/authorization/v1/bootstrap-scope': 2, '/authorization/v1/enroll': 3, '/authorization/v1/challenge': 4, '/authorization/v1/proof': 5, '/authorization/v1/status': 6}[path] || 0);
   const hashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
@@ -412,29 +416,40 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
   }
   const publicStatusValid = (value, scope) => Boolean(value && Object.keys(value).sort().join(',') === 'commissioned,condition,error,receive_state,retry_after_ms,scope,version' && value.version === 1 && value.scope && Object.keys(value.scope).sort().join(',') === 'profile_id,radio_id,safety_revision' && value.scope.profile_id === scope.profile_id && value.scope.radio_id === scope.radio_id && value.scope.safety_revision === scope.safety_revision && value.condition === 'disabled' && value.commissioned === false && value.error === null && value.retry_after_ms === null && value.receive_state && Object.keys(value.receive_state).sort().join(',') === 'audio,decoder' && value.receive_state.audio === 'closed' && value.receive_state.decoder === null);
   function watchTruth(page, at) {
+    const label = page === pages.A ? 'A' : 'B'; event(7, label, 0, 0, false);
     const record = {at, done: false, ok: false}; truth.push(record);
-    page.waitForFunction(() => !window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state !== 'connected', null, {timeout: 2000}).then(() => {record.done = true; record.ok = performance.now() - at <= 2000;}, () => {record.done = true;});
+    page.waitForFunction(() => !window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state !== 'connected', null, {timeout: 2000}).then(() => {record.done = true; record.ok = performance.now() - at <= 2000; event(8, label, Math.round(performance.now() - at), 0, record.ok);}, () => {record.done = true; event(8, label, Math.round(performance.now() - at), 0, false);});
   }
   async function instrument(page, label, retained) {
     pages[label] = page; captured[label] = {}; captured[label].promise = new Promise(resolve => {captured[label].resolve = resolve;}); ended[label] = {}; ended[label].promise = new Promise(resolve => {ended[label].resolve = resolve;});
     await page.addInitScript(known => {
-      const sample = () => {if (window.__cookieFault?.retained && document.querySelector('#login') && !document.querySelector('#login').hidden) window.__cookieFault.prompt = true;};
-      window.__cookieFault = {retained: known, prompt: false, tokenSubmits: 0, submits: []};
+      window.__cookieFault = {retained: known, prompt: false, tokenSubmits: 0, submits: [], events: [], overflow: false, windowEnd: 0, terminal: null};
+      const sample = () => {
+        const f = window.__cookieFault, now = Date.now(), auth = window.stationAuthorization?.snapshot(), login = document.querySelector('#login'), connection = document.querySelector('#connection');
+        const prompt = Boolean(f.retained && login && !login.hidden); if (prompt && (!f.windowEnd || now <= f.windowEnd)) f.prompt = true;
+        const value = [now, Number.isSafeInteger(auth?.epoch) ? auth.epoch : -1, ({unavailable: 1, recovering: 2, authorizing: 3, ready: 4})[auth?.state] || 0, Boolean(auth?.ready), prompt, ({connected: 1, connecting: 2, disconnected: 3})[connection?.dataset.state] || 0];
+        const last = f.events.at(-1); if (!last || value.slice(1).some((v, i) => v !== last[i + 1])) {if (f.events.length < 256) f.events.push(value); else f.overflow = true;}
+        if (f.windowEnd && now <= f.windowEnd) f.terminal = {at: now, ready: Boolean(auth?.ready && connection?.dataset.state === 'connected' && typeof socket !== 'undefined' && socket?.readyState === WebSocket.OPEN), boot: typeof profileData !== 'undefined' ? profileData?.boot_id : null};
+      };
       addEventListener('station-authorization', sample);
-      addEventListener('DOMContentLoaded', () => {const login = document.querySelector('#login'); if (login) new MutationObserver(sample).observe(login, {attributes: true, attributeFilter: ['hidden']}); sample();});
-      addEventListener('submit', event => {if (event.target.id === 'login') window.__cookieFault.tokenSubmits++; if (event.target.id === 'settings') window.__cookieFault.submits.push({trusted: event.isTrusted, ready: window.stationAuthorization.snapshot().ready, loaded: Boolean(profileData), at: performance.now()});}, true);
+      addEventListener('DOMContentLoaded', () => {for (const node of [document.querySelector('#login'), document.querySelector('#connection')]) if (node) new MutationObserver(sample).observe(node, {attributes: true}); sample(); setInterval(sample, 25);});
+      addEventListener('submit', event => {if (event.target.id === 'login' && (!window.__cookieFault.windowEnd || Date.now() <= window.__cookieFault.windowEnd)) window.__cookieFault.tokenSubmits++; if (event.target.id === 'settings') window.__cookieFault.submits.push({trusted: event.isTrusted, ready: window.stationAuthorization.snapshot().ready, loaded: Boolean(profileData), at: performance.now()});}, true);
     }, retained);
+    page.on('websocket', ws => {const id = ++socketSerial; liveSockets++; maxSockets = Math.max(maxSockets, liveSockets); event(9, label, id, liveSockets, true); ws.on('close', () => {liveSockets--; event(10, label, id, liveSockets, true);}); ws.on('socketerror', () => event(11, label, id, liveSockets, false));});
     page.on('request', request => {
       const url = new URL(request.url()); if (url.origin !== p.origin) return;
       const code = authCode(url.pathname), controlled = armed && code === 5 && !firstSeen[label];
       if (controlled) firstSeen[label] = request;
-      requestInfo.set(request, {label, phase, code, controlled, path: url.pathname, testProbe: Boolean(testProbe[label] && code === 6)});
+      const requestId = ++requestSerial; requestInfo.set(request, {requestId, label, phase, code, controlled, path: url.pathname, testProbe: Boolean(testProbe[label] && code === 6)});
+      event(1, label, code || (url.pathname === '/profile' ? 7 : url.pathname === '/receive/selection' ? 8 : 99), phase, controlled, requestId);
+      if (label === 'A' && code === 6 && held.A?.intentional && held.A.actualStatus === 204 && !held.A.firstStatus) held.A.firstStatus = request;
       if (code === 5) inFlightProofs.add(request);
-      if (request.method() === 'PUT' && url.pathname === '/profile') counts[label]++;
+      if (request.method() === 'PUT' && url.pathname === '/profile' && (deadline < 0 || performance.now() <= deadline)) counts[label]++;
     });
     page.on('response', response => {
       const request = response.request(), info = requestInfo.get(request); if (!info) return;
-      const at = performance.now(), status = response.status();
+      const at = performance.now(), status = response.status(); event(2, label, info.code || (info.path === '/profile' ? 7 : info.path === '/receive/selection' ? 8 : 99), status, info.controlled, info.requestId);
+      if (label === 'A' && held.A?.firstStatus === request) held.A.firstStatus401 = status === 401;
       if (info.code && !info.controlled) wire.push({label, phase: info.phase, code: info.code, status, at});
       if (info.code === 6) statusReplies[label].push({response, at, status});
       if (info.phase === 2 && !info.code && (info.path === '/profile' || info.path.startsWith('/receive/') || info.path.startsWith('/recordings'))) protectedReads.push({label, code: info.path === '/profile' ? 7 : info.path === '/receive/selection' ? 8 : 99, status, at});
@@ -442,11 +457,12 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
       if (info.controlled && held[label]?.request === request) held[label].actualStatus = status;
     });
     const finish = (request, failed) => {
+      const info = requestInfo.get(request); if (info) event(failed ? 4 : 3, label, info.code, info.phase, info.controlled, info.requestId);
       inFlightProofs.delete(request);
       const h = held[label]; if (h?.request !== request) return;
       h.endedAt = performance.now(); h.failed = failed; h.expectedAbort = failed && request.failure()?.errorText === 'net::ERR_FAILED'; clearTimeout(h.timer); ended[label].resolve();
-      if (label === 'A' && failed && taggedAt >= 0) watchTruth(page, h.endedAt);
-      if (taggedAt >= 0 && t0 < 0 && held.A?.endedAt >= 0 && held.B?.endedAt >= 0) {t0 = Math.max(held.A.endedAt, held.B.endedAt); deadline = t0 + 10000; zeroAtT0 = inFlightProofs.size === 0;}
+      if (label === 'A' && failed && taggedAt >= 0 && h.intentional && !h.expired) watchTruth(page, h.endedAt);
+      if (taggedAt >= 0 && t0 < 0 && held.A?.endedAt >= 0 && held.B?.endedAt >= 0) {t0 = Math.max(held.A.endedAt, held.B.endedAt); deadline = t0 + 10000; deadlineWall = Date.now() + 10000; zeroAtT0 = inFlightProofs.size === 0;}
     };
     page.on('requestfinished', request => finish(request, false)); page.on('requestfailed', request => finish(request, true));
   }
@@ -455,7 +471,7 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
       if (firstHandled[label]) {try {await route.continue();} catch {metrics.route_error = true;} return;}
       firstHandled[label] = true;
       const request = route.request(), headers = await request.allHeaders(), body = request.postDataBuffer();
-      const h = {route, request, headers, body, endedAt: -1, failed: false, reply: null}; held[label] = h;
+      const h = {route, request, headers, body, endedAt: -1, failed: false, expired: false, intentional: false, reply: null}; held[label] = h;
       h.pending = new Promise(resolve => {h.release = resolve;}); captured[label].resolve();
       await h.pending;
     });
@@ -464,27 +480,31 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
     const h = held[label];
     if (!h || firstSeen[label] !== h.request || h.endedAt >= 0 || h.request.method() !== 'POST' || h.request.url() !== p.origin + '/authorization/v1/proof' || h.headers.origin !== p.origin || h.headers['content-type'] !== 'application/json' || !Buffer.isBuffer(h.body) || !h.body.length || h.body.length > 1024) throw new Error('Original pending proof prerequisite failed');
     h.reply = await request(p.origin, 'POST', h.body, {Origin: h.headers.origin, 'Content-Type': h.headers['content-type'], ...(h.headers.cookie ? {Cookie: h.headers.cookie} : {})}, '/authorization/v1/proof');
-    wire.push({label, phase: 2, code: 5, status: h.reply.status, at: performance.now()});
+    wire.push({label, phase: 2, code: 5, status: h.reply.status, at: performance.now()}); event(5, label, 5, h.reply.status, true, requestInfo.get(h.request).requestId);
     const values = h.reply.headers['set-cookie'], prefix = cookieName + '=';
     if (h.endedAt >= 0 || h.reply.status !== 204 || h.reply.bodyBytes !== 0 || !Array.isArray(values) || values.length !== 1 || !values[0].split(';')[0].startsWith(prefix) || !/^[A-Za-z0-9_-]{43}$/.test(values[0].split(';')[0].slice(prefix.length))) throw new Error('Actual proof reply prerequisite failed');
     h.cookie = values[0].split(';')[0].slice(prefix.length); h.cookieHeader = values[0];
-    h.timer = setTimeout(() => {if (h.endedAt < 0) h.route.abort('failed').catch(() => {});}, 5000); pendingTimers.add(h.timer);
+    h.timer = setTimeout(() => {if (h.endedAt < 0) {h.expired = true; event(6, label, 5, 0, false); h.route.abort('failed').catch(() => {});}}, 5000); pendingTimers.add(h.timer);
   }
   async function deliver(label) {
     const h = held[label]; try {await h.route.fulfill({status: h.reply.status, body: '', headers: {'set-cookie': h.cookieHeader, ...(h.reply.headers['cache-control'] ? {'cache-control': h.reply.headers['cache-control']} : {})}});} catch {throw new Error('Controlled delivery failed');} h.release();
   }
   async function probe(id) {
+    if (observer.readyState !== WebSocket.OPEN) return false;
     const response = receive(observer, 2000); expectedObserverIds.add(id); observer.send(JSON.stringify({v: 1, type: 'station.get', id}));
     const value = await response;
     return Boolean(value?.v === 1 && value.type === 'station.status' && value.id === id && value.data?.radio === 'unconfigured' && typeof value.data?.version === 'string' && frames.every(frame => frame.bytes <= 1024 && (frame.heartbeat || frame.expected)));
   }
-  let seedMetadata, beforeFiles, oldServer, newServer, transitionReplies = 0;
+  let seedMetadata, beforeFiles, oldServer, newServer, oldBoot, currentBoot, transitionReplies = 0;
   try {
     const a = await context.newPage(); await instrument(a, 'A', false); await a.goto(p.origin); await a.locator('#login').waitFor({state: 'visible'});
     try {await a.locator('#token').fill(p.env.WSTX_TOKEN); await a.locator('#login button').click();} catch {throw new Error('Fixture bootstrap input failed');}
     await connected(a); // Meaningful pre-client RED remains the original browser readiness predicate.
     const seedSelection = await a.evaluate(async () => {const r = await window.stationAuthorization.fetch('/receive/selection'); return r.status;});
     if (seedSelection !== 200) throw new Error('Default selection read prerequisite failed');
+    metrics.seed_auth_count = wire.filter(value => value.phase === 0).length;
+    if (metrics.seed_auth_count !== 6 || wire.some(value => value.phase === 0 && ![200, 204].includes(value.status))) throw new Error('Exact seed admission prerequisite failed');
+    oldBoot = await a.locator('#profile-boot').textContent();
     seedMetadata = await keyMetadata(a); beforeFiles = await hashes(); oldServer = identity(p.app);
     await a.locator('#display-name').fill('Retained unsent Save');
     await a.evaluate(() => {window.__cookieFault.tokenSubmits = 0; window.__cookieFault.retained = true; window.__cookieFault.prompt = !document.querySelector('#login').hidden;});
@@ -504,6 +524,7 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
     await deliver('B'); await ended.B.promise; await connected(b);
     const bStatus = statusReplies.B.find(value => value.status === 200); if (!bStatus) throw new Error('Actual B status prerequisite missing');
     let bValue; try {bValue = JSON.parse(await bStatus.response.text());} catch {throw new Error('Actual B status invalid');} if (!publicStatusValid(bValue, seedMetadata.scope)) throw new Error('No-job observer prerequisite failed');
+    currentBoot = await b.locator('#profile-boot').textContent(); metrics.new_boot = Boolean(currentBoot && currentBoot !== oldBoot);
     metrics.jar_b_after_delivery = (await context.cookies(p.origin)).some(cookie => cookie.name === cookieName && cookie.value === held.B.cookie);
     await new Promise((resolve, reject) => {
       observer = new WebSocket(p.origin.replace('https:', 'wss:') + '/ws', 'wstx.v1', {origin: p.origin, rejectUnauthorized: false, headers: {Cookie: cookieName + '=' + held.B.cookie}});
@@ -513,7 +534,7 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
         const expected = v.v === 1 && v.type === 'station.status' && expectedObserverIds.has(v.id) && !seenObserverIds.has(v.id);
         if (expected) seenObserverIds.add(v.id);
         frames.push({bytes: Buffer.byteLength(data), expected, heartbeat: v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 2 && v.v === 1 && v.type === 'heartbeat'});});
-      observer.once('open', () => {clearTimeout(timer); expectedObserverIds.add(8101); receive(observer, 2000).then(value => {metrics.observer_before = value?.v === 1 && value.type === 'station.status' && value.id === 8101 && value.data?.radio === 'unconfigured' && typeof value.data?.version === 'string'; resolve();}, () => reject(new Error('Observer first response failed'))); observer.send(JSON.stringify({v: 1, type: 'station.get', id: 8101}));});
+      observer.once('open', () => {liveSockets++; maxSockets = Math.max(maxSockets, liveSockets); event(9, 'N', 0, liveSockets, true); observer.once('close', () => {liveSockets--; event(10, 'N', 0, liveSockets, true);}); clearTimeout(timer); expectedObserverIds.add(8101); receive(observer, 2000).then(value => {metrics.observer_before = value?.v === 1 && value.type === 'station.status' && value.id === 8101 && value.data?.radio === 'unconfigured' && typeof value.data?.version === 'string'; resolve();}, () => reject(new Error('Observer first response failed'))); observer.send(JSON.stringify({v: 1, type: 'station.get', id: 8101}));});
     });
     const actionable = await a.locator('#settings-save').isVisible() && await a.locator('#settings-save').isEnabled();
     if (!actionable || await a.evaluate(() => window.stationAuthorization.snapshot().ready || !profileData)) throw new Error('Loaded recovering Save prerequisite failed');
@@ -523,17 +544,19 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
     metrics.a_pending_before_action = held.A.endedAt < 0 && firstSeen.A === held.A.request;
     if (!metrics.a_pending_before_action || !metrics.save_blocked) throw new Error('Original pending proof or Save qualification failed');
     metrics.a_prompt_before_fault = await a.evaluate(() => window.__cookieFault.prompt); metrics.b_prompt_before_fault = await b.evaluate(() => window.__cookieFault.prompt);
-    taggedAt = performance.now();
-    if (deliveryMode === 'reverse') await deliver('A');
+    metrics.a_pending_before_action = held.A.endedAt < 0 && !held.A.expired && firstSeen.A === held.A.request;
+    if (!metrics.a_pending_before_action) throw new Error('Held proof expired before deliberate action');
+    taggedAt = performance.now(); held.A.intentional = true; event(12, 'A', deliveryMode === 'reverse' ? 1 : 2, 0, true);
+    if (deliveryMode === 'reverse') {await deliver('A'); metrics.jar_a_after_delivery = (await context.cookies(p.origin)).some(cookie => cookie.name === cookieName && cookie.value === held.A.cookie);}
     else {try {await held.A.route.abort('failed');} catch {throw new Error('Controlled loss failed');} held.A.release();}
     await ended.A.promise;
     metrics.zero_proofs_at_fixed_t0 = zeroAtT0; metrics.action_tag_before_end = held.A.endedAt >= taggedAt;
     metrics.controlled_action_expected = deliveryMode === 'reverse' ? !held.A.failed && held.A.actualStatus === 204 : held.A.failed && held.A.expectedAbort && held.A.endedAt >= taggedAt;
-    metrics.qualified = !held.B.failed && held.B.actualStatus === 204 && metrics.new_process && metrics.jar_untouched_after_node && metrics.old_handle_401 && metrics.current_handle_200 && metrics.jar_b_after_delivery && metrics.observer_before && metrics.save_blocked && metrics.a_pending_before_action && metrics.controlled_action_expected && zeroAtT0 && t0 >= taggedAt;
+    metrics.qualified = held.A.intentional && !held.A.expired && !held.B.expired && metrics.new_boot && !held.B.failed && held.B.actualStatus === 204 && metrics.new_process && metrics.jar_untouched_after_node && metrics.old_handle_401 && metrics.current_handle_200 && metrics.jar_b_after_delivery && metrics.observer_before && metrics.save_blocked && metrics.a_pending_before_action && metrics.controlled_action_expected && zeroAtT0 && t0 >= taggedAt;
     if (!metrics.qualified) throw new Error('Controlled response completion qualification failed');
-    metrics.observer_after = await probe(8102); // t0/deadline were already frozen in the completion event, before this await.
+    await Promise.all([a, b].map(page => page.evaluate(end => {window.__cookieFault.windowEnd = end;}, deadlineWall)));
+    try {metrics.observer_after = await probe(8102);} catch {metrics.observer_after = false;} // t0/deadline were already frozen in the completion event, before this await.
     let bothReady = false;
-    const currentBoot = bValue.scope && await b.locator('#profile-boot').textContent();
     try {await Promise.all([a, b].map(page => page.waitForFunction(boot => window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state === 'connected' && socket?.readyState === WebSocket.OPEN && profileData?.boot_id === boot, currentBoot, {timeout: Math.max(1, deadline - performance.now())}))); bothReady = true;} catch {}
     const freshProof = wire.some(value => value.phase === 2 && value.code === 5 && value.status === 204 && value.at > t0);
     let statusesValid = true;
@@ -546,28 +569,39 @@ for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recov
         statusesValid &&= Boolean(result && result.status === 200 && result.bytes <= 1024 && publicStatusValid(result.value, seedMetadata.scope));
       } else statusesValid = false;
     }
-    const readyNow = await Promise.all([a, b].map(page => page.evaluate(boot => window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state === 'connected' && socket?.readyState === WebSocket.OPEN && profileData?.boot_id === boot, currentBoot)));
-    metrics.recovery_elapsed_ms = performance.now() - t0; metrics.recovered = bothReady && readyNow.every(Boolean) && freshProof && statusesValid && inFlightProofs.size === 0 && performance.now() <= deadline;
+    metrics.early_recovery_ms = performance.now() - t0;
+    const inWindowReady = bothReady && freshProof && statusesValid && inFlightProofs.size === 0 && performance.now() <= deadline;
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, deadline - performance.now()))); // Observe the SAME original window; never reset retry/admission/deadline.
+    const terminalProofs = inFlightProofs.size;
+    const terminal = await Promise.all([a, b].map(page => page.evaluate(() => window.__cookieFault.terminal)));
+    metrics.recovery_elapsed_ms = performance.now() - t0; metrics.recovered = inWindowReady && terminalProofs === 0 && terminal.every(value => value?.ready && value.boot === currentBoot && value.at <= deadlineWall);
+    metrics.terminal_proofs = terminalProofs; metrics.terminal_ready_count = terminal.filter(value => value?.ready && value.boot === currentBoot).length;
     originalFrozen = true; // A later probe/diagnostic can never turn this original fixed-window result into PASS.
-    const [aView, bView] = await Promise.all([a, b].map(page => page.evaluate(() => ({prompt: window.__cookieFault.prompt, ready: window.stationAuthorization.snapshot().ready, submitCount: window.__cookieFault.submits.length, tokenSubmits: window.__cookieFault.tokenSubmits, dirty: document.querySelector('#display-name').value === 'Retained unsent Save', saved: document.querySelector('#settings-result').textContent.startsWith('Saved revision')}))));
+    try {metrics.observer_final = await probe(8103);} catch {metrics.observer_final = false;} // Diagnostic on BOTH frozen outcomes; cannot heal recovery.
+    event(13, 'N', 8103, 0, metrics.observer_final);
+    const [aView, bView] = await Promise.all([a, b].map(page => page.evaluate(() => ({events: window.__cookieFault.events, overflow: window.__cookieFault.overflow, prompt: window.__cookieFault.prompt, ready: window.stationAuthorization.snapshot().ready, submitCount: window.__cookieFault.submits.length, tokenSubmits: window.__cookieFault.tokenSubmits, dirty: document.querySelector('#display-name').value === 'Retained unsent Save', saved: document.querySelector('#settings-result').textContent.startsWith('Saved revision')}))));
     const sameKeys = JSON.stringify(await keyMetadata(a)) === JSON.stringify(seedMetadata) && JSON.stringify(await keyMetadata(b)) === JSON.stringify(seedMetadata);
     const sameFiles = JSON.stringify(await hashes()) === JSON.stringify(beforeFiles);
     transitionReplies = wire.filter(value => value.phase === 1).length;
     Object.assign(metrics, {a_prompt_seen: aView.prompt, b_prompt_seen: bView.prompt, a_ready: aView.ready, b_ready: bView.ready, a_submit_count: aView.submitCount, token_submits: aView.tokenSubmits + bView.tokenSubmits, dirty_preserved: aView.dirty, saved_ack: aView.saved, a_put_count: counts.A, b_put_count: counts.B, same_keys: sameKeys, same_files: sameFiles, transition_auth_responses: transitionReplies,
       new_auth_replies: wire.filter(value => value.phase === 2).length, new_429_replies: wire.filter(value => value.phase === 2 && value.status === 429).length,
       a_wire_proof_replies: wire.filter(value => value.phase === 2 && value.label === 'A' && value.code === 5).length, b_wire_proof_replies: wire.filter(value => value.phase === 2 && value.label === 'B' && value.code === 5).length,
-      a_status_401: statusReplies.A.some(value => value.status === 401 && value.at >= taggedAt), b_selection_401_count: protectedReads.filter(value => value.label === 'B' && value.code === 8 && value.status === 401).length, b_profile_401_count: protectedReads.filter(value => value.label === 'B' && value.code === 7 && value.status === 401).length, protected_read_count: protectedReads.length, observer_frame_count: frames.length, observer_frames_valid: frames.every(frame => frame.bytes <= 1024 && (frame.heartbeat || frame.expected)), wire_history_sha256: crypto.createHash('sha256').update(JSON.stringify(wire.map(value => [value.label === 'A' ? 1 : 2, value.phase, value.code, value.status, value.at]))).digest('hex')});
+      a_status_401: Boolean(held.A.firstStatus401), b_selection_401_count: protectedReads.filter(value => value.label === 'B' && value.code === 8 && value.status === 401).length, b_profile_401_count: protectedReads.filter(value => value.label === 'B' && value.code === 7 && value.status === 401).length, protected_read_count: protectedReads.length, observer_frame_count: frames.length, observer_frames_valid: frames.every(frame => frame.bytes <= 1024 && (frame.heartbeat || frame.expected)), wire_history_sha256: crypto.createHash('sha256').update(JSON.stringify(wire.map(value => [value.label === 'A' ? 1 : 2, value.phase, value.code, value.status, value.at]))).digest('hex')});
+    metrics.max_sockets = maxSockets; metrics.timeline_overflow = timelineOverflow || aView.overflow || bView.overflow;
+    t.diagnostic(JSON.stringify({timeline, a_ui: aView.events, b_ui: bView.events, truth: truth.map(value => [value.at, value.done, value.ok])}));
     t.diagnostic(JSON.stringify(metrics));
     assert.equal(metrics.recovered, true, 'original fixed10s automatic recovery must finish with proof and protected status');
-    if (deliveryMode === 'reverse') assert.equal(metrics.a_status_401, true, 'late204 cannot substitute for current protected status');
+    if (deliveryMode === 'reverse') {assert.equal(metrics.jar_a_after_delivery, true); assert.equal(metrics.a_status_401, true, 'late204 cannot substitute for current protected status');}
     assert.equal(metrics.token_submits, 0); assert.equal(metrics.dirty_preserved, true); assert.equal(metrics.saved_ack, false); assert.equal(metrics.route_error, false); assert.equal(metrics.observer_frames_valid, true); assert.equal(metrics.a_prompt_seen, false); assert.equal(metrics.b_prompt_seen, false);
     assert.equal(metrics.same_keys, true); assert.equal(metrics.same_files, true); assert.equal(metrics.a_put_count, 0); assert.equal(metrics.b_put_count, 0);
     assert.equal(wire.filter(value => value.phase === 2 && [1, 2, 3].includes(value.code)).length, 0, 'no new bootstrap/enrollment after ordinary restart');
     assert.equal(transitionReplies, 0, 'server process admission attribution must be qualified');
     assert.equal(metrics.observer_after, true);
-    metrics.observer_final = await probe(8103); assert.equal(metrics.observer_final, true);
+    assert.equal(metrics.observer_final, true); assert.equal(metrics.timeline_overflow, false); assert.ok(metrics.max_sockets <= 3);
     assert.equal(truth.every(value => value.done && value.ok), true, 'actual rejection/loss UI truth stays within2s');
   } finally {
+    const ui = []; for (const [label, page] of Object.entries(pages)) {try {ui.push({label: label === 'A' ? 1 : 2, value: await page.evaluate(() => ({events: window.__cookieFault.events, overflow: window.__cookieFault.overflow}))});} catch {ui.push({label: label === 'A' ? 1 : 2, unavailable: true});}}
+    t.diagnostic(JSON.stringify({timeline, ui, truth: truth.map(value => [value.at, value.done, value.ok]), metrics}));
     for (const timer of pendingTimers) clearTimeout(timer);
     for (const h of Object.values(held)) {if (h.endedAt < 0) await h.route.abort('failed').catch(() => {}); h.release();}
     try {
