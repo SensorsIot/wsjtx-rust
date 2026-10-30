@@ -10,6 +10,7 @@ contract; the references below are the constraints a change must respect.
 | Product component/interface boundaries | [Architecture](../sysml/Architecture.sysml) and its referenced behaviour/interface packages |
 | Product SysML artifacts and view scope | [Architecture model](../sysml/Architecture.sysml); [catalog and validation](Project-Specifics.md#canonical-model-catalog-and-source-bindings) |
 | Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
+| Which machine does what (HB9BLA station, PC Andreas) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/main/lang/rust/standard.md) |
 | Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md) |
@@ -29,7 +30,7 @@ in `harness/lang/rust/`. Project configuration is in `.harness/`, and project-sp
 environment, build and model-maintenance instructions are in [Project specifics](Project-Specifics.md).
 
 - **Main branch:** `master`; the push gate compares against `origin/master`.
-- **Execution mode:** local. The Windows PC is authoritative for compiler checks,
+- **Execution mode:** local. HB9BLA is authoritative for compiler checks,
   selected functional groups including their required bandwidth measurements, and release
   packaging. The local pre-push hook enforces the ordinary gate. GitHub Actions has
   only a manual trigger and is an explicit alternative when requested, not a second
@@ -41,11 +42,13 @@ environment, build and model-maintenance instructions are in [Project specifics]
   `.harness/suites.yaml`; see [functional test selection](Project-Specifics.md#functional-test-selection).
   Shared or unmapped changes select broader checks. `--plan` explains the selection;
   `--full` executes every eligible group without memo reuse.
-- **Deploy:** a locally built Windows release executable ([Project specifics](Project-Specifics.md));
-  the dry run uses that candidate on this PC. The manual hosted alternative can provide
-  the same evidence when explicitly chosen instead.
+- **Deploy:** a Windows release executable built and installed on HB9BLA
+  ([machines and roles](Project-Specifics.md#machines-and-roles)); the dry run uses that
+  candidate on HB9BLA. The manual hosted workflow can supply build and test evidence
+  when explicitly chosen; its artifact is never installed on the station.
 - **Live tests:** none yet. Tests that need a radio, a sound device or the network are
-  cost 3–5, marked `#[ignore]`, and get their own suites.
+  cost 3–5, marked `#[ignore]`, get their own suites and run only on HB9BLA, where the
+  transceiver is connected.
 
 ## Harness paths
 

@@ -8,6 +8,24 @@ defines reusable Rust rules and checks. This document binds those reusable instr
 to this repository's toolchain, paths, test prerequisites and selected execution mode.
 Run the commands below from the repository root.
 
+## Machines and roles
+
+Two Windows PCs work on this repository with the same GitHub account. Where a document
+says "this PC" without naming one, read it as the machine named below for that task.
+
+| Machine | Role |
+|---|---|
+| **HB9BLA** (`192.168.0.37`, checkout `D:\Github\wsjtx-rust`) | The station. The product runs here and the transceiver (IC-7300, COM3) is connected here. All operational programming, builds, release packaging, installs and deploy dry runs; all live and hardware tests (cost 3–5) and radio acceptance; by default also harness work. Runtime details: [HB9BLA handover](HB9BLA-HANDOFF.md). |
+| **Andreas** (hostname `Andreas`) | SysML model work, in isolated worktrees, and documentation work. It has no radio, so it runs no live or hardware tests and installs nothing on the station. |
+
+- The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It
+  shows that the build and tests pass on a clean Windows runner and is never installed
+  on the station (operator decision, [#26](https://github.com/SensorsIot/wsjtx-rust/issues/26)).
+- The machine that currently builds an issue is named by the issue's single
+  `owner: HB9BLA` or `owner: Andreas` label. A machine does not start an issue owned
+  by the other one; a handoff swaps the label first
+  ([harness #23](https://github.com/SensorsIot/harness/issues/23)).
+
 ## Windows build and packaging
 
 The Rust executable serves the embedded browser, versioned station interfaces and implemented receive services. Native Windows audio, typed CAT adapters and the pure FT4/FT8 decoder are separate modules. Their presence does not establish complete mode parity or live acceptance; current implementation and verification declarations belong to the functional model and issue evidence.
@@ -19,7 +37,7 @@ The root Cargo workspace contains the station-server package in `server/`. Run C
 [Windows Rust](https://github.com/SensorsIot/wsjtx-rust/actions/workflows/windows-rust.yml)
 is a manual alternative, started explicitly from the Actions page. Pushes and pull
 requests do not trigger it. Normal development, the full test suite and release packaging
-run on the Windows PC; a local pass is not automatically repeated on GitHub.
+run on HB9BLA; a local pass is not automatically repeated on GitHub.
 
 The workflow uses a GitHub-hosted Windows Server 2022 x64 runner with the MSVC build tools. It installs Rust 1.99.0, matching `rust-toolchain.toml`, and checks formatting, Clippy warnings, tests, release compilation, and execution of the built program. The executable is uploaded as the `wstx-rust-windows-x64` artifact with a 14-day retention period.
 
