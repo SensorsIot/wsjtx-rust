@@ -666,6 +666,9 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
   for (const mode of ['owned-pending', 'busy', 'old-reject-ready', 'old-reject-recovering', 'old-resolve-ready', 'old-event', 'current-event']) {
     const handlers = new Map(), listeners = new Map(), nodes = new Map();
     let authView = {epoch: 1, state: 'unavailable', ready: false, scope: null}, finish;
+    let finishStartup;
+    const startupComplete = new Promise(resolve => {finishStartup = resolve;});
+    let startupPhase = true;
     let bootstrapCalls = 0, readinessCalls = 0, networkCalls = 0, closeCalls = 0, scheduled = 0, cleared = 0, staleEvents = 0, timerId = 0;
     const delays = [];
     for (const id of ['#connection', '#version', '#radio', '#login', '#refresh', '#settings', '#settings-result', '#settings-reload', '#token', '#login-error']) {
@@ -690,12 +693,20 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     const realm = vm.createContext({window, document: {body: {dataset: {profile: 'true'}}, querySelector(id) {if (!nodes.has(id)) throw new Error('Unexpected consumer fixture DOM'); return nodes.get(id);}},
       location: {protocol: 'https:', host: 'localhost:18443'}, Event, WebSocket: NoNetworkSocket, fixtureSocket,
       addEventListener(type, handler) {listeners.set(type, handler);},
-      setInterval() {return 1;}, setTimeout(_callback, delay) {scheduled++; delays.push(delay); return ++timerId;}, clearTimeout() {cleared++;},
+      setInterval() {return 1;}, setTimeout(_callback, delay) {scheduled++; delays.push(delay); if (startupPhase) finishStartup(); return ++timerId;}, clearTimeout() {cleared++;},
       fetch() {networkCalls++; throw new Error('Unexpected consumer fixture network');}});
     vm.runInContext(appSource, realm, {timeout: 1000});
-    await Promise.resolve(); await Promise.resolve();
+    // Qualify the last startup catch effect before resetting scenario counters.
+    await startupComplete;
     assert.equal(readinessCalls, 1, 'actual startup consumer reaches the controlled initial lookup');
     assert.equal(handlers.has('#login:submit') && listeners.has('station-authorization'), true);
+    assert.equal(scheduled, 1, 'initial lookup rejection registers exactly its owned retry');
+    assert.deepEqual(delays, [4000], 'initial lookup uses the existing retry timing');
+    assert.match(nodes.get('#connection').textContent, /browser credential missing/i);
+    assert.equal(nodes.get('#connection').dataset.state, 'stale');
+    assert.equal(nodes.get('#login').hidden, false); assert.equal(nodes.get('#refresh').disabled, true);
+    assert.equal(bootstrapCalls, 0); assert.equal(networkCalls, 0); assert.equal(closeCalls, 0);
+    startupPhase = false;
     vm.runInContext('socket = fixtureSocket;', realm, {timeout: 1000});
     authView = {epoch: 20, state: mode === 'busy' ? 'recovering' : 'ready', ready: mode !== 'busy', scope: null};
     nodes.get('#connection').textContent = mode === 'busy' ? 'Current recovery notice' : 'Current ready notice';
