@@ -521,44 +521,55 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     ['retry-lost204', 'retained-transient'], ['retry-proof200', 'retained-transient'], ['retry-second-proof200', 'retained-transient'],
     ['retry-status403', 'retained-rejected'], ['retry-status429', 'retained-transient'], ['retry-status503', 'retained-transient'],
     ['retry-status-scope', 'retained-rejected'], ['retry-second-challenge-scope', 'retained-rejected'], ['retry-second-status-scope', 'retained-rejected'],
-    ['retry-pending', 'enrollment-pending'], ['retry-bootstrap', undefined], ['retry-aborted', 'retained-rejected'], ['retry-abort-challenge', 'retained-transient'], ['retry-stale', 'retained-transient']
+    ['retry-pending', 'enrollment-pending'], ['retry-bootstrap', 'retained-rejected'], ['retry-aborted', 'retained-rejected'], ['retry-abort-challenge', 'retained-transient'], ['retry-stale', 'retained-transient'],
+    ['bootstrap-denied', null], ['bootstrap-open-error', 'credential-storage-unavailable'], ['bootstrap-add-error', 'credential-storage-unavailable'],
+    ['bootstrap-existing-invalid', 'credential-invalid'], ['bootstrap-existing-pending', 'enrollment-pending'], ['bootstrap-existing-retained', 'retained-transient'],
+    ['bootstrap-enroll-loss', 'enrollment-pending'], ['bootstrap-clear-error', 'enrollment-pending'], ['bootstrap-renew-network', 'retained-transient'],
+    ['bootstrap-renew-unauthorized', 'retained-rejected'], ['bootstrap-renew-rate', 'retained-transient'], ['bootstrap-busy', null]
   ];
   let checked = 0;
   for (const [fault, expected] of cases) {
+    const bootstrapFault = fault.startsWith('bootstrap-');
     let opens = 0, aborts = 0, closes = 0, writes = 0, fetches = 0, finishBootstrap, bootstrap, challenges = 0, proofs = 0, statuses = 0, verified = 0, proofBodyReads = 0;
-    let record = fault === 'empty' || fault === 'retry-bootstrap' ? undefined : fault === 'invalid' ? null : {...credential, pending_enrollment: fault === 'pending' || fault === 'retry-pending'};
-    const calls = [], controllers = [], timeoutValues = [], proofNonces = new Set(); let activeNonce;
+    let record = bootstrapFault ? fault === 'bootstrap-existing-invalid' ? null : ['bootstrap-existing-pending', 'bootstrap-existing-retained'].includes(fault) ? {...credential, pending_enrollment: fault === 'bootstrap-existing-pending'} : undefined :
+      fault === 'empty' || fault === 'retry-bootstrap' ? undefined : fault === 'invalid' ? null : {...credential, pending_enrollment: fault === 'pending' || fault === 'retry-pending'};
+    const calls = [], controllers = [], timeoutValues = [], proofNonces = new Set(), events = []; let activeNonce, busyEpoch;
     const indexedDB = {open() {
       opens++; if (fault === 'open-throw') throw new DOMException('Injected storage failure', 'SecurityError'); const request = {}, db = {objectStoreNames: {contains: name => fault !== 'missing-store' && name === 'credential'}, close() {closes++;},
         createObjectStore() {writes++; throw new Error('Lookup must not create a store');},
         transaction() {const transaction = {objectStore: () => ({get() {const read = {}; queueMicrotask(() => {if (fault === 'read-error') {transaction.onerror(); return;} read.result = record; read.onsuccess(); transaction.oncomplete();}); return read;},
-          add(value) {writes++; record = value; const write = {}; queueMicrotask(() => {write.result = value; write.onsuccess(); transaction.oncomplete();}); return write;},
-          put(value) {writes++; record = value; const write = {}; queueMicrotask(() => {write.result = value; write.onsuccess(); transaction.oncomplete();}); return write;}})}; return transaction;}};
+          add(value) {writes++; const write = {}; queueMicrotask(() => {if (fault === 'bootstrap-add-error') {transaction.onerror(); return;} record = bootstrapFault ? {...value} : value; write.result = value; write.onsuccess(); transaction.oncomplete();}); return write;},
+          put(value) {writes++; const write = {}; queueMicrotask(() => {if (fault === 'bootstrap-clear-error') {transaction.onerror(); return;} record = bootstrapFault ? {...value} : value; write.result = value; write.onsuccess(); transaction.oncomplete();}); return write;}})}; return transaction;}};
       request.result = db; request.transaction = {abort() {aborts++; queueMicrotask(() => request.onerror?.());}};
       queueMicrotask(() => {
         if (fault === 'absent' || fault === 'old-version') request.onupgradeneeded({oldVersion: fault === 'absent' ? 0 : 1});
         else if (fault === 'blocked-late-upgrade') {request.onblocked(); request.onupgradeneeded({oldVersion: 0});}
         else if (fault === 'blocked-late-success') {request.onblocked(); request.onsuccess();}
-        else if (fault === 'error') request.onerror();
+        else if (fault === 'error' || fault === 'bootstrap-open-error') request.onerror();
         else request.onsuccess();
       }); return request;
     }};
     const response = (status, value) => ({ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(value)});
     const fetch = async (path, options) => {
       fetches++; calls.push({path, signal: options?.signal});
-      if (path === '/session' && (fault === 'explicit' || fault === 'retry-stale')) return new Promise(resolve => {finishBootstrap = () => resolve({status: 401});});
+      if (path === '/session' && (fault === 'explicit' || fault === 'retry-stale' || fault === 'bootstrap-busy')) return new Promise(resolve => {finishBootstrap = () => resolve({status: 401});});
       if (fault === 'network') throw new TypeError('Injected network failure');
       if (fault === 'null-rejection') throw null;
       const status = ({rate: 429, persistence: 503, unauthorized: 401, forbidden: 403, pending: 401})[fault];
       if (status) return {ok: false, status};
       if (fault === 'identity') return response(200, {version: 1, grant_id: Buffer.alloc(32, 8).toString('base64url'), public_key: credential.public_key, scope, nonce: Buffer.alloc(32, 9).toString('base64url'), lifetime_seconds: 60});
-      if (!fault.startsWith('retry-')) throw new Error('Unexpected network boundary');
+      if (!fault.startsWith('retry-') && !bootstrapFault) throw new Error('Unexpected network boundary');
       const body = path === '/session' ? null : JSON.parse(options.body);
-      if (path === '/session') return response(204);
+      if (path === '/session') return response(fault === 'bootstrap-denied' ? 401 : 204);
       if (path.endsWith('/bootstrap-scope')) return response(200, {version: 1, current_scope: scope});
-      if (path.endsWith('/enroll')) return response(200, {version: 1, operation_id: body.operation_id, grant_id: body.grant_id, outcome: 'committed', scope});
+      if (path.endsWith('/enroll')) {
+        if (fault === 'bootstrap-enroll-loss') throw new TypeError('Injected enrollment response loss');
+        return response(200, {version: 1, operation_id: body.operation_id, grant_id: body.grant_id, outcome: 'committed', scope});
+      }
       if (path.endsWith('/challenge')) {
         challenges++;
+        if (fault === 'bootstrap-renew-network') throw new TypeError('Injected retained renewal failure');
+        if (fault === 'bootstrap-renew-unauthorized' || fault === 'bootstrap-renew-rate') return response(fault === 'bootstrap-renew-rate' ? 429 : 401);
         if (fault === 'retry-challenge401') return response(401);
         activeNonce = Buffer.alloc(32, challenges + 9).toString('base64url');
         if (fault === 'retry-abort-challenge' && challenges === 2) controllers[0].abort();
@@ -593,18 +604,18 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
       }
       throw new Error('Unexpected retry boundary');
     };
-    const window = {dispatchEvent(event) {if (fault === 'retry-stale' && event.detail.state === 'recovering' && !bootstrap) bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);}};
+    const window = {dispatchEvent(event) {events.push(event.detail); if (fault === 'retry-stale' && event.detail.state === 'recovering' && !bootstrap) bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);}};
     const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;}};
     const realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array,
       CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal: deadlineSource, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
     vm.runInContext(source, realm, {timeout: 1000});
-    if (fault === 'explicit') bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);
+    if (fault === 'explicit' || fault === 'bootstrap-busy') {bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true); busyEpoch = window.stationAuthorization.snapshot().epoch;}
     let timer, failure;
-    try {failure = await Promise.race([(fault === 'retry-bootstrap' ? window.stationAuthorization.bootstrap('fixture-bootstrap-input') : window.stationAuthorization.ensureReady()).then(() => null, error => ({condition: error.authorizationCondition, status: error.status})),
+    try {failure = await Promise.race([(fault === 'retry-bootstrap' || bootstrapFault ? window.stationAuthorization.bootstrap('fixture-bootstrap-input') : window.stationAuthorization.ensureReady()).then(() => null, error => ({condition: error.authorizationCondition, status: error.status})),
       new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('Owner boundary did not settle')), 1000);})]);}
     finally {clearTimeout(timer); if (finishBootstrap) finishBootstrap(); if (bootstrap) await bootstrap;}
     assert.equal(failure?.condition ?? null, expected ?? null, 'actual owner classifies the independently injected boundary');
-    assert.equal(window.stationAuthorization.snapshot().ready, fault === 'retry-success'); assert.equal(writes, fault === 'retry-pending' ? 1 : fault === 'retry-bootstrap' ? 2 : 0);
+    assert.equal(window.stationAuthorization.snapshot().ready, fault === 'retry-success'); assert.equal(writes, bootstrapFault ? ({'bootstrap-add-error': 1, 'bootstrap-enroll-loss': 1, 'bootstrap-clear-error': 2, 'bootstrap-renew-network': 2, 'bootstrap-renew-unauthorized': 2, 'bootstrap-renew-rate': 2}[fault] || 0) : fault === 'retry-pending' ? 1 : fault === 'retry-bootstrap' ? 2 : 0);
     if (fault === 'absent' || fault === 'old-version' || fault === 'blocked-late-upgrade') assert.equal(aborts, 1);
     if (fault === 'blocked-late-success') assert.equal(closes, 1, 'settled failure closes a later delivered DB handle');
     if (['absent', 'empty', 'blocked-late-upgrade', 'blocked-late-success', 'error', 'open-throw', 'read-error', 'missing-store', 'old-version', 'invalid'].includes(fault)) assert.equal(fetches, 0);
@@ -619,14 +630,37 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
       if (!['retry-bootstrap', 'retry-stale'].includes(fault)) assert.equal(calls.every(call => call.signal === controllers[0].signal), true, 'all triplets retain the original signal object');
       if (fault === 'retry-success' || fault === 'retry-repeat401') assert.equal(challenges, 2);
     }
-    if (fault !== 'explicit' && !['retry-success', 'retry-bootstrap', 'retry-stale'].includes(fault)) {
+    if (!bootstrapFault && fault !== 'explicit' && !['retry-success', 'retry-bootstrap', 'retry-stale'].includes(fault)) {
       const priorOpens = opens, priorFetches = fetches;
       const retry = await window.stationAuthorization.ensureReady().then(() => null, error => ({condition: error.authorizationCondition, status: error.status}));
       assert.equal(retry?.condition, expected, 'backoff preserves the owner failure classification'); assert.equal(opens, priorOpens); assert.equal(fetches, priorFetches);
     }
+    if (bootstrapFault) {
+      const expectedFetches = {'bootstrap-denied': 1, 'bootstrap-open-error': 2, 'bootstrap-add-error': 2, 'bootstrap-existing-invalid': 2, 'bootstrap-existing-pending': 2, 'bootstrap-existing-retained': 2, 'bootstrap-enroll-loss': 3, 'bootstrap-clear-error': 3, 'bootstrap-renew-network': 4, 'bootstrap-renew-unauthorized': 4, 'bootstrap-renew-rate': 4, 'bootstrap-busy': 1};
+      assert.equal(fetches, expectedFetches[fault], 'classification never adds recovery or enrollment requests');
+      assert.equal(timeoutValues.every(value => value === 10000), true);
+      assert.equal(timeoutValues.length, ['bootstrap-denied', 'bootstrap-busy'].includes(fault) ? 1 : 2);
+      if (fault === 'bootstrap-add-error') assert.equal(record === undefined, true, 'failed initial transaction is not a retained enrollment');
+      if (fault === 'bootstrap-clear-error' || fault === 'bootstrap-enroll-loss') assert.equal(record?.pending_enrollment, true, 'pending truth survives an unacknowledged outcome or failed durable clear');
+      if (fault.startsWith('bootstrap-renew-')) assert.equal(record?.pending_enrollment, false, 'only completed durable clear establishes confirmed retained truth');
+      if (fault === 'bootstrap-existing-invalid') assert.equal(record === null, true);
+      if (fault === 'bootstrap-existing-pending' || fault === 'bootstrap-existing-retained') assert.equal(record.key === credential.key && record.grant_id === credential.grant_id && record.enrollment_id === credential.enrollment_id, true, 'existing retained identity is never replaced');
+      if (fault === 'bootstrap-busy') assert.equal(window.stationAuthorization.snapshot().epoch, busyEpoch, 'a rejected busy submission does not acquire a new epoch');
+      if (fault === 'bootstrap-renew-rate') assert.equal(failure.status, 429);
+      assert.equal(events.at(-1).authorizationCondition, expected ?? null, 'current lifecycle condition agrees with the controlled failure channel');
+      assert.equal(events.at(-1).status, failure?.status ?? null);
+    }
+    assert.deepEqual(Object.keys(window.stationAuthorization.snapshot()).sort(), ['epoch', 'ready', 'scope', 'state'], 'snapshot interface remains unchanged');
+    for (const detail of events) {
+      assert.equal(Object.isFrozen(detail), true);
+      assert.deepEqual(Object.keys(detail).sort(), ['authorizationCondition', 'epoch', 'ready', 'scope', 'state', 'status']);
+      assert.equal(detail.authorizationCondition === null || ['credential-missing', 'credential-invalid', 'credential-storage-unavailable', 'retained-transient', 'retained-rejected', 'enrollment-pending', 'explicit-in-progress'].includes(detail.authorizationCondition), true);
+      assert.equal(detail.status === null || [401, 403, 429, 503].includes(detail.status), true);
+    }
+    if (fault === 'retry-stale') assert.equal(events.filter(detail => detail.epoch === window.stationAuthorization.snapshot().epoch).every(detail => detail.authorizationCondition === null), true, 'stale recovery failure cannot publish over the newer explicit owner');
     checked++;
   }
-  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 37}));
+  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 49}));
 });
 
 // Proves CL-022-01/02/05: real overlapping proof delivery must not create a false-ready UI or replay Save.

@@ -31,6 +31,18 @@ function disconnect(current) {
   login.hidden = location.protocol !== 'https:' || retained;
   clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
 }
+function showAuthorizationUnavailable(error) {
+  const condition = error?.authorizationCondition;
+  const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
+    'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
+    'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
+    'retained-transient': error?.status === 429 ? 'Authorization rate limited \u00b7 station data stale' : error?.status === 503 ?
+      'Authorization persistence unavailable \u00b7 station data stale' : 'Retained authorization unavailable \u00b7 retrying',
+    'retained-rejected': 'Retained authorization not accepted or identity changed \u00b7 station data stale',
+    'enrollment-pending': 'Authorization enrollment outcome unknown \u00b7 station data stale',
+    'explicit-in-progress': 'Authorization in progress \u00b7 station data stale'};
+  stale(); connection.textContent = Object.hasOwn(reasons, condition) ? reasons[condition] : 'Authorization unavailable \u00b7 station data stale'; login.hidden = condition !== 'credential-missing';
+}
 let connecting = 0;
 async function connect() {
   handshakeProbe?.abort(); handshakeProbe = null;
@@ -43,16 +55,7 @@ async function connect() {
     try {await authorization.ensureReady();}
     catch (error) {
       if (attempt !== connecting) return;
-      const condition = error?.authorizationCondition;
-      const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
-        'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
-        'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
-        'retained-transient': error?.status === 429 ? 'Authorization rate limited \u00b7 station data stale' : error?.status === 503 ?
-          'Authorization persistence unavailable \u00b7 station data stale' : 'Retained authorization unavailable \u00b7 retrying',
-        'retained-rejected': 'Retained authorization not accepted or identity changed \u00b7 station data stale',
-        'enrollment-pending': 'Authorization enrollment outcome unknown \u00b7 station data stale',
-        'explicit-in-progress': 'Authorization in progress \u00b7 station data stale'};
-      stale(); connection.textContent = Object.hasOwn(reasons, condition) ? reasons[condition] : 'Authorization unavailable \u00b7 station data stale'; login.hidden = condition !== 'credential-missing';
+      showAuthorizationUnavailable(error);
       clearTimeout(timer); timer = setTimeout(connect, 4000); return;
     }
     if (attempt !== connecting || !authorized()) return;
@@ -115,20 +118,32 @@ setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - la
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
-  let secret = input.value; input.value = '';
+  let secret = input.value, submittedEpoch = null; input.value = '';
   try {
     if (selectedHttps && !authorization) throw new Error('Authorization component unavailable');
-    if (authorization) {const submitted = authorization.bootstrap(secret); secret = null; await submitted;}
+    if (authorization) {
+      const beforeEpoch = authorization.snapshot().epoch, submitted = authorization.bootstrap(secret);
+      const afterEpoch = authorization.snapshot().epoch;
+      if (afterEpoch !== beforeEpoch) submittedEpoch = afterEpoch;
+      secret = null; await submitted;
+      if (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || !authorization.snapshot().ready) return;
+    }
     else {const response = await fetch('/session', {method: 'POST', body: secret}); secret = null; if (!response.ok) throw new Error('Access denied');}
     document.querySelector('#login-error').textContent = ''; clearTimeout(timer);
     if (socket && socket.readyState < WebSocket.CLOSING) { socket.onclose = null; socket.close(); }
     retry = 1000; connect();
-  } catch { document.querySelector('#login-error').textContent = 'Could not authenticate. Check your token and connection.'; }
+  } catch (error) {
+    if (authorization && (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || authorization.snapshot().ready)) return;
+    if (error?.authorizationCondition) {
+      showAuthorizationUnavailable(error); document.querySelector('#login-error').textContent = '';
+    } else document.querySelector('#login-error').textContent = 'Could not authenticate. Check your token and connection.';
+  }
   finally {secret = null;}
 });
 addEventListener('station-authorization', event => {
-  if (!authorization || event.detail.ready) return;
-  stale(); connection.textContent = 'Authorization unavailable · station data stale';
+  if (!authorization || event.detail.epoch !== authorization.snapshot().epoch || event.detail.ready) return;
+  if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail);
+  else {stale(); connection.textContent = 'Authorization unavailable · station data stale';}
   if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
   clearTimeout(timer); timer = setTimeout(connect, 4000);
 });

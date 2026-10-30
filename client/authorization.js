@@ -19,7 +19,8 @@ window.stationAuthorization = (() => {
   const sameScope = (a, b) => validScope(a) && validScope(b) && sameRadio(a, b) && a.safety_revision === b.safety_revision;
   function publish(next, nextScope = scope) {
     state = next; scope = nextScope;
-    window.dispatchEvent(new CustomEvent('station-authorization', {detail: snapshot()}));
+    const detail = Object.freeze({...snapshot(), authorizationCondition: lastFailure?.condition ?? null, status: lastFailure?.status ?? null});
+    window.dispatchEvent(new CustomEvent('station-authorization', {detail}));
   }
   function snapshot() {return Object.freeze({epoch, state, ready: state === 'ready', scope: scope && Object.freeze({...scope})});}
   async function open(create) {
@@ -186,8 +187,9 @@ window.stationAuthorization = (() => {
   }
   async function bootstrap(secret) {
     if (recovery || authorizing) throw new Error('Authorization recovery in progress');
-    authorizing = true;
+    authorizing = true; lastFailure = null;
     const current = ++epoch; publish('authorizing');
+    let condition = null;
     try {
       let response;
       try {response = await fetch('/session', {method: 'POST', body: secret, signal: AbortSignal.timeout(10000)});}
@@ -195,23 +197,43 @@ window.stationAuthorization = (() => {
       if (response.status !== 204) throw new Error('Could not authorize station');
       const signal = AbortSignal.timeout(10000), discovered = await raw('bootstrap-scope', {version: 1}, signal);
       if (discovered.version !== 1 || !validScope(discovered.current_scope)) throw new Error('Explicit radio setup required');
+      condition = 'credential-storage-unavailable';
       const db = await open(true); db.close();
-      if (await stored()) throw new Error('Retained credential exists; resolve it before replacing authorization');
+      const existing = await stored();
+      if (existing !== undefined) {
+        condition = 'credential-invalid';
+        const retained = validateCredential(existing);
+        condition = retained.pending_enrollment ? 'enrollment-pending' : 'retained-transient';
+        throw new Error('Retained credential exists; resolve it before replacing authorization');
+      }
+      condition = null;
       const pair = await crypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify']);
       const credential = {version: 1, origin: location.origin, key: pair.privateKey,
         public_key: encoded(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey))),
         grant_id: encoded(crypto.getRandomValues(new Uint8Array(32))), enrollment_id: crypto.randomUUID(),
         scope: discovered.current_scope, pending_enrollment: true};
+      condition = 'credential-storage-unavailable';
       await stored(credential, false, true);
+      condition = 'enrollment-pending';
       const receipt = await raw('enroll', {version: 1, operation_id: credential.enrollment_id, scope: credential.scope,
         grant_id: credential.grant_id, public_key: credential.public_key}, signal);
       if (receipt.version !== 1 || receipt.operation_id !== credential.enrollment_id || receipt.grant_id !== credential.grant_id ||
           receipt.outcome !== 'committed' || !sameScope(receipt.scope, credential.scope)) throw new Error('Enrollment outcome unknown');
       credential.pending_enrollment = false; await stored(credential);
+      condition = 'retained-transient';
       const currentScope = await renew(credential, signal);
       if (current === epoch) {lastFailure = null; publish('ready', currentScope);}
       return snapshot();
-    } catch (error) {if (current === epoch) publish('unavailable'); throw error;}
+    } catch (error) {
+      let failure = error;
+      if (condition) {
+        if (condition === 'retained-transient' && ([401, 403].includes(error?.status) || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
+        failure = new Error('Station authorization unavailable'); failure.authorizationCondition = condition;
+        if ([401, 403, 429, 503].includes(error?.status)) failure.status = error.status;
+      }
+      if (current === epoch) {lastFailure = condition ? {condition, status: failure.status} : null; publish('unavailable');}
+      throw failure;
+    }
     finally {authorizing = false; secret = null;}
   }
   // No await lies between this check and fetch: mutations never wait for proof and
