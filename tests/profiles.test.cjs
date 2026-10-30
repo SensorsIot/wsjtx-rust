@@ -144,6 +144,7 @@ test('TC-022-006: upload intent cannot cross authorization renewal', {timeout: 4
   const page = await context.newPage(); await page.goto(p.origin);
   await page.locator('#login').waitFor({state: 'visible'});
   await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  await page.locator('#open-recordings').click();
   await page.locator('#recording-import').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#recording-import').disabled);
   let reserved = false, chunks = 0, heldRoute;
