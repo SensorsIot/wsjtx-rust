@@ -156,7 +156,7 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
     });
     page.on('response', response => {
       const url = new URL(response.url());
-      if (url.origin === p.origin && (url.pathname.startsWith('/authorization/v1/') || url.pathname === '/profile'))
+      if (url.origin === p.origin && (url.pathname.startsWith('/authorization/v1/') || url.pathname === '/profile' || url.pathname === '/session'))
         timeline.push({label, path: url.pathname, status: response.status(), at: performance.now()});
     });
     page.on('websocket', ws => {
@@ -184,22 +184,32 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   const cookieName = `wstx_session_${p.document.profile_id}`;
   const oldCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
   assert.ok(oldCookie, 'initial selected transport cookie exists');
-  const b = await context.newPage(); observe(b, 'B'); await b.goto(p.origin); await connected(b);
+  const b = await context.newPage(); observe(b, 'B');
+  // Observe B's real post-proof status; the later extra request is the explicit11th-attempt boundary.
+  const bStatusResponse = b.waitForResponse(response => response.url() === p.origin + '/authorization/v1/status' &&
+    response.request().method() === 'POST', {timeout: 10000}).catch(() => null);
+  await b.goto(p.origin); await connected(b);
   await b.evaluate(() => {window.__twoTabOriginalSocket = socket;});
   const secondCredential = await credential(b), newCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
   assert.ok(newCookie, 'rotated selected transport cookie exists');
   const oldProfile = await request(p.origin, 'GET', undefined, {Cookie: `${cookieName}=${oldCookie.value}`});
-  const currentProfiles = [], statuses = [];
+  const currentProfiles = [], statuses = []; let rateLimitedStatus;
   for (const page of [a, b]) {
     currentProfiles.push(await page.evaluate(async () => {
       const response = await window.stationAuthorization.fetch('/profile', {cache: 'no-store'}), value = await response.json();
       return {status: response.status, profile: value.profile_id, boot: value.boot_id};
     }));
-    statuses.push(await page.evaluate(async () => {
+    const observedStatus = await page.evaluate(async () => {
       const response = await window.stationAuthorization.fetch('/authorization/v1/status', {method: 'POST', cache: 'no-store',
         headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1})});
       const text = await response.text(); return {status: response.status, bytes: new TextEncoder().encode(text).length, value: JSON.parse(text)};
-    }));
+    });
+    if (page === a) statuses.push(observedStatus);
+    else {
+      rateLimitedStatus = observedStatus;
+      const response = await bStatusResponse; assert.ok(response, 'actual B post-proof status observed within original10s');
+      const text = await response.text(); statuses.push({status: response.status(), bytes: Buffer.byteLength(text), value: JSON.parse(text)});
+    }
     snapshots.push(await page.evaluate(() => ({connection: connection.dataset.state, sameSocket: socket === window.__twoTabOriginalSocket,
       originalState: window.__twoTabOriginalSocket?.readyState, currentState: socket?.readyState, boot: profileData?.boot_id,
       authorization: window.stationAuthorization.snapshot(), loginHidden: document.querySelector('#login').hidden,
@@ -207,9 +217,10 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   }
   const afterFiles = await fileHashes(), sameFiles = JSON.stringify(beforeFiles) === JSON.stringify(afterFiles);
   const sameCredential = JSON.stringify(firstCredential) === JSON.stringify(secondCredential);
+  const authResponses = timeline.filter(item => item.status !== undefined && (item.path === '/session' || item.path.startsWith('/authorization/v1/')));
   const peerEvidence = peers.map(peer => ({label: peer.label, frames: peer.frames, errors: peer.errors, closed: peer.ws.isClosed()}));
   t.diagnostic(JSON.stringify({scope: 'ordinary two actual tabs only; no lost/reordered response claim', counts, timeline,
-    cookieChanged: oldCookie.value !== newCookie.value, oldCookieStatus: oldProfile.status, currentProfiles, statuses,
+    cookieChanged: oldCookie.value !== newCookie.value, oldCookieStatus: oldProfile.status, currentProfiles, statuses, rateLimitedStatus,
     snapshots, sameCredential, sameFiles, peerEvidence}));
   assert.equal(oldCookie.value === newCookie.value, false, 'second retained proof rotates shared transport');
   assert.equal(oldProfile.status, 401, 'replaced transport cannot authorize a new protected request');
@@ -221,8 +232,12 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   assert.equal(sameFiles, true, 'ordinary proof/status does not rewrite durable verifier/settings/receipt bytes');
   assert.equal(counts.session, 1); assert.equal(counts.enroll, 1); assert.equal(counts.bootstrapScope, 1);
   assert.equal(counts.challenge, 2); assert.equal(counts.proof, 2); assert.equal(counts.status, 4);
-  assert.equal(counts.bootstrapScope + counts.enroll + counts.challenge + counts.proof + counts.status, 10, 'original10/60 admission budget, no extra proof/retry');
-  assert.equal(timeline.some(item => item.status === 429), false, 'normal journey must not exhaust the preserved rate limit');
+  const authV1Requests = counts.bootstrapScope + counts.enroll + counts.challenge + counts.proof + counts.status;
+  assert.equal(authV1Requests, 10); assert.equal(authV1Requests + counts.session, 11, 'session shares original10/60 budget; final extra status is11th');
+  assert.deepEqual(authResponses.map(item => item.status), [204, 200, 200, 200, 204, 200, 200, 204, 200, 200, 429], 'first10 actual admissions accepted, only11th refused');
+  assert.equal(authResponses.at(-1).label, 'B'); assert.equal(authResponses.at(-1).path, '/authorization/v1/status');
+  assert.equal(rateLimitedStatus.status, 429); assert.equal(rateLimitedStatus.bytes <= 1024, true);
+  assert.deepEqual(rateLimitedStatus.value, {error: {code: 'rate_limited', field: null}});
   assert.equal(peers.length, 2);
   for (const peer of peerEvidence) {assert.equal(peer.closed, false); assert.equal(peer.frames > 0, true); assert.equal(peer.errors, 0);}
   for (let i = 0; i < 2; i++) {
@@ -239,7 +254,7 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
     assert.equal(status.value.condition, 'disabled'); assert.equal(status.value.commissioned, false);
     assert.equal(status.value.error, null); assert.equal(status.value.retry_after_ms, null);
     assert.deepEqual(Object.keys(status.value.receive_state).sort(), ['audio', 'decoder']);
-    assert.equal(typeof status.value.receive_state.audio, 'string'); assert.equal(typeof status.value.receive_state.decoder, 'string');
+    assert.equal(status.value.receive_state.audio, 'closed'); assert.equal(status.value.receive_state.decoder, null, 'no live job has no decoder state');
   }
 });
 
