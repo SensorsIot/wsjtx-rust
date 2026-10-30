@@ -15,7 +15,7 @@ const stationContext = (current, authEpoch) => current === socket && current?.re
 const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
-let socket, timer, pendingId;
+let socket, timer, pendingId, handshakeProbe;
 let retry = 1000, lastMessage = 0, nextId = 1;
 function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new Event('station-stale')); }
 function requestStatus() {
@@ -27,11 +27,13 @@ function disconnect(current) {
   if (current !== socket) return;
   stale(); current.onclose = null; current.onmessage = null;
   current.close();
-  login.hidden = location.protocol !== 'https:';
+  const retained = selectedHttps && authorization && ['ready', 'recovering'].includes(authorization.snapshot().state);
+  login.hidden = location.protocol !== 'https:' || retained;
   clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
 }
 let connecting = 0;
 async function connect() {
+  handshakeProbe?.abort(); handshakeProbe = null;
   clearTimeout(timer);
   const attempt = ++connecting;
   if (selectedHttps && !authorization) {
@@ -47,12 +49,26 @@ async function connect() {
     if (attempt !== connecting || !authorized()) return;
   }
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, 'wstx.v1');
-  const current = socket;
+  const current = socket, socketEpoch = authorization?.snapshot().epoch;
+  let opened = false, lost = false;
   const profileRefresh = {initialized: false, running: null, again: false};
-  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) disconnect(current);}, 5000);
+  const loseSocket = () => {
+    if (current !== socket || lost) return;
+    lost = true; clearTimeout(openingTimer); disconnect(current);
+    const auth = authorization?.snapshot();
+    if (!selectedHttps || opened || !auth?.ready || auth.epoch !== socketEpoch) return;
+    // A failed handshake cannot expose its HTTP status. Only the existing protected
+    // read may observe401 and start the manager's independent coalesced renewal.
+    const probe = new AbortController(); handshakeProbe?.abort(); handshakeProbe = probe;
+    authorization.fetch('/profile', {cache: 'no-store', signal: AbortSignal.any([probe.signal, AbortSignal.timeout(10000)])})
+      .then(response => {response.body?.cancel().catch(() => {});})
+      .catch(() => {})
+      .finally(() => {if (handshakeProbe === probe) handshakeProbe = null;});
+  };
+  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket();}, 5000);
   current.onopen = () => {
-    clearTimeout(openingTimer);
-    if (current !== socket || !authorized()) return;
+    opened = true; clearTimeout(openingTimer);
+    if (lost || current !== socket || !authorized()) return;
     lastMessage = Date.now(); requestStatus();
   };
   current.onmessage = async event => {
@@ -82,9 +98,7 @@ async function connect() {
       }
     } catch { disconnect(current); }
   };
-  current.onclose = () => {
-    clearTimeout(openingTimer); disconnect(current);
-  };
+  current.onclose = loseSocket;
 }
 setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > 12000) disconnect(socket); }, 1000);
 refresh.addEventListener('click', requestStatus);
