@@ -65,6 +65,7 @@ The paths a harness change may touch; everything else is product:
 - `docs/harness/`, `AGENTS.md`, `CLAUDE.md`, `.claude/` (the agent guard and skill entrypoints)
 - `deny.toml` (the `rust-supply-chain` pack's licence and source policy)
 - `.github/ISSUE_TEMPLATE/`
+- `.github/workflows/rust-advisories.yml` (the pack's scheduled advisories sensor)
 
 They are declared as `harness_paths` in `.harness/config.yaml`: a push that changes only
 these paths is a harness change, reviewed and not gated.
@@ -74,8 +75,10 @@ as a CR: `.github/workflows/windows-rust.yml` (the CI build), `tools/sysml.py` a
 `tools/sysml/` (authority/trace checks, semantic validation and product contract oracles
 such as coverage tables and property tests).
 `.github/workflows/fortran-stage-diagnostics.yml` is product diagnostic tooling. A reviewer of a `deny.toml` change runs `cargo deny --locked --workspace check bans
-licenses sources`, since the gate does not. The scheduled `cargo deny check advisories`
-sensor of the `rust-supply-chain` pack is not set up yet.
+licenses sources`, since the gate does not. The `rust-supply-chain` pack's
+advisories sensor is `.github/workflows/rust-advisories.yml`: weekly and on demand, read-only,
+it runs `cargo deny --locked --workspace check advisories`. A red run is GitHub's failed-workflow
+notice to the operator (the user who last edited the schedule); it names the crate and the advisory, and the fix is a CR.
 
 ## Documentation is current-state
 
