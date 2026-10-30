@@ -93,8 +93,9 @@ function request(origin, method = 'GET', body, headers = {}, pathname = '/profil
       let data = '', bytes = 0;
       res.on('data', b => {bytes += b.length; if (proof && bytes > 1024) {req.destroy(); res.destroy(); fail(); return;} data += b;});
       res.on('end', () => {
+        const completedAt = performance.now();
         if (proof) clearTimeout(timer);
-        if (proof) {try {resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: bytes, headers: res.headers, rawBody: data});} catch {fail();}}
+        if (proof) {try {resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: bytes, headers: res.headers, rawBody: data, completedAt});} catch {fail();}}
         else resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: Buffer.byteLength(data, 'utf8'), headers: res.headers});
       });
       if (proof) {res.on('error', fail); res.on('aborted', () => fail());}
@@ -1123,6 +1124,9 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   let holdSnapshot = false, rejectedIntent = false, holdNoEffects = false, readyEarly = false, connectedEarly = false;
   let resolveEnrollment;
   const enrollmentSeen = new Promise(resolve => {resolveEnrollment = resolve;});
+  const wire = [Array(9).fill(0), Array(9).fill(0)], attempts = [Array(9).fill(0), Array(9).fill(0)];
+  const authCode = pathname => ({'/session': 1, '/authorization/v1/bootstrap-scope': 2, '/authorization/v1/enroll': 3, '/authorization/v1/challenge': 4, '/authorization/v1/proof': 5, '/authorization/v1/status': 6, '/authorization/v1/receipt': 7}[pathname] || 8);
+  let holdElapsed = -1, holdWithinDeadline = false, holdQualified = false, guardMs = -1, oldBoot;
   const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   function processes() {
     const quoted = profileDir.replaceAll("'", "''");
@@ -1156,12 +1160,21 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   async function openBrowser() {
     try {context = await chromium.launchPersistentContext(profileDir, {headless: true, ignoreHTTPSErrors: true});} catch {throw new Error('Owned browser launch unavailable');}
     const page = context.pages()[0] || await context.newPage();
-    await page.addInitScript(() => {
-      window.__enrollmentDcl = 0; window.__enrollmentEarlyReady = false;
-      addEventListener('DOMContentLoaded', () => {window.__enrollmentDcl = performance.now();}, {once: true});
-      addEventListener('station-authorization', event => {if (event.detail.ready) window.__enrollmentEarlyReady = true;});
-    });
+    await page.addInitScript(watchUnknown => {
+      window.__enrollmentDcl = 0; window.__enrollmentReleased = false;
+      window.__enrollmentSafety = {earlyReady: false, earlyConnected: false, loginExposed: false, watchUnknown};
+      const inspect = records => {
+        const v = window.__enrollmentSafety, connection = document.querySelector('#connection'), login = document.querySelector('#login');
+        if (!window.__enrollmentReleased && (connection?.dataset.state === 'connected' || records.some(r => r.target === connection && r.attributeName === 'data-state' && r.oldValue === 'connected'))) v.earlyConnected = true;
+        if (v.watchUnknown && (login && !login.hidden || records.some(r => r.target === login && r.attributeName === 'hidden' && r.oldValue === null))) v.loginExposed = true;
+      };
+      new MutationObserver(inspect).observe(document, {subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['data-state','hidden']});
+      window.__enrollmentInspect = () => inspect([]);
+      addEventListener('DOMContentLoaded', () => {window.__enrollmentDcl = performance.now(); inspect([]);}, {once: true});
+      addEventListener('station-authorization', event => {if (event.detail.ready && !window.__enrollmentReleased) window.__enrollmentSafety.earlyReady = true;});
+    }, !initial);
     page.on('request', req => {const u = new URL(req.url()); if (u.origin !== p.origin) return;
+      if (u.pathname === '/session' || u.pathname.startsWith('/authorization/v1/')) {const code = authCode(u.pathname); attempts[initial ? 0 : 1][code]++; if (u.pathname === '/session') wire[initial ? 0 : 1][code]++;}
       if (u.pathname === '/session') counts.session++;
       if (u.pathname === '/authorization/v1/enroll') counts.enroll++;
       if (initial && ['/authorization/v1/challenge','/authorization/v1/proof','/authorization/v1/receipt'].includes(u.pathname)) counts.followup++;
@@ -1169,7 +1182,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
       if (!receiptReleased && (u.pathname === '/profile' || u.pathname.startsWith('/receive/') || u.pathname.startsWith('/recordings'))) counts.protectedBeforeReceipt++;
     });
     page.on('requestfailed', req => {if (initial && new URL(req.url()).pathname === '/authorization/v1/enroll') enrollFailed = true;});
-    page.on('response', res => {const u = new URL(res.url()); if (u.origin === p.origin && u.pathname.startsWith('/authorization/v1/')) replies.push({path: u.pathname, status: res.status(), initial});});
+    page.on('response', res => {const u = new URL(res.url()); if (u.origin === p.origin && (u.pathname === '/session' || u.pathname.startsWith('/authorization/v1/'))) replies.push({path: u.pathname, status: res.status(), initial});});
     page.on('websocket', () => {counts.sockets++;});
     await page.route(p.origin + '/authorization/v1/**', async route => {
       const req = route.request(), pathname = new URL(req.url()).pathname;
@@ -1178,30 +1191,50 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
         if (initial && pathname.endsWith('/enroll')) {
           enrollment = JSON.parse(req.postData()); retained = await metadata(page);
           if (committed) {
-            const headers = await req.allHeaders(); const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
+            const headers = await req.allHeaders(); wire[initial ? 0 : 1][authCode(pathname)]++; const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
+            replies.push({path: pathname, status: result.status, initial});
             forwarded = result.status === 200 && result.body?.version === 1 && result.body?.outcome === 'committed' && result.body?.operation_id === enrollment.operation_id && result.body?.grant_id === enrollment.grant_id && equal(result.body?.scope, enrollment.scope) && !result.headers['set-cookie'] && storeValid(await store(), true);
           }
           await route.abort('failed'); resolveEnrollment(); return;
         }
         if (!initial && committed && pathname.endsWith('/receipt')) {
-          const headers = await req.allHeaders(); const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
+          const headers = await req.allHeaders(); wire[initial ? 0 : 1][authCode(pathname)]++; const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
+          replies.push({path: pathname, status: result.status, initial});
           const valid = result.status === 200 && result.body?.version === 1 && result.body?.outcome === 'committed' && result.body?.operation_id === enrollment.operation_id && result.body?.grant_id === enrollment.grant_id && equal(result.body?.scope, enrollment.scope) && !result.headers['set-cookie'];
           if (!valid) {routeError = true; await route.abort('failed'); return;}
-          receiptHeld = true; const until = performance.now() + 500;
-          holdSnapshot = await page.evaluate(() => !window.stationAuthorization.snapshot().ready);
-          rejectedIntent = await page.evaluate(async body => {try {await window.stationAuthorization.fetch('/profile', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body}); return false;} catch {return true;}}, JSON.stringify(edit(1, 0)));
-          const before = counts.mutation;
-          while (performance.now() < until) {readyEarly ||= await page.evaluate(() => window.stationAuthorization.snapshot().ready); connectedEarly ||= await page.locator('#connection').getAttribute('data-state') === 'connected'; await new Promise(r => setTimeout(r, Math.min(25, Math.max(0, until - performance.now()))));}
-          holdNoEffects = before === 0 && counts.mutation === 0 && counts.sockets === 0 && counts.protectedBeforeReceipt === 0;
-          receiptReleased = true; await route.fulfill({status: result.status, contentType: 'application/json', body: result.rawBody}); return;
+          receiptHeld = true;
+          const target = result.completedAt + 500;
+          const release = new Promise(resolve => {setTimeout(async () => {
+            try {
+              await page.evaluate(() => {window.__enrollmentInspect(); window.__enrollmentReleased = true;});
+              const elapsed = await page.evaluate(() => performance.now() - window.__enrollmentDcl);
+              holdElapsed = performance.now() - result.completedAt; holdWithinDeadline = elapsed < 10000;
+              holdQualified = holdElapsed >= 500 && holdElapsed < 1000 && holdWithinDeadline;
+              receiptReleased = true;
+              await route.fulfill({status: result.status, contentType: 'application/json', body: result.rawBody});
+            } catch {routeError = true; try {await route.abort('failed');} catch {}}
+            finally {resolve();}
+          }, Math.max(0, target - performance.now()));});
+          const guard = await page.evaluate(async body => {
+            const start = performance.now(); let timer;
+            const operation = window.stationAuthorization.fetch('/profile', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body}).then(() => 1, () => 2);
+            const outcome = await Promise.race([operation, new Promise(resolve => {timer = setTimeout(() => resolve(3), 0);})]);
+            clearTimeout(timer);
+            return {unknown: !window.stationAuthorization.snapshot().ready, rejected: outcome === 2 && !window.__enrollmentReleased, elapsed: performance.now() - start};
+          }, JSON.stringify(edit(1, 0)));
+          holdSnapshot = guard.unknown; rejectedIntent = guard.rejected; guardMs = guard.elapsed;
+          await release;
+          holdNoEffects = counts.mutation === 0 && counts.protectedBeforeReceipt === 0;
+          return;
         }
-        await route.continue();
+        wire[initial ? 0 : 1][authCode(pathname)]++; await route.continue();
       } catch {routeError = true; resolveEnrollment(); try {await route.abort('failed');} catch {}}
     });
     return page;
   }
   t.after(async () => {releaseInitial(); try {await context?.close(); if (processes().length) throw new Error('Owned process survives');} catch {retainFixtureRoot = true; throw new Error('Enrollment browser cleanup unqualified');}});
-  let page = await openBrowser(); processes();
+  let page = await openBrowser(); const firstBrowser = processes();
+  assert.equal(firstBrowser.length > 0 && firstBrowser.some(v => v.OwnProfile && v.ProcessId > 0 && Boolean(v.CreationDate)), true);
   const profileBefore = await fs.readFile(path.join(p.dir, 'profile.json'));
   await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible', timeout: 10000});
   try {await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();} catch {throw new Error('Enrollment bootstrap interaction unavailable');}
@@ -1211,32 +1244,54 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   assert.equal(routeError, false); assert.equal(enrollFailed, true); assert.equal(committed ? forwarded : !forwarded, true);
   assert.equal(retained?.keyValid && retained.pending && retained.grant === enrollment.grant_id && retained.operation === enrollment.operation_id && retained.public === enrollment.public_key && equal(retained.scope, enrollment.scope), true);
   assert.equal((await metadata(page)).pending, true); assert.equal(await page.evaluate(() => !window.stationAuthorization.snapshot().ready), true);
+  assert.equal(replies.some(v => v.path === '/session' && v.status === 204), true);
+  assert.equal(replies.some(v => v.path.endsWith('/bootstrap-scope') && v.status === 200), true);
   assert.equal(replies.some(v => v.path.endsWith('/receipt') && v.status === 200), false);
   assert.equal(storeValid(await store(), committed), true);
   const durableBefore = await fs.readFile(path.join(p.dir, 'authorization.json'));
+  await page.evaluate(() => {window.__enrollmentSafety.watchUnknown = true; window.__enrollmentInspect();});
+  let pendingUi = false;
+  try {await page.waitForFunction(() => document.querySelector('#login').hidden && /enrollment outcome unknown/i.test(document.querySelector('#connection').textContent), null, {timeout: 2000}); pendingUi = true;} catch {}
+  assert.equal(pendingUi, true, 'pending enrollment must remain explicitly unknown without replacement login');
+  const initialSafety = await page.evaluate(() => window.__enrollmentSafety);
+  assert.equal(initialSafety.earlyReady || initialSafety.earlyConnected || initialSafety.loginExposed, false);
   const cookieName = `wstx_session_${p.document.profile_id}`;
+  const cookies = await context.cookies(p.origin), cookie = cookies.find(v => v.name === cookieName);
+  assert.equal(Boolean(cookie?.value) && cookie.secure && cookie.httpOnly, true);
+  let oldProfile;
+  try {oldProfile = await request(p.origin, 'GET', undefined, {Cookie: `${cookieName}=${cookie.value}`});} catch {throw new Error('Original server boot inspection unavailable');}
+  oldBoot = oldProfile.body?.boot_id;
+  assert.equal(oldProfile.status === 200 && typeof oldBoot === 'string' && oldBoot.length > 0, true);
   await context.clearCookies({name: cookieName, domain: 'localhost'});
   assert.equal((await context.cookies(p.origin)).some(v => v.name === cookieName), false);
   assert.equal(equal(await metadata(page), retained), true);
-  releaseInitial(); await context.close(); context = null; assert.equal(processes().length, 0);
+  releaseInitial(); await context.close(); context = null; const closedBrowser = processes(); assert.equal(closedBrowser.length, 0);
+  assert.equal(firstBrowser.every(v => !closedBrowser.some(n => n.ProcessId === v.ProcessId && n.CreationDate === v.CreationDate)), true);
   const oldServer = serverIdentity(p.app); await p.app.close();
   assert.equal(p.app.child.exitCode !== null || p.app.child.signalCode !== null, true);
   try {p.app = await start(p, p.env); apps.push(p.app);} catch {throw new Error('Owned enrollment server restart unavailable');}
   const nextServer = serverIdentity(p.app); assert.equal(oldServer.pid !== nextServer.pid || oldServer.created !== nextServer.created, true);
   assert.equal((await fs.readFile(path.join(p.dir, 'authorization.json'))).equals(durableBefore), true);
-  initial = false; page = await openBrowser(); processes();
+  initial = false; page = await openBrowser(); const secondBrowser = processes();
+  assert.equal(secondBrowser.length > 0 && secondBrowser.some(v => v.OwnProfile && v.ProcessId > 0 && Boolean(v.CreationDate)), true);
+  assert.equal(secondBrowser.filter(v => v.OwnProfile).every(v => firstBrowser.every(old => old.ProcessId !== v.ProcessId || old.CreationDate !== v.CreationDate)), true);
   await page.goto(p.origin, {waitUntil: 'domcontentloaded'});
   const anchor = await page.evaluate(() => window.__enrollmentDcl); assert.equal(anchor > 0, true);
   const deadline = performance.now() + await page.evaluate(at => Math.max(0, at + 10000 - performance.now()), anchor);
-  let recovered = false, recoveredMs = -1;
+  let recovered = false, recoveredMs = -1, unknownSeen = false, unknownLost = false;
   while (performance.now() < deadline) {
-    const state = await page.evaluate(() => ({ready: window.stationAuthorization.snapshot().ready, elapsed: performance.now() - window.__enrollmentDcl}));
+    const state = await page.evaluate(() => ({ready: window.stationAuthorization.snapshot().ready, elapsed: performance.now() - window.__enrollmentDcl, open: typeof socket !== 'undefined' && socket?.readyState === WebSocket.OPEN, boot: typeof profileData !== 'undefined' && profileData?.boot_id, pendingUi: document.querySelector('#login').hidden && /enrollment outcome unknown/i.test(document.querySelector('#connection').textContent)}));
     const connectedNow = await page.locator('#connection').getAttribute('data-state') === 'connected';
-    if (state.ready && connectedNow && !recovered) {recovered = true; recoveredMs = state.elapsed;}
-    if (!committed) {readyEarly ||= state.ready; connectedEarly ||= connectedNow;}
+    if (state.ready && connectedNow && state.open && typeof state.boot === 'string' && state.boot !== oldBoot && !recovered) {recovered = true; recoveredMs = state.elapsed;}
+    if (!committed) {readyEarly ||= state.ready; connectedEarly ||= connectedNow; if (state.pendingUi) unknownSeen = true; else if (unknownSeen && state.elapsed >= 2000) unknownLost = true;}
     await new Promise(r => setTimeout(r, Math.min(25, Math.max(0, deadline - performance.now()))));
   }
-  const after = await metadata(page);
+  if (committed && receiptHeld) assert.equal(holdQualified, true, 'receipt hold timing instrumentation must qualify before product verdict');
+  const after = await metadata(page), safety = await page.evaluate(() => {window.__enrollmentInspect(); return window.__enrollmentSafety;});
+  assert.equal(safety.earlyReady || safety.earlyConnected || safety.loginExposed, false);
+  assert.equal(wire.every(bucket => bucket.reduce((sum, n) => sum + n, 0) <= 10 && bucket[8] === 0), true);
+  assert.equal(replies.some(v => v.status === 429), false);
+  assert.equal(wire[0][1] === 1 && wire[0][2] === 1 && wire[0][3] === (committed ? 1 : 0), true);
   assert.equal(routeError, false); assert.equal(counts.session, 1); assert.equal(counts.enroll, 1); assert.equal(counts.mutation, 0);
   assert.equal(after.keyValid && after.grant === retained.grant && after.public === retained.public && after.operation === retained.operation && equal(after.scope, retained.scope), true);
   assert.equal(storeValid(await store(), committed), true);
@@ -1248,10 +1303,10 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
     assert.equal(replies.some(v => !v.initial && v.path.endsWith('/proof') && v.status === 204), true);
     assert.equal(replies.some(v => !v.initial && v.path.endsWith('/status') && v.status === 200), true);
   } else {
-    assert.equal(readyEarly || connectedEarly || recovered, false); assert.equal(after.pending, true); assert.equal(counts.sockets, 0); assert.equal(counts.protectedBeforeReceipt, 0);
+    assert.equal(readyEarly || connectedEarly || recovered, false); assert.equal(after.pending, true); assert.equal(unknownSeen && !unknownLost, true); assert.equal(counts.sockets, 0); assert.equal(counts.protectedBeforeReceipt, 0);
     assert.equal(replies.some(v => !v.initial && ['/authorization/v1/proof','/authorization/v1/receipt'].includes(v.path) && v.status >= 200 && v.status < 300), false);
   }
-  t.diagnostic(JSON.stringify({enrollment_loss: committed ? 1 : 2, qualified: true, recovered, recovered_ms: recoveredMs, bootstrap_count: counts.session, enrollment_count: counts.enroll, queued_mutations: counts.mutation, receipt_held: receiptHeld, native_observed: false}));
+  t.diagnostic(JSON.stringify({enrollment_loss: committed ? 1 : 2, qualified: true, recovered, recovered_ms: recoveredMs, bootstrap_count: counts.session, enrollment_count: counts.enroll, queued_mutations: counts.mutation, receipt_held: receiptHeld, native_observed: false, hold_ms: holdElapsed, hold_qualified: holdQualified, guard_ms: guardMs, auth_wire_counts: wire, auth_attempt_counts: attempts}));
 });
 
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
