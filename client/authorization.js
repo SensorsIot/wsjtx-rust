@@ -2,7 +2,7 @@
 // This owner stores only the nonextractable signing key and public operation metadata.
 window.stationAuthorization = (() => {
   const encoder = new TextEncoder(), database = 'wstx-authorization-v1';
-  let epoch = 0, state = 'unavailable', scope = null, recovery = null, retryAt = 0, authorizing = false;
+  let epoch = 0, state = 'unavailable', scope = null, recovery = null, retryAt = 0, authorizing = false, lastFailure = null;
   const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
   const encoded = bytes => btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
   function decoded(value, size) {
@@ -24,17 +24,28 @@ window.stationAuthorization = (() => {
   function snapshot() {return Object.freeze({epoch, state, ready: state === 'ready', scope: scope && Object.freeze({...scope})});}
   async function open(create) {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(database, 1);
-      request.onupgradeneeded = () => {
-        if (!create || request.oldVersion > 0) {request.transaction.abort(); return;}
+      const request = indexedDB.open(database, 1); let settled = false;
+      const fail = condition => {
+        if (settled) return;
+        settled = true; const error = new Error('Authorization storage unavailable');
+        if (condition) error.authorizationCondition = condition;
+        reject(error);
+      };
+      request.onupgradeneeded = event => {
+        if (!create || event.oldVersion > 0 || settled) {
+          const absent = !create && event.oldVersion === 0;
+          try {request.transaction.abort();} catch {fail(); return;}
+          fail(absent ? 'credential-missing' : null); return;
+        }
         request.result.createObjectStore('credential');
       };
-      request.onerror = () => reject(new Error('Authorization storage unavailable'));
-      request.onblocked = () => reject(new Error('Authorization storage blocked'));
+      request.onerror = () => fail();
+      request.onblocked = () => fail();
       request.onsuccess = () => {
         const db = request.result;
-        if (!db.objectStoreNames.contains('credential')) {db.close(); reject(new Error('Invalid authorization storage')); return;}
-        resolve(db);
+        if (settled) {db.close(); return;}
+        if (!db.objectStoreNames.contains('credential')) {db.close(); fail(); return;}
+        settled = true; resolve(db);
       };
     });
   }
@@ -94,7 +105,7 @@ window.stationAuthorization = (() => {
       {version: 1, grant_id: credential.grant_id}, signal);
     if (value.version !== 1 || value.grant_id !== credential.grant_id || value.public_key !== credential.public_key ||
         !validScope(value.scope) || !sameRadio(value.scope, credential.scope) || value.lifetime_seconds !== 60) {
-      throw new Error('Authorization identity changed');
+      const error = new Error('Authorization identity changed'); error.authorizationCondition = 'retained-rejected'; throw error;
     }
     decoded(value.nonce, 32);
     return value;
@@ -120,24 +131,31 @@ window.stationAuthorization = (() => {
       credential = {...credential, pending_enrollment: false}; await stored(credential);
     }
     const status = await raw('status', {version: 1}, signal);
-    if (status.version !== 1 || !sameScope(status.scope, value.scope)) throw new Error('Authorization identity changed');
+    if (status.version !== 1 || !sameScope(status.scope, value.scope)) {const error = new Error('Authorization identity changed'); error.authorizationCondition = 'retained-rejected'; throw error;}
     return value.scope;
   }
   function ensureReady() {
-    if (authorizing) return Promise.reject(new Error('Explicit authorization in progress'));
+    if (authorizing) {const error = new Error('Explicit authorization in progress'); error.authorizationCondition = 'explicit-in-progress'; return Promise.reject(error);}
     if (state === 'ready') return Promise.resolve(snapshot());
     if (recovery) return recovery;
-    if (Date.now() < retryAt) return Promise.reject(new Error('Authorization retry pending'));
+    if (Date.now() < retryAt) {const error = new Error('Authorization retry pending'); if (lastFailure) {error.authorizationCondition = lastFailure.condition; if (lastFailure.status) error.status = lastFailure.status;} return Promise.reject(error);}
     const current = ++epoch; publish('recovering');
     recovery = (async () => {
+      let condition = 'credential-storage-unavailable';
       try {
-        const credential = validateCredential(await stored());
+        const record = await stored(); condition = record === undefined ? 'credential-missing' : 'credential-invalid';
+        const credential = validateCredential(record);
+        condition = credential.pending_enrollment ? 'enrollment-pending' : 'retained-transient';
         const currentScope = await renew(credential, AbortSignal.timeout(10000));
-        if (current === epoch) publish('ready', currentScope);
+        if (current === epoch) {lastFailure = null; publish('ready', currentScope);}
         return snapshot();
       } catch (error) {
-        if (current === epoch) {retryAt = Date.now() + (error.status === 429 ? 60000 : 4000); publish('unavailable');}
-        throw error;
+        if (condition === 'credential-storage-unavailable' && error?.authorizationCondition === 'credential-missing') condition = 'credential-missing';
+        if (condition === 'retained-transient' && ([401, 403].includes(error?.status) || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
+        const failure = new Error('Station authorization unavailable'); failure.authorizationCondition = condition;
+        if ([401, 403, 429, 503].includes(error?.status)) failure.status = error?.status;
+        if (current === epoch) {lastFailure = {condition, status: failure.status}; retryAt = Date.now() + (failure.status === 429 ? 60000 : 4000); publish('unavailable');}
+        throw failure;
       } finally {recovery = null;}
     })();
     return recovery;
@@ -173,7 +191,7 @@ window.stationAuthorization = (() => {
           receipt.outcome !== 'committed' || !sameScope(receipt.scope, credential.scope)) throw new Error('Enrollment outcome unknown');
       credential.pending_enrollment = false; await stored(credential);
       const currentScope = await renew(credential, signal);
-      if (current === epoch) publish('ready', currentScope);
+      if (current === epoch) {lastFailure = null; publish('ready', currentScope);}
       return snapshot();
     } catch (error) {if (current === epoch) publish('unavailable'); throw error;}
     finally {authorizing = false; secret = null;}

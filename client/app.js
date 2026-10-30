@@ -41,13 +41,24 @@ async function connect() {
   }
   if (authorization) {
     try {await authorization.ensureReady();}
-    catch {
+    catch (error) {
       if (attempt !== connecting) return;
-      stale(); connection.textContent = 'Authorization unavailable · station data stale'; login.hidden = false;
+      const condition = error?.authorizationCondition;
+      const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
+        'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
+        'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
+        'retained-transient': error?.status === 429 ? 'Authorization rate limited \u00b7 station data stale' : error?.status === 503 ?
+          'Authorization persistence unavailable \u00b7 station data stale' : 'Retained authorization unavailable \u00b7 retrying',
+        'retained-rejected': 'Retained authorization not accepted or identity changed \u00b7 station data stale',
+        'enrollment-pending': 'Authorization enrollment outcome unknown \u00b7 station data stale',
+        'explicit-in-progress': 'Authorization in progress \u00b7 station data stale'};
+      stale(); connection.textContent = Object.hasOwn(reasons, condition) ? reasons[condition] : 'Authorization unavailable \u00b7 station data stale'; login.hidden = condition !== 'credential-missing';
       clearTimeout(timer); timer = setTimeout(connect, 4000); return;
     }
     if (attempt !== connecting || !authorized()) return;
   }
+  clearTimeout(timer);
+  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, 'wstx.v1');
   const current = socket, socketEpoch = authorization?.snapshot().epoch;
   let opened = false, lost = false;

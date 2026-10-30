@@ -393,6 +393,72 @@ test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000
   }
 });
 
+// Executes the actual authorization owner against independent platform failure boundaries; no server authority or successful proof is fabricated.
+test('TC-022-006: authorization owner distinguishes credential lookup and retained failures', {timeout: 45000}, async t => {
+  const vm = require('node:vm'), source = await fs.readFile(path.resolve('client/authorization.js'), 'utf8');
+  const pair = await crypto.webcrypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify']);
+  const origin = 'https://localhost:18443', scope = {profile_id: uuid(1), radio_id: uuid(2), safety_revision: 1};
+  const credential = {version: 1, origin, key: pair.privateKey, public_key: Buffer.from(await crypto.webcrypto.subtle.exportKey('raw', pair.publicKey)).toString('base64url'),
+    grant_id: Buffer.alloc(32, 7).toString('base64url'), enrollment_id: uuid(3), scope, pending_enrollment: false};
+  const cases = [
+    ['absent', 'credential-missing'], ['empty', 'credential-missing'], ['blocked-late-upgrade', 'credential-storage-unavailable'],
+    ['blocked-late-success', 'credential-storage-unavailable'], ['error', 'credential-storage-unavailable'], ['open-throw', 'credential-storage-unavailable'], ['read-error', 'credential-storage-unavailable'], ['missing-store', 'credential-storage-unavailable'], ['old-version', 'credential-storage-unavailable'],
+    ['invalid', 'credential-invalid'], ['network', 'retained-transient'], ['null-rejection', 'retained-transient'],
+    ['rate', 'retained-transient'], ['persistence', 'retained-transient'], ['unauthorized', 'retained-rejected'],
+    ['forbidden', 'retained-rejected'], ['identity', 'retained-rejected'], ['pending', 'enrollment-pending'], ['explicit', 'explicit-in-progress']
+  ];
+  let checked = 0;
+  for (const [fault, expected] of cases) {
+    let opens = 0, aborts = 0, closes = 0, writes = 0, fetches = 0, finishBootstrap;
+    const record = fault === 'empty' ? undefined : fault === 'invalid' ? null : {...credential, pending_enrollment: fault === 'pending'};
+    const indexedDB = {open() {
+      opens++; if (fault === 'open-throw') throw new DOMException('Injected storage failure', 'SecurityError'); const request = {}, db = {objectStoreNames: {contains: name => fault !== 'missing-store' && name === 'credential'}, close() {closes++;},
+        createObjectStore() {writes++; throw new Error('Lookup must not create a store');},
+        transaction() {const transaction = {objectStore: () => ({get() {const read = {}; queueMicrotask(() => {if (fault === 'read-error') {transaction.onerror(); return;} read.result = record; read.onsuccess(); transaction.oncomplete();}); return read;}})}; return transaction;}};
+      request.result = db; request.transaction = {abort() {aborts++; queueMicrotask(() => request.onerror?.());}};
+      queueMicrotask(() => {
+        if (fault === 'absent' || fault === 'old-version') request.onupgradeneeded({oldVersion: fault === 'absent' ? 0 : 1});
+        else if (fault === 'blocked-late-upgrade') {request.onblocked(); request.onupgradeneeded({oldVersion: 0});}
+        else if (fault === 'blocked-late-success') {request.onblocked(); request.onsuccess();}
+        else if (fault === 'error') request.onerror();
+        else request.onsuccess();
+      }); return request;
+    }};
+    const fetch = async path => {
+      fetches++;
+      if (path === '/session' && fault === 'explicit') return new Promise(resolve => {finishBootstrap = () => resolve({status: 401});});
+      if (fault === 'network') throw new TypeError('Injected network failure');
+      if (fault === 'null-rejection') throw null;
+      const status = ({rate: 429, persistence: 503, unauthorized: 401, forbidden: 403, pending: 401})[fault];
+      if (status) return {ok: false, status};
+      if (fault === 'identity') return {ok: true, status: 200, text: async () => JSON.stringify({version: 1, grant_id: Buffer.alloc(32, 8).toString('base64url'), public_key: credential.public_key, scope, nonce: Buffer.alloc(32, 9).toString('base64url'), lifetime_seconds: 60})};
+      throw new Error('Unexpected network boundary');
+    };
+    const window = {dispatchEvent() {}}, realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array,
+      CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
+    vm.runInContext(source, realm, {timeout: 1000});
+    let bootstrap;
+    if (fault === 'explicit') bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);
+    let timer, failure;
+    try {failure = await Promise.race([window.stationAuthorization.ensureReady().then(() => null, error => ({condition: error.authorizationCondition, status: error.status})),
+      new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('Owner classification did not settle')), 1000);})]);}
+    finally {clearTimeout(timer); if (finishBootstrap) finishBootstrap(); if (bootstrap) await bootstrap;}
+    assert.equal(failure?.condition, expected, 'actual owner must classify the independently injected boundary');
+    assert.equal(window.stationAuthorization.snapshot().ready, false); assert.equal(writes, 0);
+    if (fault === 'absent' || fault === 'old-version' || fault === 'blocked-late-upgrade') assert.equal(aborts, 1);
+    if (fault === 'blocked-late-success') assert.equal(closes, 1, 'settled failure closes a later delivered DB handle');
+    if (['absent', 'empty', 'blocked-late-upgrade', 'blocked-late-success', 'error', 'open-throw', 'read-error', 'missing-store', 'old-version', 'invalid'].includes(fault)) assert.equal(fetches, 0);
+    if (fault === 'rate') assert.equal(failure.status, 429); if (fault === 'persistence') assert.equal(failure.status, 503);
+    if (fault !== 'explicit') {
+      const priorOpens = opens, priorFetches = fetches;
+      const retry = await window.stationAuthorization.ensureReady().then(() => null, error => ({condition: error.authorizationCondition, status: error.status}));
+      assert.equal(retry?.condition, expected, 'backoff preserves the owner failure classification'); assert.equal(opens, priorOpens); assert.equal(fetches, priorFetches);
+    }
+    checked++;
+  }
+  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 19}));
+});
+
 // Proves CL-022-01/02/05: real overlapping proof delivery must not create a false-ready UI or replay Save.
 for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recover after ${deliveryMode} proof delivery`, {timeout: 45000}, async t => {
   const {profiles, apps} = await fixture(t, true), p = profiles[0], context = await browser.newContext({ignoreHTTPSErrors: true});
