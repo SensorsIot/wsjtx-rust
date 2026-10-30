@@ -141,6 +141,107 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
   }), true);
 });
 
+// Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
+test('TC-022-006: actual two tabs share retained authorization and rotated transport', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const counts = {session: 0, enroll: 0, bootstrapScope: 0, challenge: 0, proof: 0, status: 0, profile: 0};
+  const timeline = [], peers = [], snapshots = [];
+  function observe(page, label) {
+    page.on('request', request => {
+      const url = new URL(request.url()); if (url.origin !== p.origin) return;
+      const key = {'/session': 'session', '/authorization/v1/enroll': 'enroll', '/authorization/v1/bootstrap-scope': 'bootstrapScope',
+        '/authorization/v1/challenge': 'challenge', '/authorization/v1/proof': 'proof', '/authorization/v1/status': 'status', '/profile': 'profile'}[url.pathname];
+      if (key) {counts[key]++; timeline.push({label, method: request.method(), path: url.pathname, at: performance.now()});}
+    });
+    page.on('response', response => {
+      const url = new URL(response.url());
+      if (url.origin === p.origin && (url.pathname.startsWith('/authorization/v1/') || url.pathname === '/profile'))
+        timeline.push({label, path: url.pathname, status: response.status(), at: performance.now()});
+    });
+    page.on('websocket', ws => {
+      const peer = {label, ws, frames: 0, errors: 0}; peers.push(peer);
+      ws.on('framereceived', () => {peer.frames++;}); ws.on('socketerror', () => {peer.errors++;});
+    });
+  }
+  async function credential(page) {
+    return page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {const request = indexedDB.open('wstx-authorization-v1', 1); request.onupgradeneeded = () => request.transaction.abort(); request.onerror = () => reject(new Error('Retained credential missing')); request.onsuccess = () => resolve(request.result);});
+      try {
+        const value = await new Promise((resolve, reject) => {const request = db.transaction('credential').objectStore('credential').get('current'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(new Error('Retained credential unavailable'));});
+        if (!value || !(value.key instanceof CryptoKey)) throw new Error('Retained signing key missing');
+        return {grant_id: value.grant_id, public_key: value.public_key, enrollment_id: value.enrollment_id,
+          scope: value.scope, extractable: value.key.extractable, usages: value.key.usages};
+      } finally {db.close();}
+    });
+  }
+  const fileHashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
+  const a = await context.newPage(); observe(a, 'A'); await a.goto(p.origin);
+  await a.locator('#login').waitFor({state: 'visible'});
+  await a.locator('#token').fill(p.env.WSTX_TOKEN); await a.locator('#login button').click(); await connected(a);
+  await a.evaluate(() => {window.__twoTabOriginalSocket = socket;});
+  const firstCredential = await credential(a), beforeFiles = await fileHashes();
+  const cookieName = `wstx_session_${p.document.profile_id}`;
+  const oldCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
+  assert.ok(oldCookie, 'initial selected transport cookie exists');
+  const b = await context.newPage(); observe(b, 'B'); await b.goto(p.origin); await connected(b);
+  await b.evaluate(() => {window.__twoTabOriginalSocket = socket;});
+  const secondCredential = await credential(b), newCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
+  assert.ok(newCookie, 'rotated selected transport cookie exists');
+  const oldProfile = await request(p.origin, 'GET', undefined, {Cookie: `${cookieName}=${oldCookie.value}`});
+  const currentProfiles = [], statuses = [];
+  for (const page of [a, b]) {
+    currentProfiles.push(await page.evaluate(async () => {
+      const response = await window.stationAuthorization.fetch('/profile', {cache: 'no-store'}), value = await response.json();
+      return {status: response.status, profile: value.profile_id, boot: value.boot_id};
+    }));
+    statuses.push(await page.evaluate(async () => {
+      const response = await window.stationAuthorization.fetch('/authorization/v1/status', {method: 'POST', cache: 'no-store',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1})});
+      const text = await response.text(); return {status: response.status, bytes: new TextEncoder().encode(text).length, value: JSON.parse(text)};
+    }));
+    snapshots.push(await page.evaluate(() => ({connection: connection.dataset.state, sameSocket: socket === window.__twoTabOriginalSocket,
+      originalState: window.__twoTabOriginalSocket?.readyState, currentState: socket?.readyState, boot: profileData?.boot_id,
+      authorization: window.stationAuthorization.snapshot(), loginHidden: document.querySelector('#login').hidden,
+      tokenEmpty: document.querySelector('#token').value === '', localKeys: Object.keys(localStorage), sessionKeys: Object.keys(sessionStorage)})));
+  }
+  const afterFiles = await fileHashes(), sameFiles = JSON.stringify(beforeFiles) === JSON.stringify(afterFiles);
+  const sameCredential = JSON.stringify(firstCredential) === JSON.stringify(secondCredential);
+  const peerEvidence = peers.map(peer => ({label: peer.label, frames: peer.frames, errors: peer.errors, closed: peer.ws.isClosed()}));
+  t.diagnostic(JSON.stringify({scope: 'ordinary two actual tabs only; no lost/reordered response claim', counts, timeline,
+    cookieChanged: oldCookie.value !== newCookie.value, oldCookieStatus: oldProfile.status, currentProfiles, statuses,
+    snapshots, sameCredential, sameFiles, peerEvidence}));
+  assert.equal(oldCookie.value === newCookie.value, false, 'second retained proof rotates shared transport');
+  assert.equal(oldProfile.status, 401, 'replaced transport cannot authorize a new protected request');
+  assert.equal(sameCredential, true, 'same origin retains one key/grant/operation tuple across real tabs');
+  assert.equal(firstCredential.extractable, false); assert.deepEqual(firstCredential.usages, ['sign']);
+  assert.equal(firstCredential.scope.profile_id, p.document.profile_id); assert.equal(firstCredential.scope.safety_revision, 1);
+  assert.match(firstCredential.scope.radio_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(sameFiles, true, 'ordinary proof/status does not rewrite durable verifier/settings/receipt bytes');
+  assert.equal(counts.session, 1); assert.equal(counts.enroll, 1); assert.equal(counts.bootstrapScope, 1);
+  assert.equal(counts.challenge, 2); assert.equal(counts.proof, 2); assert.equal(counts.status, 4);
+  assert.equal(counts.bootstrapScope + counts.enroll + counts.challenge + counts.proof + counts.status, 10, 'original10/60 admission budget, no extra proof/retry');
+  assert.equal(timeline.some(item => item.status === 429), false, 'normal journey must not exhaust the preserved rate limit');
+  assert.equal(peers.length, 2);
+  for (const peer of peerEvidence) {assert.equal(peer.closed, false); assert.equal(peer.frames > 0, true); assert.equal(peer.errors, 0);}
+  for (let i = 0; i < 2; i++) {
+    const snapshot = snapshots[i], status = statuses[i];
+    assert.equal(currentProfiles[i].status, 200); assert.equal(currentProfiles[i].profile, p.document.profile_id);
+    assert.equal(currentProfiles[i].boot, snapshots[0].boot); assert.equal(snapshot.boot, snapshots[0].boot);
+    assert.equal(snapshot.connection, 'connected'); assert.equal(snapshot.sameSocket, true);
+    assert.equal(snapshot.originalState, 1); assert.equal(snapshot.currentState, 1); assert.equal(snapshot.authorization.ready, true);
+    assert.deepEqual(snapshot.authorization.scope, firstCredential.scope); assert.equal(snapshot.loginHidden, true); assert.equal(snapshot.tokenEmpty, true);
+    assert.deepEqual(snapshot.localKeys, []); assert.deepEqual(snapshot.sessionKeys, []);
+    assert.equal(status.status, 200); assert.equal(status.bytes <= 1024, true);
+    assert.deepEqual(Object.keys(status.value).sort(), ['commissioned', 'condition', 'error', 'receive_state', 'retry_after_ms', 'scope', 'version']);
+    assert.equal(status.value.version, 1); assert.deepEqual(status.value.scope, firstCredential.scope);
+    assert.equal(status.value.condition, 'disabled'); assert.equal(status.value.commissioned, false);
+    assert.equal(status.value.error, null); assert.equal(status.value.retry_after_ms, null);
+    assert.deepEqual(Object.keys(status.value.receive_state).sort(), ['audio', 'decoder']);
+    assert.equal(typeof status.value.receive_state.audio, 'string'); assert.equal(typeof status.value.receive_state.decoder, 'string');
+  }
+});
+
 test('TC-022-006: missing selected authorization asset fails closed', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
