@@ -1,7 +1,7 @@
 # Harness reference index
 
-The build procedure is the [CR process](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Process.md); method changes
-follow [Harness changes](https://github.com/SensorsIot/harness/blob/V2/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
+The build procedure is the [CR process](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Process.md); method changes
+follow [Harness changes](https://github.com/SensorsIot/harness/blob/main/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
 contract; the references below are the constraints a change must respect.
 
 | Subject | Reference |
@@ -11,12 +11,12 @@ contract; the references below are the constraints a change must respect.
 | Product SysML artifacts and view scope | [Architecture model](../sysml/Architecture.sysml); [catalog and validation](Project-Specifics.md#canonical-model-catalog-and-source-bindings) |
 | Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
-| Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
-| Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |
-| Testing | [testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
-| Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
+| Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/main/lang/rust/standard.md) |
+| Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md) |
+| Testing | [testing](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
+| Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
 | Parallel issue workspaces and supervised sub-agents | [Parallel work](../../harness/core/docs/Parallel-Work.md); `python harness/core/tools/parallel.py status` |
-| Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md) |
+| Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | [Escapes ledger](Escapes-Ledger.md) |
@@ -66,6 +66,8 @@ The paths a harness change may touch; everything else is product:
 - `deny.toml` (the `rust-supply-chain` pack's licence and source policy)
 - `.github/ISSUE_TEMPLATE/`
 - `.github/workflows/rust-advisories.yml` (the pack's scheduled advisories sensor)
+- `.gitmodules` (the harness submodule's URL and branch; it holds only that submodule, and adding
+  another submodule is a product change)
 
 They are declared as `harness_paths` in `.harness/config.yaml`: a push that changes only
 these paths is a harness change, reviewed and not gated.
@@ -109,7 +111,7 @@ behavioural equivalence or implementation readiness; independent review and rele
 application tests supply that evidence.
 
 The active canonical contract and these bindings state the rule that holds now, never
-its history ([documentation](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/documentation.md)).
+its history ([documentation](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/documentation.md)).
 Open work and review/execution evidence live in GitHub issues; history is `git log`.
 
 ## Backlog

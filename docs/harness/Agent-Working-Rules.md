@@ -4,7 +4,7 @@
 **Status:** present-state. **Layer:** HOW. **Scope:** WSTX Rust bindings.
 
 How an AI agent session works with the operator on this project. The build procedure is
-the [CR process](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Process.md); this page holds the standing
+the [CR process](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Process.md); this page holds the standing
 rules around it. Agent memory only points here.
 
 ## Who changes what

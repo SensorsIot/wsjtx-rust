@@ -1,4 +1,4 @@
-# Harness configuration (https://github.com/SensorsIot/harness, branch V2, the submodule
+# Harness configuration (https://github.com/SensorsIot/harness, branch main, the submodule
 # at harness/). Read by harness/core/tools/project.py.
 project: wsjtx-rust
 packs: [rust, rust-supply-chain]
@@ -15,6 +15,7 @@ harness_paths:
   - deny.toml
   - .github/ISSUE_TEMPLATE/
   - .github/workflows/rust-advisories.yml
+  - .gitmodules
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
 # Three issue workspaces; the supervisor occupies this runtime's fourth agent slot.

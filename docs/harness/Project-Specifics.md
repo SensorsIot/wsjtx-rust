@@ -2,8 +2,8 @@
 
 **Layer:** HOW. **Scope:** this project's development environment and procedures.
 
-The [general harness](https://github.com/SensorsIot/harness/tree/V2/core) defines the
-development process. The [Rust harness](https://github.com/SensorsIot/harness/tree/V2/lang/rust)
+The [general harness](https://github.com/SensorsIot/harness/tree/main/core) defines the
+development process. The [Rust harness](https://github.com/SensorsIot/harness/tree/main/lang/rust)
 defines reusable Rust rules and checks. This document binds those reusable instructions
 to this repository's toolchain, paths, test prerequisites and selected execution mode.
 Run the commands below from the repository root.
@@ -173,7 +173,7 @@ Both applications can be developed on one Windows computer: the station-server p
 
 ## Product model maintenance
 
-The reusable [SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
+The reusable [SysML authoring instruction](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md)
 explains how to write models without project-specific assumptions. This binding selects the exclusive authority policy below and the local toolchain. The
 functional entry point is [Requirements.sysml](../sysml/Requirements.sysml), with the
 [architecture](../sysml/Architecture.sysml) and the model packages it references.

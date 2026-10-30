@@ -4,7 +4,7 @@ For the container transfer, first read [the handoff and project memory](docs/har
 It records the last verified state and skills setup; current contracts and GitHub issues
 remain authoritative. Recheck repository state before continuing.
 
-This project uses the harness (https://github.com/SensorsIot/harness, branch `V2`) as a
+This project uses the harness (https://github.com/SensorsIot/harness, branch `main`) as a
 git submodule at `harness/`. That copy is the version this project pins and the place
 the harness is maintained; use it, not the user-level `harness` skill.
 
