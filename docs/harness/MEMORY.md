@@ -16,4 +16,4 @@ source and work remaining, rather than a remembered version. Preserve existing c
 normal checks, independent review and one shared-file/integration writer.
 
 `HB9BLA-HANDOFF.md` identifies runtime/data locations. The pinned `harness/` is the process
-source; do not replace it with a user-level skill or update its pin without its rollout.
+source; do not replace it with a user-level skill or update its pin without its review.

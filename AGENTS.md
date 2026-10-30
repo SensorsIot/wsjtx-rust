@@ -18,4 +18,4 @@ the harness is maintained; use it, not the user-level `harness` skill.
   relevant to the task.
 - Once per clone: `git submodule update --init`, then
   `python3 harness/core/tools/install_hooks.py`, and the same inside the submodule
-  (`cd harness && python3 core/tools/install_hooks.py`) for its own gate.
+  (`cd harness && python3 core/tools/install_hooks.py`) for its commit hook. Harness changes are reviewed, not gated.

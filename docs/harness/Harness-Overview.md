@@ -62,10 +62,20 @@ The paths a harness change may touch; everything else is product:
 
 - `harness/` (the submodule: its pinned version; fixes are made inside it)
 - `.harness/`
-- `docs/harness/`, `AGENTS.md`, `CLAUDE.md`
+- `docs/harness/`, `AGENTS.md`, `CLAUDE.md`, `.claude/` (the agent guard and skill entrypoints)
+- `deny.toml` (the `rust-supply-chain` pack's licence and source policy)
 - `.github/ISSUE_TEMPLATE/`
-- `.github/workflows/` (the CI build)
-- `tools/sysml.py`, `tools/sysml/` (project-specific authority/trace checks, semantic validation and their tests)
+
+They are declared as `harness_paths` in `.harness/config.yaml`: a push that changes only
+these paths is a harness change, reviewed and not gated.
+
+Maintained with the harness but inputs of product suites, so a change to them is gated
+as a CR: `.github/workflows/windows-rust.yml` (the CI build), `tools/sysml.py` and
+`tools/sysml/` (authority/trace checks, semantic validation and product contract oracles
+such as coverage tables and property tests).
+`.github/workflows/fortran-stage-diagnostics.yml` is product diagnostic tooling. A reviewer of a `deny.toml` change runs `cargo deny --locked --workspace check bans
+licenses sources`, since the gate does not. The scheduled `cargo deny check advisories`
+sensor of the `rust-supply-chain` pack is not set up yet.
 
 ## Documentation is current-state
 

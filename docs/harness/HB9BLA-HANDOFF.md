@@ -69,6 +69,8 @@ namespace, never overwrite main or blindly apply historical FSDs. Private proof/
 stays `.git\migration-private\` and must not be uploaded publicly.
 
 Use the exact harness gitlink of the checked-out candidate. A source-harness publication
-alone is not project adoption: updates require their separate rollout and actual trial.
-Skills source is `D:\Github\agent-skills`; registered skills preserve user state. Never
+alone is not project adoption: a pin update is its own harness change, reviewed and then
+pushed.
+Skills are the pinned harness's, through the generated `.claude/skills/` entrypoints
+(`install_skills.py`); registered user skills preserve user state. Never
 install Fortran locally.

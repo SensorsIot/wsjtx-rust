@@ -124,8 +124,7 @@ is required:
 python harness/core/tools/gate.py --full
 ```
 
-The first product CR after harness adoption uses an empty run ledger, as required by
-the harness rollout process. Test networking remains isolated cost 2; this selection
+Test networking remains isolated cost 2; this selection
 does not authorize hardware or external-service tests.
 
 From the repository root:
@@ -195,7 +194,8 @@ Markdown is historical archive material: it is not edited, regenerated, synchron
 or read by preparation, implementation or validation. There is no replacement Markdown
 FSD. Optional views present existing model facts and carry no additional authority.
 The reviewed product cutover changes the marker and archives the active FSD together;
-HOW rollout and product publication remain separate reviewed batches.
+HOW rollout and product publication remain separate: a harness change is reviewed and
+published, a product change follows the CR process.
 
 ### Pinned local validation
 

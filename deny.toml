@@ -1,0 +1,33 @@
+# Dependency policy for cargo-deny (harness pack rust-supply-chain; a project binding).
+# The project is GPL-3.0-only: every allowed licence is GPLv3-compatible. A new licence is
+# added here in a reviewed change that says which crate needs it.
+
+[graph]
+all-features = true
+
+[licenses]
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "GPL-3.0-only",
+    "ISC",
+    "LGPL-2.1-or-later",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
