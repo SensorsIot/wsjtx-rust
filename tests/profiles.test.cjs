@@ -76,7 +76,7 @@ async function fixture(t, secured = false) {
 }
 function request(origin, method = 'GET', body, headers = {}, pathname = '/profile') {
   return new Promise((resolve, reject) => {
-    const proof = pathname === '/authorization/v1/proof';
+    const proof = ['/authorization/v1/proof', '/authorization/v1/enroll', '/authorization/v1/receipt'].includes(pathname);
     if (pathname !== '/profile' && !proof) {reject(new Error('Unsupported test request path')); return;}
     if (proof) {
       const expected = new URL(origin), originHeaders = Object.entries(headers).filter(([name]) => name.toLowerCase() === 'origin');
@@ -94,7 +94,7 @@ function request(origin, method = 'GET', body, headers = {}, pathname = '/profil
       res.on('data', b => {bytes += b.length; if (proof && bytes > 1024) {req.destroy(); res.destroy(); fail(); return;} data += b;});
       res.on('end', () => {
         if (proof) clearTimeout(timer);
-        if (proof) {try {resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: bytes, headers: res.headers});} catch {fail();}}
+        if (proof) {try {resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: bytes, headers: res.headers, rawBody: data});} catch {fail();}}
         else resolve({status: res.statusCode, body: data ? JSON.parse(data) : null, bodyBytes: Buffer.byteLength(data, 'utf8'), headers: res.headers});
       });
       if (proof) {res.on('error', fail); res.on('aborted', () => fail());}
@@ -1109,6 +1109,149 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
   assert.notEqual(observation.boot, originalBoot); assert.equal(observation.authorization.ready, true);
   assert.deepEqual(await metadata(page), originalMetadata);
   assert.ok(counts.challenge > beforeRestart.challenge && counts.proof > beforeRestart.proof && counts.status > beforeRestart.status, 'new server transport map requires real retained proof/status');
+});
+
+
+// Proves CL-022-01/02/05, partial TC-022-006: browser/store loss, not native CAT or durable-write failure.
+for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committed' : 'undelivered'} enrollment survives actual process restart`, {timeout: 90000}, async t => {
+  let context, fixtureValue, releaseInitial;
+  const initialClosed = new Promise(resolve => {releaseInitial = resolve;});
+  try {fixtureValue = await fixture(t, true);} catch {throw new Error('Enrollment fixture setup unavailable');}
+  const {profiles, apps, base} = fixtureValue, p = profiles[0], profileDir = path.join(base, 'owned-enrollment-chromium');
+  const tracked = new Map(), counts = {session: 0, enroll: 0, followup: 0, mutation: 0, sockets: 0, protectedBeforeReceipt: 0}, replies = [];
+  let initial = true, routeError = false, forwarded = false, enrollFailed = false, enrollment, retained, receiptHeld = false, receiptReleased = false;
+  let holdSnapshot = false, rejectedIntent = false, holdNoEffects = false, readyEarly = false, connectedEarly = false;
+  let resolveEnrollment;
+  const enrollmentSeen = new Promise(resolve => {resolveEnrollment = resolve;});
+  const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function processes() {
+    const quoted = profileDir.replaceAll("'", "''");
+    const command = `@(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('chrome.exe','chrome-headless-shell.exe') } | Select-Object ProcessId,ParentProcessId,CreationDate,@{Name='OwnProfile';Expression={$_.CommandLine -like '*${quoted}*'}}) | ConvertTo-Json -Compress`;
+    let all; try {const out = execFileSync('powershell.exe', ['-NoProfile', '-Command', command], {encoding: 'utf8', windowsHide: true, timeout: 5000}).trim(); const parsed = out ? JSON.parse(out) : []; all = Array.isArray(parsed) ? parsed : [parsed];} catch {throw new Error('Owned browser identity unavailable');}
+    const own = all.filter(v => v.OwnProfile || tracked.get(v.ProcessId) === v.CreationDate);
+    for (let i = 0; i < own.length; i++) for (const child of all.filter(v => v.ParentProcessId === own[i].ProcessId)) if (!own.some(v => v.ProcessId === child.ProcessId)) own.push(child);
+    for (const v of own) tracked.set(v.ProcessId, v.CreationDate);
+    return own;
+  }
+  function serverIdentity(app) {
+    try {const value = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter 'ProcessId=${app.child.pid}' | Select-Object ProcessId,CreationDate | ConvertTo-Json -Compress`], {encoding: 'utf8', windowsHide: true, timeout: 5000}).trim()); return {pid: value.ProcessId, created: value.CreationDate};} catch {throw new Error('Owned server identity unavailable');}
+  }
+  async function metadata(page) {
+    try {return await page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {const r = indexedDB.open('wstx-authorization-v1', 1); r.onupgradeneeded = () => r.transaction.abort(); r.onerror = () => reject(new Error('Retained store unavailable')); r.onsuccess = () => resolve(r.result);});
+      try {const v = await new Promise((resolve, reject) => {const r = db.transaction('credential').objectStore('credential').get('current'); r.onerror = () => reject(new Error('Retained credential unavailable')); r.onsuccess = () => resolve(r.result);});
+        return {grant: v?.grant_id, operation: v?.enrollment_id, public: v?.public_key, scope: v?.scope, pending: v?.pending_enrollment, keyValid: v?.key instanceof CryptoKey && v.key.extractable === false && v.key.type === 'private' && v.key.usages.join(',') === 'sign'};
+      } finally {db.close();}
+    });} catch {throw new Error('Retained metadata unavailable');}
+  }
+  async function store() {try {return JSON.parse(await fs.readFile(path.join(p.dir, 'authorization.json'), 'utf8'));} catch {throw new Error('Enrollment store inspection unavailable');}}
+  function storeValid(value, expected) {
+    const grants = value.grants.filter(v => v.grant_id === enrollment.grant_id), entries = value.operation_receipts.filter(v => v.operation_id === enrollment.operation_id);
+    if (!expected) return grants.length === 0 && entries.length === 0 && value.grants.length === 0 && value.operation_receipts.length === 0;
+    const scope = {wire: enrollment.scope, https_origin: p.origin};
+    return value.grants.length === 1 && value.operation_receipts.length === 1 && grants.length === 1 && entries.length === 1 &&
+      grants[0].public_key === enrollment.public_key && grants[0].enrollment_operation_id === enrollment.operation_id && equal(grants[0].scope, scope) &&
+      entries[0].kind === 'enroll' && entries[0].grant_id === enrollment.grant_id && equal(entries[0].scope, scope) && equal(entries[0].owner_verifier, grants[0]);
+  }
+  async function openBrowser() {
+    try {context = await chromium.launchPersistentContext(profileDir, {headless: true, ignoreHTTPSErrors: true});} catch {throw new Error('Owned browser launch unavailable');}
+    const page = context.pages()[0] || await context.newPage();
+    await page.addInitScript(() => {
+      window.__enrollmentDcl = 0; window.__enrollmentEarlyReady = false;
+      addEventListener('DOMContentLoaded', () => {window.__enrollmentDcl = performance.now();}, {once: true});
+      addEventListener('station-authorization', event => {if (event.detail.ready) window.__enrollmentEarlyReady = true;});
+    });
+    page.on('request', req => {const u = new URL(req.url()); if (u.origin !== p.origin) return;
+      if (u.pathname === '/session') counts.session++;
+      if (u.pathname === '/authorization/v1/enroll') counts.enroll++;
+      if (initial && ['/authorization/v1/challenge','/authorization/v1/proof','/authorization/v1/receipt'].includes(u.pathname)) counts.followup++;
+      if (req.method() === 'PUT') counts.mutation++;
+      if (!receiptReleased && (u.pathname === '/profile' || u.pathname.startsWith('/receive/') || u.pathname.startsWith('/recordings'))) counts.protectedBeforeReceipt++;
+    });
+    page.on('requestfailed', req => {if (initial && new URL(req.url()).pathname === '/authorization/v1/enroll') enrollFailed = true;});
+    page.on('response', res => {const u = new URL(res.url()); if (u.origin === p.origin && u.pathname.startsWith('/authorization/v1/')) replies.push({path: u.pathname, status: res.status(), initial});});
+    page.on('websocket', () => {counts.sockets++;});
+    await page.route(p.origin + '/authorization/v1/**', async route => {
+      const req = route.request(), pathname = new URL(req.url()).pathname;
+      try {
+        if (initial && ['/authorization/v1/challenge','/authorization/v1/proof','/authorization/v1/receipt'].includes(pathname)) {await initialClosed; try {await route.abort('failed');} catch {} return;}
+        if (initial && pathname.endsWith('/enroll')) {
+          enrollment = JSON.parse(req.postData()); retained = await metadata(page);
+          if (committed) {
+            const headers = await req.allHeaders(); const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
+            forwarded = result.status === 200 && result.body?.version === 1 && result.body?.outcome === 'committed' && result.body?.operation_id === enrollment.operation_id && result.body?.grant_id === enrollment.grant_id && equal(result.body?.scope, enrollment.scope) && !result.headers['set-cookie'] && storeValid(await store(), true);
+          }
+          await route.abort('failed'); resolveEnrollment(); return;
+        }
+        if (!initial && committed && pathname.endsWith('/receipt')) {
+          const headers = await req.allHeaders(); const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
+          const valid = result.status === 200 && result.body?.version === 1 && result.body?.outcome === 'committed' && result.body?.operation_id === enrollment.operation_id && result.body?.grant_id === enrollment.grant_id && equal(result.body?.scope, enrollment.scope) && !result.headers['set-cookie'];
+          if (!valid) {routeError = true; await route.abort('failed'); return;}
+          receiptHeld = true; const until = performance.now() + 500;
+          holdSnapshot = await page.evaluate(() => !window.stationAuthorization.snapshot().ready);
+          rejectedIntent = await page.evaluate(async body => {try {await window.stationAuthorization.fetch('/profile', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body}); return false;} catch {return true;}}, JSON.stringify(edit(1, 0)));
+          const before = counts.mutation;
+          while (performance.now() < until) {readyEarly ||= await page.evaluate(() => window.stationAuthorization.snapshot().ready); connectedEarly ||= await page.locator('#connection').getAttribute('data-state') === 'connected'; await new Promise(r => setTimeout(r, Math.min(25, Math.max(0, until - performance.now()))));}
+          holdNoEffects = before === 0 && counts.mutation === 0 && counts.sockets === 0 && counts.protectedBeforeReceipt === 0;
+          receiptReleased = true; await route.fulfill({status: result.status, contentType: 'application/json', body: result.rawBody}); return;
+        }
+        await route.continue();
+      } catch {routeError = true; resolveEnrollment(); try {await route.abort('failed');} catch {}}
+    });
+    return page;
+  }
+  t.after(async () => {releaseInitial(); try {await context?.close(); if (processes().length) throw new Error('Owned process survives');} catch {retainFixtureRoot = true; throw new Error('Enrollment browser cleanup unqualified');}});
+  let page = await openBrowser(); processes();
+  const profileBefore = await fs.readFile(path.join(p.dir, 'profile.json'));
+  await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible', timeout: 10000});
+  try {await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();} catch {throw new Error('Enrollment bootstrap interaction unavailable');}
+  let enrollmentTimer;
+  try {await Promise.race([enrollmentSeen, new Promise((_, reject) => {enrollmentTimer = setTimeout(() => reject(new Error('Enrollment interception unavailable')), 10000);})]);} finally {clearTimeout(enrollmentTimer);}
+  await page.waitForFunction(() => window.stationAuthorization?.snapshot().state === 'unavailable', null, {timeout: 10000});
+  assert.equal(routeError, false); assert.equal(enrollFailed, true); assert.equal(committed ? forwarded : !forwarded, true);
+  assert.equal(retained?.keyValid && retained.pending && retained.grant === enrollment.grant_id && retained.operation === enrollment.operation_id && retained.public === enrollment.public_key && equal(retained.scope, enrollment.scope), true);
+  assert.equal((await metadata(page)).pending, true); assert.equal(await page.evaluate(() => !window.stationAuthorization.snapshot().ready), true);
+  assert.equal(replies.some(v => v.path.endsWith('/receipt') && v.status === 200), false);
+  assert.equal(storeValid(await store(), committed), true);
+  const durableBefore = await fs.readFile(path.join(p.dir, 'authorization.json'));
+  const cookieName = `wstx_session_${p.document.profile_id}`;
+  await context.clearCookies({name: cookieName, domain: 'localhost'});
+  assert.equal((await context.cookies(p.origin)).some(v => v.name === cookieName), false);
+  assert.equal(equal(await metadata(page), retained), true);
+  releaseInitial(); await context.close(); context = null; assert.equal(processes().length, 0);
+  const oldServer = serverIdentity(p.app); await p.app.close();
+  assert.equal(p.app.child.exitCode !== null || p.app.child.signalCode !== null, true);
+  try {p.app = await start(p, p.env); apps.push(p.app);} catch {throw new Error('Owned enrollment server restart unavailable');}
+  const nextServer = serverIdentity(p.app); assert.equal(oldServer.pid !== nextServer.pid || oldServer.created !== nextServer.created, true);
+  assert.equal((await fs.readFile(path.join(p.dir, 'authorization.json'))).equals(durableBefore), true);
+  initial = false; page = await openBrowser(); processes();
+  await page.goto(p.origin, {waitUntil: 'domcontentloaded'});
+  const anchor = await page.evaluate(() => window.__enrollmentDcl); assert.equal(anchor > 0, true);
+  const deadline = performance.now() + await page.evaluate(at => Math.max(0, at + 10000 - performance.now()), anchor);
+  let recovered = false, recoveredMs = -1;
+  while (performance.now() < deadline) {
+    const state = await page.evaluate(() => ({ready: window.stationAuthorization.snapshot().ready, elapsed: performance.now() - window.__enrollmentDcl}));
+    const connectedNow = await page.locator('#connection').getAttribute('data-state') === 'connected';
+    if (state.ready && connectedNow && !recovered) {recovered = true; recoveredMs = state.elapsed;}
+    if (!committed) {readyEarly ||= state.ready; connectedEarly ||= connectedNow;}
+    await new Promise(r => setTimeout(r, Math.min(25, Math.max(0, deadline - performance.now()))));
+  }
+  const after = await metadata(page);
+  assert.equal(routeError, false); assert.equal(counts.session, 1); assert.equal(counts.enroll, 1); assert.equal(counts.mutation, 0);
+  assert.equal(after.keyValid && after.grant === retained.grant && after.public === retained.public && after.operation === retained.operation && equal(after.scope, retained.scope), true);
+  assert.equal(storeValid(await store(), committed), true);
+  assert.equal((await fs.readFile(path.join(p.dir, 'authorization.json'))).equals(durableBefore), true);
+  assert.equal((await fs.readFile(path.join(p.dir, 'profile.json'))).equals(profileBefore), true);
+  if (committed) {
+    assert.equal(receiptHeld && receiptReleased && holdSnapshot && rejectedIntent && holdNoEffects, true);
+    assert.equal(readyEarly || connectedEarly, false); assert.equal(recovered && recoveredMs >= 0 && recoveredMs < 10000, true); assert.equal(after.pending, false);
+    assert.equal(replies.some(v => !v.initial && v.path.endsWith('/proof') && v.status === 204), true);
+    assert.equal(replies.some(v => !v.initial && v.path.endsWith('/status') && v.status === 200), true);
+  } else {
+    assert.equal(readyEarly || connectedEarly || recovered, false); assert.equal(after.pending, true); assert.equal(counts.sockets, 0); assert.equal(counts.protectedBeforeReceipt, 0);
+    assert.equal(replies.some(v => !v.initial && ['/authorization/v1/proof','/authorization/v1/receipt'].includes(v.path) && v.status >= 200 && v.status < 300), false);
+  }
+  t.diagnostic(JSON.stringify({enrollment_loss: committed ? 1 : 2, qualified: true, recovered, recovered_ms: recoveredMs, bootstrap_count: counts.session, enrollment_count: counts.enroll, queued_mutations: counts.mutation, receipt_held: receiptHeld, native_observed: false}));
 });
 
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
