@@ -363,10 +363,7 @@ impl Record {
                         (IdentityChange::Add, None) if entry.scope.wire.safety_revision == 1 => (),
                         (IdentityChange::Replace, Some(old))
                             if entry.scope.wire.safety_revision == 1
-                                && old.radio_id != entry.scope.wire.radio_id =>
-                        {
-                            ()
-                        }
+                                && old.radio_id != entry.scope.wire.radio_id => {}
                         (IdentityChange::Remove, Some(old)) if old == &entry.scope.wire => (),
                         _ => return Err(Error::Invalid),
                     }

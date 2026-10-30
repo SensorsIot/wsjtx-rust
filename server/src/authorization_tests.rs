@@ -202,7 +202,7 @@ fn independent_node_openssl_fixed_vector_binds_exact_bytes_purpose_origin_and_re
     let public = signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, key);
     assert!(public.verify(&bytes, &signature).is_ok());
     let mut changed = s.clone();
-    changed.https_origin.push_str("0");
+    changed.https_origin.push('0');
     assert!(
         public
             .verify(
@@ -355,11 +355,10 @@ fn expected_missing_corrupt_and_cross_profile_records_never_reset_grants() {
             fs::remove_file(f.directory.join("authorization.json")).unwrap();
         }
         assert_eq!(f.reopen(), Err(Error::PersistenceFailed));
-        assert_eq!(
-            fs::read(f.directory.join(".authorization-initialized.json"))
+        assert!(
+            !fs::read(f.directory.join(".authorization-initialized.json"))
                 .unwrap()
-                .is_empty(),
-            false
+                .is_empty()
         );
     }
     let mut f = Fixture::new();

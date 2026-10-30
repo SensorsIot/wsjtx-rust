@@ -82,9 +82,9 @@ impl HttpFixture {
         let id = store.document.profile_id.clone();
         let boot = profile::new_uuid().unwrap();
         let authority = authorization_http::Service::initialize(&mut store, origin).unwrap();
-        let recording = recording::Recording::open(&directory, id.clone(), boot.clone());
+        let recording = recording::Recording::open(directory, id.clone(), boot.clone());
         recording.initialize_profile_revision(store.document.revision);
-        let app = App {
+        App {
             origin: origin.into(),
             profile: Some(Arc::new(ProfileState {
                 store: Mutex::new(store),
@@ -98,8 +98,7 @@ impl HttpFixture {
                 .then(|| "DisposableFixtureToken01234567890".into()),
             connections: Arc::new(Semaphore::new(16)),
             login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
-        };
-        app
+        }
     }
     fn reopen(&mut self) {
         let old = self.app.take().unwrap();
