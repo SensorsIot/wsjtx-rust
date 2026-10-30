@@ -393,6 +393,189 @@ test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000
   }
 });
 
+// Proves CL-022-01/02/05: real overlapping proof delivery must not create a false-ready UI or replay Save.
+for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recover after ${deliveryMode} proof delivery`, {timeout: 45000}, async t => {
+  const {profiles, apps} = await fixture(t, true), p = profiles[0], context = await browser.newContext({ignoreHTTPSErrors: true});
+  const held = {}, firstSeen = {}, firstHandled = {}, captured = {}, ended = {}, wire = [], inFlightProofs = new Set(), requestInfo = new WeakMap();
+  const statusReplies = {A: [], B: []}, pages = {}, truth = [], frames = [], counts = {A: 0, B: 0}, testProbe = {}, protectedReads = [], expectedObserverIds = new Set(), seenObserverIds = new Set();
+  const cookieName = `wstx_session_${p.document.profile_id}`, pendingTimers = new Set();
+  let phase = 0, armed = false, t0 = -1, deadline = -1, zeroAtT0 = false, taggedAt = -1, observer, observerForced = false, originalFrozen = false;
+  const metrics = {mode: deliveryMode === 'reverse' ? 1 : 2, qualified: false, recovered: false, route_error: false, a_pending_before_action: false, save_clicked: false, save_blocked: false, observer_before: false, observer_after: false, observer_final: false};
+  const authCode = path => ({'/session': 1, '/authorization/v1/bootstrap-scope': 2, '/authorization/v1/enroll': 3, '/authorization/v1/challenge': 4, '/authorization/v1/proof': 5, '/authorization/v1/status': 6}[path] || 0);
+  const hashes = async () => Object.fromEntries(await Promise.all(['profile.json', 'authorization.json'].map(async name => [name, crypto.createHash('sha256').update(await fs.readFile(path.join(p.dir, name))).digest('hex')])));
+  const identity = app => JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter 'ProcessId=${app.child.pid}' | Select-Object ProcessId,CreationDate | ConvertTo-Json -Compress`], {encoding: 'utf8', windowsHide: true, timeout: 5000}).trim());
+  async function keyMetadata(page) {
+    return page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {const r = indexedDB.open('wstx-authorization-v1', 1); r.onupgradeneeded = () => r.transaction.abort(); r.onerror = () => reject(new Error('Retained credential unavailable')); r.onsuccess = () => resolve(r.result);});
+      try {return await new Promise((resolve, reject) => {const r = db.transaction('credential').objectStore('credential').get('current'); r.onerror = () => reject(new Error('Retained credential unavailable')); r.onsuccess = () => {const v = r.result; resolve({grant: v?.grant_id, public: v?.public_key, scope: v?.scope, extractable: v?.key?.extractable, usages: v?.key?.usages});};});} finally {db.close();}
+    });
+  }
+  const publicStatusValid = (value, scope) => Boolean(value && Object.keys(value).sort().join(',') === 'commissioned,condition,error,receive_state,retry_after_ms,scope,version' && value.version === 1 && value.scope && Object.keys(value.scope).sort().join(',') === 'profile_id,radio_id,safety_revision' && value.scope.profile_id === scope.profile_id && value.scope.radio_id === scope.radio_id && value.scope.safety_revision === scope.safety_revision && value.condition === 'disabled' && value.commissioned === false && value.error === null && value.retry_after_ms === null && value.receive_state && Object.keys(value.receive_state).sort().join(',') === 'audio,decoder' && value.receive_state.audio === 'closed' && value.receive_state.decoder === null);
+  function watchTruth(page, at) {
+    const record = {at, done: false, ok: false}; truth.push(record);
+    page.waitForFunction(() => !window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state !== 'connected', null, {timeout: 2000}).then(() => {record.done = true; record.ok = performance.now() - at <= 2000;}, () => {record.done = true;});
+  }
+  async function instrument(page, label, retained) {
+    pages[label] = page; captured[label] = {}; captured[label].promise = new Promise(resolve => {captured[label].resolve = resolve;}); ended[label] = {}; ended[label].promise = new Promise(resolve => {ended[label].resolve = resolve;});
+    await page.addInitScript(known => {
+      const sample = () => {if (window.__cookieFault?.retained && document.querySelector('#login') && !document.querySelector('#login').hidden) window.__cookieFault.prompt = true;};
+      window.__cookieFault = {retained: known, prompt: false, tokenSubmits: 0, submits: []};
+      addEventListener('station-authorization', sample);
+      addEventListener('DOMContentLoaded', () => {const login = document.querySelector('#login'); if (login) new MutationObserver(sample).observe(login, {attributes: true, attributeFilter: ['hidden']}); sample();});
+      addEventListener('submit', event => {if (event.target.id === 'login') window.__cookieFault.tokenSubmits++; if (event.target.id === 'settings') window.__cookieFault.submits.push({trusted: event.isTrusted, ready: window.stationAuthorization.snapshot().ready, loaded: Boolean(profileData), at: performance.now()});}, true);
+    }, retained);
+    page.on('request', request => {
+      const url = new URL(request.url()); if (url.origin !== p.origin) return;
+      const code = authCode(url.pathname), controlled = armed && code === 5 && !firstSeen[label];
+      if (controlled) firstSeen[label] = request;
+      requestInfo.set(request, {label, phase, code, controlled, path: url.pathname, testProbe: Boolean(testProbe[label] && code === 6)});
+      if (code === 5) inFlightProofs.add(request);
+      if (request.method() === 'PUT' && url.pathname === '/profile') counts[label]++;
+    });
+    page.on('response', response => {
+      const request = response.request(), info = requestInfo.get(request); if (!info) return;
+      const at = performance.now(), status = response.status();
+      if (info.code && !info.controlled) wire.push({label, phase: info.phase, code: info.code, status, at});
+      if (info.code === 6) statusReplies[label].push({response, at, status});
+      if (info.phase === 2 && !info.code && (info.path === '/profile' || info.path.startsWith('/receive/') || info.path.startsWith('/recordings'))) protectedReads.push({label, code: info.path === '/profile' ? 7 : info.path === '/receive/selection' ? 8 : 99, status, at});
+      if (info.phase === 2 && status === 401 && !info.testProbe) watchTruth(page, at);
+      if (info.controlled && held[label]?.request === request) held[label].actualStatus = status;
+    });
+    const finish = (request, failed) => {
+      inFlightProofs.delete(request);
+      const h = held[label]; if (h?.request !== request) return;
+      h.endedAt = performance.now(); h.failed = failed; h.expectedAbort = failed && request.failure()?.errorText === 'net::ERR_FAILED'; clearTimeout(h.timer); ended[label].resolve();
+      if (label === 'A' && failed && taggedAt >= 0) watchTruth(page, h.endedAt);
+      if (taggedAt >= 0 && t0 < 0 && held.A?.endedAt >= 0 && held.B?.endedAt >= 0) {t0 = Math.max(held.A.endedAt, held.B.endedAt); deadline = t0 + 10000; zeroAtT0 = inFlightProofs.size === 0;}
+    };
+    page.on('requestfinished', request => finish(request, false)); page.on('requestfailed', request => finish(request, true));
+  }
+  async function intercept(page, label) {
+    await page.route(p.origin + '/authorization/v1/proof', async route => {
+      if (firstHandled[label]) {try {await route.continue();} catch {metrics.route_error = true;} return;}
+      firstHandled[label] = true;
+      const request = route.request(), headers = await request.allHeaders(), body = request.postDataBuffer();
+      const h = {route, request, headers, body, endedAt: -1, failed: false, reply: null}; held[label] = h;
+      h.pending = new Promise(resolve => {h.release = resolve;}); captured[label].resolve();
+      await h.pending;
+    });
+  }
+  async function forward(label) {
+    const h = held[label];
+    if (!h || firstSeen[label] !== h.request || h.endedAt >= 0 || h.request.method() !== 'POST' || h.request.url() !== p.origin + '/authorization/v1/proof' || h.headers.origin !== p.origin || h.headers['content-type'] !== 'application/json' || !Buffer.isBuffer(h.body) || !h.body.length || h.body.length > 1024) throw new Error('Original pending proof prerequisite failed');
+    h.reply = await request(p.origin, 'POST', h.body, {Origin: h.headers.origin, 'Content-Type': h.headers['content-type'], ...(h.headers.cookie ? {Cookie: h.headers.cookie} : {})}, '/authorization/v1/proof');
+    wire.push({label, phase: 2, code: 5, status: h.reply.status, at: performance.now()});
+    const values = h.reply.headers['set-cookie'], prefix = cookieName + '=';
+    if (h.endedAt >= 0 || h.reply.status !== 204 || h.reply.bodyBytes !== 0 || !Array.isArray(values) || values.length !== 1 || !values[0].split(';')[0].startsWith(prefix) || !/^[A-Za-z0-9_-]{43}$/.test(values[0].split(';')[0].slice(prefix.length))) throw new Error('Actual proof reply prerequisite failed');
+    h.cookie = values[0].split(';')[0].slice(prefix.length); h.cookieHeader = values[0];
+    h.timer = setTimeout(() => {if (h.endedAt < 0) h.route.abort('failed').catch(() => {});}, 5000); pendingTimers.add(h.timer);
+  }
+  async function deliver(label) {
+    const h = held[label]; try {await h.route.fulfill({status: h.reply.status, body: '', headers: {'set-cookie': h.cookieHeader, ...(h.reply.headers['cache-control'] ? {'cache-control': h.reply.headers['cache-control']} : {})}});} catch {throw new Error('Controlled delivery failed');} h.release();
+  }
+  async function probe(id) {
+    const response = receive(observer, 2000); expectedObserverIds.add(id); observer.send(JSON.stringify({v: 1, type: 'station.get', id}));
+    const value = await response;
+    return Boolean(value?.v === 1 && value.type === 'station.status' && value.id === id && value.data?.radio === 'unconfigured' && typeof value.data?.version === 'string' && frames.every(frame => frame.bytes <= 1024 && (frame.heartbeat || frame.expected)));
+  }
+  let seedMetadata, beforeFiles, oldServer, newServer, transitionReplies = 0;
+  try {
+    const a = await context.newPage(); await instrument(a, 'A', false); await a.goto(p.origin); await a.locator('#login').waitFor({state: 'visible'});
+    try {await a.locator('#token').fill(p.env.WSTX_TOKEN); await a.locator('#login button').click();} catch {throw new Error('Fixture bootstrap input failed');}
+    await connected(a); // Meaningful pre-client RED remains the original browser readiness predicate.
+    const seedSelection = await a.evaluate(async () => {const r = await window.stationAuthorization.fetch('/receive/selection'); return r.status;});
+    if (seedSelection !== 200) throw new Error('Default selection read prerequisite failed');
+    seedMetadata = await keyMetadata(a); beforeFiles = await hashes(); oldServer = identity(p.app);
+    await a.locator('#display-name').fill('Retained unsent Save');
+    await a.evaluate(() => {window.__cookieFault.tokenSubmits = 0; window.__cookieFault.retained = true; window.__cookieFault.prompt = !document.querySelector('#login').hidden;});
+    armed = true; await intercept(a, 'A'); phase = 1;
+    await p.app.close(); assert.notEqual(p.app.child.exitCode ?? p.app.child.signalCode, null);
+    await context.clearCookies({name: cookieName});
+    const restarted = await start(p, p.env); apps.push(restarted); p.app = restarted; newServer = identity(restarted); phase = 2;
+    metrics.new_process = oldServer.ProcessId !== newServer.ProcessId || oldServer.CreationDate !== newServer.CreationDate;
+    const b = await context.newPage(); await instrument(b, 'B', true); await intercept(b, 'B'); await b.goto(p.origin);
+    let captureTimer;
+    try {await Promise.race([Promise.all([captured.A.promise, captured.B.promise]), new Promise((_, reject) => {captureTimer = setTimeout(() => reject(new Error('Original proof overlap prerequisite failed')), 5000);})]);} finally {clearTimeout(captureTimer);}
+    await forward('A'); await forward('B');
+    metrics.jar_untouched_after_node = (await context.cookies(p.origin)).every(cookie => cookie.name !== cookieName);
+    const oldHandle = await request(p.origin, 'GET', undefined, {Cookie: cookieName + '=' + held.A.cookie});
+    const currentHandle = await request(p.origin, 'GET', undefined, {Cookie: cookieName + '=' + held.B.cookie});
+    metrics.old_handle_401 = oldHandle.status === 401; metrics.current_handle_200 = currentHandle.status === 200;
+    await deliver('B'); await ended.B.promise; await connected(b);
+    const bStatus = statusReplies.B.find(value => value.status === 200); if (!bStatus) throw new Error('Actual B status prerequisite missing');
+    let bValue; try {bValue = JSON.parse(await bStatus.response.text());} catch {throw new Error('Actual B status invalid');} if (!publicStatusValid(bValue, seedMetadata.scope)) throw new Error('No-job observer prerequisite failed');
+    metrics.jar_b_after_delivery = (await context.cookies(p.origin)).some(cookie => cookie.name === cookieName && cookie.value === held.B.cookie);
+    await new Promise((resolve, reject) => {
+      observer = new WebSocket(p.origin.replace('https:', 'wss:') + '/ws', 'wstx.v1', {origin: p.origin, rejectUnauthorized: false, headers: {Cookie: cookieName + '=' + held.B.cookie}});
+      observer.on('error', () => {}); let timer = setTimeout(() => {observer.terminate(); reject(new Error('Observer upgrade exceeded5s'));}, 5000); pendingTimers.add(timer);
+      observer.once('error', () => {clearTimeout(timer); reject(new Error('Observer upgrade failed'));});
+      observer.on('message', data => {let v; try {v = JSON.parse(String(data));} catch {v = {};}
+        const expected = v.v === 1 && v.type === 'station.status' && expectedObserverIds.has(v.id) && !seenObserverIds.has(v.id);
+        if (expected) seenObserverIds.add(v.id);
+        frames.push({bytes: Buffer.byteLength(data), expected, heartbeat: v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 2 && v.v === 1 && v.type === 'heartbeat'});});
+      observer.once('open', () => {clearTimeout(timer); expectedObserverIds.add(8101); receive(observer, 2000).then(value => {metrics.observer_before = value?.v === 1 && value.type === 'station.status' && value.id === 8101 && value.data?.radio === 'unconfigured' && typeof value.data?.version === 'string'; resolve();}, () => reject(new Error('Observer first response failed'))); observer.send(JSON.stringify({v: 1, type: 'station.get', id: 8101}));});
+    });
+    const actionable = await a.locator('#settings-save').isVisible() && await a.locator('#settings-save').isEnabled();
+    if (!actionable || await a.evaluate(() => window.stationAuthorization.snapshot().ready || !profileData)) throw new Error('Loaded recovering Save prerequisite failed');
+    try {await a.locator('#settings-save').click({timeout: 1000}); metrics.save_clicked = true;} catch {throw new Error('Recovering Save click prerequisite failed');}
+    const submit = await a.evaluate(() => window.__cookieFault.submits.at(-1));
+    metrics.save_blocked = Boolean(submit && submit.trusted && !submit.ready && submit.loaded && counts.A === 0);
+    metrics.a_pending_before_action = held.A.endedAt < 0 && firstSeen.A === held.A.request;
+    if (!metrics.a_pending_before_action || !metrics.save_blocked) throw new Error('Original pending proof or Save qualification failed');
+    metrics.a_prompt_before_fault = await a.evaluate(() => window.__cookieFault.prompt); metrics.b_prompt_before_fault = await b.evaluate(() => window.__cookieFault.prompt);
+    taggedAt = performance.now();
+    if (deliveryMode === 'reverse') await deliver('A');
+    else {try {await held.A.route.abort('failed');} catch {throw new Error('Controlled loss failed');} held.A.release();}
+    await ended.A.promise;
+    metrics.zero_proofs_at_fixed_t0 = zeroAtT0; metrics.action_tag_before_end = held.A.endedAt >= taggedAt;
+    metrics.controlled_action_expected = deliveryMode === 'reverse' ? !held.A.failed && held.A.actualStatus === 204 : held.A.failed && held.A.expectedAbort && held.A.endedAt >= taggedAt;
+    metrics.qualified = !held.B.failed && held.B.actualStatus === 204 && metrics.new_process && metrics.jar_untouched_after_node && metrics.old_handle_401 && metrics.current_handle_200 && metrics.jar_b_after_delivery && metrics.observer_before && metrics.save_blocked && metrics.a_pending_before_action && metrics.controlled_action_expected && zeroAtT0 && t0 >= taggedAt;
+    if (!metrics.qualified) throw new Error('Controlled response completion qualification failed');
+    metrics.observer_after = await probe(8102); // t0/deadline were already frozen in the completion event, before this await.
+    let bothReady = false;
+    const currentBoot = bValue.scope && await b.locator('#profile-boot').textContent();
+    try {await Promise.all([a, b].map(page => page.waitForFunction(boot => window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state === 'connected' && socket?.readyState === WebSocket.OPEN && profileData?.boot_id === boot, currentBoot, {timeout: Math.max(1, deadline - performance.now())}))); bothReady = true;} catch {}
+    const freshProof = wire.some(value => value.phase === 2 && value.code === 5 && value.status === 204 && value.at > t0);
+    let statusesValid = true;
+    for (const [label, page] of [['A', a], ['B', b]]) {
+      const reply = statusReplies[label].find(value => value.status === 200 && value.at > t0);
+      if (reply) {try {statusesValid &&= publicStatusValid(JSON.parse(await reply.response.text()), seedMetadata.scope);} catch {statusesValid = false;}}
+      else if (bothReady && performance.now() < deadline) {
+        let result; testProbe[label] = true;
+        try {result = await page.evaluate(async remaining => {try {const r = await fetch('/authorization/v1/status', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1}), signal: AbortSignal.timeout(Math.max(1, remaining))}); const text = await r.text(); return {status: r.status, bytes: new TextEncoder().encode(text).length, value: JSON.parse(text)};} catch {return null;}}, Math.max(1, Math.floor(deadline - performance.now())));} finally {testProbe[label] = false;}
+        statusesValid &&= Boolean(result && result.status === 200 && result.bytes <= 1024 && publicStatusValid(result.value, seedMetadata.scope));
+      } else statusesValid = false;
+    }
+    const readyNow = await Promise.all([a, b].map(page => page.evaluate(boot => window.stationAuthorization.snapshot().ready && document.querySelector('#connection').dataset.state === 'connected' && socket?.readyState === WebSocket.OPEN && profileData?.boot_id === boot, currentBoot)));
+    metrics.recovery_elapsed_ms = performance.now() - t0; metrics.recovered = bothReady && readyNow.every(Boolean) && freshProof && statusesValid && inFlightProofs.size === 0 && performance.now() <= deadline;
+    originalFrozen = true; // A later probe/diagnostic can never turn this original fixed-window result into PASS.
+    const [aView, bView] = await Promise.all([a, b].map(page => page.evaluate(() => ({prompt: window.__cookieFault.prompt, ready: window.stationAuthorization.snapshot().ready, submitCount: window.__cookieFault.submits.length, tokenSubmits: window.__cookieFault.tokenSubmits, dirty: document.querySelector('#display-name').value === 'Retained unsent Save', saved: document.querySelector('#settings-result').textContent.startsWith('Saved revision')}))));
+    const sameKeys = JSON.stringify(await keyMetadata(a)) === JSON.stringify(seedMetadata) && JSON.stringify(await keyMetadata(b)) === JSON.stringify(seedMetadata);
+    const sameFiles = JSON.stringify(await hashes()) === JSON.stringify(beforeFiles);
+    transitionReplies = wire.filter(value => value.phase === 1).length;
+    Object.assign(metrics, {a_prompt_seen: aView.prompt, b_prompt_seen: bView.prompt, a_ready: aView.ready, b_ready: bView.ready, a_submit_count: aView.submitCount, token_submits: aView.tokenSubmits + bView.tokenSubmits, dirty_preserved: aView.dirty, saved_ack: aView.saved, a_put_count: counts.A, b_put_count: counts.B, same_keys: sameKeys, same_files: sameFiles, transition_auth_responses: transitionReplies,
+      new_auth_replies: wire.filter(value => value.phase === 2).length, new_429_replies: wire.filter(value => value.phase === 2 && value.status === 429).length,
+      a_wire_proof_replies: wire.filter(value => value.phase === 2 && value.label === 'A' && value.code === 5).length, b_wire_proof_replies: wire.filter(value => value.phase === 2 && value.label === 'B' && value.code === 5).length,
+      a_status_401: statusReplies.A.some(value => value.status === 401 && value.at >= taggedAt), b_selection_401_count: protectedReads.filter(value => value.label === 'B' && value.code === 8 && value.status === 401).length, b_profile_401_count: protectedReads.filter(value => value.label === 'B' && value.code === 7 && value.status === 401).length, protected_read_count: protectedReads.length, observer_frame_count: frames.length, observer_frames_valid: frames.every(frame => frame.bytes <= 1024 && (frame.heartbeat || frame.expected)), wire_history_sha256: crypto.createHash('sha256').update(JSON.stringify(wire.map(value => [value.label === 'A' ? 1 : 2, value.phase, value.code, value.status, value.at]))).digest('hex')});
+    t.diagnostic(JSON.stringify(metrics));
+    assert.equal(metrics.recovered, true, 'original fixed10s automatic recovery must finish with proof and protected status');
+    if (deliveryMode === 'reverse') assert.equal(metrics.a_status_401, true, 'late204 cannot substitute for current protected status');
+    assert.equal(metrics.token_submits, 0); assert.equal(metrics.dirty_preserved, true); assert.equal(metrics.saved_ack, false); assert.equal(metrics.route_error, false); assert.equal(metrics.observer_frames_valid, true); assert.equal(metrics.a_prompt_seen, false); assert.equal(metrics.b_prompt_seen, false);
+    assert.equal(metrics.same_keys, true); assert.equal(metrics.same_files, true); assert.equal(metrics.a_put_count, 0); assert.equal(metrics.b_put_count, 0);
+    assert.equal(wire.filter(value => value.phase === 2 && [1, 2, 3].includes(value.code)).length, 0, 'no new bootstrap/enrollment after ordinary restart');
+    assert.equal(transitionReplies, 0, 'server process admission attribution must be qualified');
+    assert.equal(metrics.observer_after, true);
+    metrics.observer_final = await probe(8103); assert.equal(metrics.observer_final, true);
+    assert.equal(truth.every(value => value.done && value.ok), true, 'actual rejection/loss UI truth stays within2s');
+  } finally {
+    for (const timer of pendingTimers) clearTimeout(timer);
+    for (const h of Object.values(held)) {if (h.endedAt < 0) await h.route.abort('failed').catch(() => {}); h.release();}
+    try {
+      if (observer && observer.readyState !== WebSocket.CLOSED) await new Promise((resolve, reject) => {let timer = setTimeout(() => {observerForced = true; observer.terminate(); reject(new Error('Observer close exceeded5s'));}, 5000); observer.once('close', () => {clearTimeout(timer); resolve();}); observer.close();});
+    } finally {await context.close(); t.diagnostic(JSON.stringify({mode: deliveryMode === 'reverse' ? 1 : 2, original_frozen: originalFrozen, observer_forced: observerForced, t0_ms: t0, tagged_ms: taggedAt, route_error: metrics.route_error}));}
+  }
+});
+
 test('TC-022-006: missing selected authorization asset fails closed', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
