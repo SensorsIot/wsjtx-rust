@@ -281,6 +281,7 @@ test('TC-022-006: simulated reservation upload intent cannot cross authorization
 test('TC-022-006: actual browser and server process restart', {timeout: 90000}, async t => {
   const {profiles, apps, base} = await fixture(t, true), p = profiles[0];
   const profileDir = path.join(base, 'owned-persistent-chromium');
+  const idlePeers = [];
   const tracked = new Map(), counts = {session: 0, enroll: 0, challenge: 0, proof: 0, status: 0, bootstrapScope: 0, profile: 0, ws: 0, wsErrors: 0};
   let context;
   function browserProcesses() {
@@ -305,7 +306,15 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
       if (key) counts[key]++;
     });
     const page = context.pages()[0] || await context.newPage();
-    page.on('websocket', ws => {counts.ws++; ws.on('socketerror', () => {counts.wsErrors++;});});
+    page.on('websocket', ws => {
+      counts.ws++; const peer = {ws, createdAt: performance.now(), frames: 0, closedAt: null, errors: 0}; idlePeers.push(peer);
+      ws.on('framereceived', () => {peer.frames++;}); ws.on('close', () => {peer.closedAt = performance.now();});
+      ws.on('socketerror', () => {counts.wsErrors++; peer.errors++;});
+    });
+    await page.addInitScript(() => {
+      window.__idleAuthorizationTimeline = [];
+      addEventListener('station-authorization', event => window.__idleAuthorizationTimeline.push({state: event.detail.state, at: performance.now()}));
+    });
     await page.goto(p.origin);
     return page;
   }
@@ -341,6 +350,31 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
   const originalMetadata = await metadata(page), originalBoot = await page.locator('#profile-boot').textContent();
   assert.equal(originalMetadata.extractable, false); assert.deepEqual(originalMetadata.usages, ['sign']);
   assert.equal(counts.session, 1); assert.equal(counts.enroll, 1);
+  // Proves CL-022-01/02/05: initial authorization must not leave an extra reconnect/socket owner.
+  const idleBefore = {...counts}, idleStart = await page.evaluate(() => {
+    window.__idleOriginalSocket = socket;
+    return {at: performance.now(), timeline: window.__idleAuthorizationTimeline.slice(), epoch: window.stationAuthorization.snapshot().epoch};
+  });
+  const unavailableAt = idleStart.timeline.find(item => item.state === 'unavailable')?.at;
+  const idleQualified = Number.isFinite(unavailableAt) && idleStart.at < unavailableAt + 4000;
+  await page.waitForTimeout(5500);
+  const idleObservation = await page.evaluate(() => ({sameSocket: socket === window.__idleOriginalSocket,
+    originalState: window.__idleOriginalSocket?.readyState, currentState: socket?.readyState,
+    state: connection.dataset.state, boot: profileData?.boot_id, authorization: window.stationAuthorization.snapshot(),
+    loginHidden: document.querySelector('#login').hidden, timeline: window.__idleAuthorizationTimeline.slice()}));
+  const idlePeerEvidence = idlePeers.map(peer => ({createdAt: peer.createdAt, frames: peer.frames,
+    closedAt: peer.closedAt, errors: peer.errors, closed: peer.ws.isClosed()}));
+  t.diagnostic(JSON.stringify({scope: 'fresh authorization stable idle only', idleQualified, idleStart,
+    elapsedMs: performance.now() - idlePeers[0]?.createdAt, idleBefore, counts: {...counts}, idleObservation, idlePeerEvidence}));
+  assert.equal(idleQualified, true, 'initial authorization must finish before original4s timer boundary; otherwise reproduction unqualified, no retry');
+  assert.equal(counts.ws, 1, 'stable initial authorization must create only one actual WebSocket');
+  assert.equal(idlePeerEvidence.filter(peer => !peer.closed).length, 1, 'one live observed peer');
+  assert.equal(idlePeerEvidence[0].frames > 0, true, 'actual first peer received station frames');
+  assert.equal(idleObservation.sameSocket, true); assert.equal(idleObservation.originalState, 1); assert.equal(idleObservation.currentState, 1);
+  assert.equal(idleObservation.state, 'connected'); assert.equal(idleObservation.boot, originalBoot);
+  assert.equal(idleObservation.authorization.epoch, idleStart.epoch); assert.equal(idleObservation.authorization.ready, true);
+  assert.equal(idleObservation.loginHidden, true);
+  for (const key of ['session', 'enroll', 'challenge', 'proof', 'status']) assert.equal(counts[key], idleBefore[key], 'stable idle does not repeat ' + key);
   const firstBrowser = browserProcesses(); assert.ok(firstBrowser.some(item => item.OwnProfile), 'actual first persistent browser generation observed');
   // Leave only about:blank in the owned profile, avoiding an unobserved restored-page request on relaunch.
   await page.goto('about:blank'); await context.clearCookies();
