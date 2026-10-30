@@ -14,6 +14,7 @@ harness_paths:
   - .claude/
   - deny.toml
   - .github/ISSUE_TEMPLATE/
+  - .github/workflows/rust-advisories.yml
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
 # Three issue workspaces; the supervisor occupies this runtime's fourth agent slot.
