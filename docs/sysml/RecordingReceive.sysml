@@ -266,10 +266,52 @@ package WstxRecordingReceive {
              total immutable after first chunk. Only1chunk request at once. Browser
              waits response before next;no streaming-request API assumption. */
     }
+    enum def HttpMethod { enum get; enum mutation; }
+    attribute def HttpResponsePolicy {
+        attribute cacheControl : String = "no-store";
+        attribute corsAllowed : Boolean = false;
+        attribute jsonMediaType : String = "application/json";
+        doc /* FSD12.6: UTF-8 JSON except raw WAV input. No CORS permission is emitted.
+             JSON accepts optional UTF-8 charset as12.5. JSON schemas are exact:
+             reject duplicate/unknown/missing keys. */
+    }
+    attribute def HttpErrorDetail {
+        attribute code : ErrorCode;
+        attribute 'field' : String[0..0];
+        doc /* Exact members code and field. field is JSON null; code is the stable
+             declared error code, never reflected request input. */
+    }
+    attribute def HttpErrorBody {
+        attribute error : HttpErrorDetail;
+        doc /* Exact UTF-8 wire shape {"error":{"code":"...","field":null}}. */
+    }
+    calc def OriginAllowed {
+        in method : HttpMethod;
+        in originHeaderCount : Integer;
+        in suppliedOriginEqualsSelectedOrigin : Boolean;
+        return allowed : Boolean =
+            (method == HttpMethod::get and originHeaderCount == 0) or
+            (originHeaderCount == 1 and suppliedOriginEqualsSelectedOrigin);
+        doc /* FSD12.6: GET alone permits absent Origin. Every mutation requires
+             one exact Origin even on loopback. Repeated Origin is refused. */
+    }
+    calc def HttpAccessStatus {
+        in selectedProfileModeAndKnownRoute : Boolean;
+        in originAllowed : Boolean;
+        in tls : Boolean;
+        in selectedProfileSessionValid : Boolean;
+        return status : Integer = if not selectedProfileModeAndKnownRoute ? 404 else
+            if not originAllowed ? 403 else
+            if tls and not selectedProfileSessionValid ? 401 else 200;
+        doc /* Precedence is mode/route, Origin, TLS session, then payload/resource
+             checks in HttpValidation. TLS requires its selected profile's session
+             on every recording route. 200 means admitted, not a final route result. */
+    }
     attribute def HttpValidation {
         attribute selectedProfile : Boolean;
         attribute originAllowed : Boolean;
         attribute authenticated : Boolean;
+        attribute responsePolicy : HttpResponsePolicy;
         attribute mediaAllowed : Boolean;
         attribute bodyBounded : Boolean;
         attribute schemaValid : Boolean;
@@ -855,32 +897,65 @@ package WstxRecordingReceive {
              keyboard-only use, touch input, 200% zoom and literal rendering of source/status text.
              No horizontal page overflow; axis labels and primary controls remain reachable. */
     }
+    enum def ImportEvent {
+        enum chunk_started; enum all_bytes_received; enum valid_and_flushed;
+        enum cancel_accepted; enum transport_lost; enum reservation_expired;
+        enum upload_expired; enum cleanup_succeeded; enum cleanup_failed_or_deadline;
+        enum io_failure; enum validation_failed; enum commit_succeeded;
+    }
+    calc def ImportExpired {
+        in currentState : ImportState;
+        in reservationElapsedMs : Integer;
+        in receiveIdleMs : Integer;
+        in totalElapsedMs : Integer;
+        in limits : Limits;
+        return expired : Boolean =
+            (currentState == ImportState::reserved and reservationElapsedMs >= limits.reservationMs) or
+            (currentState == ImportState::receiving and
+                (receiveIdleMs >= limits.uploadIdleMs or totalElapsedMs >= limits.uploadTotalMs));
+        doc /* FSD12.6: station monotonic elapsed time, not browser timers; equality
+             expires. Event dispatch is serialized with chunk/cancel/commit admission.
+             Emit reservation_expired or upload_expired for the corresponding state. */
+    }
     state def ImportLifecycle {
-        attribute chunkStarted : Boolean;
-        attribute allBytesReceived : Boolean;
-        attribute validAndFlushed : Boolean;
-        attribute cancelAccepted : Boolean;
-        attribute cleanupSucceeded : Boolean;
-        attribute storageFaultOrDeadline : Boolean;
-        attribute commitSucceeded : Boolean;
-        attribute validationFailed : Boolean;
+        attribute acceptedEvent : ImportEvent;
+        attribute cancellationCleanup : Boolean;
+        doc /* Events are accepted serially by the one station state owner. A cancel
+             accepted before committing invalidates commit authorization before its
+             acknowledgement. cancellationCleanup records explicit/transport cancellation;
+             timeout cleanup retains upload_timeout instead. These are event outcomes,
+             not competing Boolean policy flags or a new owner. */
         entry; then reserved;
         state reserved; state receiving; state validating; state committing;
         state cancelling; state completed; state cancelled; state failed;
-        transition upload first reserved if chunkStarted then receiving;
-        transition validate first receiving if allBytesReceived then validating;
-        transition commit first validating if validAndFlushed and not cancelAccepted then committing;
-        transition cancelReserved first reserved if cancelAccepted then cancelled;
-        transition cancelReceiving first receiving if cancelAccepted then cancelling;
-        transition cancelValidation first validating if cancelAccepted then cancelling;
-        transition cleaned first cancelling if cleanupSucceeded then cancelled;
-        transition quarantine first cancelling if storageFaultOrDeadline then failed;
-        transition rejected first validating if validationFailed then failed;
-        transition committed first committing if commitSucceeded then completed;
-        transition commitError first committing if storageFaultOrDeadline then failed;
-        doc /* Flags are stationevents,not freepolicy. Reservation/uploadtimeout enters
-             cleanup with upload_timeout;transportloss samecleanup. FailedblockedI/O
-             retains slot. Restartreconcilesactualmanifest,notHTTPresponse. */
+        transition upload first reserved if acceptedEvent == ImportEvent::chunk_started then receiving;
+        transition validate first receiving if acceptedEvent == ImportEvent::all_bytes_received then validating;
+        transition commit first validating if acceptedEvent == ImportEvent::valid_and_flushed then committing;
+        transition cancelReserved first reserved if acceptedEvent == ImportEvent::cancel_accepted then cancelled;
+        transition cancelReceiving first receiving if acceptedEvent == ImportEvent::cancel_accepted then cancelling;
+        transition cancelValidation first validating if acceptedEvent == ImportEvent::cancel_accepted then cancelling;
+        transition abortReceiving first receiving if acceptedEvent == ImportEvent::transport_lost then cancelling;
+        transition abortValidation first validating if acceptedEvent == ImportEvent::transport_lost then cancelling;
+        transition reservationTimeout first reserved if acceptedEvent == ImportEvent::reservation_expired then cancelling;
+        transition uploadTimeout first receiving if acceptedEvent == ImportEvent::upload_expired then cancelling;
+        transition cleanedCancellation first cancelling if acceptedEvent == ImportEvent::cleanup_succeeded and cancellationCleanup then cancelled;
+        transition cleanedTimeout first cancelling if acceptedEvent == ImportEvent::cleanup_succeeded and not cancellationCleanup then failed;
+        transition quarantine first cancelling if acceptedEvent == ImportEvent::cleanup_failed_or_deadline or acceptedEvent == ImportEvent::io_failure then failed;
+        transition reservationIoError first reserved if acceptedEvent == ImportEvent::io_failure then failed;
+        transition uploadIoError first receiving if acceptedEvent == ImportEvent::io_failure then failed;
+        transition validationIoError first validating if acceptedEvent == ImportEvent::io_failure then failed;
+        transition rejected first validating if acceptedEvent == ImportEvent::validation_failed then failed;
+        transition committed first committing if acceptedEvent == ImportEvent::commit_succeeded then completed;
+        transition commitError first committing if acceptedEvent == ImportEvent::io_failure then failed;
+        doc /* FSD4.4/12.6: reservation expiry30s; receiving inactivity15s or total1800s
+             emits upload_expired. Timeout error is upload_timeout; observed PUT transport
+             loss cancels the import. cleanup_succeeded requires actual release/removal,
+             not an elapsed timer. Normal cancellation cleanup<=1s; I/O failure or cleanup
+             deadline5s publishes failed/storage_unavailable, quarantines files/handles and
+             retains the occupied slot until actual cleanup/restart reconciliation.
+             A replaced manifest remains authoritative after post-commit failure.
+             DELETE in committing is409 invalid_state; terminal DELETE is unchanged.
+             Terminal resources persist only until next reservation/restart. */
     }
     state def ReceiveLifecycle {
         attribute cancelAccepted : Boolean;
@@ -892,7 +967,51 @@ package WstxRecordingReceive {
         transition cancel first running if cancelAccepted then cancelling;
         transition release first cancelling if workerReleased then cancelled;
         transition complete first running if sourceComplete and workerReleased and not processingFailed and not cancelAccepted then completed;
-        transition fail first running if processingFailed and workerReleased then failed;
+        transition fail first running if processingFailed and workerReleased and not cancelAccepted then failed;
+        doc /* FSD4.4: accepted cancellation already changes running to cancelling;
+             otherwise processing failure prevents completion even with simultaneous EOS.
+             While a failed worker is held, state remains nonterminal. Guards are disjoint;
+             every terminal receive transition requires worker release. */
+    }
+    enum def ImportBrowserEvent {
+        enum start; enum accepted; enum reservation_rejected; enum abort; enum response_lost;
+        enum reconciled; enum terminal;
+    }
+    state def BrowserImportLifecycle {
+        attribute acceptedEvent : ImportBrowserEvent;
+        entry; then idle;
+        state idle; state pending; state uploading; state reconciling;
+        transition begin first idle if acceptedEvent == ImportBrowserEvent::start then pending;
+        transition reserved first pending if acceptedEvent == ImportBrowserEvent::accepted then uploading;
+        transition reservationRejected first pending if acceptedEvent == ImportBrowserEvent::reservation_rejected then idle;
+        transition reservationUnknown first pending if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
+        transition abortUpload first uploading if acceptedEvent == ImportBrowserEvent::abort then reconciling;
+        transition uploadUnknown first uploading if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
+        transition observed first reconciling if acceptedEvent == ImportBrowserEvent::reconciled then idle;
+        transition finished first uploading if acceptedEvent == ImportBrowserEvent::terminal then idle;
+        doc /* FSD12.6: UI abort stops PUT and sends DELETE independently, then uses GET
+             to reconcile uncertain outcome. A lost reservation response is reconciled from
+             GET /recording, which exposes any accepted import ID. Never retry a mutation,
+             resume upload, replay, or infer rollback from a missing response. reconciling
+             persists on unavailable transport; no fabricated successful snapshot.
+             A known reservation rejection ends local pending, visibly reports the returned
+             error and starts no PUT/DELETE/retry; authoritative busy/degraded/identity state
+             remains unchanged until an independently validated snapshot changes it.
+             idle means no local upload, not permission to ignore authoritative busy state. */
+    }
+    enum def SourceAvailability { enum absent; enum available; enum unavailable; }
+    calc def RecordingAvailability {
+        in committedSourceUnavailable : Boolean;
+        in recordingPresent : Boolean;
+        return availability : SourceAvailability = if committedSourceUnavailable ?
+            SourceAvailability::unavailable else if recordingPresent ?
+            SourceAvailability::available else SourceAvailability::absent;
+        doc /* FSD12.6: authenticated GET remains200 with current identity/generation/
+             operations; unavailable sets recording:null and source_error recording_unavailable.
+             Browser labels absence/unavailability distinctly; idle replacement stays enabled.
+             Replay returns409 recording_unavailable until successful replacement clears error.
+             Affected job fails under ReceiveLifecycle; no job/source is manufactured.
+             Authentication/transport failure is not an absent/unavailable-source snapshot. */
     }
     action importRecording : ImportRecording;
     action recoverSource : RecoverRecordedSource;
@@ -939,8 +1058,8 @@ package WstxRecordingReceive {
         verification receiveIsolation {
             subject operation : CancelReceive;
             objective { verify WstxRequirements::'CL-006-02'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors.
-                 Independent expected oracle: Exactly one serialized start wins. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
+            doc /* TC-018-003: setup/input/action: Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. In a real browser, reject the reservation POST with known409 busy and separately503 storage_unavailable; observe local pending/error display and all subsequent requests.
+                 Independent expected oracle: Exactly one serialized start wins. A known rejected reservation ends local pending and visibly reports its exact error, sends no PUT/DELETE/retried POST and preserves authoritative busy/degraded/identity state; it cannot fabricate an accepted import or successful snapshot. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
         }
         dependency tracereceiveIsolation from receiveIsolation to WstxRequirements::'TC-018-003';
         verification calibratedDisplay {
@@ -999,7 +1118,8 @@ package WstxRecordingReceive {
     }
     doc /* Implementation freedoms: Rust file layout; existing-library/std storage
          commit primitives preserving the declared commit point; small bounded parser
-         mechanics; test-only fault injection; canvas palette colors/drawing mechanisms within the prescribed integer geometry. No implicit changes
+         mechanics; test-only fault injection; canvas drawing mechanisms preserving the exact
+         authoritative RGB palette and prescribed integer geometry. No implicit changes
          to wire/schema/state/units/bounds/authority/errors/oracles, extra dependencies,
          speculative FFT wrapper, device capabilities or transmit lifecycle. */
 }

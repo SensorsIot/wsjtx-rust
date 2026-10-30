@@ -14,6 +14,8 @@ package WstxArchitecture {
          servers suffice for CR #5 acceptance; stations[*] remains variable. */
 
     part physicalStation {
+        doc /* FSD11.9: one selected-radio reference context with four physical roles,
+             not universal radio cardinality or a radio count derived from station count. */
         part user : Operator;
         part viewer : ViewerComputer;
         part controller : StationControllerComputer;
@@ -142,7 +144,10 @@ package WstxArchitecture {
         port radioAudio : AudioExchange;
         port radioControl : RadioControl;
         part stations[*] : StationProcess;
-        part mcpClients[*] : McpClient;
+        ref part mcpClients[*] : McpClient;
+        doc /* FSD11.9: client references do not compose clients onto this computer.
+             Controller-level attachments own routing associations only. #12 client
+             placement/authority remains unresolved and is not implementation-ready. */
         part radioAuthority : RadioAuthority;
 
         part mcpAttachments[*] : McpAttachment;
@@ -310,16 +315,20 @@ package WstxArchitecture {
     part def NativeControl :> RustRadioDriver { port session : SessionAccess; }
     part def NativeSession {
         doc /* A managed native session may serve both implementations. This session is
-             not a second arbitration authority and cannot bypass the common authority. */
+             not a second arbitration authority and cannot bypass the common authority.
+             Session ownership/sharing/lifetime remain #13 decisions; this is a provider
+             type, not a requirement for a separate session per station. */
         port audio : ~SessionAccess;
         port control : ~SessionAccess;
     }
     part def NativeBackend :> RadioBackend {
         doc /* Optional Phase 2 alternate, no external SmartSDR/CAT/DAX bridge required.
-             These logical associations select no native API schema or physical streams. */
+             These logical associations select no native API schema or physical streams.
+             The session is referenced, not composed by the backend. #13 is not
+             implementation-ready until ownership/sharing/lifetime are settled in FSD. */
         part audioDevices : NativeAudio;
         part controlDriver : NativeControl;
-        part session : NativeSession;
+        ref part session : NativeSession;
         connection audioHost connect audio to audioDevices.host;
         connection audioRadio connect audioDevices.radio to radioAudio;
         connection controlHost connect control to controlDriver.authorized;
@@ -378,6 +387,28 @@ package WstxArchitecture {
     dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
     dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     dependency flexPromise from NativeBackend to WstxRequirements::'FR-023';
+    doc /* Target responsibility traces from FSD11.10. Dependencies identify the
+         responsible boundary, not delivered capability or an executed verification. */
+    dependency configurationPromise from StationService to WstxRequirements::'FR-001';
+    dependency receivePromise from ReceivePipeline to WstxRequirements::'FR-003';
+    dependency decodePromise from ModeFunctions to WstxRequirements::'FR-004';
+    dependency encodePromise from ModeFunctions to WstxRequirements::'FR-005';
+    dependency timingPromise from TransmitService to WstxRequirements::'FR-006';
+    dependency receiveTimingPromise from ReceivePipeline to WstxRequirements::'FR-006';
+    dependency qsoPromise from QsoAndLogging to WstxRequirements::'FR-007';
+    dependency haltPromise from TransmitService to WstxRequirements::'FR-008';
+    dependency displayPromise from BrowserClient to WstxRequirements::'FR-010';
+    dependency loggingPromise from QsoAndLogging to WstxRequirements::'FR-011';
+    dependency integrationPromise from StationService to WstxRequirements::'FR-012';
+    dependency emePromise from ModeFunctions to WstxRequirements::'FR-013';
+    dependency widebandPromise from ReceivePipeline to WstxRequirements::'FR-014';
+    dependency utilitiesPromise from ModeFunctions to WstxRequirements::'FR-015';
+    dependency persistencePromise from PersistedProfile to WstxRequirements::'FR-016';
+    dependency helpPromise from BrowserClient to WstxRequirements::'FR-017';
+    dependency recordingPromise from RecordedSource to WstxRequirements::'FR-018';
+    dependency htmlPromise from WebAdapter to WstxRequirements::'FR-019';
+    dependency mcpPromise from McpAdapter to WstxRequirements::'FR-020';
+    dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
     package ImplementedStatusSlice {
         doc /* Legacy status/TLS subset retained alongside Profiles.sysml's implemented
              CR #5 profile functionality. Target deployment above is not an assertion of implemented

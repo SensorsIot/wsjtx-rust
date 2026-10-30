@@ -257,9 +257,9 @@ the owning requirements; full station setup and legacy WSJT-X migration are late
 | Stable clause | Requirements | Approved target refinement | Cases |
 |---|---|---|---|
 | CL-005-01 | FR-022 | A selected profile owns one process/listener; N is variable and storage, process and browser collections MUST NOT assume four entries. Four concurrent servers are sufficient for CR #5 acceptance; the implementation has no four-instance ceiling. | `TC-022-001` |
-| CL-005-02 | FR-001, FR-016, FR-019, FR-022 | Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. | TC-022-001; TC-022-002 |
-| CL-005-03 | FR-019, FR-021, FR-022 | Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. | TC-022-001; TC-022-003; TC-022-004 |
-| CL-005-04 | FR-016, FR-021, FR-022 | Ownership, invalid storage, occupied endpoints and unavailable startup resources MUST fail explicitly without replacing saved configuration or disrupting a running instance. | TC-022-002; TC-022-003 |
+| CL-005-02 | FR-001, FR-016, FR-019, FR-022 | Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. | TC-022-001; TC-022-002; TC-022-005 |
+| CL-005-03 | FR-019, FR-021, FR-022 | Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. | TC-022-001; TC-022-003; TC-022-004; TC-022-005 |
+| CL-005-04 | FR-016, FR-021, FR-022 | Ownership, invalid storage, occupied endpoints and unavailable startup resources MUST fail explicitly without replacing saved configuration or disrupting a running instance. | TC-022-002; TC-022-003; TC-022-004 |
 | CL-005-05 | FR-001, FR-022 | Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. Native FlexRadio is reserved and refused in this phase. | TC-022-001; TC-022-002 |
 
 **Selection and compatibility.** `wstx-rust --create-profile <directory>` creates a new
@@ -464,8 +464,8 @@ milestone remains planned.
 |---|---|---|---|
 | CL-006-01 | FR-003, FR-018 | Import only the bounded WAV capability below; preserve original bytes and expose immutable, explicitly timed samples without a codec or implicit resampler. | TC-018-001; TC-018-002 |
 | CL-006-02 | FR-018, FR-019 | Profile-owned import/replay/cancellation have explicit pending, terminal and recoverable error states; replacement never destroys the previous committed source before commit. | TC-018-001; TC-018-002; TC-018-003 |
-| CL-006-03 | FR-010, FR-019, FR-021 | Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded selectable Detailed/Thin/Off display. | TC-010-001; TC-010-002; TC-010-003; TC-010-004; TC-010-005; TC-010-006 |
-| CL-006-04 | FR-021 | Bound import, sample, worker and visualization resources; refuse excess work explicitly, discard obsolete display work, preserve status service and invalidate late receive output on cancellation/replacement. | TC-018-002; TC-018-003; TC-010-002 |
+| CL-006-03 | FR-010, FR-019, FR-021 | Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded selectable Detailed/Thin/Off display. | TC-010-001; TC-010-002; TC-010-003; TC-010-004; TC-010-005; TC-010-006; TC-010-007 |
+| CL-006-04 | FR-021 | Bound import, sample, worker and visualization resources; refuse excess work explicitly, discard obsolete display work, preserve status service and invalidate late receive output on cancellation/replacement. | TC-018-002; TC-018-003; TC-010-002; TC-010-004; TC-010-005; TC-010-006; TC-010-007; TC-022-005 |
 
 **Input capability.** RIFF/WAVE little-endian integer PCM format tag 1,
 mono, 16 bits/sample, exactly 12,000 samples/s; 1 through 1,440,000 source frames
@@ -1532,7 +1532,11 @@ save inject a deterministic denied-write/atomic-replace failure in disposable st
 no acknowledgement, no revision advance, previous complete JSON and current settings
 remain authoritative. At crash-before/after-replacement fault points require either
 complete old or complete new JSON, never a partial file; a lost response is reconciled
-by GET without replay. Test a relative profile argument from another working directory,
+by GET without replay. After a lost save response, ordinary Refresh/background GET or
+reconnect MUST NOT permit a second save: Save remains disabled until an explicit reload
+successfully validates the current authoritative profile. A failed explicit reload keeps
+that guard; a successful one recovers the committed revision without a second PUT.
+Test a relative profile argument from another working directory,
 a directory alias, absent parent on creation, existing empty/nonempty creation target,
 unknown/duplicate CLI flags and forbidden WSTX_BIND/WSTX_ORIGIN overrides. No fallback
 or mutation is permitted. This does not certify power-loss durability or WSJT-X migration.
@@ -1607,9 +1611,9 @@ connection-local meaning and are not profile identities. Verify 12.1's body
 and per-process rate limits independently of other profiles. Same-host cookie transport
 is explicitly observed; it is not proof against a hostile service on that hostname.
 
-#### TC-022-005 ? Status readiness independent of settings transport
+#### TC-022-005 — Status readiness independent of settings transport
 
-Proves CL-005-02/03 and CL-006-04. Level 2, automated Windows real Chromium/server
+Proves CL-005-02, CL-005-03 and CL-006-04. Level 2, automated Windows real Chromium/server
 fixture in tests/profiles.test.cjs, using the common four-process profile fixture.
 On an established socket hold GET /profile behind a controlled barrier, click Refresh,
 observe its actual correlated WebSocket status and require changed visible updated plus
@@ -1784,7 +1788,7 @@ IDs from #6 are preserved.
 |---|---|---|---|
 | TC-018-001 | CL-006-01, CL-006-02 | Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability. | Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. |
 | TC-018-002 | CL-006-01, CL-006-02, CL-006-04 | Table-mutate each required WAV field/chunk, zero data, odd data, duplicate fmt/data, RIFF mismatch/overflow, truncation at each header/data boundary, rate/channel/format changes, 65 chunks, frame count max+1 and file cap+1; create legal exactly-at-cap ancillary data. Exercise slow/aborted/timed-out upload, cancel before/after validation commit and storage write/flush/manifest/cleanup failures, including restart at commit boundaries. | Hand-specified errors follow 12.6; unsupported capability differs from malformed structure, exact limits accepted. Before manifest commit old bytes/ID remain; after it new bytes/ID remain even with lost response. No partial source becomes replayable, no unbounded pending file remains; startup cleanup keeps committed data and reports failure explicitly. Other station/profile/status remains available. |
-| TC-018-003 | CL-006-02, CL-006-04 | Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. | Exactly one serialized start wins. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. |
+| TC-018-003 | CL-006-02, CL-006-04 | Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. In a real browser, reject the reservation POST with known409 busy and separately503 storage_unavailable; observe local pending/error display and all subsequent requests. | Exactly one serialized start wins. A known rejected reservation ends local pending and visibly reports its exact error, sends no PUT/DELETE/retried POST and preserves authoritative busy/degraded/identity state; it cannot fabricate an accepted import or successful snapshot. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. |
 | TC-010-001 | CL-006-03 | Independently synthesize silence, DC, coherent tones at 750/1500/2250 Hz at amplitudes 0.5/0.25, two simultaneous tones, a noncoherent tone, clipped input and a burst with specified source-frame start/end. Compute selected windows using a direct DFT test oracle; replay through real browser. | Direct DFT uses published formula without candidate FFT/provider helpers; peak group equals floor(k/4) for coherent bins and row interval follows window-start rule. Half-amplitude change is -6.0206 dB within 0.05 dB prequantization; quantized levels add <=0.5 dB. Silence equals floor; DC uses one-sided exception. Require normal and portable scalar FFT paths against the same direct DFT oracle, then compare full selected rows, axes/legend/row gaps in DOM/canvas sampling and source metadata, not screenshot resemblance alone. |
 | TC-010-002 | CL-006-03, CL-006-04 | Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing. | Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. |
 | TC-010-003 | CL-006-03 | Real browser at 1100x850 and 360x640: import actual recording, verify one station page, drag divider beyond both extremes, use keyboard/touch/zoom and resize during replay. Repeat four independent station windows. | Measured pane bounds meet 160/200 px minima, separator is 12 px and accessible, keyboard steps16px/Home/End clamp, small-height page scrolls, no horizontal page overflow, controls and axes remain reachable. Pointer/keyboard actions change only that station's pane, no second waterfall window appears and data/source identity survives resize. Browser assertions plus desktop/narrow screenshots verify actual layout. |
@@ -2281,6 +2285,14 @@ those same viewer/controller roles. Station processes are a variable population;
 owns exactly one selected profile and one exclusive backend choice. Optional browser/MCP
 clients and optional CAT availability do not imply additional station engines. A backend
 choice describes alternatives, not simultaneous connections to every backend.
+
+This is one selected-radio reference context, not a limit on physical radios or a
+derivation of radio count from station count. MCP client references identify endpoints
+without assigning their host; the controller-level attachment owns routing associations,
+not the clients. A native backend's session reference identifies its interface provider,
+not a station-owned connection or lifetime. MCP placement/authority details (#12) and
+native session ownership, sharing and lifecycle (#13) remain unresolved; those slices
+are not implementation-ready until their Markdown contracts and models settle them.
 
 The connected semantic paths required for review and automated structural checks are:
 
@@ -2832,7 +2844,18 @@ are bound to selected profile and current boot; unknown/previous boot/other stat
 return 404 `not_found`, without revealing resource existence elsewhere. Idempotent DELETE
 never cancels a different current operation. Abort during PUT cancels that import on
 transport-loss observation; UI abort also sends DELETE on an independent request and
-reconciles GET when network outcome is uncertain. No mutation is retried automatically.
+reconciles GET when network outcome is uncertain. No mutation is retried automatically. A known rejected reservation response ends local
+pending and visibly reports its error; it creates no accepted import or successful
+snapshot, sends no upload/cancel request or automatic retry, and preserves the last
+authoritative busy/degraded/identity state until a validated snapshot changes it.
+Reservation/upload timeout enters cleanup with `upload_timeout` and ends failed after
+successful cleanup; observed PUT transport loss uses cancellation cleanup and ends
+cancelled. Explicit cancellation before committing also ends cancelled after cleanup
+(a reserved import can cancel immediately). Cleanup I/O failure or its five-second
+deadline ends failed with `storage_unavailable` and the quarantine/retained-slot policy
+in4.4. The state owner serializes these events; entering committing removes pre-commit
+cancellation/timeout paths and preserves the manifest commit-point rule even if a later
+response or cleanup fails.
 
 Validation order: mode/route existence; Origin (403 forbidden_origin); TLS auth
 (401 unauthorized); content type/encoding (415 unsupported_media_type); declared or
