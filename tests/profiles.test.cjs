@@ -137,8 +137,67 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
   }), true);
 });
 
-// Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.
-test('TC-022-006: upload intent cannot cross authorization renewal', {timeout: 45000}, async t => {
+for (const action of ['reload', 'save']) test(`TC-022-006: held ${action} body cannot cross authorization renewal`, {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage(); await page.goto(p.origin);
+  await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  let putCount = 0;
+  page.on('request', request => {if (request.url().endsWith('/profile') && request.method() === 'PUT') putCount++;});
+  await page.evaluate(method => {
+    const originalFetch = window.fetch;
+    const gate = window.profileBodyCompletion = {held: false, released: false, timedOut: false};
+    let armed = true;
+    window.fetch = async (...args) => {
+      const response = await originalFetch(...args);
+      if (armed && String(args[0]) === '/profile' && (args[1]?.method || 'GET') === method && response.status === 200) {
+        armed = false;
+        const nativeJson = response.json.bind(response);
+        response.json = async () => {
+          const actual = await nativeJson();
+          gate.method = method; gate.status = response.status; gate.profile_id = actual.profile_id; gate.revision = actual.revision;
+          gate.oldSocket = socket;
+          gate.held = true;
+          await new Promise(resolve => {
+            const timer = setTimeout(() => {gate.timedOut = true; resolve();}, 10000);
+            gate.release = () => {clearTimeout(timer); gate.released = true; resolve();};
+          });
+          return actual;
+        };
+      }
+      return response;
+    };
+  }, action === 'save' ? 'PUT' : 'GET');
+  t.after(async () => {try {await page.evaluate(() => window.profileBodyCompletion.release?.());} catch {}});
+  const intendedName = action === 'save' ? 'Committed before lost completion' : 'Operator unsaved value';
+  await page.locator('#display-name').fill(intendedName);
+  const oldEpoch = await page.evaluate(() => window.stationAuthorization.snapshot().epoch);
+  await page.locator(action === 'save' ? '#settings-save' : '#settings-reload').click();
+  await page.waitForFunction(() => window.profileBodyCompletion.held);
+  const heldIdentity = await page.evaluate(() => {
+    const gate = window.profileBodyCompletion; return {method: gate.method, status: gate.status, profile_id: gate.profile_id, revision: gate.revision};
+  });
+  assert.deepEqual(heldIdentity, {method: action === 'save' ? 'PUT' : 'GET', status: 200, profile_id: p.document.profile_id, revision: action === 'save' ? 1 : 0});
+  await context.clearCookies();
+  await page.evaluate(async () => {try {await window.stationAuthorization.fetch('/profile');} catch {}});
+  await page.waitForFunction(previous => {const now = window.stationAuthorization.snapshot(); return now.ready && now.epoch > previous;}, oldEpoch);
+  await connected(page);
+  assert.equal(await page.evaluate(() => socket !== window.profileBodyCompletion.oldSocket && socket.readyState === WebSocket.OPEN && window.profileBodyCompletion.oldSocket.readyState === WebSocket.CLOSED), true);
+  assert.equal(await page.locator('#display-name').inputValue(), intendedName, 'new socket preserves the in-progress form');
+  await page.evaluate(() => window.profileBodyCompletion.release());
+  await page.locator('#settings-result').filter({hasText: action === 'save' ? 'Save outcome unknown' : 'Could not load saved settings'}).waitFor();
+  assert.equal(await page.locator('#display-name').inputValue(), intendedName, 'old completion must not overwrite the form');
+  assert.equal(await page.evaluate(() => window.profileBodyCompletion.timedOut), false, 'the controlled completion was released explicitly');
+  assert.equal(putCount, action === 'save' ? 1 : 0, 'no automatic mutation replay');
+  const committed = JSON.parse(await fs.readFile(path.join(p.dir, 'profile.json'), 'utf8'));
+  assert.equal(committed.revision, action === 'save' ? 1 : 0);
+  assert.equal(committed.display_name, action === 'save' ? intendedName : 'Station 1');
+  if (action === 'save') assert.equal(await page.locator('#settings-save').isDisabled(), true, 'unknown save needs explicit reload');
+});
+
+// Client continuation only: the reservation success is simulated; backend mutation guards remain intact.
+test('TC-022-006: simulated reservation upload intent cannot cross authorization renewal', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
   const page = await context.newPage(); await page.goto(p.origin);
@@ -147,18 +206,30 @@ test('TC-022-006: upload intent cannot cross authorization renewal', {timeout: 4
   await page.locator('#open-recordings').click();
   await page.locator('#recording-import').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#recording-import').disabled);
-  let reserved = false, chunks = 0, heldRoute;
+  const baseline = await page.evaluate(async () => (await window.stationAuthorization.fetch('/recording')).json());
+  const resource = `/recording/imports/${uuid(999)}`;
+  let reservationRequests = 0, reservationAccepted = false, chunks = 0, heldRoute;
   let markHeld; const held = new Promise(resolve => {markHeld = resolve;});
   page.on('request', request => {
-    if (request.url().endsWith('/recording/imports') && request.method() === 'POST') reserved = true;
-    if (request.url().includes('/recording/imports/') && request.method() === 'PUT') chunks++;
+    if (request.url() === p.origin + resource && request.method() === 'PUT') chunks++;
+  });
+  await page.route('**/recording/imports', async route => {
+    const request = route.request(); assert.equal(request.method(), 'POST'); reservationRequests++;
+    assert.deepEqual(JSON.parse(request.postData()), {v: 1, profile_id: baseline.profile_id, boot_id: baseline.boot_id, generation: baseline.generation});
+    assert.equal(request.headers().origin, p.origin);
+    assert.equal(await page.evaluate(() => window.stationAuthorization.snapshot().ready), true);
+    reservationAccepted = true;
+    await route.fulfill({status: 201, headers: {'Content-Type': 'application/json', Location: resource},
+      body: JSON.stringify({v: 1, id: uuid(999), generation: baseline.generation + 1, state: 'reserved'})});
   });
   await page.route('**/recording', async route => {
-    if (reserved && !heldRoute) {heldRoute = route; markHeld();} else await route.continue();
+    if (reservationAccepted && !heldRoute) {heldRoute = route; markHeld();} else await route.continue();
   });
+  t.after(async () => {try {await heldRoute?.continue();} catch {}});
   // The bytes must never be dispatched; this is an intent-fence fixture, not a WAV generator.
   await page.locator('#recording-file').setInputFiles({name: 'not-dispatched.wav', mimeType: 'audio/wav', buffer: Buffer.from([0])});
   await page.locator('#recording-import').click(); await held;
+  assert.equal(reservationRequests, 1); assert.equal(reservationAccepted, true);
   const oldEpoch = await page.evaluate(() => window.stationAuthorization.snapshot().epoch);
   await context.clearCookies();
   await page.evaluate(async () => {try {await window.stationAuthorization.fetch('/profile');} catch {}});
@@ -166,10 +237,16 @@ test('TC-022-006: upload intent cannot cross authorization renewal', {timeout: 4
     const current = window.stationAuthorization.snapshot(); return current.ready && current.epoch > previous;
   }, oldEpoch);
   await heldRoute.continue();
-  await page.locator('#recording-progress').filter({hasText: 'Import intent changed'}).waitFor();
+  try {await page.locator('#recording-progress').filter({hasText: 'Import intent changed'}).waitFor();}
+  catch (error) {
+    t.diagnostic(JSON.stringify({chunks, reservationRequests, reservationAccepted, oldEpoch, progress: await page.locator('#recording-progress').textContent(),
+      authorization: await page.evaluate(() => window.stationAuthorization.snapshot())}));
+    assert.equal(chunks, 0, 'independent count even if the progress oracle failed'); throw error;
+  }
   assert.equal(chunks, 0, 'no upload chunk from the old explicit intent may be sent after proof');
 });
 
+// Proves: FR-001, FR-019, FR-021, FR-022; CL-005-01..03/05; TC-022-001.
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles} = await fixture(t), beforeBytes = await savedBytes(profiles);
   const {pages, context} = await browserWindows(t, profiles);

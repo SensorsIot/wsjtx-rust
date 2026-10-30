@@ -8,6 +8,8 @@ const profileMode = document.body.dataset.profile === 'true';
 const authorization = profileMode && location.protocol === 'https:' ? window.stationAuthorization : null;
 const authorized = () => !authorization || authorization.snapshot().ready;
 const stationFetch = (path, options) => authorization ? authorization.fetch(path, options) : fetch(path, options);
+const stationContext = (current, authEpoch) => current === socket && current?.readyState === WebSocket.OPEN &&
+  authorized() && (!authorization || authorization.snapshot().epoch === authEpoch);
 const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
@@ -129,12 +131,14 @@ function refreshProfile(current, state) {
   }).finally(() => {state.running = null;});
   return state.running;
 }
-async function loadProfile(reload, current) {
+async function loadProfile(reload, current = socket) {
+  const authEpoch = authorization?.snapshot().epoch;
+  if (!stationContext(current, authEpoch)) return false;
   const response = await stationFetch('/profile', {signal: AbortSignal.timeout(10000)});
-  if (!authorized() || current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
+  if (!stationContext(current, authEpoch)) return false;
   if (!response.ok) {settingsResult.textContent = 'Could not load saved settings.'; throw new Error('Profile unavailable');}
   const data = await response.json();
-  if (!authorized() || current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
+  if (!stationContext(current, authEpoch)) return false;
   if (typeof data.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return true;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
@@ -151,10 +155,12 @@ async function loadProfile(reload, current) {
 settingsForm.addEventListener('input', () => {dirty = true;});
 settingsForm.addEventListener('change', () => {dirty = true;});
 document.querySelector('#settings-reload').addEventListener('click', async () => {
-  try {await loadProfile(true); settingsResult.textContent = 'Loaded saved settings.';} catch {settingsResult.textContent = 'Could not load saved settings.';}
+  try {if (!await loadProfile(true)) throw new Error('Stale settings'); settingsResult.textContent = 'Loaded saved settings.';} catch {settingsResult.textContent = 'Could not load saved settings.';}
 });
 settingsForm.addEventListener('submit', async event => {
   event.preventDefault(); if (!profileMode || !profileData || saving || conflict || !authorized()) return;
+  const current=socket,authEpoch=authorization?.snapshot().epoch,context=JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]);
+  if(!stationContext(current,authEpoch))return;
   saving = true;
   const button = document.querySelector('#settings-save');
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
@@ -162,12 +168,14 @@ settingsForm.addEventListener('submit', async event => {
   try {
     const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: formSettings()})});
     const result = await response.json();
+    if(!stationContext(current,authEpoch)||context!==JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]))throw new Error('Stale save completion');
     if (!response.ok) {
       if (response.status === 409) {conflict = true; settingsResult.textContent = 'Settings changed or revision limit reached. Reload saved settings before saving.';}
       else settingsResult.textContent = result.error?.field ? `Invalid ${result.error.field}. Check this field.` : `Could not save settings (${result.error?.code || 'connection error'}).`;
       return;
     }
-    dirty = false; await loadProfile(true); settingsResult.textContent = `Saved revision ${result.revision}`;
+    if(!await loadProfile(true,current)||!stationContext(current,authEpoch))throw new Error('Stale save completion');
+    settingsResult.textContent = `Saved revision ${result.revision}`;
   } catch {settingsResult.textContent = 'Save outcome unknown. Reload saved settings before retrying.'; conflict = true;}
   finally {saving = false; for (const [element, disabled] of controls) element.disabled = disabled; button.disabled = saving || conflict;}
 });

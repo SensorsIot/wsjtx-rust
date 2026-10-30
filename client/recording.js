@@ -301,18 +301,20 @@ function show() {
   if(live?.job){statusText.textContent=`Live ${live.job.mode.toUpperCase()} · ${live.audio.state} · ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`;}
 }
 async function request(path,options={}) {
+  const current=socket,authEpoch=authorization?.snapshot().epoch;
   const response=await stationFetch(path,{...options,signal:options.signal || AbortSignal.timeout(10000)});
-  const data=await response.json();if(!response.ok) throw new Error(data.error?.code || 'request_failed');return data;
+  const data=await response.json();if(!stationContext(current,authEpoch))throw new Error('Station response is stale');if(!response.ok) throw new Error(data.error?.code || 'request_failed');return data;
 }
 async function sync(current=socket) {
   if(current!==socket)return;restoreDisplayPreference();if(syncPending){syncAgain=true;return;}syncPending=true;
+  const authEpoch=authorization?.snapshot().epoch;
   try {
-    const data=await request('/recording');if(current!==socket) return;
+    const data=await request('/recording');if(!stationContext(current,authEpoch)) return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
     if(identity(data)!==identity(snapshot)){rows=[];resetLevels();paint();}snapshot=data;
     if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
-      try{const outcome=await request(`/recording/imports/${previousImport}`);if(current!==socket)return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
+      try{const outcome=await request(`/recording/imports/${previousImport}`);if(!stationContext(current,authEpoch))return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
@@ -470,10 +472,10 @@ function receiveShow(){
 async function receiveSync(current=socket){
   if(current!==socket||connection.dataset.state!=='connected')return;
   if(livePending){liveAgain=receiveMutationEpoch;return;}livePending=true;
-  const epoch=receiveMutationEpoch;
+  const epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   try{
     const data=await request('/receive');
-    if(current!==socket||epoch!==receiveMutationEpoch)return;
+    if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
     if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
@@ -545,11 +547,11 @@ async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
   const now=performance.now();if(now-lastResultStart<4000)return;
   resultPending=true;lastResultStart=now;
-  const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch;
+  const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
   try{
     const response=await stationFetch(`/receive/results?${query}`,{signal:AbortSignal.timeout(10000)}),page=await response.json();
-    if(current!==socket||context!==liveIdentity(live)||revision!==liveRevision||epoch!==receiveMutationEpoch)return;
+    if(!stationContext(current,authEpoch)||context!==liveIdentity(live)||revision!==liveRevision||epoch!==receiveMutationEpoch)return;
     if(response.status===410){
       if(page.error?.code!=='cursor_expired'||!Number.isSafeInteger(page.first_sequence)||!Number.isSafeInteger(page.next_sequence)||page.first_sequence<0||page.first_sequence>page.next_sequence)throw new Error('Invalid expired cursor');
       historyIncomplete=true;resultCursor=page.first_sequence;receiveShow();return;
@@ -687,10 +689,10 @@ function operatingShow(){
 async function operatingSync(reconcile=false){
   if(connection.dataset.state!=='connected'||!profileData)return;
   if(operatingReadPending){if(reconcile)operatingReadAgain=true;return;}
-  operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket;
+  operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
   try{
     const response=await stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
-    if(epoch!==operatingEpoch||current!==socket||current.readyState!==WebSocket.OPEN||connection.dataset.state!=='connected')return;
+    if(epoch!==operatingEpoch||!stationContext(current,authEpoch)||connection.dataset.state!=='connected')return;
     let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
     if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
     if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
@@ -710,12 +712,13 @@ async function operatingSync(reconcile=false){
 }
 async function operatingSelect(action,value){
   if(!operatingState||mutationPending||uncertainMutation||operatingBlocked())return;
-  const s=operatingState,command_id=crypto.randomUUID(),epoch=++operatingEpoch;
+  const s=operatingState,command_id=crypto.randomUUID(),epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
   const body={v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id,action,profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,[action]:value};
   operatingIntent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
   try{
     const response=await stationFetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
     if(epoch!==operatingEpoch)return;
+    if(!stationContext(current,authEpoch))throw new Error('Stale selection completion');
     if(!response.ok){operatingFailure=`Selection refused · ${ack.error?.code??'request_failed'}`;operatingIntent=null;return;}
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||ack.command_id!==command_id||ack.accepted!==true||!operatingCounter(ack.operating_revision)||ack.operating_revision<=s.operating_revision||!['releasing','applying','restarting','applied','failed','release_blocked'].includes(ack.phase))throw new Error('Invalid admission receipt');
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=operatingIntent;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or Stop to cancel/fence`;}}
@@ -724,10 +727,11 @@ async function operatingSelect(action,value){
 async function operatingStop(){
   const s=operatingState,target=operatingUnknown??operatingIntent??(s?.operation?{command_id:s.operation.command_id,base_revision:s.operation.base_revision,boot_id:s.boot_id}:null);
   if(!target||(!operatingUnknown&&!operatingIntent&&s?.operation?.result!=='pending')){document.querySelector('#receive-stop').click();return;}
-  const epoch=++operatingEpoch;receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
+  const epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
   try{
     const command_id=crypto.randomUUID();
     const response=await stationFetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:target.boot_id,command_id,action:'cancel',operating_revision:target.base_revision,target_command_id:target.command_id}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    if(!stationContext(current,authEpoch))throw new Error('Stale cancellation completion');
     if(!response.ok)throw new Error(ack.error?.code??'Stop refused');
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==profileData.profile_id||ack.boot_id!==target.boot_id||ack.command_id!==command_id||ack.accepted!==true||ack.phase!=='cancelled'||!operatingCounter(ack.operating_revision))throw new Error('Invalid cancellation receipt');
     if(epoch===operatingEpoch){operatingUnknown=null;operatingIntent=null;}
@@ -741,8 +745,9 @@ document.querySelector('#operating-stop').addEventListener('click',operatingStop
 document.querySelector('#operating-refresh').addEventListener('click',()=>operatingSync(true));
 document.querySelector('#radio-receive-only').addEventListener('change',operatingShow);
 for(const action of ['connect','disconnect'])document.querySelector('#radio-'+action).addEventListener('click',async()=>{
-  const s=operatingState;if(!s||mutationPending)return;const epoch=++operatingEpoch;receiveMutationEpoch++;mutationPending=true;receiveShow();
+  const s=operatingState;if(!s||mutationPending)return;const epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;receiveMutationEpoch++;mutationPending=true;receiveShow();
   try{const response=await stationFetch('/radio/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='connect'?{v:1,profile_id:s.profile_id,boot_id:s.boot_id,profile_revision:s.profile_revision,receive_only_verified:document.querySelector('#radio-receive-only').checked}:{v:1,profile_id:s.profile_id,boot_id:s.boot_id,connection_generation:s.radio.connection_generation}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
+    if(!stationContext(current,authEpoch))throw new Error('Stale CAT completion');
     if(!response.ok){if(!operatingShape(ack,'error')||!operatingShape(ack.error,'code,field')||typeof ack.error.code!=='string'||ack.error.field!==null)throw new Error('Invalid CAT refusal');operatingFailure=`CAT ${action} refused · ${ack.error.code}`;return;}
     if(new TextEncoder().encode(text).length>2048)throw new Error('Invalid CAT receipt size');
     if(!operatingShape(ack,'v,profile_id,boot_id,connection_generation,state,error,device_id,effective_baud,observation')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||!operatingCounter(ack.connection_generation))throw new Error('Invalid CAT receipt');
