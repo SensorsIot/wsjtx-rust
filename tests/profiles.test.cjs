@@ -393,7 +393,7 @@ test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000
   }
 });
 
-// Executes the actual authorization owner against independent platform failure boundaries; no server authority or successful proof is fabricated.
+// Executes the actual authorization owner against independent platform boundaries; the browser cases separately prove real authority.
 test('TC-022-006: authorization owner distinguishes credential lookup and retained failures', {timeout: 45000}, async t => {
   const vm = require('node:vm'), source = await fs.readFile(path.resolve('client/authorization.js'), 'utf8');
   const pair = await crypto.webcrypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify']);
@@ -405,16 +405,24 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     ['blocked-late-success', 'credential-storage-unavailable'], ['error', 'credential-storage-unavailable'], ['open-throw', 'credential-storage-unavailable'], ['read-error', 'credential-storage-unavailable'], ['missing-store', 'credential-storage-unavailable'], ['old-version', 'credential-storage-unavailable'],
     ['invalid', 'credential-invalid'], ['network', 'retained-transient'], ['null-rejection', 'retained-transient'],
     ['rate', 'retained-transient'], ['persistence', 'retained-transient'], ['unauthorized', 'retained-rejected'],
-    ['forbidden', 'retained-rejected'], ['identity', 'retained-rejected'], ['pending', 'enrollment-pending'], ['explicit', 'explicit-in-progress']
+    ['forbidden', 'retained-rejected'], ['identity', 'retained-rejected'], ['pending', 'enrollment-pending'], ['explicit', 'explicit-in-progress'],
+    ['retry-success', null], ['retry-repeat401', 'retained-rejected'], ['retry-challenge401', 'retained-rejected'], ['retry-proof401', 'retained-rejected'],
+    ['retry-lost204', 'retained-transient'], ['retry-proof200', 'retained-transient'], ['retry-second-proof200', 'retained-transient'],
+    ['retry-status403', 'retained-rejected'], ['retry-status429', 'retained-transient'], ['retry-status503', 'retained-transient'],
+    ['retry-status-scope', 'retained-rejected'], ['retry-second-challenge-scope', 'retained-rejected'], ['retry-second-status-scope', 'retained-rejected'],
+    ['retry-pending', 'enrollment-pending'], ['retry-bootstrap', undefined], ['retry-aborted', 'retained-rejected'], ['retry-abort-challenge', 'retained-transient'], ['retry-stale', 'retained-transient']
   ];
   let checked = 0;
   for (const [fault, expected] of cases) {
-    let opens = 0, aborts = 0, closes = 0, writes = 0, fetches = 0, finishBootstrap;
-    const record = fault === 'empty' ? undefined : fault === 'invalid' ? null : {...credential, pending_enrollment: fault === 'pending'};
+    let opens = 0, aborts = 0, closes = 0, writes = 0, fetches = 0, finishBootstrap, bootstrap, challenges = 0, proofs = 0, statuses = 0, verified = 0, proofBodyReads = 0;
+    let record = fault === 'empty' || fault === 'retry-bootstrap' ? undefined : fault === 'invalid' ? null : {...credential, pending_enrollment: fault === 'pending' || fault === 'retry-pending'};
+    const calls = [], controllers = [], timeoutValues = [], proofNonces = new Set(); let activeNonce;
     const indexedDB = {open() {
       opens++; if (fault === 'open-throw') throw new DOMException('Injected storage failure', 'SecurityError'); const request = {}, db = {objectStoreNames: {contains: name => fault !== 'missing-store' && name === 'credential'}, close() {closes++;},
         createObjectStore() {writes++; throw new Error('Lookup must not create a store');},
-        transaction() {const transaction = {objectStore: () => ({get() {const read = {}; queueMicrotask(() => {if (fault === 'read-error') {transaction.onerror(); return;} read.result = record; read.onsuccess(); transaction.oncomplete();}); return read;}})}; return transaction;}};
+        transaction() {const transaction = {objectStore: () => ({get() {const read = {}; queueMicrotask(() => {if (fault === 'read-error') {transaction.onerror(); return;} read.result = record; read.onsuccess(); transaction.oncomplete();}); return read;},
+          add(value) {writes++; record = value; const write = {}; queueMicrotask(() => {write.result = value; write.onsuccess(); transaction.oncomplete();}); return write;},
+          put(value) {writes++; record = value; const write = {}; queueMicrotask(() => {write.result = value; write.onsuccess(); transaction.oncomplete();}); return write;}})}; return transaction;}};
       request.result = db; request.transaction = {abort() {aborts++; queueMicrotask(() => request.onerror?.());}};
       queueMicrotask(() => {
         if (fault === 'absent' || fault === 'old-version') request.onupgradeneeded({oldVersion: fault === 'absent' ? 0 : 1});
@@ -424,39 +432,90 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
         else request.onsuccess();
       }); return request;
     }};
-    const fetch = async path => {
-      fetches++;
-      if (path === '/session' && fault === 'explicit') return new Promise(resolve => {finishBootstrap = () => resolve({status: 401});});
+    const response = (status, value) => ({ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(value)});
+    const fetch = async (path, options) => {
+      fetches++; calls.push({path, signal: options?.signal});
+      if (path === '/session' && (fault === 'explicit' || fault === 'retry-stale')) return new Promise(resolve => {finishBootstrap = () => resolve({status: 401});});
       if (fault === 'network') throw new TypeError('Injected network failure');
       if (fault === 'null-rejection') throw null;
       const status = ({rate: 429, persistence: 503, unauthorized: 401, forbidden: 403, pending: 401})[fault];
       if (status) return {ok: false, status};
-      if (fault === 'identity') return {ok: true, status: 200, text: async () => JSON.stringify({version: 1, grant_id: Buffer.alloc(32, 8).toString('base64url'), public_key: credential.public_key, scope, nonce: Buffer.alloc(32, 9).toString('base64url'), lifetime_seconds: 60})};
-      throw new Error('Unexpected network boundary');
+      if (fault === 'identity') return response(200, {version: 1, grant_id: Buffer.alloc(32, 8).toString('base64url'), public_key: credential.public_key, scope, nonce: Buffer.alloc(32, 9).toString('base64url'), lifetime_seconds: 60});
+      if (!fault.startsWith('retry-')) throw new Error('Unexpected network boundary');
+      const body = path === '/session' ? null : JSON.parse(options.body);
+      if (path === '/session') return response(204);
+      if (path.endsWith('/bootstrap-scope')) return response(200, {version: 1, current_scope: scope});
+      if (path.endsWith('/enroll')) return response(200, {version: 1, operation_id: body.operation_id, grant_id: body.grant_id, outcome: 'committed', scope});
+      if (path.endsWith('/challenge')) {
+        challenges++;
+        if (fault === 'retry-challenge401') return response(401);
+        activeNonce = Buffer.alloc(32, challenges + 9).toString('base64url');
+        if (fault === 'retry-abort-challenge' && challenges === 2) controllers[0].abort();
+        return response(200, {version: 1, grant_id: record.grant_id, public_key: record.public_key,
+          scope: fault === 'retry-second-challenge-scope' && challenges === 2 ? {...scope, radio_id: uuid(99)} : scope, nonce: activeNonce, lifetime_seconds: 60});
+      }
+      if (path.endsWith('/proof') || path.endsWith('/receipt')) {
+        const receipt = path.endsWith('/receipt'); if (!receipt) proofs++;
+        assert.equal(body.nonce === activeNonce, true, 'each proof uses its actual fresh challenge');
+        assert.equal(proofNonces.has(body.nonce), false, 'an already consumed proof nonce is not replayed'); proofNonces.add(body.nonce);
+        // Independent canonical signing oracle: domain/version, U32BE-length-prefixed fields, raw nonce.
+        const fields = [origin, scope.profile_id, scope.radio_id, String(scope.safety_revision), record.grant_id]; if (receipt) fields.push(record.enrollment_id);
+        const parts = [Buffer.from(receipt ? 'WSTX-AUTH-RECEIPT' : 'WSTX-AUTH-PROOF'), Buffer.from([1])];
+        for (const field of [...fields.map(value => Buffer.from(value)), Buffer.from(body.nonce, 'base64url')]) {const length = Buffer.alloc(4); length.writeUInt32BE(field.length); parts.push(length, field);}
+        const publicKey = await crypto.webcrypto.subtle.importKey('raw', Buffer.from(record.public_key, 'base64url'), {name: 'ECDSA', namedCurve: 'P-256'}, false, ['verify']);
+        assert.equal(await crypto.webcrypto.subtle.verify({name: 'ECDSA', hash: 'SHA-256'}, publicKey, Buffer.from(body.signature, 'base64url'), Buffer.concat(parts)), true, 'proof signs the independent canonical identity/nonce payload');
+        if (!receipt) verified++;
+        if (receipt) return response(200, {version: 1, operation_id: record.enrollment_id, grant_id: record.grant_id, outcome: 'committed', scope});
+        if (fault === 'retry-lost204') throw new TypeError('Injected unacknowledged proof response');
+        if (fault === 'retry-proof401') return response(401);
+        if (fault === 'retry-proof200' || fault === 'retry-second-proof200' && proofs === 2) return {ok: true, status: 200, text: async () => {proofBodyReads++; return 'null';}};
+        return response(204);
+      }
+      if (path.endsWith('/status')) {
+        statuses++;
+        if (fault === 'retry-status-scope' || fault === 'retry-second-status-scope' && statuses === 2) return response(200, {version: 1, scope: {...scope, radio_id: uuid(99)}});
+        if (statuses === 1) {
+          if (fault === 'retry-aborted') controllers[0].abort();
+          return response(({ 'retry-status403': 403, 'retry-status429': 429, 'retry-status503': 503 })[fault] || 401);
+        }
+        return response(fault === 'retry-repeat401' ? 401 : 200, {version: 1, scope});
+      }
+      throw new Error('Unexpected retry boundary');
     };
-    const window = {dispatchEvent() {}}, realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array,
-      CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
+    const window = {dispatchEvent(event) {if (fault === 'retry-stale' && event.detail.state === 'recovering' && !bootstrap) bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);}};
+    const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;}};
+    const realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array,
+      CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal: deadlineSource, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
     vm.runInContext(source, realm, {timeout: 1000});
-    let bootstrap;
     if (fault === 'explicit') bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);
     let timer, failure;
-    try {failure = await Promise.race([window.stationAuthorization.ensureReady().then(() => null, error => ({condition: error.authorizationCondition, status: error.status})),
-      new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('Owner classification did not settle')), 1000);})]);}
+    try {failure = await Promise.race([(fault === 'retry-bootstrap' ? window.stationAuthorization.bootstrap('fixture-bootstrap-input') : window.stationAuthorization.ensureReady()).then(() => null, error => ({condition: error.authorizationCondition, status: error.status})),
+      new Promise((_, reject) => {timer = setTimeout(() => reject(new Error('Owner boundary did not settle')), 1000);})]);}
     finally {clearTimeout(timer); if (finishBootstrap) finishBootstrap(); if (bootstrap) await bootstrap;}
-    assert.equal(failure?.condition, expected, 'actual owner must classify the independently injected boundary');
-    assert.equal(window.stationAuthorization.snapshot().ready, false); assert.equal(writes, 0);
+    assert.equal(failure?.condition ?? null, expected ?? null, 'actual owner classifies the independently injected boundary');
+    assert.equal(window.stationAuthorization.snapshot().ready, fault === 'retry-success'); assert.equal(writes, fault === 'retry-pending' ? 1 : fault === 'retry-bootstrap' ? 2 : 0);
     if (fault === 'absent' || fault === 'old-version' || fault === 'blocked-late-upgrade') assert.equal(aborts, 1);
     if (fault === 'blocked-late-success') assert.equal(closes, 1, 'settled failure closes a later delivered DB handle');
     if (['absent', 'empty', 'blocked-late-upgrade', 'blocked-late-success', 'error', 'open-throw', 'read-error', 'missing-store', 'old-version', 'invalid'].includes(fault)) assert.equal(fetches, 0);
-    if (fault === 'rate') assert.equal(failure.status, 429); if (fault === 'persistence') assert.equal(failure.status, 503);
-    if (fault !== 'explicit') {
+    if (fault === 'rate' || fault === 'retry-status429') assert.equal(failure.status, 429); if (fault === 'persistence' || fault === 'retry-status503') assert.equal(failure.status, 503);
+    if (fault.startsWith('retry-')) {
+      const counts = {'retry-success': 6, 'retry-repeat401': 6, 'retry-challenge401': 1, 'retry-proof401': 2, 'retry-lost204': 2, 'retry-proof200': 2, 'retry-second-proof200': 5,
+        'retry-status403': 3, 'retry-status429': 3, 'retry-status503': 3, 'retry-status-scope': 3, 'retry-second-challenge-scope': 4, 'retry-second-status-scope': 6,
+        'retry-pending': 5, 'retry-bootstrap': 6, 'retry-aborted': 3, 'retry-abort-challenge': 4, 'retry-stale': 1};
+      assert.equal(fetches, counts[fault], 'retry bounds match the independent call-count oracle'); assert.equal(verified, proofs); assert.equal(proofBodyReads, 0);
+      assert.equal(timeoutValues.every(value => value === 10000), true);
+      assert.equal(timeoutValues.length, ['retry-bootstrap', 'retry-stale'].includes(fault) ? 2 : 1, 'retry never creates a replacement deadline');
+      if (!['retry-bootstrap', 'retry-stale'].includes(fault)) assert.equal(calls.every(call => call.signal === controllers[0].signal), true, 'all triplets retain the original signal object');
+      if (fault === 'retry-success' || fault === 'retry-repeat401') assert.equal(challenges, 2);
+    }
+    if (fault !== 'explicit' && !['retry-success', 'retry-bootstrap', 'retry-stale'].includes(fault)) {
       const priorOpens = opens, priorFetches = fetches;
       const retry = await window.stationAuthorization.ensureReady().then(() => null, error => ({condition: error.authorizationCondition, status: error.status}));
       assert.equal(retry?.condition, expected, 'backoff preserves the owner failure classification'); assert.equal(opens, priorOpens); assert.equal(fetches, priorFetches);
     }
     checked++;
   }
-  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 19}));
+  t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 37}));
 });
 
 // Proves CL-022-01/02/05: real overlapping proof delivery must not create a false-ready UI or replay Save.

@@ -95,6 +95,7 @@ window.stationAuthorization = (() => {
         'Authorization persistence unavailable' : 'Authorization unavailable');
       error.status = response.status; throw error;
     }
+    if (path === 'proof' && response.status !== 204) throw new Error('Invalid proof acknowledgement');
     if (response.status === 204) return null;
     const text = await response.text();
     if (encoder.encode(text).length > 1024) throw new Error('Invalid authorization response');
@@ -122,18 +123,35 @@ window.stationAuthorization = (() => {
         receipt.outcome !== 'committed' || !sameScope(receipt.scope, credential.scope)) throw new Error('Authorization outcome unknown');
     return receipt;
   }
-  async function renew(credential, signal) {
-    const value = await challenge(credential, signal);
-    await raw('proof', {version: 1, grant_id: credential.grant_id, nonce: value.nonce,
-      signature: await signature(credential, value)}, signal);
-    if (credential.pending_enrollment) {
-      await reconcile(credential, credential.enrollment_id, signal);
-      credential = {...credential, pending_enrollment: false}; await stored(credential);
+  async function renew(credential, signal, recoveryEpoch = null) {
+    const retryEligible = Number.isSafeInteger(recoveryEpoch) && recoveryEpoch > 0 && recoveryEpoch === epoch && credential.pending_enrollment === false;
+    const checkRetry = () => {signal.throwIfAborted(); if (recoveryEpoch !== epoch) throw new Error('Authorization recovery changed');};
+    if (recoveryEpoch !== null) checkRetry();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) checkRetry();
+      const value = await challenge(credential, signal);
+      if (attempt) checkRetry();
+      const signed = await signature(credential, value);
+      if (attempt) checkRetry();
+      await raw('proof', {version: 1, grant_id: credential.grant_id, nonce: value.nonce, signature: signed}, signal);
+      if (credential.pending_enrollment) {
+        await reconcile(credential, credential.enrollment_id, signal);
+        credential = {...credential, pending_enrollment: false}; await stored(credential);
+      }
+      if (attempt) checkRetry();
+      let status;
+      try {status = await raw('status', {version: 1}, signal);}
+      catch (error) {
+        // An acknowledged proof can lose the shared-cookie race. Re-prove once;
+        // never infer current authority from that old acknowledgement or status alone.
+        if (attempt === 0 && retryEligible && error?.status === 401 && recoveryEpoch === epoch && !signal.aborted) continue;
+        throw error;
+      }
+      if (status.version !== 1 || !sameScope(status.scope, value.scope)) {const error = new Error('Authorization identity changed'); error.authorizationCondition = 'retained-rejected'; throw error;}
+      return value.scope;
     }
-    const status = await raw('status', {version: 1}, signal);
-    if (status.version !== 1 || !sameScope(status.scope, value.scope)) {const error = new Error('Authorization identity changed'); error.authorizationCondition = 'retained-rejected'; throw error;}
-    return value.scope;
   }
+
   function ensureReady() {
     if (authorizing) {const error = new Error('Explicit authorization in progress'); error.authorizationCondition = 'explicit-in-progress'; return Promise.reject(error);}
     if (state === 'ready') return Promise.resolve(snapshot());
@@ -146,7 +164,7 @@ window.stationAuthorization = (() => {
         const record = await stored(); condition = record === undefined ? 'credential-missing' : 'credential-invalid';
         const credential = validateCredential(record);
         condition = credential.pending_enrollment ? 'enrollment-pending' : 'retained-transient';
-        const currentScope = await renew(credential, AbortSignal.timeout(10000));
+        const currentScope = await renew(credential, AbortSignal.timeout(10000), current);
         if (current === epoch) {lastFailure = null; publish('ready', currentScope);}
         return snapshot();
       } catch (error) {
