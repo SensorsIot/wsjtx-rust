@@ -905,7 +905,7 @@ package WstxRequirements {
              query other stations throughout. Run local and cross-station negatives with the same
              four-server fixture. Exercise namespaced transport-cookie expiry and automatic retained-key proof recovery without clearing others; ordinary restart does not revoke grants.
 
-             **Delivered amendment:** the companion converts rotation to the actual revoke-all receipt then restart with a new token; the rejected browser makes no automatic retry, uses Forget to re-enroll with the new token, and Log out deletes its key/cookie while other profiles stay usable. Retained proofs share the 10/60 budget (enrollment 6, retained proof 3 admissions).
+             **Delivered amendment:** the companion converts rotation to the actual revoke-all receipt then restart with a new token; the rejected browser makes no automatic retry, uses Forget to re-enroll with the new token, and Log out deletes its key/cookie while other profiles stay usable. Only setup calls count against the 10/60 budget (enrollment 3 admissions, retained proof none).
 
              **Oracle/outcome:** Exactly one expected namespaced session per logged-in UUID exists
              with the 12.1 attributes and no Domain attribute. All independent sessions survive other
@@ -919,7 +919,7 @@ package WstxRequirements {
              `profile_id` is denied. Numeric WebSocket correlation IDs retain 12.2's unchanged
              connection-local meaning and are not profile identities. Verify 12.1's body
              and per-process rate limits independently of other profiles. Count actual auth-v1
-             setup admissions under the shared10/60 budget and prove10 admitted/11th429 per
+             setup admissions (session/bootstrap-scope/enroll) under the10/60 budget and prove10 admitted/11th429 per
              process in bounded fixture subcases; no production clock/rate switch, status poll
              stream, relaxed deadline or omitted companion. Same-host cookie transport
              is explicitly observed; it is not proof against a hostile service on that hostname. */
@@ -1628,6 +1628,12 @@ package WstxRequirements {
              Exact Origin is required on enrollment/challenge/proof/revocation; no
              credentialed CORS. Preserve existing TLS and10attempts/60seconds per
              process admission ceiling and1024-byte authentication payload cap.
+             Decision (issue22 supervisor): that ceiling is the SETUP budget and counts
+             only POST /session, bootstrap-scope and enroll. Grant operations
+             (challenge, proof, status, receipt, revoke, commission) never spend it, so
+             several browsers can enroll and reconnect at once; they stay bounded by
+             the64 pending one-use60s challenges (429 on saturation), one transport
+             per grant, proof-of-key and the1024-byte cap.
              New strict typed auth payloads/endpoints are explicit canonical API
              additions, not extra keys silently accepted by old POST /session.
              Cookie missing/duplicate/malformed/wrong profile remains401; automatic
@@ -1639,8 +1645,8 @@ package WstxRequirements {
              no background elapsed-time deletion of active grant verifiers.
              Rejected or lost credentials are terminal for automatic recovery: a
              retained-rejected, invalid or missing credential is never retried
-             without an operator action, so it cannot drain the shared10/60
-             admission budget; transient failures back off exponentially to60s.
+             without an operator action, so it cannot spam challenges or drain any
+             admission bound; transient failures back off exponentially to60s.
              Browser Log out revokes this grant (revoke all_for_radio=false), then
              deletes the local key after the committed receipt; the server clears
              the transport cookie. A confirmed rejected/invalid retained credential

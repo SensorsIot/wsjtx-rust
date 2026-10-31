@@ -210,7 +210,7 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   const oldCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
   assert.ok(oldCookie, 'initial selected transport cookie exists');
   const b = await context.newPage(); observe(b, 'B');
-  // Observe B's real post-proof status; the later extra request is the explicit11th-attempt boundary.
+  // Observe B's real post-proof status; the later extra status is beyond 10 auth requests but not a setup admission.
   const bStatusResponse = b.waitForResponse(response => response.url() === p.origin + '/authorization/v1/status' &&
     response.request().method() === 'POST', {timeout: 10000}).catch(() => null);
   await b.goto(p.origin); await connected(b);
@@ -258,11 +258,10 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   assert.equal(counts.session, 1); assert.equal(counts.enroll, 1); assert.equal(counts.bootstrapScope, 1);
   assert.equal(counts.challenge, 2); assert.equal(counts.proof, 2); assert.equal(counts.status, 4);
   const authV1Requests = counts.bootstrapScope + counts.enroll + counts.challenge + counts.proof + counts.status;
-  assert.equal(authV1Requests, 10); assert.equal(authV1Requests + counts.session, 11, 'session shares original10/60 budget; final extra status is11th');
-  assert.deepEqual(authResponses.map(item => item.status), [204, 200, 200, 200, 204, 200, 200, 204, 200, 200, 429], 'first10 actual admissions accepted, only11th refused');
+  assert.equal(authV1Requests, 10); assert.equal(authV1Requests + counts.session, 11, 'only session/bootstrap-scope/enroll are setup admissions');
+  assert.deepEqual(authResponses.map(item => item.status), [204, 200, 200, 200, 204, 200, 200, 204, 200, 200, 200], 'retained proof/status never spend the 10/60 setup budget');
   assert.equal(authResponses.at(-1).label, 'B'); assert.equal(authResponses.at(-1).path, '/authorization/v1/status');
-  assert.equal(rateLimitedStatus.status, 429); assert.equal(rateLimitedStatus.bytes <= 1024, true);
-  assert.deepEqual(rateLimitedStatus.value, {error: {code: 'rate_limited', field: null}});
+  assert.equal(rateLimitedStatus.status, 200); assert.equal(rateLimitedStatus.bytes <= 1024, true);
   assert.equal(peers.length, 2);
   for (const peer of peerEvidence) {assert.equal(peer.closed, false); assert.equal(peer.frames > 0, true); assert.equal(peer.errors, 0);}
   for (let i = 0; i < 2; i++) {
@@ -1707,8 +1706,8 @@ async function storedCredential(page) {
 test('TC-022-004: same-host four-port TLS cookies, reconnect, negatives and rotation', {timeout: 90000}, async t => {
   const {profiles, apps} = await fixture(t, true); const {context, pages} = await browserWindows(t, profiles);
   for (let i = 0; i < 4; i++) {const p = profiles[i]; assert.equal((await request(p.origin)).status, 401); assert.equal((await request(p.origin, 'PUT', edit(i + 1, 0))).status, 401); assert.equal(await upgradeStatus(p), 401); if (i === 0) {await pages[i].route('**/session', route => route.abort()); await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await pages[i].locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor(); assert.equal(await pages[i].locator('#token').inputValue(), ''); await pages[i].unroute('**/session');} await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await connected(pages[i]);}
-  // Each browser enrollment admits 6 of the shared 10/60 budget (session, bootstrap-scope,
-  // enroll, challenge, proof, status); a retained proof admits 3. Retained authorization is
+  // Each browser enrollment admits 3 of the 10/60 setup budget (session, bootstrap-scope,
+  // enroll); retained challenge/proof/status admit none. Retained authorization is
   // repeated without a token: profile 2 by reload here, profile 1 by transport expiry below.
   await pages[1].reload(); await connected(pages[1]); assert.equal(await pages[1].evaluate(async () => (await fetch('/profile')).status), 200);
   const cookies = await context.cookies(); assert.equal(cookies.filter(c => c.name.startsWith('wstx_session_')).length, 4);
@@ -1724,8 +1723,8 @@ test('TC-022-004: same-host four-port TLS cookies, reconnect, negatives and rota
   assert.equal((await context.cookies()).filter(c => c.name.startsWith('wstx_session_')).length, 4);
   const c = profiles[2], d = profiles[3];
   assert.equal((await login(c, 'X'.repeat(1024))).status, 401); assert.equal((await login(c, 'X'.repeat(1025))).status, 413);
-  for (let i = 0; i < 4; i++) assert.equal((await login(d, 'W'.repeat(32))).status, 401);
-  assert.equal((await login(d)).status, 429, '6 enrollment + 4 login admissions, 11th refused');
+  for (let i = 0; i < 7; i++) assert.equal((await login(d, 'W'.repeat(32))).status, 401);
+  assert.equal((await login(d)).status, 429, '3 enrollment setup + 7 login admissions, 11th refused');
   const own204 = await login(c); assert.equal(own204.status, 204, 'rate budgets belong to their profiles'); assert.equal(/(?:^|;)\s*Domain=/i.test(own204.setCookie), false);
   const own = cookies.find(cookie => cookie.name === 'wstx_session_' + uuid(3));
   const ws = new WebSocket(c.origin.replace('https', 'wss') + '/ws', 'wstx.v1', {origin: c.origin, rejectUnauthorized: false, headers: {Cookie: `${own.name}=${own.value}`}}); ws.on('error', () => {}); await once(ws, 'open');

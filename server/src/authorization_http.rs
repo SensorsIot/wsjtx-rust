@@ -361,7 +361,11 @@ fn operate(
         .map_err(|_| Error::PersistenceFailed)?;
     let service = owner.as_mut().ok_or(Error::Unauthorized)?;
     let now = Instant::now();
-    service.attempts.admit(now)?;
+    // The 10/60 budget bounds setup (token/bootstrap) attempts only. Grant operations are
+    // bounded by the 64 one-use 60 s challenges, one transport per grant and grant auth.
+    if matches!(operation, Operation::BootstrapScope | Operation::Enroll) {
+        service.attempts.admit(now)?;
+    }
     match operation {
         Operation::BootstrapScope => {
             let request: BootstrapRead = auth::parse_request(&body)?;

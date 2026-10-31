@@ -1021,7 +1021,7 @@ package WstxProfiles {
              Every new request exactly version1 plus its listed fields; unknown,
              missing,duplicate keys/wrongtype/noncanonicalencoding400, contenttype
              application/json else415, body>1024bytes413, wrongOrigin403 first, TLS
-             required before accepting credentials. At most10authattempts/60s/process;
+             required before accepting credentials. At most10setup attempts(session/bootstrap-scope/enroll)/60s/process;
              grant/challenge caps64, saturation429. All responses<=1024UTF8bytes,
              uncompressed, no auth material in errors/logs. No endpoint opens CAT.
              bootstrap-scope: BootstrapScopeRequest/Response via ReadBootstrapScope;

@@ -805,8 +805,10 @@ async fn http_auth_rotation_retains_ws_grant_but_committed_revoke_fences_it() {
     drop(context); // release the extra owned profile lock holder before fixture cleanup.
 }
 
+// Proves: CL-022-01; TC-022-004. The 10/60 setup budget counts session/bootstrap-scope/
+// enroll only; grant operations (challenge, status) neither spend nor are refused by it.
 #[tokio::test]
-async fn http_auth_process_attempt_cap_is_shared_by_session_and_auth_routes() {
+async fn http_auth_setup_budget_counts_only_setup_calls() {
     let f = HttpFixture::new("https://localhost:8080");
     for _ in 0..9 {
         assert_eq!(
@@ -821,32 +823,59 @@ async fn http_auth_process_attempt_cap_is_shared_by_session_and_auth_routes() {
             StatusCode::UNAUTHORIZED
         );
     }
+    let unknown = json!({"version":1,"grant_id":URL_SAFE_NO_PAD.encode([3;32])});
+    for _ in 0..3 {
+        assert_eq!(
+            f.post("/authorization/v1/challenge", unknown.clone(), None)
+                .await
+                .status,
+            StatusCode::UNAUTHORIZED,
+            "a grant operation is not a setup admission"
+        );
+    }
     assert_eq!(
         f.post(
-            "/authorization/v1/challenge",
-            json!({"version":1,"grant_id":URL_SAFE_NO_PAD.encode([3;32])}),
+            "/authorization/v1/bootstrap-scope",
+            json!({"version":1}),
             None
         )
         .await
         .status,
-        StatusCode::UNAUTHORIZED
+        StatusCode::UNAUTHORIZED,
+        "10th setup admission is admitted (then lacks a bootstrap cookie)"
     );
+    for (path, body) in [
+        ("/session", None),
+        (
+            "/authorization/v1/bootstrap-scope",
+            Some(json!({"version":1})),
+        ),
+    ] {
+        let status = match body {
+            None => {
+                f.request(
+                    axum::http::Method::POST,
+                    path,
+                    f.app().token.clone().unwrap(),
+                    f.headers(None),
+                )
+                .await
+                .status
+            }
+            Some(body) => f.post(path, body, None).await.status,
+        };
+        assert_eq!(
+            status,
+            StatusCode::TOO_MANY_REQUESTS,
+            "{path} beyond setup budget"
+        );
+    }
     assert_eq!(
-        f.request(
-            axum::http::Method::POST,
-            "/session",
-            f.app().token.clone().unwrap(),
-            f.headers(None)
-        )
-        .await
-        .status,
-        StatusCode::TOO_MANY_REQUESTS
-    );
-    assert_eq!(
-        f.post("/authorization/v1/status", json!({"version":1}), None)
+        f.post("/authorization/v1/challenge", unknown, None)
             .await
             .status,
-        StatusCode::TOO_MANY_REQUESTS
+        StatusCode::UNAUTHORIZED,
+        "an exhausted setup budget never refuses grant operations"
     );
 }
 
