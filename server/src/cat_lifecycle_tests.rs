@@ -265,9 +265,8 @@ impl Transport for Port {
         if cancel.load(Ordering::Acquire) {
             return Err(cat::Error::Cancelled);
         }
-        match self.peer.lock().unwrap().device {
-            Device::Removed => return Err(cat::Error::Unavailable),
-            _ => {}
+        if matches!(self.peer.lock().unwrap().device, Device::Removed) {
+            return Err(cat::Error::Unavailable);
         }
         let count = bytes.len().min(self.pending.len());
         for b in bytes.iter_mut().take(count) {
