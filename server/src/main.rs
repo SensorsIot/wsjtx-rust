@@ -289,7 +289,6 @@ fn router(state: App) -> Router {
         .route("/authorization/v1/receipt", post(authorization_http::reconcile_receipt))
         .route("/authorization/v1/revoke", post(authorization_http::revoke))
         .route("/authorization/v1/commission", post(authorization_http::commission))
-        .route("/authorization/v1/radio-identity", post(authorization_http::radio_identity))
         .route("/profile", get(get_profile).put(put_profile))
         .route("/recording", get(recording_http::snapshot))
         .route("/audio/devices", get(receive_http::devices))
@@ -601,8 +600,8 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         return StatusCode::FORBIDDEN.into_response();
     }
     let authority = if let Some(state) = &app.profile {
-        match authorization_http::access_async(&headers, &app).await {
-            Ok(access) => Some(ConnectionAuthority {
+        match authorization_http::operating_access_async(&headers, &app).await {
+            Ok(access) => access.map(|access| ConnectionAuthority {
                 state: state.clone(),
                 access,
             }),

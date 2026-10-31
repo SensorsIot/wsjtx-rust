@@ -92,24 +92,30 @@ fn cookie(headers: &HeaderMap, name: &str) -> Result<String, Error> {
     }
     found.ok_or(Error::Unauthorized)
 }
-pub(crate) fn access(headers: &HeaderMap, app: &App) -> Result<Access, Error> {
+/// Operating HTTP/WS authority. A selected HTTPS profile requires its durable
+/// grant transport, re-validated for dispatch under the one authority lock; a
+/// plaintext profile keeps the runtime-token contract with no grant.
+pub(crate) fn operating_access(headers: &HeaderMap, app: &App) -> Result<Option<Access>, Error> {
     let state = app.profile.as_ref().ok_or(Error::Unauthorized)?;
-    let token = cookie(headers, &cookie_name(app))?;
-    state
+    let owner = state
         .authorization
         .lock()
-        .map_err(|_| Error::PersistenceFailed)?
-        .as_ref()
-        .ok_or(Error::Unauthorized)?
-        .authority
-        .access(&token, &app.origin, Instant::now())
+        .map_err(|_| Error::PersistenceFailed)?;
+    let access = configuration_access(headers, app, owner.as_ref())?;
+    if let (Some(access), Some(service)) = (&access, owner.as_ref()) {
+        service.authority.recheck_dispatch(access)?;
+    }
+    Ok(access)
 }
 /// Potential mutex waits stay wholly on Tokio's blocking pool. A busy writer
 /// remains a pending authority check, never a fabricated unauthorized result.
-pub(crate) async fn access_async(headers: &HeaderMap, app: &App) -> Result<Access, Error> {
+pub(crate) async fn operating_access_async(
+    headers: &HeaderMap,
+    app: &App,
+) -> Result<Option<Access>, Error> {
     let headers = headers.clone();
     let app = app.clone();
-    tokio::task::spawn_blocking(move || access(&headers, &app))
+    tokio::task::spawn_blocking(move || operating_access(&headers, &app))
         .await
         .map_err(|_| Error::PersistenceFailed)?
 }
@@ -214,13 +220,6 @@ fn receipt(entry: &auth::JournalEntry) -> Value {
 #[serde(deny_unknown_fields)]
 struct BootstrapRead {
     version: u8,
-    #[serde(default, deserialize_with = "optional_non_null_string")]
-    operation_id: Option<String>,
-}
-fn optional_non_null_string<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> Result<Option<String>, D::Error> {
-    String::deserialize(d).map(Some)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -283,7 +282,6 @@ enum Operation {
     Receipt,
     Revoke,
     Commission,
-    RadioIdentity,
 }
 
 async fn finish_operation(job: tokio::task::JoinHandle<Result<Response, Error>>) -> Response {
@@ -347,7 +345,6 @@ handler!(status, Status);
 handler!(reconcile_receipt, Receipt);
 handler!(revoke, Revoke);
 handler!(commission, Commission);
-handler!(radio_identity, RadioIdentity);
 
 fn operate(
     operation: Operation,
@@ -376,26 +373,8 @@ fn operate(
                 &format!("wstx_bootstrap_{}", store.document.profile_id),
             )?;
             service.bootstrap_context(&token, &app.origin, now)?;
-            let entry = if let Some(id) = request.operation_id {
-                if !profile::valid_uuid(&id) {
-                    return Err(Error::Invalid);
-                }
-                Some(
-                    service
-                        .authority
-                        .record()
-                        .operation_receipts
-                        .iter()
-                        .find(|e| {
-                            e.operation_id == id && e.kind == auth::OperationKind::RadioIdentity
-                        })
-                        .ok_or(Error::Conflict)?,
-                )
-            } else {
-                None
-            };
             bounded(
-                json!({"version":1,"current_scope":service.authority.record().current_scope.as_ref().map(|s| &s.wire),"identity_receipt":entry.map(receipt)}),
+                json!({"version":1,"current_scope":service.authority.record().current_scope.as_ref().map(|s| &s.wire)}),
             )
         }
         Operation::Enroll => {
@@ -542,12 +521,23 @@ fn operate(
                 return Err(Error::Conflict);
             }
             service.authority.recheck_dispatch(&access)?;
-            bounded(receipt(&service.authority.revoke(
+            let mut response = bounded(receipt(&service.authority.revoke(
                 &mut store,
                 &access.grant_id,
                 &r.operation_id,
                 r.all_for_radio,
-            )?))
+            )?))?;
+            // The revoked transport is dead server-side; also clear the browser copy.
+            response.headers_mut().insert(
+                header::SET_COOKIE,
+                format!(
+                    "{}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0",
+                    cookie_name(&app)
+                )
+                .parse()
+                .map_err(|_| Error::Invalid)?,
+            );
+            Ok(response)
         }
         Operation::Commission => {
             let r: CommissionRequest = auth::parse_request(&body)?;
@@ -566,22 +556,6 @@ fn operate(
                 &access,
                 &r.operation_id,
             )?))
-        }
-        Operation::RadioIdentity => {
-            let r: auth::IdentityRequest = auth::parse_request(&body)?;
-            if r.version != 1 || !profile::valid_uuid(&r.operation_id) {
-                return Err(Error::Invalid);
-            }
-            if let Some(scope) = r.expected_scope {
-                scope.in_validated_origin(&app.origin)?;
-            }
-            let token = cookie(
-                &headers,
-                &format!("wstx_bootstrap_{}", store.document.profile_id),
-            )?;
-            service.bootstrap_context(&token, &app.origin, now)?;
-            // A pending confirmed-release transaction is never represented as committed.
-            Err(Error::Conflict)
         }
     }
 }

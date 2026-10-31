@@ -507,14 +507,15 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         serde_json::to_vec(&document).unwrap(),
     )
     .unwrap();
+    // Plaintext selected profile: the runtime-token cookie below is its operating contract.
     let (mut store, _) = profile::Store::open(&root).unwrap();
     let authorization =
-        crate::authorization_http::Service::initialize(&mut store, "https://localhost:18001")
+        crate::authorization_http::Service::initialize(&mut store, "http://localhost:18001")
             .unwrap();
     let r = recording::Recording::open(&root, id.clone(), boot.clone());
     r.initialize_profile_revision(0);
     let app = App {
-        origin: "https://localhost:18001".into(),
+        origin: "http://localhost:18001".into(),
         profile: Some(Arc::new(ProfileState {
             store: Mutex::new(store),
             authorization: Mutex::new(authorization),

@@ -182,25 +182,6 @@ pub enum OperationKind {
     Logout,
     RevokeAll,
     Commission,
-    RadioIdentity,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum IdentityChange {
-    Add,
-    Replace,
-    Remove,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct IdentityRequest {
-    pub version: u8,
-    pub operation_id: String,
-    #[serde(deserialize_with = "required_nullable")]
-    pub expected_scope: Option<WireScope>,
-    pub change: IdentityChange,
 }
 
 fn required_nullable<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
@@ -221,8 +202,6 @@ pub struct JournalEntry {
     pub grant_id: Option<String>,
     #[serde(deserialize_with = "required_nullable")]
     pub owner_verifier: Option<Verifier>,
-    #[serde(deserialize_with = "required_nullable")]
-    pub identity_request: Option<IdentityRequest>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -318,8 +297,8 @@ impl Record {
             {
                 return Err(Error::Invalid);
             }
-            match (&entry.owner_verifier, &entry.identity_request) {
-                (Some(v), None) if entry.kind != OperationKind::RadioIdentity => {
+            match &entry.owner_verifier {
+                Some(v) => {
                     validate_verifier(v)?;
                     check_scope(&v.scope)?;
                     if !v.scope.same_radio(&entry.scope)
@@ -347,28 +326,7 @@ impl Record {
                         return Err(Error::Invalid);
                     }
                 }
-                (None, Some(r))
-                    if entry.kind == OperationKind::RadioIdentity && entry.grant_id.is_none() =>
-                {
-                    if r.version != 1 || r.operation_id != entry.operation_id {
-                        return Err(Error::Invalid);
-                    }
-                    if let Some(scope) = &r.expected_scope {
-                        scope.validate()?;
-                        if scope.profile_id != profile_id {
-                            return Err(Error::Invalid);
-                        }
-                    }
-                    match (r.change, &r.expected_scope) {
-                        (IdentityChange::Add, None) if entry.scope.wire.safety_revision == 1 => (),
-                        (IdentityChange::Replace, Some(old))
-                            if entry.scope.wire.safety_revision == 1
-                                && old.radio_id != entry.scope.wire.radio_id => {}
-                        (IdentityChange::Remove, Some(old)) if old == &entry.scope.wire => (),
-                        _ => return Err(Error::Invalid),
-                    }
-                }
-                _ => return Err(Error::Invalid),
+                None => return Err(Error::Invalid),
             }
         }
         Ok(())
@@ -621,7 +579,6 @@ impl Authority {
             kind: OperationKind::Enroll,
             grant_id: Some(verifier.grant_id.clone()),
             owner_verifier: Some(verifier.clone()),
-            identity_request: None,
         };
         let mut next = self.record.clone();
         next.grants.push(verifier);
@@ -844,7 +801,7 @@ impl Authority {
         if !profile::valid_uuid(operation_id) {
             return Err(Error::Invalid);
         }
-        // Unlike identity receipt recovery, commissioning always requires CURRENT
+        // Commissioning always requires CURRENT
         // authority before any retained-operation lookup.
         self.recheck_dispatch(access)?;
         let control = store.document.control.clone();
@@ -869,7 +826,6 @@ impl Authority {
                 && entry.scope == access.scope
                 && entry.grant_id.as_ref() == Some(&access.grant_id)
                 && entry.owner_verifier.as_ref() == Some(&verifier)
-                && entry.identity_request.is_none()
             {
                 Ok(entry.clone())
             } else {
@@ -882,7 +838,6 @@ impl Authority {
             kind: OperationKind::Commission,
             grant_id: Some(access.grant_id.clone()),
             owner_verifier: Some(verifier),
-            identity_request: None,
         };
         let mut next = self.record.clone();
         next.commissioning = Some(Commissioning {
@@ -935,7 +890,6 @@ impl Authority {
             },
             grant_id: Some(grant_id.into()),
             owner_verifier: Some(verifier),
-            identity_request: None,
         };
         let mut next = self.record.clone();
         next.revocation_generation = next

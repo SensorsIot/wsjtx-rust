@@ -170,7 +170,7 @@ impl HttpFixture {
             )
             .await;
         assert_eq!(response.status, StatusCode::OK);
-        assert!(response.json()["identity_receipt"].is_null());
+        assert_eq!(response.json().as_object().unwrap().len(), 2);
         let scope: authorization::WireScope =
             serde_json::from_value(response.json()["current_scope"].clone()).unwrap();
         let key = authorization::authorization_tests::peer_key();
@@ -283,17 +283,219 @@ async fn http_auth_current_grant_cookie_positive_duplicates_legacy_and_wrong_pro
             .status,
         StatusCode::UNAUTHORIZED
     );
+}
+
+const OPERATING_MUTATIONS: [&str; 8] = [
+    "/receive/start",
+    "/receive/stop",
+    "/receive/select",
+    "/radio/connect",
+    "/radio/disconnect",
+    "/radio/operation",
+    "/recording/imports",
+    "/recording/replay",
+];
+
+/// Actual WS handshake over a served router; returns the HTTP status line.
+async fn ws_status(app: App, cookie: Option<String>) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let origin = app.origin.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router(app)).await.unwrap();
+    });
+    let line = tokio::task::spawn_blocking(move || {
+        use std::io::{BufRead, Write};
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let cookie = cookie.map_or(String::new(), |c| {
+            format!(
+                "Cookie: {c}
+"
+            )
+        });
+        write!(
+            stream,
+            "GET /ws HTTP/1.1
+Host: {address}
+Origin: {origin}
+Connection: Upgrade
+Upgrade: websocket
+Sec-WebSocket-Version: 13
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Protocol: wstx.v1
+{cookie}
+"
+        )
+        .unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(stream)
+            .read_line(&mut line)
+            .unwrap();
+        line
+    })
+    .await
+    .unwrap();
+    server.abort();
+    line.trim_end().to_owned()
+}
+
+// Proves: CL-022-02; TC-022-007. A current grant dispatches operating HTTP/WS
+// effects under the authority lock; foreign and revoked transports cannot.
+#[tokio::test]
+async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_foreign_cannot() {
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
     let radio_before = f.app().profile.as_ref().unwrap().recording.radio_view();
-    assert_eq!(
-        f.post("/radio/connect", json!({}), Some(&g.cookie))
-            .await
-            .status,
-        StatusCode::CONFLICT,
-        "unwired native dispatch stays fail closed"
-    );
+    for path in OPERATING_MUTATIONS {
+        let reply = f.post(path, json!({}), Some(&g.cookie)).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::BAD_REQUEST,
+            "{path} reaches dispatch validation"
+        );
+        assert!(
+            reply
+                .body
+                .starts_with(br#"{"error":{"code":"invalid_request"#),
+            "{path}: {}",
+            String::from_utf8_lossy(&reply.body)
+        );
+    }
     assert_eq!(
         f.app().profile.as_ref().unwrap().recording.radio_view(),
-        radio_before
+        radio_before,
+        "invalid requests cause no native radio effect"
+    );
+    let snapshot = f
+        .request(
+            axum::http::Method::GET,
+            "/recording",
+            Vec::new(),
+            f.headers(Some(&g.cookie)),
+        )
+        .await;
+    assert_eq!(snapshot.status, StatusCode::OK);
+    let s = f.app().profile.as_ref().unwrap().recording.snapshot();
+    let reserve = f
+        .post(
+            "/recording/imports",
+            json!({"v":1,"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"]}),
+            Some(&g.cookie),
+        )
+        .await;
+    assert!(
+        reserve.status.is_success(),
+        "authorized storage mutation dispatches: {}",
+        reserve.status
+    );
+    assert_eq!(
+        f.app().profile.as_ref().unwrap().recording.snapshot()["import"]["state"],
+        "reserved"
+    );
+    assert!(
+        ws_status(f.app().clone(), Some(g.cookie.clone()))
+            .await
+            .starts_with("HTTP/1.1 101")
+    );
+
+    let other = HttpFixture::new("https://localhost:8081");
+    let foreign = other.authorize().await;
+    let foreign = format!(
+        "{}={}",
+        cookie_name(f.app()),
+        foreign.cookie.split_once('=').unwrap().1
+    );
+    let response = f.post("/authorization/v1/revoke",json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":g.scope,"all_for_radio":false}),Some(&g.cookie)).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert!(
+        response.headers[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .starts_with(&format!("{}=; ", cookie_name(f.app())))
+            && response.headers[header::SET_COOKIE]
+                .to_str()
+                .unwrap()
+                .contains("Max-Age=0"),
+        "logout clears the browser transport cookie"
+    );
+    for cookie in [&g.cookie, &foreign] {
+        for path in OPERATING_MUTATIONS {
+            assert_eq!(
+                f.post(path, json!({}), Some(cookie)).await.status,
+                StatusCode::UNAUTHORIZED,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            f.request(
+                axum::http::Method::GET,
+                "/receive",
+                Vec::new(),
+                f.headers(Some(cookie))
+            )
+            .await
+            .status,
+            StatusCode::UNAUTHORIZED
+        );
+        assert!(
+            ws_status(f.app().clone(), Some(cookie.clone()))
+                .await
+                .starts_with("HTTP/1.1 401")
+        );
+    }
+}
+
+// Proves: CL-022-01; TC-022-006. A plaintext selected profile has no grant service
+// and keeps the runtime-token contract for operating HTTP routes and WS.
+#[tokio::test]
+async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
+    let mut f = HttpFixture::new("http://localhost:8080");
+    let token = "PlaintextFixtureToken0123456789ab";
+    f.app.as_mut().unwrap().token = Some(token.into());
+    let good = format!("{}={}", cookie_name(f.app()), cookie_value(f.app(), token));
+    let wrong = format!(
+        "{}={}",
+        cookie_name(f.app()),
+        cookie_value(f.app(), "WrongFixtureToken0123456789abcdef")
+    );
+    for path in OPERATING_MUTATIONS {
+        let reply = f.post(path, json!({}), Some(&good)).await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{path}");
+        for cookie in [None, Some(wrong.as_str())] {
+            assert_eq!(
+                f.post(path, json!({}), cookie).await.status,
+                StatusCode::UNAUTHORIZED,
+                "{path}"
+            );
+        }
+    }
+    let read = |cookie: Option<&str>| {
+        f.request(
+            axum::http::Method::GET,
+            "/receive",
+            Vec::new(),
+            f.headers(cookie),
+        )
+    };
+    assert_eq!(read(Some(&good)).await.status, StatusCode::OK);
+    assert_eq!(read(None).await.status, StatusCode::UNAUTHORIZED);
+    assert!(
+        ws_status(f.app().clone(), Some(good.clone()))
+            .await
+            .starts_with("HTTP/1.1 101")
+    );
+    assert!(
+        ws_status(f.app().clone(), None)
+            .await
+            .starts_with("HTTP/1.1 401")
+    );
+    assert!(
+        ws_status(f.app().clone(), Some(wrong))
+            .await
+            .starts_with("HTTP/1.1 401")
     );
 }
 
@@ -312,7 +514,6 @@ async fn http_auth_origin_tls_precede_credentials_and_strict_body_bounds_have_no
         "receipt",
         "revoke",
         "commission",
-        "radio-identity",
     ] {
         let reply = f
             .request(
@@ -426,8 +627,8 @@ async fn http_auth_origin_tls_precede_credentials_and_strict_body_bounds_have_no
             )
             .await
             .status,
-        StatusCode::UNAUTHORIZED,
-        "configuration trust never grants native runtime access"
+        StatusCode::OK,
+        "trusted plaintext loopback keeps its runtime-token operating contract"
     );
     let (id, settings) = {
         let store = plaintext
@@ -562,7 +763,9 @@ async fn http_auth_bootstrap_never_controls_receipt_proof_never_rotates_transpor
 async fn http_auth_rotation_retains_ws_grant_but_committed_revoke_fences_it() {
     let f = HttpFixture::new("https://localhost:8080");
     let g = f.authorize().await;
-    let access = authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap();
+    let access = authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app())
+        .unwrap()
+        .unwrap();
     let context = ConnectionAuthority {
         state: f.app().profile.as_ref().unwrap().clone(),
         access: access.clone(),
@@ -572,7 +775,7 @@ async fn http_auth_rotation_retains_ws_grant_but_committed_revoke_fences_it() {
         context.current(),
         "transport rotation must not revoke established WS grant context"
     );
-    assert!(authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).is_err());
+    assert!(authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app()).is_err());
     let response = f.post("/authorization/v1/revoke",json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":g.scope,"all_for_radio":false}),Some(&new_cookie)).await;
     assert_eq!(response.status, StatusCode::OK);
     assert_eq!(response.json()["outcome"], "committed");
@@ -666,7 +869,7 @@ async fn http_auth_safety_edit_preserves_key_identity_but_advances_scope_and_cle
         .await;
     assert_eq!(response.status, StatusCode::OK);
     assert!(
-        authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).is_ok(),
+        authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app()).is_ok(),
         "non-safety edit must preserve current transport"
     );
     settings.control = profile::Control {
@@ -683,7 +886,7 @@ async fn http_auth_safety_edit_preserves_key_identity_but_advances_scope_and_cle
         )
         .await;
     assert_eq!(response.status, StatusCode::OK);
-    assert!(authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).is_err());
+    assert!(authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app()).is_err());
     {
         let state = f.app().profile.as_ref().unwrap();
         let service = state.authorization.lock().unwrap();
@@ -961,7 +1164,9 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
     let prior: Value =
         serde_json::from_slice(&std::fs::read(f.directory.join("authorization.json")).unwrap())
             .unwrap();
-    let access = authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap();
+    let access = authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app())
+        .unwrap()
+        .unwrap();
     let response = f
         .post(
             "/authorization/v1/commission",
@@ -994,15 +1199,13 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
         prior["grants"][0]
     );
     assert_eq!(
-        committed["operation_receipts"][1]["identity_request"],
-        Value::Null
-    );
-    assert_eq!(
         std::fs::read(f.directory.join("profile.json")).unwrap(),
         public
     );
     assert_eq!(
-        authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap(),
+        authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app())
+            .unwrap()
+            .unwrap(),
         access
     );
     let duplicate = f
@@ -1032,7 +1235,9 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
         bytes
     );
     assert_eq!(
-        authorization_http::access(&f.headers(Some(&g.cookie)), f.app()).unwrap(),
+        authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app())
+            .unwrap()
+            .unwrap(),
         access
     );
 }

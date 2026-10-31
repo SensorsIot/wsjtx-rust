@@ -177,13 +177,6 @@ fn strict_wire_scope_and_enrollment_reject_duplicate_unknown_omission_and_noncan
     assert!(decode::<32>(&format!("{GRANT}=")).is_err());
     assert!(decode::<64>(SIGNATURE).is_ok());
     assert!(decode::<65>(SIGNATURE).is_err());
-    let raw =
-        format!(r#"{{"version":1,"operation_id":"{OP}","expected_scope":null,"change":"add"}}"#);
-    assert!(parse_request::<IdentityRequest>(raw.as_bytes()).is_ok());
-    assert!(
-        parse_request::<IdentityRequest>(raw.replace("\"expected_scope\":null,", "").as_bytes())
-            .is_err()
-    );
 }
 
 #[test]
@@ -676,7 +669,7 @@ fn repair_retained_revoked_grant_id_cannot_bind_different_key_or_operation_after
 }
 
 #[test]
-fn repair_semantically_corrupt_commissioning_and_identity_journal_fail_closed_without_rewrite() {
+fn repair_semantically_corrupt_commissioning_fails_closed_without_rewrite() {
     let changes = [
         ("commission", "mode", serde_json::json!("bogus")),
         ("commission", "endpoint", serde_json::Value::Null),
@@ -686,15 +679,8 @@ fn repair_semantically_corrupt_commissioning_and_identity_journal_fail_closed_wi
             "disabled_with_endpoint",
             serde_json::Value::Null,
         ),
-        ("identity", "add_present", serde_json::Value::Null),
-        ("identity", "replace_null", serde_json::Value::Null),
-        ("identity", "remove_null", serde_json::Value::Null),
-        ("identity", "wrong_profile", serde_json::Value::Null),
-        ("identity", "remove_wrong_receipt", serde_json::Value::Null),
-        ("identity", "replace_same_radio", serde_json::Value::Null),
-        ("identity", "add_revision_two", serde_json::Value::Null),
     ];
-    for (kind, field, value) in changes {
+    for (_, field, value) in changes {
         let mut f = Fixture::new();
         let (_, a) = f.parts();
         let mut record = a.record.clone();
@@ -709,58 +695,12 @@ fn repair_semantically_corrupt_commissioning_and_identity_journal_fail_closed_wi
             },
         });
         record.checked_control = record.commissioning.as_ref().unwrap().control.clone();
-        let operation_id = profile::new_uuid().unwrap();
-        record.operation_receipts.push_back(JournalEntry {
-            operation_id: operation_id.clone(),
-            scope: selected.clone(),
-            kind: OperationKind::RadioIdentity,
-            grant_id: None,
-            owner_verifier: None,
-            identity_request: Some(IdentityRequest {
-                version: 1,
-                operation_id,
-                expected_scope: None,
-                change: IdentityChange::Add,
-            }),
-        });
         // Independent JSON edits exercise semantic read/write validation, not just Rust construction.
         let mut json = serde_json::to_value(&record).unwrap();
-        if kind == "commission" {
-            if field == "disabled_with_endpoint" {
-                json["commissioning"]["control"]["mode"] = serde_json::json!("disabled");
-            } else {
-                json["commissioning"]["control"][field] = value;
-            }
+        if field == "disabled_with_endpoint" {
+            json["commissioning"]["control"]["mode"] = serde_json::json!("disabled");
         } else {
-            let request = &mut json["operation_receipts"][0]["identity_request"];
-            match field {
-                "add_present" => {
-                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap()
-                }
-                "replace_null" => request["change"] = serde_json::json!("replace"),
-                "remove_null" => request["change"] = serde_json::json!("remove"),
-                "wrong_profile" => {
-                    request["change"] = serde_json::json!("remove");
-                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap();
-                    request["expected_scope"]["profile_id"] =
-                        serde_json::json!("00000000-0000-4000-8000-000000000099");
-                }
-                "remove_wrong_receipt" => {
-                    request["change"] = serde_json::json!("remove");
-                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap();
-                    request["expected_scope"]["safety_revision"] = serde_json::json!(2);
-                }
-                "replace_same_radio" => {
-                    request["change"] = serde_json::json!("replace");
-                    request["expected_scope"] = serde_json::to_value(&selected.wire).unwrap();
-                }
-                "add_revision_two" => (),
-                _ => unreachable!(),
-            }
-            if field == "add_revision_two" {
-                json["operation_receipts"][0]["scope"]["wire"]["safety_revision"] =
-                    serde_json::json!(2);
-            }
+            json["commissioning"]["control"][field] = value;
         }
         let invalid: Record = serde_json::from_value(json.clone()).unwrap();
         let committed = fs::read(f.directory.join("authorization.json")).unwrap();
@@ -828,50 +768,6 @@ fn repair_valid_same_radio_older_verifier_and_receipt_remain_valid() {
             .safety_revision,
         2
     );
-}
-
-#[test]
-fn repair_valid_add_replace_remove_identity_receipts_survive_reopen() {
-    for change in [
-        IdentityChange::Add,
-        IdentityChange::Replace,
-        IdentityChange::Remove,
-    ] {
-        let mut f = Fixture::new();
-        let (store, a) = f.parts();
-        let mut record = a.record.clone();
-        let old = record.current_scope.clone().unwrap();
-        let mut result = old.clone();
-        if change == IdentityChange::Replace {
-            result.wire.radio_id = profile::new_uuid().unwrap();
-        }
-        record.current_scope = if change == IdentityChange::Remove {
-            None
-        } else {
-            Some(result.clone())
-        };
-        let operation_id = profile::new_uuid().unwrap();
-        record.operation_receipts.push_back(JournalEntry {
-            operation_id: operation_id.clone(),
-            scope: result,
-            kind: OperationKind::RadioIdentity,
-            grant_id: None,
-            owner_verifier: None,
-            identity_request: Some(IdentityRequest {
-                version: 1,
-                operation_id,
-                expected_scope: if change == IdentityChange::Add {
-                    None
-                } else {
-                    Some(old.wire)
-                },
-                change,
-            }),
-        });
-        store.save_authorization(&record).unwrap();
-        f.reopen().unwrap();
-        assert_eq!(f.authority.as_ref().unwrap().record, record);
-    }
 }
 
 #[test]
