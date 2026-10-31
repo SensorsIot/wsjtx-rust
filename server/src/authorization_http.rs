@@ -92,20 +92,16 @@ fn cookie(headers: &HeaderMap, name: &str) -> Result<String, Error> {
     }
     found.ok_or(Error::Unauthorized)
 }
-/// Operating HTTP/WS authority. A selected HTTPS profile requires its durable
-/// grant transport, re-validated for dispatch under the one authority lock; a
-/// plaintext profile keeps the runtime-token contract with no grant.
+/// Operating HTTP/WS authority. A selected HTTPS profile requires its durable grant
+/// transport, validated (scope, grant, current revocation generation) under the one
+/// authority lock; a plaintext profile keeps the runtime-token contract with no grant.
 pub(crate) fn operating_access(headers: &HeaderMap, app: &App) -> Result<Option<Access>, Error> {
     let state = app.profile.as_ref().ok_or(Error::Unauthorized)?;
     let owner = state
         .authorization
         .lock()
         .map_err(|_| Error::PersistenceFailed)?;
-    let access = configuration_access(headers, app, owner.as_ref())?;
-    if let (Some(access), Some(service)) = (&access, owner.as_ref()) {
-        service.authority.recheck_dispatch(access)?;
-    }
-    Ok(access)
+    configuration_access(headers, app, owner.as_ref())
 }
 /// Potential mutex waits stay wholly on Tokio's blocking pool. A busy writer
 /// remains a pending authority check, never a fabricated unauthorized result.
@@ -524,7 +520,6 @@ fn operate(
             if scope != access.scope {
                 return Err(Error::Conflict);
             }
-            service.authority.recheck_dispatch(&access)?;
             let mut response = bounded(receipt(&service.authority.revoke(
                 &mut store,
                 &access.grant_id,

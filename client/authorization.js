@@ -105,8 +105,12 @@ window.stationAuthorization = (() => {
     return JSON.parse(text);
   }
   async function challenge(credential, signal, operationId) {
-    const value = await raw('challenge', operationId ? {version: 1, operation_id: operationId, scope: credential.scope} :
-      {version: 1, grant_id: credential.grant_id}, signal);
+    let value;
+    // Only the challenge stage proves an unknown (revoked/deleted) grant. A later proof or
+    // status 401 can be another same-browser tab rotating the shared transport: transient.
+    try {value = await raw('challenge', operationId ? {version: 1, operation_id: operationId, scope: credential.scope} :
+      {version: 1, grant_id: credential.grant_id}, signal);}
+    catch (error) {if (error?.status === 401) error.authorizationCondition = 'retained-rejected'; throw error;}
     if (value.version !== 1 || value.grant_id !== credential.grant_id || value.public_key !== credential.public_key ||
         !validScope(value.scope) || !sameRadio(value.scope, credential.scope) || value.lifetime_seconds !== 60) {
       const error = new Error('Authorization identity changed'); error.authorizationCondition = 'retained-rejected'; throw error;
@@ -172,7 +176,7 @@ window.stationAuthorization = (() => {
         return snapshot();
       } catch (error) {
         if (condition === 'credential-storage-unavailable' && error?.authorizationCondition === 'credential-missing') condition = 'credential-missing';
-        if (condition === 'retained-transient' && ([401, 403].includes(error?.status) || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
+        if (condition === 'retained-transient' && (error?.status === 403 || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
         const failure = new Error('Station authorization unavailable'); failure.authorizationCondition = condition;
         if ([401, 403, 429, 503].includes(error?.status)) failure.status = error?.status;
         if (current === epoch) {
@@ -235,7 +239,7 @@ window.stationAuthorization = (() => {
     } catch (error) {
       let failure = error;
       if (condition) {
-        if (condition === 'retained-transient' && ([401, 403].includes(error?.status) || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
+        if (condition === 'retained-transient' && (error?.status === 403 || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
         failure = new Error('Station authorization unavailable'); failure.authorizationCondition = condition;
         if ([401, 403, 429, 503].includes(error?.status)) failure.status = error.status;
       }

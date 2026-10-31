@@ -510,17 +510,19 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
   const origin = 'https://localhost:18443', scope = {profile_id: uuid(1), radio_id: uuid(2), safety_revision: 1};
   const credential = {version: 1, origin, key: pair.privateKey, public_key: Buffer.from(await crypto.webcrypto.subtle.exportKey('raw', pair.publicKey)).toString('base64url'),
     grant_id: Buffer.alloc(32, 7).toString('base64url'), enrollment_id: uuid(3), scope, pending_enrollment: false};
+  // N1: only a challenge-stage 401 (unknown grant), 403 or identity mismatch is retained-rejected;
+  // a proof- or status-stage 401 is a shared-transport race and stays retained-transient.
   const cases = [
     ['absent', 'credential-missing'], ['empty', 'credential-missing'], ['blocked-late-upgrade', 'credential-storage-unavailable'],
     ['blocked-late-success', 'credential-storage-unavailable'], ['error', 'credential-storage-unavailable'], ['open-throw', 'credential-storage-unavailable'], ['read-error', 'credential-storage-unavailable'], ['missing-store', 'credential-storage-unavailable'], ['old-version', 'credential-storage-unavailable'],
     ['invalid', 'credential-invalid'], ['network', 'retained-transient'], ['null-rejection', 'retained-transient'],
     ['rate', 'retained-transient'], ['persistence', 'retained-transient'], ['unauthorized', 'retained-rejected'],
     ['forbidden', 'retained-rejected'], ['identity', 'retained-rejected'], ['pending', 'enrollment-pending'], ['explicit', 'explicit-in-progress'],
-    ['retry-success', null], ['retry-repeat401', 'retained-rejected'], ['retry-challenge401', 'retained-rejected'], ['retry-proof401', 'retained-rejected'],
+    ['retry-success', null], ['retry-repeat401', 'retained-transient'], ['retry-challenge401', 'retained-rejected'], ['retry-proof401', 'retained-transient'],
     ['retry-lost204', 'retained-transient'], ['retry-proof200', 'retained-transient'], ['retry-second-proof200', 'retained-transient'],
     ['retry-status403', 'retained-rejected'], ['retry-status429', 'retained-transient'], ['retry-status503', 'retained-transient'],
     ['retry-status-scope', 'retained-rejected'], ['retry-second-challenge-scope', 'retained-rejected'], ['retry-second-status-scope', 'retained-rejected'],
-    ['retry-pending', 'enrollment-pending'], ['retry-bootstrap', 'retained-rejected'], ['retry-aborted', 'retained-rejected'], ['retry-abort-challenge', 'retained-transient'], ['retry-stale', 'retained-transient'],
+    ['retry-pending', 'enrollment-pending'], ['retry-bootstrap', 'retained-transient'], ['retry-aborted', 'retained-transient'], ['retry-abort-challenge', 'retained-transient'], ['retry-stale', 'retained-transient'],
     ['bootstrap-denied', null], ['bootstrap-open-error', 'credential-storage-unavailable'], ['bootstrap-add-error', 'credential-storage-unavailable'],
     ['bootstrap-existing-invalid', 'credential-invalid'], ['bootstrap-existing-pending', 'enrollment-pending'], ['bootstrap-existing-retained', 'retained-transient'],
     ['bootstrap-enroll-loss', 'enrollment-pending'], ['bootstrap-clear-error', 'enrollment-pending'], ['bootstrap-renew-network', 'retained-transient'],

@@ -1784,8 +1784,9 @@ package WstxRequirements {
 
              Station authority serializes grant validation and protected-effect
              dispatch with selection/revocation transitions. The revocation commit is
-             the linearization point: queued effects not dispatched before it are
-             rejected; already-dispatched I/O cannot be retroactively undone and is
+             the linearization point: effects whose request has not passed the locked
+             admission check before it are rejected (see accepted bound below for an
+             admitted request still in flight); already-dispatched I/O cannot be retroactively undone and is
              cancelled using existing acknowledged-release rules without unsafe replay.
              Existing affected sockets close and new HTTP/WS effects fail. Revocation
              write failure quarantines affected access in memory immediately, reports
@@ -1795,15 +1796,18 @@ package WstxRequirements {
              reconciliation; no blind new enrollment or mutation replay. If response
              reconciliation is unavailable, browser stays unauthorized/unknown until
              resolved. Server restart reloads only committed state.
-             Delivered: durable record, logout/revoke-all, dispatch rechecks of every
-             operating HTTP route and WS upgrade, safety-revision advance and the
-             commissioning server API. Explicit Add/Replace/Remove remains target.
-             Accepted bound: an operating HTTP mutation rechecks scope, grant and
-             revocation generation under the authority lock, then calls the
-             recording/native owner after releasing it. A revocation committed after
-             that recheck finds the effect already dispatched: it is not undone or
-             reported as refused, and follows the existing cancellation/release rules,
-             while the affected WS closes and every later effect fails. */
+             Delivered: durable record, logout/revoke-all, a locked admission check of
+             every operating HTTP route and WS upgrade, WS-message rechecks of an earlier
+             admitted grant, safety-revision advance and the commissioning server API.
+             Explicit Add/Replace/Remove remains target.
+             Accepted bound: an operating HTTP request is admitted by validating its
+             transport (scope, grant, current revocation generation) under the authority
+             lock; the lock is then released. Such an admitted request may still be
+             queued (body parsing, the recording/native owner lock, the blocking pool)
+             when a revocation commits. It is not re-checked, refused or undone: at most
+             one in-flight effect per admitted request follows, under the existing
+             cancellation/release rules. Every request admitted after the commit is
+             refused, and the affected WS closes before its next message. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
     }

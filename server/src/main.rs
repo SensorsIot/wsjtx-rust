@@ -449,21 +449,11 @@ async fn put_profile(
         let Ok(mut authorization) = state.authorization.lock() else {
             return authorization_http::mapped(authorization::Error::PersistenceFailed);
         };
-        let context = match authorization_http::configuration_access(
-            &headers,
-            &app,
-            authorization.as_ref(),
-        ) {
-            Ok(context) => context,
-            Err(error) => return authorization_http::mapped(error),
-        };
-        if let Some(context) = context {
-            let Some(service) = authorization.as_ref() else {
-                return authorization_http::mapped(authorization::Error::Unauthorized);
-            };
-            if let Err(error) = service.authority.recheck_dispatch(&context) {
-                return authorization_http::mapped(error);
-            }
+        // Validated under the held authorization lock: no separate dispatch recheck needed.
+        if let Err(error) =
+            authorization_http::configuration_access(&headers, &app, authorization.as_ref())
+        {
+            return authorization_http::mapped(error);
         }
         if !json_media_type(&headers) {
             return profile_error(
