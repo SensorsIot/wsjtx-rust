@@ -298,7 +298,9 @@ package WstxContact {
              auto_sequence(decodedtext,25,50); 50 Hz rule): in replying, or in report
              when the contact started with Tx1 skipped, with Auto Seq on, the DX call's
              decoded message to another call within 50 Hz inclusive of my txOffsetHz
-             disarms and halts a transmission already started; the state is kept.
+             disarms and halts a transmission already started; the state is kept. #9
+             has no dedicated DisarmCause for it: the disarm is recorded with cause
+             operator (supervisor decision on #10 review, 2026-10-31).
              halt and watchdogExpired turn Enable Tx off and keep the state (the
              contact can resume after an explicit Enable Tx), except in calling where
              the CQ ends. cancel follows CancelContact. Esc is halt plus cancel. */
@@ -480,7 +482,13 @@ package WstxContact {
              available whenever a contact has a DX call, in any state, using the same
              contactId and the times observed so far. The operator may correct call,
              grid, reports, times, power and comments; invalid fields are refused beside
-             the field. The review never hides Halt Tx. */
+             the field. The review never hides Halt Tx. Offers queue per contactId,
+             oldest first, at most 8 unsaved: a completed or manually offered contact
+             stays offered until saved or discarded (discard_review), even after
+             CancelContact or ChangeContact; a later contact's offer waits behind it
+             (the same contactId replaces its own offer); a full queue refuses Log QSO
+             with state_conflict and leaves the completed contact available for a later
+             Log QSO. ContactSnapshot review is the oldest unsaved offer. */
     }
     action def SaveContact {
         in reviewed : LogRecord;
@@ -661,7 +669,10 @@ package WstxContact {
              set_frequency {rx_hz|null,tx_hz|null} (null = unchanged; pointer actions use
              this with the PointerEffect result); set_hold_tx {enabled};
              set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
-             set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled};
+             set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled,
+             safety_revision|null} (safety_revision: the CL-022 safety revision shown in
+             the snapshot transmit view; for enabled true a value different from the
+             station's current revision is stale_revision with field safety_revision);
              tune {enabled}; redecode {} (last completed interval of the current live
              job); open_log {} (manual Log QSO); discard_review {contact_id}.
              replace true is the explicit ChangeContact; false with an active contact is
@@ -675,8 +686,10 @@ package WstxContact {
              version/enums/UUIDs/safe integers, profile, boot/revision, capability,
              state). Transmit actions on a station without transmit capability, or
              without a current CL-022 grant (a plaintext profile), are
-             transmit_unavailable; Enable Tx arms #9 with the station's current CL-022
-             safety revision. */
+             transmit_unavailable; Enable Tx arms #9 with the confirmed CL-022 safety
+             revision it carries. A transmit outcome refused without a #9 disarm
+             (duplicateSequence) disarms with cause refused and is never resubmitted
+             unchanged; the engine's own disarms are not shown as refusals. */
     }
     item def CommandReceipt :> WstxArchitecture::StationOutcome {
         attribute v : Integer = 1;
@@ -698,10 +711,14 @@ package WstxContact {
              bytes (503 snapshot_limit otherwise, never truncated). transmit is #9's read
              view exactly {capability:"unsupported"|"unavailable"|"available",
              arm_state,last_disarm_cause,tune,pending_sequence,last_text,
-             last_period_utc,halt_state,refusal}; settings exactly {auto_seq,tx1_skip,
+             last_period_utc,halt_state,safety_revision,refusal} (safety_revision the
+             current CL-022 safety revision of the selected radio scope or null);
+             settings exactly {auto_seq,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,offered_for_log,saved} with messages an array
+             tx4,messages,start_utc,end_utc,offered_for_log,saved} (report_sent the
+             report of the last transmitted Tx2/Tx3 rendered, null until one is sent)
+             with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); review null
              or exactly {contact_id,record,outcome,error} with record the LogRecord keys
              and outcome pending|saved|unsaved; watchdog exactly {tx_remaining_minutes,

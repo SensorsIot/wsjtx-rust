@@ -453,7 +453,7 @@ package WstxTransmit {
              in the compressed GET allowlist); no WebSocket or StatusReply change.
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
              clock,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
-             {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
+             without its safety_revision: {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
              last_period_utc,halt_state,refusal}, ptt released|keyed|indeterminate,
              clock synchronized|unsynchronized|unknown, watchdog exactly {tx_minutes,
              tx_remaining_minutes,tx_expired,tune_seconds,tune_remaining_seconds} and

@@ -361,10 +361,14 @@ attribute def ActivityOrdering {
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
              Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
-             receive-only station, where Esc only cancels the contact), transmit state with the
-             last transmitted text, Tx watchdog remaining WD:nm or "Tx watchdog expired",
-             UTC clock, Tx progress v/15 with Transmitting label, Rx level meter 0..90 dB
-             with high/low text labels (WstxContact::OperatorDisplays).
+             receive-only station, where Esc only cancels the contact) and a compact
+             transmit state with the last transmitted text, Tx watchdog remaining WD:nm
+             or "Tx watchdog expired", visible in every region. Radio toolbar (its period
+             and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
+             level meter 0..90 dB with high/low text labels
+             (WstxContact::OperatorDisplays); they are not in the station bar because the
+             360 px / 200 % station bar cannot hold them without overflow (#10 review
+             decision 2026-10-31).
              Waterfall: green Rx and red Tx markers labelled Rx/Tx with their Hz, pointer
              actions per WstxContact::PointerEffect; the context menu is suppressed only
              over the canvas.
