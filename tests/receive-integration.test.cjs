@@ -77,7 +77,7 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     await page.locator('#receive-status').filter({hasText:'Partial results retained'}).waitFor();
     assert.equal(await row.count(),1,'accepted partial records survive stop');
     assert.equal((await (await fetch(origin+'/receive/results?'+query)).json()).records[0].text,'CQ K1ABC FN42');
-    for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+    for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
     assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
     await fs.mkdir('test-results/receive-integration',{recursive:true});
     await row.scrollIntoViewIfNeeded();

@@ -157,4 +157,7 @@ function annotate(body,records){
 const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
 window.wstxLogbook=Object.freeze({openReview,annotate,loadHistory});
+// The contact client (WstxContact) loads after the station is ready, so its bytes never
+// compete with the cold page and authorization on a 32 kbit/s link (TC-009-005 bounds).
+addEventListener('station-ready',()=>{if(document.querySelector('script[src="/contact.js"]'))return;const script=document.createElement('script');script.src='/contact.js';document.head.append(script);});
 })();

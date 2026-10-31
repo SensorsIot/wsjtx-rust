@@ -246,7 +246,10 @@ function displays(){
 }
 setInterval(displays,250);
 // ---------------------------------------------------------------- station events
-addEventListener('station-ready',()=>load());
+// Reconnect (a new socket) reloads the authoritative snapshot; a status refresh on the
+// same socket does not (contact.state announces every change).
+let readySocket=null;
+addEventListener('station-ready',event=>{if(event.detail===readySocket&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
@@ -259,5 +262,6 @@ addEventListener('station-message',event=>{
   }
 });
 render();
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();}
 window.wstxContact=Object.freeze({load,snapshot:()=>snap});
 })();
