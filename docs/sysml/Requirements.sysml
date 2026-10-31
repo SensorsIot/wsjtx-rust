@@ -50,13 +50,14 @@ package WstxRequirements {
     requirement 'FR-008' {
         doc /* Transmit control
              Provide clear transmit state and an immediate halt action; handle PTT, radio errors, and device loss without leaving transmit active unintentionally. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs";
     }
     requirement 'FR-009' {
         doc /* Radio control
              Support baseline radio-control capabilities, including frequency, mode, PTT, split operation, and supported device interfaces. The hardware support matrix is to be inventoried. The first hardware end-to-end test target is an Icom IC-7300 on a different PC; #8 must settle its setup and acceptance contract before the test. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs";
+        attribute implementation : String = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs";
     }
     requirement 'FR-010' {
         doc /* Displays
@@ -394,6 +395,38 @@ package WstxRequirements {
     }
     dependency CL_009_02_to_FR_006 from 'CL-009-02' to 'FR-006';
     dependency CL_009_02_to_FR_005 from 'CL-009-02' to 'FR-005';
+    requirement 'CL-009-03' {
+        doc /* Manage PTT and transmit audio through the station's one transmit owner and
+             its explicit transmit authority: arm only by an explicit operator request
+             with a current CL-022 grant and the current safety revision on a profile
+             with CAT PTT and an exact output device (receive-only commissioning is not
+             authority); disarmed at every start; admit, replace (until audio start) or
+             refuse TransmitRequests; key CI-V PTT with readback before audio, play the
+             48 kHz waveform from its planned sample, release PTT with readback after the
+             last sample; Tune and the Tx watchdog; report every TransmitOutcome. The
+             automatic CAT lifecycle never emits PTT. Details: WstxTransmit::
+             TransmitAuthority, TransmitArming, TransmitRequest, TransmitOutcome,
+             TransmitTiming, TransmitClock, PttControl, AudioPlayback, SetTune,
+             TransmitWatchdog, TransmitWire. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs";
+    }
+    dependency CL_009_03_to_FR_008 from 'CL-009-03' to 'FR-008';
+    dependency CL_009_03_to_FR_009 from 'CL-009-03' to 'FR-009';
+    dependency CL_009_03_to_FR_002 from 'CL-009-03' to 'FR-002';
+    requirement 'CL-009-04' {
+        doc /* Provide an immediate Halt that stops audio and releases PTT with readback
+             within 250 ms while CAT answers, cancels pending requests and disarms; make
+             audio device loss, CAT errors or timeouts, authority changes, an
+             unsynchronized clock and late or stale requests release or never key PTT,
+             report an unconfirmed release as indeterminate and recover it off-only, and
+             never resume or replay a transmission after a restart or reconnect. Details:
+             WstxTransmit::HaltTransmit, TransmitTiming, PttControl, TransmitOutcome. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs";
+    }
+    dependency CL_009_04_to_FR_008 from 'CL-009-04' to 'FR-008';
+    dependency CL_009_04_to_FR_006 from 'CL-009-04' to 'FR-006';
 
     verification 'TC-005-001' {
         doc /* TC-005-001 — FT8 message, symbol and waveform encoding
@@ -440,6 +473,68 @@ package WstxRequirements {
     }
     dependency CL_009_01_verified_by_TC_005_001 from 'CL-009-01' to 'TC-005-001';
     dependency CL_009_02_verified_by_TC_006_001 from 'CL-009-02' to 'TC-006-001';
+    verification 'TC-008-003' {
+        doc /* TC-008-003 — Transmit authority, halt and failure handling
+             CL-009-03, CL-009-04
+             (Planned on issue #9 as TC-008-001; that ID was taken by #10 for the Tx and
+             Tune watchdogs, so the #9 halt/failure case is TC-008-003.)
+             Setup: the actual transmit owner on a virtual UTC clock with a recording
+             hardware double; the actual CI-V actor against an independent emulated
+             IC-7300 peer; the actual station router, CL-022 lifecycle and scripted CI-V
+             peer.
+             Steps: request while disarmed; arm with unsupported/unavailable capability,
+             a wrong safety revision and without a grant; FT8 request before the period,
+             late, stale, misaligned, unsynchronized/unknown clock, bad text and offset,
+             duplicate sequence; replacement before and after audio start; halt
+             mid-audio on the virtual clock, through the owner thread and through the
+             real actor; audio device loss, CAT loss, key timeout, output open failure,
+             safety revision change; restart; Tx watchdog expiry and Tune limit;
+             lifecycle polling with the transmit owner present; malformed and extra-key
+             wire bodies, wrong Origin, stale boot, retained command_id.
+             Oracles: no PTT or audio call/byte while disarmed or unauthorized or
+             without an opened output; PTT bytes exactly FE FE 94 E0 1C 00 01 FD and
+             1C 00 00 with 1C 00 readback; open before key at the period start, audio at
+             period start + 500 ms with skip 0, late skip (t-500 ms)*48; replaced and
+             audioStarted outcomes in order; halt releases within 250 ms and disarms;
+             every failure stops audio, attempts release and disarms with its cause; an
+             unconfirmed release is indeterminate and recovered off-only; restart is
+             disarmed (startup) with nothing pending; watchdog expiry at the configured
+             minute; no poll during the transmit hold; one off-only release on close of
+             a keyed connection; exact wire shapes and refusals.
+             2 — Isolated automated tests; Windows development PC, no audio device,
+             radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-009-03';
+            verify 'CL-009-04';
+        }
+        attribute executable : String = "server/tests/transmit_service.rs; server/src/transmit_http_tests.rs";
+    }
+    verification 'TC-008-002' {
+        doc /* TC-008-002 — Physical controlled FT8 transmit
+             CL-009-03, CL-009-04
+             Setup: separately approved operation on the HB9BLA IC-7300 (COM3, USB Audio
+             CODEC) into a dummy load or the station antenna at reduced power, profile
+             with control.ptt cat and the IC-7300 USB output, synchronized system clock;
+             WSJT-X on the same PC receiving independently.
+             Steps: arm, transmit FT8 messages in both parities, replace before audio
+             start, halt mid-transmission, Tune and its limit, pull the USB audio or CAT
+             cable during a transmission, restart the station.
+             Oracles: WSJT-X decodes the transmitted messages with plausible DT and
+             frequency; the radio's TX indication and power meter follow PTT; halt and
+             each failure end RF within the settled bound; restart does not transmit.
+             5 — Tests with external effects and explicit operator consent; HB9BLA radio
+             PC, physical IC-7300. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-009-03';
+            verify 'CL-009-04';
+        }
+    }
+    dependency CL_009_03_verified_by_TC_008_003 from 'CL-009-03' to 'TC-008-003';
+    dependency CL_009_04_verified_by_TC_008_003 from 'CL-009-04' to 'TC-008-003';
+    dependency CL_009_03_verified_by_TC_008_002 from 'CL-009-03' to 'TC-008-002';
+    dependency CL_009_04_verified_by_TC_008_002 from 'CL-009-04' to 'TC-008-002';
     // #11 FT4 transmit preparation (slice A); detailed contract in WstxTransmit.
     requirement 'CL-011-01' {
         doc /* Encode every supported message family for FT4 with the shared FT8 packer

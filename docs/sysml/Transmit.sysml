@@ -1,11 +1,14 @@
 package WstxTransmit {
     private import ScalarValues::*;
-    doc /* Canonical FT8 and FT4 transmit-preparation contract (issue #9 slice A, FT4
-         issue #11 slice A): message packing, channel symbols, waveform and pure
-         period scheduling. Nothing here
-         opens audio, keys PTT or touches a radio; arming, Halt, PTT and played-audio
-         evidence are later #9 clauses. The TARGET section "#9 slice B consumer
-         contract" fixes what WstxContact (#10) consumes; #9 implements it. Declared coverage is not a test result.
+    doc /* Canonical FT8 and FT4 transmit contract. Slice A (issue #9, FT4 issue #11
+         slice A): message packing, channel symbols, waveform and pure period
+         scheduling, none of which opens audio, keys PTT or touches a radio. Slice B
+         (issue #9, CL-009-03/04): the station's transmit owner (arming under the
+         explicit TransmitAuthority, TransmitRequest admission and replacement, CI-V
+         PTT with readback, 48 kHz output, priority Halt, Tune, Tx watchdog, failure and
+         restart handling, TransmitWire); WstxContact (#10) consumes it. Physical RF
+         acceptance is TC-008-002 and is not claimed by automated tests. Declared
+         coverage is not a test result.
          CL-009-01/02, CL-011-01 and TC-005-001/002, TC-006-001/002 are declared in
          WstxRequirements. FT4 reuses PackMessage unchanged (FT4 and FT8 share pack77).
          Behaviour oracle: WSJT-X 3.3.0-beta5 (revision d89fe3) lib/77bit/packjt77.f90,
@@ -232,30 +235,115 @@ package WstxTransmit {
              is clockNotSynchronized. */
     }
     // ------------------------------------------------------------------
-    // #9 slice B consumer contract (TARGET, supervisor decision 2026-10-31 on #10).
-    // #9 slice B owns and implements the armed state, halt, PTT and pending-request
-    // replacement; WstxContact (#10) only consumes these definitions. They are the
-    // minimum #10 needs; #9 declares its own clauses, timing and device policy.
+    // #9 slice B transmit owner (delivered; consumer contract of WstxContact #10,
+    // supervisor decision 2026-10-31 on #10). Implementation:
+    // server/src/transmit/service.rs (owner), server/src/radio_control/actor.rs and
+    // executor.rs (PttControl), server/src/playback.rs (AudioPlayback),
+    // server/src/transmit_http.rs (station hardware, TransmitWire).
     enum def ArmState { enum disarmed; enum armed; }
     enum def DisarmCause {
         enum operator; enum halt; enum contactCompleted; enum contactCancelled;
         enum txWatchdog; enum refused; enum failed; enum deviceLost; enum startup;
+        enum authorityChanged;
     }
     enum def TransmitRefusal {
         enum transmitUnsupported; enum notArmed; enum audioStarted; enum duplicateSequence;
         enum staleRequest; enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod;
-        enum packRefused; enum frequencyOutOfRange; enum busy;
+        enum packRefused; enum frequencyOutOfRange; enum busy; enum notAuthorized;
+        enum radioUnavailable;
+    }
+    enum def TransmitFailure {
+        enum pttTimeout; enum pttRejected; enum pttReadbackMismatch; enum pttIndeterminate;
+        enum radioLost; enum audioUnavailable; enum audioDeviceLost; enum authorityChanged;
+    }
+    enum def TransmitCapability { enum unsupported; enum unavailable; enum available; }
+    enum def PttState { enum released; enum keyed; enum indeterminate; }
+    enum def HaltState { enum idle; enum pending; enum stopped; }
+    attribute def TransmitAuthority {
+        attribute armedOnStartup : Boolean = false;
+        attribute persisted : Boolean = false;
+        doc /* The station's explicit transmit authority (WstxArchitecture::RadioAuthority),
+             evaluated at Arm, at every request admission, at keying and on every
+             owner step. Capability: unsupported unless the saved profile has
+             control.mode cat, control.ptt cat and an exact audio.output_device (a
+             receive-only profile, ptt disabled, is never transmit capability);
+             unavailable while the CL-022-03 automatic CAT gate is not eligible (no
+             current grant, commissioning missing or invalidated) or its actor is not
+             ready; otherwise available. Authority: an explicit operator Arm request
+             carrying the current CL-022 safety revision of the selected radio scope,
+             sent by a request with a current CL-022 grant (a plaintext profile has no
+             grant and never arms). CL-022 receive-only commissioning is a precondition
+             of CAT but is not transmit authority. The authority is per boot, never
+             persisted or restored: every process start is disarmed (startup), and any
+             safety revision change (control/profile edit, recommissioning) disarms
+             (authorityChanged); loss of the radio or capability disarms (deviceLost).
+             MCP and the browser use the same operation; neither can widen it. */
+    }
+    attribute def TransmitTiming {
+        attribute haltMs : Integer = 250;
+        attribute pttExchangeMs : Integer = 1000;
+        attribute keyLeadMs : Integer = 0;
+        attribute playbackScale : Real = 0.5;
+        attribute sampleRateHz : Integer = 48000;
+        doc /* Keying: the output device is opened first, then PTT is keyed at the period
+             start (keyLeadMs after it; for an admitted late start at once), so the
+             audio delay of Ft8Schedule/Ft4Schedule (500/300 ms) separates the confirmed
+             key from the first sample. Audio starts only after the key readback, at
+             the first owner step at or after period start + audio delay, and plays
+             from the sample PlanTransmitStart gives for that instant (late start skips,
+             never replays). PTT is released with readback after the device reports the
+             last sample played. haltMs: from HaltTransmit receipt, audio output stops
+             without waiting for the owner lock and PTT is released and read back
+             within 250 ms while CAT answers; a release exchange that fails or times
+             out (pttExchangeMs per exchange, RadioIO 1 s) leaves PttState
+             indeterminate, closes that CAT connection and is reported, never hidden.
+             playbackScale: the unit-peak waveform is played at -6.02 dBFS; drive level
+             is set at the radio (IC-7300 USB MOD level) in this slice. */
+    }
+    attribute def TransmitClock {
+        doc /* ClockState of the station's system UTC clock: synchronized when Windows
+             reports that a time service disciplines the system clock
+             (GetSystemTimeAdjustmentPrecise time adjustment enabled), unsynchronized
+             when it reports no discipline, unknown when the query fails. External
+             accuracy is not inferred (WstxRadioIO receive clock stays unknown);
+             PlanTransmitStart refuses anything but synchronized. */
+    }
+    action def PttControl {
+        in enable : Boolean;
+        doc /* Typed CI-V transmit switch through the one WstxRadioIO CAT owner:
+             FE FE radio controller 1C 00 01|00 FD, ACK FB required (NG FA is
+             pttRejected), then the 1C 00 query must read back the requested state.
+             Compiled code, not an Operation: catalogue data, POST /radio/operation and
+             the automatic CL-022 lifecycle cannot reach it, and the lifecycle emits
+             no PTT. Keying takes the actor's transmit hold, which waits for a running
+             poll or operation and then excludes every ordinary operation, receive
+             transition and poll until a release is confirmed, so a release is the
+             next exchange. Closing a connection that may be keyed first sends one
+             off-only release. After an indeterminate release the owner retries
+             off-only releases (never a key) and refuses Arm until one is confirmed. */
+    }
+    action def AudioPlayback {
+        doc /* WASAPI shared event-driven render on exactly the profile's
+             audio.output_device endpoint ID (no default fallback), 48 kHz mix format
+             only (float32 or PCM16/24/32, any channel count, the mono program on every
+             channel); otherwise audioUnavailable before PTT is keyed. The device opens
+             streaming silence before keying, plays one program (waveform from its
+             planned sample or the Tune tone), and stops and closes within 250 ms from
+             any thread. A render error or invalidated device during audio is
+             audioDeviceLost: PTT is released and the station disarms. Capture never
+             opens it; it never touches CAT. */
     }
     attribute def TransmitArming {
         attribute armState : ArmState = ArmState::disarmed;
         attribute lastDisarmCause : DisarmCause = DisarmCause::startup;
-        doc /* TARGET #9 slice B. One armed state per station, owned by
-             WstxArchitecture::TransmitService; disarmed at startup and after every
-             DisarmCause. Arm/Disarm are requests from QsoAndLogging (Enable Tx) through
-             the qso-to-transmit connection. Disarm sends no new request; a transmission
-             whose audio already started finishes unless halted. Arming requires the
-             transmit capability and the station's explicit transmit authority
-             (WstxArchitecture::RadioAuthority); otherwise refused transmitUnsupported. */
+        doc /* One armed state per station, owned by WstxArchitecture::TransmitService;
+             disarmed at startup and after every DisarmCause. Arm/Disarm are requests
+             from QsoAndLogging (Enable Tx) through the qso-to-transmit connection, or
+             TransmitWire. Arming requires TransmitAuthority: unsupported capability
+             is refused transmitUnsupported, unavailable radioUnavailable, a missing
+             grant or a different safety revision notAuthorized. Disarm sends no new
+             request and cancels requests that are not keyed; a transmission already
+             keyed or playing finishes unless halted. */
     }
     attribute def TransmitRequest {
         attribute contactId : String[0..1];
@@ -264,41 +352,91 @@ package WstxTransmit {
         attribute periodStartUtcMs : Integer;
         attribute messageText : String;
         attribute txOffsetHz : Integer;
-        doc /* TARGET #9 slice B. At most one pending request per station. Admitted only
-             while armed; the service packs messageText (PackMessage), plans the start
-             (PlanTransmitStart), encodes, plays and keys PTT. requestSequence is a
+        doc /* At most one pending (not audio-started) request per station. Admitted only
+             while armed under TransmitAuthority; the service packs messageText
+             (PackMessage), plans the start (PlanTransmitStart), encodes the 48 kHz
+             waveform, keys PTT and plays (TransmitTiming). requestSequence is a
              strictly increasing safe integer per boot: a lower or equal sequence is
-             duplicateSequence and never transmits twice. A request for the same period
-             with a higher sequence REPLACES the pending one while its audio has not
-             started; from audio start the replacement is refused audioStarted and the
-             requester submits it for the next period of its parity. */
+             duplicateSequence, never transmits twice and changes nothing (a retry does
+             not disarm). A new admitted request REPLACES the pending one (replaced)
+             while its audio has not started; a keyed pending request is replaced only
+             by one for the same period (else busy). From audio start a request for the
+             same period is refused audioStarted (no disarm) and one for another period
+             becomes the next pending request, started after the current one completes.
+             Clock, alignment and lateness refusals (clockNotSynchronized,
+             misalignedPeriod, stalePeriod) and packRefused or frequencyOutOfRange are
+             checked at admission; the start is planned again at keying and at audio
+             start, so a request that became stale is refused, never replayed. A
+             request of another boot is refused at the wire (state_conflict). */
     }
     enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; }
     attribute def TransmitOutcome {
+        attribute outcomeSequence : Integer;
         attribute requestSequence : Integer;
         attribute kind : TransmitOutcomeKind;
         attribute refusal : TransmitRefusal[0..1];
+        attribute failure : TransmitFailure[0..1];
         attribute audioStartUtcMs : Integer[0..1];
-        doc /* TARGET #9 slice B. started is reported at audio start, completed after
-             the last sample and PTT release, halted after confirmed stop. refused and
-             failed disarm (DisarmCause refused/failed). No outcome is inferred from a
-             client timeout or a lost response. */
+        doc /* started is reported at audio start, completed after the last sample and the
+             confirmed PTT release, halted after HaltTransmit. refused (except
+             duplicateSequence and audioStarted) and failed disarm (DisarmCause refused,
+             failed, deviceLost or authorityChanged). outcomeSequence orders all outcomes
+             of a boot; the consumer reads those after its cursor; the last 32 are
+             retained. No outcome is inferred from a client timeout or a lost response. */
     }
     action def HaltTransmit {
-        doc /* TARGET #9 slice B. Immediate priority stop of a transmission or Tune,
-             cancels the pending request and disarms (DisarmCause halt). Always admitted
-             (no revision check), idempotent, independent of decode/receive/display
-             congestion (ProcessingAndHaltOwnership). Wire: POST /transmit/halt exactly
+        doc /* Immediate priority stop of a transmission or Tune: stops audio without the
+             owner lock, releases PTT with readback (TransmitTiming haltMs), cancels the
+             pending and next requests (halted) and disarms (DisarmCause halt). Always
+             admitted for the selected profile (no boot or revision check), idempotent,
+             independent of decode, receive or display congestion
+             (ProcessingAndHaltOwnership). Wire: POST /transmit/halt exactly
              {v,profile_id,boot_id,command_id}, 202 {v:1,command_id,halt_state} with
-             halt_state pending|stopped|idle; a repeated command_id returns the same
-             receipt. */
+             halt_state stopped (confirmed within 250 ms), pending (not yet confirmed;
+             GET /transmit shows the result) or idle (nothing was keyed); a repeated
+             command_id returns the same receipt (last 16). */
     }
     action def SetTune {
         in enable : Boolean;
-        doc /* TARGET #9 slice B. Unmodulated tone at the Tx offset; stopped by
-             SetTune(false), HaltTransmit or the WstxContact::TuneWatchdog expiry. */
+        doc /* Unmodulated tone at the given Tx offset (200..2950 Hz) under the same
+             authority, armed and with nothing pending; stopped by SetTune(false),
+             HaltTransmit or the tune limit (WstxContact::TuneWatchdog, default 90 s,
+             1..300 s) with PTT release. */
+    }
+    attribute def TransmitWatchdog {
+        doc /* WstxContact::TxWatchdog enforced by the owner: limit 1..99 minutes (default
+             6 at each start), counted only while armed, reset at Arm, on accepted
+             operating activity (every accepted transmit command; the contact consumer
+             reports its own) and at the start of a transmission whose text differs from
+             the last one. At expiry the owner halts and disarms (txWatchdog) and
+             reports tx_expired until the next Arm. */
+    }
+    attribute def TransmitWire {
+        doc /* Selected-profile routes, existing authentication, exact Origin on mutations,
+             JSON media rules, 1024-byte bodies and error envelope; identity-coded (not
+             in the compressed GET allowlist); no WebSocket or StatusReply change.
+             GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
+             clock,watchdog,outcomes} with transmit exactly the WstxContact read view
+             {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
+             last_period_utc,halt_state,refusal}, ptt released|keyed|indeterminate,
+             clock synchronized|unsynchronized|unknown, watchdog exactly {tx_minutes,
+             tx_remaining_minutes,tx_expired,tune_seconds,tune_remaining_seconds} and
+             outcomes the last 8 {outcome_sequence,request_sequence,kind,refusal,failure,
+             audio_start_utc_ms}; enum values snake_case.
+             POST /transmit/command: exactly {v,profile_id,boot_id,command_id,action}
+             plus the action's parameters: arm {safety_revision}; disarm {};
+             request {request_sequence,mode ft8|ft4,period_start_utc_ms,message_text,
+             tx_offset_hz}; tune {enabled} or {enabled true,tx_offset_hz};
+             set_watchdogs {tx_minutes,tune_seconds}. 200 {v:1,profile_id,boot_id,
+             command_id,result}: result is the TransmitOutcome of a request, otherwise
+             {accepted,refusal}. A retained command_id (last 16) with the identical body
+             returns the same reply without effect, a different body is state_conflict;
+             another boot is state_conflict. POST /transmit/halt: HaltTransmit. */
     }
     dependency armingPromise from TransmitArming to WstxRequirements::'FR-008';
+    dependency pttPromise from PttControl to WstxRequirements::'FR-009';
+    dependency authorityPromise from TransmitAuthority to WstxRequirements::'CL-009-03';
+    dependency haltClausePromise from HaltTransmit to WstxRequirements::'CL-009-04';
 
     action def PlanTransmitStart {
         in mode : WstxOfflineDecode::Mode;

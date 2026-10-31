@@ -469,8 +469,10 @@ Before physical opening, USB SEND/CW/RTTY keying must be independently confirmed
 or equivalent receive inhibit verified: post-open DCB settings cannot promise no initial
 control-line glitch. Hardware acceptance reads original state, compares front-panel
 indications, applies only reversible receive settings and restores them by readback.
-No PTT setter, keying, tuner, VOX or split/TX setter is reachable in this slice; #9 owns
-transmit authority and halt. Optional native FlexRadio remains the later #13 adapter.
+No PTT setter, keying, tuner, VOX or split/TX setter is reachable through this slice's
+operations, catalogue or automatic lifecycle. #9 slice B adds only the compiled CI-V
+transmit switch (WstxTransmit::PttControl) to the same owner, reachable solely by the
+transmit service under its transmit hold and authority; #9 owns transmit authority and halt. Optional native FlexRadio remains the later #13 adapter.
 
 #### Interface verification
 

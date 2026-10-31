@@ -171,7 +171,7 @@ package WstxProductScope {
              acceleration choices require measured workloads, with CPU correctness. */
     }
     attribute def TransmitSafetyPolicy {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;
+        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
         attribute armedOnStartup : Boolean = false;
         attribute haltWaitsForDecode : Boolean = false;
         attribute mcpMayOverrideLossPolicy : Boolean = false;
@@ -181,7 +181,11 @@ package WstxProductScope {
              Obtain common authority, prepare selected audio and radio/PTT, schedule,
              then handle completion/halt/failure. Audio failure leaves control-side
              halt/release usable; control failure never fabricates radio-ready state.
-             Browser timers or optional display congestion cannot hold transmit authority. */
+             Browser timers or optional display congestion cannot hold transmit authority.
+             Settled by #9 slice B (WstxTransmit::TransmitAuthority, TransmitTiming,
+             PttControl): per-boot explicit authority, 250 ms halt, release on device
+             or CAT loss, off-only recovery, no VOX; physical acceptance remains
+             TC-008-002. */
     }
     requirement RemoteDeliveryPolicy {
         doc /* Commands/state/results have priority over discardable visualization.
