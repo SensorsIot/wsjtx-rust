@@ -6,6 +6,12 @@ mod authorization_http;
 mod cat_lifecycle;
 #[cfg(test)]
 mod cat_lifecycle_tests;
+mod contact;
+mod contact_http;
+#[cfg(test)]
+mod contact_http_tests;
+#[cfg(test)]
+mod contact_tests;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
@@ -257,6 +263,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 previous(info);
             }));
             let _ = recording.transmit.set(transmit);
+            // WstxContact: one contact engine per station, consuming the transmit owner.
+            let _ = recording.contact.set(contact_http::Station::start());
             let log_base = selected.clone().ok_or("profile directory absent")?;
             let logbook = Arc::new(
                 tokio::task::spawn_blocking(move || logbook::Logbook::open(&log_base)).await?,
@@ -275,6 +283,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 boot,
                 recording,
                 logbook,
+            });
+            // WstxContact: the station-wide contact step, whether or not a browser is connected.
+            let contacts = state.clone();
+            tokio::spawn(async move {
+                let mut timer = interval(Duration::from_millis(50));
+                timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    timer.tick().await;
+                    let current = contacts.clone();
+                    let _ =
+                        tokio::task::spawn_blocking(move || contact_http::station_tick(&current))
+                            .await;
+                }
             });
             // CL-022-03/04: one station-wide timer and at most one tick in flight; it
             // runs whether or not any browser is connected.
@@ -325,6 +346,7 @@ fn router(state: App) -> Router {
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/app.js")) }))
         .route("/recording.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/recording.js")) }))
         .route("/recording.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../client/recording.css")) }))
+        .route("/contact.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/contact.js")) }))
         .route("/logbook.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/logbook.js")) }))
         .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../client/style.css")) }))
         .route("/session", post(session).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -360,6 +382,8 @@ fn router(state: App) -> Router {
         .route("/contacts/export.adi", get(logbook_http::export))
         .route("/contacts/imports", post(logbook_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/contacts/imports/{id}", get(logbook_http::import).put(logbook_http::import).layer(axum::extract::DefaultBodyLimit::max(logbook::IMPORT_CHUNK_BYTES_MAX)))
+        .route("/contact", get(contact_http::snapshot))
+        .route("/contact/command", post(contact_http::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
@@ -385,7 +409,7 @@ fn startup_error(code: &str, path: &std::path::Path) -> String {
 }
 async fn index(State(app): State<App>) -> Html<String> {
     Html(include_str!("../../client/index.html").replace(
-        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script><script src=\"/logbook.js\" defer></script></head>" } else { "</head>" }
+        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script><script src=\"/logbook.js\" defer></script><script src=\"/contact.js\" defer></script></head>" } else { "</head>" }
     ).replace(
         "<script src=\"/app.js\" defer></script>",
         if app.profile.is_some() { "<script src=\"/authorization.js\" defer></script><script src=\"/app.js\" defer></script>" } else { "<script src=\"/app.js\" defer></script>" }
@@ -847,6 +871,15 @@ async fn connection(
     let mut receive_tick = interval(Duration::from_secs(2));
     receive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut receive_seen = Value::Null;
+    // WstxContact::ContactStateEvent / StationTickEvent pacing (optional writes).
+    let mut contact_tick = interval(Duration::from_secs(1));
+    contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut contact_seen: Option<u64> = None;
+    let mut last_station_tick: Option<Instant> = None;
+    let mut tick_transmitting: Option<bool> = None;
+    // Events pace by the peer's display subscription; a peer that never chose one
+    // (a bare status observer) receives none.
+    let mut subscribed = false;
     loop {
         let auth_ready = if let Some(context) = &authority {
             match context.current_async().await {
@@ -879,6 +912,31 @@ async fn connection(
                     optional_since=None;receive_seen=observed;
                 }
             }
+            _ = contact_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.contact.get().is_some()) => {
+                if !auth_ready { continue; }
+                if optional_since.is_some() {
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
+                }
+                let r=recording.as_ref().unwrap();
+                let revision=r.contact.get().map_or(0,|c|c.revision());
+                if contact_seen!=Some(revision) {
+                    match optional_write(&mut socket,Message::Text(contact_http::state_event(r,revision).into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{contact_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                let (text,transmitting)=contact_http::tick_event(r);
+                // Detailed 1 per second; Thin and Off 1 per 5 s; plus transmit start/stop.
+                let every=Duration::from_millis(if display_profile=="detail" {950} else {4950});
+                if last_station_tick.is_none_or(|t|t.elapsed()>=every) || tick_transmitting.is_some_and(|t|t!=transmitting) {
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{last_station_tick=Some(Instant::now());tick_transmitting=Some(transmitting);if !flushed {optional_since=Some(Instant::now());}},
+                        Err(_)=>break,
+                    }
+                }
+            }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Text(text))) => {
                     if let Some(context) = &authority {
@@ -896,6 +954,7 @@ async fn connection(
                                     value = json!({"v":1,"type":"recording.state","id":request["id"],"data":{"generation":s["generation"],"source_id":source,"job_id":s["job"]["id"],"state":s["job"]["state"]}});
                                 } else {
                                     display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
+                                    subscribed = true;
                                     if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now()); }
                                     let state=r.state.lock().unwrap();
                                     let frame=if display_profile=="detail" {&state.detail_frame} else {&state.frame};

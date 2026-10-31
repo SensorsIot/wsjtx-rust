@@ -24,11 +24,12 @@ pub(crate) fn logical_cap(path: &str) -> Option<u64> {
 /// Public script/style assets carry no secret or reflected input, so compressing them has
 /// no BREACH exposure. They are gzip only when the client positively selects it; any other
 /// negotiation (including all encodings forbidden) keeps the exact identity bytes, never 406.
-const STATIC_ASSETS: [&str; 6] = [
+const STATIC_ASSETS: [&str; 7] = [
     "/app.js",
     "/authorization.js",
     "/recording.js",
     "/logbook.js",
+    "/contact.js",
     "/style.css",
     "/recording.css",
 ];

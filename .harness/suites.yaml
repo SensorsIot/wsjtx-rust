@@ -302,6 +302,31 @@
   depends_on: [profiles]
   needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated server and browser, unsupported/no-input baseline, disabled TX/QSO/log, literal station identity, desktop/mobile/zoom layout and separator accessibility. No transceiver, audio activation or network service.
 
+- suite: contact-browser
+  cost: 2
+  run: cargo test --release --locked --bin wstx-rust contact_http_tests::contact_browser_ -- --nocapture
+  paths:
+  - server/
+  - client/
+  - tests/contact.test.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/contact.rs
+  - server/src/contact_http.rs
+  - server/src/contact_http_tests.rs
+  - server/src/transmit_http.rs
+  - server/src/main.rs
+  - client/contact.js
+  - client/recording.js
+  - client/logbook.js
+  - tests/contact.test.cjs
+  depends_on: [operating-layout]
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the #9 transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer. No transceiver, audio device, PTT or network service.
+
 - suite: simulator-fixtures
   cost: 2
   run: >-

@@ -1,0 +1,912 @@
+#![forbid(unsafe_code)]
+// Proves: CL-010-01, CL-010-03, CL-010-06, CL-010-11, CL-010-14, CL-010-15; TC-007-001,
+// TC-007-003, TC-007-004, TC-010-008, TC-010-009. The actual router with the contact
+// engine, the actual #9 transmit owner thread on recording hardware doubles (no audio,
+// PTT or radio) and hand-authored decoded rows packed with the real codec.
+use super::*;
+use axum::body::Body;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use tower::ServiceExt;
+use wstx_rust::transmit::service::{
+    AudioError, AudioPoll, Capability, Context, Hardware, Program, PttError,
+};
+
+/// Wall-clock hardware double: capability fixed, PTT/plays recorded, audio ends after
+/// its sample count.
+#[derive(Clone, Default)]
+pub(crate) struct Bench {
+    pub(crate) unsupported: Arc<AtomicBool>,
+    pub(crate) keys: Arc<Mutex<Vec<bool>>>,
+    playing: Arc<Mutex<Option<(i64, usize)>>>,
+    offset: Arc<AtomicI64>,
+}
+impl Hardware for Bench {
+    fn now_utc_ms(&self) -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            + self.offset.load(Ordering::SeqCst)
+    }
+    fn clock(&self) -> wstx_rust::transmit::ClockState {
+        wstx_rust::transmit::ClockState::Synchronized
+    }
+    fn context(&self) -> Context {
+        if self.unsupported.load(Ordering::SeqCst) {
+            return Context {
+                capability: Capability::Unsupported,
+                safety_revision: None,
+                radio_transmitting: Some(false),
+            };
+        }
+        Context {
+            capability: Capability::Available,
+            safety_revision: Some(3),
+            radio_transmitting: Some(false),
+        }
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        self.keys.lock().unwrap().push(on);
+        Ok(())
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        Ok(())
+    }
+    fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        let n = match program {
+            Program::Waveform { samples, skip } => samples.len() - skip,
+            Program::Tone { .. } => usize::MAX / 4,
+        };
+        *self.playing.lock().unwrap() = Some((self.now_utc_ms(), n));
+        Ok(())
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        match *self.playing.lock().unwrap() {
+            Some((at, n)) if (self.now_utc_ms() - at) * 48 >= n as i64 => AudioPoll::Finished,
+            Some(_) => AudioPoll::Playing,
+            None => AudioPoll::Idle,
+        }
+    }
+    fn stop_audio(&mut self) {
+        *self.playing.lock().unwrap() = None;
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let p = self.playing.clone();
+        Arc::new(move || *p.lock().unwrap() = None)
+    }
+}
+
+/// A decoded result record of `text` with the real 77-bit codec (no decoder run).
+pub(crate) fn record(text: &str, hz: f64, snr: Option<f64>) -> Value {
+    let packed = wstx_rust::transmit::pack(text).unwrap();
+    let mut v = serde_json::to_value(decoder::unpack(&packed.bits)).unwrap();
+    v["start_frame"] = json!(0);
+    v["frequency_hz"] = json!(hz);
+    v["snr_db"] = json!(snr);
+    v["dt_seconds"] = json!(0.1);
+    v
+}
+pub(crate) fn period_text(ms: i64) -> String {
+    let t = crate::contact::utc_text(ms);
+    format!("{}.0000000Z", &t[..19])
+}
+pub(crate) fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+pub(crate) struct Fixture {
+    pub(crate) router: Router,
+    pub(crate) state: Arc<ProfileState>,
+    pub(crate) origin: String,
+    pub(crate) id: String,
+    pub(crate) boot: String,
+    pub(crate) dir: std::path::PathBuf,
+    pub(crate) bench: Bench,
+}
+pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
+    let dir = std::env::temp_dir().join(format!("wstx-contact-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let id = profile::new_uuid().unwrap();
+    let boot = profile::new_uuid().unwrap();
+    let bind = origin.trim_start_matches("http://");
+    let doc = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Contact fixture",
+        "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":bind,"origin":null},"connection_type":"standard",
+        "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
+    std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
+    let (store, _) = profile::Store::open(&dir).unwrap();
+    let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    let bench = Bench::default();
+    bench.unsupported.store(!transmit, Ordering::SeqCst);
+    let _ = recording
+        .transmit
+        .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
+    let _ = recording.contact.set(contact_http::Station::start());
+    let state = Arc::new(ProfileState {
+        store: Mutex::new(store),
+        authorization: Mutex::new(None),
+        boot: boot.clone(),
+        recording,
+        logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+    });
+    let app = App {
+        origin: origin.to_string(),
+        profile: Some(state.clone()),
+        profile_id: Some(id.clone()),
+        token: None,
+        connections: Arc::new(Semaphore::new(16)),
+        login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
+    };
+    Fixture {
+        router: router(app),
+        state,
+        origin: origin.to_string(),
+        id,
+        boot,
+        dir,
+        bench,
+    }
+}
+impl Fixture {
+    pub(crate) fn contact(&self) -> Arc<contact_http::Station> {
+        self.state.recording.contact.get().unwrap().clone()
+    }
+    pub(crate) fn tick(&self) {
+        contact_http::station_tick(&self.state);
+    }
+    async fn call(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value, HeaderMap, usize) {
+        self.raw(
+            method,
+            path,
+            Some(&self.origin),
+            body.map(|b| serde_json::to_vec(&b).unwrap()),
+            &[],
+        )
+        .await
+    }
+    async fn raw(
+        &self,
+        method: &str,
+        path: &str,
+        origin: Option<&str>,
+        body: Option<Vec<u8>>,
+        headers: &[(&str, &str)],
+    ) -> (StatusCode, Value, HeaderMap, usize) {
+        let mut request = axum::http::Request::builder().method(method).uri(path);
+        if let Some(origin) = origin {
+            request = request.header(header::ORIGIN, origin);
+        }
+        for (k, v) in headers {
+            request = request.header(*k, *v);
+        }
+        let request = match body {
+            Some(b) => {
+                if !headers
+                    .iter()
+                    .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                {
+                    request = request.header(header::CONTENT_TYPE, "application/json");
+                }
+                request.body(Body::from(b))
+            }
+            None => request.body(Body::empty()),
+        }
+        .unwrap();
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+            headers,
+            bytes.len(),
+        )
+    }
+    fn body(&self, revision: u64, action: &str, extra: Value) -> Value {
+        let mut b = json!({"v":1,"profile_id":self.id,"boot_id":self.boot,"command_id":profile::new_uuid().unwrap(),
+            "contact_revision":revision,"action":action});
+        for (k, v) in extra.as_object().unwrap() {
+            b[k] = v.clone();
+        }
+        b
+    }
+    async fn snapshot(&self) -> Value {
+        let (status, v, _, _) = self.call("GET", "/contact", None).await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        v
+    }
+    async fn send(&self, action: &str, extra: Value) -> (StatusCode, Value) {
+        let revision = self.snapshot().await["contact_revision"].as_u64().unwrap();
+        let (s, v, _, _) = self
+            .call(
+                "POST",
+                "/contact/command",
+                Some(self.body(revision, action, extra)),
+            )
+            .await;
+        (s, v)
+    }
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+fn keys(v: &Value) -> Vec<String> {
+    let mut k: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+    k.sort();
+    k
+}
+fn sorted(list: &[&str]) -> Vec<String> {
+    let mut k: Vec<String> = list.iter().map(|s| s.to_string()).collect();
+    k.sort();
+    k
+}
+fn code(v: &Value) -> (&str, Option<&str>) {
+    (
+        v["error"]["code"].as_str().unwrap_or(""),
+        v["error"]["field"].as_str(),
+    )
+}
+
+#[tokio::test]
+async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let (status, v, headers, bytes) = f
+        .raw(
+            "GET",
+            "/contact",
+            None,
+            None,
+            &[("accept-encoding", "gzip, br")],
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        headers.get(header::CONTENT_ENCODING).is_none(),
+        "GET /contact is never content-coded"
+    );
+    assert!(bytes <= contact_http::SNAPSHOT_BYTES_MAX);
+    assert_eq!(
+        keys(&v),
+        sorted(&[
+            "v",
+            "profile_id",
+            "boot_id",
+            "contact_revision",
+            "snapshot_sequence",
+            "monotonic_ms",
+            "utc_ms",
+            "transmit",
+            "settings",
+            "contact",
+            "review",
+            "watchdog"
+        ])
+    );
+    assert_eq!(
+        keys(&v["transmit"]),
+        sorted(&[
+            "capability",
+            "arm_state",
+            "last_disarm_cause",
+            "tune",
+            "pending_sequence",
+            "last_text",
+            "last_period_utc",
+            "halt_state",
+            "refusal"
+        ])
+    );
+    assert_eq!(
+        keys(&v["settings"]),
+        sorted(&[
+            "auto_seq",
+            "tx1_skip",
+            "tx_minutes",
+            "tune_seconds",
+            "rx_hz",
+            "tx_hz",
+            "hold_tx",
+            "parity",
+            "report"
+        ])
+    );
+    assert_eq!(
+        keys(&v["watchdog"]),
+        sorted(&[
+            "tx_remaining_minutes",
+            "tx_expired",
+            "tune_remaining_seconds"
+        ])
+    );
+    assert_eq!(v["contact"], Value::Null);
+    assert_eq!(v["review"], Value::Null);
+    assert_eq!(
+        v["settings"],
+        json!({"auto_seq":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
+    );
+    assert_eq!(v["transmit"]["capability"], "available");
+    assert_eq!(v["transmit"]["arm_state"], "disarmed");
+    let (status, _, _, _) = f.raw("GET", "/contact?x=1", None, None, &[]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, v, _, _) = f
+        .raw("GET", "/contact", Some("http://evil.example"), None, &[])
+        .await;
+    assert_eq!(
+        (status, code(&v).0),
+        (StatusCode::FORBIDDEN, "forbidden_origin")
+    );
+    // The maximum shape (six 37-character messages, 13-character calls, a full review
+    // record without comment) fits; one byte over the cap is refused, never truncated.
+    let long = "A".repeat(37);
+    let max = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"contact_revision":MAX_SAFE_TEST,"snapshot_sequence":MAX_SAFE_TEST,
+        "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
+        "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
+            "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","refusal":"clock_not_synchronized"},
+        "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
+        "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
+            "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
+            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","offered_for_log":false,"saved":false},
+        "review":{"contact_id":f.id,"record":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","gridsquare":"JN47AA","mode":"MFSK","submode":"FT4",
+            "rst_sent":"-50","rst_rcvd":"-50","qso_date":"20261031","time_on":"235959","qso_date_off":"20261031","time_off":"235959",
+            "band":"1.25cm","freq":"24249.999999","station_callsign":"PJ4/PA3XYZABC","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null},
+            "outcome":"unsaved","error":null},
+        "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
+    let size = contact_http::admit(&max).unwrap().len();
+    assert!(size <= contact_http::SNAPSHOT_BYTES_MAX, "{size}");
+    let mut over = max.clone();
+    over["contact"]["dx_grid"] = json!("X".repeat(contact_http::SNAPSHOT_BYTES_MAX - size + 7));
+    assert_eq!(contact_http::admit(&over), Err("snapshot_limit"));
+    // Event payloads stay within 192 bytes.
+    let r = &f.state.recording;
+    assert!(contact_http::state_event(r, MAX_SAFE_TEST).len() <= 192);
+    // station.tick with its exact keys is at least 220 bytes at maximum values (two
+    // UUIDs, a 13-digit utc_ms); the model's StationTickEvent bound is 224 (#10 NOTES).
+    let tick = contact_http::tick_event(r).0;
+    let worst = tick
+        .replace("\"rx_level_db\":null", "\"rx_level_db\":90")
+        .replace("false", "true ");
+    assert!(worst.len() <= 224, "{worst}");
+}
+const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
+
+#[tokio::test]
+async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let rev = |v: &Value| v["contact_revision"].as_u64().unwrap();
+    let r0 = rev(&f.snapshot().await);
+    // Accepted: 202 exact receipt.
+    let body = f.body(r0, "set_report", json!({"report":-7}));
+    let (s, receipt, _, n) = f.call("POST", "/contact/command", Some(body.clone())).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
+    assert!(n <= 384);
+    assert_eq!(
+        keys(&receipt),
+        sorted(&[
+            "v",
+            "profile_id",
+            "boot_id",
+            "command_id",
+            "contact_revision",
+            "accepted"
+        ])
+    );
+    assert_eq!(receipt["accepted"], true);
+    let r1 = rev(&f.snapshot().await);
+    assert!(r1 > r0);
+    assert_eq!(f.snapshot().await["settings"]["report"], -7);
+    // Identical retained command_id: 200, the same receipt, no effect.
+    let (s, again, _, _) = f.call("POST", "/contact/command", Some(body.clone())).await;
+    assert_eq!((s, &again), (StatusCode::OK, &receipt));
+    assert_eq!(rev(&f.snapshot().await), r1);
+    // Same command_id, different body: state_conflict.
+    let mut changed = body.clone();
+    changed["report"] = json!(-8);
+    let (s, v, _, _) = f.call("POST", "/contact/command", Some(changed)).await;
+    assert_eq!(
+        (s, code(&v)),
+        (StatusCode::CONFLICT, ("state_conflict", Some("command_id")))
+    );
+    // Stale revision refused, except cancel, enable_tx false and tune false.
+    let (s, v, _, _) = f
+        .call(
+            "POST",
+            "/contact/command",
+            Some(f.body(r0, "set_report", json!({"report":-9}))),
+        )
+        .await;
+    assert_eq!(
+        (s, code(&v)),
+        (
+            StatusCode::CONFLICT,
+            ("stale_revision", Some("contact_revision"))
+        )
+    );
+    for (action, extra) in [
+        ("cancel", json!({})),
+        ("enable_tx", json!({"enabled":false})),
+        ("tune", json!({"enabled":false})),
+    ] {
+        let (s, v, _, _) = f
+            .call("POST", "/contact/command", Some(f.body(r0, action, extra)))
+            .await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{action} {v}");
+    }
+    let current = rev(&f.snapshot().await);
+    let (s, v, _, _) = f
+        .call(
+            "POST",
+            "/contact/command",
+            Some(f.body(current + 1, "cancel", json!({}))),
+        )
+        .await;
+    assert_eq!(
+        code(&v).0,
+        "stale_revision",
+        "{s}: a future revision is never admitted"
+    );
+    // Exact keys, enums, UUIDs, safe integers, version.
+    let base = f.body(current, "set_report", json!({"report":-5}));
+    let cases: Vec<(Value, &str, Option<&str>)> = vec![
+        ({let mut b = base.clone(); b.as_object_mut().unwrap().remove("report"); b}, "invalid_request", Some("report")),
+        ({let mut b = base.clone(); b["extra"] = json!(1); b}, "invalid_request", None),
+        ({let mut b = base.clone(); b["v"] = json!(2); b}, "unsupported_version", Some("v")),
+        ({let mut b = base.clone(); b["command_id"] = json!("not-a-uuid"); b}, "invalid_request", Some("command_id")),
+        ({let mut b = base.clone(); b["contact_revision"] = json!(9_007_199_254_740_992u64); b}, "invalid_request", Some("contact_revision")),
+        ({let mut b = base.clone(); b["action"] = json!("transmit_now"); b}, "invalid_request", Some("action")),
+        ({let mut b = base.clone(); b["profile_id"] = json!(profile::new_uuid().unwrap()); b}, "wrong_profile", Some("profile_id")),
+        ({let mut b = base.clone(); b["boot_id"] = json!(profile::new_uuid().unwrap()); b}, "state_conflict", Some("boot_id")),
+        (f.body(current, "set_report", json!({"report":50})), "invalid_report", None),
+        (f.body(current, "set_frequency", json!({"rx_hz":null,"tx_hz":199})), "out_of_range", None),
+        (f.body(current, "set_frequency", json!({"rx_hz":null,"tx_hz":2951})), "out_of_range", None),
+        (f.body(current, "set_frequency", json!({"rx_hz":3001,"tx_hz":null})), "out_of_range", None),
+        (f.body(current, "set_watchdogs", json!({"tx_minutes":0,"tune_seconds":90})), "out_of_range", None),
+        (f.body(current, "set_watchdogs", json!({"tx_minutes":6,"tune_seconds":301})), "out_of_range", None),
+        (f.body(current, "choose_next", json!({"slot":"tx7"})), "invalid_request", Some("slot")),
+        (f.body(current, "choose_next", json!({"slot":"tx2"})), "no_contact", None),
+        (f.body(current, "set_tx4", json!({"form":"r73"})), "invalid_request", Some("form")),
+        (f.body(current, "set_parity", json!({"parity":"first"})), "invalid_request", Some("parity")),
+        (f.body(current, "enter_dx", json!({"dx_call":"AB1","dx_grid":null,"replace":false})), "invalid_call", None),
+        (f.body(current, "enter_dx", json!({"dx_call":"DL1ABC","dx_grid":"SS00","replace":false})), "invalid_grid", None),
+        (f.body(current, "select_row", json!({"row":{"source_id":f.id,"job_id":f.id,"generation":1},"replace":false})), "invalid_request", Some("row")),
+        (f.body(current, "select_row", json!({"row":{"source_id":f.id,"job_id":f.id,"generation":1,"sequence":0},"replace":false})), "row_unavailable", Some("row")),
+        (f.body(current, "redecode", json!({})), "redecode_unavailable", None),
+        (f.body(current, "open_log", json!({})), "no_contact", None),
+        (f.body(current, "discard_review", json!({"contact_id":f.id})), "not_found", None),
+    ];
+    for (body, expected, field) in cases {
+        let (s, v, _, _) = f.call("POST", "/contact/command", Some(body.clone())).await;
+        assert_eq!(code(&v), (expected, field), "{s} {body}");
+        assert_eq!(
+            rev(&f.snapshot().await),
+            current,
+            "a refusal changes nothing: {body}"
+        );
+    }
+    // Barriers: Origin, media type, body size, query.
+    let ok = serde_json::to_vec(&f.body(current, "set_hold_tx", json!({"enabled":true}))).unwrap();
+    let (s, v, _, _) = f
+        .raw("POST", "/contact/command", None, Some(ok.clone()), &[])
+        .await;
+    assert_eq!((s, code(&v).0), (StatusCode::FORBIDDEN, "forbidden_origin"));
+    let (s, _, _, _) = f
+        .raw(
+            "POST",
+            "/contact/command",
+            Some(&f.origin),
+            Some(ok.clone()),
+            &[("content-type", "text/plain")],
+        )
+        .await;
+    assert_eq!(s, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let (s, _, _, _) = f
+        .raw(
+            "POST",
+            "/contact/command?x=1",
+            Some(&f.origin),
+            Some(ok.clone()),
+            &[],
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    // 1024 bytes admitted, 1025 refused.
+    let mut text = f.body(current, "edit_message", json!({"slot":"tx1","text":""}));
+    let size = serde_json::to_vec(&text).unwrap().len();
+    text["text"] = json!(" ".repeat(1024 - size));
+    let exact = serde_json::to_vec(&text).unwrap();
+    assert_eq!(exact.len(), 1024);
+    let (s, v, _, _) = f
+        .raw(
+            "POST",
+            "/contact/command",
+            Some(&f.origin),
+            Some(exact.clone()),
+            &[],
+        )
+        .await;
+    assert_ne!(s, StatusCode::PAYLOAD_TOO_LARGE, "{v}");
+    let mut over = exact.clone();
+    over.insert(over.len() - 2, b' ');
+    let (s, _, _, _) = f
+        .raw("POST", "/contact/command", Some(&f.origin), Some(over), &[])
+        .await;
+    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
+    // 16 receipts retained: the 17th oldest command_id is no longer a replay.
+    let first = f.body(
+        rev(&f.snapshot().await),
+        "set_hold_tx",
+        json!({"enabled":false}),
+    );
+    let (s, _, _, _) = f
+        .call("POST", "/contact/command", Some(first.clone()))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED);
+    for i in 0..16 {
+        let (s, v) = f.send("set_report", json!({"report":-(i % 20)})).await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    }
+    let (s, v, _, _) = f.call("POST", "/contact/command", Some(first)).await;
+    assert_eq!(
+        code(&v).0,
+        "stale_revision",
+        "{s}: evicted receipt is evaluated again"
+    );
+    // StatusReply is unchanged by the contact events.
+    assert_eq!(
+        keys(&reply(r#"{"v":1,"type":"station.get","id":1}"#)["data"]),
+        sorted(&["version", "radio"])
+    );
+}
+
+#[tokio::test]
+async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    let (source, job, generation) = r.fixture_live_job("ft8");
+    let now = now_ms();
+    let even = now.div_euclid(30_000) * 30_000;
+    let seq = r.fixture_publish_period(
+        &period_text(even),
+        vec![
+            record("CQ K1ABC FN42", 1234.6, Some(-12.4)),
+            record("CQ DL1ABC JO62", 800.0, Some(-3.0)),
+        ],
+    );
+    let mut hashed = record("CQ W1AW FN31", 500.0, None);
+    hashed["fields"]["from"] = json!({"kind":"hash","text":null,"hash_bits":22,"hash_value":12345});
+    let hash_seq = r.fixture_publish_period(&period_text(even), vec![hashed])[0];
+    f.tick();
+    let row = |sequence: u64| json!({"source_id":source,"job_id":job,"generation":generation,"sequence":sequence});
+    let (s, v) = f
+        .send("select_row", json!({"row":row(hash_seq),"replace":false}))
+        .await;
+    assert_eq!(
+        (s, code(&v).0),
+        (StatusCode::BAD_REQUEST, "row_not_standard")
+    );
+    let (s, v) = f.send("select_row", json!({"row":{"source_id":source,"job_id":profile::new_uuid().unwrap(),"generation":generation,"sequence":seq[0]},"replace":false})).await;
+    assert_eq!(
+        (s, code(&v).0),
+        (StatusCode::CONFLICT, "row_unavailable"),
+        "an old/other job tuple"
+    );
+    let (s, v) = f
+        .send("select_row", json!({"row":row(seq[0]),"replace":false}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    let c = &snap["contact"];
+    assert_eq!(
+        keys(c),
+        sorted(&[
+            "id",
+            "origin",
+            "dx_call",
+            "dx_grid",
+            "report_sent",
+            "report_rcvd",
+            "state",
+            "next_slot",
+            "tx4",
+            "messages",
+            "start_utc",
+            "end_utc",
+            "offered_for_log",
+            "saved"
+        ])
+    );
+    assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
+    assert_eq!(
+        (
+            c["dx_call"].as_str(),
+            c["dx_grid"].as_str(),
+            c["report_sent"].as_str()
+        ),
+        (Some("K1ABC"), Some("FN42"), Some("-12"))
+    );
+    assert_eq!(
+        (c["state"].as_str(), c["next_slot"].as_str()),
+        (Some("replying"), Some("tx1"))
+    );
+    assert_eq!(
+        c["messages"],
+        json!([
+            "K1ABC HB9BLA JN47",
+            "K1ABC HB9BLA -12",
+            "K1ABC HB9BLA R-12",
+            "K1ABC HB9BLA RRR",
+            "K1ABC HB9BLA 73",
+            "CQ HB9BLA JN47"
+        ])
+    );
+    assert_eq!(
+        (
+            snap["settings"]["rx_hz"].as_u64(),
+            snap["settings"]["tx_hz"].as_u64(),
+            snap["settings"]["parity"].as_str()
+        ),
+        (Some(1235), Some(1235), Some("odd"))
+    );
+    for _ in 0..5 {
+        f.tick();
+    }
+    let snap = f.snapshot().await;
+    assert_eq!(
+        snap["transmit"]["arm_state"], "disarmed",
+        "selection never arms"
+    );
+    assert_eq!(
+        snap["transmit"]["pending_sequence"],
+        Value::Null,
+        "no TransmitRequest"
+    );
+    // A different partner needs the explicit ChangeContact.
+    let (s, v) = f
+        .send("select_row", json!({"row":row(seq[1]),"replace":false}))
+        .await;
+    assert_eq!((s, code(&v).0), (StatusCode::CONFLICT, "contact_active"));
+    // Plaintext has no CL-022 grant: Enable Tx is transmit_unavailable.
+    let (s, v) = f.send("enable_tx", json!({"enabled":true})).await;
+    assert_eq!(
+        (s, code(&v).0),
+        (StatusCode::CONFLICT, "transmit_unavailable")
+    );
+    // With the test-only grant the explicit Enable Tx arms and one request is pending
+    // for the next odd period with the Tx1 text.
+    f.contact().grant.store(true, Ordering::SeqCst);
+    let (s, v) = f.send("enable_tx", json!({"enabled":true})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["transmit"]["arm_state"], "armed");
+    assert!(snap["transmit"]["pending_sequence"].is_u64(), "{snap}");
+    let pending = snap["transmit"]["pending_sequence"].clone();
+    // Reconnect/duplicate: the same command_id replays nothing; a fresh GET replays nothing.
+    for _ in 0..3 {
+        f.tick();
+        assert_eq!(f.snapshot().await["transmit"]["pending_sequence"], pending);
+    }
+    // Esc: halt (priority #9 route) first, then cancel.
+    let (s, v, _, _) = f.call("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let (s, _) = f.send("cancel", json!({})).await;
+    assert_eq!(s, StatusCode::ACCEPTED);
+    f.tick();
+    let snap = f.snapshot().await;
+    assert_eq!(
+        (
+            snap["transmit"]["arm_state"].as_str(),
+            snap["contact"]["state"].as_str()
+        ),
+        (Some("disarmed"), Some("cancelled"))
+    );
+    assert_eq!(snap["contact"]["dx_call"], Value::Null);
+    assert!(
+        f.bench.keys.lock().unwrap().iter().all(|on| !on),
+        "nothing was keyed before its period"
+    );
+}
+
+#[tokio::test]
+async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action() {
+    let f = fixture("http://127.0.0.1:18001", false);
+    f.contact().grant.store(true, Ordering::SeqCst);
+    let (s, v) = f
+        .send(
+            "enter_dx",
+            json!({"dx_call":"dl1abc","dx_grid":"JO62","replace":false}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["transmit"]["capability"], "unsupported");
+    assert_eq!(snap["contact"]["origin"], "manual_entry");
+    for (action, extra) in [
+        ("enable_tx", json!({"enabled":true})),
+        ("tune", json!({"enabled":true})),
+    ] {
+        let (s, v) = f.send(action, extra).await;
+        assert_eq!(
+            (s, code(&v).0),
+            (StatusCode::CONFLICT, "transmit_unavailable"),
+            "{action}"
+        );
+    }
+    let (s, _) = f.send("open_log", json!({})).await;
+    assert_eq!(s, StatusCode::ACCEPTED);
+    let review = f.snapshot().await["review"].clone();
+    assert_eq!(
+        keys(&review),
+        sorted(&["contact_id", "record", "outcome", "error"])
+    );
+    let mut expected: Vec<String> = crate::logbook::FIELDS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    expected.push("contact_id".into());
+    expected.sort();
+    assert_eq!(keys(&review["record"]), expected);
+    assert_eq!(review["outcome"], "unsaved");
+    assert_eq!(review["record"]["call"], "DL1ABC");
+    assert_eq!(review["record"]["station_callsign"], "HB9BLA");
+    assert_eq!(review["record"]["my_gridsquare"], "JN47AA");
+    assert_eq!(review["record"]["mode"], "FT8");
+    assert_eq!(
+        review["record"]["band"],
+        Value::Null,
+        "no confirmed dial: band absent"
+    );
+    // The review record is admissible to the existing SaveContact route as offered.
+    let (s, v, _, _) = f.call("POST", "/contacts", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"record":review["record"]}))).await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(
+        (
+            snap["review"]["outcome"].as_str(),
+            snap["contact"]["saved"].as_bool()
+        ),
+        (Some("saved"), Some(true))
+    );
+}
+
+#[test]
+fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
+    let sine = |amplitude: f64| -> (f64, u64) {
+        let n = 12_000u64;
+        let mut sum = 0.0;
+        for i in 0..n {
+            let s = (amplitude * (2.0 * std::f64::consts::PI * 1000.0 * i as f64 / 12_000.0).sin())
+                as f32;
+            let v = f64::from(s) * 32768.0;
+            sum += v * v;
+        }
+        (sum, n)
+    };
+    let (s, n) = sine(1.0);
+    assert_eq!(recording::rx_level_db(s, n), 87, "full-scale sine");
+    let (s, n) = sine(0.01);
+    assert_eq!(recording::rx_level_db(s, n), 47, "-40 dBFS sine");
+    assert_eq!(recording::rx_level_db(0.0, 12_000), 0, "silence clamped");
+    // Uniform noise of known power: mean(s^2) = A^2/3 with A = 0.1 -> 10log10(32768^2*0.01/3) = 65.5 -> 65 or 66.
+    let mut x: u64 = 1;
+    let mut sum = 0.0;
+    for _ in 0..120_000 {
+        x = x
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let u = ((x >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0;
+        let v = f64::from((0.1 * u) as f32) * 32768.0;
+        sum += v * v;
+    }
+    assert!((65..=66).contains(&recording::rx_level_db(sum, 120_000)));
+}
+
+/// TC-007-001/003/004, TC-010-008/009 in the real browser: launches
+/// tests/contact.test.cjs against this router with a request-recording peer.
+/// Mandatory release execution is registered as the contact-browser suite.
+#[cfg(not(debug_assertions))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn contact_browser_operating_flow() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let origin = format!("http://{address}");
+    let f = Arc::new(fixture(&origin, true));
+    f.contact().grant.store(true, Ordering::SeqCst);
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let _ = (&source, &job, generation);
+    let router = f.router.clone();
+    let service = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    // The station-wide contact step, as main() runs it.
+    let ticker = {
+        let f = f.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let state = f.state.clone();
+                let _ =
+                    tokio::task::spawn_blocking(move || contact_http::station_tick(&state)).await;
+            }
+        })
+    };
+    // Test-only control peer: publishes hand-authored periods on request.
+    let control = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let control_origin = format!("http://{}", control.local_addr().unwrap());
+    let publisher = f.clone();
+    let control_app = Router::new()
+        .route(
+            "/publish",
+            post(move |Json(body): Json<Value>| {
+                let f = publisher.clone();
+                async move {
+                    let period = body["period_ms"].as_i64().unwrap();
+                    let records = body["rows"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|r| {
+                            record(
+                                r["text"].as_str().unwrap(),
+                                r["hz"].as_f64().unwrap(),
+                                r["snr"].as_f64(),
+                            )
+                        })
+                        .collect();
+                    let sequences = f
+                        .state
+                        .recording
+                        .fixture_publish_period(&period_text(period), records);
+                    Json(json!({"sequences":sequences,"now_ms":now_ms()}))
+                }
+            }),
+        )
+        .route(
+            "/keys",
+            get({
+                let f = f.clone();
+                move || {
+                    let f = f.clone();
+                    async move { Json(json!(*f.bench.keys.lock().unwrap())) }
+                }
+            }),
+        );
+    let control_service = tokio::spawn(async move {
+        axum::serve(control, control_app).await.unwrap();
+    });
+    let outcome = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("node")
+            .args(["--test", "--test-concurrency=1", "tests/contact.test.cjs"])
+            .current_dir(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .unwrap(),
+            )
+            .env("WSTX_CONTACT_FIXTURE_ORIGIN", origin)
+            .env("WSTX_CONTACT_FIXTURE_CONTROL", control_origin)
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    ticker.abort();
+    service.abort();
+    control_service.abort();
+    assert!(
+        outcome.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&outcome.stdout),
+        String::from_utf8_lossy(&outcome.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&outcome.stdout));
+}

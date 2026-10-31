@@ -172,6 +172,14 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await page.waitForFunction(()=>!uncertainMutation&&!document.querySelector('#receive-start').disabled);
   assert.deepEqual(errors,[]);
 });
+// WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
+// aborts the contact but closes no panel; the region's Back control (keyboard) returns.
+async function returnToOperation(page){
+  const open=await page.locator('.op-secondary:not([hidden])').count();
+  await page.keyboard.press('Escape');
+  if(open)assert.equal(await page.locator('#operating-workspace').isVisible(),false,'Escape closes no panel');
+  if(open){await page.locator('.op-secondary:not([hidden]) .return-operate').focus();await page.keyboard.press('Enter');}
+}
 async function geometry(page){return page.evaluate(()=>{const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};return {bar:box('#station-bar'),signal:box('#signal'),split:box('#splitter'),workspace:box('#controls'),overflow:document.documentElement.scrollWidth>innerWidth};});}
 
 // Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 read-only layout subset.
@@ -181,7 +189,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station').textContent(),'HB9BLA <station>');
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
-  for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
   await page.getByRole('button',{name:'Station connection details',exact:true}).click();
   assert.match(await page.locator('#operating-capabilities').innerText(),/Audio.*unavailable/is);
@@ -221,7 +229,7 @@ test('TC-007-002 operating split and secondary regions remain accessible at narr
       await summary.focus();await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),false);
       await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
       assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
-      await page.keyboard.press('Escape');assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+      await returnToOperation(page);assert.equal(await page.locator('#operating-workspace').isVisible(),true);
       assert.equal(await page.locator(opener).evaluate(el=>document.activeElement===el),true);
     }
     assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
@@ -236,7 +244,7 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+box.height/2-40);await page.mouse.up();
   assert.ok(Number(await separator.getAttribute('aria-valuenow'))<before);
   await app.close();await page.locator('#connection[data-state=stale]').waitFor();
-  for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+  for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
   assert.ok(sent.some(m=>m.type==='station.get'),'recorder observes actual allowed station traffic');
   assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
 });
@@ -275,7 +283,8 @@ test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strate
  assert.equal(await page.locator('#audio-enumerate').isEnabled(),true,'read-only input listing is supported');
  assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/0\u20133000 Hz/,'fixed-band label retains correct Unicode text');
- assert.match(await page.locator('#radio-toolbar').innerText(),/Timing unavailable/);
+ // WstxContact::OperatorDisplays (D11): server UTC and period progress replace the former 'Timing unavailable'.
+ await page.locator('#radio-toolbar .op-period small').filter({hasText:/^\d{1,2}\/15/}).waitFor();assert.match(await page.locator('#radio-toolbar .op-period > span').textContent(),/^UTC \d\d:\d\d:\d\d$/);
  assert.match(await page.locator('#strategy-panel').innerText(),/No active definition/);
  assert.equal(await page.locator('tr[data-result-id]').count(),0);
  for(const width of [360,720,1200,1440,1499,1500,1600]){
@@ -293,19 +302,19 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push({method:r.method(),url:r.url()});});
  await page.keyboard.press('F2');assert.equal(await page.locator('#region-server-settings').isVisible(),true);
  await page.locator('#display-name').fill('Unsaved operator edit');
- await page.keyboard.press('Escape');assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+ await returnToOperation(page);assert.equal(await page.locator('#operating-workspace').isVisible(),true);
  await page.locator('#open-recordings').click();
  await page.locator('#recording-file').setInputFiles({name:'selected-but-not-imported.wav',mimeType:'audio/wav',buffer:Buffer.from('not imported')});
- await page.keyboard.press('Escape');
+ await returnToOperation(page);
  for(const name of ['logbook','strategies','client-preferences','help']){
   const button=page.locator(`#station-bar [data-region="${name}"]`);await button.focus();await page.keyboard.press('Enter');
   assert.equal(await page.locator(`#region-${name}`).isVisible(),true);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isDisabled(),true);
-  await page.keyboard.press('Escape');assert.equal(await button.evaluate(el=>document.activeElement===el),true);
+  await returnToOperation(page);assert.equal(await button.evaluate(el=>document.activeElement===el),true);
  }
  await page.locator('#open-server-settings').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
- await page.keyboard.press('Escape');await page.locator('#open-recordings').click();
+ await returnToOperation(page);await page.locator('#open-recordings').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
  assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations');
  assert.deepEqual(errors,[]);

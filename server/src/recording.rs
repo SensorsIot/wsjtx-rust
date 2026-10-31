@@ -258,6 +258,8 @@ pub struct Recording {
     cat: Mutex<crate::cat_lifecycle::Lifecycle>,
     /// WstxTransmit slice B transmit owner of this station, started once by the process.
     pub(crate) transmit: std::sync::OnceLock<Arc<crate::transmit_http::Station>>,
+    /// WstxContact engine of this station (#10), started once by the process.
+    pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     #[cfg(test)]
     cat_transport: Mutex<Option<CatTransport>>,
     #[cfg(test)]
@@ -299,8 +301,34 @@ struct LiveState {
     search_limited: bool,
     last_overrun: Option<(u64, u64)>,
     publication_error: Option<&'static str>,
+    /// WstxContact::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
+    /// full-scale units, sample count, window start) and the last published value.
+    level: (f64, u64, Option<Instant>, Option<i32>),
+}
+/// rxLevelDb = round(10 log10(mean(s^2))) with s scaled to 32768, clamped to 0..90.
+pub(crate) fn rx_level_db(sum_squares: f64, count: u64) -> i32 {
+    if count == 0 || sum_squares <= 0.0 {
+        return 0;
+    }
+    (10.0 * (sum_squares / count as f64).log10())
+        .round()
+        .clamp(0.0, 90.0) as i32
 }
 impl LiveState {
+    fn accumulate_level(&mut self, samples: &[f32], now: Instant) {
+        let (sum, count, since, _) = &mut self.level;
+        for s in samples {
+            let v = f64::from(*s) * 32768.0;
+            *sum += v * v;
+        }
+        *count += samples.len() as u64;
+        let start = *since.get_or_insert(now);
+        // At most one value per second (the status interval).
+        if now.duration_since(start) >= Duration::from_secs(1) {
+            let value = rx_level_db(*sum, *count);
+            self.level = (0.0, 0, Some(now), Some(value));
+        }
+    }
     fn clear_context(&mut self) {
         self.source = None;
         self.timing = None;
@@ -312,6 +340,7 @@ impl LiveState {
         self.search_limited = false;
         self.last_overrun = None;
         self.publication_error = None;
+        self.level = (0.0, 0, None, None);
     }
 }
 
@@ -388,6 +417,150 @@ impl Recording {
             "correlated":timing.is_some_and(|t|t.correlated),"utc_anchor":timing.and_then(|t|t.system_utc_anchor.as_ref()),
             "canonical_anchor_frame":timing.map(|t|t.canonical_anchor_frame),
             "uncertainty_ns":timing.and_then(|t|t.uncertainty_ns),"external_accuracy":"unknown"}})
+    }
+    /// The latest Rx level while audio runs (WstxContact::OperatorDisplays), else None.
+    pub(crate) fn rx_level(&self) -> Option<i32> {
+        let s = self.state.lock().unwrap();
+        let l = s.live.as_ref()?;
+        if l.audio.state == audio::AudioState::Running {
+            l.level.3
+        } else {
+            None
+        }
+    }
+    /// The live decoding job's identity (source, job, generation) and mode.
+    pub(crate) fn live_identity(&self) -> Option<(String, String, u64, &'static str)> {
+        let s = self.state.lock().unwrap();
+        let j = s.job.as_ref().filter(|j| j.kind == "live")?;
+        let l = s.live.as_ref()?;
+        let source = l.source.as_ref()?.source_id.clone();
+        matches!(l.mode, "ft8" | "ft4").then(|| (source, j.id.clone(), j.generation, l.mode))
+    }
+    /// Retained result records of the current live job with sequence >= `after` (all
+    /// retained ones when `identity` is not the current job).
+    pub(crate) fn live_records_after(
+        &self,
+        identity: Option<&(String, String, u64)>,
+        after: u64,
+    ) -> Option<((String, String, u64), &'static str, Vec<Value>)> {
+        let (source, job, generation, mode) = self.live_identity()?;
+        let current = (source, job, generation);
+        let from = if identity == Some(&current) { after } else { 0 };
+        let s = self.state.lock().unwrap();
+        let l = s.live.as_ref()?;
+        let skip = from.saturating_sub(l.first_sequence) as usize;
+        let records = l
+            .records
+            .iter()
+            .skip(skip)
+            .map(|(r, _)| r.clone())
+            .collect();
+        Some((current, mode, records))
+    }
+    /// One retained live result record by its full identity.
+    pub(crate) fn live_record(
+        &self,
+        source: &str,
+        job: &str,
+        generation: u64,
+        sequence: u64,
+    ) -> Option<(Value, &'static str)> {
+        let (s_id, j_id, g, mode) = self.live_identity()?;
+        if s_id != source || j_id != job || g != generation {
+            return None;
+        }
+        let s = self.state.lock().unwrap();
+        let l = s.live.as_ref()?;
+        if sequence < l.first_sequence {
+            return None;
+        }
+        l.records
+            .get((sequence - l.first_sequence) as usize)
+            .map(|(r, _)| (r.clone(), mode))
+    }
+    /// Test seam: an injected running live job whose result records the test publishes
+    /// itself (hand-authored rows; no decoder). Returns (source, job, generation).
+    #[cfg(test)]
+    pub(crate) fn fixture_live_job(&self, mode: &'static str) -> (String, String, u64) {
+        let mut s = self.state.lock().unwrap();
+        s.generation += 1;
+        let generation = s.generation;
+        let id = profile::new_uuid().unwrap();
+        let source_id = profile::new_uuid().unwrap();
+        s.job = Some(Job {
+            id: id.clone(),
+            source_id: Some(source_id.clone()),
+            generation,
+            kind: "live",
+            state: "running",
+            processed_frames: 0,
+            error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+        s.latest_decode = None;
+        s.live = Some(LiveState {
+            mode,
+            audio: audio::AudioStatus {
+                state: audio::AudioState::Running,
+                error: None,
+                retry_after_ms: None,
+            },
+            device_id: "fixture-contact-rows".into(),
+            source: Some(Arc::new(SourceDescriptor {
+                schema_version: 1,
+                profile_id: self.profile.clone(),
+                boot_id: self.boot.clone(),
+                source_id: source_id.clone(),
+                rate_hz: 12000,
+                channel: "mono_real",
+                total_frames: None,
+                utc_anchor: None,
+            })),
+            timing: None,
+            next_frame: 0,
+            records: VecDeque::new(),
+            record_bytes: 0,
+            first_sequence: 0,
+            next_sequence: 0,
+            search_limited: false,
+            last_overrun: None,
+            publication_error: None,
+            level: (0.0, 0, None, Some(47)),
+        });
+        (source_id, id, generation)
+    }
+    /// Test seam: publishes one period of fixture records (sequence assigned here) and
+    /// its latest-decode descriptor. Returns the assigned sequences.
+    #[cfg(test)]
+    pub(crate) fn fixture_publish_period(
+        &self,
+        period_start_utc: &str,
+        records: Vec<Value>,
+    ) -> Vec<u64> {
+        let mut s = self.state.lock().unwrap();
+        let counter = s.decode_counter + 1;
+        let l = s.live.as_mut().unwrap();
+        let first = l.next_sequence;
+        let mut sequences = Vec::new();
+        for mut record in records {
+            record["sequence"] = json!(l.next_sequence);
+            record["period_start_utc"] = json!(period_start_utc);
+            sequences.push(l.next_sequence);
+            let size = serde_json::to_vec(&record).unwrap().len();
+            l.records.push_back((record, size));
+            l.record_bytes += size;
+            l.next_sequence += 1;
+        }
+        let next = l.next_sequence;
+        s.decode_counter = counter;
+        s.latest_decode = Some(LatestDecode {
+            id: counter,
+            first_sequence: first,
+            next_sequence: next,
+            period_start_utc: Some(period_start_utc.into()),
+            complete: true,
+        });
+        sequences
     }
     pub fn receive_snapshot(&self) -> Value {
         self.live_view(&self.state.lock().unwrap())
@@ -587,6 +760,7 @@ impl Recording {
                 search_limited: false,
                 last_overrun: None,
                 publication_error: None,
+                level: (0.0, 0, None, None),
             });
         }
         let this = self.clone();
@@ -1913,6 +2087,7 @@ impl LiveWorker {
                 }
                 let l = s.live.as_mut().ok_or("state_conflict")?;
                 l.next_frame = next;
+                l.accumulate_level(&block.samples, Instant::now());
                 self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
                 if self.reset {
                     self.modem = None;
@@ -2446,6 +2621,7 @@ impl Recording {
                 boot,
                 cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
                 transmit: std::sync::OnceLock::new(),
+                contact: std::sync::OnceLock::new(),
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
                 #[cfg(test)]
@@ -2509,6 +2685,7 @@ impl Recording {
             boot,
             cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
             transmit: std::sync::OnceLock::new(),
+            contact: std::sync::OnceLock::new(),
             #[cfg(test)]
             cat_transport: Mutex::new(None),
             #[cfg(test)]

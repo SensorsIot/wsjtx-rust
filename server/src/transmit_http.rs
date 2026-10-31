@@ -193,6 +193,16 @@ impl Station {
             receipts: Mutex::new(VecDeque::new()),
         }))
     }
+    /// Test seam: the same station with injected hardware (virtual devices, no radio).
+    #[cfg(test)]
+    pub(crate) fn start_with(hardware: Box<dyn Hardware>) -> std::io::Result<Arc<Self>> {
+        Ok(Arc::new(Self {
+            inputs: Arc::new(Mutex::new(Inputs::default())),
+            slot: Arc::new(Mutex::new(None)),
+            service: Service::start(hardware)?,
+            receipts: Mutex::new(VecDeque::new()),
+        }))
+    }
     /// WstxTransmit::ExitRelease for process exit and panics: stop output and, only if
     /// the CI-V switch may be keyed, send one off-only release bounded to 500 ms. Uses
     /// try_lock only, so a panicking holder cannot deadlock it.

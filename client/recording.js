@@ -42,7 +42,7 @@ strategiesRegion.insertAdjacentHTML('beforeend','<div class="op-definition-grid"
 const logRegion=region('logbook','Logbook','Contact history and ADIF operations are unavailable until this station offers contact logging.');
 logRegion.insertAdjacentHTML('beforeend','<p>No server-confirmed contacts are available.</p><button type="button" disabled>Import ADIF</button> <button type="button" disabled>Export ADIF</button>');
 const helpRegion=region('help','Help','Operating controls use confirmed station capabilities. Unavailable controls do not send radio commands.');
-helpRegion.insertAdjacentHTML('beforeend','<dl><div><dt>F2</dt><dd>Open Server settings</dd></div><div><dt>Escape</dt><dd>Return to operation and restore focus</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the actual spectrum/waterfall</dd></div><div><dt>Waterfall arrows</dt><dd>Inspect measured bins and source time</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
+helpRegion.insertAdjacentHTML('beforeend','<dl><div><dt>F2</dt><dd>Open Server settings</dd></div><div><dt>Escape</dt><dd>Halt Tx and abort the contact (panels stay open; use Back to operation)</dd></div><div><dt>Alt+N / Alt+H / Alt+Q</dt><dd>Enable Tx / Halt Tx / Log QSO</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the actual spectrum/waterfall</dd></div><div><dt>Waterfall arrows</dt><dd>Inspect measured bins and source time</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
 secondary('station-settings','Station settings',document.querySelector('#profile-panel'),settingsRegion).open=true;
 const connectionDetails=secondary('connection-details','Connection details',controls.querySelector('section[aria-label="Station status"]'),connectionRegion);connectionDetails.open=true;
@@ -94,7 +94,7 @@ function showRegion(name,opener){
   else secondaryRegions.get(name).querySelector('.return-operate').focus();
 }
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
-addEventListener('keydown',event=>{if(event.key==='F2'){event.preventDefault();showRegion('server-settings',document.querySelector('#open-server-settings'));}else if(event.key==='Escape'&&currentRegion!=='operate'){event.preventDefault();showRegion('operate');}});
+addEventListener('keydown',event=>{if(event.key==='F2'){event.preventDefault();showRegion('server-settings',document.querySelector('#open-server-settings'));}});
 const profileSelect=document.querySelector('#display-profile');
 const defaultDisplayProfile=()=>'detail';
 const displayPreferenceKey=id=>`wstx.display-profile.v1:${id}`;
@@ -466,7 +466,7 @@ function receiveShow(){
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
     statusBar.children[1].textContent=`Audio ${live.audio.state} \u00b7 ${live.job?`${live.job.mode.toUpperCase()} ${live.job.state}`:'Receive stopped'} \u00b7 CAT unavailable`;
     const focus=document.querySelector('#rx-focus .op-contact-identity');
-    if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Contact selection and QSO workflow are unavailable on this server.';}
+    if(live.job&&live.job.mode!=='spectrum'&&!document.querySelector('#rx-focus').dataset.contact){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Select a decoded station or enter a DX call.';}
     else{focus.querySelector('strong').textContent='No station selected';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
   }
   operatingShow();

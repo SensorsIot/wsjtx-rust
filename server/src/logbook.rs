@@ -797,6 +797,11 @@ impl Logbook {
             inner.receipts.push_back(receipt);
         }
     }
+    /// Whether a record with this contact id is durably stored (review outcome).
+    pub fn saved(&self, contact_id: &str) -> bool {
+        self.lock()
+            .is_ok_and(|inner| inner.ids.contains_key(contact_id))
+    }
     pub fn total(&self) -> Result<usize, StoreError> {
         Ok(self.lock()?.records.len())
     }
