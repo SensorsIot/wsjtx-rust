@@ -3,6 +3,17 @@ use std::cell::Cell;
 
 thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
 
+pub(crate) fn with_fault<T>(stage: &'static str, action: impl FnOnce() -> T) -> T {
+    struct Restore(Option<&'static str>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            FAULT.set(self.0);
+        }
+    }
+    let _restore = Restore(FAULT.replace(Some(stage)));
+    action()
+}
+
 // Test-only I/O/crash seam: no configuration or fault switch exists in the binary.
 pub(super) fn checkpoint(stage: &'static str) -> std::io::Result<()> {
     if FAULT.get() == Some(stage) {
@@ -17,6 +28,48 @@ pub(super) fn checkpoint(stage: &'static str) -> std::io::Result<()> {
 
 fn independent_document() -> Document {
     serde_json::from_str(r#"{"schema_version":1,"profile_id":"00000000-0000-4000-8000-000000000001","revision":0,"display_name":"Station 1","callsign":"TEST1","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":"fixture-input-1","output_device":"fixture-output-1"},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}}"#).unwrap()
+}
+
+// CL-022-02: an expected private authorization record cannot be silently reset.
+// This uses only the preexisting Store API so the unchanged parent compiles and
+// fails on its actual accepted startup, rather than a missing new module/API.
+#[test]
+fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_files() {
+    for record in [None, Some(b"{corrupt".as_slice())] {
+        let directory =
+            std::env::temp_dir().join(format!("wstx-auth-startup-{}", new_uuid().unwrap()));
+        Store::create(&directory).unwrap();
+        let (store, _) = Store::open(&directory).unwrap();
+        let profile_id = store.document.profile_id.clone();
+        drop(store);
+        let original = fs::read(directory.join("profile.json")).unwrap();
+        let marker = format!(r#"{{"schema_version":1,"profile_id":"{profile_id}"}}"#);
+        fs::write(directory.join(".authorization-initialized.json"), &marker).unwrap();
+        if let Some(bytes) = record {
+            fs::write(directory.join("authorization.json"), bytes).unwrap();
+        }
+        let attempted = Store::open(&directory);
+        let rejected = matches!(attempted, Err("resource_unavailable"));
+        drop(attempted);
+        assert_eq!(fs::read(directory.join("profile.json")).unwrap(), original);
+        assert_eq!(
+            fs::read(directory.join(".authorization-initialized.json")).unwrap(),
+            marker.as_bytes()
+        );
+        if let Some(bytes) = record {
+            assert_eq!(
+                fs::read(directory.join("authorization.json")).unwrap(),
+                bytes
+            );
+        } else {
+            assert!(!directory.join("authorization.json").exists());
+        }
+        fs::remove_dir_all(directory).unwrap();
+        assert!(
+            rejected,
+            "startup accepted a missing/corrupt expected authorization record"
+        );
+    }
 }
 
 // Proves: FR-001, FR-016; CL-005-02, CL-005-05; TC-022-001, TC-022-002.

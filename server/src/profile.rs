@@ -9,7 +9,7 @@ use std::{
 
 #[cfg(test)]
 #[path = "profile_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 pub const MAX_REVISION: u64 = 9_007_199_254_740_991;
 pub const MAX_FILE: u64 = 16_384;
@@ -111,17 +111,25 @@ impl Settings {
                 return Err(field);
             }
         }
-        if !["disabled", "cat"].contains(&self.control.mode.as_str()) {
+        self.control.validate()
+    }
+}
+
+impl Control {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        let text = |s: &str, maximum| {
+            !s.is_empty() && s.len() <= maximum && !s.chars().any(char::is_control)
+        };
+        if !["disabled", "cat"].contains(&self.mode.as_str()) {
             return Err("control.mode");
         }
-        if (self.control.mode == "disabled" && self.control.endpoint.is_some())
-            || (self.control.mode == "cat"
-                && self.control.endpoint.as_ref().is_none_or(|s| !text(s, 256)))
+        if (self.mode == "disabled" && self.endpoint.is_some())
+            || (self.mode == "cat" && self.endpoint.as_ref().is_none_or(|s| !text(s, 256)))
         {
             return Err("control.endpoint");
         }
-        if !["disabled", "cat"].contains(&self.control.ptt.as_str())
-            || (self.control.ptt == "cat" && self.control.mode != "cat")
+        if !["disabled", "cat"].contains(&self.ptt.as_str())
+            || (self.ptt == "cat" && self.mode != "cat")
         {
             return Err("control.ptt");
         }
@@ -302,6 +310,46 @@ fn lock(path: &Path) -> Result<File, &'static str> {
     Ok(file)
 }
 impl Store {
+    /// The existing profile lock is also the only private authorization writer lock.
+    pub fn load_authorization(
+        &mut self,
+        initial: crate::authorization::Scope,
+    ) -> std::io::Result<crate::authorization::Record> {
+        if let Some(saved) = read_authorization(&self.directory, &self.document.profile_id)? {
+            return Ok(saved);
+        }
+        let mut initial = crate::authorization::Record::initial(initial)
+            .map_err(|_| std::io::Error::other("invalid authorization scope"))?;
+        initial.checked_control = self.document.control.clone();
+        initial
+            .validate(&self.document.profile_id)
+            .map_err(|_| std::io::Error::other("invalid authorization scope"))?;
+        // Marker first: interruption cannot turn an expected record into a new profile.
+        atomic_json(
+            &self.directory,
+            ".authorization-initialized.json",
+            &AuthorizationMarker {
+                schema_version: 1,
+                profile_id: self.document.profile_id.clone(),
+            },
+        )?;
+        atomic_json(&self.directory, "authorization.json", &initial)?;
+        Ok(initial)
+    }
+    pub fn save_authorization(
+        &mut self,
+        record: &crate::authorization::Record,
+    ) -> std::io::Result<()> {
+        record
+            .validate(&self.document.profile_id)
+            .map_err(|_| std::io::Error::other("invalid authorization record"))?;
+        if read_authorization(&self.directory, &self.document.profile_id)?.is_none() {
+            return Err(std::io::Error::other(
+                "authorization initialization missing",
+            ));
+        }
+        atomic_json(&self.directory, "authorization.json", record)
+    }
     pub fn create(directory: &Path) -> Result<(), &'static str> {
         fs::create_dir(directory).map_err(|_| "resource_unavailable")?;
         let document = Document::defaults().map_err(|_| "resource_unavailable")?;
@@ -327,6 +375,7 @@ impl Store {
         fs::create_dir_all(&identity_directory).map_err(|_| "resource_unavailable")?;
         let identity_lock =
             lock(&identity_directory.join(format!("{}.lock", document.profile_id)))?;
+        read_authorization(&directory, &document.profile_id).map_err(|_| "resource_unavailable")?;
         Ok((
             Self {
                 document,
@@ -350,6 +399,47 @@ impl Store {
         Ok(())
     }
 }
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorizationMarker {
+    schema_version: u8,
+    profile_id: String,
+}
+fn read_authorization(
+    directory: &Path,
+    profile_id: &str,
+) -> std::io::Result<Option<crate::authorization::Record>> {
+    use std::io::ErrorKind;
+    let marker = match fs::read(directory.join(".authorization-initialized.json")) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            return match fs::metadata(directory.join("authorization.json")) {
+                Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+                _ => Err(std::io::Error::other(
+                    "authorization initialization missing",
+                )),
+            };
+        }
+        Err(e) => return Err(e),
+    };
+    let marker: AuthorizationMarker = serde_json::from_slice(&marker)?;
+    if marker.schema_version != 1 || marker.profile_id != profile_id {
+        return Err(std::io::Error::other(
+            "invalid authorization initialization",
+        ));
+    }
+    let file = File::open(directory.join("authorization.json"))?;
+    let mut bytes = Vec::new();
+    file.take(4 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err(std::io::Error::other("invalid authorization record"));
+    }
+    let saved: crate::authorization::Record = serde_json::from_slice(&bytes)?;
+    saved
+        .validate(profile_id)
+        .map_err(|_| std::io::Error::other("invalid authorization record"))?;
+    Ok(Some(saved))
+}
 fn read_document(directory: &Path) -> Result<(Document, SocketAddr), &'static str> {
     let file = File::open(directory.join("profile.json")).map_err(|_| "resource_unavailable")?;
     let mut bytes = Vec::new();
@@ -363,7 +453,7 @@ fn read_document(directory: &Path) -> Result<(Document, SocketAddr), &'static st
     let address = document.validate()?;
     Ok((document, address))
 }
-fn write_document(path: &Path, document: &Document) -> std::io::Result<()> {
+fn write_document(path: &Path, document: &impl Serialize) -> std::io::Result<()> {
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     #[cfg(test)]
     tests::checkpoint("write")?;
@@ -374,6 +464,9 @@ fn write_document(path: &Path, document: &Document) -> std::io::Result<()> {
     file.sync_all()
 }
 fn atomic_write(directory: &Path, document: &Document) -> std::io::Result<()> {
+    atomic_json(directory, "profile.json", document)
+}
+fn atomic_json(directory: &Path, filename: &str, document: &impl Serialize) -> std::io::Result<()> {
     let temporary = directory.join(format!(".{}.tmp", new_uuid()?));
     let result = (|| {
         write_document(&temporary, document)?;
@@ -381,7 +474,7 @@ fn atomic_write(directory: &Path, document: &Document) -> std::io::Result<()> {
         tests::checkpoint("before_replace")?;
         #[cfg(test)]
         tests::checkpoint("replace")?;
-        fs::rename(&temporary, directory.join("profile.json"))?;
+        fs::rename(&temporary, directory.join(filename))?;
         #[cfg(test)]
         tests::checkpoint("after_replace")?;
         Ok(())

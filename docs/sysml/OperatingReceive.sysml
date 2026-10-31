@@ -324,7 +324,12 @@ package WstxOperatingReceive {
              /session, all nonGET including PUTprofile/POSToperations, /ws handshake or
              messages, auth/error/credential/authority responses are excluded. HEAD,
              no-body, existingContent-Encoding andContent-Range preserve original semantics.
-             Static /,/app.js,/recording.js,/style.css,/recording.css are excluded.
+             Static / is excluded. Static /app.js,/authorization.js,/recording.js,
+             /style.css,/recording.css (public, no secret or reflected input, so no
+             BREACH exposure) are gzip only when the pinned algorithm positively selects
+             gzip; every other negotiation, including all encodings forbidden, returns
+             the exact identity bytes, never406 (issue22 supervisor decision, CL-022-05
+             32kbit budget with the new authorization client).
              No lossy application codec, changed clocks, cached facts or blanket future
              TX/QSO/MCP compression permission. Re-review allowlist when responses gain secrets. */
     }

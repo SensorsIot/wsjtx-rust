@@ -231,7 +231,10 @@ async fn live_native_selection_tls_thin_and_off() {
         serde_json::to_vec(&document).unwrap(),
     )
     .unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
+    let (mut store, _) = profile::Store::open(&dir).unwrap();
+    // Selected HTTPS profile: browsers enroll real CL-022-01 grants through the token form.
+    let authorization =
+        crate::authorization_http::Service::initialize(&mut store, &origin).unwrap();
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
     recording.initialize_profile_revision(0);
     recording.fixture_inputs(inputs);
@@ -241,6 +244,7 @@ async fn live_native_selection_tls_thin_and_off() {
         origin: origin.clone(),
         profile: Some(Arc::new(ProfileState {
             store: Mutex::new(store),
+            authorization: Mutex::new(authorization),
             boot,
             recording: recording.clone(),
         })),
@@ -361,4 +365,10 @@ async fn live_native_selection_tls_thin_and_off() {
         "actual setup stays within existing5s bound"
     );
     assert!(released);
+}
+
+// Proves: CL-022-03; TC-022-007. Confirmation alone has zero native effects.
+#[tokio::test]
+async fn live_native_selection_commission_has_zero_native_effects() {
+    crate::auth_tests::commission_zero_native_io_case().await;
 }

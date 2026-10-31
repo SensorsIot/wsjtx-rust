@@ -36,7 +36,7 @@ pub fn error(code: &str) -> Response {
     };
     profile_error(status, code, None)
 }
-pub(crate) fn authorize(
+pub(crate) async fn authorize(
     app: &App,
     headers: &HeaderMap,
     mutation: bool,
@@ -47,8 +47,12 @@ pub(crate) fn authorize(
     if (mutation || headers.contains_key(header::ORIGIN)) && !allowed_origin(headers, app) {
         return Err("forbidden_origin");
     }
-    if !authenticated(headers, app) {
-        return Err("unauthorized");
+    if let Err(error) = authorization_http::operating_access_async(headers, app).await {
+        return Err(if error == authorization::Error::Unauthorized {
+            "unauthorized"
+        } else {
+            "storage_unavailable"
+        });
     }
     Ok(state.recording.clone())
 }
@@ -76,7 +80,7 @@ pub async fn snapshot(
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, false) {
+    let r = match authorize(&app, &headers, false).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };
@@ -121,7 +125,7 @@ pub async fn reserve(
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, true) {
+    let r = match authorize(&app, &headers, true).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };
@@ -145,7 +149,7 @@ pub async fn replay(
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, true) {
+    let r = match authorize(&app, &headers, true).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };
@@ -171,7 +175,7 @@ pub async fn import(
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, method != Method::GET) {
+    let r = match authorize(&app, &headers, method != Method::GET).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };
@@ -268,7 +272,7 @@ pub async fn cancel_job(
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, true) {
+    let r = match authorize(&app, &headers, true).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };

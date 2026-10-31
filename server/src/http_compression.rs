@@ -21,6 +21,59 @@ pub(crate) fn logical_cap(path: &str) -> Option<u64> {
     }
 }
 
+/// Public script/style assets carry no secret or reflected input, so compressing them has
+/// no BREACH exposure. They are gzip only when the client positively selects it; any other
+/// negotiation (including all encodings forbidden) keeps the exact identity bytes, never 406.
+const STATIC_ASSETS: [&str; 5] = [
+    "/app.js",
+    "/authorization.js",
+    "/recording.js",
+    "/style.css",
+    "/recording.css",
+];
+
+async fn encode_static(method: &Method, negotiation: HeaderMap, response: Response) -> Response {
+    if method != Method::GET || response.status() != StatusCode::OK {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, 1 << 20).await else {
+        return Response::from_parts(parts, Body::empty());
+    };
+    let identity = |parts| Response::from_parts(parts, Body::from(bytes.clone()));
+    let mut existing = Some(identity(parts.clone()));
+    let service = service_fn(move |_: Request| {
+        ready(Ok::<_, Infallible>(
+            existing.take().expect("one-shot response adapter"),
+        ))
+    });
+    let request = Request::builder()
+        .body(Body::empty())
+        .expect("fixed empty request");
+    let (mut request_parts, request_body) = request.into_parts();
+    request_parts.headers = negotiation;
+    let encoded = match CompressionLayer::new()
+        .gzip(true)
+        .compress_when(|_: StatusCode, _: Version, _: &HeaderMap, _: &Extensions| true)
+        .layer(service)
+        .oneshot(Request::from_parts(request_parts, request_body))
+        .await
+    {
+        Ok(response) => response.map(Body::new),
+        Err(never) => match never {},
+    };
+    if encoded.status() == StatusCode::OK
+        && encoded
+            .headers()
+            .get(header::CONTENT_ENCODING)
+            .is_some_and(|v| v == "gzip")
+    {
+        encoded
+    } else {
+        identity(parts)
+    }
+}
+
 pub(crate) async fn encode(request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_owned();
@@ -59,6 +112,9 @@ pub(crate) async fn encode_response(
     negotiation: HeaderMap,
     mut response: Response,
 ) -> Response {
+    if STATIC_ASSETS.contains(&path) {
+        return encode_static(method, negotiation, response).await;
+    }
     let Some(cap) = logical_cap(path) else {
         return response;
     };

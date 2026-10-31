@@ -834,6 +834,12 @@ package WstxRequirements {
              CL-005-05. **Level:** 2 — isolated automated tests.
              **Where:** Windows PC, N real server processes and separate real browser windows.
 
+             **Setup partition:** Operational browser windows and save/readiness regressions
+             use four saved HTTPS localhost endpoints and legitimate selected grants in one
+             browser context, per WstxProfiles::IndependentVerification. Plaintext trusted
+             numeric-loopback HTTP/launch compatibility is a separate mandatory companion,
+             not an operational configuration GUI or Connected/protected-WS prerequisite.
+
              **Steps:** Launch each table profile with `--profile`; open one window per recorded
              endpoint. Match every visible full UUID, display name, endpoint, boot ID and revision
              to its fixture; require N distinct boot IDs/listeners/PIDs. Refresh every window.
@@ -849,6 +855,14 @@ package WstxRequirements {
              serial/device access is attempted. The native option is visibly reserved/disabled.
              There is no four-entry ceiling. Check the form at desktop width and 360 px: identity,
              errors and Save remain readable/reachable with keyboard input.
+
+             **Plaintext API companion:** With trusted numeric loopback, no cookie and the
+             exact saved Origin where supplied, require GET/valid durable PUT200, identical
+             JSON keys/UUID/revision/settings/size expectations, ordered errors/domain/byte
+             boundaries, unchanged file bytes on rejection and exact durable fields on success.
+             Retain the complete validation matrix below in this companion AND current-grant
+             HTTPS protected ordered checks; no auth bypass or omitted existing variant.
+             Plaintext auth-v1/protected WS/native remain denied, never operational readiness.
 
              **Validation variants:** In one isolated profile, submit every editable field's empty,
              maximum and one-beyond-maximum value from 4.2, controls/newlines, malformed callsign/
@@ -871,8 +885,13 @@ package WstxRequirements {
              Repeat with the opposite response order on an unchanged revision-0 station: hold the
              Refresh response, complete the PUT and its follow-up revision-1 GET, then release the
              old response. Visible revision, saved fields and acknowledged-save feedback remain at
-             revision 1. A changed boot identity still permits restart/recovery resynchronization. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             revision 1. A changed boot identity still permits restart/recovery resynchronization.
+
+             **Automation coverage:** Existing companions retain the delivered profile,
+             domain/API and form-ordering subset. Operational HTTPS/grant fixture conversion
+             and complete separate plaintext plus protected-HTTPS validation coverage remain
+             pending; the expanded case is partial, without discarding existing assertions. */
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-01';
             verify 'CL-005-02';
@@ -891,6 +910,12 @@ package WstxRequirements {
              **Promises:** FR-001, FR-016, FR-022; CL-005-02, CL-005-04, CL-005-05.
              **Level:** 2 — isolated automated tests. **Where:** Windows PC, disposable storage,
              N real processes/windows. No full OS reboot is required or claimed by this case.
+
+             **Setup partition:** Browser saves, recovery and restart observations use the
+             common operational HTTPS/grant fixture; trusted plaintext loopback HTTP/startup
+             compatibility remains independently mandatory, including the complete validation,
+             error/storage/file invariants and exact8192 response-budget fixture. An ordinary
+             unchanged-bootstrap restart retains unrevoked grants, without enrollment replay.
 
              **Steps:** Create an additional profile with `--create-profile`, independently check
              all creation defaults and UUID v4, and verify creation exits without listening. Save
@@ -925,6 +950,8 @@ package WstxRequirements {
              a directory alias, absent parent on creation, existing empty/nonempty creation target,
              unknown/duplicate CLI flags and forbidden WSTX_BIND/WSTX_ORIGIN overrides. No fallback
              or mutation is permitted. This does not certify power-loss durability or WSJT-X migration.
+             The cross-field response-budget fixture remains plaintext numeric loopback with
+             an independently long saved Origin, not a protected browser/TLS/DNS/grant fixture.
              For the cross-field response budget, independently build the maximum-encoded-settings
              vector in 12.5. With the selected origin sized so its complete representation is exactly
              8,192 UTF-8 bytes, startup and GET succeed; save from revision 9,007,199,254,740,990 to
@@ -953,6 +980,11 @@ package WstxRequirements {
              **Level:** 2 — isolated automated tests. **Where:** Windows PC, N real server/browser
              instances, OS port reservations, ownership aliases/copies and disposable resource fixtures.
 
+             **Setup partition:** Operational windows use the common four-process HTTPS/
+             grant fixture; retain separate plaintext launch/configuration variants. Each
+             negative launch has otherwise valid transport-specific TLS/token inputs, so the
+             intended single fault is not replaced by a missing prerequisite or scheme mismatch.
+
              **Steps:** Stop profile 1 and query the other N-1 before, during and after its restart.
              While the original is running attempt: the same profile path, an alias to that directory,
              a copied directory retaining its UUID, and a new UUID/profile requesting an occupied
@@ -970,8 +1002,13 @@ package WstxRequirements {
              fault by 4.2's startup-error table; no readiness, browser attachment, settings rewrite
              or existing-session interruption occurs. Pre/post byte hashes of saved files agree.
              Killing a process releases its ownership claim; a stale marker alone does not own it.
-             A copied UUID is rejected until the owning process exits, irrespective of directory name. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             A copied UUID is rejected until the owning process exits, irrespective of directory name.
+
+             **Automation coverage:** Existing companions retain delivered profile launch,
+             fault and lifecycle-isolation subsets. The operational HTTPS/grant browser
+             fixture conversion and complete transport-partition companions remain pending;
+             the expanded case is partial, with every existing launch/error oracle retained. */
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-03';
             verify 'CL-005-04';
@@ -989,18 +1026,28 @@ package WstxRequirements {
              Independent contexts do not satisfy this case; tests never contact an external service.
 
              **Steps:** Before login request GET/PUT /profile and WebSocket upgrade without a cookie.
-             Log in successively to all N stations; fetch GET `/profile` using ordinary same-origin
-             browser fetch with no manually supplied Origin header and require 200. Inspect the cookie store by names/attributes only,
-             then Refresh and reconnect every window. Repeat logins in reverse order. Copy station
+             Fresh selected authorization at each station is session204, bootstrap-scope200
+             with non-null migrated scope, completed storage of key/grant/enrollment operation
+             IDs BEFORE enroll200, then challenge/proof204/status200. Session204 alone is not
+             ordinary permission. Initial migration assigns identity to existing selection even
+             with disabled control, but creates no grant/commission or native effects; explicit
+             removed/null scope cannot be invented or auto-added. Fetch GET `/profile` using
+             ordinary same-origin browser fetch with no manually supplied Origin and require200.
+             Inspect cookie names/attributes only, then Refresh/reconnect every window. Repeat
+             retained authorization in reverse order with proof/status, no token or enrollment
+             replay. Copy station
              1's token to station 2's login, cookie name/value to station 2's upgrade and /profile
              requests, and station 1's session value under station 2's expected cookie name. Supply
              a legacy `wstx_session` cookie and duplicate expected-name cookies. Exercise missing/
              wrong Origin on login, PUT and upgrade, including another station's port and an unrelated
-             origin. Explicitly revoke all grants only for profile 1, rotate its bootstrap token and restart;
+             origin. Operator bootstrap rotation is explicit profile revoke-all, unlike
+             transport-handle rotation/expiry or ordinary restart with unchanged bootstrap.
+             Require actual durable revoke-all commit/receipt for profile1, then rotate its
+             bootstrap token and restart; an environment-variable change alone is not proof;
              query other stations throughout. Run local and cross-station negatives with the same
              four-server fixture. Exercise namespaced transport-cookie expiry and automatic retained-key proof recovery without clearing others; ordinary restart does not revoke grants.
 
-             **Target amendment:** Existing executable companions prove the delivered isolation subset only; new persistent proof/revocation cases TC-022-006/007 remain planned.
+             **Delivered amendment:** the companion converts rotation to the actual revoke-all receipt then restart with a new token; the rejected browser makes no automatic retry, uses Forget to re-enroll with the new token, and Log out deletes its key/cookie while other profiles stay usable. Only setup calls count against the 10/60 budget (enrollment 3 admissions, retained proof none).
 
              **Oracle/outcome:** Exactly one expected namespaced session per logged-in UUID exists
              with the 12.1 attributes and no Domain attribute. All independent sessions survive other
@@ -1013,7 +1060,10 @@ package WstxRequirements {
              at their selected profile, and a different profile's UUID in the HTTP PUT body's
              `profile_id` is denied. Numeric WebSocket correlation IDs retain 12.2's unchanged
              connection-local meaning and are not profile identities. Verify 12.1's body
-             and per-process rate limits independently of other profiles. Same-host cookie transport
+             and per-process rate limits independently of other profiles. Count actual auth-v1
+             setup admissions (session/bootstrap-scope/enroll) under the10/60 budget and prove10 admitted/11th429 per
+             process in bounded fixture subcases; no production clock/rate switch, status poll
+             stream, relaxed deadline or omitted companion. Same-host cookie transport
              is explicitly observed; it is not proof against a hostile service on that hostname. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1029,7 +1079,10 @@ package WstxRequirements {
         doc /* #### TC-022-005 — Status readiness independent of settings transport
 
              Proves CL-005-02, CL-005-03 and CL-006-04. Level 2, automated Windows real Chromium/server
-             fixture in tests/profiles.test.cjs, using the common four-process profile fixture.
+             fixture in tests/profiles.test.cjs, using the common four-process operational
+             HTTPS/grant fixture before each relevant protected socket. Preserve separate
+             plaintext HTTP/launch compatibility; auth setup requests do not count as profile
+             GETs and auth status cannot replace correlated WS status.
              On an established socket hold GET /profile behind a controlled barrier, click Refresh,
              observe its actual correlated WebSocket status and require changed visible updated plus
              enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
@@ -1040,8 +1093,13 @@ package WstxRequirements {
              restore Connected, replace the newer profile snapshot or overwrite its form. Fail the
              initial/background GET separately: visible failure/stale, no false configuration success.
              Oracles are these independent canonical timing/identity expectations, real WS traffic and independently
-             prepared profile revisions; barrier release happens only after the status assertion. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             prepared profile revisions; barrier release happens only after the status assertion.
+
+             **Automation coverage:** Existing companions retain the delivered legacy
+             socket/settings-readiness subset. The operational HTTPS/grant fixture conversion
+             remains pending; the expanded case is partial, with every existing timing,
+             held-response, count and stale-form assertion retained. */
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-02';
             verify 'CL-005-03';
@@ -1660,17 +1718,22 @@ package WstxRequirements {
     dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
     dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
 
-    doc /* Issue22 target contract, not delivered behavior. CL-022-01..05 and
-         TC-022-006..010 are target/planned. Existing99 identities retain meaning and
-         numbering; the changed authentication expectations of TC-022-004 are partial
-         until its companions implement this contract. Independent exact meaning review,
-         supported-browser primitive evidence and source-scope admission precede coding.
-         No parser, model declaration or issue checkpoint proves execution/acceptance. */
+    doc /* Issue22 contract. Delivered (partial): CL-022-01 persistent browser key,
+         enrollment, challenge/proof transport, retained-key recovery and the
+         browser Log out / forget-rejected-credential actions; CL-022-02 durable
+         private record, revocation (logout, revoke-all), dispatch fencing of every
+         operating HTTP/WS effect under the authority lock, safety-revision
+         advance and the commissioning server API (POST /authorization/v1/commission
+         and the status condition). Still target: CL-022-02 explicit radio identity
+         Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
+         CL-022-03 commissioning UI and automatic read-only CAT lifecycle, CL-022-04
+         cadence and CL-022-05 health presentation; TC-022-008..010 stay planned.
+         Existing99 identities retain meaning and numbering. No parser, model
+         declaration or issue checkpoint proves execution/acceptance. */
     requirement 'CL-022-01' {
         doc /* Initial bootstrap authorization enrolls one browser proof key for an
              exact station/profile/radio tuple. Grant validity has no time expiry.
-             Target credential mechanism; independent meaning/security review is
-             required before implementation: browser creates an ECDSA P-256 signing key through WebCrypto;
+             Delivered credential mechanism: browser creates an ECDSA P-256 signing key through WebCrypto;
              private CryptoKey extractable=false, usages=sign only, persisted solely
              in origin-scoped IndexedDB. Public verifier and random grant identifier
              are enrolled over TLS after existing raw-token authorization succeeds.
@@ -1707,6 +1770,12 @@ package WstxRequirements {
              Exact Origin is required on enrollment/challenge/proof/revocation; no
              credentialed CORS. Preserve existing TLS and10attempts/60seconds per
              process admission ceiling and1024-byte authentication payload cap.
+             Decision (issue22 supervisor): that ceiling is the SETUP budget and counts
+             only POST /session, bootstrap-scope and enroll. Grant operations
+             (challenge, proof, status, receipt, revoke, commission) never spend it, so
+             several browsers can enroll and reconnect at once; they stay bounded by
+             the64 pending one-use60s challenges (429 on saturation), one transport
+             per grant, proof-of-key and the1024-byte cap.
              New strict typed auth payloads/endpoints are explicit canonical API
              additions, not extra keys silently accepted by old POST /session.
              Cookie missing/duplicate/malformed/wrong profile remains401; automatic
@@ -1715,8 +1784,18 @@ package WstxRequirements {
              challenge saturation fails closed429, new enrollment beyond grant cap
              fails explicitly and never expires/evicts an existing unrevoked grant.
              Expired/consumed challenges and expired transport handles are removed;
-             no background elapsed-time deletion of active grant verifiers. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             no background elapsed-time deletion of active grant verifiers.
+             Rejected or lost credentials are terminal for automatic recovery: a
+             retained-rejected, invalid or missing credential is never retried
+             without an operator action, so it cannot spam challenges or drain any
+             admission bound; transient failures back off exponentially to60s.
+             Browser Log out revokes this grant (revoke all_for_radio=false), then
+             deletes the local key after the committed receipt; the server clears
+             the transport cookie. A confirmed rejected/invalid retained credential
+             offers 'Forget this browser credential and authorize again', which
+             deletes only the local key and shows the bootstrap token form. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "client/authorization.js; client/app.js; server/src/authorization.rs; server/src/authorization_http.rs";
     }
     dependency CL_022_01_to_FR_019 from 'CL-022-01' to 'FR-019';
     dependency CL_022_01_to_FR_021 from 'CL-022-01' to 'FR-021';
@@ -1776,8 +1855,9 @@ package WstxRequirements {
 
              Station authority serializes grant validation and protected-effect
              dispatch with selection/revocation transitions. The revocation commit is
-             the linearization point: queued effects not dispatched before it are
-             rejected; already-dispatched I/O cannot be retroactively undone and is
+             the linearization point: effects whose request has not passed the locked
+             admission check before it are rejected (see accepted bound below for an
+             admitted request still in flight); already-dispatched I/O cannot be retroactively undone and is
              cancelled using existing acknowledged-release rules without unsafe replay.
              Existing affected sockets close and new HTTP/WS effects fail. Revocation
              write failure quarantines affected access in memory immediately, reports
@@ -1786,8 +1866,21 @@ package WstxRequirements {
              Lost acknowledgement uses idempotent operation ID and read-only receipt
              reconciliation; no blind new enrollment or mutation replay. If response
              reconciliation is unavailable, browser stays unauthorized/unknown until
-             resolved. Server restart reloads only committed state. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             resolved. Server restart reloads only committed state.
+             Delivered: durable record, logout/revoke-all, a locked admission check of
+             every operating HTTP route and WS upgrade, WS-message rechecks of an earlier
+             admitted grant, safety-revision advance and the commissioning server API.
+             Explicit Add/Replace/Remove remains target.
+             Accepted bound: an operating HTTP request is admitted by validating its
+             transport (scope, grant, current revocation generation) under the authority
+             lock; the lock is then released. Such an admitted request may still be
+             queued (body parsing, the recording/native owner lock, the blocking pool)
+             when a revocation commits. It is not re-checked, refused or undone: at most
+             one in-flight effect per admitted request follows, under the existing
+             cancellation/release rules. Every request admitted after the commit is
+             refused, and the affected WS closes before its next message. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
     }
     dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
     dependency CL_022_02_to_FR_021 from 'CL-022-02' to 'FR-021';
@@ -1881,6 +1974,24 @@ package WstxRequirements {
              Full status still includes bounded receive/error fields within1024, not
              truncation or a weakened origin/profile domain. Whitespace-padded request
              exactly1024 accepted when otherwise valid,1025 rejected before effects.
+             Independently count volatile transport entries: two valid proofs for A
+             leave exactly one current handle, old cookie401/new cookie200, B unchanged;
+             <=64 entries, no verifier eviction. Verify durable verifier/receipt bytes,
+             revocation generation and commissioning unchanged, with zero independently
+             counted native open/query/set/PTT/close effects. Invalid/replayed/expired/
+             wrong-Origin/wrong-scope proof and failed randomness/response preparation
+             retain the prior current handle. Receipt-purpose proof never rotates it.
+             At exact monotonic28800 expiry only transport becomes unusable; purge and
+             restart retain grants/receipts/commissioning. Use two ACTUAL tabs sharing
+             one context to overlap valid proofs and hold/reverse Set-Cookie responses:
+             last committed proof owns the sole handle, while late delivery can yield401.
+             Include lost204, existing openWS and queued user mutation; after held
+             responses quiesce, fresh proof AND protected read-only status restore the
+             shared cookie without key deletion/token prompt or automatic mutation
+             replay. UI truth remains<=2s; rotation alone does not revoke an existing
+             WS grant or disconnect CAT/audio, while actual revoke still fences effects
+             and closes affected WS. Same-document readiness sharing is not a claimed
+             cross-tab lock; keep rate10/60 and all other caps/budgets unchanged.
              Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
@@ -1903,8 +2014,12 @@ package WstxRequirements {
              proof establishes readiness. Contrast pre-commit failure: no retained
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
-             Planned companions: tests/profiles.test.cjs and tests/communication.test.cjs; no executable binding is claimed yet. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Automated companions: tests/profiles.test.cjs TC-022-006 cases and
+             server/src/auth_tests.rs, including plaintext runtime-token operating
+             access. Radio identity Add/Replace and injected-time restart subsets
+             remain pending. */
+        attribute automation : AutomationState = AutomationState::partial;
+        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
         objective {
             verify 'CL-022-01';
             verify 'CL-022-02';
@@ -1940,8 +2055,13 @@ package WstxRequirements {
              failure/restart and verify documented last-committed-state limitation and
              failclosed current process. Cap64 grants without evicting active grants;
              delete verifier and replay old proof/cookie: rejected, no tombstone growth.
-             Planned companions: tests/profiles.test.cjs, server/src/auth_tests.rs and station-authority unit tests; no executable binding is claimed yet. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Automated: server/src/auth_tests.rs (logout/revoke fencing of every
+             operating HTTP route and WS upgrade, foreign grant refusal, commission
+             receipts) and station-authority unit tests; tests/profiles.test.cjs
+             TC-022-004 covers browser logout and revoke-all. Radio identity
+             add/replace/remove cases remain pending with that target slice. */
+        attribute automation : AutomationState = AutomationState::partial;
+        attribute executable : String = "server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
             verify 'CL-022-02';
         }
