@@ -171,6 +171,8 @@ test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeo
   const mark=requests.length;
   await page.keyboard.press('Escape');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt without snapshot');
+  await new Promise(r=>setTimeout(r,500));
+  assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'exactly one halt per Esc');
   const halt=JSON.parse(requests.slice(mark).find(r=>r.path==='/transmit/halt').body);
   const live=await (await fetch(origin+'/receive')).json();
   assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
@@ -187,4 +189,30 @@ test('TC-007-002 a pointer action outside an open region returns to operation',{
   await page.locator('#operating-workspace').waitFor({state:'visible'});
   assert.equal(await page.locator('#region-help').isVisible(),false);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
+});
+
+// Re-check item 2: the keyboard halt does not wait for contact.js (loaded after the first
+// state reads); one Esc sends exactly one halt before and after that load.
+test('TC-007-004 Esc halts once before and once after the contact client loads',{timeout:60000},async()=>{
+  // Hold /contact.js so the first Esc happens deterministically before it loads.
+  let release;const held=new Promise(r=>release=r);
+  await page.route('**/contact.js',route=>held.then(()=>route.continue()).catch(()=>{}));
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await waitFor(()=>requests.some(r=>r.path==='/contact.js'&&r.end===null),'contact.js requested and held');
+  assert.equal(await page.evaluate(()=>!!window.wstxContact),false,'contact.js not loaded yet');
+  const start=requests.length;
+  await page.keyboard.press('Escape');
+  await waitFor(()=>requests.slice(start).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt before contact.js');
+  await new Promise(r=>setTimeout(r,500));
+  assert.equal(requests.slice(start).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1);
+  release();
+  await waitFor(()=>page.evaluate(()=>!!window.wstxContact),'contact.js loaded');
+  await page.unroute('**/contact.js');
+  await page.locator('#contact-enable').waitFor({state:'attached'});
+  const mark=requests.length;
+  await page.keyboard.press('Escape');
+  await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt after contact.js');
+  await new Promise(r=>setTimeout(r,800));
+  assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'contact.js sends no second halt');
+  assert.deepEqual(page.errors,[]);
 });

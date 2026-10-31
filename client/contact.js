@@ -56,19 +56,15 @@ async function sendNow(action,params={},label=action){
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
   finally{sending=false;await load();}
 }
-// Halt is skipped only when the station is known to be receive-only; with the contact
-// snapshot unknown (not loaded, or GET /contact failing) it is always sent.
-async function haltTx(){
-  if(snap&&snap.transmit.capability==='unsupported')return false;
-  const station=snap?{profile_id:snap.profile_id,boot_id:snap.boot_id}:profileData?{profile_id:profileData.profile_id,boot_id:profileData.boot_id}:null;
-  if(!station){resultText.textContent='Halt not sent · station identity unknown';return false;}
-  try{
-    const response=await stationFetch('/transmit/halt',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...station,command_id:crypto.randomUUID()}),signal:AbortSignal.timeout(5000)});
-    const data=await response.json().catch(()=>null);
-    resultText.textContent=response.status===202?`Halt: ${data?.halt_state==='stopped'?'stopped (confirmed)':data?.halt_state==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`:`Halt refused · ${data?.error?.code??response.status}`;
-  }catch(error){resultText.textContent=`Halt not confirmed · ${error.message}`;}
-  return true;
-}
+// The keyboard halt itself (Esc, Alt+H) is sent by recording.js, which is loaded at
+// once; this client only shows its outcome and adds the Esc contact cancellation.
+addEventListener('keyboard-halt',event=>{
+  const h=event.detail?.reply?.halt_state;
+  if(h)resultText.textContent=`Halt: ${h==='stopped'?'stopped (confirmed)':h==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`;
+  // Esc: the contact cancellation follows the answered (or skipped) halt.
+  const c=snap?.contact;
+  if(event.detail?.escape&&c&&!['idle','cancelled','completed'].includes(c.state))send('cancel',{},'Cancel contact');else load();
+});
 // ---------------------------------------------------------------- render
 const stateText={idle:'Idle',calling:'Calling CQ',replying:'Replying',report:'Sending report',roger_report:'Sending R+report',rogers:'Sending acknowledgement',signoff:'Signing off',completed:'Completed',cancelled:'Cancelled'};
 function setValue(input,value){if(document.activeElement!==input)input.value=value??'';}
@@ -168,13 +164,12 @@ $('contact-discard').addEventListener('click',()=>{const id=snap?.review?.contac
 addEventListener('keydown',event=>{
   if(event.key==='Escape'){
     event.preventDefault();
-    (async()=>{await haltTx();const c=snap?.contact;if(c&&!['idle','cancelled','completed'].includes(c.state))await send('cancel',{},'Cancel contact');})();
+    // The halt and then the cancellation run from the 'keyboard-halt' event above.
     return;
   }
   if(!event.altKey||event.ctrlKey||event.metaKey)return;
   const key=event.key.toLowerCase();
-  if(key==='h'){event.preventDefault();haltTx();}
-  else if(key==='n'&&transmitCapable()){event.preventDefault();$('contact-enable').click();}
+  if(key==='n'&&transmitCapable()){event.preventDefault();$('contact-enable').click();}
   else if(key==='q'){event.preventDefault();logQso();}
 },true);
 // ---------------------------------------------------------------- Band Activity selection

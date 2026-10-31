@@ -117,6 +117,13 @@ pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
     let doc = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Contact fixture",
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":bind,"origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
+    // A transmit-capable fixture is configured for CAT PTT, as a real one would be (the
+    // CAT lifecycle does not run in these tests; the transmit owner uses the double).
+    let mut doc = doc;
+    if transmit {
+        doc["audio"]["output_device"] = json!("fixture-output-device");
+        doc["control"] = json!({"mode":"cat","endpoint":"icom7300://COM250","ptt":"cat"});
+    }
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
     let (store, _) = profile::Store::open(&dir).unwrap();
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());

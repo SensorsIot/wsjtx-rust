@@ -336,7 +336,11 @@ package WstxContact {
              as MW keyPressEvent ~3683 (abortQSO); D5: Esc acts on every page state and
              in every focused field and closes no panel. With no transmit capability
              (receive-only station) Esc only cancels the contact and sends no halt.
-             Shown as halted only after #9 confirms; until then pending/unknown. */
+             Shown as halted only after #9 confirms; until then pending/unknown. The
+             keyboard halt is sent by the always-loaded page script (never waiting for
+             the contact client), skipped only when the station is known receive-only;
+             the Esc cancellation follows the answered halt. Esc on a completed contact
+             only selects Tx6 and keeps its fields (Log QSO still works). */
     }
 
     // ---------------------------------------------------------------- watchdogs

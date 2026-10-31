@@ -873,3 +873,19 @@ halt.addEventListener('click',async()=>{
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
   transmitSync();
 });
+// WstxContact::HaltTx: Esc and Alt+H send #9's priority halt from this always-loaded
+// script, in every page state and focused field. Skipped only when the station is known
+// receive-only (the contact snapshot says unsupported, or without one the profile has
+// no CAT PTT). contact.js adds only the contact cancellation for Esc.
+function keyboardHaltSkipped(){const s=window.wstxContact?.snapshot?.();return s?s.transmit.capability==='unsupported':!transmitConfigured();}
+addEventListener('keydown',event=>{
+  const altH=event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='h';
+  if(event.key!=='Escape'&&!altH)return;
+  event.preventDefault();
+  // 'keyboard-halt' tells contact.js when the halt was answered (or skipped), so the Esc
+  // contact cancellation always follows it.
+  const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{escape:event.key==='Escape',reply}}));
+  if(!profileData||keyboardHaltSkipped()){done(null);return;}
+  const result=document.querySelector('#transmit-result');
+  transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
+},true);
