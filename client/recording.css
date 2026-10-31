@@ -195,3 +195,4 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .op-input-meter[data-level=high] strong,.op-input-meter[data-level=low] strong{color:#ffb040}
 #band-activity tr[data-sequence]{cursor:pointer}
 #band-activity tr[data-sequence]:focus{outline:2px solid #e0a030;outline-offset:-2px}
+.ct-station-tx{font-size:var(--op-font-secondary);color:#c9d7df;min-width:0;max-width:18rem;overflow-wrap:anywhere}

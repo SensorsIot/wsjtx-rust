@@ -305,6 +305,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
             "last_text",
             "last_period_utc",
             "halt_state",
+            "safety_revision",
             "refusal"
         ])
     );
@@ -353,7 +354,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     let max = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"contact_revision":MAX_SAFE_TEST,"snapshot_sequence":MAX_SAFE_TEST,
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
-            "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","refusal":"clock_not_synchronized"},
+            "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
         "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
@@ -435,7 +436,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
     );
     for (action, extra) in [
         ("cancel", json!({})),
-        ("enable_tx", json!({"enabled":false})),
+        ("enable_tx", json!({"enabled":false,"safety_revision":null})),
         ("tune", json!({"enabled":false})),
     ] {
         let (s, v, _, _) = f
@@ -633,8 +634,9 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             c["dx_grid"].as_str(),
             c["report_sent"].as_str()
         ),
-        (Some("K1ABC"), Some("FN42"), Some("-12"))
+        (Some("K1ABC"), Some("FN42"), None)
     );
+    // RST_SENT is the report actually sent: none yet (planned Tx2 text holds -12).
     assert_eq!(
         (c["state"].as_str(), c["next_slot"].as_str()),
         (Some("replying"), Some("tx1"))
@@ -677,7 +679,9 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
         .await;
     assert_eq!((s, code(&v).0), (StatusCode::CONFLICT, "contact_active"));
     // Plaintext has no CL-022 grant: Enable Tx is transmit_unavailable.
-    let (s, v) = f.send("enable_tx", json!({"enabled":true})).await;
+    let (s, v) = f
+        .send("enable_tx", json!({"enabled":true,"safety_revision":3}))
+        .await;
     assert_eq!(
         (s, code(&v).0),
         (StatusCode::CONFLICT, "transmit_unavailable")
@@ -685,7 +689,28 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
     // With the test-only grant the explicit Enable Tx arms and one request is pending
     // for the next odd period with the Tx1 text.
     f.contact().grant.store(true, Ordering::SeqCst);
-    let (s, v) = f.send("enable_tx", json!({"enabled":true})).await;
+    for (wrong, field) in [
+        (json!(2), "safety_revision"),
+        (Value::Null, "safety_revision"),
+    ] {
+        let (s, v) = f
+            .send("enable_tx", json!({"enabled":true,"safety_revision":wrong}))
+            .await;
+        assert_eq!(
+            (s, code(&v)),
+            (StatusCode::CONFLICT, ("stale_revision", Some(field))),
+            "Enable Tx needs the current CL-022 safety revision"
+        );
+    }
+    let shown = f.snapshot().await["transmit"]["safety_revision"].clone();
+    assert_eq!(
+        shown,
+        json!(3),
+        "the snapshot shows the current safety revision"
+    );
+    let (s, v) = f
+        .send("enable_tx", json!({"enabled":true,"safety_revision":shown}))
+        .await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
     let snap = f.snapshot().await;
     assert_eq!(snap["transmit"]["arm_state"], "armed");
@@ -732,7 +757,7 @@ async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action
     assert_eq!(snap["transmit"]["capability"], "unsupported");
     assert_eq!(snap["contact"]["origin"], "manual_entry");
     for (action, extra) in [
-        ("enable_tx", json!({"enabled":true})),
+        ("enable_tx", json!({"enabled":true,"safety_revision":null})),
         ("tune", json!({"enabled":true})),
     ] {
         let (s, v) = f.send(action, extra).await;

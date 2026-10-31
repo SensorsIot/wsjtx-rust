@@ -17,7 +17,7 @@ body.insertAdjacentHTML('beforeend',`<div class="ct-dx"><label>DX Call<input id=
 <div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1"><span>dB</span></label><label>Rx audio<input id="contact-rx" type="number" min="0" max="3000" step="1"><span>Hz</span></label><label>Tx audio<input id="contact-tx" type="number" min="200" max="2950" step="1"><span>Hz</span></label><label class="op-check"><input type="checkbox" id="contact-hold">Hold Tx</label><label>Tx period<select id="contact-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label></div>
 <p class="ct-tx"><span>NEXT</span> <strong id="contact-next">None</strong> <span>LAST SENT</span> <strong id="contact-last">None</strong></p>
 <div class="op-auto-row"><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-tune" disabled>Tune</button><span id="contact-watchdog" class="op-muted"></span></div>
-<div class="op-contact-actions"><button type="button" id="contact-enable" class="op-primary" disabled aria-pressed="false" aria-describedby="transmit-unavailable" title="Enable Tx (Alt+N)"><span aria-hidden="true">&#9655;</span>Enable Tx</button><button type="button" id="contact-cancel" disabled>Cancel contact</button><button type="button" id="contact-log" disabled aria-describedby="contact-unavailable" title="Log QSO (Alt+Q)">Log QSO</button></div>
+<div class="op-contact-actions"><button type="button" id="contact-enable" class="op-primary" disabled aria-pressed="false" aria-describedby="transmit-unavailable" title="Enable Tx (Alt+N)"><span aria-hidden="true">&#9655;</span>Enable Tx</button><button type="button" id="contact-cancel" disabled>Cancel contact</button><button type="button" id="contact-log" disabled aria-describedby="contact-unavailable" title="Log QSO (Alt+Q)">Log QSO</button><button type="button" id="contact-discard" hidden>Discard log review</button></div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
 <section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Rx Frequency <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button><button type="button" id="rx-pane-erase">Erase</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="Rx Frequency messages"><table aria-label="Rx Frequency messages"><tbody id="rx-pane-rows"></tbody></table></div></section>`);
 const $=id=>document.getElementById(id);
@@ -56,10 +56,14 @@ async function sendNow(action,params={},label=action){
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
   finally{sending=false;await load();}
 }
+// Halt is skipped only when the station is known to be receive-only; with the contact
+// snapshot unknown (not loaded, or GET /contact failing) it is always sent.
 async function haltTx(){
-  if(!transmitCapable())return false;
+  if(snap&&snap.transmit.capability==='unsupported')return false;
+  const station=snap?{profile_id:snap.profile_id,boot_id:snap.boot_id}:profileData?{profile_id:profileData.profile_id,boot_id:profileData.boot_id}:null;
+  if(!station){resultText.textContent='Halt not sent · station identity unknown';return false;}
   try{
-    const response=await stationFetch('/transmit/halt',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({...ids(),command_id:crypto.randomUUID()}),signal:AbortSignal.timeout(5000)});
+    const response=await stationFetch('/transmit/halt',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...station,command_id:crypto.randomUUID()}),signal:AbortSignal.timeout(5000)});
     const data=await response.json().catch(()=>null);
     resultText.textContent=response.status===202?`Halt: ${data?.halt_state==='stopped'?'stopped (confirmed)':data?.halt_state==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`:`Halt refused · ${data?.error?.code??response.status}`;
   }catch(error){resultText.textContent=`Halt not confirmed · ${error.message}`;}
@@ -100,9 +104,27 @@ function render(){
   if(snap)$('contact-state').textContent+=problem+halt;
   markers();
   if(t?.last_text&&t.last_period_utc&&lastTx!==`${t.last_period_utc}/${t.last_text}`){if(lastTx!==null)paneTx(t.last_text,t.last_period_utc);lastTx=`${t.last_period_utc}/${t.last_text}`;}
+  const pendingReview=snap?.review&&snap.review.outcome!=='saved';const discard=$('contact-discard');discard.hidden=!pendingReview;
+  if(pendingReview)discard.textContent=`Discard log review ${snap.review.record.call}`;
+  stationTx();
   const review=snap?.review;
   if(review&&!openedReviews.has(review.contact_id)&&review.outcome!=='saved'&&window.wstxLogbook){openedReviews.add(review.contact_id);window.wstxLogbook.openReview(review.record);}
 }
+// Compact transmit state in the station bar, visible in every region (review decision 5).
+const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
+document.querySelector('#halt-tx')?.before(stationTxNode);
+function stationTx(){
+  const t=snap?.transmit,capable=transmitCapable();stationTxNode.hidden=!capable;if(!capable)return;
+  const wd=snap.watchdog,armed=t.arm_state==='armed';
+  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx enabled':'Tx off'}${armed?` · WD:${wd.tx_remaining_minutes}m`:wd.tx_expired?' · Tx watchdog expired':''}${t.last_text?` · last ${t.last_text}`:''}`;
+}
+// OperatingLayout::OpenRegion: a pointer action outside an open secondary region returns to
+// operation (the signal area of Recordings/Preferences and the station bar excepted).
+document.addEventListener('pointerdown',event=>{
+  if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
+  if(event.target.closest?.('.op-secondary,#station-bar,#signal,#splitter,button[data-region]'))return;
+  showRegion('operate');
+},true);
 // ---------------------------------------------------------------- controls
 $('dx-generate').addEventListener('click',()=>enterDx(false));
 for(const id of ['dx-call','dx-grid'])$(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();enterDx(false);}});
@@ -127,7 +149,7 @@ for(const [id,key] of [['contact-rx','rx_hz'],['contact-tx','tx_hz']])$(id).addE
 $('contact-hold').addEventListener('change',event=>send('set_hold_tx',{enabled:event.target.checked},'Hold Tx'));
 $('contact-parity').addEventListener('change',event=>send('set_parity',{parity:event.target.value},'Tx period'));
 $('contact-auto').addEventListener('change',event=>send('set_auto_seq',{enabled:event.target.checked},'Auto sequence'));
-$('contact-enable').addEventListener('click',()=>send('enable_tx',{enabled:snap?.transmit.arm_state!=='armed'},'Enable Tx'));
+$('contact-enable').addEventListener('click',()=>send('enable_tx',{enabled:snap?.transmit.arm_state!=='armed',safety_revision:snap?.transmit.safety_revision??null},'Enable Tx'));
 $('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune},'Tune'));
 $('contact-cancel').addEventListener('click',()=>send('cancel',{},'Cancel contact'));
 async function logQso(){
@@ -136,6 +158,8 @@ async function logQso(){
   openedReviews.delete(c.id);await send('open_log',{},'Log QSO');
 }
 $('contact-log').addEventListener('click',logQso);
+// The offered review is the oldest unsaved one; discarding it shows the next.
+$('contact-discard').addEventListener('click',()=>{const id=snap?.review?.contact_id;if(id)send('discard_review',{contact_id:id},'Discard log review');});
 // Esc halts Tx and aborts the contact in every page state and focused field; it closes
 // no panel (D5). On a receive-only station it only cancels. Alt+N/H/Q where delivered.
 addEventListener('keydown',event=>{
@@ -219,14 +243,17 @@ function markers(){
   if(room&&s&&Math.abs(s.rx_hz-s.tx_hz)<400){rxMarker.textContent=s.rx_hz===s.tx_hz?`Rx/Tx ${s.rx_hz}`:`Rx ${s.rx_hz} · Tx ${s.tx_hz}`;txMarker.textContent='';}
 }
 const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
-let lastRight=0;
+let lastRight=0,lastLeft={at:-Infinity,x:0};
 function pointer(rx,tx,label){send('set_frequency',{rx_hz:rx,tx_hz:tx},label);}
 waterfall?.addEventListener('contextmenu',event=>event.preventDefault());
 waterfall?.addEventListener('click',event=>{
-  if(event.button!==0||event.detail>1)return;const hz=pointerHz(event);
+  if(event.button!==0)return;const hz=pointerHz(event),now=performance.now();
+  // Left double-click, detected here (the browser click count also counts other
+  // buttons): Rx, then Re-decode.
+  const double=now-lastLeft.at<400&&Math.abs(event.clientX-lastLeft.x)<6;lastLeft=double?{at:-Infinity,x:0}:{at:now,x:event.clientX};
+  if(double){send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency').then(()=>send('redecode',{},'Re-decode'));return;}
   if(event.ctrlKey)pointer(hz,hz,'Rx and Tx frequency');else if(event.shiftKey)pointer(null,hz,'Tx frequency');else pointer(hz,null,'Rx frequency');
 });
-waterfall?.addEventListener('dblclick',async event=>{if(event.button!==0)return;const hz=pointerHz(event);await send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency');send('redecode',{},'Re-decode');});
 waterfall?.addEventListener('mouseup',event=>{
   if(event.button!==2)return;const hz=pointerHz(event),now=performance.now();
   if(now-lastRight<400){lastRight=0;pointer(hz,hz,'Rx and Tx frequency');}else{lastRight=now;pointer(null,hz,'Tx frequency');}
@@ -261,7 +288,7 @@ addEventListener('station-message',event=>{
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;
     tick={utc:d.utc_ms,at:performance.now(),period:d.period_ms,transmitting:d.transmitting===true,level:Number.isInteger(d.rx_level_db)?d.rx_level_db:null};
-    displays();if(changed)render();
+    displays();if(changed)render();else stationTx();
   }
 });
 render();

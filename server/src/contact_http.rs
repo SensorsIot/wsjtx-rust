@@ -189,6 +189,8 @@ impl Station {
             inner.rows = Some((identity, next));
         }
         let inner = &mut *inner;
+        // A review whose contact is durably saved leaves the offer queue.
+        inner.engine.prune_saved(|id| state.logbook.saved(id));
         Self::run(r, |core, now| {
             let ctx = Ctx {
                 call,
@@ -207,6 +209,10 @@ impl Station {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
         let view = r.transmit.get().map(|t| t.service.view());
+        let safety = r
+            .transmit
+            .get()
+            .and_then(|t| t.service.with(|c| c.hardware().context().safety_revision));
         let mut inner = self.lock();
         let e = &inner.engine;
         let now = view.as_ref().map_or_else(wall_ms, |_| {
@@ -217,13 +223,13 @@ impl Station {
         let saved = |id: &str| state.logbook.saved(id);
         let contact = e.contact.as_ref().map(|c| {
             json!({"id":c.id,"origin":c.origin.name(),"dx_call":c.dx_call,"dx_grid":c.dx_grid,
-                "report_sent":contact::render_report(c.report),"report_rcvd":c.report_rcvd.map(contact::render_report),
+                "report_sent":c.report_sent.map(contact::render_report),"report_rcvd":c.report_rcvd.map(contact::render_report),
                 "state":c.state.name(),"next_slot":c.next.name(),"tx4":c.tx4.name(),"messages":c.messages,
                 "start_utc":c.start_utc_ms().map(contact::utc_text),"end_utc":c.last_counted_end.map(contact::utc_text),
                 "offered_for_log":c.offered_for_log,"saved":saved(&c.id)})
         });
         let dial = confirmed_dial(r);
-        let review = e.review.as_ref().and_then(|review| {
+        let review = e.review().and_then(|review| {
             let f = review.fields(now)?;
             let id = review.contact.id.clone();
             let (mode, submode) = match f.mode {
@@ -242,10 +248,10 @@ impl Station {
             Some(json!({"contact_id":id,"record":record,"outcome":if saved(&id) {"saved"} else {"unsaved"},"error":null}))
         });
         let transmit = match &view {
-            Some(v) => transmit_view(v, e.transmit_problem.as_deref()),
+            Some(v) => transmit_view(v, e.transmit_problem.as_deref(), safety),
             None => {
                 json!({"capability":"unsupported","arm_state":"disarmed","last_disarm_cause":"startup",
-                "tune":false,"pending_sequence":null,"last_text":null,"last_period_utc":null,"halt_state":"idle","refusal":null})
+                "tune":false,"pending_sequence":null,"last_text":null,"last_period_utc":null,"halt_state":"idle","safety_revision":null,"refusal":null})
             }
         };
         let s = &e.settings;
@@ -294,7 +300,7 @@ fn parity_name(p: Parity) -> &'static str {
 }
 /// The #9 read view WstxContact::ContactSnapshot carries (refusal: the latest #9
 /// refusal, or the contact's last refused/failed transmit outcome).
-fn transmit_view(v: &View, problem: Option<&str>) -> Value {
+fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) -> Value {
     let name = |t: String| contact::snake(&t);
     let halt = match v.halt_state {
         HaltState::Idle => "idle",
@@ -303,7 +309,7 @@ fn transmit_view(v: &View, problem: Option<&str>) -> Value {
     };
     json!({"capability":name(format!("{:?}",v.capability)),"arm_state":name(format!("{:?}",v.arm_state)),
         "last_disarm_cause":name(format!("{:?}",v.last_disarm_cause)),"tune":v.tune,"pending_sequence":v.pending_sequence,
-        "last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,"halt_state":halt,
+        "last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,"halt_state":halt,"safety_revision":safety_revision,
         "refusal":v.refusal.map(|r|name(format!("{r:?}"))).or(problem.map(String::from))})
 }
 pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
@@ -357,7 +363,8 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "choose_next" => &["slot"],
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
-        "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "enable_tx" | "tune" => &["enabled"],
+        "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "tune" => &["enabled"],
+        "enable_tx" => &["enabled", "safety_revision"],
         "set_tx4" => &["form"],
         "set_frequency" => &["rx_hz", "tx_hz"],
         "set_parity" => &["parity"],
@@ -437,7 +444,12 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
         "set_tx1_skip" => Command::SetTx1Skip(boolean(b, "enabled")?),
         "set_hold_tx" => Command::SetHoldTx(boolean(b, "enabled")?),
         "set_auto_seq" => Command::SetAutoSeq(boolean(b, "enabled")?),
-        "enable_tx" => Command::EnableTx(boolean(b, "enabled")?),
+        "enable_tx" => {
+            if !b["safety_revision"].is_null() {
+                safe(b, "safety_revision")?;
+            }
+            Command::EnableTx(boolean(b, "enabled")?)
+        }
         "tune" => Command::Tune(boolean(b, "enabled")?),
         "set_tx4" => Command::SetTx4(match text(b, "form")? {
             "rrr" => Tx4::Rrr,
@@ -604,6 +616,17 @@ impl Station {
         }
         if current >= MAX_SAFE {
             return Err(("counter_exhausted", None));
+        }
+        // Enable Tx carries the CL-022 safety revision the operator saw in the snapshot;
+        // a different current revision is the stale-revision refusal.
+        if action == "enable_tx" && body["enabled"] == true {
+            let current_safety = r
+                .transmit
+                .get()
+                .and_then(|t| t.service.with(|c| c.hardware().context().safety_revision));
+            if current_safety.is_some() && body["safety_revision"].as_u64() != current_safety {
+                return Err(("stale_revision", Some("safety_revision")));
+            }
         }
         let command = match parsed {
             Some(c) => c,

@@ -305,7 +305,7 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
         s.core.view().last_disarm_cause,
         DisarmCause::ContactCompleted
     );
-    let review = s.engine.review.clone().expect("one log offer");
+    let review = s.engine.review().cloned().expect("one log offer");
     assert!(review.automatic);
     let fields = review.fields(s.now()).unwrap();
     assert_eq!(fields.call, "K1ABC");
@@ -316,11 +316,11 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
     // TIME_OFF: end of the last period with a counted message (my Tx5).
     assert_eq!(fields.end_utc_ms, period(6));
     // A reply after completion changes nothing and never offers again.
-    s.engine.review = None;
+    s.engine.prune_saved(|_| true);
     let late = s.row(period(6), "HB9BLA K1ABC 73", 1240.0, None);
     s.deliver(&[late]);
     assert_eq!(s.state(), (State::Completed, Slot::Tx6));
-    assert!(s.engine.review.is_none());
+    assert!(s.engine.review().is_none());
     s.run(period(9));
     assert_eq!(
         s.sent.len(),
@@ -388,7 +388,7 @@ fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73
         let sent = s.sent.len();
         s.run(period(9));
         assert_eq!(s.sent.len(), sent, "no further CQ after completion");
-        let fields = s.engine.review.as_ref().unwrap().fields(s.now()).unwrap();
+        let fields = s.engine.review().unwrap().fields(s.now()).unwrap();
         assert_eq!(
             fields.start_utc_ms,
             period(2),
@@ -692,7 +692,7 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     );
     assert_eq!(s.command(Command::Tune(true)), Err("transmit_unavailable"));
     s.command(Command::OpenLog).unwrap();
-    assert!(!s.engine.review.as_ref().unwrap().automatic);
+    assert!(!s.engine.review().unwrap().automatic);
     // Without a CL-022 grant (plaintext profile) nothing arms.
     *s.fake.0.capability.lock().unwrap() = Some(Capability::Available);
     let ctx = Ctx {
@@ -849,4 +849,101 @@ fn tx_watchdog_counts_whole_minutes_from_the_last_reset_and_tune_ends_at_its_lim
     );
     // Tune false is always admitted.
     s.command(Command::Tune(false)).unwrap();
+}
+
+// Review findings P2-1, P3-3, P3-4 (independent review of 761b00fbf).
+#[test]
+fn an_unsaved_review_is_kept_when_another_contact_is_offered() {
+    let mut s = station();
+    s.command(Command::EnterDx {
+        call: "DL1ABC".into(),
+        grid: Some("JO62".into()),
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::OpenLog).unwrap();
+    let a = s.engine.contact.as_ref().unwrap().id.clone();
+    s.command(Command::EnterDx {
+        call: "W1AW".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    s.command(Command::OpenLog).unwrap();
+    let b = s.engine.contact.as_ref().unwrap().id.clone();
+    assert_ne!(a, b);
+    let offered: Vec<String> = s.engine.reviews().map(|r| r.contact.id.clone()).collect();
+    assert_eq!(
+        offered,
+        vec![a.clone(), b.clone()],
+        "A stays offered first until saved or discarded"
+    );
+    assert_eq!(s.engine.review().unwrap().contact.id, a);
+    // Repeated Log QSO for B does not add a second B; discarding A shows B.
+    s.command(Command::OpenLog).unwrap();
+    assert_eq!(s.engine.reviews().count(), 2);
+    s.command(Command::DiscardReview(a.clone())).unwrap();
+    assert_eq!(s.engine.review().unwrap().contact.id, b);
+    // A saved review leaves the queue.
+    s.engine.prune_saved(|id| id == b);
+    assert!(s.engine.review().is_none());
+}
+
+#[test]
+fn an_operator_disarm_is_not_reported_as_a_refused_transmission() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true)).unwrap();
+    assert!(
+        s.core.view().pending_sequence.is_some(),
+        "a request is pending"
+    );
+    s.command(Command::EnableTx(false)).unwrap();
+    s.run(s.now() + 200);
+    assert_eq!(s.engine.transmit_problem, None, "disarm cancels quietly");
+}
+
+#[test]
+fn a_non_disarming_refusal_is_not_resubmitted_every_step() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    // Another client exhausted the boot's request sequences.
+    s.core.arm(7).unwrap();
+    let _ = s.core.submit(wstx_rust::transmit::service::Request {
+        contact_id: None,
+        request_sequence: 9_007_199_254_740_991,
+        mode: Mode::Ft8,
+        period_start_utc_ms: period(1),
+        message_text: "CQ HB9BLA JN47".into(),
+        tx_offset_hz: 1500,
+    });
+    s.core.disarm(DisarmCause::Operator);
+    s.command(Command::EnableTx(true)).unwrap();
+    s.run(s.now() + 2000);
+    let duplicates = s
+        .core
+        .view()
+        .outcomes
+        .iter()
+        .filter(|o| {
+            o.refusal == Some(wstx_rust::transmit::service::TransmitRefusal::DuplicateSequence)
+        })
+        .count();
+    assert!(duplicates <= 1, "{duplicates} duplicate submissions");
+    assert!(!s.armed(), "the refusal disarms visibly");
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::Refused);
+    assert_eq!(
+        s.engine.transmit_problem.as_deref(),
+        Some("duplicate_sequence")
+    );
 }

@@ -31,6 +31,8 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
 const COUNTED_KEYS: usize = 4096;
+/// Unsaved log reviews retained per station session.
+pub const REVIEWS_MAX: usize = 8;
 
 pub fn period_ms(mode: Mode) -> i64 {
     match mode {
@@ -435,7 +437,10 @@ pub struct Engine {
     pub revision: u64,
     pub settings: Settings,
     pub contact: Option<Contact>,
-    pub review: Option<Review>,
+    /// Offered, not yet saved or discarded reviews, oldest first (bounded).
+    reviews: VecDeque<Review>,
+    /// The last request target refused without a disarm, never resubmitted as is.
+    refused_target: Option<(i64, String, u32)>,
     /// The last visible refusal or failure of a transmit outcome (snake_case).
     pub transmit_problem: Option<String>,
     sequence: u64,
@@ -468,7 +473,8 @@ impl Engine {
             revision: 0,
             settings: Settings::default(),
             contact: None,
-            review: None,
+            reviews: VecDeque::new(),
+            refused_target: None,
             transmit_problem: None,
             sequence: 0,
             pending: None,
@@ -482,6 +488,35 @@ impl Engine {
             fingerprint: String::new(),
             new_id,
         }
+    }
+    /// The review offered first (the oldest unsaved one).
+    pub fn review(&self) -> Option<&Review> {
+        self.reviews.front()
+    }
+    pub fn reviews(&self) -> impl Iterator<Item = &Review> {
+        self.reviews.iter()
+    }
+    /// Drops offered reviews whose contact is durably saved.
+    pub fn prune_saved(&mut self, saved: impl Fn(&str) -> bool) {
+        self.reviews.retain(|r| !saved(&r.contact.id));
+    }
+    /// Offers a review: the same contact replaces its own offer in place; another
+    /// contact queues behind every unsaved one (CancelContact/ChangeContact keep a
+    /// completed unsaved contact until saved or discarded). Full queue: refused.
+    fn offer(&mut self, review: Review) -> Result<(), &'static str> {
+        if let Some(r) = self
+            .reviews
+            .iter_mut()
+            .find(|r| r.contact.id == review.contact.id)
+        {
+            *r = review;
+            return Ok(());
+        }
+        if self.reviews.len() == REVIEWS_MAX {
+            return Err("state_conflict");
+        }
+        self.reviews.push_back(review);
+        Ok(())
     }
     fn tx_max(&self, ctx: &Ctx) -> u32 {
         tx_max_hz(self.contact.as_ref().map_or(ctx.mode(), |c| c.mode))
@@ -859,16 +894,18 @@ impl Engine {
                 if c.dx_call.is_none() {
                     return Err("no_contact");
                 }
-                self.review = Some(Review {
+                let review = Review {
                     contact: c.clone(),
                     automatic: false,
-                });
+                };
+                self.offer(review)?;
             }
             Command::DiscardReview(id) => {
-                if self.review.as_ref().is_none_or(|r| r.contact.id != id) {
+                let before = self.reviews.len();
+                self.reviews.retain(|r| r.contact.id != id);
+                if self.reviews.len() == before {
                     return Err("not_found");
                 }
-                self.review = None;
             }
         }
         // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog).
@@ -888,10 +925,15 @@ impl Engine {
             }
             if !c.offered_for_log {
                 c.offered_for_log = true;
-                self.review = Some(Review {
+                let review = Review {
                     contact: c.clone(),
                     automatic: true,
-                });
+                };
+                if self.offer(review).is_err() {
+                    // Eight unsaved reviews already wait; the contact stays completed
+                    // and can still be offered with Log QSO once one is resolved.
+                    self.transmit_problem = Some("review_queue_full".into());
+                }
             }
         }
     }
@@ -973,7 +1015,9 @@ impl Engine {
                         if !matches!(
                             refusal,
                             Some(
-                                TransmitRefusal::DuplicateSequence | TransmitRefusal::AudioStarted
+                                TransmitRefusal::DuplicateSequence
+                                    | TransmitRefusal::AudioStarted
+                                    | TransmitRefusal::NotArmed
                             )
                         ) {
                             self.transmit_problem = outcome
@@ -1112,7 +1156,7 @@ impl Engine {
         });
         format!(
             "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
-            self.settings, self.contact, self.review, self.transmit_problem, view, self.last_arm
+            self.settings, self.contact, self.reviews, self.transmit_problem, view, self.last_arm
         )
     }
     /// Keeps exactly one pending request for the next period of the contact's parity
@@ -1134,6 +1178,9 @@ impl Engine {
             .map_or(now + LEAD_MS, |p| (now + LEAD_MS).max(p + period_ms(mode)));
         let period = transmit::next_period(mode, floor, self.settings.parity);
         let tx_hz = self.settings.tx_hz;
+        if self.refused_target.as_ref() == Some(&(period, text.clone(), tx_hz)) {
+            return;
+        }
         if let Some((_, s)) = &self.pending
             && s.period == period
             && s.text == text
@@ -1170,6 +1217,15 @@ impl Engine {
         } else {
             self.pending = None;
             self.transmit_problem = outcome.refusal.map(|r| snake(&format!("{r:?}")));
+            // Never resubmit a refused target as is; a refusal #9 does not disarm for
+            // (duplicateSequence: this boot's sequences are exhausted) disarms here, so
+            // the refusal is visible and the 20 Hz step does not repeat it.
+            self.refused_target = Some((period, submitted.text.clone(), tx_hz));
+            if outcome.refusal == Some(TransmitRefusal::DuplicateSequence)
+                && core.view().arm_state == ArmState::Armed
+            {
+                core.disarm(DisarmCause::Refused);
+            }
         }
     }
 }

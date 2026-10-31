@@ -21,7 +21,8 @@ before(async()=>{
   const context=await browser.newContext({viewport:{width:1440,height:1000}});
   page=await context.newPage();
   page.errors=[];page.on('pageerror',e=>page.errors.push(e.message));
-  page.on('request',r=>{const u=new URL(r.url());requests.push({method:r.method(),path:u.pathname,body:r.postData(),at:performance.now()});});
+  page.on('request',r=>{const u=new URL(r.url());const e={method:r.method(),path:u.pathname,body:r.postData(),at:performance.now(),end:null};requests.push(e);r.__e=e;});
+  page.on('requestfinished',r=>{if(r.__e)r.__e.end=Math.round(performance.now());});page.on('requestfailed',r=>{if(r.__e)r.__e.end='failed';});
   await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
 });
 after(async()=>{await browser?.close();});
@@ -68,7 +69,10 @@ test('TC-007-001 explicit Enable Tx, partner report advances to Tx3, Esc halts f
   await page.getByRole('button',{name:'Enable Tx'}).click();
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed');
   await page.locator('#contact-enable[aria-pressed=true]').waitFor();
-  const armed=await snapshot();assert.ok(Number.isSafeInteger(armed.transmit.pending_sequence),'one pending TransmitRequest');
+  // The compact transmit state stays in the station bar (review decision 5).
+  await page.locator('#station-bar #station-tx').filter({hasText:/Tx enabled|TRANSMITTING/}).waitFor();
+  // One TransmitRequest: pending, or already started when armed inside an own period.
+  const armed=await waitFor(async()=>{const v=await snapshot();return (Number.isSafeInteger(v.transmit.pending_sequence)||v.transmit.last_text)&&v;},'one TransmitRequest');assert.ok(armed);
   await publish(evenNow(),[{text:'HB9BLA K1ABC -05',hz:1240,snr:-7}]);
   await waitFor(async()=>(await snapshot()).contact.state==='roger_report','roger_report',15000);
   await page.locator('#contact-next').filter({hasText:'K1ABC HB9BLA R-12'}).waitFor();
@@ -82,6 +86,7 @@ test('TC-007-001 explicit Enable Tx, partner report advances to Tx3, Esc halts f
   const mark=requests.length;
   await page.keyboard.press('Escape');
   await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled');
+  await waitFor(()=>requests.slice(mark).some(r=>r.path==='/contact/command'),'cancel request observed');
   const after=requests.slice(mark).filter(r=>r.method==='POST');
   assert.deepEqual(after.map(r=>r.path),['/transmit/halt','/contact/command']);
   assert.equal(JSON.parse(after[1].body).action,'cancel');
@@ -94,27 +99,30 @@ test('TC-007-001 explicit Enable Tx, partner report advances to Tx3, Esc halts f
 });
 
 test('TC-010-008 waterfall pointer actions and numeric frequency inputs',{timeout:60000},async()=>{
-  const canvas=page.locator('#waterfall'),box=await canvas.boundingBox();
-  const at=hz=>({x:box.x+box.width*hz/3000,y:box.y+box.height/2});
-  const last=async(n=1)=>{await waitFor(()=>commands().length>=n,'command');return commands().at(-1);};
+  const canvas=page.locator('#waterfall');
+  // Measured at every action: station-bar text changes may move the signal area.
+  let box;const at=hz=>({x:box.x+box.width*hz/3000,y:box.y+box.height/2});
+  const clickAt=async(hz,options)=>{box=await canvas.boundingBox();const p=at(hz);await page.mouse.click(p.x,p.y,options);};
+  const dblAt=async hz=>{box=await canvas.boundingBox();const p=at(hz);await page.mouse.dblclick(p.x,p.y);};
+  const last=async(n=1)=>{await waitFor(()=>commands().length>=n,()=>`command ${n} ${JSON.stringify(requests.slice(-8).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())}`);return commands().at(-1);};
   const settle=async(field,hz)=>waitFor(async()=>(await snapshot()).settings[field]===hz,async()=>`${field} ${hz}: ${await page.locator('#contact-result').textContent()}`);
   let n=commands().length;
-  await page.mouse.click(at(1500).x,at(1500).y);
+  await clickAt(1500);
   assert.deepEqual([(await last(n+1)).action,(await last(n+1)).rx_hz,(await last(n+1)).tx_hz],['set_frequency',1500,null]);await settle('rx_hz',1500);
   await page.locator('#waterfall-wrap .ct-rx').filter({hasText:/^Rx 1500/}).waitFor();
-  n=commands().length;await page.keyboard.down('Shift');await page.mouse.click(at(200).x,at(200).y);await page.keyboard.up('Shift');
+  n=commands().length;await page.keyboard.down('Shift');await clickAt(200);await page.keyboard.up('Shift');
   let c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[null,200]);await settle('tx_hz',200);
-  n=commands().length;await page.keyboard.down('Control');await page.mouse.click(at(2950).x,at(2950).y);await page.keyboard.up('Control');
+  n=commands().length;await page.keyboard.down('Control');await clickAt(2950);await page.keyboard.up('Control');
   c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[2950,2950]);await settle('tx_hz',2950);
   // Hold Tx only blocks implicit moves: an explicit right-click still moves Tx.
   await page.locator('#contact-hold').check();await waitFor(async()=>(await snapshot()).settings.hold_tx,'hold');
-  n=commands().length;await page.mouse.click(at(1000).x,at(1000).y,{button:'right'});
+  n=commands().length;await clickAt(1000,{button:'right'});
   c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[null,1000]);await settle('tx_hz',1000);
   const prevented=await canvas.evaluate(el=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented;});
   assert.equal(prevented,true,'no context menu over the waterfall');
   await new Promise(r=>setTimeout(r,500));
-  n=commands().length;await page.mouse.dblclick(at(700).x,at(700).y);
-  await waitFor(()=>commands().slice(n).some(x=>x.action==='redecode'),'redecode');
+  const dbl=performance.now();n=commands().length;await dblAt(700);
+  await waitFor(()=>commands().slice(n).some(x=>x.action==='redecode'),async()=>`redecode after ${JSON.stringify(commands().slice(n).map(x=>[x.action,x.rx_hz,x.tx_hz]))}: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(requests.slice(-12).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())} ${JSON.stringify(await page.evaluate(()=>{const c=document.querySelector('#waterfall').getBoundingClientRect();const e=document.elementFromPoint(c.left+c.width*700/3000,c.top+c.height/2);return [e?.id||e?.className||e?.tagName,c.width,c.height];}))}`);
   const after=commands().slice(n).filter(x=>x.action!=='set_frequency'||x.rx_hz===700);
   assert.ok(after.some(x=>x.action==='set_frequency'&&x.rx_hz===700&&x.tx_hz===null));
   await page.locator('#contact-result').filter({hasText:'redecode_unavailable'}).waitFor();
@@ -150,4 +158,31 @@ test('TC-007-004 manual DX entry and Log QSO open the review without hiding Halt
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   assert.equal(mutations().some(r=>r.path==='/contacts'),false,'no auto-log: review only');
   assert.deepEqual(page.errors,[]);
+});
+
+// Review finding P2-2: with the contact snapshot unavailable (GET /contact failing),
+// Esc still sends the #9 halt; only a station known to be receive-only skips it.
+test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
+  await page.route('**/contact',route=>route.abort('failed'));
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await page.locator('#contact-enable').waitFor({state:'attached'});
+  const mark=requests.length;
+  await page.keyboard.press('Escape');
+  await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt without snapshot');
+  const halt=JSON.parse(requests.slice(mark).find(r=>r.path==='/transmit/halt').body);
+  const live=await (await fetch(origin+'/receive')).json();
+  assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
+  await page.unroute('**/contact');
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await page.locator('#contact-enable').waitFor({state:'attached'});
+});
+
+// Review decision 6 (OpenRegion): a pointer action outside an open region closes it.
+test('TC-007-002 a pointer action outside an open region returns to operation',{timeout:30000},async()=>{
+  await page.locator('#station-bar [data-region=help]').click();
+  assert.equal(await page.locator('#region-help').isVisible(),true);
+  await page.locator('#workspace-statusbar').click({timeout:5000});
+  await page.locator('#operating-workspace').waitFor({state:'visible'});
+  assert.equal(await page.locator('#region-help').isVisible(),false);
+  assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
 });
