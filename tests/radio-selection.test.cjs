@@ -368,7 +368,7 @@ function selectionNetworkSummary(transfers,start,end){
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'dc856c397ead00a58c737818e3434600b35e78a459d0ddc9a8b3baf2eddba8da','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'425caa8a62a1c0421c47f707f5b366a72e02d09d2a39ca9a5da9d4d58e946b6e','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   return {sha256,valid,fetchLine:694,timerLine:759};
