@@ -29,7 +29,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     def test_complete_resolved_deployment(self):
         self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
         counts = tool.architecture_integrity(self.accepted.stdout)
-        self.assertEqual(counts, {"parts": 27, "references": 8, "ports": 54, "connections": 45})
+        self.assertEqual(counts, {"parts": 27, "references": 8, "ports": 56, "connections": 46})
 
     def reject(self, original, replacement, diagnostic):
         self.assertIn(original, self.source, "mutation no longer targets the accepted architecture")
@@ -80,6 +80,9 @@ class ArchitectureIntegrityTests(unittest.TestCase):
 
     def test_missing_encoding_path(self):
         self.reject("connection encodeModem connect transmit.encode to modes.encode;", "", "missing required connection")
+
+    def test_missing_contact_transmit_path(self):
+        self.reject("connection contactTransmit connect qso.transmit to transmit.contacts;", "", "missing required connection")
 
     def test_control_bypasses_common_authority(self):
         self.reject("connect radioControl.backend to authorityRequest;", "connect radioControl.backend to catAdapter.authorized;", "missing required connection")
