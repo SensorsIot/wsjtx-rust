@@ -248,6 +248,9 @@ pub struct State {
     operating: selection::Operating,
     live_worker: Option<std::thread::JoinHandle<()>>,
     live_owner_released: bool,
+    /// WstxContact::StationOperatingMode: the mode of the last started ft4/ft8 live job
+    /// or admitted mode selection, whichever came last (FT8 at a fresh boot).
+    operating_mode: &'static str,
 }
 pub struct Recording {
     pub state: Mutex<State>,
@@ -439,17 +442,20 @@ impl Recording {
         let source = l.source.as_ref()?.source_id.clone();
         matches!(l.mode, "ft8" | "ft4").then(|| (source, j.id.clone(), j.generation, l.mode))
     }
-    /// WstxContact::StationOperatingMode: the running live decoding job's mode (ft4 or
-    /// ft8), else the operating selection's mode.
+    /// WstxContact::StationOperatingMode: the mode of the last started ft4/ft8 live job
+    /// or admitted operating mode selection (persists across a receive stop).
     pub(crate) fn operating_mode(&self) -> &'static str {
-        let s = self.state.lock().unwrap();
-        let running = s
-            .job
-            .as_ref()
-            .is_some_and(|j| j.kind == "live" && !terminal(j.state));
-        match s.live.as_ref().map(|l| l.mode) {
-            Some(mode @ ("ft4" | "ft8")) if running => mode,
-            _ => s.operating.nominal.mode,
+        self.state.lock().unwrap().operating_mode
+    }
+    /// Gives the #9 owner the station's operating mode (WstxTransmit::StationModeGate).
+    /// Called after every change, never under the station mutex.
+    pub(crate) fn sync_transmit_mode(&self) {
+        let mode = match self.operating_mode() {
+            "ft4" => decoder::Mode::Ft4,
+            _ => decoder::Mode::Ft8,
+        };
+        if let Some(t) = self.transmit.get() {
+            t.service.with(|c| c.set_station_mode(Some(mode)));
         }
     }
     /// Retained result records of the current live job with sequence >= `after` (all
@@ -514,6 +520,9 @@ impl Recording {
             cancel: Arc::new(AtomicBool::new(false)),
         });
         s.latest_decode = None;
+        if matches!(mode, "ft4" | "ft8") {
+            s.operating_mode = mode;
+        }
         s.live = Some(LiveState {
             mode,
             audio: audio::AudioStatus {
@@ -543,6 +552,8 @@ impl Recording {
             publication_error: None,
             level: (0.0, 0, None, Some(47)),
         });
+        drop(s);
+        self.sync_transmit_mode();
         (source_id, id, generation)
     }
     /// Test seam: publishes one period of fixture records (sequence assigned here) and
@@ -756,6 +767,9 @@ impl Recording {
             if s.operating.nominal.band.is_none() && matches!(mode, "ft4" | "ft8") {
                 s.operating.nominal.mode = mode;
             }
+            if matches!(mode, "ft4" | "ft8") {
+                s.operating_mode = mode;
+            }
             s.latest_decode = None;
             s.decode_counter = 0;
             s.live = Some(LiveState {
@@ -779,6 +793,7 @@ impl Recording {
                 level: (0.0, 0, None, None),
             });
         }
+        self.sync_transmit_mode();
         let this = self.clone();
         let worker_job = job.clone();
         if self
@@ -1527,7 +1542,9 @@ impl Recording {
         {
             return Err("busy");
         }
-        let mode = intent.mode.unwrap_or(s.operating.nominal.mode);
+        // A band change keeps the station's operating mode (WSJT-X keeps the mode on a
+        // band change), so an FT4 contact survives it.
+        let mode = intent.mode.unwrap_or(s.operating_mode);
         let bound_radio =
             selection::bound_snapshot(s.operating.radio.cached.as_ref(), intent.profile_revision)
                 .filter(|snapshot| {
@@ -1640,8 +1657,12 @@ impl Recording {
             }
             s.frame = None;
             s.detail_frame = None;
+            // The station's operating mode follows an admitted selection at once, so the
+            // #9 owner never keys the old mode on the new dial.
+            s.operating_mode = operation.requested.mode;
             s.operating.operation = Some(operation.clone());
         }
+        self.sync_transmit_mode();
         let receipt =
             self.selection_receipt(&operation.command_id, operation.revision, "releasing");
         let this = self.clone();
@@ -2621,6 +2642,7 @@ impl Recording {
             operating: selection::Operating::new(),
             live_worker: None,
             live_owner_released: true,
+            operating_mode: "ft8",
         };
         let confined = fs::create_dir_all(&dir).is_ok()
             && base

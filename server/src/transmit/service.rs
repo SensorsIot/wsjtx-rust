@@ -278,6 +278,8 @@ pub struct Core<H: Hardware> {
     startup_release: StartupRelease,
     abort: Arc<AtomicBool>,
     faulted: bool,
+    /// WstxTransmit::StationModeGate: the station's operating mode (None: not gated).
+    station_mode: Option<Mode>,
 }
 
 fn schedule_refusal(error: ScheduleError) -> TransmitRefusal {
@@ -359,7 +361,16 @@ impl<H: Hardware> Core<H> {
             startup_release: StartupRelease::Pending,
             abort: Arc::new(AtomicBool::new(false)),
             faulted: false,
+            station_mode: None,
         }
+    }
+    /// WstxTransmit::StationModeGate: the station's operating mode. A request of
+    /// another mode is refused staleRequest at admission and never keyed or started.
+    pub fn set_station_mode(&mut self, mode: Option<Mode>) {
+        self.station_mode = mode;
+    }
+    fn other_mode(&self, mode: Mode) -> bool {
+        self.station_mode.is_some_and(|m| m != mode)
     }
     /// Shares the priority-halt flag with the hardware's device waits.
     pub fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
@@ -508,6 +519,9 @@ impl<H: Hardware> Core<H> {
         }
         if self.tune.is_some() {
             return self.refuse(sequence, TransmitRefusal::Busy, true);
+        }
+        if self.other_mode(request.mode) {
+            return self.refuse(sequence, TransmitRefusal::StaleRequest, true);
         }
         let now = self.hardware.now_utc_ms();
         if let Err(e) = plan_start(
@@ -778,6 +792,11 @@ impl<H: Hardware> Core<H> {
         let sequence = request.request_sequence;
         if job.audio_start_utc_ms.is_none() {
             if now < period {
+                return;
+            }
+            // The station's mode changed after admission: never key or start it.
+            if self.other_mode(mode) {
+                self.refuse_current(TransmitRefusal::StaleRequest);
                 return;
             }
             if !job.keyed {

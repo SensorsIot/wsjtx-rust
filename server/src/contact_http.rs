@@ -190,7 +190,11 @@ impl Station {
         let inner = &mut *inner;
         // A review whose contact is durably saved leaves the offer queue.
         inner.engine.prune_saved(|id| state.logbook.saved(id));
-        Self::run(r, |core, now| {
+        Self::run(r, |mut core, now| {
+            // Belt and braces for WstxTransmit::StationModeGate (set at every change).
+            if let Some(c) = core.as_deref_mut() {
+                c.set_station_mode(mode);
+            }
             let ctx = Ctx {
                 call,
                 locator,

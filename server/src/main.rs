@@ -263,6 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 previous(info);
             }));
             let _ = recording.transmit.set(transmit);
+            recording.sync_transmit_mode();
             // WstxContact: one contact engine per station, consuming the transmit owner.
             let _ = recording.contact.set(contact_http::Station::start());
             let log_base = selected.clone().ok_or("profile directory absent")?;

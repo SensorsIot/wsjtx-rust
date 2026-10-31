@@ -231,7 +231,10 @@ pub async fn select(
         }
     }
     match r.selection_begin(intent, device, cat) {
-        Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
+        Ok(v) => {
+            receive_http::contact_step(state.clone()).await;
+            (StatusCode::ACCEPTED, Json(v)).into_response()
+        }
         Err(e) => error(e),
     }
 }
