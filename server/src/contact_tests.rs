@@ -111,7 +111,7 @@ fn parse(text: &str) -> Standard {
         } else if w == "<...>" {
             Call::Hash
         } else {
-            Call::Call(w.into())
+            Call::Sign(w.into())
         }
     };
     let (ack, exchange) = match words.get(2).copied() {
@@ -287,7 +287,7 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
     s.run(period(2) + 14 * SECOND);
     assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
     let report = s.row(period(2), "HB9BLA K1ABC -05", 1240.0, Some(-7.0));
-    s.deliver(&[report.clone()]);
+    s.deliver(std::slice::from_ref(&report));
     assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
     // Delivered twice: counted once (no change, no second effect).
     s.deliver(&[report]);
@@ -342,7 +342,7 @@ fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73
         assert_eq!(s.sent.first().map(|x| x.1.as_str()), Some("CQ HB9BLA JN47"));
         let answer = s.row(period(1), "HB9BLA K1ABC FN42", 900.0, Some(3.0));
         // Not selected yet: the reply to my CQ does not choose the partner (#12).
-        s.deliver(&[answer.clone()]);
+        s.deliver(std::slice::from_ref(&answer));
         assert_eq!(s.state(), (State::Calling, Slot::Tx6));
         s.command(Command::SelectRow {
             row: answer,
@@ -414,7 +414,7 @@ fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
     // The partner misses my Tx3 and repeats its report: Tx3 is sent again.
     s.run(period(4) + 14 * SECOND);
     let again = s.row(period(4), "HB9BLA K1ABC -05", 1500.0, None);
-    s.deliver(&[again.clone()]);
+    s.deliver(std::slice::from_ref(&again));
     assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
     s.run(period(5) + 14 * SECOND);
     assert_eq!(s.sent_in(period(3)), s.sent_in(period(5)));
@@ -426,7 +426,7 @@ fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
     assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
     // The earlier report row delivered again (same identity) counts once: it does not
     // send the contact back to Tx3.
-    s.deliver(&[again.clone()]);
+    s.deliver(std::slice::from_ref(&again));
     assert_eq!(s.state(), (State::Rogers, Slot::Tx4), "one row counts once");
     // The partner did not copy my R-report and sends its report again: back to Tx3.
     s.run(period(8) + 14 * SECOND);

@@ -389,6 +389,9 @@ fn window_error(error: receive::WindowError) -> &'static str {
     }
 }
 
+/// The current live job identity (source, job, generation), its mode and its retained
+/// result records.
+pub(crate) type LiveRecords = ((String, String, u64), &'static str, Vec<Value>);
 impl Recording {
     fn live_view(&self, s: &State) -> Value {
         let live = s.live.as_ref();
@@ -442,7 +445,7 @@ impl Recording {
         &self,
         identity: Option<&(String, String, u64)>,
         after: u64,
-    ) -> Option<((String, String, u64), &'static str, Vec<Value>)> {
+    ) -> Option<LiveRecords> {
         let (source, job, generation, mode) = self.live_identity()?;
         let current = (source, job, generation);
         let from = if identity == Some(&current) { after } else { 0 };

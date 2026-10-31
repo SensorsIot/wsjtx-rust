@@ -177,7 +177,7 @@ pub struct RowKey {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Call {
     /// A concrete call sign.
-    Call(String),
+    Sign(String),
     /// CQ, DE, QRZ and directed CQ tokens.
     Token(String),
     /// An unresolved hash (`<...>`).
@@ -498,6 +498,7 @@ impl Engine {
     pub fn review(&self) -> Option<&Review> {
         self.reviews.front()
     }
+    #[cfg(test)]
     pub fn reviews(&self) -> impl Iterator<Item = &Review> {
         self.reviews.iter()
     }
@@ -564,7 +565,7 @@ impl Engine {
     #[allow(clippy::too_many_arguments)]
     fn prepare<H: Hardware>(
         &mut self,
-        mut core: Option<&mut Core<H>>,
+        core: Option<&mut Core<H>>,
         ctx: &Ctx,
         origin: Origin,
         dx: String,
@@ -595,7 +596,7 @@ impl Engine {
         };
         if active && !same {
             // ChangeContact: the old contact is cancelled and Enable Tx turns off.
-            Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
+            Self::disarm(core, DisarmCause::ContactCancelled);
         }
         let tx1_skip = self.settings.tx1_skip;
         let first = if first == Slot::Tx1 && tx1_skip {
@@ -635,9 +636,7 @@ impl Engine {
         if let Some(c) = self.contact.as_mut()
             && let Some(set) = generate(&call, &grid4, c.dx_call.as_deref(), c.report, c.tx4)
         {
-            for i in 1..4 {
-                c.messages[i] = set[i].clone();
-            }
+            c.messages[1..4].clone_from_slice(&set[1..4]);
         }
     }
     /// Applies one accepted-or-refused operating command. Ok means accepted (the caller
@@ -656,11 +655,11 @@ impl Engine {
                 let Some(std) = row.standard.clone() else {
                     return Err("row_not_standard");
                 };
-                let Call::Call(dx) = std.from.clone() else {
+                let Call::Sign(dx) = std.from.clone() else {
                     return Err("row_not_standard");
                 };
                 let my = ctx.call.clone().ok_or("profile_incomplete")?;
-                let to_me = std.to == Call::Call(my);
+                let to_me = std.to == Call::Sign(my);
                 let received = classify(&std);
                 let report = row.snr_db.map_or(self.settings.report, report_from_snr);
                 let grid = match &std.exchange {
@@ -1084,14 +1083,14 @@ impl Engine {
             let (Some(dx), Some(std)) = (c.dx_call.clone(), row.standard.as_ref()) else {
                 continue;
             };
-            if std.from != Call::Call(dx) || !c.state.active() {
+            if std.from != Call::Sign(dx) || !c.state.active() {
                 continue;
             }
             let Some(my) = ctx.call.as_deref() else {
                 continue;
             };
             match &std.to {
-                Call::Call(to) if to == my => {
+                Call::Sign(to) if to == my => {
                     let Some(period) = row.period_start_ms else {
                         continue;
                     };
@@ -1125,7 +1124,7 @@ impl Engine {
                         }
                     }
                 }
-                Call::Call(_) => {
+                Call::Sign(_) => {
                     // partnerWorksOther: the 50 Hz rule (MW auto_sequence 25/50).
                     let applies = c.state == State::Replying
                         || (c.state == State::Report && c.started_tx1_skipped);

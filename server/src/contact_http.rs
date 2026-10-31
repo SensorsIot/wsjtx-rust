@@ -78,7 +78,7 @@ fn mode_of(text: &str) -> decoder::Mode {
 }
 fn call_of(v: &Value) -> Option<Call> {
     match v["kind"].as_str()? {
-        "call" => Some(Call::Call(v["text"].as_str()?.to_owned())),
+        "call" => Some(Call::Sign(v["text"].as_str()?.to_owned())),
         "token" => Some(Call::Token(v["text"].as_str()?.to_owned())),
         "hash" => Some(Call::Hash),
         _ => None,
