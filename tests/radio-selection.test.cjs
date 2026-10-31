@@ -334,10 +334,10 @@ function selectionNetworkSummary(transfers,start,end){
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'c4baf7430c9ab570d3e012002be65d687586d06a8fec626f3be6876e86627fe6','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'361ed4af3ac7fecfc24cfaee4ee75f77e1660fc1002ddccfa902b7ad01c5f712','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:682,timerLine:758};
+  return {sha256,valid,fetchLine:693,timerLine:772};
 }
 function cadenceCaller(initiator,origin,mapping){
   const frames=initiator?.stack?.callFrames;
@@ -346,7 +346,7 @@ function cadenceCaller(initiator,origin,mapping){
   assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
-  const explicitLines=[699,712,725,731,741,743,751,760];
+  const explicitLines=[710,724,738,744,755,757,765,774];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';

@@ -1720,7 +1720,13 @@ package WstxRequirements {
              resolved. Server restart reloads only committed state.
              Delivered: durable record, logout/revoke-all, dispatch rechecks of every
              operating HTTP route and WS upgrade, safety-revision advance and the
-             commissioning server API. Explicit Add/Replace/Remove remains target. */
+             commissioning server API. Explicit Add/Replace/Remove remains target.
+             Accepted bound: an operating HTTP mutation rechecks scope, grant and
+             revocation generation under the authority lock, then calls the
+             recording/native owner after releasing it. A revocation committed after
+             that recheck finds the effect already dispatched: it is not undone or
+             reported as refused, and follows the existing cancellation/release rules,
+             while the affected WS closes and every later effect fails. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
     }
