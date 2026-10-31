@@ -743,10 +743,18 @@ impl Engine {
             Command::Cancel => {
                 Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
                 if let Some(c) = self.contact.as_mut() {
+                    if c.state == State::Completed {
+                        // A completed contact keeps its fields (Log QSO still works and a
+                        // held, unqueued contact is never stranded); only Tx6 is selected.
+                        c.next = Slot::Tx6;
+                        self.pending = None;
+                        if let Some(core) = core {
+                            core.activity();
+                        }
+                        return Ok(());
+                    }
                     c.state = if c.state == State::Calling || c.state == State::Idle {
                         State::Idle
-                    } else if c.state == State::Completed {
-                        State::Completed
                     } else {
                         State::Cancelled
                     };

@@ -1044,3 +1044,92 @@ fn enable_tx_arms_with_the_revision_the_operator_saw_and_9_refuses_a_changed_one
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert!(s.armed());
 }
+
+// Re-check of b3fd3f312, item 1: Cancel never strands the held contact.
+#[test]
+fn cancel_keeps_a_held_completed_contact_loggable_and_discard_clears_the_hold() {
+    let mut s = station();
+    for i in 0..8 {
+        s.command(Command::EnterDx {
+            call: format!("DL{i}ABC"),
+            grid: None,
+            replace: true,
+        })
+        .unwrap();
+        s.command(Command::OpenLog).unwrap();
+    }
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: Some("FN42".into()),
+        replace: true,
+    })
+    .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(&[seventy_three]);
+    let held = s.engine.contact.as_ref().unwrap().id.clone();
+    assert_eq!(s.state().0, State::Completed);
+    // Cancel (Esc) on the completed contact only disarms and selects Tx6.
+    s.command(Command::Cancel).unwrap();
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!((c.state, c.next), (State::Completed, Slot::Tx6));
+    assert_eq!(
+        (c.dx_call.as_deref(), c.dx_grid.as_deref()),
+        (Some("K1ABC"), Some("FN42"))
+    );
+    assert_eq!(c.messages[4].as_deref(), Some("K1ABC HB9BLA 73"));
+    // A freed place lets Log QSO queue it.
+    let first = s.engine.review().unwrap().contact.id.clone();
+    s.command(Command::DiscardReview(first)).unwrap();
+    s.command(Command::OpenLog).unwrap();
+    assert!(s.engine.reviews().any(|r| r.contact.id == held));
+    s.command(Command::EnterDx {
+        call: "W1AW".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+
+    // Second path: discarding the held contact id itself clears the hold.
+    let mut s = station();
+    for i in 0..8 {
+        s.command(Command::EnterDx {
+            call: format!("DL{i}ABC"),
+            grid: None,
+            replace: true,
+        })
+        .unwrap();
+        s.command(Command::OpenLog).unwrap();
+    }
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(&[seventy_three]);
+    let held = s.engine.contact.as_ref().unwrap().id.clone();
+    s.command(Command::Cancel).unwrap();
+    assert_eq!(
+        s.command(Command::EnterDx {
+            call: "W1AW".into(),
+            grid: None,
+            replace: true
+        }),
+        Err("state_conflict")
+    );
+    s.command(Command::DiscardReview(held)).unwrap();
+    s.command(Command::EnterDx {
+        call: "W1AW".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(
+        s.engine.reviews().count(),
+        8,
+        "the queued reviews are untouched"
+    );
+}
