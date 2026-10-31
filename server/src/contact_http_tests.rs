@@ -1132,3 +1132,99 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
     );
     assert_eq!(review(&s8), (Some("FT8".into()), None));
 }
+
+// Proves: CL-011-02; TC-006-002. The busy barrier also holds while PTT is keyed before
+// the audio and while the waveform plays (ModeChange); nothing changes.
+#[tokio::test]
+async fn a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting() {
+    use wstx_rust::transmit::service::{OutcomeKind, PttState, Request};
+    let f = fixture("http://127.0.0.1:18014", true);
+    let r = &f.state.recording;
+    r.fixture_live_job("ft4");
+    let service = &r.transmit.get().unwrap().service;
+    // Virtual UTC 200 ms before an FT4 period start; audio follows 300 ms after it.
+    let now = now_ms();
+    let period = (now.div_euclid(7_500) + 2) * 7_500;
+    f.bench.offset.store(period - 200 - now, Ordering::SeqCst);
+    service.with(|c| {
+        c.arm(3).unwrap();
+        let o = c.submit(Request {
+            contact_id: None,
+            request_sequence: 1,
+            mode: decoder::Mode::Ft4,
+            period_start_utc_ms: period,
+            message_text: "CQ HB9BLA JN47".into(),
+            tx_offset_hz: 1500,
+        });
+        assert_eq!(o.kind, OutcomeKind::Accepted);
+    });
+    let before = f.call("GET", "/receive/selection", None).await.1["operating_revision"].clone();
+    let wait = |keyed: bool| async move {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let v = service.view();
+            if (keyed && v.ptt == PttState::Keyed && !v.transmitting) || (!keyed && v.transmitting)
+            {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{v:?}");
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    };
+    wait(true).await;
+    let (s, v) = select_mode(&f, "ft8").await;
+    assert_eq!(
+        (s, code(&v).0),
+        (StatusCode::CONFLICT, "busy"),
+        "PTT keyed: {v}"
+    );
+    wait(false).await;
+    let (s, v) = select_mode(&f, "ft8").await;
+    assert_eq!(
+        (s, code(&v).0),
+        (StatusCode::CONFLICT, "busy"),
+        "transmitting: {v}"
+    );
+    let after = f.call("GET", "/receive/selection", None).await.1;
+    assert_eq!(after["operating_revision"], before, "nothing changed");
+    assert_eq!(after["receive"]["mode"], "ft4");
+    assert_eq!(tick_period(&f), 7_500);
+    service.with(|c| c.halt());
+}
+
+// Proves: CL-011-02; TC-006-002. StationOperatingMode persists across a receive stop: an
+// FT4 contact is kept when FT4 receive (started outside the operating selection) stops.
+#[tokio::test]
+async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_contact() {
+    let f = fixture("http://127.0.0.1:18015", false);
+    let r = &f.state.recording;
+    let (_, job, generation) = r.fixture_live_job("ft4");
+    let (s, v) = f
+        .send(
+            "enter_dx",
+            json!({"dx_call":"K1ABC","dx_grid":null,"replace":false}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let (s, v, _, _) = f
+        .call(
+            "POST",
+            "/receive/stop",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"generation":generation,"job_id":job})),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    // The receive worker's completion (no worker runs in this fixture).
+    r.state.lock().unwrap().job.as_mut().unwrap().state = "cancelled";
+    f.tick();
+    assert_eq!(tick_period(&f), 7_500, "still FT4 after the stop");
+    let snap = f.snapshot().await;
+    assert_eq!(
+        (
+            snap["contact"]["state"].as_str(),
+            snap["contact"]["dx_call"].as_str(),
+            snap["contact"]["tx4"].as_str()
+        ),
+        (Some("replying"), Some("K1ABC"), Some("rr73"))
+    );
+}

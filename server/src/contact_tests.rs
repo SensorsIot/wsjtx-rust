@@ -1467,3 +1467,59 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     let c = s.engine.contact.as_ref().unwrap();
     assert_eq!((c.mode, c.tx4), (Mode::Ft4, Tx4::Rr73));
 }
+
+// Proves: CL-011-04; TC-007-008. WstxTransmit::StationModeGate: the #9 owner alone (no
+// contact step after the switch) never keys a request of another station mode.
+#[test]
+fn the_owner_never_keys_a_request_of_another_station_mode_without_a_contact_step() {
+    use wstx_rust::transmit::service::{OutcomeKind, Request, TransmitRefusal};
+    let mut s = station();
+    s.core.set_station_mode(Some(Mode::Ft8));
+    let cq = s.row(P0, "CQ K1ABC FN42", 1234.6, Some(-12.4));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert!(
+        s.core.view().pending_sequence.is_some(),
+        "Tx1 pending for period(1)"
+    );
+    // The station switches to FT4; only the owner runs across the period start.
+    s.core.set_station_mode(Some(Mode::Ft4));
+    let mut t = s.now();
+    while t < period(1) + 3 * SECOND {
+        t += 10;
+        s.fake.0.now.store(t, Ordering::SeqCst);
+        s.core.tick();
+    }
+    assert!(s.fake.0.keys.lock().unwrap().is_empty(), "never keyed");
+    assert!(s.fake.0.plays.lock().unwrap().is_empty(), "no audio");
+    let v = s.core.view();
+    assert_eq!(v.arm_state, ArmState::Disarmed);
+    assert_eq!(v.refusal, Some(TransmitRefusal::StaleRequest));
+    assert!(
+        v.outcomes
+            .iter()
+            .any(|o| o.kind == OutcomeKind::Refused
+                && o.refusal == Some(TransmitRefusal::StaleRequest)),
+        "{:?}",
+        v.outcomes
+    );
+    // A new request of the old mode is refused at admission.
+    s.core.arm(7).unwrap();
+    let outcome = s.core.submit(Request {
+        contact_id: None,
+        request_sequence: u64::MAX >> 12,
+        mode: Mode::Ft8,
+        period_start_utc_ms: period(3),
+        message_text: "CQ HB9BLA JN47".into(),
+        tx_offset_hz: 1500,
+    });
+    assert_eq!(
+        (outcome.kind, outcome.refusal),
+        (OutcomeKind::Refused, Some(TransmitRefusal::StaleRequest))
+    );
+    assert_eq!(s.core.view().arm_state, ArmState::Disarmed);
+}
