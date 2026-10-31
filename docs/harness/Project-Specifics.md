@@ -184,6 +184,38 @@ see the [measurement limits](../sysml/Requirements.sysml).
 
 Both applications can be developed on one Windows computer: the station-server process runs locally and the operator client opens in a browser on that computer. The interface between them remains the same when the server is later placed beside a remote radio. The current page reports server version, connection status and an unconfigured radio; it reconnects after connection loss.
 
+## Deployment authority
+
+This is the project's binding of the harness
+[deployment authority](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md#deployment-authority)
+rules (#26).
+
+**Mechanism.** There is one existing deploy mechanism: the Windows release executable
+built on HB9BLA and installed there by the reviewed package scripts (`apply.ps1`,
+`rollback.ps1`, as in the `deploy-ba176` package under
+`.git/harness-parallel/resources/issue-8/`), with the dry run (`apply.ps1 -PreflightOnly`)
+on the packaged candidate. The manual `windows-rust.yml` workflow and its
+`wstx-rust-windows-x64` artifact are build evidence only (operator decision 2026-10-30):
+that artifact is never installed on the station.
+
+**Rules not met yet.** Until each issue is done, the operator's OK on the dry run
+(CR process step 5) authorizes this mechanism.
+
+| Rule | State today | Issue |
+|---|---|---|
+| Credentials outside the agents | Agents run as the HB9BLA user and can write the version directory, receipt, gates record and package scripts. Only the task and firewall changes need the operator's elevation. | #30 |
+| Approval names the candidate | The manifest names commit, executable SHA-256 and destination, but the agents write it, and the elevation is not bound to it. | #31 |
+| Verify before writing | `apply.ps1` refuses a changed artifact, package, gates record, receipt, process, task or firewall state before writing, but checks against an agent-written manifest beside the artifact. | #32 |
+| Prove the result | After restart: a trusted-TLS, cookie-authenticated profile GET and a launcher-receipt check (commit, path, hash, PID). The version comes from the receipt, not from the service, and the deploying agent runs the probe. | #33 |
+| Show the refusals | Firewall-enum and profile-lock refusals were observed in past dry runs. Tampered artifact, stale or unapproved commit, mismatched approval and wrong destination were not each shown. | #34 |
+
+No rule is met in full.
+
+**Platform limits.** `execution_mode: local`: the hooks and the push gate run on the
+client with the agents' own rights. The repository has no branch protection and no
+required remote status check. There is no environment approval. None of these rules is
+enforced by the platform.
+
 ## References
 
 - [GitHub guidance for building and testing Rust](https://docs.github.com/en/actions/tutorials/build-and-test-code/rust)
