@@ -162,7 +162,11 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 #operating-monitor[aria-pressed=true]{background:#1f6f48;color:white}
 /* CR #10 contact workspace (WstxContact, OperatingLayout::ContactWorkspace). */
 .ct-dx,.ct-fields{display:flex;flex-wrap:wrap;gap:.5rem;align-items:end}
-.ct-dx label,.ct-fields label{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+.ct-dx label,.ct-fields label{display:flex;flex-direction:column;gap:.15rem;min-width:0;max-width:100%}
+.ct-fields label{flex:1 1 6.5rem}
+.ct-fields select{width:100%;max-width:100%}
+#rx-focus .op-contact-actions{flex-wrap:wrap}
+#rx-focus .op-contact-actions button{flex:1 1 7rem;min-width:0;white-space:normal}
 .ct-dx input{width:8rem;max-width:100%;text-transform:uppercase}
 .ct-fields input[type=number]{width:5.5rem;max-width:100%}
 .ct-state{margin:.4rem 0;font-weight:600;overflow-wrap:anywhere}
