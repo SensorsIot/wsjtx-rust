@@ -31,9 +31,10 @@ package WstxOperatingLayout {
         assert constraint readOnlyUnsupportedCapabilities {
             (liveResultInterfaceAvailable or messageRowCount == 0) and
             messageRowCount >= 0 and messageRowCount <= 2048 and
-            selectedContactRowCount == 0 and
-            not transmitEnabled and not haltEnabled and
-            not autoSequenceEnabled and not logEnabled
+            (transmit == CapabilityState::available or
+             (selectedContactRowCount == 0 and
+              not transmitEnabled and not haltEnabled and
+              not autoSequenceEnabled and not logEnabled))
         }
         doc /* Link transitions follow existing station.status/socket authority.
              A connected link does not imply audio/CAT/decoder/TX availability.
@@ -53,7 +54,10 @@ package WstxOperatingLayout {
              follow12.8. RX selection/TX/log remain unsupported. TC009004 exercises
              actual verified native input through converter/manager/modem/HTTP to
              literal browser rows and stale/epoch/stop/cursor/cadence boundaries;
-             TC007002 keeps the unsupported/no-input empty-view baseline. */
+             TC007002 keeps the unsupported/no-input empty-view baseline.
+             The read-only constraint binds whenever transmit is not available; with
+             an available transmit capability the contact controls follow
+             ContactWorkspace and WstxContact (CL-010-01..04, -06, -10..-14). */
     }
 
     enum def ActivitySortField { enum frequency; enum signalStrength; enum dt; enum 'message'; }
@@ -299,8 +303,13 @@ attribute def ActivityOrdering {
         doc /* Visible keyboard route for each region. Server settings uses actual
              revision-aware profile/connection; Client preferences uses existing
              browser display controls; Recordings uses real import/replay/cancel.
-             Persistent Halt stays reachable; F2 opens server settings;
-             Escape returns to operation and restores opener focus.
+             Persistent Halt stays reachable; F2 opens server settings.
+             A secondary region closes with its labelled close control (keyboard
+             reachable) or a pointer action outside it, returning to operation and
+             restoring opener focus. Escape never closes a region: it is Halt Tx plus
+             contact cancellation (WstxContact::HaltTx, CL-010-03, #10 decision 5),
+             replacing the earlier Escape-closes-region behaviour; existing TC-007-002
+             tests asserting Escape-to-close must be updated with that implementation.
              No radio/QSO/strategy mutation or settings autosave from navigation. */
     }
     verification agreedDesignPresentation {
@@ -313,13 +322,73 @@ attribute def ActivityOrdering {
         doc /* TC007002: actual browser/server at360/720/1200/1440/1499/1500/1600;
              desktop three-card order, compact header/toolbars/bands, no overflow,
              typography/breakpoint/native canvas/full-space/splitter assertions,
-             pointer/keyboard region routes,F2/Escape/focus, real profile/recording
+             pointer/keyboard region routes,F2/close-control/outside-click/focus (Escape
+             halts, CL-010-03), real profile/recording
              behavior and request recorder refusing invented RF/QSO/strategy work.
              Same1200x800 target/actual screenshots show design correspondence.
              Cost2 Windows isolated real server/Chromium; no radio. */
     }
     dependency agreedDesignCase from agreedDesignPresentation
         to WstxRequirements::'TC-007-002';
+    attribute def ContactWorkspace {
+        attribute hasStationBarHalt : Boolean = true;
+        attribute hasEnableTx : Boolean = true;
+        attribute hasAutoSequence : Boolean = true;
+        attribute hasTune : Boolean = true;
+        attribute hasDxCallGridEntry : Boolean = true;
+        attribute hasStandardMessageRows : Integer = 6;
+        attribute hasReportOverride : Boolean = true;
+        attribute hasTx1Skip : Boolean = true;
+        attribute hasTx4Toggle : Boolean = true;
+        attribute hasRxTxInputs : Boolean = true;
+        attribute hasHoldTx : Boolean = true;
+        attribute hasPeriodChoice : Boolean = true;
+        attribute hasRxFrequencyPane : Boolean = true;
+        attribute hasLogQso : Boolean = true;
+        attribute hasNowButtons : Boolean = false;
+        attribute hasFrequencyStepKeys : Boolean = false;
+        attribute escapeClosesRegion : Boolean = false;
+        attribute workspaceCardsChangeSignalArea : Boolean = false;
+        assert constraint adoptedControls {
+            hasStationBarHalt and hasEnableTx and hasAutoSequence and hasDxCallGridEntry and
+            hasStandardMessageRows == 6 and hasReportOverride and hasTx1Skip and hasTx4Toggle and
+            hasRxTxInputs and hasHoldTx and hasPeriodChoice and hasRxFrequencyPane and hasLogQso and
+            not hasNowButtons and not hasFrequencyStepKeys and not escapeClosesRegion and
+            not workspaceCardsChangeSignalArea
+        }
+        doc /* Browser regions for WstxContact, inside the existing AgreedOperatingDesign
+             order (station bar, toolbar, signal canvas, separator, band strip, cards);
+             the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
+             (CL-010-05, SplitGeometry) are unchanged.
+             Station bar: Halt Tx (always visible, Alt+H, Esc), transmit state with the
+             last transmitted text, Tx watchdog remaining WD:nm or "Tx watchdog expired",
+             UTC clock, Tx progress v/15 with Transmitting label, Rx level meter 0..90 dB
+             with high/low text labels (WstxContact::OperatorDisplays).
+             Waterfall: green Rx and red Tx markers labelled Rx/Tx with their Hz, pointer
+             actions per WstxContact::PointerEffect; the context menu is suppressed only
+             over the canvas.
+             Band Activity card: existing latest-period table plus a worked-before
+             label/icon column (WstxContact::WorkedBeforeQuery); row selection by click,
+             Enter or double-click is SelectDecodedRow.
+             Current QSO card: DX Call and DX Grid inputs with Generate (Enter); contact
+             state text and partner; six message rows Tx1..Tx6, each with a Next radio and
+             editable validated text, a Tx1 skip toggle on Tx1 and an RRR/RR73 toggle on
+             Tx4; report input -50..+49; Rx Hz and Tx Hz inputs, Hold Tx and Tx even/odd
+             choice with requested versus confirmed values; Enable Tx (Alt+N), Auto Seq,
+             Tune with remaining seconds, Cancel contact, Log QSO (Alt+Q); the Rx
+             Frequency pane (WstxContact::RoutesToRxFrequencyPane) with Tx-labelled own
+             messages, unread count and Erase. At 360 CSS px it stacks below Band Activity
+             or is a labelled tab, with no horizontal page overflow.
+             Logbook region: the in-page log review (WstxContact::OfferLogReview) with
+             power and comments and retain toggles, saved/unsaved outcome and retry,
+             history and ADI import/export; opening it never hides Halt Tx.
+             Alt+letter bindings apply only where the browser delivers the key; every
+             action is also a focusable labelled control. Ctrl+R, Ctrl+1..6, F11/F12 and
+             Now buttons are not adopted (browser reload/tab keys; #10 decision 7).
+             Every control is a server request; state shows only server-confirmed
+             values, pending and unknown outcomes explicitly. */
+    }
+    dependency contactWorkspaceClauses from ContactWorkspace to WstxRequirements::'CL-010-03';
     doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
          receive/radio/result shapes and owner/cancellation/source contracts.
