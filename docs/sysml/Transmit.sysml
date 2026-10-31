@@ -322,6 +322,7 @@ package WstxTransmit {
         attribute maxAgeS : Integer = 600;
         attribute intervalS : Integer = 60;
         attribute serverTimeoutMs : Integer = 1500;
+        attribute maxStepMs : Integer = 100;
         assert constraint freshness { intervalS < maxAgeS and serverTimeoutMs < intervalS * 1000 }
         doc /* ClockState of the station's system UTC clock from the station's own SNTP
              measurement (RFC 4330 client, operator decision 2026-10-31 on #9; a
@@ -342,9 +343,15 @@ package WstxTransmit {
              in milliseconds to the nearest, NTP timestamps compared modulo the era;
              T4 is T1 plus the monotonic time to the reply, so a clock step during the
              exchange cannot distort it. A round without an answer keeps the previous
-             measurement. synchronized: the latest measurement is at most maxAgeS old
-             and |offset| <= maxOffsetMs; unsynchronized: at most maxAgeS old and
-             |offset| > maxOffsetMs; unknown: no measurement or an older one. The
+             measurement. Each measurement keeps the monotonic instant and the system
+             time of its reply; step = system time elapsed since then minus monotonic
+             time elapsed. A |step| above maxStepMs means the system clock was stepped
+             after the measurement (e.g. by a third-party tool), so the measured offset
+             no longer describes it. synchronized: the latest measurement is at most
+             maxAgeS old, |step| <= maxStepMs and |offset| <= maxOffsetMs;
+             unsynchronized: at most maxAgeS old, |step| <= maxStepMs and
+             |offset| > maxOffsetMs; unknown: no measurement, an older one or a larger
+             step (until the next measurement). The
              offset is reported, never applied: the station does not set the system
              clock. WstxRadioIO receive clock external accuracy stays unknown.
              PlanTransmitStart refuses anything but synchronized. */

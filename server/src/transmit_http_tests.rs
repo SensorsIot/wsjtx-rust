@@ -457,6 +457,7 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
         offset_ms: -120,
         round_trip_ms: 31,
         taken,
+        system: std::time::SystemTime::now() - Duration::from_secs(5),
     }));
     let (status, view) = call(&router, "GET", "/transmit", None, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -477,6 +478,7 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
         offset_ms: 501,
         round_trip_ms: 40,
         taken: Instant::now(),
+        system: std::time::SystemTime::now(),
     }));
     let (_, view) = call(&router, "GET", "/transmit", None, None).await;
     assert_eq!(view["clock"], "unsynchronized");

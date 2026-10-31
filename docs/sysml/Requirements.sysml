@@ -436,8 +436,9 @@ package WstxRequirements {
              order (the next when one does not answer validly within 1.5 s):
              synchronized when the latest measurement is at most 10 min old and its
              |offset| is at most 500 ms, unsynchronized when outside, unknown without a
-             recent measurement; report the offset, server and age on GET /transmit and
-             with the transmit state in the browser. Details: WstxTransmit::TransmitClock,
+             recent measurement or when the system clock stepped by more than 100 ms
+             since it; report the offset, server and age on GET /transmit and with the
+             transmit state in the browser. Details: WstxTransmit::TransmitClock,
              TransmitWire. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/clock.rs; server/src/transmit_http.rs; server/src/main.rs; client/recording.js";
@@ -497,25 +498,31 @@ package WstxRequirements {
              Steps: compute offsets and round trips including an NTP era boundary;
              present short, wrong-mode, stratum 0/16, zero-transmit, wrong-origin and
              leap-alarm replies; measure over silent, refusing, answering and later
-             servers; derive states at |offset| 500/501 ms and ages 10 min / 10 min +
-             1 ms; plan FT8 and FT4 starts with each derived state; read the state
-             while a measurement blocks; GET /transmit before and after measurements.
+             servers; a fake station clock stepping +10 s during the exchange; derive
+             states at |offset| 500/501 ms, ages 10 min / 10 min + 1 ms and system
+             clock steps of +-100/+-101/+-2000 ms after the measurement; plan FT8 and
+             FT4 starts with each derived state; read the state while a measurement
+             blocks; GET /transmit before and after measurements; the browser transmit
+             status with a GET /transmit fixture.
              Oracles: RFC 4330/5905 arithmetic by hand (590/20 ms, -705/10 ms, 495/10
              ms); every invalid reply refused, stratum 1 and 15 accepted; servers asked
              once each in order, none after the first valid answer, none answering
-             gives no measurement; 500 ms synchronized, 501 ms unsynchronized, older
-             than 10 min unknown; only synchronized admitted (else
+             gives no measurement; a step during the exchange leaves the offset at
+             3 s (not -2 s); 500 ms synchronized, 501 ms unsynchronized, older than
+             10 min unknown, a step above 100 ms unknown; only synchronized admitted (else
              clockNotSynchronized); reading never waits for a measurement; exact
              clock_measurement keys {server,offset_ms,round_trip_ms,age_ms}, null and
-             unknown before the first answer.
+             unknown before the first answer; the status reads "clock synchronized
+             +12 ms ch.pool.ntp.org 34 s ago".
              2 — Isolated automated tests; Windows development PC, loopback UDP only, no
-             public time server, audio or radio. */
+             public time server, audio or radio; the actual server and Chromium for the
+             status line. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-009-05';
             verify 'CL-009-02';
         }
-        attribute executable : String = "server/tests/transmit_clock.rs; server/src/transmit_http_tests.rs";
+        attribute executable : String = "server/tests/transmit_clock.rs; server/src/transmit_http_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_009_05_verified_by_TC_006_003 from 'CL-009-05' to 'TC-006-003';
     dependency CL_009_02_verified_by_TC_006_003 from 'CL-009-02' to 'TC-006-003';

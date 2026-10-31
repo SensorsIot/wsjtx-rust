@@ -6,10 +6,10 @@
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use wstx_rust::decoder::Mode;
 use wstx_rust::transmit::clock::{
-    self, MAX_AGE, Measurement, Monitor, ReplyError, Sntp, Source, offset, state,
+    self, MAX_AGE, MAX_STEP_MS, Measurement, Monitor, ReplyError, Sntp, Source, offset, state,
 };
 use wstx_rust::transmit::{ClockState, ScheduleError, plan_start};
 
@@ -172,19 +172,56 @@ fn servers_are_tried_in_order_until_one_answers() {
     assert_eq!(sntp(&[&silent, &refusing]).measure(), None);
 }
 
+/// The fake station system clock at the measurement.
+fn system0() -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(1_790_000_000)
+}
+static JUMP_CALLS: AtomicUsize = AtomicUsize::new(0);
+/// A fake station clock that steps +10 s after its first reading (the request).
+fn jumping_now() -> SystemTime {
+    let base = UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+    if JUMP_CALLS.fetch_add(1, Ordering::SeqCst) == 0 {
+        base
+    } else {
+        base + Duration::from_secs(10)
+    }
+}
+
+#[test]
+fn a_clock_step_during_the_exchange_does_not_distort_the_offset() {
+    // The responder answers 3 s ahead of the request's transmit timestamp. If the
+    // receive time T4 were read from the stepped clock, the offset would be about
+    // (3 + (3 - 10)) / 2 = -2 s; T4 = T1 + monotonic elapsed keeps it at 3 s.
+    let (good, _) = responder(Behaviour::Ahead(3_000));
+    let mut source = Sntp {
+        servers: vec![good],
+        timeout: Duration::from_millis(500),
+        now: jumping_now,
+    };
+    let m = source.measure().expect("answer");
+    assert!(JUMP_CALLS.load(Ordering::SeqCst) >= 1);
+    assert!((2_980..=3_000).contains(&m.offset_ms), "{}", m.offset_ms);
+}
+
 fn measured(offset_ms: i64, taken: Instant) -> Measurement {
     Measurement {
         server: "ch.pool.ntp.org".into(),
         offset_ms,
         round_trip_ms: 20,
         taken,
+        system: system0(),
     }
+}
+
+fn state_at(m: Option<&Measurement>, (now, system): (Instant, SystemTime)) -> ClockState {
+    state(m, now, system)
 }
 
 #[test]
 fn clock_state_rule_and_transmit_admission() {
     let taken = Instant::now();
-    let at = |age: Duration| taken + age;
+    // Monotonic and system time advance together: no clock step.
+    let at = |age: Duration| (taken + age, system0() + age);
     let fresh = Duration::from_secs(1);
     for (offset_ms, expected) in [
         (0, ClockState::Synchronized),
@@ -195,30 +232,66 @@ fn clock_state_rule_and_transmit_admission() {
         (30_000, ClockState::Unsynchronized),
     ] {
         assert_eq!(
-            state(Some(&measured(offset_ms, taken)), at(fresh)),
+            state_at(Some(&measured(offset_ms, taken)), at(fresh)),
             expected,
             "{offset_ms}"
         );
     }
     assert_eq!(
-        state(Some(&measured(10, taken)), at(MAX_AGE)),
+        state_at(Some(&measured(10, taken)), at(MAX_AGE)),
         ClockState::Synchronized
     );
     assert_eq!(
-        state(
+        state_at(
             Some(&measured(10, taken)),
             at(MAX_AGE + Duration::from_millis(1))
         ),
         ClockState::Unknown
     );
     assert_eq!(
-        state(
+        state_at(
             Some(&measured(900, taken)),
             at(MAX_AGE + Duration::from_millis(1))
         ),
         ClockState::Unknown
     );
-    assert_eq!(state(None, at(fresh)), ClockState::Unknown);
+    assert_eq!(state_at(None, at(fresh)), ClockState::Unknown);
+    assert_eq!(MAX_STEP_MS, 100);
+    // The system clock stepped after the measurement (e.g. Dimension 4 by 2 s): the
+    // measured offset no longer describes it, so the state is unknown, not synchronized.
+    let stepped = |age: Duration, step_ms: i64| {
+        let system = if step_ms >= 0 {
+            system0() + age + Duration::from_millis(step_ms as u64)
+        } else {
+            system0() + age - Duration::from_millis((-step_ms) as u64)
+        };
+        (taken + age, system)
+    };
+    for (step_ms, expected) in [
+        (100, ClockState::Synchronized),
+        (-100, ClockState::Synchronized),
+        (101, ClockState::Unknown),
+        (-101, ClockState::Unknown),
+        (2_000, ClockState::Unknown),
+        (-2_000, ClockState::Unknown),
+    ] {
+        assert_eq!(
+            state_at(
+                Some(&measured(0, taken)),
+                stepped(Duration::from_secs(30), step_ms)
+            ),
+            expected,
+            "step {step_ms}"
+        );
+    }
+    // Also an unsynchronized measurement becomes unknown after a step (it may now be right).
+    assert_eq!(
+        state_at(
+            Some(&measured(2_089, taken)),
+            stepped(Duration::from_secs(30), 2_089)
+        ),
+        ClockState::Unknown
+    );
     assert_eq!(MAX_AGE, Duration::from_secs(600));
 
     // PlanTransmitStart with each derived state, FT8 and FT4, a period starting now.
@@ -226,7 +299,7 @@ fn clock_state_rule_and_transmit_admission() {
     for mode in [Mode::Ft8, Mode::Ft4] {
         let plan = |offset_ms: Option<i64>, age: Duration| {
             let m = offset_ms.map(|o| measured(o, taken));
-            plan_start(mode, period, state(m.as_ref(), at(age)), period, 48_000)
+            plan_start(mode, period, state_at(m.as_ref(), at(age)), period, 48_000)
         };
         assert!(plan(Some(500), fresh).is_ok());
         assert_eq!(
@@ -238,9 +311,23 @@ fn clock_state_rule_and_transmit_admission() {
             plan(Some(0), MAX_AGE + fresh),
             Err(ScheduleError::ClockNotSynchronized)
         );
+        // A 2 s step after a synchronized measurement never keys.
+        let m = measured(0, taken);
+        let (now, system) = stepped(fresh, 2_000);
+        assert_eq!(
+            plan_start(mode, period, state(Some(&m), now, system), period, 48_000),
+            Err(ScheduleError::ClockNotSynchronized)
+        );
     }
 }
 
+/// A measurement taken now on the real clocks (what Monitor::state compares against).
+fn measured_now(offset_ms: i64) -> Measurement {
+    Measurement {
+        system: SystemTime::now(),
+        ..measured(offset_ms, Instant::now())
+    }
+}
 struct Scripted(mpsc::Receiver<Option<Measurement>>);
 impl Source for Scripted {
     fn measure(&mut self) -> Option<Measurement> {
@@ -257,7 +344,7 @@ fn monitor_measures_off_the_reading_thread_and_keeps_the_last_answer() {
     let started = Instant::now();
     assert_eq!(monitor.state(), ClockState::Unknown);
     assert!(started.elapsed() < Duration::from_millis(50));
-    send.send(Some(measured(42, Instant::now()))).unwrap();
+    send.send(Some(measured_now(42))).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while monitor.latest().is_none() && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(5));
@@ -265,14 +352,14 @@ fn monitor_measures_off_the_reading_thread_and_keeps_the_last_answer() {
     assert_eq!(monitor.state(), ClockState::Synchronized);
     // A round without an answer keeps the previous measurement (it ages out later).
     send.send(None).unwrap();
-    send.send(Some(measured(700, Instant::now()))).unwrap();
+    send.send(Some(measured_now(700))).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while monitor.latest().map(|m| m.offset_ms) != Some(700) && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(monitor.state(), ClockState::Unsynchronized);
     let quiet = Monitor::new();
-    quiet.record(Some(measured(1, Instant::now())));
+    quiet.record(Some(measured_now(1)));
     quiet.record(None);
     assert_eq!(quiet.latest().map(|m| m.offset_ms), Some(1));
 }

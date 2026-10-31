@@ -15,6 +15,9 @@ pub const SERVERS: [&str; 3] = ["ch.pool.ntp.org", "time.windows.com", "pool.ntp
 pub const MAX_OFFSET_MS: i64 = 500;
 /// A measurement older than this no longer counts: the state is unknown.
 pub const MAX_AGE: Duration = Duration::from_secs(600);
+/// Largest difference between system and monotonic time elapsed since a measurement
+/// that still counts as no clock step (free-running drift over `MAX_AGE` stays below it).
+pub const MAX_STEP_MS: i64 = 100;
 /// Time between measurements.
 pub const INTERVAL: Duration = Duration::from_secs(60);
 /// How long one server may take to answer.
@@ -32,14 +35,34 @@ pub struct Measurement {
     pub round_trip_ms: i64,
     /// Monotonic instant at which the reply arrived.
     pub taken: Instant,
+    /// Station system clock at that instant (detects a later step of the clock).
+    pub system: SystemTime,
 }
 
-/// The rule of TransmitClock: synchronized when the latest measurement is at most
-/// `MAX_AGE` old and |offset| <= `MAX_OFFSET_MS`, unsynchronized when it is that recent
-/// but outside, unknown without a recent measurement.
-pub fn state(latest: Option<&Measurement>, now: Instant) -> ClockState {
+fn unix_ms(t: SystemTime) -> i128 {
+    match t.duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_millis() as i128,
+        Err(e) => -(e.duration().as_millis() as i128),
+    }
+}
+/// System time minus monotonic time elapsed since `m`: nonzero when the system clock
+/// was stepped (or slewed) after the measurement.
+fn step_ms(m: &Measurement, now: Instant, system_now: SystemTime) -> i128 {
+    unix_ms(system_now)
+        - unix_ms(m.system)
+        - now.saturating_duration_since(m.taken).as_millis() as i128
+}
+/// The rule of TransmitClock at monotonic `now` and system time `system_now`:
+/// synchronized when the latest measurement is at most `MAX_AGE` old, the system clock
+/// has not stepped by more than `MAX_STEP_MS` since, and |offset| <= `MAX_OFFSET_MS`;
+/// unsynchronized when it is that recent and unstepped but outside; otherwise unknown
+/// (the next measurement decides).
+pub fn state(latest: Option<&Measurement>, now: Instant, system_now: SystemTime) -> ClockState {
     match latest {
-        Some(m) if now.saturating_duration_since(m.taken) <= MAX_AGE => {
+        Some(m)
+            if now.saturating_duration_since(m.taken) <= MAX_AGE
+                && step_ms(m, now, system_now).abs() <= i128::from(MAX_STEP_MS) =>
+        {
             if m.offset_ms.abs() <= MAX_OFFSET_MS {
                 ClockState::Synchronized
             } else {
@@ -234,6 +257,7 @@ impl Source for Sntp {
                 offset_ms,
                 round_trip_ms,
                 taken: Instant::now(),
+                system: (self.now)(),
             })
         })
     }
@@ -281,6 +305,6 @@ impl Monitor {
             .clone()
     }
     pub fn state(&self) -> ClockState {
-        state(self.latest().as_ref(), Instant::now())
+        state(self.latest().as_ref(), Instant::now(), SystemTime::now())
     }
 }
