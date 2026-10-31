@@ -69,8 +69,8 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:682},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(758),origin,mapping),'automatic');for(const line of [699,712,725,731,741,743,751,760])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(757),origin,mapping),/unknown/);
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:693},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(772),origin,mapping),'automatic');for(const line of [710,724,738,744,755,757,765,774])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(771),origin,mapping),/unknown/);
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
   await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
