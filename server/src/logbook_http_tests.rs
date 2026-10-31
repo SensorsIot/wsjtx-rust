@@ -324,22 +324,31 @@ async fn save_contact_refusals_byte_cap_and_command_receipts() {
     ready(&f);
     let post = |value: Value| f.post("/contacts", value, None);
     let base = save_body(&f, record(CONTACT));
-    // Exactly 2048 bytes admitted, 2049 refused before parsing.
-    let size = serde_json::to_vec(&base).unwrap().len();
-    // Quotes cost two JSON bytes: reach 2048 bytes with a valid 1024-character comment.
-    let needed = 2048 - size;
-    let quotes = needed - 1021;
+    // Worst case: a 1024-character comment of quotes costs 2048 JSON bytes and fits.
     let mut exact = base.clone();
-    exact["record"]["comment"] = json!(format!(
-        "Tnx{}{}",
-        "\"".repeat(quotes),
-        "x".repeat(1021 - quotes)
-    ));
-    assert_eq!(serde_json::to_vec(&exact).unwrap().len(), 2048);
-    let mut over = exact.clone();
-    over["record"]["comment"] = json!(format!("{}y", exact["record"]["comment"].as_str().unwrap()));
+    exact["record"]["comment"] = json!("\"".repeat(1024));
+    assert!(serde_json::to_vec(&exact).unwrap().len() < 8192);
+    // Exactly 8192 bytes are admitted to parsing (refused only for its invalid field, no
+    // effect); 8193 bytes are refused before parsing.
+    let mut probe = exact.clone();
+    probe["record"]["tx_pwr"] = json!("-1");
+    let padded = |n: usize| {
+        let mut bytes = serde_json::to_vec(&probe).unwrap();
+        bytes.resize(n, b' ');
+        bytes
+    };
+    let at = raw(&f, Method::POST, "/contacts", padded(8192), f.headers(None)).await;
     assert_eq!(
-        code(&post(over).await),
+        code(&at),
+        (
+            StatusCode::BAD_REQUEST,
+            json!("log_invalid_field"),
+            json!("record.tx_pwr")
+        )
+    );
+    let over = raw(&f, Method::POST, "/contacts", padded(8193), f.headers(None)).await;
+    assert_eq!(
+        code(&over),
         (
             StatusCode::PAYLOAD_TOO_LARGE,
             json!("request_too_large"),

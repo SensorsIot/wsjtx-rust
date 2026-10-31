@@ -334,7 +334,7 @@ fn router(state: App) -> Router {
         .route("/recording/imports/{id}", get(recording_http::import).put(recording_http::import).delete(recording_http::import).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/recording/replay", post(recording_http::replay).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/jobs/{id}", axum::routing::delete(recording_http::cancel_job))
-        .route("/contacts", get(logbook_http::history).post(logbook_http::save).layer(axum::extract::DefaultBodyLimit::max(2048)))
+        .route("/contacts", get(logbook_http::history).post(logbook_http::save).layer(axum::extract::DefaultBodyLimit::max(logbook_http::SAVE_BODY_MAX)))
         .route("/contacts/export.adi", get(logbook_http::export))
         .route("/contacts/imports", post(logbook_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/contacts/imports/{id}", get(logbook_http::import).put(logbook_http::import).layer(axum::extract::DefaultBodyLimit::max(logbook::IMPORT_CHUNK_BYTES_MAX)))

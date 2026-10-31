@@ -737,7 +737,8 @@ package WstxContact {
              strings of at most 13 characters, body at most 2048 bytes; 200 exactly
              {v:1,band,mode,statuses:[{call,status}]}, at most 4096 bytes; read-only, at
              most one per published period per browser); POST /contacts (SaveContact:
-             exactly {v,profile_id,boot_id,command_id,record}, body at most 2048 bytes;
+             exactly {v,profile_id,boot_id,command_id,record}, body at most 8192 bytes so
+             that a 1024-character comment fits with worst-case JSON escaping;
              201 {v:1,contact_id,outcome:"saved"}, 200 alreadySaved, 409 log_conflict,
              400 log_invalid_field with field, 503 storage_unavailable leaving the review
              unsaved); GET /contacts (ContactHistory); GET /contacts/export.adi
@@ -748,7 +749,8 @@ package WstxContact {
              (ImportAdi); POST /transmit/halt (WstxTransmit::HaltTransmit).
              All use the existing HTTP/TLS authentication, exact Origin on mutations,
              JSON media rules and error envelope; the 1024-byte body cap applies except
-             the stated 2048-byte bodies and 16384-byte import chunks. Mutations are never
+             the stated 2048-byte worked-before body, 8192-byte save body and 16384-byte
+             import chunks. Mutations are never
              replayed automatically; reconnect reads GET /contact first. MCP uses the
              same station operations. */
     }

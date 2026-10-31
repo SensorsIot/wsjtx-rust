@@ -11,6 +11,10 @@ use axum::http::Method;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// SaveContact body cap: a 1024-character comment stays admissible with worst-case
+/// two-byte JSON escaping of every character (#10 decision 2026-10-31).
+pub const SAVE_BODY_MAX: usize = 8192;
+
 pub fn error(code: &str, field: Option<&str>) -> Response {
     let status = match code {
         "forbidden_origin" | "wrong_profile" => StatusCode::FORBIDDEN,
@@ -213,7 +217,7 @@ pub async fn save(
         Ok(s) => s,
         Err(r) => return *r,
     };
-    let value = match json_body(&headers, body, 2048) {
+    let value = match json_body(&headers, body, SAVE_BODY_MAX) {
         Ok(v) => v,
         Err(r) => return *r,
     };
