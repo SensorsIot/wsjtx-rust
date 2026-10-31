@@ -455,8 +455,10 @@ package WstxContact {
              FREQ in MHz with six decimals = confirmed dial + Tx offset (LQ ~384,
              mainwindow_slots.cpp ~545), absent when unconfirmed; STATION_CALLSIGN and
              MY_GRIDSQUARE from the profile; TX_PWR watts (operator entry, decimal >0,
-             optional, D10); COMMENT single line, printable ASCII, at most 1024
-             characters (optional, D10); APP_WSTXRUST_CONTACT_ID = contactId.
+             optional, D10); COMMENT single line, printable ASCII without '<' and '>', at
+             most 1024 characters (optional, D10); a COMMENT containing '<' or '>' is
+             refused beside the field (DIFFERENT from WSJT-X to_adi_text stripping them:
+             a reviewed record is never altered); APP_WSTXRUST_CONTACT_ID = contactId.
              Name, operator, propagation, satellite and contest exchange fields are not
              adopted (D10). Retain checkboxes: power and comments may be retained for
              the next review within the station session.
@@ -548,7 +550,9 @@ package WstxContact {
         attribute historyPageBytesMax : Integer = 16384;
         doc /* Application admission limits (#10 text; not ADIF limits). Exactly at a
              limit is admitted, one over is refused and publishes no record of that
-             import. The stored log is not limited by one import's record count. */
+             import. Inside a record only white space is permitted between a field value
+             and the next tag; any other text there is length_mismatch (an inexact LEN is
+             never silently truncated). The stored log is not limited by one import's record count. */
     }
     enum def AdiError {
         enum malformed; enum lengthMismatch; enum unsupportedCharacter; enum fieldTooLong;

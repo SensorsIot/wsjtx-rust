@@ -651,6 +651,9 @@ package WstxRequirements {
     }
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
+    // CL-010-04 partial coverage, open items: the automatic review offer at completion,
+    // TIME_ON/TIME_OFF from the contact engine, and ExportAdi built in memory rather than
+    // streamed with backpressure.
     requirement 'CL-010-04' {
         doc /* Offer the prefilled log review automatically once at completion and on a manual Log QSO, including power and comments; persist each contact exactly once per profile in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity, Saved only after durable acknowledgement, explicit unsaved retry, and ADI import/export/history with the stated limits, identity, duplicate/conflict and unknown-field rules. Details: WstxContact::LogRecord, OfferLogReview, SaveContact, ImportAdi, ExportAdi, ContactHistory, AdiLimits. */
         attribute coverage : ImplementationState = ImplementationState::partial;

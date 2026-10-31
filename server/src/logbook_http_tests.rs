@@ -812,3 +812,30 @@ async fn worked_before_query_is_bounded_to_sixty_four_calls_and_four_kibibytes()
         "request_too_large"
     );
 }
+
+// Proves: CL-010-04, CL-010-15; TC-011-001 an unreadable log answers 503 and stays untouched.
+#[tokio::test]
+async fn unreadable_contacts_file_makes_save_storage_unavailable() {
+    let mut f = HttpFixture::new("http://localhost:8098");
+    ready(&f);
+    let path = f.directory.join("contacts.adi");
+    std::fs::create_dir(&path).unwrap();
+    f.reopen();
+    let reply = f
+        .post("/contacts", save_body(&f, record(CONTACT)), None)
+        .await;
+    assert_eq!(
+        code(&reply),
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!("storage_unavailable"),
+            Value::Null
+        )
+    );
+    assert_eq!(
+        code(&get(&f, "/contacts", None).await).1,
+        "storage_unavailable"
+    );
+    assert!(path.is_dir(), "the unreadable path is not replaced");
+    assert_eq!(std::fs::read_dir(&path).unwrap().count(), 0);
+}

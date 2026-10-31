@@ -665,7 +665,7 @@ fn review_validation_refuses_each_invalid_field_with_its_key() {
         Ok(()),
         "optional fields may be null"
     );
-    let cases: [(usize, &str, &str); 16] = [
+    let cases: [(usize, &str, &str); 18] = [
         (0, "k1abc", "record.call"),
         (1, "FN4", "record.gridsquare"),
         (2, "SSB", "record.mode"),
@@ -682,6 +682,8 @@ fn review_validation_refuses_each_invalid_field_with_its_key() {
         (14, "-1", "record.tx_pwr"),
         (15, "line\r\nbreak", "record.comment"),
         (15, "", "record.comment"),
+        (15, "see <eor> here", "record.comment"),
+        (15, "a>b", "record.comment"),
     ];
     for (index, value, field) in cases {
         let mut record = good.clone();
@@ -710,4 +712,23 @@ fn review_validation_refuses_each_invalid_field_with_its_key() {
         validate_review(&good, "HB9BLA", ""),
         Err("record.my_gridsquare")
     );
+}
+
+// Proves: CL-010-04; TC-011-001 an unreadable contacts.adi (not NotFound) is never
+// treated as an empty log and is never replaced.
+#[test]
+fn unreadable_stored_log_is_unavailable_and_left_untouched() {
+    let dir = Dir::new();
+    let path = dir.0.join(FILE_NAME);
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("marker"), b"kept").unwrap();
+    let log = Logbook::open(&dir.0);
+    assert_eq!(
+        log.save(reviewed(ID1, "K1ABC"), GATE),
+        Err(StoreError::Unavailable)
+    );
+    assert_eq!(log.total(), Err(StoreError::Unavailable));
+    assert!(path.is_dir(), "the unreadable path is not replaced");
+    assert_eq!(fs::read(path.join("marker")).unwrap(), b"kept");
+    assert!(dir.leftovers().is_empty());
 }
