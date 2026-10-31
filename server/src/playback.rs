@@ -11,7 +11,7 @@ use std::sync::Arc;
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{Output, system_time_disciplined};
+pub use windows::{Output, install_exit_guard, system_time_disciplined};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputError {
@@ -114,5 +114,64 @@ pub fn write_sample(encoding: Encoding, value: f32, out: &mut [u8]) {
             let v = (f64::from(value) * 2_147_483_647.).round() as i32;
             out.copy_from_slice(&v.to_le_bytes());
         }
+    }
+}
+
+/// What the render loop does with the device buffer (WstxTransmit::AudioPlayback drain
+/// rule): after the program is exhausted nothing more is written, so the device padding
+/// drains to zero and the end is reported once every program frame was consumed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fill {
+    Program(u32),
+    Silence(u32),
+    Nothing,
+    Finished,
+}
+pub fn plan_fill(program: Option<&Renderer>, padding: u32, capacity: u32) -> Fill {
+    let available = capacity.saturating_sub(padding);
+    match program {
+        Some(r) if r.exhausted() => {
+            if padding == 0 {
+                Fill::Finished
+            } else {
+                Fill::Nothing
+            }
+        }
+        _ if available == 0 => Fill::Nothing,
+        Some(_) => Fill::Program(available),
+        None => Fill::Silence(available),
+    }
+}
+/// Render progress watchdog: frames the device actually consumed (written minus padding)
+/// must advance at least every `STALL_MS`, otherwise the output is treated as lost.
+pub const STALL_MS: u64 = 500;
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Progress {
+    written: u64,
+    consumed: u64,
+    at_ms: u64,
+}
+impl Progress {
+    pub fn new(now_ms: u64) -> Self {
+        Self {
+            at_ms: now_ms,
+            ..Self::default()
+        }
+    }
+    pub fn wrote(&mut self, frames: u32) {
+        self.written += u64::from(frames);
+    }
+    pub fn observe(&mut self, padding: u32, now_ms: u64) {
+        let consumed = self.written.saturating_sub(u64::from(padding));
+        if consumed > self.consumed {
+            self.consumed = consumed;
+            self.at_ms = now_ms;
+        }
+    }
+    pub fn stalled(&self, now_ms: u64) -> bool {
+        now_ms.saturating_sub(self.at_ms) > STALL_MS
+    }
+    pub fn last_progress_ms(&self) -> u64 {
+        self.at_ms
     }
 }

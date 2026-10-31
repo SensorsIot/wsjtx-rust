@@ -27,6 +27,9 @@ pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
+/// WstxTransmit::TransmitTiming releaseMarginMs: PTT is released at the latest this long
+/// after the waveform's last sample was due, whatever the device reports.
+pub const RELEASE_MARGIN_MS: i64 = 500;
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const OUTCOMES: usize = 32;
 const HALT_RECEIPTS: usize = 16;
@@ -74,7 +77,11 @@ pub enum TransmitFailure {
     RadioLost,
     AudioUnavailable,
     AudioDeviceLost,
+    /// The device did not report the end in time (release deadline or stalled render).
+    AudioStalled,
     AuthorityChanged,
+    /// The transmit owner thread panicked; it failed closed.
+    OwnerFault,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutcomeKind {
@@ -180,6 +187,10 @@ pub trait Hardware: Send {
     fn stop_audio(&mut self);
     /// A handle that stops output from any thread without the core lock (priority halt).
     fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync>;
+    /// The priority-halt flag; device waits (output open, CAT key wait) abort on it.
+    fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
+        let _ = abort;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -227,6 +238,8 @@ struct Job {
     prepared: Prepared,
     keyed: bool,
     audio_start_utc_ms: Option<i64>,
+    /// Device-independent release deadline once audio started.
+    release_by_utc_ms: Option<i64>,
 }
 struct Tune {
     hz: f64,
@@ -258,6 +271,8 @@ pub struct Core<H: Hardware> {
     tx_expired: bool,
     ever_keyed: bool,
     startup_release: StartupRelease,
+    abort: Arc<AtomicBool>,
+    faulted: bool,
 }
 
 fn schedule_refusal(error: ScheduleError) -> TransmitRefusal {
@@ -337,7 +352,17 @@ impl<H: Hardware> Core<H> {
             tx_expired: false,
             ever_keyed: false,
             startup_release: StartupRelease::Pending,
+            abort: Arc::new(AtomicBool::new(false)),
+            faulted: false,
         }
+    }
+    /// Shares the priority-halt flag with the hardware's device waits.
+    pub fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
+        self.hardware.attach_abort(abort.clone());
+        self.abort = abort;
+    }
+    fn aborted(&self) -> bool {
+        self.abort.load(Ordering::Acquire)
     }
     pub fn hardware(&self) -> &H {
         &self.hardware
@@ -410,7 +435,10 @@ impl<H: Hardware> Core<H> {
             self.refusal = Some(refusal);
             return Err(refusal);
         }
-        if self.ptt == PttState::Indeterminate || self.startup_release == StartupRelease::Failed {
+        if self.ptt == PttState::Indeterminate
+            || self.startup_release == StartupRelease::Failed
+            || self.faulted
+        {
             self.refusal = Some(TransmitRefusal::RadioUnavailable);
             return Err(TransmitRefusal::RadioUnavailable);
         }
@@ -518,6 +546,7 @@ impl<H: Hardware> Core<H> {
                 prepared,
                 keyed: false,
                 audio_start_utc_ms: None,
+                release_by_utc_ms: None,
             });
         }
         self.emit(sequence, OutcomeKind::Accepted)
@@ -626,7 +655,8 @@ impl<H: Hardware> Core<H> {
             self.refusal = Some(refusal);
             return Err(refusal);
         }
-        if self.hardware.open_audio().is_err() {
+        if self.hardware.open_audio().is_err() || self.aborted() {
+            self.hardware.stop_audio();
             self.refusal = Some(TransmitRefusal::Busy);
             return Err(TransmitRefusal::Busy);
         }
@@ -699,8 +729,8 @@ impl<H: Hardware> Core<H> {
                 .watchdog_from
                 .is_some_and(|from| now - from >= i64::from(self.tx_minutes) * 60_000)
         {
+            // halt() records the true halt state (pending if the release failed).
             self.halt();
-            self.halt_state = HaltState::Stopped;
             self.cause = DisarmCause::TxWatchdog;
             self.tx_expired = true;
             return;
@@ -753,8 +783,20 @@ impl<H: Hardware> Core<H> {
                     self.refuse_current(schedule_refusal(e));
                     return;
                 }
+                if self.aborted() {
+                    return;
+                }
                 if self.hardware.open_audio().is_err() {
+                    if self.aborted() {
+                        self.hardware.stop_audio();
+                        return;
+                    }
                     self.fail_current(TransmitFailure::AudioUnavailable, DisarmCause::DeviceLost);
+                    return;
+                }
+                // A halt received while the output opened: never key.
+                if self.aborted() {
+                    self.hardware.stop_audio();
                     return;
                 }
                 self.ever_keyed = true;
@@ -795,6 +837,7 @@ impl<H: Hardware> Core<H> {
                 }
             };
             let samples = job.prepared.samples.clone();
+            let job_len = samples.len();
             let text = job.prepared.text.clone();
             if let Err(e) = self.hardware.play(Program::Waveform {
                 samples,
@@ -812,10 +855,24 @@ impl<H: Hardware> Core<H> {
             }
             self.last_text = Some(text);
             self.last_period = Some(period);
+            let remaining = (job_len - start.skipped_samples as usize) as i64 * 1000
+                / i64::from(SAMPLE_RATE_HZ);
             if let Some(job) = &mut self.current {
                 job.audio_start_utc_ms = Some(now);
+                job.release_by_utc_ms = Some(now + remaining + RELEASE_MARGIN_MS);
             }
             self.emit_full(sequence, OutcomeKind::Started, None, None, Some(now));
+            return;
+        }
+        // Device-independent bound: PTT is released at the deadline whatever the device
+        // reports (stalled, silent, never finishing).
+        if self
+            .current
+            .as_ref()
+            .and_then(|j| j.release_by_utc_ms)
+            .is_some_and(|by| now >= by)
+        {
+            self.fail_current(TransmitFailure::AudioStalled, DisarmCause::DeviceLost);
             return;
         }
         match self.hardware.poll_audio() {
@@ -834,6 +891,7 @@ impl<H: Hardware> Core<H> {
                             prepared: next,
                             keyed: false,
                             audio_start_utc_ms: None,
+                            release_by_utc_ms: None,
                         });
                     }
                 } else {
@@ -860,6 +918,54 @@ impl<H: Hardware> Core<H> {
             return false;
         }
         self.release()
+    }
+    /// Fail closed after an owner fault: stop audio, one release attempt, drop every
+    /// request, disarm (failed) and refuse Arm for the rest of the boot.
+    pub fn fail_closed(&mut self) -> HaltState {
+        self.faulted = true;
+        let keyed = self.current.as_ref().is_some_and(|j| j.keyed)
+            || self.tune.is_some()
+            || self.ptt != PttState::Released;
+        let _ =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.hardware.stop_audio()));
+        let released = !keyed
+            || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.hardware.ptt(false).is_ok()
+            }))
+            .unwrap_or(false);
+        self.ptt = if released {
+            PttState::Released
+        } else {
+            PttState::Indeterminate
+        };
+        self.tune = None;
+        if let Some(job) = self.current.take() {
+            self.emit_full(
+                job.prepared.request.request_sequence,
+                OutcomeKind::Failed,
+                None,
+                Some(TransmitFailure::OwnerFault),
+                job.audio_start_utc_ms,
+            );
+        }
+        if let Some(next) = self.next.take() {
+            self.emit_full(
+                next.request.request_sequence,
+                OutcomeKind::Failed,
+                None,
+                Some(TransmitFailure::OwnerFault),
+                None,
+            );
+        }
+        self.disarm_with(DisarmCause::Failed);
+        self.halt_state = if !keyed {
+            HaltState::Idle
+        } else if released {
+            HaltState::Stopped
+        } else {
+            HaltState::Pending
+        };
+        self.halt_state
     }
     pub fn view(&self) -> View {
         let now = self.hardware.now_utc_ms();
@@ -921,7 +1027,7 @@ impl<H: Hardware> Core<H> {
 
 /// Lock-free priority halt signal shared between callers and the transmit thread.
 struct HaltSignal {
-    requested: AtomicBool,
+    requested: Arc<AtomicBool>,
     generation: Mutex<(u64, u64, HaltState)>,
     done: Condvar,
 }
@@ -940,24 +1046,40 @@ pub struct Service<H: Hardware + 'static> {
 impl<H: Hardware + 'static> Service<H> {
     pub fn start(hardware: H) -> std::io::Result<Self> {
         let stopper = hardware.audio_stopper();
-        let core = Arc::new(Mutex::new(Core::new(hardware)));
         let halt = Arc::new(HaltSignal {
-            requested: AtomicBool::new(false),
+            requested: Arc::new(AtomicBool::new(false)),
             generation: Mutex::new((0, 0, HaltState::Idle)),
             done: Condvar::new(),
         });
+        let mut owner = Core::new(hardware);
+        owner.attach_abort(halt.requested.clone());
+        let core = Arc::new(Mutex::new(owner));
         let stop = Arc::new(AtomicBool::new(false));
         let (c, h, s) = (core.clone(), halt.clone(), stop.clone());
         let thread = thread::Builder::new()
             .name("transmit".into())
             .spawn(move || {
+                let lock = || c.lock().unwrap_or_else(|p| p.into_inner());
+                let mut faulted = false;
                 while !s.load(Ordering::Acquire) {
-                    if h.requested.swap(false, Ordering::AcqRel) {
+                    if h.requested.load(Ordering::Acquire) {
                         let target = h.generation.lock().map(|g| g.0).unwrap_or(0);
-                        let state = c
-                            .lock()
-                            .map(|mut core| core.halt())
-                            .unwrap_or(HaltState::Pending);
+                        let mut core = lock();
+                        let state = if faulted {
+                            core.fail_closed()
+                        } else {
+                            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                core.halt()
+                            })) {
+                                Ok(state) => state,
+                                Err(_) => {
+                                    faulted = true;
+                                    core.fail_closed()
+                                }
+                            }
+                        };
+                        drop(core);
+                        h.requested.store(false, Ordering::Release);
                         if let Ok(mut g) = h.generation.lock() {
                             g.1 = target;
                             g.2 = state;
@@ -965,17 +1087,27 @@ impl<H: Hardware + 'static> Service<H> {
                         h.done.notify_all();
                         continue;
                     }
-                    if let Ok(mut core) = c.lock() {
-                        core.tick();
-                        if core.ptt == PttState::Indeterminate {
-                            core.recover_release();
+                    if !faulted {
+                        let mut core = lock();
+                        let stepped =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                core.tick();
+                                if core.ptt == PttState::Indeterminate {
+                                    core.recover_release();
+                                }
+                            }));
+                        if stepped.is_err() {
+                            // A panicking owner fails closed and stays faulted.
+                            faulted = true;
+                            core.fail_closed();
                         }
                     }
                     thread::sleep(Duration::from_millis(2));
                 }
                 // Shutdown never leaves TX active.
-                if let Ok(mut core) = c.lock() {
-                    core.halt();
+                let mut core = lock();
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| core.halt())).is_err() {
+                    core.fail_closed();
                 }
             })?;
         Ok(Self {
@@ -1055,6 +1187,28 @@ impl<H: Hardware + 'static> Drop for Service<H> {
     }
 }
 
+/// Keys through the CI-V owner; a priority halt before the frame is sent aborts the
+/// wait with Busy (no bytes).
+pub fn actor_ptt_abortable(
+    actor: &crate::radio_control::actor::Actor,
+    exchange: Duration,
+    abort: &AtomicBool,
+) -> Result<(), PttError> {
+    actor
+        .ptt_abortable(true, Instant::now() + exchange, abort)
+        .map_err(map_actor_error)
+}
+fn map_actor_error(e: crate::radio_control::Error) -> PttError {
+    use crate::radio_control::Error;
+    match e {
+        Error::Busy => PttError::Busy,
+        Error::Timeout | Error::Cancelled | Error::PartialWrite => PttError::Timeout,
+        Error::Rejected => PttError::Rejected,
+        Error::ReadbackMismatch => PttError::ReadbackMismatch,
+        Error::Indeterminate | Error::Protocol | Error::Limit => PttError::Indeterminate,
+        _ => PttError::Unavailable,
+    }
+}
 /// PTT through the station's single CI-V owner (WstxTransmit::PttControl).
 pub fn actor_ptt(
     actor: &crate::radio_control::actor::Actor,

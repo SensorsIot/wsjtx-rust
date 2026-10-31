@@ -254,7 +254,8 @@ package WstxTransmit {
     }
     enum def TransmitFailure {
         enum pttTimeout; enum pttRejected; enum pttReadbackMismatch; enum pttIndeterminate;
-        enum radioLost; enum audioUnavailable; enum audioDeviceLost; enum authorityChanged;
+        enum radioLost; enum audioUnavailable; enum audioDeviceLost; enum audioStalled;
+        enum authorityChanged; enum ownerFault;
     }
     enum def TransmitCapability { enum unsupported; enum unavailable; enum available; }
     enum def PttState { enum released; enum keyed; enum indeterminate; }
@@ -285,6 +286,8 @@ package WstxTransmit {
         attribute keyLeadMs : Integer = 0;
         attribute playbackScale : Real = 0.5;
         attribute sampleRateHz : Integer = 48000;
+        attribute releaseMarginMs : Integer = 500;
+        attribute renderStallMs : Integer = 500;
         doc /* Keying: the output device is opened first, then PTT is keyed at the period
              start (keyLeadMs after it; for an admitted late start at once), so the
              audio delay of Ft8Schedule/Ft4Schedule (500/300 ms) separates the confirmed
@@ -292,11 +295,24 @@ package WstxTransmit {
              the first owner step at or after period start + audio delay, and plays
              from the sample PlanTransmitStart gives for that instant (late start skips,
              never replays). PTT is released with readback after the device reports the
-             last sample played. haltMs: from HaltTransmit receipt, audio output stops
+             last sample played, and at the latest at the device-independent release
+             deadline audio start + remaining waveform duration + releaseMarginMs
+             whatever the device reports (audioStalled); disarm never unbounds a keyed
+             transmission. haltMs: from HaltTransmit receipt, audio output stops
              without waiting for the owner lock and PTT is released and read back
              within 250 ms while CAT answers; a release exchange that fails or times
              out (pttExchangeMs per exchange, RadioIO 1 s) leaves PttState
              indeterminate, closes that CAT connection and is reported, never hidden.
+             Halt priority: the halt flag is checked immediately before keying and
+             aborts the output open and the wait for the CAT owner; a halt received
+             during the open never keys, one received during the key exchange releases
+             at once after it; halt_state stopped only after the confirmed release,
+             otherwise pending with the true PttState. Owner fault: a panic of the
+             transmit owner thread fails closed (audio stopped, one release attempt,
+             requests failed ownerFault, disarmed failed, Arm refused for the boot)
+             and halt keeps answering. ExitRelease: Ctrl+C, console close, logoff,
+             shutdown and any process panic stop output and, only when the CI-V switch
+             may be keyed, send one off-only release bounded to 500 ms.
              playbackScale: the unit-peak waveform is played at -6.02 dBFS, fixed for
              now (supervisor decision); drive level is set at the radio (IC-7300 USB MOD
              level), no attenuation setting is offered in this slice. */
@@ -330,7 +346,11 @@ package WstxTransmit {
              channel); otherwise audioUnavailable before PTT is keyed. The device opens
              streaming silence before keying, plays one program (waveform from its
              planned sample or the Tune tone), and stops and closes within 250 ms from
-             any thread. A render error or invalidated device during audio is
+             any thread. Drain: after the program's last frame nothing more is written,
+             so the device padding drains and the end is reported only when every
+             program frame was consumed. Render watchdog: while playing, no device
+             consumption for renderStallMs, or an ended render thread, is
+             audioDeviceLost. A render error or invalidated device during audio is
              audioDeviceLost: PTT is released and the station disarms. Capture never
              opens it; it never touches CAT. */
     }

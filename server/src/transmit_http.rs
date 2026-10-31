@@ -29,8 +29,12 @@ pub(crate) struct StationHardware {
     #[cfg(windows)]
     output: Option<wstx_rust::playback::Output>,
     slot: Arc<Mutex<Option<Stopper>>>,
+    abort: Arc<std::sync::atomic::AtomicBool>,
 }
 impl Hardware for StationHardware {
+    fn attach_abort(&mut self, abort: Arc<std::sync::atomic::AtomicBool>) {
+        self.abort = abort;
+    }
     fn now_utc_ms(&self) -> i64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -87,7 +91,11 @@ impl Hardware for StationHardware {
             .actor
             .clone()
             .ok_or(PttError::Unavailable)?;
-        tx::actor_ptt(&actor, on, Duration::from_secs(1))
+        if on {
+            tx::actor_ptt_abortable(&actor, Duration::from_secs(1), &self.abort)
+        } else {
+            tx::actor_ptt(&actor, false, Duration::from_secs(1))
+        }
     }
     #[cfg(windows)]
     fn open_audio(&mut self) -> Result<(), AudioError> {
@@ -99,7 +107,8 @@ impl Hardware for StationHardware {
             .output_device
             .clone()
             .ok_or(AudioError::Unavailable)?;
-        let output = wstx_rust::playback::Output::open(&id).map_err(|_| AudioError::Unavailable)?;
+        let output = wstx_rust::playback::Output::open_abortable(&id, &self.abort)
+            .map_err(|_| AudioError::Unavailable)?;
         *self.slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(output.stopper());
         self.output = Some(output);
         Ok(())
@@ -157,29 +166,43 @@ impl Hardware for StationHardware {
 
 pub(crate) struct Station {
     inputs: Arc<Mutex<Inputs>>,
+    slot: Arc<Mutex<Option<Stopper>>>,
     pub(crate) service: Service<Box<dyn Hardware>>,
     receipts: Mutex<VecDeque<(String, Value, Value)>>,
 }
 impl Station {
     pub(crate) fn start() -> std::io::Result<Arc<Self>> {
         let inputs = Arc::new(Mutex::new(Inputs::default()));
+        let slot = Arc::new(Mutex::new(None));
         let hardware = StationHardware {
             inputs: inputs.clone(),
             #[cfg(windows)]
             output: None,
-            slot: Arc::new(Mutex::new(None)),
+            slot: slot.clone(),
+            abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
-        Self::with_hardware(inputs, Box::new(hardware))
-    }
-    pub(crate) fn with_hardware(
-        inputs: Arc<Mutex<Inputs>>,
-        hardware: Box<dyn Hardware>,
-    ) -> std::io::Result<Arc<Self>> {
         Ok(Arc::new(Self {
             inputs,
-            service: Service::start(hardware)?,
+            slot,
+            service: Service::start(Box::new(hardware) as Box<dyn Hardware>)?,
             receipts: Mutex::new(VecDeque::new()),
         }))
+    }
+    /// WstxTransmit::ExitRelease for process exit and panics: stop output and, only if
+    /// the CI-V switch may be keyed, send one off-only release bounded to 500 ms. Uses
+    /// try_lock only, so a panicking holder cannot deadlock it.
+    pub(crate) fn emergency_release(&self) {
+        if let Ok(slot) = self.slot.try_lock()
+            && let Some(stop) = slot.as_ref()
+        {
+            stop();
+        }
+        let actor = self.inputs.try_lock().ok().and_then(|i| i.actor.clone());
+        if let Some(actor) = actor
+            && actor.ptt_indeterminate()
+        {
+            let _ = actor.ptt(false, Instant::now() + Duration::from_millis(500));
+        }
     }
     /// Called by the CL-022 tick with the current profile, gate and actor.
     pub(crate) fn update(

@@ -251,6 +251,11 @@ impl Actor {
     /// is confirmed by readback. Release is admitted with or without the hold. No queue:
     /// one switch exchange at a time.
     pub fn ptt(&self, on: bool, deadline: Instant) -> Result<()> {
+        self.ptt_abortable(on, deadline, &AtomicBool::new(false))
+    }
+    /// As `ptt`; while the switch frame is not yet sent, a set `abort` (priority halt)
+    /// ends the wait with Busy and no bytes.
+    pub fn ptt_abortable(&self, on: bool, deadline: Instant, abort: &AtomicBool) -> Result<()> {
         if on && self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
@@ -264,10 +269,18 @@ impl Actor {
                 ) {
                     Ok(_) => break,
                     Err(TRANSMIT_HOLD) => break,
-                    Err(_) if Instant::now() >= deadline => return Err(Error::Busy),
+                    Err(_) if Instant::now() >= deadline || abort.load(Ordering::Acquire) => {
+                        return Err(Error::Busy);
+                    }
                     Err(_) => thread::sleep(Duration::from_millis(1)),
                 }
             }
+        }
+        if on && abort.load(Ordering::Acquire) {
+            if !self.keyed.load(Ordering::Acquire) {
+                self.release_hold();
+            }
+            return Err(Error::Busy);
         }
         if on {
             self.keyed.store(true, Ordering::Release);

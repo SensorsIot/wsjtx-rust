@@ -21,6 +21,9 @@ struct Shared {
     program: Mutex<Option<Renderer>>,
     state: Mutex<OutputState>,
     stop: AtomicBool,
+    /// Milliseconds since `origin` of the last observed device consumption.
+    progress_ms: std::sync::atomic::AtomicU64,
+    origin: Instant,
 }
 /// One open output stream. Dropping or `stop` closes it within 250 ms.
 pub struct Output {
@@ -51,6 +54,10 @@ impl Drop for Mix {
 impl Output {
     /// Opens `endpoint_id` and starts streaming silence; waits at most 1 s for the open.
     pub fn open(endpoint_id: &str) -> Result<Self, OutputError> {
+        Self::open_abortable(endpoint_id, &AtomicBool::new(false))
+    }
+    /// As `open`; gives up at once when `abort` is set (priority halt).
+    pub fn open_abortable(endpoint_id: &str, abort: &AtomicBool) -> Result<Self, OutputError> {
         if endpoint_id.is_empty() || endpoint_id.len() > 2048 || endpoint_id.contains('\0') {
             return Err(OutputError::Unavailable);
         }
@@ -58,6 +65,8 @@ impl Output {
             program: Mutex::new(None),
             state: Mutex::new(OutputState::Opening),
             stop: AtomicBool::new(false),
+            progress_ms: std::sync::atomic::AtomicU64::new(0),
+            origin: Instant::now(),
         });
         let (opened_tx, opened) = mpsc::sync_channel(1);
         let id = endpoint_id.to_owned();
@@ -79,7 +88,17 @@ impl Output {
             shared,
             thread: Some(thread),
         };
-        match opened.recv_timeout(Duration::from_secs(1)) {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let received = loop {
+            if abort.load(Ordering::Acquire) {
+                break Err(mpsc::RecvTimeoutError::Timeout);
+            }
+            match opened.recv_timeout(Duration::from_millis(5)) {
+                Err(mpsc::RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
+                other => break other,
+            }
+        };
+        match received {
             Ok(Ok(())) => Ok(output),
             Ok(Err(e)) => {
                 output.stop();
@@ -109,12 +128,25 @@ impl Output {
             .map_err(|_| OutputError::Unavailable)? = OutputState::Playing;
         Ok(())
     }
+    /// Device state; a render thread that ended, or made no consumption progress for
+    /// STALL_MS while playing, is reported lost (render watchdog).
     pub fn state(&self) -> OutputState {
-        self.shared
+        let state = self
+            .shared
             .state
             .lock()
             .map(|s| *s)
-            .unwrap_or(OutputState::Failed(OutputError::DeviceLost))
+            .unwrap_or(OutputState::Failed(OutputError::DeviceLost));
+        if state == OutputState::Playing {
+            let now = self.shared.origin.elapsed().as_millis() as u64;
+            let last = self.shared.progress_ms.load(Ordering::Acquire);
+            if self.thread.as_ref().is_none_or(JoinHandle::is_finished)
+                || now.saturating_sub(last) > super::STALL_MS
+            {
+                return OutputState::Failed(OutputError::DeviceLost);
+            }
+        }
+        state
     }
     /// Stops writing program samples at once; callable from any thread.
     pub fn stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
@@ -212,34 +244,42 @@ fn render(
         *shared.state.lock().map_err(|_| OutputError::Unavailable)? = OutputState::Ready;
         let _ = opened.try_send(Ok(()));
         let frame_bytes = format.frame_bytes();
+        let now = || shared.origin.elapsed().as_millis() as u64;
+        let mut progress = super::Progress::new(now());
+        progress.wrote(capacity);
         let result = (|| {
             while !shared.stop.load(Ordering::Acquire) {
                 if WaitForSingleObject(event.0, 10) == WAIT_FAILED {
                     return Err(OutputError::DeviceLost);
                 }
                 let padding = client.GetCurrentPadding().map_err(lost)?;
-                let available = capacity.saturating_sub(padding);
+                progress.observe(padding, now());
+                shared
+                    .progress_ms
+                    .store(progress.last_progress_ms(), Ordering::Release);
                 let mut program = shared.program.lock().map_err(|_| OutputError::DeviceLost)?;
-                let drained = program.as_ref().is_some_and(Renderer::exhausted);
-                if drained && padding == 0 {
-                    *program = None;
-                    *shared.state.lock().map_err(|_| OutputError::DeviceLost)? =
-                        OutputState::Finished;
-                }
-                if available == 0 {
-                    continue;
-                }
-                let buffer = writer.GetBuffer(available).map_err(lost)?;
-                match program.as_mut().filter(|p| !p.exhausted()) {
-                    Some(renderer) => {
-                        let bytes = std::slice::from_raw_parts_mut(
-                            buffer,
-                            available as usize * frame_bytes,
-                        );
-                        renderer.fill(format, bytes, available as usize);
-                        writer.ReleaseBuffer(available, 0).map_err(lost)?;
+                match super::plan_fill(program.as_ref(), padding, capacity) {
+                    super::Fill::Nothing => {}
+                    super::Fill::Finished => {
+                        *program = None;
+                        *shared.state.lock().map_err(|_| OutputError::DeviceLost)? =
+                            OutputState::Finished;
                     }
-                    None => writer.ReleaseBuffer(available, silent).map_err(lost)?,
+                    super::Fill::Silence(frames) => {
+                        writer.GetBuffer(frames).map_err(lost)?;
+                        writer.ReleaseBuffer(frames, silent).map_err(lost)?;
+                        progress.wrote(frames);
+                    }
+                    super::Fill::Program(frames) => {
+                        let buffer = writer.GetBuffer(frames).map_err(lost)?;
+                        let bytes =
+                            std::slice::from_raw_parts_mut(buffer, frames as usize * frame_bytes);
+                        if let Some(renderer) = program.as_mut() {
+                            renderer.fill(format, bytes, frames as usize);
+                        }
+                        writer.ReleaseBuffer(frames, 0).map_err(lost)?;
+                        progress.wrote(frames);
+                    }
                 }
             }
             Ok(())
@@ -265,4 +305,24 @@ pub fn system_time_disciplined() -> Option<bool> {
         .ok()?;
     }
     Some(!disabled.as_bool())
+}
+
+static EXIT_GUARD: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
+unsafe extern "system" fn console_exit(_: u32) -> ::windows::core::BOOL {
+    if let Some(guard) = EXIT_GUARD.get() {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(guard));
+    }
+    // Not handled: the default handler then ends the process as before.
+    ::windows::core::BOOL(0)
+}
+/// WstxTransmit::ExitRelease: runs `guard` (stop audio, one bounded off-only PTT release)
+/// on Ctrl+C, Ctrl+Break, console close, logoff and shutdown before the default exit.
+pub fn install_exit_guard(guard: Box<dyn Fn() + Send + Sync>) -> bool {
+    if EXIT_GUARD.set(guard).is_err() {
+        return false;
+    }
+    // SAFETY: a static handler with the documented signature, registered once.
+    unsafe {
+        ::windows::Win32::System::Console::SetConsoleCtrlHandler(Some(console_exit), true).is_ok()
+    }
 }

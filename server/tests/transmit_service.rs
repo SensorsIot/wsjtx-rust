@@ -40,6 +40,10 @@ struct Bench {
     /// Wall-clock delay of each PTT exchange (Service real-time tests).
     ptt_delay_ms: AtomicI64,
     radio_tx: Mutex<Option<bool>>,
+    /// Wall-clock delay inside open_audio (halt-during-open tests).
+    open_delay_ms: AtomicI64,
+    /// poll_audio panics (owner fault tests).
+    panic_poll: AtomicBool,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -107,6 +111,10 @@ impl Hardware for Fake {
     }
     fn open_audio(&mut self) -> Result<(), AudioError> {
         self.record(Event::Open);
+        let delay = self.0.open_delay_ms.load(Ordering::SeqCst);
+        if delay > 0 {
+            std::thread::sleep(Duration::from_millis(delay as u64));
+        }
         if self.0.open_error.load(Ordering::SeqCst) {
             return Err(AudioError::Unavailable);
         }
@@ -122,6 +130,9 @@ impl Hardware for Fake {
         Ok(())
     }
     fn poll_audio(&mut self) -> AudioPoll {
+        if self.0.panic_poll.load(Ordering::SeqCst) {
+            panic!("fixture: output poll panics");
+        }
         self.0.audio.lock().unwrap().unwrap_or(AudioPoll::Idle)
     }
     fn stop_audio(&mut self) {
@@ -564,6 +575,8 @@ fn tx_watchdog_expiry_halts_and_disarms_and_tune_ends_at_its_limit() {
     core.arm(7).unwrap();
     assert_eq!(core.view().tx_remaining_minutes, 1);
     core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 13_000);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
     run(&mut core, &f, t0 + 59_999);
     assert_eq!(
         core.view().arm_state,
@@ -903,4 +916,237 @@ fn startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed
     assert_eq!(f.keys().len(), 1);
     assert_eq!(core.view().startup_release, StartupRelease::Failed);
     assert_eq!(core.arm(7), Err(TransmitRefusal::RadioUnavailable));
+}
+
+/// Wall-clock driver: the fake UTC follows real time from `start`.
+fn drive(f: &Fake, start: i64) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+    let origin = Instant::now();
+    let clock = f.clone();
+    let stop = Arc::new(AtomicBool::new(false));
+    let ticking = stop.clone();
+    clock.at(start);
+    let handle = std::thread::spawn(move || {
+        while !ticking.load(Ordering::SeqCst) {
+            clock.at(start + origin.elapsed().as_millis() as i64);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    });
+    (stop, handle)
+}
+fn wait_for(what: &str, limit: Duration, done: impl Fn() -> bool) {
+    let start = Instant::now();
+    while !done() {
+        assert!(start.elapsed() < limit, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+// Proves: CL-009-04; TC-008-003. Review finding 1: the release never depends on the
+// device reporting the end.
+#[test]
+fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls() {
+    for stuck in [AudioPoll::Playing, AudioPoll::Idle] {
+        let f = Fake::new();
+        let mut core = Core::new(f.clone());
+        f.at(P - 100);
+        core.arm(7).unwrap();
+        core.submit(request(1, P, "CQ HB9BLA JN47"));
+        run(&mut core, &f, P + 600);
+        *f.0.audio.lock().unwrap() = Some(stuck);
+        // Disarm does not unbound the keyed transmission.
+        core.disarm(DisarmCause::Operator);
+        let deadline = P + 500 + 606_720 * 1000 / 48_000 + 500;
+        run(&mut core, &f, deadline - 1);
+        assert_eq!(f.keys(), vec![(P, true)], "still keyed before the deadline");
+        run(&mut core, &f, deadline);
+        assert_eq!(f.keys(), vec![(P, true), (deadline, false)], "{stuck:?}");
+        let last = core.view().outcomes.last().cloned().unwrap();
+        assert_eq!(last.kind, OutcomeKind::Failed);
+        assert!(last.failure.is_some());
+        assert_eq!(core.view().ptt, PttState::Released);
+    }
+}
+
+// Proves: CL-009-04; TC-008-003. Review finding 3: an owner panic fails closed.
+#[test]
+fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
+    let f = Fake::new();
+    let (stop, driver) = drive(&f, P + 300);
+    let service = Service::start(f.clone()).unwrap();
+    service.with(|c| {
+        c.arm(7).unwrap();
+        c.submit(request(1, P, "CQ HB9BLA JN47"))
+    });
+    wait_for("audio start", Duration::from_secs(3), || {
+        service.view().transmitting
+    });
+    f.0.panic_poll.store(true, Ordering::SeqCst);
+    wait_for("fail-closed release", Duration::from_secs(2), || {
+        f.keys().last().map(|k| k.1) == Some(false)
+    });
+    let v = service.view();
+    assert_eq!(
+        (v.arm_state, v.ptt, v.transmitting),
+        (ArmState::Disarmed, PttState::Released, false)
+    );
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000c1");
+    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS));
+    assert_ne!(state, HaltState::Pending, "halt answers after a fault");
+    assert!(
+        service.with(|c| c.arm(7)).is_err(),
+        "a faulted owner never re-arms"
+    );
+    stop.store(true, Ordering::SeqCst);
+    driver.join().unwrap();
+}
+
+// Proves: CL-009-04; TC-008-003. Review finding 2: a halt during the output open
+// prevents keying.
+#[test]
+fn halt_during_a_slow_output_open_never_keys() {
+    let f = Fake::new();
+    f.0.open_delay_ms.store(300, Ordering::SeqCst);
+    let (stop, driver) = drive(&f, P - 50);
+    let service = Service::start(f.clone()).unwrap();
+    service.with(|c| {
+        c.arm(7).unwrap();
+        c.submit(request(1, P, "CQ HB9BLA JN47"))
+    });
+    wait_for("open", Duration::from_secs(2), || {
+        f.log().iter().any(|(_, e)| *e == Event::Open)
+    });
+    let state = service.halt("00000000-0000-4000-8000-0000000000c2");
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(
+        f.keys().iter().all(|k| !k.1),
+        "keyed after halt: {:?}",
+        f.log()
+    );
+    assert_ne!(state, HaltState::Stopped, "nothing was keyed");
+    assert_eq!(service.view().arm_state, ArmState::Disarmed);
+    stop.store(true, Ordering::SeqCst);
+    driver.join().unwrap();
+}
+
+// Proves: CL-009-04; TC-008-003. A halt while the key exchange runs releases within the bound.
+#[test]
+fn halt_during_a_slow_key_releases_within_the_bound() {
+    let f = Fake::new();
+    f.0.ptt_delay_ms.store(80, Ordering::SeqCst);
+    let (stop, driver) = drive(&f, P - 50);
+    let service = Service::start(f.clone()).unwrap();
+    service.with(|c| {
+        c.arm(7).unwrap();
+        c.submit(request(1, P, "CQ HB9BLA JN47"))
+    });
+    wait_for("open", Duration::from_secs(2), || {
+        f.log().iter().any(|(_, e)| *e == Event::Open)
+    });
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000c3");
+    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS + 20));
+    std::thread::sleep(Duration::from_millis(300));
+    let keys = f.keys();
+    assert!(
+        keys.is_empty() || keys.last().map(|k| k.1) == Some(false),
+        "{keys:?}"
+    );
+    assert_ne!(state, HaltState::Pending);
+    assert!(!f.log().iter().any(|(_, e)| matches!(e, Event::Play { .. })));
+    stop.store(true, Ordering::SeqCst);
+    driver.join().unwrap();
+}
+
+// Proves: CL-009-04; TC-008-003. Review finding 4.
+#[test]
+fn watchdog_expiry_reports_the_true_halt_state_when_release_fails() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.set_watchdogs(1, 90).unwrap();
+    f.at(P - 100);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 600);
+    *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
+    f.at(P + 500 + 60_000);
+    core.tick();
+    let v = core.view();
+    assert_eq!(v.last_disarm_cause, DisarmCause::TxWatchdog);
+    assert_eq!(
+        (v.halt_state, v.ptt),
+        (HaltState::Pending, PttState::Indeterminate)
+    );
+}
+
+// Proves: CL-009-03; TC-008-003. Mutation guards named by the review.
+#[test]
+fn arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revision() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    f.at(P - 100);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 600);
+    *f.0.unkey_error.lock().unwrap() = Some(PttError::Rejected);
+    assert_eq!(core.halt(), HaltState::Pending);
+    assert_eq!(core.view().ptt, PttState::Indeterminate);
+    // Capability stays available: only the indeterminate switch refuses Arm.
+    assert_eq!(core.arm(7), Err(TransmitRefusal::RadioUnavailable));
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    *f.0.revision.lock().unwrap() = Some(8); // no tick in between
+    let o = core.submit(request(1, P, "CQ HB9BLA JN47"));
+    assert_eq!(o.refusal, Some(TransmitRefusal::NotAuthorized));
+    assert_eq!(core.view().arm_state, ArmState::Disarmed);
+}
+
+#[test]
+fn render_drain_stops_topping_up_and_watchdog_flags_a_stall() {
+    use wstx_rust::playback::{Fill, Progress, Renderer, Source, plan_fill};
+    let samples: Arc<[f32]> = vec![0.1; 10].into();
+    let mut r = Renderer::new(Source::Samples { samples, skip: 0 }, 1.0);
+    assert_eq!(plan_fill(None, 100, 480), Fill::Silence(380));
+    assert_eq!(plan_fill(Some(&r), 470, 480), Fill::Program(10));
+    let format = wstx_rust::audio::NativeFormat {
+        rate: 48_000,
+        channels: 1,
+        encoding: wstx_rust::audio::Encoding::Float32,
+    };
+    r.fill(format, &mut [0; 40], 10);
+    assert_eq!(
+        plan_fill(Some(&r), 300, 480),
+        Fill::Nothing,
+        "no silence after the end"
+    );
+    assert_eq!(plan_fill(Some(&r), 0, 480), Fill::Finished);
+    let mut p = Progress::new(0);
+    p.wrote(480);
+    p.observe(480, 100);
+    p.observe(480, 600);
+    assert!(p.stalled(601), "no consumption for 601 ms");
+    p.observe(400, 650);
+    assert!(!p.stalled(1_100));
+}
+
+#[test]
+fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
+    let (actor, state) = radio();
+    let lease = actor.reserve_transition().unwrap();
+    let abort = Arc::new(AtomicBool::new(false));
+    let (a, flag) = (actor.clone(), abort.clone());
+    let waiter = std::thread::spawn(move || {
+        let started = Instant::now();
+        let result = actor_ptt_abortable(&a, Duration::from_secs(2), &flag);
+        (result, started.elapsed())
+    });
+    std::thread::sleep(Duration::from_millis(50));
+    abort.store(true, Ordering::SeqCst);
+    let (result, elapsed) = waiter.join().unwrap();
+    assert_eq!(result, Err(PttError::Busy));
+    assert!(elapsed < Duration::from_millis(250), "{elapsed:?}");
+    drop(lease);
+    assert!(ptt_frames(&state.lock().unwrap()).is_empty());
+    assert!(!actor.ptt_indeterminate());
 }

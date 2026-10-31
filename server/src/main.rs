@@ -241,6 +241,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
             let transmit =
                 transmit_http::Station::start().map_err(|_| error("resource_unavailable", ""))?;
+            // Process exit and panics stop output and release a keyed CI-V switch once.
+            let guard = transmit.clone();
+            #[cfg(windows)]
+            wstx_rust::playback::install_exit_guard(Box::new(move || guard.emergency_release()));
+            #[cfg(not(windows))]
+            let _ = guard;
+            let hooked = transmit.clone();
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                hooked.emergency_release();
+                previous(info);
+            }));
             let _ = recording.transmit.set(transmit);
             let watched = recording.clone();
             tokio::spawn(async move {
