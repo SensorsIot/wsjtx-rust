@@ -122,7 +122,9 @@ function stationTx(){
 // operation (the signal area of Recordings/Preferences and the station bar excepted).
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
-  if(event.target.closest?.('.op-secondary,#station-bar,#signal,#splitter,button[data-region]'))return;
+  // A control outside the region acts on its own; closing first would move it away
+  // from under the pointer.
+  if(event.target.closest?.('.op-secondary,#station-bar,#signal,#splitter,button,input,select,textarea,a,label,summary,[tabindex]'))return;
   showRegion('operate');
 },true);
 // ---------------------------------------------------------------- controls
