@@ -212,6 +212,8 @@ rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMar
 wrap?.append(rxMarker,txMarker);
 function markers(){
   const s=snap?.settings;for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.textContent=`${label} ${hz}`;m.dataset.hz=String(hz);}}
+  // Close markers share one label so the texts never overlap.
+  if(s&&Math.abs(s.rx_hz-s.tx_hz)<400){rxMarker.textContent=s.rx_hz===s.tx_hz?`Rx/Tx ${s.rx_hz}`:`Rx ${s.rx_hz} · Tx ${s.tx_hz}`;txMarker.textContent='';}
 }
 const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
 let lastRight=0;

@@ -57,7 +57,7 @@ test('TC-007-003 Rx Frequency pane routing and TC-007-001 selection without tran
   assert.equal(await page.locator('input[name=contact-next][value=tx1]').isChecked(),true);
   assert.equal(await page.locator('#contact-rx').inputValue(),'1235');assert.equal(await page.locator('#contact-tx').inputValue(),'1235');
   assert.equal(await page.locator('#contact-parity').inputValue(),'odd');
-  assert.equal(await page.locator('#waterfall-wrap .ct-rx').textContent(),'Rx 1235');
+  assert.equal(await page.locator('#waterfall-wrap .ct-rx').textContent(),'Rx/Tx 1235');
   assert.equal((await snapshot()).transmit.arm_state,'disarmed','selection alone never arms');
   assert.equal(requests.some(r=>r.method==='POST'&&r.path.startsWith('/transmit')),false,'no transmit request from selection');
   assert.equal(commands().some(c=>c.action==='enable_tx'),false);
@@ -101,7 +101,7 @@ test('TC-010-008 waterfall pointer actions and numeric frequency inputs',{timeou
   let n=commands().length;
   await page.mouse.click(at(1500).x,at(1500).y);
   assert.deepEqual([(await last(n+1)).action,(await last(n+1)).rx_hz,(await last(n+1)).tx_hz],['set_frequency',1500,null]);await settle('rx_hz',1500);
-  await page.locator('#waterfall-wrap .ct-rx').filter({hasText:'Rx 1500'}).waitFor();
+  await page.locator('#waterfall-wrap .ct-rx').filter({hasText:/^Rx 1500/}).waitFor();
   n=commands().length;await page.keyboard.down('Shift');await page.mouse.click(at(200).x,at(200).y);await page.keyboard.up('Shift');
   let c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[null,200]);await settle('tx_hz',200);
   n=commands().length;await page.keyboard.down('Control');await page.mouse.click(at(2950).x,at(2950).y);await page.keyboard.up('Control');
