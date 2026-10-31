@@ -342,6 +342,9 @@ fn resource_station_process_delta_and_owner_release() {
     let mut metrics = StationMetrics::bind_self();
     let idle = metrics.sample();
     let mut phases = Vec::new();
+    // Frames ingested when the decoded phase first published: the complete fixture,
+    // including the trailing support that hands its window to the decoder.
+    let mut ingested = std::collections::BTreeMap::<&str, u64>::new();
     for (phase, mode) in [
         ("after-decode", "ft8"),
         ("busy-window", "ft8"),
@@ -350,7 +353,6 @@ fn resource_station_process_delta_and_owner_release() {
     ] {
         let fixture = NativeFt8Fixture::load_mode(mode);
         let payload = fixture.expected["payload77"].as_str().unwrap().to_owned();
-        let window = if mode == "ft8" { 180_000 } else { 90_000 };
         let generation = recording.receive_snapshot()["generation"].as_u64().unwrap();
         let started = recording
             .receive_start_input(
@@ -369,9 +371,13 @@ fn resource_station_process_delta_and_owner_release() {
         loop {
             let snapshot = recording.receive_snapshot();
             assert_eq!(snapshot["job"]["state"], "running", "{snapshot}");
-            if phase == "busy-window"
-                && snapshot["job"]["processed_frames"].as_u64().unwrap_or(0) >= window
-            {
+            let processed = snapshot["job"]["processed_frames"].as_u64().unwrap_or(0);
+            if phase == "busy-window" && processed >= ingested[mode] {
+                // The window is with the decoder; no publication yet means it is in progress.
+                assert_eq!(
+                    snapshot["job"]["available_count"], 0,
+                    "{mode}: decode completed before Stop; busy release not established"
+                );
                 break;
             }
             if phase == "after-decode"
@@ -383,6 +389,7 @@ fn resource_station_process_delta_and_owner_release() {
                     .unwrap();
                 if page.to_string().contains(&payload) {
                     decoded = true;
+                    ingested.insert(mode, processed);
                     break;
                 }
             }
@@ -406,6 +413,13 @@ fn resource_station_process_delta_and_owner_release() {
             std::thread::sleep(Duration::from_micros(200));
         }
         let release = stop.elapsed();
+        if phase == "busy-window" {
+            let after = recording.receive_snapshot()["job"]["available_count"].clone();
+            assert!(
+                after.is_null() || after == 0,
+                "{mode}: cancelled busy decode published {after}"
+            );
+        }
         phases.push(json!({"phase":phase,"mode":mode,"decoded_expected":decoded,
             "published_at_stop":published,"release_seconds":release.as_secs_f64(),
             "private_usage_before_stop":during["private_usage"]}));
