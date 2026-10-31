@@ -13,7 +13,7 @@ contract; the references below are the constraints a change must respect.
 | Which machine does what (HB9BLA station, PC Andreas) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/main/lang/rust/standard.md) |
-| Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md) |
+| Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
 | Testing | [testing](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
 | Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
 | Parallel issue workspaces and supervised sub-agents | [Parallel work](../../harness/core/docs/Parallel-Work.md); `python harness/core/tools/parallel.py status` |
