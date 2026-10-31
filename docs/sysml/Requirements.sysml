@@ -653,12 +653,14 @@ package WstxRequirements {
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
     requirement 'CL-010-04' {
         doc /* Offer the prefilled log review automatically once at completion and on a manual Log QSO, including power and comments; persist each contact exactly once per profile in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity, Saved only after durable acknowledgement, explicit unsaved retry, and ADI import/export/history with the stated limits, identity, duplicate/conflict and unknown-field rules. Details: WstxContact::LogRecord, OfferLogReview, SaveContact, ImportAdi, ExportAdi, ContactHistory, AdiLimits. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/main.rs; client/logbook.js";
     }
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';
     requirement 'CL-010-15' {
         doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxContact::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/logbook_http.rs; server/src/main.rs";
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
@@ -688,7 +690,8 @@ package WstxRequirements {
     dependency CL_010_12_to_FR_007 from 'CL-010-12' to 'FR-007';
     requirement 'CL-010-13' {
         doc /* Indicate worked-before status of decoded calls in Band Activity, the Rx Frequency pane and the log review (this band and mode, other band or mode, not worked, unknown) determined by the server from the profile log, by text or icon as well as colour, with at most one bounded query per published period. Details: WstxContact::WorkedBeforeQuery. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; client/logbook.js; client/recording.js";
     }
     dependency CL_010_13_to_FR_010 from 'CL-010-13' to 'FR-010';
     dependency CL_010_13_to_FR_011 from 'CL-010-13' to 'FR-011';
@@ -817,10 +820,11 @@ package WstxRequirements {
              Steps: completion offers; manual Log QSO before completion; edit power 10, comment, reports and times; invalid power -1, comment with CR/LF or 1025 characters; save, repeat save, duplicate completion, disconnect after commit before acknowledgement, restart; same call again on the same band; second profile.
              Expected (independent record catalogue and direct file reading): one review offer per completion; exactly one record per contact identity in that profile's contacts.adi, Saved only after the atomic replace; identical resave alreadySaved, changed resave conflict; failures stay visibly unsaved and retry the same identity; invalid fields refused beside the field; the second contact with the same call is a separate record marked worked before; TIME_ON follows the first transmitted Tx2/Tx3 rule; no cross-profile record or browser-clock time.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-04';
         }
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs";
     }
     verification 'TC-011-002' {
         doc /* TC-011-002 — ADI interchange and boundaries
@@ -829,10 +833,11 @@ package WstxRequirements {
              Steps: import, retry the same import_id with identical and different total/sha256, export, reopen, page history at cursor 0, total-1 and total with limit 1/10/11.
              Expected (independent ADI parser): exact field values and lengths, FREQ six decimals in MHz, no silent truncation or commands from data; the independently counted new/duplicate/conflict numbers; any conflict, invalid or over-limit input publishes zero records with record/field context; natural-key matches are duplicates, id matches with a differing field conflicts; new records without id gain one; unknown fields re-export byte-identical; same import_id retry has no second effect, different values state_conflict; history pages hold stable indexes, limit 11 refused, at most 16384 bytes; export then import yields only duplicates.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-04';
         }
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs";
     }
     verification 'TC-011-003' {
         doc /* TC-011-003 — Worked-before indication
@@ -841,10 +846,11 @@ package WstxRequirements {
              Steps: publish periods, save a new contact with N0NEW, publish again.
              Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the indication is text/icon plus colour in Band Activity, the Rx Frequency pane and the review; one query per period with at most 64 calls (the 65th unknown); no change to decoding, sequence or log.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-13';
         }
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_010_01_verified_by_TC_007_001 from 'CL-010-01' to 'TC-007-001';
     dependency CL_010_01_verified_by_TC_007_003 from 'CL-010-01' to 'TC-007-003';
