@@ -25,6 +25,8 @@ struct Bench {
     capability: Mutex<Option<Capability>>,
     keys: Mutex<Vec<(i64, bool)>>,
     playing: Mutex<Option<(i64, usize)>>,
+    /// Every waveform play: (UTC start, samples played).
+    plays: Mutex<Vec<(i64, usize)>>,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -57,11 +59,19 @@ impl Hardware for Fake {
         Ok(())
     }
     fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        let waveform = matches!(program, Program::Waveform { .. });
         let remaining = match program {
             Program::Waveform { samples, skip } => samples.len() - skip,
             Program::Tone { .. } => usize::MAX / 2,
         };
         *self.0.playing.lock().unwrap() = Some((self.now_utc_ms(), remaining));
+        if waveform {
+            self.0
+                .plays
+                .lock()
+                .unwrap()
+                .push((self.now_utc_ms(), remaining));
+        }
         Ok(())
     }
     fn poll_audio(&mut self) -> AudioPoll {
@@ -84,6 +94,8 @@ struct Station {
     core: Core<Fake>,
     engine: Engine,
     sequence: u64,
+    /// The station's operating mode (Ctx.mode) and the mode of the rows it decodes.
+    mode: Mode,
     /// Texts whose audio started, with their period start.
     sent: Vec<(i64, String)>,
 }
@@ -99,6 +111,7 @@ fn station() -> Station {
             Some(format!("00000000-0000-4000-8000-{ids:012}"))
         })),
         sequence: 0,
+        mode: Mode::Ft8,
         sent: Vec::new(),
     }
 }
@@ -142,7 +155,7 @@ impl Station {
             locator: Some("JN47AA".into()),
             now_utc_ms: self.now(),
             granted: true,
-            mode: Some(Mode::Ft8),
+            mode: Some(self.mode),
         }
     }
     fn row(&mut self, period: i64, text: &str, hz: f64, snr: Option<f64>) -> Row {
@@ -154,7 +167,7 @@ impl Station {
                 generation: 1,
                 sequence: self.sequence,
             },
-            mode: Mode::Ft8,
+            mode: self.mode,
             period_start_ms: Some(period),
             frequency_hz: hz,
             snr_db: snr,
@@ -1217,4 +1230,240 @@ fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
     s.command(Command::OpenLog).unwrap();
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert_eq!(s.engine.contact.as_ref().unwrap().origin, Origin::OwnCq);
+}
+
+// ---------------------------------------------------------------- FT4 (#11 slice B)
+// Proves: CL-011-03, CL-011-04; TC-007-008. The same engine and #9 owner core in FT4;
+// expected periods, texts, samples and times are hand-written from WstxContact
+// ContactMode/ModeChange, the FT4-NOTE rules and WSJT-X (Modulator.cpp FT4 delay
+// 300 ms; 105 symbols x 576 x 4 = 241920 samples at 48 kHz; m_TRperiod 7.5 s).
+const FT4: i64 = 7_500;
+const FT4_SAMPLES_48K: usize = 241_920;
+fn ft4_station() -> Station {
+    let mut s = station();
+    s.mode = Mode::Ft4;
+    s
+}
+
+#[test]
+fn ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_offer() {
+    let mut s = ft4_station();
+    // P0 is a multiple of 15 s: an even FT4 period, so I transmit in the odd ones.
+    let cq = s.row(P0, "CQ K1ABC FN42", 1234.6, Some(-12.4));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!(c.mode, Mode::Ft4);
+    assert_eq!(s.engine.settings.parity, Parity::Odd);
+    assert_eq!(c.tx4, Tx4::Rr73, "FT4-NOTE: Tx4 is RR73");
+    assert_eq!(c.messages[3].as_deref(), Some("K1ABC HB9BLA RR73"));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(P0 + 22 * SECOND);
+    assert_eq!(
+        s.sent_in(P0 + FT4).as_deref(),
+        Some("K1ABC HB9BLA JN47"),
+        "{:?}",
+        s.sent
+    );
+    let report = s.row(P0 + 2 * FT4, "HB9BLA K1ABC -05", 1240.0, None);
+    s.deliver(&[report]);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(P0 + 37 * SECOND);
+    assert_eq!(
+        s.sent_in(P0 + 3 * FT4).as_deref(),
+        Some("K1ABC HB9BLA R-12")
+    );
+    let rr73 = s.row(P0 + 4 * FT4, "HB9BLA K1ABC RR73", 1240.0, None);
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(P0 + 60 * SECOND);
+    assert_eq!(s.sent_in(P0 + 5 * FT4).as_deref(), Some("K1ABC HB9BLA 73"));
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    assert!(!s.armed());
+    assert_eq!(s.sent.len(), 3, "{:?}", s.sent);
+    // #9 played the FT4 waveform 300 ms after each odd FT4 period start.
+    let plays = s.fake.0.plays.lock().unwrap().clone();
+    assert_eq!(
+        plays,
+        vec![
+            (P0 + FT4 + 300, FT4_SAMPLES_48K),
+            (P0 + 3 * FT4 + 300, FT4_SAMPLES_48K),
+            (P0 + 5 * FT4 + 300, FT4_SAMPLES_48K),
+        ]
+    );
+    let review = s.engine.review().cloned().expect("one log offer");
+    let fields = review.fields(s.now()).unwrap();
+    assert_eq!(fields.mode, Mode::Ft4);
+    assert_eq!(
+        fields.start_utc_ms,
+        P0 + 2 * FT4,
+        "TIME_ON one FT4 period before the first Tx3"
+    );
+    assert_eq!(
+        fields.end_utc_ms,
+        P0 + 6 * FT4,
+        "TIME_OFF end of my Tx5 period"
+    );
+}
+
+#[test]
+fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
+    let mut s = ft4_station();
+    s.fake.0.now.store(P0 + 8 * SECOND, Ordering::SeqCst);
+    s.command(Command::SetParity(Parity::Even)).unwrap();
+    assert_eq!(
+        s.command(Command::SetFrequency {
+            rx: None,
+            tx: Some(2917)
+        }),
+        Err("out_of_range")
+    );
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(2916),
+    })
+    .unwrap();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(1500),
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.engine.contact.as_ref().unwrap().mode, Mode::Ft4);
+    s.run(P0 + 29 * SECOND);
+    assert_eq!(s.sent_in(P0 + 2 * FT4).as_deref(), Some("CQ HB9BLA JN47"));
+    let answer = s.row(P0 + 3 * FT4, "HB9BLA K1ABC FN42", 900.0, Some(3.0));
+    s.command(Command::SelectRow {
+        row: answer,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    assert_eq!(s.command(Command::SetTx4(Tx4::Rrr)), Err("out_of_range"));
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(
+        (c.tx4, c.messages[3].as_deref()),
+        (Tx4::Rr73, Some("K1ABC HB9BLA RR73")),
+        "a refused set_tx4 changes nothing"
+    );
+    s.run(P0 + 44 * SECOND);
+    assert_eq!(s.sent_in(P0 + 4 * FT4).as_deref(), Some("K1ABC HB9BLA +03"));
+    let roger = s.row(P0 + 5 * FT4, "HB9BLA K1ABC R-07", 900.0, None);
+    s.deliver(&[roger]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(P0 + 60 * SECOND);
+    assert_eq!(
+        s.sent_in(P0 + 6 * FT4).as_deref(),
+        Some("K1ABC HB9BLA RR73")
+    );
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    let fields = s.engine.review().unwrap().fields(s.now()).unwrap();
+    assert_eq!(fields.start_utc_ms, P0 + 4 * FT4, "first transmitted Tx2");
+    assert_eq!(fields.mode, Mode::Ft4);
+}
+
+#[test]
+fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
+    // An armed FT8 responder with a pending request and a 2940 Hz Tx offset.
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1234.6, Some(-12.4));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(2940),
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    // An FT4 row of the partner (even FT4 and FT8 period start) never counts.
+    s.mode = Mode::Ft4;
+    let ft4_report = s.row(period(2), "HB9BLA K1ABC -05", 1240.0, None);
+    s.mode = Mode::Ft8;
+    s.deliver(&[ft4_report]);
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    assert!(s.armed());
+    assert!(
+        s.core.view().pending_sequence.is_some(),
+        "a request is pending"
+    );
+    let keys = s.fake.0.keys.lock().unwrap().len();
+    // The station switches to FT4 (the live job now decodes FT4).
+    s.mode = Mode::Ft4;
+    s.step(&[]);
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!((c.state, c.next), (State::Cancelled, Slot::Tx6));
+    assert_eq!(c.dx_call, None);
+    assert!(!s.armed());
+    assert_eq!(
+        s.core.view().last_disarm_cause,
+        DisarmCause::ContactCancelled
+    );
+    assert_eq!(s.core.view().pending_sequence, None);
+    assert_eq!(s.engine.settings.tx_hz, 2916, "clamped into the FT4 domain");
+    s.run(period(6));
+    assert_eq!(
+        s.fake.0.keys.lock().unwrap().len(),
+        keys,
+        "no key after the switch"
+    );
+    // Enable Tx afterwards is a fresh own CQ in FT4, in odd FT4 periods.
+    let sent = s.sent.len();
+    let played = s.fake.0.plays.lock().unwrap().len();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    let cq = s.engine.contact.clone().unwrap();
+    assert_eq!((cq.origin, cq.mode), (Origin::OwnCq, Mode::Ft4));
+    s.run(period(8));
+    let later = &s.sent[sent..];
+    assert!(!later.is_empty());
+    for (p, text) in later {
+        assert_eq!(text, "CQ HB9BLA JN47");
+        assert_eq!(p.rem_euclid(15_000), FT4, "odd FT4 period: {p}");
+    }
+    for (_, n) in s.fake.0.plays.lock().unwrap().iter().skip(played) {
+        assert_eq!(*n, FT4_SAMPLES_48K);
+    }
+
+    // A calling FT4 CQ returns to idle on a switch back to FT8.
+    s.mode = Mode::Ft8;
+    s.step(&[]);
+    assert_eq!(s.state().0, State::Idle);
+    assert!(!s.armed());
+
+    // A completed, unsaved FT8 contact keeps its fields and its FT8 review.
+    let mut s = station();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(&[seventy_three]);
+    assert_eq!(s.state().0, State::Completed);
+    s.mode = Mode::Ft4;
+    s.step(&[]);
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!(
+        (c.state, c.dx_call.as_deref()),
+        (State::Completed, Some("K1ABC"))
+    );
+    assert_eq!(s.engine.review().unwrap().contact.mode, Mode::Ft8);
+    // A manual entry now is an FT4 contact.
+    s.command(Command::EnterDx {
+        call: "DL1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!((c.mode, c.tx4), (Mode::Ft4, Tx4::Rr73));
 }

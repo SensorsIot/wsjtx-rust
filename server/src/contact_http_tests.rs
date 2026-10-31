@@ -988,3 +988,147 @@ async fn contact_browser_operating_flow() {
     );
     println!("{}", String::from_utf8_lossy(&outcome.stdout));
 }
+
+// ---------------------------------------------------------------- FT4 (#11 slice B)
+fn tick_period(f: &Fixture) -> u64 {
+    let (text, _) = contact_http::tick_event(&f.state.recording);
+    serde_json::from_str::<Value>(&text).unwrap()["data"]["period_ms"]
+        .as_u64()
+        .unwrap()
+}
+async fn select_mode(f: &Fixture, mode: &str) -> (StatusCode, Value) {
+    let (_, sel, _, _) = f.call("GET", "/receive/selection", None).await;
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "profile_revision":sel["profile_revision"],"generation":sel["generation"],
+        "operating_revision":sel["operating_revision"],"action":"mode","mode":mode});
+    let (s, v, _, _) = f.call("POST", "/receive/select", Some(body)).await;
+    (s, v)
+}
+
+// Proves: CL-011-02; TC-006-002. The station's operating mode follows the live FT4 job
+// (WstxContact::StationOperatingMode) and a mode selection is refused busy while #9
+// keys the radio (ModeChange; WSJT-X updateModeControlLock).
+#[tokio::test]
+async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change() {
+    let f = fixture("http://127.0.0.1:18011", true);
+    let r = &f.state.recording;
+    assert_eq!(tick_period(&f), 15_000, "fresh boot: FT8");
+    r.fixture_live_job("ft4");
+    assert_eq!(tick_period(&f), 7_500);
+    let (s, v) = f
+        .send(
+            "enter_dx",
+            json!({"dx_call":"K1ABC","dx_grid":null,"replace":false}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(
+        (
+            snap["contact"]["tx4"].as_str(),
+            snap["contact"]["messages"][3].as_str()
+        ),
+        (Some("rr73"), Some("K1ABC HB9BLA RR73")),
+        "a manual entry in FT4 is an FT4 contact"
+    );
+    let (s, v) = f.send("set_tx4", json!({"form":"rrr"})).await;
+    assert_eq!(
+        (s, code(&v)),
+        (StatusCode::BAD_REQUEST, ("out_of_range", Some("form")))
+    );
+    let service = &r.transmit.get().unwrap().service;
+    service.with(|c| {
+        c.arm(3).unwrap();
+        c.set_tune(true, 1500).unwrap();
+    });
+    let before = f.call("GET", "/receive/selection", None).await.1["operating_revision"].clone();
+    let (s, v) = select_mode(&f, "ft8").await;
+    assert_eq!((s, code(&v).0), (StatusCode::CONFLICT, "busy"), "{v}");
+    let after = f.call("GET", "/receive/selection", None).await.1;
+    assert_eq!(after["operating_revision"], before, "nothing changed");
+    assert_eq!(after["receive"]["mode"], "ft4");
+    service.with(|c| c.set_tune(false, 0).unwrap());
+    let (_, v) = select_mode(&f, "ft8").await;
+    assert_ne!(code(&v).0, "busy", "{v}");
+    r.fixture_live_job("ft8");
+    assert_eq!(tick_period(&f), 15_000);
+}
+
+// Proves: CL-011-03, CL-011-04; TC-007-008. An FT4 and an FT8 station at once, each
+// with its own router, engine, #9 owner and log; then the FT4 station switches mode.
+#[tokio::test]
+async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own() {
+    let f4 = fixture("http://127.0.0.1:18012", true);
+    let f8 = fixture("http://127.0.0.1:18013", true);
+    let even = now_ms().div_euclid(30_000) * 30_000;
+    let mut rows = Vec::new();
+    for (f, mode) in [(&f4, "ft4"), (&f8, "ft8")] {
+        let r = &f.state.recording;
+        let (source, job, generation) = r.fixture_live_job(mode);
+        let seq = r.fixture_publish_period(
+            &period_text(even),
+            vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+        );
+        f.tick();
+        let row =
+            json!({"source_id":source,"job_id":job,"generation":generation,"sequence":seq[0]});
+        let (s, v) = f
+            .send("select_row", json!({"row":row,"replace":false}))
+            .await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+        let (s, v) = f.send("open_log", json!({})).await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+        rows.push(row);
+    }
+    let review = |snap: &Value| {
+        (
+            snap["review"]["record"]["mode"].as_str().map(String::from),
+            snap["review"]["record"]["submode"]
+                .as_str()
+                .map(String::from),
+        )
+    };
+    let s4 = f4.snapshot().await;
+    let s8 = f8.snapshot().await;
+    assert_eq!(s4["contact"]["messages"][3], "K1ABC HB9BLA RR73");
+    assert_eq!(s8["contact"]["messages"][3], "K1ABC HB9BLA RRR");
+    assert_eq!(review(&s4), (Some("MFSK".into()), Some("FT4".into())));
+    assert_eq!(review(&s8), (Some("FT8".into()), None));
+    assert_ne!(s4["contact"]["id"], s8["contact"]["id"]);
+    // Only the FT4 station arms.
+    f4.contact().grant.store(true, Ordering::SeqCst);
+    let (s, v) = f4
+        .send("enable_tx", json!({"enabled":true,"safety_revision":3}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    f8.tick();
+    assert_eq!(f4.snapshot().await["transmit"]["arm_state"], "armed");
+    assert_eq!(f8.snapshot().await["transmit"]["arm_state"], "disarmed");
+    // The FT4 station switches to FT8: its contact is cancelled and Enable Tx is off;
+    // its review keeps MFSK/FT4. The FT8 station is untouched.
+    f4.state.recording.fixture_live_job("ft8");
+    f4.tick();
+    let s4 = f4.snapshot().await;
+    assert_eq!(
+        (
+            s4["contact"]["state"].as_str(),
+            s4["transmit"]["arm_state"].as_str(),
+            s4["transmit"]["last_disarm_cause"].as_str()
+        ),
+        (
+            Some("cancelled"),
+            Some("disarmed"),
+            Some("contact_cancelled")
+        )
+    );
+    assert_eq!(review(&s4), (Some("MFSK".into()), Some("FT4".into())));
+    let s8 = f8.snapshot().await;
+    assert_eq!(
+        (
+            s8["contact"]["state"].as_str(),
+            s8["contact"]["dx_call"].as_str()
+        ),
+        (Some("replying"), Some("K1ABC"))
+    );
+    assert_eq!(review(&s8), (Some("FT8".into()), None));
+}
