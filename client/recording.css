@@ -172,7 +172,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-messages .ct-text{flex:1 1 12rem;min-width:0;font-family:ui-monospace,Consolas,monospace}
 .ct-next{display:flex;gap:.25rem;align-items:center;min-width:3.5rem}
 .ct-tx{display:flex;flex-wrap:wrap;gap:.35rem;align-items:baseline;overflow-wrap:anywhere}
-.ct-tx span{font-size:.75rem;letter-spacing:.05em;opacity:.8}
+.ct-tx span{font-size:var(--op-font-secondary);letter-spacing:.05em;color:#8caabb}
 #contact-enable.ct-on{outline:3px solid #e04040}
 
 .ct-pane{margin-top:.6rem}
@@ -183,7 +183,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-pane td{padding:.15rem .3rem;overflow-wrap:anywhere}
 .ct-pane tr[data-kind=tx] td{color:#ffb0a0;font-weight:600}
 #waterfall-wrap{position:relative}
-.ct-marker{position:absolute;top:0;bottom:0;width:0;border-left:2px solid;pointer-events:none;font-size:.7rem;padding-left:2px;white-space:nowrap;z-index:1}
+.ct-marker{position:absolute;top:0;bottom:0;width:0;border-left:2px solid;pointer-events:none;font-size:var(--op-font-secondary);padding-left:2px;white-space:nowrap;z-index:1}
 .ct-rx{border-color:#30d050;color:#30d050}
 .ct-txm{border-color:#ff4040;color:#ff6060}
 .op-period.ct-transmitting small{color:#ff8080;font-weight:700}

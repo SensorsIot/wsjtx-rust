@@ -535,7 +535,11 @@ impl Engine {
         if active && !same && !replace {
             return Err("contact_active");
         }
-        let id = (self.new_id)().ok_or("storage_unavailable")?;
+        // Re-preparing the same active partner keeps its contact identity.
+        let id = match self.contact.as_ref().filter(|_| active && same) {
+            Some(c) => c.id.clone(),
+            None => (self.new_id)().ok_or("storage_unavailable")?,
+        };
         if active && !same {
             // ChangeContact: the old contact is cancelled and Enable Tx turns off.
             Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
@@ -614,11 +618,6 @@ impl Engine {
                 let rx = (row.frequency_hz.round().max(0.0) as u32).min(RX_MAX_HZ);
                 let mode = row.mode;
                 let tx_max = tx_max_hz(mode);
-                // A previous partner's reply in my period is never this partner's start.
-                let calling = self
-                    .contact
-                    .as_ref()
-                    .is_some_and(|c| c.state == State::Calling);
                 self.prepare(
                     core.as_deref_mut(),
                     ctx,
@@ -630,7 +629,6 @@ impl Engine {
                     replace,
                     mode,
                 )?;
-                let _ = calling;
                 self.settings.rx_hz = rx;
                 if !self.settings.hold_tx && !to_me && (TX_MIN_HZ..=tx_max).contains(&rx) {
                     self.settings.tx_hz = rx;
