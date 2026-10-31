@@ -254,9 +254,25 @@ pub struct Recording {
     dir: PathBuf,
     pub profile: String,
     pub boot: String,
+    /// The one CL-022-03/04 automatic CAT policy of this station.
+    cat: Mutex<crate::cat_lifecycle::Lifecycle>,
+    #[cfg(test)]
+    cat_transport: Mutex<Option<CatTransport>>,
     #[cfg(test)]
     resources: Mutex<Resources>,
 }
+/// Fixture seam replacing only the physical serial open, never the actor/executor.
+#[cfg(test)]
+pub(crate) type CatTransport = Arc<
+    dyn Fn(
+            &wstx_rust::radio_control::Configuration,
+            Instant,
+            &AtomicBool,
+        ) -> wstx_rust::radio_control::Result<
+            Box<dyn wstx_rust::radio_control::executor::Transport>,
+        > + Send
+        + Sync,
+>;
 
 #[derive(Clone, Serialize)]
 struct LatestDecode {
@@ -956,7 +972,7 @@ impl Recording {
         configuration: wstx_rust::radio_control::Configuration,
         revision: u64,
     ) -> Result<Value> {
-        use wstx_rust::radio_control::{Authority, actor::Actor, catalogue::Catalogue};
+        use wstx_rust::radio_control::Authority;
         let (generation, old) = self.radio_reserve(revision)?;
         // Final Arc destruction invokes Actor::Drop and therefore belongs outside state locks.
         drop(old);
@@ -967,8 +983,41 @@ impl Recording {
             resource_id: format!("COM{}", configuration.port),
             connection_generation: generation,
         };
+        let started = self.radio_begin(configuration, authority);
+        let actor = match started {
+            Ok(actor) => Arc::new(actor),
+            Err(e) => {
+                let mut s = self.state.lock().unwrap();
+                if s.operating.radio.generation == generation {
+                    s.operating.radio.connecting = false;
+                    s.operating.radio.error = Some(selection::radio_error(e));
+                }
+                return Err(selection::radio_error(e));
+            }
+        };
+        self.radio_install(generation, revision, actor)
+    }
+    fn radio_begin(
+        &self,
+        configuration: wstx_rust::radio_control::Configuration,
+        authority: wstx_rust::radio_control::Authority,
+    ) -> std::result::Result<wstx_rust::radio_control::actor::Actor, wstx_rust::radio_control::Error>
+    {
+        use wstx_rust::radio_control::{actor::Actor, catalogue::Catalogue};
+        #[cfg(test)]
+        if let Some(open) = self.cat_transport.lock().unwrap().clone() {
+            let native = configuration.clone();
+            return Catalogue::builtin().and_then(|catalogue| {
+                Actor::begin(
+                    configuration,
+                    authority,
+                    catalogue,
+                    move |deadline, cancel| open(&native, deadline, cancel),
+                )
+            });
+        }
         #[cfg(windows)]
-        let started = {
+        {
             let lock_root = std::env::var_os("LOCALAPPDATA")
                 .map(PathBuf::from)
                 .unwrap_or_else(std::env::temp_dir)
@@ -987,24 +1036,76 @@ impl Recording {
                     },
                 )
             })
-        };
+        }
         #[cfg(not(windows))]
-        let started: std::result::Result<Actor, wstx_rust::radio_control::Error> = {
+        {
             let _ = (configuration, authority);
             Err(wstx_rust::radio_control::Error::Unavailable)
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn fixture_cat_transport(&self, open: CatTransport) {
+        *self.cat_transport.lock().unwrap() = Some(open);
+    }
+    /// One tick of the automatic read-only lifecycle. The caller holds the profile
+    /// store and authority locks (lock order store -> authorization -> recording), so a
+    /// committed revocation or configuration edit is observed before any new attempt.
+    pub(crate) fn cat_maintain(self: &Arc<Self>, gate: &crate::cat_lifecycle::Gate, now: Instant) {
+        use crate::cat_lifecycle::{Action, Gate, Observed};
+        use wstx_rust::radio_control::{Error, State as Cat};
+        let (actor, generation) = {
+            let s = self.state.lock().unwrap();
+            (
+                s.operating.radio.actor.clone(),
+                s.operating.radio.generation,
+            )
         };
-        let actor = match started {
-            Ok(actor) => Arc::new(actor),
-            Err(e) => {
-                let mut s = self.state.lock().unwrap();
-                if s.operating.radio.generation == generation {
-                    s.operating.radio.connecting = false;
-                    s.operating.radio.error = Some(selection::radio_error(e));
-                }
-                return Err(selection::radio_error(e));
+        let observed = match actor.as_ref().map(|a| a.snapshot()) {
+            None => Observed::Absent,
+            Some(Err(_)) => Observed::Closing,
+            Some(Ok(v)) => match (v.state, v.last_error) {
+                (_, Some(Error::FailedClose)) => Observed::FailedClose,
+                (Cat::Connecting, _) => Observed::Connecting,
+                (Cat::Ready, _) => Observed::Ready,
+                (Cat::Unavailable, e) => Observed::FailedReleased(e.unwrap_or(Error::Unavailable)),
+                (Cat::Closing, _) => Observed::Closing,
+                (Cat::Closed, _) => Observed::Closed,
+            },
+        };
+        let action = self.cat.lock().unwrap().step(gate, observed, now);
+        match action {
+            Action::None => {}
+            Action::Close => {
+                let _ = self.radio_disconnect(generation);
             }
-        };
-        self.radio_install(generation, revision, actor)
+            Action::Attempt => {
+                let Gate::Eligible { key, configuration } = gate else {
+                    return;
+                };
+                // The released previous actor is removed only if it is still current;
+                // its final drop happens outside the state lock.
+                let old = {
+                    let mut s = self.state.lock().unwrap();
+                    let radio = &mut s.operating.radio;
+                    match (&radio.actor, &actor) {
+                        (Some(a), Some(b)) if Arc::ptr_eq(a, b) => radio.actor.take(),
+                        _ => None,
+                    }
+                };
+                drop(old);
+                drop(actor);
+                if let Err("busy" | "state_conflict") =
+                    self.radio_connect(configuration.clone(), key.profile_revision)
+                {
+                    self.cat.lock().unwrap().deferred(now);
+                }
+            }
+        }
+        self.refresh_radio_cache();
+    }
+    /// Current automatic CAT condition for the additive authorization status.
+    pub(crate) fn cat_status(&self) -> (&'static str, Option<&'static str>, Option<u64>) {
+        self.cat.lock().unwrap().status()
     }
     fn radio_install(
         &self,
@@ -2338,6 +2439,9 @@ impl Recording {
                 dir,
                 profile,
                 boot,
+                cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
+                #[cfg(test)]
+                cat_transport: Mutex::new(None),
                 #[cfg(test)]
                 resources: Mutex::new(Resources::default()),
             });
@@ -2397,6 +2501,9 @@ impl Recording {
             dir,
             profile,
             boot,
+            cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
+            #[cfg(test)]
+            cat_transport: Mutex::new(None),
             #[cfg(test)]
             resources: Mutex::new(Resources::default()),
         });

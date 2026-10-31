@@ -72,6 +72,58 @@ impl Service {
     }
 }
 
+/// CL-022-03 precondition for the station's automatic read-only CAT lifecycle.
+/// Plaintext profiles have no grant authority and therefore never open CAT.
+pub(crate) fn cat_gate(
+    store: &profile::Store,
+    service: Option<&Service>,
+) -> crate::cat_lifecycle::Gate {
+    use crate::cat_lifecycle::{Gate, Key};
+    let control = &store.document.control;
+    if control.mode != "cat" {
+        return Gate::Disabled;
+    }
+    let Some(service) = service else {
+        return Gate::Unauthorized;
+    };
+    match service.authority.automatic_cat(control) {
+        None => Gate::Unauthorized,
+        Some(false) => Gate::CommissioningRequired,
+        Some(true) => {
+            let scope = &service
+                .authority
+                .record()
+                .current_scope
+                .as_ref()
+                .unwrap()
+                .wire;
+            let endpoint = control.endpoint.clone().unwrap_or_default();
+            match wstx_rust::radio_control::Configuration::parse(&endpoint) {
+                Ok(configuration) => Gate::Eligible {
+                    key: Key {
+                        radio_id: scope.radio_id.clone(),
+                        safety_revision: scope.safety_revision,
+                        profile_revision: store.document.revision,
+                        endpoint,
+                    },
+                    configuration,
+                },
+                Err(_) => Gate::InvalidConfiguration,
+            }
+        }
+    }
+}
+/// One lifecycle tick under the documented lock order store -> authorization -> recording.
+pub(crate) fn cat_tick(state: &ProfileState, now: Instant) {
+    let Ok(store) = state.store.lock() else {
+        return;
+    };
+    let Ok(owner) = state.authorization.lock() else {
+        return;
+    };
+    let gate = cat_gate(&store, owner.as_ref());
+    state.recording.cat_maintain(&gate, now);
+}
 fn cookie(headers: &HeaderMap, name: &str) -> Result<String, Error> {
     let mut found = None;
     for field in headers.get_all(header::COOKIE) {
@@ -488,24 +540,27 @@ fn operate(
             }
             let handle = cookie(&headers, &cookie_name(&app))?;
             let access = service.authority.access(&handle, &app.origin, now)?;
-            let record = service.authority.record();
-            let commissioned = record.commissioning.as_ref().is_some_and(|c| {
-                c.scope == access.scope
-                    && c.receive_only_confirmed
-                    && c.control == store.document.control
-            });
-            // Automatic CAT lifecycle is a pending slice. Without its durable
-            // commissioning, this adapter never fabricates ready/readback/retry.
-            let condition = if store.document.control.mode == "disabled" {
-                "disabled"
-            } else if !commissioned {
-                "commissioningRequired"
-            } else {
-                "waitingForDevice"
+            let gate = cat_gate(&store, Some(service));
+            let commissioned =
+                service.authority.automatic_cat(&store.document.control) == Some(true);
+            // Before the lifecycle policy observes an eligible gate it reports waiting,
+            // never a fabricated ready/readback.
+            let (condition, error, retry_after_ms) = match gate {
+                crate::cat_lifecycle::Gate::Disabled => ("disabled", None, None),
+                crate::cat_lifecycle::Gate::Unauthorized => ("unauthorized", None, None),
+                crate::cat_lifecycle::Gate::CommissioningRequired => {
+                    ("commissioningRequired", None, None)
+                }
+                _ => match state.recording.cat_status() {
+                    ("disabled" | "unauthorized" | "commissioningRequired", _, _) => {
+                        ("waitingForDevice", None, None)
+                    }
+                    current => current,
+                },
             };
             let receive = state.recording.receive_snapshot();
             bounded(
-                json!({"version":1,"scope":access.scope.wire,"condition":condition,"error":null,"retry_after_ms":null,"commissioned":commissioned,
+                json!({"version":1,"scope":access.scope.wire,"condition":condition,"error":error,"retry_after_ms":retry_after_ms,"commissioned":commissioned,
                 "receive_state":{"audio":receive["audio"]["state"],"decoder":receive["job"]["state"]}}),
             )
         }

@@ -24,6 +24,27 @@ pub trait Transport {
     fn quiet(&mut self, deadline: Instant, cancel: &AtomicBool) -> Result<()>;
     fn close(&mut self) -> Result<()>;
 }
+/// A station owner may select its physical transport at runtime (serial or fixture).
+impl<T: Transport + ?Sized> Transport for Box<T> {
+    fn physical_identity(&self) -> Option<&str> {
+        (**self).physical_identity()
+    }
+    fn configure(&mut self, baud: u32) -> Result<()> {
+        (**self).configure(baud)
+    }
+    fn write(&mut self, bytes: &[u8], deadline: Instant, cancel: &AtomicBool) -> Result<usize> {
+        (**self).write(bytes, deadline, cancel)
+    }
+    fn read(&mut self, bytes: &mut [u8], deadline: Instant, cancel: &AtomicBool) -> Result<usize> {
+        (**self).read(bytes, deadline, cancel)
+    }
+    fn quiet(&mut self, deadline: Instant, cancel: &AtomicBool) -> Result<()> {
+        (**self).quiet(deadline, cancel)
+    }
+    fn close(&mut self) -> Result<()> {
+        (**self).close()
+    }
+}
 struct Inner<T> {
     transport: T,
     configuration: Configuration,

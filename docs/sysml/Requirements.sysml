@@ -1653,10 +1653,13 @@ package WstxRequirements {
          private record, revocation (logout, revoke-all), dispatch fencing of every
          operating HTTP/WS effect under the authority lock, safety-revision
          advance and the commissioning server API (POST /authorization/v1/commission
-         and the status condition). Still target: CL-022-02 explicit radio identity
-         Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
-         CL-022-03 commissioning UI and automatic read-only CAT lifecycle, CL-022-04
-         cadence and CL-022-05 health presentation; TC-022-008..010 stay planned.
+         and the status condition). Delivered (partial, before live acceptance):
+         CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
+         lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
+         TC-022-009 automated companions. Still target: CL-022-02 explicit radio
+         identity Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
+         CL-022-05 dated freeze reproduction and Thin/Off accounted-traffic companion;
+         TC-022-008 and TC-022-010 stay planned.
          Existing99 identities retain meaning and numbering. No parser, model
          declaration or issue checkpoint proves execution/acceptance. */
     requirement 'CL-022-01' {
@@ -1835,8 +1838,17 @@ package WstxRequirements {
              obtains actual fresh readback automatically after preconditions hold.
              Selection/query/set refer to the same current observable values and
              identity/provenance. Automatic lifecycle never sends a setter/PTT command,
-             replays user commands, starts audio/decoder or grants transmit authority. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             replays user commands, starts audio/decoder or grants transmit authority.
+             Delivered (issue22 slice B): the browser operating panel shows the
+             action with radio identity, endpoint, model, PTT and setup revision,
+             requires an explicit receive-only acknowledgement checkbox and posts the
+             existing commission API; the label reads 'Confirm changed receive-only
+             setup' when the safety revision is above1. A selected plaintext profile
+             has no grant authority and therefore never runs the lifecycle (zero CAT
+             I/O); its automatic CAT is unavailable by design. Live IC-7300
+             acceptance (TC-022-010) remains outstanding. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js";
     }
     dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
     dependency CL_022_03_to_FR_009 from 'CL-022-03' to 'FR-009';
@@ -1858,8 +1870,14 @@ package WstxRequirements {
              RF-operation tokens and pending resume; CAT housekeeping may not restart
              audio or setters. Late results are identity/generation fenced. Existing
              shared native owner/resource arbitration with RF work stays authoritative.
-             This is the target cadence, not a claim that current runtime implements it. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Delivered: one station-wide50ms lifecycle tick (one timer, at most one
+             tick and one actor in flight) evaluates the grant/commissioning gate under
+             the profile store and authority locks, then the policy. A delay starts at
+             the first tick observing the confirmed released failure (<=one tick
+             after release). Explicit recovery from a failed-close quarantine is a
+             station restart; no in-process action clears it. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs";
     }
     dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
     dependency CL_022_04_to_FR_009 from 'CL-022-04' to 'FR-009';
@@ -1875,8 +1893,17 @@ package WstxRequirements {
              32kbit/s accounted-traffic regressions include new auth/recovery/status
              messages, explicit errors and multi-peer recovery. Issue10 existing
              continuity/stale fixes are reused; this proposal adds no duplicate helper.
-             Actual dated freeze reproduction/root-cause trace remains outstanding. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Actual dated freeze reproduction/root-cause trace remains outstanding.
+             Delivered: POST /authorization/v1/status reports the actual lifecycle
+             condition, mapped error and retry delay, with receive_state separate; the
+             browser reads it only when the versioned /receive/selection
+             snapshot_sequence changes or after a confirmation (no own timer) and
+             shows session, CAT and audio/decoder separately. A retained frequency is
+             labelled stale/unconfirmed unless the WS is connected and its fact is
+             confirmed in ready. Still target: Thin/Off accounted-traffic companion
+             including these status reads (TC-022-008) and the freeze trace. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
     }
     dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
     dependency CL_022_05_to_FR_010 from 'CL-022-05' to 'FR-010';
@@ -2033,8 +2060,19 @@ package WstxRequirements {
              cost2 native fixture release/cancel measurements prove unchanged250/50ms
              bounds and required four-profile workload; injected time is no substitute.
              Use R4 provider/consumer fixtures, no second native builder.
-             Planned companions: server/src/radio_http_tests.rs and server/tests/radio_native.rs using the existing R4 providers; no execution is claimed. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Automated: server/src/cat_lifecycle_tests.rs (injected-time policy:
+             immediate startup, exact1/2/4/8/8, reset only on readback, no catch-up,
+             disable/revoke/identity cancel, quarantine; scripted CI-V peer through
+             the real Actor/Executor: absent/open failure/timeout/removal/return,
+             failed close zero reopen, query-only bytes), server/src/auth_tests.rs
+             automatic_cat (real grant/commission flow, zero I/O before commission,
+             endpoint edit and last-grant revocation release, deprecated routes409
+             zero I/O, status retry reason) and tests/radio-selection.test.cjs
+             TC-022-009 (browser confirm action, no Connect/Disconnect, retry reason,
+             non-fresh frequency). Pending: corrupt-store case, concurrent RF-work
+             arbitration case and real Windows native release/cancel measurement. */
+        attribute automation : AutomationState = AutomationState::partial;
+        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; tests/radio-selection.test.cjs";
         objective {
             verify 'CL-022-03';
             verify 'CL-022-04';

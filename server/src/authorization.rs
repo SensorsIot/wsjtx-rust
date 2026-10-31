@@ -456,6 +456,22 @@ impl Authority {
     pub fn record(&self) -> &Record {
         &self.record
     }
+    /// CL-022-03 automatic read-only CAT precondition: a usable (non-quarantined)
+    /// store, at least one unrevoked grant for the current radio and durable
+    /// commissioning of exactly the current scope and saved control settings.
+    /// Returns None when no grant authorizes it, Some(false) when commissioning is
+    /// missing or invalidated, Some(true) when the lifecycle may run.
+    pub fn automatic_cat(&self, control: &profile::Control) -> Option<bool> {
+        let scope = self.record.current_scope.as_ref()?;
+        if self.available().is_err()
+            || !self.record.grants.iter().any(|g| g.scope.same_radio(scope))
+        {
+            return None;
+        }
+        Some(self.record.commissioning.as_ref().is_some_and(|c| {
+            c.receive_only_confirmed && &c.scope == scope && &c.control == control
+        }))
+    }
     pub fn load(store: &mut profile::Store, initial: Scope) -> Result<Self, Error> {
         let record = store
             .load_authorization(initial)
