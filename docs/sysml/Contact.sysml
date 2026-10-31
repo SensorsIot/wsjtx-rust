@@ -568,8 +568,8 @@ package WstxContact {
         out conflictCount : Integer;
         out error : AdiError[0..1];
         doc /* ADIF 3.1.8 ADI only (header optional, ended by <EOH>; records end <EOR>;
-             tags case-insensitive <NAME:LEN[:TYPE]> with exact LEN in characters; text
-             between fields ignored). Characters: printable ASCII 0x20-0x7E, plus
+             tags case-insensitive <NAME:LEN[:TYPE]> with exact LEN in characters; only
+             white space between fields within a record, see AdiLimits). Characters: printable ASCII 0x20-0x7E, plus
              TAB/CR/LF only inside unknown-field values; anything else
              unsupportedCharacter. Required per record: CALL, QSO_DATE (valid
              YYYYMMDD), TIME_ON (HHMM or HHMMSS), MODE; supported fields that are present
