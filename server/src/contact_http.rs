@@ -448,7 +448,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             if !b["safety_revision"].is_null() {
                 safe(b, "safety_revision")?;
             }
-            Command::EnableTx(boolean(b, "enabled")?)
+            Command::EnableTx(boolean(b, "enabled")?, b["safety_revision"].as_u64())
         }
         "tune" => Command::Tune(boolean(b, "enabled")?),
         "set_tx4" => Command::SetTx4(match text(b, "form")? {
@@ -665,7 +665,10 @@ impl Station {
             inner
                 .engine
                 .command(command, core.as_deref_mut(), &ctx)
-                .map_err(|code| (code, None))?;
+                .map_err(|code| {
+                    let field = (code == "stale_revision").then_some("safety_revision");
+                    (code, field)
+                })?;
             // An accepted command always advances the revision; the immediate step
             // folds its own consequences (a new pending request) into the receipt.
             inner.engine.revision += 1;

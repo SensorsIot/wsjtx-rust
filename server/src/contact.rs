@@ -416,7 +416,8 @@ pub enum Command {
         tx_minutes: u32,
         tune_seconds: u32,
     },
-    EnableTx(bool),
+    /// Enable Tx on/off; Some(revision) is the CL-022 safety revision the operator saw.
+    EnableTx(bool, Option<u64>),
     Tune(bool),
     Redecode,
     OpenLog,
@@ -441,6 +442,9 @@ pub struct Engine {
     reviews: VecDeque<Review>,
     /// The last request target refused without a disarm, never resubmitted as is.
     refused_target: Option<(i64, String, u32)>,
+    /// A completed, unsaved contact that found the review queue full; until it is
+    /// queued, saved or discarded no other contact or CQ may replace it.
+    unqueued: Option<String>,
     /// The last visible refusal or failure of a transmit outcome (snake_case).
     pub transmit_problem: Option<String>,
     sequence: u64,
@@ -475,6 +479,7 @@ impl Engine {
             contact: None,
             reviews: VecDeque::new(),
             refused_target: None,
+            unqueued: None,
             transmit_problem: None,
             sequence: 0,
             pending: None,
@@ -499,6 +504,15 @@ impl Engine {
     /// Drops offered reviews whose contact is durably saved.
     pub fn prune_saved(&mut self, saved: impl Fn(&str) -> bool) {
         self.reviews.retain(|r| !saved(&r.contact.id));
+        if self.unqueued.as_deref().is_some_and(&saved) {
+            self.unqueued = None;
+        }
+    }
+    fn guard_unqueued(&self) -> Result<(), &'static str> {
+        if self.unqueued.is_some() {
+            return Err("state_conflict");
+        }
+        Ok(())
     }
     /// Offers a review: the same contact replaces its own offer in place; another
     /// contact queues behind every unsaved one (CancelContact/ChangeContact keep a
@@ -514,6 +528,9 @@ impl Engine {
         }
         if self.reviews.len() == REVIEWS_MAX {
             return Err("state_conflict");
+        }
+        if self.unqueued.as_deref() == Some(review.contact.id.as_str()) {
+            self.unqueued = None;
         }
         self.reviews.push_back(review);
         Ok(())
@@ -557,6 +574,7 @@ impl Engine {
         replace: bool,
         mode: Mode,
     ) -> Result<(), &'static str> {
+        self.guard_unqueued()?;
         let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
             return Err("profile_incomplete");
         };
@@ -821,11 +839,11 @@ impl Engine {
                 core.set_watchdogs(tx_minutes, tune_seconds)
                     .map_err(|_| "out_of_range")?;
             }
-            Command::EnableTx(false) => {
+            Command::EnableTx(false, _) => {
                 Self::disarm(core.as_deref_mut(), DisarmCause::Operator);
                 self.pending = None;
             }
-            Command::EnableTx(true) => {
+            Command::EnableTx(true, shown) => {
                 if capability == Capability::Unsupported {
                     return Err("transmit_unavailable");
                 }
@@ -836,12 +854,16 @@ impl Engine {
                     return Err("transmit_unavailable");
                 }
                 let core = core.as_deref_mut().ok_or("transmit_unavailable")?;
-                let revision = core
-                    .hardware()
-                    .context()
-                    .safety_revision
-                    .ok_or("transmit_unavailable")?;
+                if core.hardware().context().safety_revision.is_none() {
+                    return Err("transmit_unavailable");
+                }
+                // #9 arms only with the revision the operator saw; it refuses a changed
+                // one itself (NotAuthorized), so there is no check-then-arm race.
+                let revision = shown.ok_or("stale_revision")?;
                 let needs_cq = self.contact.as_ref().is_none_or(|c| !c.state.transmits());
+                if needs_cq {
+                    self.guard_unqueued()?;
+                }
                 let cq = if needs_cq {
                     let set = generate(&call, &grid4, None, self.settings.report, Tx4::Rrr)
                         .ok_or("profile_incomplete")?;
@@ -849,7 +871,10 @@ impl Engine {
                 } else {
                     None
                 };
-                core.arm(revision).map_err(refusal_code)?;
+                core.arm(revision).map_err(|r| match r {
+                    TransmitRefusal::NotAuthorized => "stale_revision",
+                    other => refusal_code(other),
+                })?;
                 self.last_arm = ArmState::Armed;
                 self.transmit_problem = None;
                 if let Some((messages, id)) = cq {
@@ -903,7 +928,9 @@ impl Engine {
             Command::DiscardReview(id) => {
                 let before = self.reviews.len();
                 self.reviews.retain(|r| r.contact.id != id);
-                if self.reviews.len() == before {
+                if self.unqueued.as_deref() == Some(id.as_str()) {
+                    self.unqueued = None;
+                } else if self.reviews.len() == before {
                     return Err("not_found");
                 }
             }
@@ -925,11 +952,13 @@ impl Engine {
             }
             if !c.offered_for_log {
                 c.offered_for_log = true;
+                let id = c.id.clone();
                 let review = Review {
                     contact: c.clone(),
                     automatic: true,
                 };
                 if self.offer(review).is_err() {
+                    self.unqueued = Some(id);
                     // Eight unsaved reviews already wait; the contact stays completed
                     // and can still be offered with Log QSO once one is resolved.
                     self.transmit_problem = Some("review_queue_full".into());

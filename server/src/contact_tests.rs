@@ -282,7 +282,7 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
         replace: false,
     })
     .unwrap();
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert!(s.armed());
     s.run(period(2) + 14 * SECOND);
     assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
@@ -335,7 +335,7 @@ fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73
     for rr73 in [false, true] {
         let mut s = station();
         s.command(Command::SetParity(Parity::Even)).unwrap();
-        s.command(Command::EnableTx(true)).unwrap();
+        s.command(Command::EnableTx(true, Some(7))).unwrap();
         assert_eq!(s.state(), (State::Calling, Slot::Tx6));
         s.run(period(1) + 14 * SECOND);
         assert_eq!(s.sent_in(period(2)), None);
@@ -407,7 +407,7 @@ fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
         replace: false,
     })
     .unwrap();
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.run(period(2) + 14 * SECOND);
     let report = s.row(period(2), "HB9BLA K1ABC -05", 1500.0, None);
     s.deliver(&[report]);
@@ -465,7 +465,7 @@ fn other_stations_wrong_period_and_previous_partner_rows_change_nothing() {
         s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
         Some("K1ABC")
     );
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.command(Command::SelectRow {
         row: cq2,
         replace: true,
@@ -607,7 +607,7 @@ fn partner_working_another_call_within_50_hz_halts_in_replying_and_skipped_repor
                 (State::Replying, Slot::Tx1)
             };
             assert_eq!(s.state(), expected);
-            s.command(Command::EnableTx(true)).unwrap();
+            s.command(Command::EnableTx(true, Some(7))).unwrap();
             s.run(period(1) + 3 * SECOND);
             assert!(s.core.view().transmitting);
             let elsewhere = s.row(period(0), "W9XYZ K1ABC -10", 1000.0 + offset, None);
@@ -638,7 +638,7 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     );
     s.command(Command::SetAutoSeq(true)).unwrap();
     // Halt keeps the state; the contact can resume after Enable Tx.
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.run(period(1) + 2 * SECOND);
     assert!(s.core.view().transmitting);
     s.core.halt();
@@ -646,7 +646,7 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     assert!(!s.armed());
     assert_eq!(s.state(), (State::Replying, Slot::Tx1));
     // Cancel: disarm, clear DX and Tx1-Tx5, Tx6 next.
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.command(Command::Cancel).unwrap();
     assert!(!s.armed());
     let c = s.engine.contact.clone().unwrap();
@@ -665,7 +665,7 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
         tune_seconds: 90,
     })
     .unwrap();
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert_eq!(s.state(), (State::Calling, Slot::Tx6));
     // The first CQ differs from the earlier Tx1 text: its start resets the count.
     let start = s.now();
@@ -687,7 +687,7 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     })
     .unwrap();
     assert_eq!(
-        s.command(Command::EnableTx(true)),
+        s.command(Command::EnableTx(true, Some(7))),
         Err("transmit_unavailable")
     );
     assert_eq!(s.command(Command::Tune(true)), Err("transmit_unavailable"));
@@ -701,7 +701,7 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     };
     assert_eq!(
         s.engine
-            .command(Command::EnableTx(true), Some(&mut s.core), &ctx),
+            .command(Command::EnableTx(true, Some(7)), Some(&mut s.core), &ctx),
         Err("transmit_unavailable")
     );
     assert!(!s.armed());
@@ -787,7 +787,7 @@ fn tx_watchdog_counts_whole_minutes_from_the_last_reset_and_tune_ends_at_its_lim
         0,
         "counter 0 while disarmed"
     );
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     let armed_at = s.now();
     assert_eq!(s.core.view().tx_remaining_minutes, 1);
     // Identical Tx1 text every period does not reset; a refused request does not reset.
@@ -815,9 +815,9 @@ fn tx_watchdog_counts_whole_minutes_from_the_last_reset_and_tune_ends_at_its_lim
         "contact state kept"
     );
     // Re-enable clears the expiry.
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert!(!s.core.view().tx_expired);
-    s.command(Command::EnableTx(false)).unwrap();
+    s.command(Command::EnableTx(false, None)).unwrap();
     // Tune: limit 1 s, ends through #9 with release.
     s.command(Command::SetWatchdogs {
         tx_minutes: 6,
@@ -898,12 +898,12 @@ fn an_operator_disarm_is_not_reported_as_a_refused_transmission() {
         replace: false,
     })
     .unwrap();
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert!(
         s.core.view().pending_sequence.is_some(),
         "a request is pending"
     );
-    s.command(Command::EnableTx(false)).unwrap();
+    s.command(Command::EnableTx(false, None)).unwrap();
     s.run(s.now() + 200);
     assert_eq!(s.engine.transmit_problem, None, "disarm cancels quietly");
 }
@@ -928,7 +928,7 @@ fn a_non_disarming_refusal_is_not_resubmitted_every_step() {
         tx_offset_hz: 1500,
     });
     s.core.disarm(DisarmCause::Operator);
-    s.command(Command::EnableTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.run(s.now() + 2000);
     let duplicates = s
         .core
@@ -946,4 +946,101 @@ fn a_non_disarming_refusal_is_not_resubmitted_every_step() {
         s.engine.transmit_problem.as_deref(),
         Some("duplicate_sequence")
     );
+}
+
+// Re-review follow-ups (a) and (b).
+#[test]
+fn a_completed_contact_that_found_the_review_queue_full_is_never_dropped() {
+    let mut s = station();
+    for i in 0..8 {
+        s.command(Command::EnterDx {
+            call: format!("DL{i}ABC"),
+            grid: None,
+            replace: true,
+        })
+        .unwrap();
+        s.command(Command::OpenLog).unwrap();
+    }
+    assert_eq!(s.engine.reviews().count(), 8);
+    // A ninth contact completes on a received 73 in rogers (no transmission needed).
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: Some("FN42".into()),
+        replace: true,
+    })
+    .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(&[seventy_three]);
+    assert_eq!(s.state().0, State::Completed);
+    assert_eq!(s.engine.reviews().count(), 8, "the queue holds 8");
+    assert_eq!(
+        s.engine.transmit_problem.as_deref(),
+        Some("review_queue_full")
+    );
+    // While it waits for a queue place, no new contact or CQ may replace it.
+    assert_eq!(
+        s.command(Command::EnterDx {
+            call: "W1AW".into(),
+            grid: None,
+            replace: true
+        }),
+        Err("state_conflict")
+    );
+    let cq = s.row(P0, "CQ W2AW FN31", 900.0, None);
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: cq,
+            replace: true
+        }),
+        Err("state_conflict")
+    );
+    assert_eq!(
+        s.command(Command::EnableTx(true, Some(7))),
+        Err("state_conflict")
+    );
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
+        Some("K1ABC")
+    );
+    // Freeing a place lets Log QSO queue it; then new contacts are prepared again.
+    let first = s.engine.review().unwrap().contact.id.clone();
+    s.command(Command::DiscardReview(first)).unwrap();
+    s.command(Command::OpenLog).unwrap();
+    assert!(
+        s.engine
+            .reviews()
+            .any(|r| r.contact.dx_call.as_deref() == Some("K1ABC"))
+    );
+    s.command(Command::EnterDx {
+        call: "W1AW".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+}
+
+#[test]
+fn enable_tx_arms_with_the_revision_the_operator_saw_and_9_refuses_a_changed_one() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    // The station's CL-022 safety revision is 7; the operator saw 6.
+    assert_eq!(
+        s.command(Command::EnableTx(true, Some(6))),
+        Err("stale_revision")
+    );
+    assert!(!s.armed());
+    assert_eq!(
+        s.command(Command::EnableTx(true, None)),
+        Err("stale_revision"),
+        "no revision shown"
+    );
+    assert!(!s.armed());
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert!(s.armed());
 }

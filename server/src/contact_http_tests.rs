@@ -16,7 +16,8 @@ use wstx_rust::transmit::service::{
 #[derive(Clone, Default)]
 pub(crate) struct Bench {
     pub(crate) unsupported: Arc<AtomicBool>,
-    pub(crate) keys: Arc<Mutex<Vec<bool>>>,
+    /// Every PTT exchange with its UTC time.
+    pub(crate) keys: Arc<Mutex<Vec<(i64, bool)>>>,
     playing: Arc<Mutex<Option<(i64, usize)>>>,
     offset: Arc<AtomicI64>,
 }
@@ -46,7 +47,8 @@ impl Hardware for Bench {
         }
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
-        self.keys.lock().unwrap().push(on);
+        let at = self.now_utc_ms();
+        self.keys.lock().unwrap().push((at, on));
         Ok(())
     }
     fn open_audio(&mut self) -> Result<(), AudioError> {
@@ -708,24 +710,58 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
         json!(3),
         "the snapshot shows the current safety revision"
     );
-    let (s, v) = f
-        .send("enable_tx", json!({"enabled":true,"safety_revision":shown}))
+    let revision = f.snapshot().await["contact_revision"].as_u64().unwrap();
+    let enable = f.body(
+        revision,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":shown}),
+    );
+    let (s, receipt, _, _) = f
+        .call("POST", "/contact/command", Some(enable.clone()))
         .await;
-    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
     let snap = f.snapshot().await;
     assert_eq!(snap["transmit"]["arm_state"], "armed");
-    assert!(snap["transmit"]["pending_sequence"].is_u64(), "{snap}");
-    let pending = snap["transmit"]["pending_sequence"].clone();
-    // Reconnect/duplicate: the same command_id replays nothing; a fresh GET replays nothing.
-    // (Inside an own period the request may start at once; the next period's request
-    // is then the engine's single new pending one, never a replay.)
-    for _ in 0..3 {
+    // Accepted TransmitRequest sequences as #9 reports them.
+    let accepted = |t: &Value| -> std::collections::BTreeSet<u64> {
+        t["outcomes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|o| o["kind"] == "accepted")
+            .map(|o| o["request_sequence"].as_u64().unwrap())
+            .collect()
+    };
+    let (_, t0, _, _) = f.call("GET", "/transmit", None).await;
+    assert_eq!(
+        accepted(&t0).len(),
+        1,
+        "Enable Tx submits exactly one request: {t0}"
+    );
+    // A duplicated browser action (same command_id) replays the receipt, nothing else;
+    // further steps add no request unless the first one's audio started (then exactly
+    // one new request for the next own period).
+    let (s, again, _, _) = f.call("POST", "/contact/command", Some(enable)).await;
+    assert_eq!((s, &again), (StatusCode::OK, &receipt));
+    for _ in 0..5 {
         f.tick();
-        let t = f.snapshot().await["transmit"].clone();
-        assert!(
-            t["pending_sequence"] == pending || !t["last_text"].is_null(),
-            "{t}"
-        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let (_, t1, _, _) = f.call("GET", "/transmit", None).await;
+    let started = !t1["transmit"]["last_text"].is_null();
+    let new = accepted(&t1).difference(&accepted(&t0)).count();
+    assert_eq!(new, usize::from(started), "{t1}");
+    // Every key falls inside an own-parity (odd) period's start window.
+    for (at, on) in f.bench.keys.lock().unwrap().iter().copied() {
+        if on {
+            let period = at - at.rem_euclid(15_000);
+            assert_eq!(
+                wstx_rust::transmit::parity(decoder::Mode::Ft8, period),
+                wstx_rust::transmit::Parity::Odd,
+                "key at {at} outside an own period"
+            );
+            assert!(at - period < 11_250, "key at {at} after the start window");
+        }
     }
     // Esc: halt (priority #9 route) first, then cancel.
     let (s, v, _, _) = f.call("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
@@ -743,7 +779,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
     );
     assert_eq!(snap["contact"]["dx_call"], Value::Null);
     assert!(
-        f.bench.keys.lock().unwrap().last().is_none_or(|on| !on),
+        f.bench.keys.lock().unwrap().last().is_none_or(|k| !k.1),
         "PTT is released after the halt (a key, if any, was in an own period)"
     );
 }
@@ -908,7 +944,11 @@ async fn contact_browser_operating_flow() {
                 let f = f.clone();
                 move || {
                     let f = f.clone();
-                    async move { Json(json!(*f.bench.keys.lock().unwrap())) }
+                    async move {
+                        let keys: Vec<bool> =
+                            f.bench.keys.lock().unwrap().iter().map(|k| k.1).collect();
+                        Json(json!(keys))
+                    }
                 }
             }),
         );
