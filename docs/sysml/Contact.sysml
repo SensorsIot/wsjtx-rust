@@ -33,11 +33,12 @@ package WstxContact {
          comment 6539901776 (2026-10-31), items D1..D11. Deliberate differences are
          marked DIFFERENT with their reason.
 
-         FT4 (#11 CL-011-03) reuses this contract unchanged except the rules marked
-         FT4-NOTE: 7.5 s periods (WstxTransmit::Ft4Schedule), Tx4 default RR73 (MW
+         FT4 (#11 CL-011-02..04) reuses this contract unchanged except the rules marked
+         FT4-NOTE: 7.5 s periods (WstxTransmit::Ft4Schedule), Tx4 always RR73 (MW
          ~11227 forces m_send_RR73 in FT4), ADIF MODE MFSK with SUBMODE FT4 (ADQ
-         to_adif), Tx offset upper bound 2916 Hz (Ft4WaveformContract). FT4 is not
-         delivered by this slice. */
+         to_adif), Tx offset upper bound 2916 Hz (Ft4WaveformContract). Which mode a
+         contact uses and what a mode change does: StationOperatingMode, ContactMode
+         and ModeChange below (#11 slice B). */
 
     // ---------------------------------------------------------------- messages
     enum def TxSlot { enum tx1; enum tx2; enum tx3; enum tx4; enum tx5; enum tx6; }
@@ -85,12 +86,17 @@ package WstxContact {
              of a slot is kept until the next regeneration and requires server
              validation through PackMessage before it can be chosen as next.
              Tx4 default is rrr in FT8: m_send_RR73 starts false and is not saved
-             (MW ~580, ~9661; Rr73Policy.cpp tx4AllowsRr73). FT4-NOTE: rr73. */
+             (MW ~580, ~9661; Rr73Policy.cpp tx4AllowsRr73). FT4-NOTE: rr73, and
+             always rr73 (MW send_rr73_for_tx4 ~9661 is true for FT4 whatever
+             m_send_RR73; set_rr73_tx4 ~9676 forces it), see ToggleTx4Form. */
     }
     action def ToggleTx4Form {
         doc /* D7 adopted (MW on_txrb4_doubleClicked ~9047): switches tx4 between rrr
              and rr73 for the current contact and regenerates Tx4. Applies to the next
-             transmission, never to one whose audio has started. */
+             transmission, never to one whose audio has started. FT4-NOTE: an FT4
+             contact keeps rr73; set_tx4 rrr on it is refused out_of_range with field
+             form and changes nothing (DIFFERENT from WSJT-X, which silently keeps RR73:
+             a refusal never looks like an accepted change). */
     }
     action def OverrideReport {
         in requestedReportDb : Integer;
@@ -130,6 +136,7 @@ package WstxContact {
         attribute lastTransmittedText : String[0..1];
         attribute sequenceState : SequenceStateName;
         attribute armState : WstxTransmit::ArmState;
+        attribute mode : WstxOfflineDecode::Mode;
         attribute autoSequence : Boolean;
         attribute startUtc : String[0..1];
         attribute endUtc : String[0..1];
@@ -148,7 +155,56 @@ package WstxContact {
              autoSequence is initially on (own choice, operator can switch it off;
              off means received messages never change nextSlot). armState is the
              read view of #9's TransmitArming, never armed by selection, entry, reconnect or startup (#10 CL-010-01,
-             TransmitSafetyPolicy armedOnStartup=false). */
+             TransmitSafetyPolicy armedOnStartup=false). mode: ContactMode. */
+    }
+    calc def StationOperatingMode {
+        in liveDecodingMode : WstxOfflineDecode::Mode[0..1];
+        in selectionMode : WstxOfflineDecode::Mode;
+        return mode : WstxOfflineDecode::Mode;
+        doc /* #11 CL-011-02. The station's operating mode is the mode of the running
+             live decoding job (WstxOperatingReceive receive job ft4|ft8, not
+             terminal), else the operating selection's mode (WstxOperatingReceive::
+             WireSelection mode; FT8 at a fresh boot). FT4 is selected per station
+             through the existing operating selection (action mode ft4, which retunes
+             the dial to the FT4 entry and restarts the live job in FT4) or the
+             existing receive start; there is no second mode control, browser,
+             rig-control, log or transmit authority for FT4. It sets the mode of a
+             manually entered contact and of an own CQ, the Tx offset domain
+             (FrequencyControls) and station.tick period_ms (7500 FT4, 15000 FT8). */
+    }
+    attribute def ContactMode {
+        doc /* #11 CL-011-03. A contact's mode is fixed when it is prepared: the selected
+             row's mode (the live job that decoded it) or StationOperatingMode for
+             manual entry and own CQ. All of its rules use that mode: messages
+             (FT4-NOTE Tx4), TransmitSubmission requests (mode carried in every
+             WstxTransmit::TransmitRequest, so #9 plans Ft4Schedule or Ft8Schedule and
+             renders that waveform), period parity, TIME_ON/TIME_OFF period lengths, log
+             MODE/SUBMODE and worked-before mode. Only decoded rows of the contact's
+             mode count as received messages or for the 50 Hz rule; a row of the other
+             mode never changes the sequence (cross-mode isolation). Re-preparing the
+             same DX call in the other mode is a different contact (new contactId,
+             ChangeContact rules). Each station process owns its own engine, transmit
+             owner and contacts.adi, so simultaneous FT4 and FT8 stations share no
+             contact, arm or log state. */
+    }
+    action def ModeChange {
+        doc /* #11 CL-011-04. When StationOperatingMode differs from the mode of a contact
+             in calling, replying, report, rogerReport, rogers or signoff, the engine
+             (at its next step or command, at most one 50 ms step later) turns Enable
+             Tx off through #9 (TransmitArming disarm, DisarmCause contactCancelled: no
+             unkeyed request of the old mode remains) and cancels the contact as
+             CancelContact (calling -> idle; replying..signoff -> cancelled, DX call and
+             Tx1-Tx5 cleared, Tx6 next). A completed contact keeps its fields and its
+             unsaved log review with its own mode; idle and cancelled contacts are
+             unchanged. The Tx offset is clamped into the new mode's domain (an FT8
+             2917..2950 Hz offset becomes 2916 Hz in FT4). Enable Tx afterwards starts a
+             fresh own CQ in the new mode. DIFFERENT from WSJT-X, which keeps the DX
+             call and Enable Tx across a mode change: a contact's messages, periods and
+             log mode belong to one mode, so no contact or arm continues across modes.
+             As WSJT-X (MW updateModeControlLock disables the mode controls while
+             transmitting), an operating selection with action mode is refused busy,
+             after the profile/revision checks and before any effect, while #9 reports
+             PTT keyed, a transmission or Tune. */
     }
     action def SelectDecodedRow {
         in rowIdentity : String;

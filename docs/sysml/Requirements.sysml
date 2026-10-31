@@ -553,7 +553,7 @@ package WstxRequirements {
              the earlier of 75 % of the period and the end of the waveform's audio
              (5340 ms), deliberately not WSJT-X's fTR < 0.75 empty-start quirk.
              The mode is explicit per request and FT8 behaviour is unchanged.
-             Arming, playback, mode selection and QSO/log rules are later #11 clauses.
+             Mode selection and QSO/log rules are CL-011-02..04.
              Details: WstxTransmit::Ft4ChannelFrame, Ft4WaveformContract, Ft4Schedule,
              PlanTransmitStart. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -591,12 +591,22 @@ package WstxRequirements {
     }
     verification 'TC-006-002' {
         doc /* TC-006-002 — FT4 timing and mode changes
-             CL-011-01 (FT4 period timing; mid-workflow mode selection follows with CL-011-02)
+             CL-011-01 (FT4 period timing), CL-011-02 (mid-workflow mode selection)
              Setup: virtual UTC clock values around 7.5 s boundaries, both parities,
-             12 kHz and 48 kHz, every clock state, FT8 requests at the same instants.
+             12 kHz and 48 kHz, every clock state, FT8 requests at the same instants;
+             for CL-011-02 the actual router with the contact engine and the actual #9
+             transmit owner on a hardware double, live FT4/FT8 jobs with hand-authored
+             rows.
              Steps: select the next FT4 slot and plan starts before the period, at the
              300 ms delay, late, at the 75 % boundary, after it, for unaligned periods,
              FT4-only boundaries requested as FT8, and unsynchronized/unknown clocks.
+             CL-011-02: with an FT4 live job read station.tick and prepare an own CQ and
+             a manual entry; request an operating selection with action mode while Tune
+             is on, and again after Tune ends.
+             CL-011-02 oracles (WstxContact::StationOperatingMode, ModeChange):
+             station.tick period_ms 7500 in FT4 and 15000 in FT8; the manual contact
+             uses FT4 (Tx4 RR73); the mode selection while Tune is on is 409 busy and
+             nothing changes; after Tune it is not refused busy.
              Oracles: WSJT-X values (Modulator.cpp FT4 delay_ms=300 and late-start m_ic,
              TxStartPolicy.hpp 0.75, mainwindow.cpp m_TRperiod=7.5 and t mod 15 s
              parity): exact audio start and skipped samples. Deliberately not WSJT-X's
@@ -607,11 +617,103 @@ package WstxRequirements {
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-011-01';
+            verify 'CL-011-02';
         }
-        attribute executable : String = "server/tests/transmit_ft4_vectors.rs";
+        attribute executable : String = "server/tests/transmit_ft4_vectors.rs; server/src/contact_http_tests.rs";
     }
     dependency CL_011_01_verified_by_TC_005_002 from 'CL-011-01' to 'TC-005-002';
     dependency CL_011_01_verified_by_TC_006_002 from 'CL-011-01' to 'TC-006-002';
+    // #11 slice B (CL-011-02..04): FT4 in the operating workflow through the shared
+    // contact engine; detailed contract in WstxContact (StationOperatingMode,
+    // ContactMode, ModeChange, FT4-NOTE rules). The issue's planned TC-007-002 collided
+    // with the #10 operating-layout case of that number; the FT4 contact case is
+    // TC-007-008 (agent decision, 2026-10-31). Physical FT4 RF acceptance belongs to a
+    // separately approved level-5 case and is not part of this slice.
+    requirement 'CL-011-02' {
+        doc /* Make FT4 selectable per station through the existing operating selection
+             and receive start, without a second browser, rig-control, logging or
+             transmit-authority path: the station's operating mode (the running live
+             decoding job's mode, else the operating selection's mode) sets the mode of
+             manual entries and own CQs, the Tx offset domain and the period shown; an
+             operating mode selection is refused busy while #9 reports PTT keyed, a
+             transmission or Tune. Details: WstxContact::StationOperatingMode,
+             ModeChange. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/recording.rs; server/src/selection_http.rs; server/src/contact_http.rs; server/src/contact.rs";
+    }
+    dependency CL_011_02_to_FR_006 from 'CL-011-02' to 'FR-006';
+    dependency CL_011_02_to_FR_007 from 'CL-011-02' to 'FR-007';
+    dependency CL_011_02_to_FR_019 from 'CL-011-02' to 'FR-019';
+    requirement 'CL-011-03' {
+        doc /* Complete and log FT4 contacts through the common contact engine with the
+             FT4 rules: the contact's mode fixed at preparation and carried in every
+             TransmitRequest (7.5 s periods, t mod 15 s parity, 300 ms audio delay and
+             the FT4 waveform through the #9 owner), Tx4 always RR73, Tx offset
+             200..2916 Hz, TIME_ON one 7.5 s period before the first Tx3, log MODE MFSK
+             SUBMODE FT4 and worked-before by effective mode FT4; only rows of the
+             contact's mode count. Details: WstxContact::ContactMode, FT4-NOTE rules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/logbook.rs";
+    }
+    dependency CL_011_03_to_FR_007 from 'CL-011-03' to 'FR-007';
+    dependency CL_011_03_to_FR_011 from 'CL-011-03' to 'FR-011';
+    requirement 'CL-011-04' {
+        doc /* Keep FT8 behaviour unchanged and isolate the modes: a change of the
+             station's operating mode disarms #9 and cancels a calling or active
+             contact of the other mode (a completed contact keeps its review and mode),
+             clamps the Tx offset into the new domain, and simultaneous FT4 and FT8
+             stations share no contact, arm or log state. Details:
+             WstxContact::ModeChange, ContactMode. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+    }
+    dependency CL_011_04_to_FR_006 from 'CL-011-04' to 'FR-006';
+    dependency CL_011_04_to_FR_007 from 'CL-011-04' to 'FR-007';
+    dependency CL_011_04_to_FR_008 from 'CL-011-04' to 'FR-008';
+    verification 'TC-007-008' {
+        doc /* TC-007-008 — FT4 contact, logging and mixed-mode isolation
+             CL-011-03, CL-011-04
+             Setup: the contact engine against the actual #9 transmit owner core on a
+             virtual UTC clock with a recording hardware double (no audio, PTT or
+             radio); the actual router with live FT4 and FT8 fixture jobs; two
+             independent station fixtures at once; profile HB9BLA/JN47; hand-authored
+             rows packed with the real codec.
+             Steps: (a) FT4 responder: select "CQ K1ABC FN42" (even FT4 period P0,
+             -12.4 dB, 1234.6 Hz), Enable Tx, feed "HB9BLA K1ABC -05" and
+             "HB9BLA K1ABC RR73" in the partner's FT4 periods; (b) FT4 caller: CQ, select
+             the "HB9BLA K1ABC FN42" reply, feed "HB9BLA K1ABC R-07"; set_tx4 rrr; Tx
+             2916 and 2917 Hz; (c) an FT4 row reaching an FT8 contact; (d) switch the
+             station mode with an armed FT8 contact and a pending request and a
+             2940 Hz Tx offset, and with a completed unsaved FT8 contact, then Enable Tx
+             in FT4; (e) an FT4 and an FT8 station prepare and review contacts at the
+             same time; (f) the FT8 contact tests of TC-007-001 unchanged.
+             Expected (independent hand-written values): (a) Tx4 text
+             "K1ABC HB9BLA RR73", transmissions only in odd FT4 periods P0+7.5 s,
+             P0+22.5 s, P0+37.5 s with audio 300 ms after the period start and 241920
+             samples at 48 kHz, states replying -> rogerReport -> signoff -> completed
+             after the completed Tx5, one log offer with mode FT4, TIME_ON P0+15 s (one
+             7.5 s period before the first Tx3), TIME_OFF P0+45 s, review MODE MFSK
+             SUBMODE FT4; (b) report/Tx2 -> rogers/Tx4 RR73 -> completed on the
+             completed RR73 transmission; set_tx4 rrr refused out_of_range field form
+             with tx4 unchanged; 2916 accepted, 2917 refused out_of_range; (c) no state
+             change; (d) Enable Tx off with DisarmCause contactCancelled, no key after
+             the switch, contact cancelled, Tx offset 2916, the completed contact's
+             review kept with MODE FT8, a later CQ transmitted in FT4 periods;
+             (e) each station keeps its own contact, messages, arm state and review mode
+             (FT4 MFSK/FT4, FT8 FT8); (f) FT8 results identical to TC-007-001.
+             2 — Isolated automated functional tests; Windows development PC, actual
+             engine, #9 owner core and router, independent row and outcome fixtures; no
+             RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-011-03';
+            verify 'CL-011-04';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs";
+    }
+    dependency CL_011_02_verified_by_TC_006_002 from 'CL-011-02' to 'TC-006-002';
+    dependency CL_011_03_verified_by_TC_007_008 from 'CL-011-03' to 'TC-007-008';
+    dependency CL_011_04_verified_by_TC_007_008 from 'CL-011-04' to 'TC-007-008';
     dependency CL_008_07_to_FR_019 from 'CL-008-07' to 'FR-019';
     dependency CL_008_07_to_FR_021 from 'CL-008-07' to 'FR-021';
     verification 'TC-002-001' {
