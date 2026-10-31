@@ -203,23 +203,32 @@ pub async fn select(
         return error("wrong_profile");
     }
     let state = app.profile.as_ref().unwrap();
-    let store = state.store.lock().unwrap();
-    if store.document.revision != intent.profile_revision {
-        return error("state_conflict");
-    }
-    let device = store.document.audio.input_device.clone();
-    let cat = store.document.control.mode == "cat";
     // Capture settings, then release before actor reservation, snapshots or worker I/O.
-    drop(store);
+    let (device, cat) = {
+        let store = state.store.lock().unwrap();
+        if store.document.revision != intent.profile_revision {
+            return error("state_conflict");
+        }
+        (
+            store.document.audio.input_device.clone(),
+            store.document.control.mode == "cat",
+        )
+    };
     // WstxContact::ModeChange: no mode change while #9 keys the radio, transmits or
     // tunes (WSJT-X disables the mode controls while transmitting); nothing changes.
+    // The owner lock can wait on a CAT exchange: read the view off the async runtime.
     if intent.action == "mode"
-        && r.transmit.get().is_some_and(|t| {
+        && let Some(t) = r.transmit.get().cloned()
+    {
+        let keyed = tokio::task::spawn_blocking(move || {
             let v = t.service.view();
             v.transmitting || v.tune || v.ptt != wstx_rust::transmit::service::PttState::Released
         })
-    {
-        return error("busy");
+        .await
+        .unwrap_or(true);
+        if keyed {
+            return error("busy");
+        }
     }
     match r.selection_begin(intent, device, cat) {
         Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
