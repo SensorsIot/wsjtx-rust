@@ -341,10 +341,17 @@ package WstxProfiles {
         out outcome : StartupOutcome;
     }
     action def AuthenticateProfile {
-        doc /* Target issue22 authentication for selected persisted profiles. CL-022-01/02
+        doc /* Issue22 authentication for selected persisted HTTPS profiles. CL-022-01/02
              supersede the old UUID.runtime-token transport cookie, restart revocation
-             and HttpOnly-only persistence rule. Existing runtime is not claimed to
-             implement this amendment. Preserve POST /session raw-token body<=1024,
+             and HttpOnly-only persistence rule; delivered except the target radio
+             identity Add/Replace/Remove slice. A selected profile on a plaintext
+             loopback origin has no grant authority: its configuration GET/PUT,
+             operating HTTP routes and WS upgrade keep the runtime-token cookie
+             wstx_session_<UUID>=<UUID>.<token> (no configured token = trusted
+             loopback), with exact Origin checks, and its WS carries no grant
+             revocation fence. Every HTTPS operating HTTP route and WS upgrade instead
+             requires the current grant transport, re-validated for dispatch
+             (scope/grant/revocation generation) under the one authority lock. Preserve POST /session raw-token body<=1024,
              exact Origin403 before authentication, invalid token401, oversized413,
              rate10attempts/60seconds per process429, TLS only and successful204.
              Successful bootstrap creates only a random256-bit ephemeral bootstrap
@@ -358,6 +365,9 @@ package WstxProfiles {
              Wrong/legacy token-valued cookies are not migrated into grants. Other
              names ignored. Expiry only removes transport readiness; retained key proof
              restores it automatically without another bootstrap submission.
+             Transport handles follow RotateScopedTransport below; at most one current
+             handle per grant and64 overall, elapsed monotonic lifetime28800seconds.
+             Grant persistence is independent of transport rotation or expiry.
              One narrow new credential exception permits only a nonextractable P256
              signing CryptoKey in origin-scoped IndexedDB; no bootstrap token, private
              key export or token persistence in localStorage/sessionStorage/public
@@ -386,6 +396,12 @@ package WstxProfiles {
     action def PresentAndEditProfile {
         doc /* Existing browser on embedded profile-mode flag, never error-based mode
              guessing. One real window per endpoint; operator opens readiness origin.
+             For a selected persisted profile this operational browser flow uses the
+             effective HTTPS origin and a current scoped grant/transport established by
+             AuthenticateProfile/HandleScopedAuthorization. Trusted plaintext loopback
+             GET/PUT compatibility remains the HttpProfileGet/PutDecision API contract;
+             a plaintext selected profile reaches Connected only through the
+             runtime-token operating contract of AuthenticateProfile, never a grant.
              Display full UUID/name/effective endpoint/boot UUID/revision with legacy
              radio/link/version; title contains display name and port. Before Connected
              require correlated status snapshot AND successful validated authenticated GET
@@ -510,24 +526,40 @@ package WstxProfiles {
     satisfy WstxRequirements::'CL-005-05' by presentAndEdit;
 
     package IndependentVerification {
-        doc /* Case identities remain WstxRequirements::TC-022-001..004, projected
+        doc /* Case identities remain WstxRequirements::TC-022-001..005, projected
              from WstxRequirements and this package. No cases/verdicts are regenerated from
              action calculations. These declarations refine their subjects/oracles.
-             Delivered source/test companions, level 2 isolated automated Windows PC tests;
+             Source/test companions retain delivered scoped profile/API/legacy-socket
+             subsets, level 2 isolated automated Windows PC tests. The operational HTTPS/
+             grant fixture conversion and complete dual-transport companions below remain
+             pending; existing source is not complete automation of the expanded cases.
+             The independently sized plaintext8192 response-budget companion remains
+             implemented and mandatory; no existing companion or scoped evidence is discarded.
              FOUR real candidate processes, distinct saved ports/profiles, four real
              Chromium windows sharing ONE context/cookie store; no radio/device/live
              account/external-service/duplicate hosted run. Rust profile tests in
              server/src/profile_tests.rs and server/src/auth_tests.rs; communication browser/
              process cases in tests/profiles.test.cjs, registered beside the legacy suite.
-             Case names are TC-022-001..004; run node --test --test-concurrency=1
+             Case names are TC-022-001..005; run node --test --test-concurrency=1
              tests/profiles.test.cjs after cargo build --locked. Rust companions run with
              cargo test --workspace --locked --all-targets. Execution evidence remains
              on issue #5; model declarations are not run results.
              Fixture expects UUID 00000000-0000-4000-8000-00000000000i for i=1..4,
              Station i, TESTi, JN47AA, revision0, standard, fixture-input-i/output-i,
              disabled/null/disabled control. Ports reserved+recorded independently.
-             Bind127.0.0.1, saved TLS origin https://localhost:<port>; plaintext origin
-             null =>http://127.0.0.1:<port>. Tokens independently generated, never logged.
+             Operational browser windows in TC-022-001/002/003/005 and their save/readiness
+             regressions bind127.0.0.1 with saved HTTPS origins https://localhost:<port>
+             and legitimate selected grants in the shared browser context. Initial
+             selected-configuration identity migration creates no grant or commissioning;
+             fresh setup follows AuthenticateProfile/HandleScopedAuthorization, and
+             retained setup proves its existing grant without token/enrollment replay.
+             Plaintext origin null =>http://127.0.0.1:<port> remains a separate HTTP/launch
+             compatibility variant, never a claim of Connected or protected WS readiness.
+             Preserve every API field/size/error/storage/startup variant: the full trusted
+             numeric-loopback no-cookie GET/PUT matrix and current-grant HTTPS protected
+             ordered checks are independently mandatory. The exact8192 response-budget
+             fixture remains plaintext. Tokens independently generated, never logged.
+             Auth setup cannot commission/open/query/set/close CAT/audio or key PTT.
              Hand-authored expected edit table and independently parsed JSON/file
              hashes are the oracle, NOT new code/model-produced golden outputs.
              Readiness <=10s, Refresh <=2s, recovery <=10s after detection/restored link.
@@ -537,8 +569,10 @@ package WstxProfiles {
         verification variableServers {
             subject operation : PresentAndEditProfile;
             objective { verify WstxRequirements::'CL-005-01'; verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-005-05'; }
-            doc /* TC-022-001: four PID/listener/boot-ID/visible-UUID endpoints, Refresh
-                 all. Edit only profile1: Edited station 1, changed-input-1, CAT endpoint
+            doc /* TC-022-001: operational HTTPS/grant setup and separate plaintext API
+                 compatibility use the common partition above. Four PID/listener/boot-ID/
+                 visible-UUID endpoints, Refresh all. Edit only profile1: Edited station 1,
+                 changed-input-1, CAT endpoint
                  fixture-cat-1, CAT/disabled; retain output. Second window on same
                  station reloads acknowledged revision; other three settings/bytes stable.
                  Repeat audio-only/control-only/null-audio/CAT-disabled edits. Radio
@@ -562,7 +596,9 @@ package WstxProfiles {
         verification persistence {
             subject operation : SaveSelectedProfile;
             objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-04'; verify WstxRequirements::'CL-005-05'; }
-            doc /* TC-022-002: create extra default profile, verify exact defaults/UUID,
+            doc /* TC-022-002: operational browser saves/recovery use the common HTTPS/
+                 grant partition; HTTP/startup compatibility remains independently tested.
+                 Create extra default profile, verify exact defaults/UUID,
                  no listener. Four browser saves; record independently expected fields,
                  UUIDs/revisions. Fresh processes after clearing inherited WSTX inputs
                  restore same settings/fixed endpoint/UUID/revision and fresh boot ID.
@@ -585,7 +621,9 @@ package WstxProfiles {
                  response GET, no replay. Relative path from different CWD, aliases,
                  absent parent/existing empty/nonempty create target, invalid CLI and
                  forbidden env all have mapped errors. Independent ResponseBudgetAdmission
-                 fixture: the full worst-case representation with empty origin is2018
+                 fixture remains plaintext numeric loopback with the independently sized
+                 saved Origin, no protected browser/WS claim or TLS/DNS requirement:
+                 the full worst-case representation with empty origin is2018
                  UTF-8 bytes; size the ASCII origin contents to6174 bytes. Startup and
                  actual GET/PUT bodies must fit exactly8192, including a save from
                  maxRevision-1 to maxRevision. One extra origin byte or a9000-character
@@ -597,7 +635,11 @@ package WstxProfiles {
         verification lifecycleIsolation {
             subject operation : LaunchSelectedProfile;
             objective { verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-005-04'; }
-            doc /* TC-022-003: stop/restart profile1 while other three Refresh<=2s and
+            doc /* TC-022-003: operational windows use the common HTTPS/grant partition;
+                 retain separate plaintext startup/configuration variants. Each fault
+                 starts with otherwise valid transport-specific TLS/token inputs, so a
+                 missing prerequisite cannot replace the intended single fault.
+                 Stop/restart profile1 while other three Refresh<=2s and
                  UUID/settings unchanged. Original UUID/revision returns,new boot ID.
                  Running same path/alias/copied UUID ->profile_in_use; occupied port
                  ->endpoint_in_use. Denied storage and absent/unreadable/invalid TLS file
@@ -613,17 +655,29 @@ package WstxProfiles {
             subject operation : AuthenticateProfile;
             objective { verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-005-04'; }
             doc /* TC-022-004: four TLS localhost ports/tokens, ONE Chromium cookie
-                 context. Before login GET/PUT/WS401; login all then reverse order204.
+                 context. Before authorization GET/PUT/WS401. Fresh selected authorization
+                 is session204, bootstrap-scope200 with non-null migrated scope, completed
+                 persistence of the key/grant/operation IDs before enroll200, then
+                 challenge/proof204/status200. Session204 alone grants no ordinary access.
+                 Reverse-order retained authorization proves the existing key/grant and
+                 verifies status without token reentry or enrollment replay.
                  Ordinary same-origin browser GET without manual Origin200; cookie
                  names/attributes only reported. All four Refresh/reconnect independently.
                  Station1 token to station2 login401; copied name/value or value under
                  station2's expected name401; legacy cookie or duplicate expected name401.
                  Missing/wrong Origin login/PUT/WS403, including other station port and
                  unrelated origin. Transport-cookie expiry/proof recovery does not clear other cookies; ordinary restart retains grants.
-                 Explicitly revoke station1 grants and rotate bootstrap+restart:old grants/token401,new enrollment succeeds,
-                 other three usable. Exact UUID in PUT matches selected profile; wrong
+                 Operator bootstrap rotation is explicit profile revoke-all, unlike
+                 transport rotation/expiry or ordinary restart with unchanged bootstrap.
+                 Require actual durable revoke-all commit/receipt, then rotation/restart:
+                 old grants/token401, fresh explicitly authorized enrollment succeeds,
+                 other three usable. Environment-variable change alone is not commit proof.
+                 Exact UUID in PUT matches selected profile; wrong
                  UUID403, WS numeric correlation IDs retain existing local meaning.
                  Check 12.1 login body/rate independently per process, cookie attributes,
+                 and the shared auth-v1 budget: count setup admissions and independently
+                 prove10 admitted/11th429 per process without clock/rate changes or polling.
+                 Preserve existing request/count/deadline bounds;
                  only HttpOnly handles and the CL-022-01 nonextractable IndexedDB key persist; no
                  local/sessionStorage/profileJSON/retained form/URL/log/report leakage. Failed
                  network login also clears DOM token immediately on submission.
@@ -636,6 +690,9 @@ package WstxProfiles {
             subject operation : PresentAndEditProfile;
             objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
+                 Use the common operational HTTPS/grant partition before each relevant
+                 protected socket; count profile GETs separately from auth setup, never
+                 substitute auth status for the correlated WS observation.
                  Established socket: hold GET/profile; actual correlated WS response and
                  changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
                  Refresh: one in-flight GET plus one follow-up gets independently saved
@@ -667,12 +724,57 @@ package WstxProfiles {
          source-scope admission. They reuse selected profile/station authority; no new
          physical component or public-profile schema field is introduced. */
     enum def GrantCondition { enum unauthorized; enum authorized; enum revoked; enum unknown; }
-    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum radioIdentity; enum status; }
+    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum status; }
     enum def AuthOperationOutcome { enum committed; enum proofRequired; enum unauthorized; enum wrongOrigin; enum invalid; enum saturated; enum persistenceFailed; enum unknown; }
     enum def RadioIdentityChange { enum add; enum replace; enum remove; }
     attribute maxActiveBrowserGrants : Integer = 64;
     attribute maxPendingProofChallenges : Integer = 64;
     attribute proofChallengeLifetimeSeconds : Integer = 60;
+    attribute maxActiveTransportHandles : Integer = 64;
+    attribute maxTransportHandlesPerGrant : Integer = 1;
+    attribute transportLifetimeSeconds : Integer = 28800;
+    action def RotateScopedTransport {
+        doc /* Issue22 target behavior, not an implementation declaration. The volatile
+             transport table is owned by the same selected-station authorization
+             authority, not another credential store or lifecycle owner. It contains
+             at most one current handle per existing unrevoked verifier grant and at
+             most64 entries overall; no disk transport persistence or verifier eviction.
+             Successful ordinary grant proof serializes current scope/grant/revocation
+             validation, one-use challenge consumption and installation of a new
+             CSPRNG256bit opaque handle. Installation atomically replaces the previous
+             current handle for that SAME grant only. It does not replace a verifier,
+             advance revocation generation, revoke another grant, change commissioning
+             or disconnect CAT/audio. Other grants/profile processes remain unchanged.
+             Replay or invalid/expired/wrong-Origin/wrong-scope proof never replaces a
+             current handle. Random-generation or response-preparation failure fails
+             closed without installing a handle or invalidating the prior current one;
+             an already consumed nonce requires a new challenge, never proof replay.
+             Installed handles expire after28800 elapsed monotonic seconds, never
+             extended by use; cookie Max-Age remains28800. Expired/replaced/revoked/
+             wrong-scope handles return401 for new protected HTTP requests/WS upgrades.
+             Purge, rotation, expiry and ordinary restart do not delete or age-evict a
+             verifier, operation receipt or commissioning. Restart drops only volatile
+             transport; retained-key proof recovers without another bootstrap token.
+             Receipt-purpose proof NEVER installs or replaces transport. Revocation or
+             radio removal still invalidates dependent handles and existing effects/WS
+             according to the existing authority/cancellation rules.
+             Rotation is distinct from revocation: an already authenticated WS retains
+             only its existing grant/scope/revocation authority and existing dispatch
+             checks; rotation alone neither grants a new effect nor revokes its grant.
+             An open socket never establishes current browser authorization readiness.
+             Concurrent same-key proofs serialize; last committed proof determines the
+             sole current handle. HTTP delivery can be reordered or lost, so204 alone
+             does not prove the last-delivered cookie is current. The client shares its
+             existing readiness promise within a document and checks protected read-only
+             status after renewal. A401 or lost renewal response leaves readiness
+             unavailable/unknown and recovers through fresh challenge/proof/status using
+             the retained key, without bootstrap resubmission or user-mutation replay.
+             Same-origin tabs share cookie storage; once overlapping responses quiesce,
+             any tab can recover through fresh proof/status. Rotation by another tab
+             never deletes the retained key or claims revocation. No cross-tab framework
+             or additional credential store is introduced. Existing<=2s truthfulness,
+             rate10/60, TLS/Origin/profile checks and1024byte auth bounds all remain. */
+    }
     attribute def SelectedRadioAuthorizationScope {
         doc /* ProfileId is the persisted logical station identity in this phase;
              HTTPS origin is exact effective Endpoint.origin including port. UUIDs are
@@ -706,12 +808,12 @@ package WstxProfiles {
              public profile origin domains/ResponseBudgetAdmission remain unchanged.
              Fixed UUID36/revision<=9007199254740991 give scope138UTF8bytes including
              all JSON punctuation/quotes. Compact-output independent width bounds:
-             enrollment374, ordinary proof225, receipt proof426, identity request242,
+             enrollment374, ordinary proof225, receipt proof426,
              commissioning244, revoke236, challenge response396, receipt response<=302
-             (conservative18ASCII outcome/43grantId), bootstrap receipt query67.
-             Bootstrap response including current scope AND identity-receipt scope is
-             440bytes (two138 scopes +164fixed fields/UUID/outcome/nullgrant); absent
-             scope/receipt only shortens it. All below unchanged1024 logical-byte cap.
+             (conservative18ASCII outcome/43grantId). Delivered bootstrap response
+             {version,current_scope} is<=170bytes; the target identity slice's
+             receipt query67/identity request242/440byte two-scope response stay
+             target bounds. All below unchanged1024 logical-byte cap.
              These bounds are for compact server JSON; input whitespace may consume
              the remaining request allowance but total>1024 still413. All bounded
              strings here are canonical ASCII, so no hidden UTF8/escape growth.
@@ -763,26 +865,24 @@ package WstxProfiles {
         attribute operationReceipts : AuthOperationReceipt[0..64];
     }
     attribute def BootstrapScopeRequest {
-        doc /* Exact POST /authorization/v1/bootstrap-scope request is {version:1};
-             read-only identity-receipt reconciliation additionally has operation_id
-             (UUIDv4). No other optional/unknown/duplicate fields. */
+        doc /* Delivered: exact POST /authorization/v1/bootstrap-scope request is
+             {version:1}; no optional/unknown/duplicate fields. The target radio
+             identity slice (ChangeSelectedRadioIdentity) adds read-only receipt
+             reconciliation by operation_id only when that slice lands. */
         attribute version : Integer = 1;
-        attribute operationId : String[0..1];
     }
     attribute def BootstrapScopeResponse {
-        doc /* Strict200 {version,current_scope,identity_receipt}; optional model
-             features serialize as explicit JSON null. Scope is the station-authority
-             snapshot, never a browser-supplied tuple; receipt is null on initial read.
-             Reconciliation returns only the matching radioIdentity-kind receipt;
-             absent/evicted/wrong-kind operation409 unknown, not fabricated success.
-             Receipt.scope identifies that operation, not necessarily current scope.
-             No grant/verifier enumeration, cookies, keys or credentials in response. */
+        doc /* Delivered strict200 {version,current_scope}. Scope is the station-
+             authority snapshot, never a browser-supplied tuple. The target identity
+             slice adds identity_receipt with its reconciliation. No grant/verifier
+             enumeration, cookies, keys or credentials in response. */
         attribute version : Integer = 1;
         attribute currentScope : AuthWireScope[0..1];
-        attribute identityReceipt : AuthOperationReceipt[0..1];
     }
     attribute def RadioIdentityRequest {
-        doc /* Exact POST /authorization/v1/radio-identity JSON fields:
+        doc /* Target slice, not delivered: no radio-identity route, journal kind or
+             persisted identity request exists until this slice lands.
+             Exact POST /authorization/v1/radio-identity JSON fields:
              version,operation_id,expected_scope,change. expected_scope is explicit
              null or the full last-authoritative scope; change is add/replace/remove.
              operation_id is browser-generated UUIDv4 retained through unknown outcome.
@@ -808,7 +908,7 @@ package WstxProfiles {
         out response : BootstrapScopeResponse;
     }
     action def ChangeSelectedRadioIdentity {
-        doc /* Same-profile unexpired bootstrap cookie and explicit setup intent are
+        doc /* Target slice, not delivered (see RadioIdentityRequest). Same-profile unexpired bootstrap cookie and explicit setup intent are
              required; an ordinary grant/transport cookie alone is insufficient401.
              Strict auth-v1 bounds/errors apply. Before current-scope comparison,
              a committed same operation ID/equal parsed request returns its receipt
@@ -899,10 +999,9 @@ package WstxProfiles {
              unknown/unauthorized until same operation receipt and scoped proof recover.
              Uncommitted enrollment is unusable after restart. Revocation commit fences
              queued effects; already-dispatched I/O follows acknowledged cancellation.
-             Verifier-owned entries require ownerVerifier and no identityRequest;
-             radioIdentity entries require identityRequest, no ownerVerifier and null
-             grant_id. Only bootstrap-scope may reconcile the latter; proof/receipt
-             paths reject them and cannot turn setup receipts into control authority.
+             Delivered entries are verifier-owned (enroll/logout/revokeAll/commission)
+             and require ownerVerifier; any other persisted entry is corrupt and fails
+             closed. The target identity slice adds its own setup-receipt kind.
              A failed revocation write quarantines current-process access but discloses
              NOT durably revoked; restart may restore last committed grant. */
         attribute version : Integer = 1;
@@ -913,20 +1012,19 @@ package WstxProfiles {
         // Internal journal discriminator/owner; not additional public response keys.
         attribute operationKind : AuthOperationKind;
         attribute ownerVerifier : BrowserPublicVerifier[0..1];
-        attribute identityRequest : RadioIdentityRequest[0..1];
     }
     action def HandleScopedAuthorization {
-        doc /* Target strict auth API v1. Exact paths POST /authorization/v1/bootstrap-scope,
-             /radio-identity,/status,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
+        doc /* Delivered strict auth API v1. Exact paths POST /authorization/v1/bootstrap-scope,
+             /status,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
+             Target /radio-identity is not routed until ChangeSelectedRadioIdentity lands.
              Existing POST /session stays raw-token, never accepts JSON extension keys.
              Every new request exactly version1 plus its listed fields; unknown,
              missing,duplicate keys/wrongtype/noncanonicalencoding400, contenttype
              application/json else415, body>1024bytes413, wrongOrigin403 first, TLS
-             required before accepting credentials. At most10authattempts/60s/process;
+             required before accepting credentials. At most10setup attempts(session/bootstrap-scope/enroll)/60s/process;
              grant/challenge caps64, saturation429. All responses<=1024UTF8bytes,
              uncompressed, no auth material in errors/logs. No endpoint opens CAT.
              bootstrap-scope: BootstrapScopeRequest/Response via ReadBootstrapScope;
-             radio-identity: RadioIdentityRequest via ChangeSelectedRadioIdentity;
              status: WstxOperatingReceive::AuthStatusRequest, read-only active-grant
              snapshot per AutomaticCatStatus, no effects and no GET fallback;
              enroll: AuthEnrollmentRequest, ephemeral bootstrap cookie required;
@@ -936,6 +1034,7 @@ package WstxProfiles {
              proof: AuthProofRequest; successful204 issues only new opaque transport;
              revoke: {version,operation_id,scope,all_for_radio}, matching active grant
              required; false logs out that grant, true revokes matching radio grants;
+             a committed revoke also clears the caller's session cookie (Max-Age=0);
              commission: {version,operation_id,scope,receive_only_confirmed:true}, active
              matching grant required, commits exact displayed safety configuration;
              receipt: {version,operation_id,scope,grant_id,nonce,signature}; one-use
@@ -945,7 +1044,7 @@ package WstxProfiles {
              cannot authorize control or revive a revoked grant. Evicted/absent receipt returns409 unknown and
              browser remains unknown, never fabricates durable success. Journal entries
              persist atomically with their mutation and carry only bounded public
-             verifier/scope/operation/outcome metadata or the parsed identityRequest;
+             verifier/scope/operation/outcome metadata;
              no bootstrap secret or unbounded tombstones. A separate challenge request
              {version,operation_id,scope} addresses a known receipt. Its payload uses
              UTF8 WSTX-AUTH-RECEIPT then byte01, followed by the same six length-prefixed

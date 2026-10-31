@@ -60,7 +60,7 @@ pub async fn snapshot(
     RawQuery(query): RawQuery,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, false) {
+    let r = match authorize(&app, &headers, false).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };
@@ -89,7 +89,7 @@ pub async fn select(
     RawQuery(query): RawQuery,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
-    let r = match authorize(&app, &headers, true) {
+    let r = match authorize(&app, &headers, true).await {
         Ok(r) => r,
         Err(e) => return error(e),
     };

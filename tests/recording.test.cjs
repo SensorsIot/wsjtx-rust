@@ -12,7 +12,10 @@ const {chromium}=require('playwright');
 const selfsigned=require('selfsigned');
 const WebSocket=require('ws');
 const {receive}=require('./peer.cjs');
-const {server,link}=require('./support.cjs');
+const {server,link,loginPage}=require('./support.cjs');
+// Selected HTTPS profile: each browser context enrolls its own CL-022-01 key through the
+// real token form, then the cache is cleared so later cold measurements stay uncached.
+async function enroll(context,origin,token){const p=await context.newPage();await loginPage(p,origin,token,120000);const cdp=await context.newCDPSession(p);await cdp.send('Network.clearBrowserCache');await p.close();}
 let root,browser,tls;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 before(async()=>{
@@ -46,10 +49,11 @@ async function fixture(t,{thin=false,secure=false}={}){
   await retained(app);
   context=await browser.newContext({ignoreHTTPSErrors:true});
   await retained(context);
-  if(thin||secure){const res=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token});assert.equal(res.status(),204);}
+  if(thin||secure)await enroll(context,origin,token);
+  const transport=async()=>{const c=(await context.cookies(origin)).find(c=>c.name==='wstx_session_'+profile_id);return c?`${c.name}=${c.value}`:'';};
   async function req(route,method='GET',body,headers={},direct=false){
     const target=direct&&thin?`https://127.0.0.2:${proxy.port}`:origin;
-    const response=await context.request.fetch(target+route,{method,headers:{...(method==='GET'?{}:{Origin:origin}),...(direct&&thin?{Cookie:`wstx_session_${profile_id}=${profile_id}.${token}`}:{}) ,...(body&&!Buffer.isBuffer(body)?{'Content-Type':'application/json'}:{}),...headers},data:body});
+    const response=await context.request.fetch(target+route,{method,headers:{...(method==='GET'?{}:{Origin:origin}),...(direct&&thin?{Cookie:await transport()}:{}) ,...(body&&!Buffer.isBuffer(body)?{'Content-Type':'application/json'}:{}),...headers},data:body});
     const text=await response.text();return {status:response.status(),value:text?JSON.parse(text):null,headers:response.headers()};
   }
   async function snapshot(){const r=await req('/recording');assert.equal(r.status,200);return r.value;}
@@ -57,7 +61,7 @@ async function fixture(t,{thin=false,secure=false}={}){
   async function reserve(){const s=await snapshot();const r=await req('/recording/imports','POST',body(s));assert.equal(r.status,201);return r.value;}
   async function upload(bytes,direct=false){const op=await reserve();for(let offset=0;offset<bytes.length;offset+=2048){const end=Math.min(offset+2048,bytes.length);const r=await req(`/recording/imports/${op.id}`,'PUT',bytes.subarray(offset,end),{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${bytes.length}`},direct);assert.equal(r.status,end===bytes.length?201:202,JSON.stringify(r.value));}return snapshot();}
   async function replay(){const s=await snapshot(),r=await req('/recording/replay','POST',{...body(s),recording_id:s.recording.id});assert.equal(r.status,202,JSON.stringify(r.value));return r.value;}
-  return {dir,origin,context,proxy,req,snapshot,reserve,upload,replay,body,async restart(){await app.close();app=await server(env,['--profile',dir]);}};
+  return {dir,origin,context,proxy,req,snapshot,reserve,upload,replay,body,token,async restart(){await app.close();app=await server(env,['--profile',dir]);if(thin||secure){const p=await context.newPage();await p.goto(origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.close();}}};
 }
 function wav(seconds=1,amplitude=.5,frequency=750){
   const count=Math.round(seconds*12000),b=Buffer.alloc(44+count*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(count*2,40);
@@ -293,7 +297,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
   test('TC-010-002 cold load in two independent uncached browsers',{timeout:230000},async t=>{
     await runPhase(t,'cold',async()=>{
       f=await fixture({after:cleanup=>cleanups.push(cleanup)},{thin:true});await f.upload(wav(64),true);
-      const second=await browser.newContext({ignoreHTTPSErrors:true,storageState:await f.context.storageState()});cleanups.push(()=>second.close());
+      const second=await browser.newContext({ignoreHTTPSErrors:true});cleanups.push(()=>second.close());await enroll(second,f.origin,f.token);
       if(closing){await second.close();throw Error('Cold-load fixture was released during setup');}
       const began=performance.now(),coldBefore={...f.proxy.counters};
       pages=await Promise.all([page(f),page({...f,context:second})]);

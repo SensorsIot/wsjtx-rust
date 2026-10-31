@@ -507,13 +507,18 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         serde_json::to_vec(&document).unwrap(),
     )
     .unwrap();
-    let (store, _) = profile::Store::open(&root).unwrap();
+    // Plaintext selected profile: the runtime-token cookie below is its operating contract.
+    let (mut store, _) = profile::Store::open(&root).unwrap();
+    let authorization =
+        crate::authorization_http::Service::initialize(&mut store, "http://localhost:18001")
+            .unwrap();
     let r = recording::Recording::open(&root, id.clone(), boot.clone());
     r.initialize_profile_revision(0);
     let app = App {
-        origin: "https://localhost:18001".into(),
+        origin: "http://localhost:18001".into(),
         profile: Some(Arc::new(ProfileState {
             store: Mutex::new(store),
+            authorization: Mutex::new(authorization),
             boot: boot.clone(),
             recording: r.clone(),
         })),
@@ -597,4 +602,60 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         }
     }
     drop(fixture);
+}
+
+// Proves: CL-022-05; TC-021-008. Public script/style assets are gzip only when the client
+// selects it; every other negotiation keeps the exact identity bytes, never 406.
+#[tokio::test]
+async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwise() {
+    use crate::{App, Semaphore};
+    use std::sync::{Arc, Mutex};
+    use std::time::Instant;
+    let app = App {
+        origin: "http://localhost:18002".into(),
+        profile: None,
+        profile_id: None,
+        token: None,
+        connections: Arc::new(Semaphore::new(16)),
+        login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
+    };
+    for (path, source) in [
+        ("/app.js", include_str!("../../client/app.js")),
+        (
+            "/authorization.js",
+            include_str!("../../client/authorization.js"),
+        ),
+        ("/recording.js", include_str!("../../client/recording.js")),
+        ("/style.css", include_str!("../../client/style.css")),
+        ("/recording.css", include_str!("../../client/recording.css")),
+    ] {
+        for (accept, gzip) in [
+            (Some("gzip, deflate, br"), true),
+            (Some("gzip;q=0"), false),
+            (Some("identity;q=0,gzip;q=0"), false),
+            (None, false),
+        ] {
+            let mut request = Request::builder().uri(path);
+            if let Some(accept) = accept {
+                request = request.header("accept-encoding", accept);
+            }
+            let response = crate::router(app.clone())
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path} {accept:?}");
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            let encoding = response.headers().get("content-encoding").cloned();
+            let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+            if gzip {
+                // Browser decoding of these bytes is exercised by the actual-browser suites.
+                assert_eq!(encoding.unwrap(), "gzip", "{path}");
+                assert_eq!(&bytes[..2], [0x1f, 0x8b], "{path} gzip member");
+                assert!(bytes.len() < source.len(), "{path} is smaller on the wire");
+            } else {
+                assert!(encoding.is_none(), "{path} {accept:?}");
+                assert_eq!(bytes, source.as_bytes(), "{path} {accept:?}");
+            }
+        }
+    }
 }

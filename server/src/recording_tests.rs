@@ -931,6 +931,7 @@ fn selection_profile_fixture() -> (
         origin: "http://127.0.0.1:18001".into(),
         profile: Some(Arc::new(crate::ProfileState {
             store: Mutex::new(store),
+            authorization: Mutex::new(None),
             boot: r.boot.clone(),
             recording: r.clone(),
         })),

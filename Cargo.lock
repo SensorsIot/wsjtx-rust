@@ -1284,6 +1284,7 @@ dependencies = [
  "axum-server",
  "base64",
  "futures-sink",
+ "ring",
  "rustfft",
  "rustls",
  "serde",

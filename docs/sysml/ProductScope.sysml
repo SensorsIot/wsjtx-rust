@@ -16,7 +16,7 @@ package WstxProductScope {
          WstxProfiles configuration/persistence; WstxRecordingReceive recording/display;
          WstxOfflineDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
          capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding;
-         WstxTransmit FT8 message packing, waveform and transmit period scheduling.
+         WstxTransmit FT8/FT4 message packing, waveform and transmit period scheduling.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is
          not an extra architecture. Declared coverage is not an execution verdict.

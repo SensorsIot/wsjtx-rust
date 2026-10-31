@@ -20,6 +20,7 @@ futures-sink = "0.3"
 tower-http = { version = "=0.7.1", default-features = false, features = ["compression-gzip"] }
 tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 base64 = "=0.22.1"
+ring = "=0.17.14"
 subtle = "2.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
 

@@ -277,20 +277,29 @@ fn tc_006_001_period_selection_and_parity() {
     // 2026-10-31T12:00:00Z is an even period (multiple of 30 s).
     let t0: i64 = 1_793_448_000_000;
     assert_eq!(t0 % 30_000, 0);
-    assert_eq!(next_period(t0, Parity::Even), t0);
-    assert_eq!(next_period(t0, Parity::Odd), t0 + 15_000);
-    assert_eq!(next_period(t0 + 11_249, Parity::Even), t0);
-    assert_eq!(next_period(t0 + 11_250, Parity::Even), t0 + 30_000);
-    assert_eq!(next_period(t0 + 14_999, Parity::Odd), t0 + 15_000);
-    assert_eq!(next_period(t0 + 26_250, Parity::Odd), t0 + 45_000);
-    assert_eq!(next_period(t0 - 1, Parity::Even), t0);
+    assert_eq!(next_period(Mode::Ft8, t0, Parity::Even), t0);
+    assert_eq!(next_period(Mode::Ft8, t0, Parity::Odd), t0 + 15_000);
+    assert_eq!(next_period(Mode::Ft8, t0 + 11_249, Parity::Even), t0);
+    assert_eq!(
+        next_period(Mode::Ft8, t0 + 11_250, Parity::Even),
+        t0 + 30_000
+    );
+    assert_eq!(
+        next_period(Mode::Ft8, t0 + 14_999, Parity::Odd),
+        t0 + 15_000
+    );
+    assert_eq!(
+        next_period(Mode::Ft8, t0 + 26_250, Parity::Odd),
+        t0 + 45_000
+    );
+    assert_eq!(next_period(Mode::Ft8, t0 - 1, Parity::Even), t0);
 }
 
 #[test]
 fn tc_006_001_start_plan_late_start_and_refusals() {
     let p: i64 = 1_793_448_015_000;
     let sync = ClockState::Synchronized;
-    let start = |now, rate| plan_start(now, sync, p, rate);
+    let start = |now, rate| plan_start(Mode::Ft8, now, sync, p, rate);
     assert_eq!(
         start(p - 3_000, 48_000),
         Ok(Start {
@@ -330,12 +339,12 @@ fn tc_006_001_start_plan_late_start_and_refusals() {
     assert_eq!(start(p + 15_001, 48_000), Err(ScheduleError::StalePeriod));
     assert_eq!(start(p + 60_000, 48_000), Err(ScheduleError::StalePeriod));
     assert_eq!(
-        plan_start(p, sync, p + 1, 48_000),
+        plan_start(Mode::Ft8, p, sync, p + 1, 48_000),
         Err(ScheduleError::MisalignedPeriod)
     );
     for clock in [ClockState::Unsynchronized, ClockState::Unknown] {
         assert_eq!(
-            plan_start(p + 100, clock, p, 48_000),
+            plan_start(Mode::Ft8, p + 100, clock, p, 48_000),
             Err(ScheduleError::ClockNotSynchronized)
         );
     }

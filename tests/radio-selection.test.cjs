@@ -8,7 +8,7 @@ const {once}=require('node:events');
 const {randomUUID}=require('node:crypto');
 const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
-const {server}=require('./support.cjs');
+const {server,grant,loginPage}=require('./support.cjs');
 
 async function station(t){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-selection-'));
@@ -26,8 +26,9 @@ async function station(t){
       const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{try{const raw=Buffer.concat(chunks),text=(res.headers['content-encoding']==='gzip'?gunzipSync(raw):raw).toString('utf8');resolve({status:res.statusCode,headers:res.headers,raw,text,body:text&&(res.headers['content-type']||'').startsWith('application/json')?JSON.parse(text):null});}catch(error){reject(error);}});
     });req.on('error',reject);if(body!==undefined)req.write(typeof body==='string'||Buffer.isBuffer(body)?body:JSON.stringify(body));req.end();
   });
-  const session=await request('/session','POST',token);assert.equal(session.status,204);cookie=session.headers['set-cookie'][0].split(';')[0];
-  return {origin,id,request,cookie};
+  // Selected HTTPS profile: raw requests use the real CL-022-01 grant flow, not the token cookie.
+  cookie=(await grant(origin,token,(route,method,body,extra)=>request(route,method,body,extra))).cookie;
+  return {origin,id,request,cookie,token};
 }
 
 // Proves: CL-008-07; TC-009-005 cases2/5. Parent has no selection route, so this
@@ -69,8 +70,11 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:682},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(758),origin,mapping),'automatic');for(const line of [699,712,725,731,741,743,751,760])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(757),origin,mapping),/unknown/);
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:693},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(772),origin,mapping),'automatic');for(const line of [710,724,738,744,755,757,765,774])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(771),origin,mapping),/unknown/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(772).stack.callFrames]}};
+    assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
+    wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
   await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
@@ -260,12 +264,11 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
 // Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
 test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
-  const {origin,request,cookie}=await station(t);const {chromium}=require('playwright');
+  const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
-  const separator=cookie.indexOf('=');await context.addCookies([{name:cookie.slice(0,separator),value:cookie.slice(separator+1),url:origin,httpOnly:true,secure:true,sameSite:'Strict'}]);
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();await page.locator('#operating-band:enabled').waitFor();
+  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();
   await page.selectOption('#operating-band','40m');await page.locator('#operating-selection-status').filter({hasText:'audio_unconfigured'}).waitFor();
   assert.match(await page.locator('#operating-radio').textContent(),/Nominal 7\.074000 MHz.*manual, actual rig unconfirmed/);
   await page.selectOption('#operating-mode','ft4');await page.waitForFunction(()=>document.querySelector('#op-dial').value==='7.047500');
@@ -291,10 +294,9 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
 // Proves: CL-008-03/07; TC-009-005 case7. One actual status response can publish
 // the same readiness twice; unchanged context must not duplicate receive reads.
 test('TC-009-005 one status refresh coalesces unchanged receive readiness',{timeout:30000},async t=>{
-  const {origin,cookie}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());
-  const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();const separator=cookie.indexOf('=');
-  await context.addCookies([{name:cookie.slice(0,separator),value:cookie.slice(separator+1),url:origin,httpOnly:true,secure:true,sameSite:'Strict'}]);
-  await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();await page.locator('#operating-band:enabled').waitFor();await page.waitForTimeout(200);
+  const {origin,token}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());
+  const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
+  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForTimeout(200);
   await page.evaluate(()=>{window.__readyReads=[];addEventListener('station-ready',event=>window.__readyReads.push({sameSocket:event.detail===socket,pendingId,profile:profileData.profile_id,boot:profileData.boot_id,revision:profileData.revision}));});
   const reads=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/receive')reads.push({method:request.method(),at:Date.now()});});
   const prior=await page.locator('#updated').textContent();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=2);await page.waitForTimeout(250);
@@ -334,19 +336,24 @@ function selectionNetworkSummary(transfers,start,end){
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'c4baf7430c9ab570d3e012002be65d687586d06a8fec626f3be6876e86627fe6','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'361ed4af3ac7fecfc24cfaee4ee75f77e1660fc1002ddccfa902b7ad01c5f712','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:682,timerLine:758};
+  return {sha256,valid,fetchLine:693,timerLine:772};
 }
 function cadenceCaller(initiator,origin,mapping){
-  const frames=initiator?.stack?.callFrames;
+  let frames=initiator?.stack?.callFrames;
   assert.equal(initiator?.type,'script','selection read must have script provenance');
+  // A selected HTTPS profile reads through the exact station authorization wrapper first.
+  if(frames?.[0]?.url===origin+'/authorization.js'){
+    assert.equal(frames[0].functionName,'protectedFetch');assert.equal(frames[1]?.url,origin+'/app.js');assert.equal(frames[1].functionName,'stationFetch');
+    frames=frames.slice(2);
+  }
   assert.ok(frames?.length>=2,'complete selection caller stack');
   assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
-  const explicitLines=[699,712,725,731,741,743,751,760];
+  const explicitLines=[710,724,738,744,755,757,765,774];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';
@@ -470,7 +477,6 @@ function liveSelectionFixture(){
     t.after(async()=>{if(activePhase){report.phases[activePhase].state='failed';report.phases[activePhase].endedUtc=new Date().toISOString();await save();}});
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
-      const session=await context.request.post(origin+'/session',{headers:{Origin:origin},data:token,timeout:20000});assert.equal(session.status(),204);
       const page=await context.newPage();pages.push(page);
       const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[]};observations.push(seen);
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
@@ -504,6 +510,8 @@ function liveSelectionFixture(){
     report.cold={state:'running',startedUtc:new Date().toISOString(),startedMonotonic:coldStarted,deadlineMonotonic:coldDeadline};await save();
     try{await Promise.all(pages.map(async(page,index)=>{
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
+      // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
+      await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
       await page.locator('#connection[data-state=connected]').waitFor({timeout:coldRemaining()});seen.connectedObserved=performance.now();
       await page.locator('#operating-band:enabled').waitFor({timeout:coldRemaining()});seen.operatingObserved=performance.now();
       await page.locator('[data-region=client-preferences]').first().click({timeout:coldRemaining()});await page.selectOption('#display-profile','thin',{timeout:coldRemaining()});await page.locator('.op-secondary:not([hidden]) .return-operate').click({timeout:coldRemaining()});

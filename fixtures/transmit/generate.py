@@ -55,6 +55,15 @@ MESSAGES = [
 # Zero-noise ft8sim references: message, f0, file.
 WAVES = [("CQ K1ABC FN42", 1500.0, "ft8sim-cq-k1abc-fn42-1500.wav"),
          ("<W9XYZ> PJ4/K1ABC RRR", 637.5, "ft8sim-type4-637.5.wav")]
+# Zero-noise ft4sim references (complex genft4 waveform, real part written).
+FT4_WAVES = [("CQ K1ABC FN42", 1500.0, "ft4sim-cq-k1abc-fn42-1500.wav"),
+             ("<W9XYZ> PJ4/K1ABC RRR", 637.5, "ft4sim-type4-637.5.wav")]
+FT4_EXTRA = ["HB9BLA K1ABC -12", "K1ABC HB9BLA R-07", "HB9BLA K1ABC RR73"]
+# genft4.f90 data symbol positions (0-based in the 103 tones): three blocks of 29.
+FT4_DATA = [*range(4, 33), *range(37, 66), *range(70, 99)]
+FT4_GRAY_INVERSE = {0: 0, 1: 1, 3: 2, 2: 3}
+# genft4.f90 rvec, used only to cross-check the codeword read back from the tones.
+FT4_RVEC = "01001010010111101000100110110100101100001000101001111001010101011011111000101"
 
 
 def sha256(path: Path) -> str:
@@ -86,11 +95,78 @@ def ft8code(exe: Path, message: str) -> dict:
     }
 
 
+def ft4sim(exe: Path, message: str, f0: float, cwd: str) -> dict:
+    command = [str(exe), message, f"{f0}", "0.0", "0", "0", "1", "99"]
+    run = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    lines = [line.rstrip("\r") for line in run.stdout.splitlines()]
+    normalized = " ".join(message.upper().split())
+    if run.returncode != 0 or not any(line.startswith("Message: ") for line in lines):
+        return {"message": message, "encoded": False, "output": run.stdout.strip()}
+    row = next(line for line in lines if line.startswith("Message: "))
+    decoded = row[9:46].rstrip()
+    i3, n3 = (int(x) for x in re.search(r"i3\.n3: (\d)\.(\d)", row).groups())
+    k = next(i for i, line in enumerate(lines) if line.startswith("f0:"))
+    k = next(i for i in range(k + 1, len(lines)) if re.fullmatch(r"[01 ]{77,}", lines[i]))
+    scrambled = lines[k].replace(" ", "")  # genft4 returns the payload XOR rvec
+    k = next(i for i, line in enumerate(lines) if line.startswith("Channel symbols"))
+    tones = lines[k + 1].strip() + lines[k + 2].strip()
+    assert len(scrambled) == 77 and len(tones) == 103 and set(tones) <= set("0123"), (message, tones)
+    codeword = "".join(f"{FT4_GRAY_INVERSE[int(tones[p])]:02b}" for p in FT4_DATA)
+    assert codeword[:77] == scrambled, message
+    bits = "".join(str(int(a) ^ int(b)) for a, b in zip(scrambled, FT4_RVEC))
+    return {"message": message, "encoded": True, "decoded": decoded, "altered": decoded != normalized,
+            "i3": i3, "n3": n3, "bits77": bits, "scrambled77": scrambled, "codeword174": codeword,
+            "tones103": tones}
+
+
+def ft4(exe: Path) -> None:
+    out = HERE / "ft4"
+    out.mkdir(exist_ok=True)
+    version = subprocess.run([str(exe)], capture_output=True, text=True).stdout.strip()
+    vectors, waves = [], []
+    with tempfile.TemporaryDirectory() as tmp:
+        for message in [*MESSAGES, *FT4_EXTRA]:
+            vectors.append(ft4sim(exe, message, 1500.0, tmp))
+        for message, f0, name in FT4_WAVES:
+            v = ft4sim(exe, message, f0, tmp)
+            assert v["encoded"] and not v["altered"], v
+            shutil.copyfile(Path(tmp) / "000000_000001.wav", out / name)
+            waves.append({"message": message, "f0_hz": f0, "file": name, "sha256": sha256(out / name),
+                          "command": ["ft4sim.exe", message, f"{f0}", "0.0", "0", "0", "1", "99"]})
+    # FT4 and FT8 share pack77: unaltered messages must carry the ft8code payload bits.
+    ft8 = {v["message"]: v for v in json.loads((HERE / "ft8code-vectors.json").read_text())["vectors"]}
+    shared = 0
+    for v in vectors:
+        f = ft8.get(v["message"])
+        if v["encoded"] and not v["altered"] and f and not f["altered"]:
+            assert v["bits77"] == f["bits77"], v["message"]
+            shared += 1
+    document = {
+        "tool": {"usage": version.splitlines(), "exe": exe.as_posix(), "ft4sim_sha256": sha256(exe),
+                 "release": "WSJT-X 3.3.0-beta5 windows-x86_64 utilities",
+                 "command": 'ft4sim.exe "<message>" 1500.0 0.0 0 0 1 99',
+                 "bits77": "ft4sim printed bits XOR genft4.f90 rvec; equal to ft8code bits77 for every shared unaltered message",
+                 "codeword": "inverse Gray map 0,1,3,2 of tones at genft4.f90 data positions 5-33, 38-66, 71-99",
+                 "altered": "ft4sim Message: text differs from the input upper-cased with blank runs collapsed",
+                 "generator": "fixtures/transmit/generate.py --ft4sim"},
+        "ft8code_cross_check": f"{shared} messages identical",
+        "ft4sim_waves": waves,
+        "vectors": vectors,
+    }
+    (out / "ft4sim-vectors.json").write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8")
+    print(f"FT4: {len(vectors)} vectors, {len(waves)} waves")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bin", type=Path, required=True)
+    parser.add_argument("--bin", type=Path)
     parser.add_argument("--compare-bin", type=Path)
+    parser.add_argument("--ft4sim", type=Path)
     args = parser.parse_args()
+    if args.ft4sim:
+        ft4(args.ft4sim)
+    if not args.bin:
+        return
     code, sim = args.bin / "ft8code.exe", args.bin / "ft8sim.exe"
     version = subprocess.run([str(sim)], capture_output=True, text=True).stdout.splitlines()[0].strip()
     vectors = [ft8code(code, m) for m in MESSAGES]

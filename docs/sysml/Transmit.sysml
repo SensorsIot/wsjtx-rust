@@ -1,10 +1,12 @@
 package WstxTransmit {
     private import ScalarValues::*;
-    doc /* Canonical FT8 transmit-preparation contract (issue #9, slice A): message
-         packing, channel symbols, waveform and pure period scheduling. Nothing here
+    doc /* Canonical FT8 and FT4 transmit-preparation contract (issue #9 slice A, FT4
+         issue #11 slice A): message packing, channel symbols, waveform and pure
+         period scheduling. Nothing here
          opens audio, keys PTT or touches a radio; arming, Halt, PTT and played-audio
          evidence are later #9 clauses. Declared coverage is not a test result.
-         CL-009-01/02 and TC-005-001/TC-006-001 are declared in WstxRequirements.
+         CL-009-01/02, CL-011-01 and TC-005-001/002, TC-006-001/002 are declared in
+         WstxRequirements. FT4 reuses PackMessage unchanged (FT4 and FT8 share pack77).
          Behaviour oracle: WSJT-X 3.3.0-beta5 (revision d89fe3) lib/77bit/packjt77.f90,
          packjt77_grammar.f90, lib/ft8/genft8.f90, gen_ft8wave.f90, ft8_waveform.f90,
          Modulator/Modulator.cpp, TxStartPolicy.hpp and widgets/mainwindow.cpp. Its
@@ -113,9 +115,99 @@ package WstxTransmit {
              waveform; the measured 4.9e-3 rad is the constant pulse-grid
              (rectangle-rule) phase offset between the two native sample grids. */
     }
+    attribute def Ft4ChannelFrame {
+        attribute payload77 : String;
+        attribute codeword174 : String;
+        attribute tones : Integer[103];
+        doc /* WSJT-X genft4.f90 ft4_tones_from_77bits: the payload XOR the 77-bit
+             scrambling vector rvec 0100101001011110100010011011010010110000100010100111
+             1001010101011011111000101 is the codeword's first 77 bits, followed by
+             CRC-14 over those scrambled bits and the 83 LDPC(174,91) parity bits of
+             the same receive generator as FT8. 103 tones: Costas 0132 at tones 0-3,
+             1023 at 33-36, 2310 at 66-69, 3201 at 99-102; the 87 data symbols in
+             between take successive bit pairs MSB first through Gray map 0,1,3,2.
+             The two ramp symbols are not tones; they belong to the waveform. Bits,
+             codeword and tones equal the WSJT-X ft4sim printout exactly (no ft4code
+             executable ships with 3.3.0-beta5; fixtures/transmit/ft4/ft4sim-vectors.json
+             reads the codeword back from the printed tones by the inverse Gray map and
+             cross-checks the payload against ft8code). */
+    }
+    attribute def Ft4WaveformContract {
+        attribute channelSymbols : Integer = 103;
+        attribute waveformSymbols : Integer = 105;
+        attribute toneSpacingHz : Real = 20.833333;
+        attribute gaussianBT : Real = 1.0;
+        attribute samplesPerSymbol12k : Integer = 576;
+        attribute samplesPerSymbol48k : Integer = 2304;
+        attribute samples12k : Integer = 60480;
+        attribute samples48k : Integer = 241920;
+        attribute minimumToneZeroHz : Real = 200.0;
+        attribute maximumToneZeroHz : Real = 2916.666667;
+        attribute referenceTolerance : Real = 0.001;
+        attribute rateConsistencyTolerance : Real = 0.025;
+        assert constraint occupiedBand { minimumToneZeroHz >= 200.0 and maximumToneZeroHz + 4 * toneSpacingHz <= 3000.0 }
+        assert constraint length { samples12k == waveformSymbols * samplesPerSymbol12k and samples48k == waveformSymbols * samplesPerSymbol48k }
+        doc /* Native transmitter convention of gen_ft4wave.f90 as called by
+             mainwindow.cpp for FT4 (nsym=103, nsps=4*576, fsample=48000, icmplx=0),
+             not the receive decoder's reconstruction (WstxOfflineDecode quadratures).
+             Real waveform of (103+2) symbols, unit peak, no lead or tail silence; 48 kHz
+             is the native playback rate. Frequency pulse
+             p(t)=(erf(k(t+0.5))-erf(k(t-0.5)))/2 with BT 1.0, a three-symbol grid sampled
+             at t=(i+1-1.5N)/N for i=0..3N-1; channel tone j (0-based) adds
+             2*pi/N*tone*p over samples j*N..j*N+3N-1 of a zero buffer of (103+2)*N
+             increments, so the first and last symbol carry only pulse tails (no
+             dummy-symbol extension as FT8). Each increment also adds 2*pi*f0/rate.
+             Sample n = a(n)*sin(phi(n)) with phi(0)=0 and the increment n applied after
+             sample n (sine before phase advance). a(n) = (1-cos(pi*n/N))/2 for n < N,
+             (1+cos(pi*m/N))/2 at m = n-104N for the last symbol, else 1; the native
+             endpoints are a(0)=0 and a(last) = (1+cos(pi*(N-1)/N))/2 > 0. f0 is tone 0;
+             the whole 83.3 Hz tone span lies within 200..3000 Hz, otherwise
+             frequencyOutOfRange; a tone above 3 is invalidTone. Binary64 math, binary32
+             output.
+             referenceTolerance: maximum absolute difference, as a fraction of full
+             scale, between the 12 kHz waveform and the in-phase component of a
+             zero-noise ft4sim WAV (f0 1500 and 637.5 Hz, ramp-up symbol from sample
+             5424). ft4sim writes the real part cos(phi) of the complex form; the test
+             takes the imaginary part of its FFT analytic signal (sin(phi)) and the
+             analytic magnitude peak as full scale, independent of the implementation.
+             Measured 2.8e-4 at 1500 Hz and 2.3e-4 at 637.5 Hz: int16 rounding 1.5e-5,
+             WSJT-X binary32 phase accumulation over 60480 samples and the analytic-signal
+             edge error. A one-sample shift, a 0.01 Hz carrier error and a ramp one sample
+             late (2.7e-3) each exceed it; so do the decoder conventions (phase advanced
+             before the sample, mirrored ramp-down endpoint), the FT8 N/8 ramp and an
+             output one sample late (source mutations, test evidence).
+             rateConsistencyTolerance: every fourth 48 kHz sample against the 12 kHz
+             waveform. Each grid samples the pulse one of its own samples early, so the
+             frequency trajectories differ by a 3/48000 s shift; the phase difference is
+             bounded by 2*pi*3*20.833 Hz*62.5 us = 0.0245 rad (measured 0.0123). */
+    }
     enum def ClockState { enum synchronized; enum unsynchronized; enum unknown; }
     enum def PeriodParity { enum even; enum odd; }
     enum def ScheduleRefusal { enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod; }
+    attribute def Ft4Schedule {
+        attribute periodMs : Integer = 7500;
+        attribute audioDelayMs : Integer = 300;
+        attribute latestStartMs : Integer = 5625;
+        attribute waveformMs : Integer = 5040;
+        attribute audioEndMs : Integer = 5340;
+        assert constraint startWindow { latestStartMs * 4 == periodMs * 3 and audioDelayMs < latestStartMs }
+        assert constraint audioEnd { audioEndMs == audioDelayMs + waveformMs and audioEndMs < latestStartMs }
+        doc /* Ft8Schedule rules with FT4 values: periods start at UTC multiples of
+             7.5 s (mainwindow.cpp m_TRperiod=7.5); even when (start/7.5 s) is even
+             (Tx even/1st = t mod 15 s < 7.5 s); audio starts 300 ms after the period
+             start (Modulator.cpp FT4 delay_ms=300) with the ramp-up symbol, so the
+             first channel tone starts 348 ms after it; later starts skip
+             floor((e-300 ms)*rate/1000 ms) samples. The 105-symbol waveform lasts
+             5040 ms, so its audio ends 5340 ms into the period, before the 75 % limit
+             (5.625 s, TxStartPolicy.hpp): a start is admitted only while the skip is
+             below the waveform's sample count at that rate (60480 at 12 kHz, 241920 at
+             48 kHz), i.e. elapsed below 5340 ms; from 5340 ms the request is
+             stalePeriod. This deliberately differs from WSJT-X, whose fTR < 0.75 check
+             would start an empty transmission between 5340 and 5625 ms. Misaligned and
+             clock refusals as FT8. The ft4sim receive
+             placement (channel tones from 0.5 s) is a simulator convention, not
+             transmit timing. */
+    }
     attribute def Ft8Schedule {
         attribute periodMs : Integer = 15000;
         attribute audioDelayMs : Integer = 500;
@@ -139,6 +231,7 @@ package WstxTransmit {
              is clockNotSynchronized. */
     }
     action def PlanTransmitStart {
+        in mode : WstxOfflineDecode::Mode;
         in nowUtcMs : Integer;
         in clock : ClockState;
         in periodStartUtcMs : Integer;
@@ -146,5 +239,13 @@ package WstxTransmit {
         out audioStartUtcMs : Integer[0..1];
         out skippedSamples : Integer[0..1];
         out refusal : ScheduleRefusal[0..1];
+        doc /* The mode is explicit in every request and selects Ft8Schedule or
+             Ft4Schedule; a period aligned for one mode only is misalignedPeriod for
+             the other. Selecting the next slot also takes the mode. For every mode a
+             start is stalePeriod once elapsed time reaches the 75 % limit or once the
+             skipped samples would reach the waveform's sample count (audio delay plus
+             waveform duration: FT4 5340 ms; FT8 13140 ms, after its 11.25 s limit), so
+             an empty transmission is never admitted; the next slot uses the same
+             window. */
     }
 }

@@ -5,10 +5,17 @@ const radio = document.querySelector('#radio');
 const login = document.querySelector('#login');
 const refresh = document.querySelector('#refresh');
 const profileMode = document.body.dataset.profile === 'true';
+const selectedHttps = profileMode && location.protocol === 'https:';
+const authorization = selectedHttps ? window.stationAuthorization : null;
+const authorized = () => !selectedHttps || authorization?.snapshot().ready === true;
+const stationFetch = (path, options) => authorization ? authorization.fetch(path, options) : selectedHttps ?
+  Promise.reject(new Error('Station authorization component unavailable')) : fetch(path, options);
+const stationContext = (current, authEpoch) => current === socket && current?.readyState === WebSocket.OPEN &&
+  authorized() && (!authorization || authorization.snapshot().epoch === authEpoch);
 const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
-let socket, timer, pendingId;
+let socket, timer, pendingId, handshakeProbe;
 let retry = 1000, lastMessage = 0, nextId = 1;
 function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new Event('station-stale')); }
 function requestStatus() {
@@ -20,22 +27,66 @@ function disconnect(current) {
   if (current !== socket) return;
   stale(); current.onclose = null; current.onmessage = null;
   current.close();
-  login.hidden = location.protocol !== 'https:';
+  const retained = selectedHttps && authorization && ['ready', 'recovering'].includes(authorization.snapshot().state);
+  login.hidden = location.protocol !== 'https:' || retained;
   clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
 }
-function connect() {
+function showAuthorizationUnavailable(error) {
+  const condition = error?.authorizationCondition;
+  const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
+    'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
+    'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
+    'retained-transient': error?.status === 429 ? 'Authorization rate limited \u00b7 station data stale' : error?.status === 503 ?
+      'Authorization persistence unavailable \u00b7 station data stale' : 'Retained authorization unavailable \u00b7 retrying',
+    'retained-rejected': 'Retained authorization not accepted or identity changed \u00b7 station data stale',
+    'enrollment-pending': 'Authorization enrollment outcome unknown \u00b7 station data stale',
+    'explicit-in-progress': 'Authorization in progress \u00b7 station data stale'};
+  stale(); connection.textContent = Object.hasOwn(reasons, condition) ? reasons[condition] : 'Authorization unavailable \u00b7 station data stale'; login.hidden = condition !== 'credential-missing';
+}
+let connecting = 0;
+async function connect() {
+  handshakeProbe?.abort(); handshakeProbe = null;
   clearTimeout(timer);
+  const attempt = ++connecting;
+  if (selectedHttps && !authorization) {
+    stale(); connection.textContent = 'Authorization component unavailable · station data stale'; login.hidden = true; return;
+  }
+  if (authorization) {
+    try {await authorization.ensureReady();}
+    catch (error) {
+      if (attempt !== connecting) return;
+      showAuthorizationUnavailable(error);
+      clearTimeout(timer); timer = setTimeout(connect, 4000); return;
+    }
+    if (attempt !== connecting || !authorized()) return;
+  }
+  clearTimeout(timer);
+  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, 'wstx.v1');
-  const current = socket;
+  const current = socket, socketEpoch = authorization?.snapshot().epoch;
+  let opened = false, lost = false;
   const profileRefresh = {initialized: false, running: null, again: false};
-  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) disconnect(current);}, 5000);
+  const loseSocket = () => {
+    if (current !== socket || lost) return;
+    lost = true; clearTimeout(openingTimer); disconnect(current);
+    const auth = authorization?.snapshot();
+    if (!selectedHttps || opened || !auth?.ready || auth.epoch !== socketEpoch) return;
+    // A failed handshake cannot expose its HTTP status. Only the existing protected
+    // read may observe401 and start the manager's independent coalesced renewal.
+    const probe = new AbortController(); handshakeProbe?.abort(); handshakeProbe = probe;
+    authorization.fetch('/profile', {cache: 'no-store', signal: AbortSignal.any([probe.signal, AbortSignal.timeout(10000)])})
+      .then(response => response.body?.cancel().catch(() => {}))
+      .catch(() => {})
+      .finally(() => {if (handshakeProbe === probe) handshakeProbe = null;});
+  };
+  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket();}, 5000);
   current.onopen = () => {
-    clearTimeout(openingTimer);
-    if (current !== socket) return;
+    opened = true; clearTimeout(openingTimer);
+    if (lost || current !== socket || !authorized()) return;
     lastMessage = Date.now(); requestStatus();
   };
   current.onmessage = async event => {
-    if (current !== socket) return;
+    if (current !== socket || !authorized()) return;
     try {
       const message = JSON.parse(event.data);
       if (message.v !== 1) throw new Error('Unsupported version');
@@ -51,7 +102,7 @@ function connect() {
             refreshProfile(current, profileRefresh).catch(() => disconnect(current));
           }
         }
-        if (current !== socket || current.readyState !== WebSocket.OPEN) return;
+        if (current !== socket || current.readyState !== WebSocket.OPEN || !authorized()) return;
         version.textContent = message.data.version; radio.textContent = 'Radio not configured';
         connection.textContent = 'Connected'; connection.dataset.state = 'connected';
         document.querySelector('#updated').textContent = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
@@ -61,23 +112,51 @@ function connect() {
       }
     } catch { disconnect(current); }
   };
-  current.onclose = () => {
-    clearTimeout(openingTimer); disconnect(current);
-  };
+  current.onclose = loseSocket;
 }
 setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > 12000) disconnect(socket); }, 1000);
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
-  const secret = input.value; input.value = '';
+  let secret = input.value, submittedEpoch = null; input.value = '';
   try {
-    const response = await fetch('/session', {method: 'POST', body: secret});
-    if (!response.ok) throw new Error('Access denied');
+    if (selectedHttps && !authorization) throw new Error('Authorization component unavailable');
+    if (authorization) {
+      const beforeEpoch = authorization.snapshot().epoch, submitted = authorization.bootstrap(secret);
+      const afterEpoch = authorization.snapshot().epoch;
+      if (afterEpoch !== beforeEpoch) submittedEpoch = afterEpoch;
+      secret = null; await submitted;
+      if (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || !authorization.snapshot().ready) return;
+    }
+    else {const response = await fetch('/session', {method: 'POST', body: secret}); secret = null; if (!response.ok) throw new Error('Access denied');}
     document.querySelector('#login-error').textContent = ''; clearTimeout(timer);
     if (socket && socket.readyState < WebSocket.CLOSING) { socket.onclose = null; socket.close(); }
     retry = 1000; connect();
-  } catch { document.querySelector('#login-error').textContent = 'Could not authenticate. Check your token and connection.'; }
+  } catch (error) {
+    if (authorization && (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || authorization.snapshot().ready)) return;
+    if (error?.authorizationCondition) {
+      showAuthorizationUnavailable(error); document.querySelector('#login-error').textContent = '';
+    } else document.querySelector('#login-error').textContent = 'Could not authenticate. Check your token and connection.';
+  }
+  finally {secret = null;}
 });
+const logoutButton = document.querySelector('#logout'), forgetButton = document.querySelector('#forget');
+addEventListener('station-authorization', event => {
+  if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
+  logoutButton.hidden = !event.detail.ready;
+  forgetButton.hidden = !['retained-rejected', 'credential-invalid'].includes(event.detail.authorizationCondition);
+  if (event.detail.ready) return;
+  if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail);
+  else {stale(); connection.textContent = 'Authorization unavailable · station data stale';}
+  if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
+  clearTimeout(timer); timer = setTimeout(connect, 4000);
+});
+for (const [button, action] of [[logoutButton, 'logout'], [forgetButton, 'forget']]) {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {await authorization[action]();} catch {} finally {button.disabled = false;}
+  });
+}
 connect();
 
 function formSettings() {
@@ -108,12 +187,14 @@ function refreshProfile(current, state) {
   }).finally(() => {state.running = null;});
   return state.running;
 }
-async function loadProfile(reload, current) {
-  const response = await fetch('/profile', {signal: AbortSignal.timeout(10000)});
-  if (current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
+async function loadProfile(reload, current = socket) {
+  const authEpoch = authorization?.snapshot().epoch;
+  if (!stationContext(current, authEpoch)) return false;
+  const response = await stationFetch('/profile', {signal: AbortSignal.timeout(10000)});
+  if (!stationContext(current, authEpoch)) return false;
   if (!response.ok) {settingsResult.textContent = 'Could not load saved settings.'; throw new Error('Profile unavailable');}
   const data = await response.json();
-  if (current && (current !== socket || current.readyState !== WebSocket.OPEN)) return false;
+  if (!stationContext(current, authEpoch)) return false;
   if (typeof data.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return true;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
@@ -130,23 +211,27 @@ async function loadProfile(reload, current) {
 settingsForm.addEventListener('input', () => {dirty = true;});
 settingsForm.addEventListener('change', () => {dirty = true;});
 document.querySelector('#settings-reload').addEventListener('click', async () => {
-  try {await loadProfile(true); settingsResult.textContent = 'Loaded saved settings.';} catch {settingsResult.textContent = 'Could not load saved settings.';}
+  try {if (!await loadProfile(true)) throw new Error('Stale settings'); settingsResult.textContent = 'Loaded saved settings.';} catch {settingsResult.textContent = 'Could not load saved settings.';}
 });
 settingsForm.addEventListener('submit', async event => {
-  event.preventDefault(); if (!profileMode || !profileData || saving || conflict) return;
+  event.preventDefault(); if (!profileMode || !profileData || saving || conflict || !authorized()) return;
+  const current=socket,authEpoch=authorization?.snapshot().epoch,context=JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]);
+  if(!stationContext(current,authEpoch))return;
   saving = true;
   const button = document.querySelector('#settings-save');
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
   for (const [element] of controls) element.disabled = true;
   try {
-    const response = await fetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: formSettings()})});
+    const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: formSettings()})});
     const result = await response.json();
+    if(!stationContext(current,authEpoch)||context!==JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]))throw new Error('Stale save completion');
     if (!response.ok) {
       if (response.status === 409) {conflict = true; settingsResult.textContent = 'Settings changed or revision limit reached. Reload saved settings before saving.';}
       else settingsResult.textContent = result.error?.field ? `Invalid ${result.error.field}. Check this field.` : `Could not save settings (${result.error?.code || 'connection error'}).`;
       return;
     }
-    dirty = false; await loadProfile(true); settingsResult.textContent = `Saved revision ${result.revision}`;
+    if(!await loadProfile(true,current)||!stationContext(current,authEpoch))throw new Error('Stale save completion');
+    settingsResult.textContent = `Saved revision ${result.revision}`;
   } catch {settingsResult.textContent = 'Save outcome unknown. Reload saved settings before retrying.'; conflict = true;}
   finally {saving = false; for (const [element, disabled] of controls) element.disabled = disabled; button.disabled = saving || conflict;}
 });
