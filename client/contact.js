@@ -107,6 +107,7 @@ function render(){
   const pendingReview=snap?.review&&snap.review.outcome!=='saved';const discard=$('contact-discard');discard.hidden=!pendingReview;
   if(pendingReview)discard.textContent=`Discard log review ${snap.review.record.call}`;
   stationTx();
+  paneUpdate();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   const review=snap?.review;
   if(review&&!openedReviews.has(review.contact_id)&&review.outcome!=='saved'&&window.wstxLogbook){openedReviews.add(review.contact_id);window.wstxLogbook.openReview(review.record);}
 }
@@ -215,7 +216,8 @@ $('rx-pane-resume').addEventListener('click',()=>{paneFollow=true;paneUnread=0;p
 function paneClear(){pane.replaceChildren();paneSeen=new Set();paneUnread=0;paneFollow=true;showUnread();}
 $('rx-pane-erase').addEventListener('click',paneClear);
 function paneUpdate(){
-  if(typeof resultRows==='undefined'||!live?.job)return;
+  // Routing needs the confirmed Rx offset: rows wait until the snapshot is known.
+  if(!snap||typeof resultRows==='undefined'||!live?.job)return;
   const context=`${profileData?.profile_id}/${live.job.mode}/${operatingState?.selection?.band??''}`;
   if(context!==paneContext){paneClear();paneContext=context;}
   const ordered=[...resultRows].sort((a,b)=>a.sequence-b.sequence);

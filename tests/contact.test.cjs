@@ -24,6 +24,8 @@ before(async()=>{
   page.on('request',r=>{const u=new URL(r.url());const e={method:r.method(),path:u.pathname,body:r.postData(),at:performance.now(),end:null};requests.push(e);r.__e=e;});
   page.on('requestfinished',r=>{if(r.__e)r.__e.end=Math.round(performance.now());});page.on('requestfailed',r=>{if(r.__e)r.__e.end='failed';});
   await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
+  // contact.js loads after the first recording/receive snapshots (idle link).
+  await page.locator('#contact-enable').waitFor({state:'attached'});
 });
 after(async()=>{await browser?.close();});
 
