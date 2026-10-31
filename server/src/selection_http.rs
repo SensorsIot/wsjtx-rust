@@ -211,6 +211,16 @@ pub async fn select(
     let cat = store.document.control.mode == "cat";
     // Capture settings, then release before actor reservation, snapshots or worker I/O.
     drop(store);
+    // WstxContact::ModeChange: no mode change while #9 keys the radio, transmits or
+    // tunes (WSJT-X disables the mode controls while transmitting); nothing changes.
+    if intent.action == "mode"
+        && r.transmit.get().is_some_and(|t| {
+            let v = t.service.view();
+            v.transmitting || v.tune || v.ptt != wstx_rust::transmit::service::PttState::Released
+        })
+    {
+        return error("busy");
+    }
     match r.selection_begin(intent, device, cat) {
         Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
         Err(e) => error(e),

@@ -439,6 +439,19 @@ impl Recording {
         let source = l.source.as_ref()?.source_id.clone();
         matches!(l.mode, "ft8" | "ft4").then(|| (source, j.id.clone(), j.generation, l.mode))
     }
+    /// WstxContact::StationOperatingMode: the running live decoding job's mode (ft4 or
+    /// ft8), else the operating selection's mode.
+    pub(crate) fn operating_mode(&self) -> &'static str {
+        let s = self.state.lock().unwrap();
+        let running = s
+            .job
+            .as_ref()
+            .is_some_and(|j| j.kind == "live" && !terminal(j.state));
+        match s.live.as_ref().map(|l| l.mode) {
+            Some(mode @ ("ft4" | "ft8")) if running => mode,
+            _ => s.operating.nominal.mode,
+        }
+    }
     /// Retained result records of the current live job with sequence >= `after` (all
     /// retained ones when `identity` is not the current job).
     pub(crate) fn live_records_after(

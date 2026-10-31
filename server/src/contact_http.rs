@@ -170,12 +170,11 @@ impl Station {
         let mut inner = self.lock();
         let cursor = inner.rows.clone();
         let mut rows = Vec::new();
-        let mut mode = None;
+        let mode = Some(mode_of(r.operating_mode()));
         if let Some((identity, live_mode, records)) = r.live_records_after(
             cursor.as_ref().map(|c| &c.0),
             cursor.as_ref().map_or(0, |c| c.1),
         ) {
-            mode = Some(mode_of(live_mode));
             let mut next = cursor
                 .as_ref()
                 .filter(|c| c.0 == identity)
@@ -321,8 +320,7 @@ pub(crate) fn tick_event(r: &recording::Recording) -> (String, bool) {
         t.service
             .with(|c| (c.hardware().now_utc_ms(), c.view().transmitting))
     });
-    let mode = r.live_identity().map_or("ft8", |i| i.3);
-    let period = contact::period_ms(mode_of(mode));
+    let period = contact::period_ms(mode_of(r.operating_mode()));
     (
         json!({"v":1,"type":"station.tick","data":{"profile_id":r.profile,"boot_id":r.boot,"utc_ms":utc,
             "period_ms":period,"transmitting":transmitting,"rx_level_db":r.rx_level()}})
@@ -652,7 +650,7 @@ impl Station {
                 }
             }
         };
-        let mode = r.live_identity().map(|i| mode_of(i.3));
+        let mode = Some(mode_of(r.operating_mode()));
         let inner = &mut *inner;
         Self::run(r, |mut core, now| {
             let ctx = Ctx {
@@ -666,7 +664,11 @@ impl Station {
                 .engine
                 .command(command, core.as_deref_mut(), &ctx)
                 .map_err(|code| {
-                    let field = (code == "stale_revision").then_some("safety_revision");
+                    let field = match code {
+                        "stale_revision" => Some("safety_revision"),
+                        "out_of_range" if action == "set_tx4" => Some("form"),
+                        _ => None,
+                    };
                     (code, field)
                 })?;
             // An accepted command always advances the revision; the immediate step

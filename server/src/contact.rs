@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxContact (#10): the server-owned standard FT8 contact engine. It owns contact
+//! WstxContact (#10, FT4 #11): the server-owned standard FT8/FT4 contact engine. It owns contact
 //! identity, the AutoSequence state, the next-message choice, completion and the log
 //! review offer; it never keys PTT, opens audio or touches a radio. Every transmission
 //! is a WstxTransmit::TransmitRequest submitted in-process to the #9 slice B transmit
@@ -23,6 +23,13 @@ pub fn tx_max_hz(mode: Mode) -> u32 {
     match mode {
         Mode::Ft8 => 2950,
         Mode::Ft4 => 2916,
+    }
+}
+/// FT4-NOTE: Tx4 is always RR73 in FT4 (MW send_rr73_for_tx4); RRR is the FT8 default.
+pub fn tx4_default(mode: Mode) -> Tx4 {
+    match mode {
+        Mode::Ft8 => Tx4::Rrr,
+        Mode::Ft4 => Tx4::Rr73,
     }
 }
 /// The 50 Hz rule of WSJT-X auto_sequence(decodedtext, 25, 50) (stopTolerance).
@@ -536,8 +543,42 @@ impl Engine {
         self.reviews.push_back(review);
         Ok(())
     }
+    /// The Tx offset domain: the transmitting contact's mode, else the station's.
     fn tx_max(&self, ctx: &Ctx) -> u32 {
-        tx_max_hz(self.contact.as_ref().map_or(ctx.mode(), |c| c.mode))
+        tx_max_hz(
+            self.contact
+                .as_ref()
+                .filter(|c| c.state.transmits())
+                .map_or(ctx.mode(), |c| c.mode),
+        )
+    }
+    /// WstxContact::ModeChange: a calling or active contact of another mode than the
+    /// station's operating mode is cancelled with Enable Tx off; the Tx offset is kept
+    /// inside the station mode's domain.
+    fn follow_mode<H: Hardware>(&mut self, core: Option<&mut Core<H>>, ctx: &Ctx) {
+        let Some(mode) = ctx.mode else {
+            return;
+        };
+        self.settings.tx_hz = self.settings.tx_hz.min(tx_max_hz(mode));
+        let Some(c) = self.contact.as_mut() else {
+            return;
+        };
+        if c.mode == mode || !c.state.transmits() {
+            return;
+        }
+        Self::disarm(core, DisarmCause::ContactCancelled);
+        c.state = if c.state == State::Calling {
+            State::Idle
+        } else {
+            State::Cancelled
+        };
+        c.dx_call = None;
+        c.dx_grid = None;
+        for message in &mut c.messages[..5] {
+            *message = None;
+        }
+        c.next = Slot::Tx6;
+        self.pending = None;
     }
     fn count(&mut self, key: RowKey, message: (i64, String)) -> bool {
         if self.counted_rows.contains(&key) || self.counted_messages.contains(&message) {
@@ -579,12 +620,13 @@ impl Engine {
         let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
             return Err("profile_incomplete");
         };
-        let messages =
-            generate(&call, &grid4, Some(&dx), report, Tx4::Rrr).ok_or("invalid_call")?;
+        let tx4 = tx4_default(mode);
+        let messages = generate(&call, &grid4, Some(&dx), report, tx4).ok_or("invalid_call")?;
+        // The same partner in the other mode is a different contact (ContactMode).
         let same = self
             .contact
             .as_ref()
-            .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()));
+            .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()) && c.mode == mode);
         let active = self.contact.as_ref().is_some_and(|c| c.state.active());
         if active && !same && !replace {
             return Err("contact_active");
@@ -616,7 +658,7 @@ impl Engine {
             report_sent: None,
             state,
             next: first,
-            tx4: Tx4::Rrr,
+            tx4,
             messages,
             started_tx1_skipped: tx1_skip && first == Slot::Tx2,
             prepared_utc_ms: ctx.now_utc_ms,
@@ -647,6 +689,7 @@ impl Engine {
         mut core: Option<&mut Core<H>>,
         ctx: &Ctx,
     ) -> Result<(), &'static str> {
+        self.follow_mode(core.as_deref_mut(), ctx);
         let capability = core
             .as_ref()
             .map_or(Capability::Unsupported, |c| c.view().capability);
@@ -815,6 +858,9 @@ impl Engine {
             }
             Command::SetTx4(form) => {
                 let c = self.contact.as_mut().ok_or("no_contact")?;
+                if c.mode == Mode::Ft4 && form != Tx4::Rr73 {
+                    return Err("out_of_range");
+                }
                 c.tx4 = form;
                 self.regenerate(ctx);
             }
@@ -899,7 +945,7 @@ impl Engine {
                         report_sent: None,
                         state: State::Calling,
                         next: Slot::Tx6,
-                        tx4: Tx4::Rrr,
+                        tx4: tx4_default(ctx.mode()),
                         messages,
                         started_tx1_skipped: false,
                         prepared_utc_ms: ctx.now_utc_ms,
@@ -984,6 +1030,7 @@ impl Engine {
         rows: &[Row],
     ) -> bool {
         let now = ctx.now_utc_ms;
+        self.follow_mode(core.as_deref_mut(), ctx);
         // Outcomes of my requests.
         if let Some(core) = core.as_deref_mut() {
             for outcome in core.outcomes_since(self.outcome_cursor) {
@@ -1083,7 +1130,8 @@ impl Engine {
             let (Some(dx), Some(std)) = (c.dx_call.clone(), row.standard.as_ref()) else {
                 continue;
             };
-            if std.from != Call::Sign(dx) || !c.state.active() {
+            // Only rows of the contact's own mode count (ContactMode isolation).
+            if row.mode != c.mode || std.from != Call::Sign(dx) || !c.state.active() {
                 continue;
             }
             let Some(my) = ctx.call.as_deref() else {
