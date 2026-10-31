@@ -43,7 +43,8 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
     let recording =
         recording::Recording::open(&directory, id.clone(), profile::new_uuid().unwrap());
     let peer = attach_peer(&recording, Device::Present);
-    let station = transmit_http::Station::start().unwrap();
+    let station =
+        transmit_http::Station::start(wstx_rust::transmit::clock::Monitor::new()).unwrap();
     let _ = recording.transmit.set(station.clone());
     // Receive-only commissioning (PTT disabled) is not transmit capability.
     let receive_only = document(&id, "disabled", Some("fixture-output"));
@@ -127,6 +128,11 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
 }
 
 async fn app() -> (Router, String, String, String, std::path::PathBuf) {
+    app_with(wstx_rust::transmit::clock::Monitor::new()).await
+}
+async fn app_with(
+    clock: Arc<wstx_rust::transmit::clock::Monitor>,
+) -> (Router, String, String, String, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!(
         "wstx-transmit-http-{}",
         profile::new_uuid().unwrap()
@@ -142,7 +148,7 @@ async fn app() -> (Router, String, String, String, std::path::PathBuf) {
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
     let _ = recording
         .transmit
-        .set(transmit_http::Station::start().unwrap());
+        .set(transmit_http::Station::start(clock).unwrap());
     let origin = "http://127.0.0.1:18001".to_string();
     let app = App {
         origin: origin.clone(),
@@ -204,6 +210,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
         [
             "boot_id",
             "clock",
+            "clock_measurement",
             "outcomes",
             "profile_id",
             "ptt",
@@ -228,6 +235,9 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "tune"
         ]
     );
+    // No SNTP measurement yet: the clock is unknown, not synchronized.
+    assert_eq!(view["clock"], "unknown");
+    assert_eq!(view["clock_measurement"], Value::Null);
     assert_eq!(view["transmit"]["arm_state"], "disarmed");
     assert_eq!(view["transmit"]["last_disarm_cause"], "startup");
     assert_eq!(view["transmit"]["capability"], "unsupported");
@@ -397,7 +407,8 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
         recording::Recording::open(&directory, id.clone(), profile::new_uuid().unwrap());
     let peer = attach_peer(&recording, Device::Present);
     peer.lock().unwrap().transmitting = true;
-    let station = transmit_http::Station::start().unwrap();
+    let station =
+        transmit_http::Station::start(wstx_rust::transmit::clock::Monitor::new()).unwrap();
     let _ = recording.transmit.set(station.clone());
     // Even a receive-only profile gets the release: it only ever turns RF off.
     let doc = document(&id, "disabled", None);
@@ -431,4 +442,44 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     }
     drop(station);
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+// Proves: CL-009-05; TC-006-003. GET /transmit reports the station's SNTP measurement
+// (exact keys) and the clock state the transmit owner plans with.
+#[tokio::test]
+async fn transmit_wire_shows_the_sntp_clock_measurement() {
+    use wstx_rust::transmit::clock::{Measurement, Monitor};
+    let clock = Monitor::new();
+    let (router, _, _, _, dir) = app_with(clock.clone()).await;
+    let taken = Instant::now() - Duration::from_secs(5);
+    clock.record(Some(Measurement {
+        server: "ch.pool.ntp.org".into(),
+        offset_ms: -120,
+        round_trip_ms: 31,
+        taken,
+    }));
+    let (status, view) = call(&router, "GET", "/transmit", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["clock"], "synchronized");
+    let m = &view["clock_measurement"];
+    assert_eq!(
+        object_keys(m),
+        ["age_ms", "offset_ms", "round_trip_ms", "server"]
+    );
+    assert_eq!(
+        (&m["server"], &m["offset_ms"], &m["round_trip_ms"]),
+        (&json!("ch.pool.ntp.org"), &json!(-120), &json!(31))
+    );
+    let age = m["age_ms"].as_u64().unwrap();
+    assert!((5_000..60_000).contains(&age), "age {age}");
+    clock.record(Some(Measurement {
+        server: "time.windows.com".into(),
+        offset_ms: 501,
+        round_trip_ms: 40,
+        taken: Instant::now(),
+    }));
+    let (_, view) = call(&router, "GET", "/transmit", None, None).await;
+    assert_eq!(view["clock"], "unsynchronized");
+    assert_eq!(view["clock_measurement"]["server"], "time.windows.com");
+    let _ = std::fs::remove_dir_all(&dir);
 }

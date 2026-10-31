@@ -248,8 +248,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             recording.initialize_profile_revision(store.document.revision);
             // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
-            let transmit =
-                transmit_http::Station::start().map_err(|_| error("resource_unavailable", ""))?;
+            // WstxTransmit::TransmitClock: the station measures its UTC offset by SNTP
+            // on its own thread, at start and every minute. WSTX_SNTP_SERVERS replaces
+            // the server order (comma-separated; empty: never measure, clock unknown).
+            let mut sntp = wstx_rust::transmit::clock::Sntp::station();
+            if let Ok(list) = env::var("WSTX_SNTP_SERVERS") {
+                sntp.servers = wstx_rust::transmit::clock::server_list(&list);
+            }
+            let clock = wstx_rust::transmit::clock::Monitor::start(
+                Box::new(sntp),
+                wstx_rust::transmit::clock::INTERVAL,
+            )
+            .map_err(|_| error("resource_unavailable", ""))?;
+            let transmit = transmit_http::Station::start(clock)
+                .map_err(|_| error("resource_unavailable", ""))?;
             // Process exit and panics stop output and release a keyed CI-V switch once.
             let guard = transmit.clone();
             #[cfg(windows)]

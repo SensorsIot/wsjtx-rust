@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 //! Pure FT8/FT4 transmit preparation: message packing, channel symbols, waveform and
-//! period scheduling; `service` is the slice B transmit owner (arming, PTT, audio, halt).
+//! period scheduling; `service` is the slice B transmit owner (arming, PTT, audio, halt)
+//! and `clock` the station's SNTP clock measurement (TransmitClock).
+pub mod clock;
 mod pack;
 mod schedule;
 pub mod service;

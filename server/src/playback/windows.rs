@@ -289,24 +289,6 @@ fn render(
     }
 }
 
-/// WstxTransmit::TransmitClock: Some(true) when Windows reports that a time service is
-/// disciplining the system clock (time adjustment enabled), Some(false) when it is not,
-/// None when the query fails.
-pub fn system_time_disciplined() -> Option<bool> {
-    let (mut adjustment, mut increment) = (0u64, 0u64);
-    let mut disabled = ::windows::core::BOOL(1);
-    // SAFETY: writable stack outputs of a documented process-wide query.
-    unsafe {
-        ::windows::Win32::System::SystemInformation::GetSystemTimeAdjustmentPrecise(
-            &mut adjustment,
-            &mut increment,
-            &mut disabled,
-        )
-        .ok()?;
-    }
-    Some(!disabled.as_bool())
-}
-
 static EXIT_GUARD: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
 unsafe extern "system" fn console_exit(_: u32) -> ::windows::core::BOOL {
     if let Some(guard) = EXIT_GUARD.get() {

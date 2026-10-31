@@ -11,7 +11,8 @@ async function server(env = {}, args = []) {
   if (!fs.existsSync(exe)) throw new Error(`Missing candidate ${exe}; run cargo build --locked`);
   const clean = {...process.env};
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  const child = spawn(exe, args, {env: {...clean, ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
+  // WstxTransmit::TransmitClock: isolated tests never ask a public SNTP server.
+  const child = spawn(exe, args, {env: {...clean, WSTX_SNTP_SERVERS: '', ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
   let output = '';
   const origin = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Server readiness timeout: ' + output)); }, 10000);

@@ -318,11 +318,35 @@ package WstxTransmit {
              level), no attenuation setting is offered in this slice. */
     }
     attribute def TransmitClock {
-        doc /* ClockState of the station's system UTC clock: synchronized when Windows
-             reports that a time service disciplines the system clock
-             (GetSystemTimeAdjustmentPrecise time adjustment enabled), unsynchronized
-             when it reports no discipline, unknown when the query fails. External
-             accuracy is not inferred (WstxRadioIO receive clock stays unknown);
+        attribute maxOffsetMs : Integer = 500;
+        attribute maxAgeS : Integer = 600;
+        attribute intervalS : Integer = 60;
+        attribute serverTimeoutMs : Integer = 1500;
+        assert constraint freshness { intervalS < maxAgeS and serverTimeoutMs < intervalS * 1000 }
+        doc /* ClockState of the station's system UTC clock from the station's own SNTP
+             measurement (RFC 4330 client, operator decision 2026-10-31 on #9; a
+             third-party tool that steps the clock, e.g. Dimension 4, is never reported
+             by Windows as discipline, so Windows discipline is not used). A dedicated
+             thread measures at start and then every intervalS, never the transmit
+             owner, audio or HTTP thread; those only read the latest measurement. One
+             measurement asks the servers ch.pool.ntp.org, time.windows.com,
+             pool.ntp.org in that order (UDP port 123) and takes the first valid
+             answer; a server that does not answer validly within serverTimeoutMs is
+             skipped. The environment variable WSTX_SNTP_SERVERS, when set, replaces
+             the order with its comma-separated host or host:port entries; empty means
+             no measurement (unknown), which isolated tests use so that they never
+             contact a public server. A valid reply is at least 48 bytes, leap indicator not 3, mode 4,
+             stratum 1..15, nonzero transmit timestamp and an originate timestamp equal
+             to the request's transmit timestamp; anything else is ignored.
+             offset = ((T2-T1)+(T3-T4))/2 and round trip (T4-T1)-(T3-T2) (not below 0),
+             in milliseconds to the nearest, NTP timestamps compared modulo the era;
+             T4 is T1 plus the monotonic time to the reply, so a clock step during the
+             exchange cannot distort it. A round without an answer keeps the previous
+             measurement. synchronized: the latest measurement is at most maxAgeS old
+             and |offset| <= maxOffsetMs; unsynchronized: at most maxAgeS old and
+             |offset| > maxOffsetMs; unknown: no measurement or an older one. The
+             offset is reported, never applied: the station does not set the system
+             clock. WstxRadioIO receive clock external accuracy stays unknown.
              PlanTransmitStart refuses anything but synchronized. */
     }
     action def PttControl {
@@ -452,10 +476,13 @@ package WstxTransmit {
              JSON media rules, 1024-byte bodies and error envelope; identity-coded (not
              in the compressed GET allowlist); no WebSocket or StatusReply change.
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
-             clock,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
+             clock,clock_measurement,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
              without its safety_revision: {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
              last_period_utc,halt_state,refusal}, ptt released|keyed|indeterminate,
-             clock synchronized|unsynchronized|unknown, watchdog exactly {tx_minutes,
+             clock synchronized|unsynchronized|unknown (TransmitClock),
+             clock_measurement null before the first answer, else exactly the latest
+             measurement {server,offset_ms,round_trip_ms,age_ms} (server as configured,
+             age at the read), watchdog exactly {tx_minutes,
              tx_remaining_minutes,tx_expired,tune_seconds,tune_remaining_seconds} and
              outcomes the last 8 {outcome_sequence,request_sequence,kind,refusal,failure,
              audio_start_utc_ms} and startup_release the StartupSafetyRelease state;
