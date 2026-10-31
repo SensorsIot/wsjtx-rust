@@ -343,10 +343,11 @@ package WstxTransmit {
              in milliseconds to the nearest, NTP timestamps compared modulo the era;
              T4 is T1 plus the monotonic time to the reply, so a clock step during the
              exchange cannot distort it. A round without an answer keeps the previous
-             measurement. Each measurement keeps the monotonic instant and the system
-             time of its reply; step = system time elapsed since then minus monotonic
+             measurement. Each measurement keeps the monotonic instant of its reply and
+             the system time its offset describes (the send time plus the monotonic
+             time to the reply); step = system time elapsed since then minus monotonic
              time elapsed. A |step| above maxStepMs means the system clock was stepped
-             after the measurement (e.g. by a third-party tool), so the measured offset
+             during or after the exchange (e.g. by a third-party tool), so the offset
              no longer describes it. synchronized: the latest measurement is at most
              maxAgeS old, |step| <= maxStepMs and |offset| <= maxOffsetMs;
              unsynchronized: at most maxAgeS old, |step| <= maxStepMs and

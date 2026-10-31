@@ -35,7 +35,8 @@ pub struct Measurement {
     pub round_trip_ms: i64,
     /// Monotonic instant at which the reply arrived.
     pub taken: Instant,
-    /// Station system clock at that instant (detects a later step of the clock).
+    /// Station system clock at that instant as the offset describes it (send time plus
+    /// monotonic elapsed time), so a later step, also one during the exchange, is detected.
     pub system: SystemTime,
 }
 
@@ -162,6 +163,17 @@ fn address(server: &str) -> io::Result<SocketAddr> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address"))
 }
 
+/// One answered exchange: the offset and round trip refer to the station clock at
+/// `sent_system`, read at monotonic `sent`; the reply arrived at monotonic `received`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Exchange {
+    pub offset_ms: i64,
+    pub round_trip_ms: i64,
+    pub sent_system: SystemTime,
+    pub sent: Instant,
+    pub received: Instant,
+}
+
 /// One SNTP exchange with `server` (a host name, port 123 by default, or host:port),
 /// bounded by `timeout` after name resolution. `now` is the station clock under
 /// measurement; the receive time is the send time plus monotonic elapsed time, so a
@@ -171,7 +183,7 @@ pub fn query(
     server: &str,
     timeout: Duration,
     now: &dyn Fn() -> SystemTime,
-) -> io::Result<(i64, i64)> {
+) -> io::Result<Exchange> {
     let target = address(server)?;
     let local: SocketAddr = if target.is_ipv4() {
         "0.0.0.0:0".parse().expect("address")
@@ -180,7 +192,8 @@ pub fn query(
     };
     let socket = UdpSocket::bind(local)?;
     socket.connect(target)?;
-    let t1 = ntp_timestamp(now());
+    let sent_system = now();
+    let t1 = ntp_timestamp(sent_system);
     let sent = Instant::now();
     socket.send(&request(t1))?;
     let deadline = sent + timeout;
@@ -209,12 +222,19 @@ pub fn query(
             }
             Err(e) => return Err(e),
         };
-        let elapsed = sent.elapsed();
+        let received = Instant::now();
+        let elapsed = received - sent;
         let t4 = t1.wrapping_add(
             ((elapsed.as_nanos() << 32) / 1_000_000_000).min(u128::from(u64::MAX)) as u64,
         );
-        if let Ok(result) = offset(&buffer[..n], t1, t4) {
-            return Ok(result);
+        if let Ok((offset_ms, round_trip_ms)) = offset(&buffer[..n], t1, t4) {
+            return Ok(Exchange {
+                offset_ms,
+                round_trip_ms,
+                sent_system,
+                sent,
+                received,
+            });
         }
     }
 }
@@ -251,13 +271,15 @@ pub fn server_list(list: &str) -> Vec<String> {
 impl Source for Sntp {
     fn measure(&mut self) -> Option<Measurement> {
         self.servers.iter().find_map(|server| {
-            let (offset_ms, round_trip_ms) = query(server, self.timeout, &self.now).ok()?;
+            let e = query(server, self.timeout, &self.now).ok()?;
+            // The system time the offset describes, carried to the reply on the
+            // monotonic clock: a step during the exchange then shows as a step.
             Some(Measurement {
                 server: server.clone(),
-                offset_ms,
-                round_trip_ms,
-                taken: Instant::now(),
-                system: (self.now)(),
+                offset_ms: e.offset_ms,
+                round_trip_ms: e.round_trip_ms,
+                taken: e.received,
+                system: e.sent_system + (e.received - e.sent),
             })
         })
     }

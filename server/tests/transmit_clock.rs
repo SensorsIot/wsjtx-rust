@@ -201,6 +201,9 @@ fn a_clock_step_during_the_exchange_does_not_distort_the_offset() {
     let m = source.measure().expect("answer");
     assert!(JUMP_CALLS.load(Ordering::SeqCst) >= 1);
     assert!((2_980..=3_000).contains(&m.offset_ms), "{}", m.offset_ms);
+    // The offset describes the clock before the step; read now on the stepped clock the
+    // measurement no longer holds, so the state is unknown (not unsynchronized/synchronized).
+    assert_eq!(state(Some(&m), m.taken, jumping_now()), ClockState::Unknown);
 }
 
 fn measured(offset_ms: i64, taken: Instant) -> Measurement {
