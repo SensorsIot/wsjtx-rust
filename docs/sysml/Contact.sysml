@@ -488,7 +488,10 @@ package WstxContact {
              CancelContact or ChangeContact; a later contact's offer waits behind it
              (the same contactId replaces its own offer); a full queue refuses Log QSO
              with state_conflict and leaves the completed contact available for a later
-             Log QSO. ContactSnapshot review is the oldest unsaved offer. */
+             Log QSO; while such a completed, unqueued, unsaved contact exists, preparing
+             another contact (select_row, enter_dx) or starting a CQ is refused with
+             state_conflict, so it is never dropped. ContactSnapshot review is the oldest
+             unsaved offer. */
     }
     action def SaveContact {
         in reviewed : LogRecord;
@@ -687,7 +690,8 @@ package WstxContact {
              state). Transmit actions on a station without transmit capability, or
              without a current CL-022 grant (a plaintext profile), are
              transmit_unavailable; Enable Tx arms #9 with the confirmed CL-022 safety
-             revision it carries. A transmit outcome refused without a #9 disarm
+             revision it carries (#9 itself refuses a changed revision, reported
+             stale_revision with field safety_revision; no check-then-arm race). A transmit outcome refused without a #9 disarm
              (duplicateSequence) disarms with cause refused and is never resubmitted
              unchanged; the engine's own disarms are not shown as refusals. */
     }
