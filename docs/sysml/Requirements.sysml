@@ -519,13 +519,15 @@ package WstxRequirements {
              CL-009-03, CL-009-04
              Setup: separately approved operation on the HB9BLA IC-7300 (COM3, USB Audio
              CODEC) into a dummy load or the station antenna at reduced power, profile
-             with control.ptt cat and the IC-7300 USB output, synchronized system clock;
-             WSJT-X on the same PC receiving independently.
+             with control.ptt cat and the IC-7300 USB output, synchronized system clock
+             (Windows Time service), the radio's own transmit time-out timer set
+             (mandatory, e.g. 3 min) and read back before any keying.
              Steps: arm, transmit FT8 messages in both parities, replace before audio
              start, halt mid-transmission, Tune and its limit, pull the USB audio or CAT
              cable during a transmission, restart the station.
-             Oracles: WSJT-X decodes the transmitted messages with plausible DT and
-             frequency; the radio's TX indication and power meter follow PTT; halt and
+             Oracles: PSK Reporter spots of HB9BLA for the transmitted CQ by
+             independent receivers (frequency, time); the radio's TX indication, power
+             meter and ALC follow PTT; halt and
              each failure end RF within the settled bound; restart does not transmit.
              5 — Tests with external effects and explicit operator consent; HB9BLA radio
              PC, physical IC-7300. Not run by the automated gate. */
