@@ -231,7 +231,10 @@ async fn live_native_selection_tls_thin_and_off() {
         serde_json::to_vec(&document).unwrap(),
     )
     .unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
+    let (mut store, _) = profile::Store::open(&dir).unwrap();
+    // Selected HTTPS profile: browsers enroll real CL-022-01 grants through the token form.
+    let authorization =
+        crate::authorization_http::Service::initialize(&mut store, &origin).unwrap();
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
     recording.initialize_profile_revision(0);
     recording.fixture_inputs(inputs);
@@ -241,7 +244,7 @@ async fn live_native_selection_tls_thin_and_off() {
         origin: origin.clone(),
         profile: Some(Arc::new(ProfileState {
             store: Mutex::new(store),
-            authorization: Mutex::new(None),
+            authorization: Mutex::new(authorization),
             boot,
             recording: recording.clone(),
         })),

@@ -84,4 +84,42 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
     async close() {enabled = false; for (const socket of sockets) socket.destroy(); for (const timer of timers) clearTimeout(timer); listener.close(); await once(listener, 'close');}
   };
 }
-module.exports = {server, link};
+// Test client of the CL-022-01 auth-v1 flow for raw (non-browser) requests to a selected
+// HTTPS profile: bootstrap with the token, enroll a P-256 key, prove it and return the
+// transport cookie. `send(route, method, body, headers)` must resolve {status, headers, body}.
+async function grant(origin, token, send) {
+  const crypto = require('node:crypto');
+  const session = await send('/session', 'POST', token, {});
+  if (session.status !== 204) throw new Error('bootstrap session ' + session.status);
+  const bootstrap = session.headers['set-cookie'][0].split(';')[0];
+  const scoped = await send('/authorization/v1/bootstrap-scope', 'POST', {version: 1}, {Cookie: bootstrap});
+  if (scoped.status !== 200) throw new Error('bootstrap scope ' + scoped.status);
+  const scope = scoped.body.current_scope, {publicKey, privateKey} = crypto.generateKeyPairSync('ec', {namedCurve: 'P-256'});
+  const jwk = publicKey.export({format: 'jwk'});
+  const public_key = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]).toString('base64url');
+  const grant_id = crypto.randomBytes(32).toString('base64url');
+  const enrolled = await send('/authorization/v1/enroll', 'POST', {version: 1, operation_id: crypto.randomUUID(), scope, grant_id, public_key}, {Cookie: bootstrap});
+  if (enrolled.status !== 200) throw new Error('enroll ' + enrolled.status);
+  async function prove() {
+    const challenge = await send('/authorization/v1/challenge', 'POST', {version: 1, grant_id}, {});
+    if (challenge.status !== 200) throw new Error('challenge ' + challenge.status);
+    const c = challenge.body.scope, parts = [Buffer.from('WSTX-AUTH-PROOF'), Buffer.from([1])];
+    for (const field of [origin, c.profile_id, c.radio_id, String(c.safety_revision), grant_id].map(v => Buffer.from(v)).concat([Buffer.from(challenge.body.nonce, 'base64url')])) {
+      const size = Buffer.alloc(4); size.writeUInt32BE(field.length); parts.push(size, field);
+    }
+    const signature = crypto.sign('sha256', Buffer.concat(parts), {key: privateKey, dsaEncoding: 'ieee-p1363'}).toString('base64url');
+    const proof = await send('/authorization/v1/proof', 'POST', {version: 1, grant_id, nonce: challenge.body.nonce, signature}, {});
+    if (proof.status !== 204) throw new Error('proof ' + proof.status);
+    return proof.headers['set-cookie'][0].split(';')[0];
+  }
+  return {cookie: await prove(), prove, scope, grant_id};
+}
+// Browser side of the same flow: the real token form enrolls this context's nonextractable
+// key; later pages of the context recover by retained-key proof without the token.
+async function loginPage(page, origin, token, timeout = 30000) {
+  await page.goto(origin, {timeout});
+  await page.locator('#login').waitFor({state: 'visible', timeout});
+  await page.locator('#token').fill(token); await page.locator('#login button').click();
+  await page.locator('#connection[data-state="connected"]').waitFor({timeout});
+}
+module.exports = {server, link, grant, loginPage};
