@@ -285,7 +285,7 @@ package WstxRequirements {
     dependency CL_006_04_to_FR_021 from 'CL-006-04' to 'FR-021';
     requirement 'CL-007-01' {
         doc /* Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz live source through the existing receive-job authority. Independent recorded fixtures MUST exercise the same pure modem without a physical radio; no file-decoding product operation is provided. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
     }
     dependency CL_007_01_to_FR_003 from 'CL-007-01' to 'FR-003';
@@ -301,7 +301,7 @@ package WstxRequirements {
     dependency CL_007_02_to_FR_019 from 'CL-007-02' to 'FR-019';
     requirement 'CL-007-03' {
         doc /* Each mode MUST satisfy independent payload/channel/waveform oracles; reference decoder output alone MUST NOT define exhaustive truth or make a hash reversible. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
     }
     dependency CL_007_03_to_FR_003 from 'CL-007-03' to 'FR-003';
