@@ -18,6 +18,7 @@ pub use history::DecodeState;
 pub use payload::{Call, CallKind, Exchange, Fields, Payload, PayloadStatus, unpack};
 pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
+pub(crate) use waveform::gaussian_pulse;
 pub use waveform::quadratures;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

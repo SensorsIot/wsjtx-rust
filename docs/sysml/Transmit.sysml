@@ -152,7 +152,8 @@ package WstxTransmit {
              48 kHz within the declared WSJT-X reference tolerance. Unsupported,
              invalid or altered messages and out-of-range audio frequencies are
              explicit refusals. Details: PackMessage, ChannelFrame, Ft8WaveformContract. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/transmit/mod.rs; server/src/transmit/pack.rs; server/src/transmit/waveform.rs";
     }
     dependency CL_009_01_to_FR_005 from 'CL-009-01' to 'FR-005';
     requirement 'CL-009-02' {
@@ -161,7 +162,8 @@ package WstxTransmit {
              skipping the elapsed prefix, refusal for an unsynchronized/unknown clock,
              an unaligned period or a stale request, and no catch-up or replay of a
              missed period. Details: Ft8Schedule, PlanTransmitStart. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/transmit/schedule.rs";
     }
     dependency CL_009_02_to_FR_006 from 'CL-009-02' to 'FR-006';
     dependency CL_009_02_to_FR_005 from 'CL-009-02' to 'FR-005';
@@ -184,10 +186,11 @@ package WstxTransmit {
              the receive decoder returns the same payload; refusals are explicit.
              2 — Isolated automated tests; Windows development PC, no audio device, radio
              or WSJT-X installation at test time. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-009-01';
         }
+        attribute executable : String = "server/tests/transmit_vectors.rs";
     }
     verification 'TC-006-001' {
         doc /* TC-006-001 — FT8 transmit period scheduling
@@ -202,10 +205,11 @@ package WstxTransmit {
              start and skipped-sample counts; 11249 ms admitted and 11250 ms stale;
              stale requests never move to a later period.
              2 — Isolated automated tests; Windows development PC, no clock, audio or radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-009-02';
         }
+        attribute executable : String = "server/tests/transmit_vectors.rs";
     }
     dependency CL_009_01_verified_by_TC_005_001 from 'CL-009-01' to 'TC-005-001';
     dependency CL_009_02_verified_by_TC_006_001 from 'CL-009-02' to 'TC-006-001';
