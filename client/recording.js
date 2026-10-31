@@ -703,7 +703,7 @@ async function operatingSync(reconcile=false){
     const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
     if(resolved)operatingUnknown=null;
     if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
-    const changed=operatingState?.boot_id!==s.boot_id||operatingState?.snapshot_sequence!==s.snapshot_sequence;
+    const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
     operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
     if(s.selection.confirmed_command_id&&s.selection.confirmed_command_id!==lastOperatingCommit){lastOperatingCommit=s.selection.confirmed_command_id;document.querySelector('#receive-mode').value=s.selection.mode;}
   }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
@@ -762,7 +762,8 @@ setInterval(()=>{
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected'){operatingSocket=socket;operatingSync(false);}
 
 // CL-022-03/05: automatic CAT health is read from the additive authorization status
-// only when the versioned operating snapshot changes (or after a confirmation), never
+// only when the versioned operating snapshot changes its CAT identity/state/error
+// (connection generation advances on every attempt) or after a confirmation, never
 // on its own timer. Session, CAT and audio/decoder remain separate observations.
 const catConditions=['disabled','unauthorized','commissioningRequired','waitingForDevice','connecting','ready','retryWaiting','closing','quarantined'];
 function validCatStatus(v,scope){
