@@ -3,6 +3,9 @@
 mod auth_tests;
 mod authorization;
 mod authorization_http;
+mod cat_lifecycle;
+#[cfg(test)]
+mod cat_lifecycle_tests;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
@@ -240,12 +243,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     watched.tick();
                 }
             });
-            Some(Arc::new(ProfileState {
+            let state = Arc::new(ProfileState {
                 store: Mutex::new(store),
                 authorization: Mutex::new(authorization),
                 boot,
                 recording,
-            }))
+            });
+            // CL-022-03/04: one station-wide timer and at most one tick in flight; it
+            // runs whether or not any browser is connected.
+            let lifecycle = state.clone();
+            tokio::spawn(async move {
+                let mut timer = interval(Duration::from_millis(50));
+                timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    timer.tick().await;
+                    let current = lifecycle.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        authorization_http::cat_tick(&current, Instant::now())
+                    })
+                    .await;
+                }
+            });
+            Some(state)
         }
         None => None,
     };

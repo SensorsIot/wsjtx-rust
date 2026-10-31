@@ -410,7 +410,9 @@ tuning.querySelector('.op-monitor').remove();
 tuning.querySelector('.op-decode-group').remove();
 tuning.insertBefore(receiveControls,tuning.querySelector('.op-period'));
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
-let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingRadioUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,lastOperatingCommit=null,operatingSocket=null;
+let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,lastOperatingCommit=null,operatingSocket=null;
+let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
+
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null;
 let lastReceiveReady=null;
@@ -619,7 +621,7 @@ if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state===
 // These controls share the existing station/receive authority. Nominal selection
 // and dated CAT observations remain different values throughout a transition.
 const operatingControls=document.createElement('div');operatingControls.id='operating-receive-controls';
-operatingControls.innerHTML='<label>Operating mode<select id="operating-mode" disabled><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Band<select id="operating-band" disabled><option value="">Choose band</option></select></label><button id="operating-monitor" disabled aria-pressed="false">Monitor</button><button id="operating-stop" disabled>Stop</button><button id="operating-refresh" disabled>Refresh operating state</button><label class="receive-only-verification"><input type="checkbox" id="radio-receive-only">Receive-only keying/inhibit verified</label><button id="radio-connect" disabled>Connect CAT</button><button id="radio-disconnect" disabled>Disconnect CAT</button><output id="operating-radio">CAT readback unavailable</output><p id="operating-selection-status" role="status">Operating selection unavailable until station snapshot</p>';
+operatingControls.innerHTML='<label>Operating mode<select id="operating-mode" disabled><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Band<select id="operating-band" disabled><option value="">Choose band</option></select></label><button id="operating-monitor" disabled aria-pressed="false">Monitor</button><button id="operating-stop" disabled>Stop</button><button id="operating-refresh" disabled>Refresh operating state</button><output id="operating-radio">CAT readback unavailable</output><div id="cat-lifecycle"><p id="cat-status" role="status">CAT status unavailable</p><div id="cat-confirm" hidden><p id="cat-confirm-summary"></p><label class="receive-only-verification"><input type="checkbox" id="cat-confirm-ack">USB SEND/CW/RTTY keying is OFF or receive inhibit is verified</label><button id="cat-confirm-button" type="button" disabled>Confirm receive-only setup</button></div><p id="cat-confirm-result" role="status"></p></div><p id="operating-selection-status" role="status">Operating selection unavailable until station snapshot</p>';
 receiveControls.before(operatingControls);
 const operatingMode=document.querySelector('#operating-mode'),operatingBand=document.querySelector('#operating-band'),operatingStatus=document.querySelector('#operating-selection-status');
 const operatingBands=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m'];
@@ -630,7 +632,7 @@ const operatingNullable=(v,valid)=>v===null||valid(v);
 const operatingModeValid=v=>['ft4','ft8'].includes(v);
 const operatingFrequency=v=>Number.isSafeInteger(v)&&v>=30000&&v<=74800000;
 function operatingSelectionBlocked(){return !!operatingUnknown||!!operatingIntent||operatingState?.operation?.result==='pending';}
-function operatingBlocked(){return operatingSelectionBlocked()||!!operatingRadioUnknown;}
+function operatingBlocked(){return operatingSelectionBlocked();}
 function validOperatingState(s){
   if(!operatingShape(s,'v,profile_id,boot_id,profile_revision,generation,operating_revision,snapshot_sequence,monotonic_ms,control,selection,available_bands,operation,cancellation,receive,radio')||s.v!==1||!operatingUuid(s.profile_id)||!operatingUuid(s.boot_id)||!['manual','cat'].includes(s.control))return false;
   for(const key of ['profile_revision','generation','operating_revision','snapshot_sequence','monotonic_ms'])if(!operatingCounter(s[key]))return false;
@@ -664,12 +666,11 @@ function operatingShow(){
   const blocked=!ready||mutationPending||uncertainMutation||operatingBlocked();
   operatingMode.disabled=blocked;operatingBand.disabled=blocked;
   const active=live?.job&&['running','cancelling'].includes(live.job.state),target=operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);
-  document.querySelector('#operating-monitor').disabled=!connected||!live||mutationPending||uncertainMutation||!!operatingUnknown||(active?live.job.state==='cancelling':(!!operatingRadioUnknown||!live.audio||!profileData?.settings.audio.input_device||s?.receive.owner_released===false));
+  document.querySelector('#operating-monitor').disabled=!connected||!live||mutationPending||uncertainMutation||!!operatingUnknown||(active?live.job.state==='cancelling':(!live.audio||!profileData?.settings.audio.input_device||s?.receive.owner_released===false));
   document.querySelector('#operating-monitor').setAttribute('aria-pressed',String(!!active));
   document.querySelector('#operating-stop').disabled=!connected||(!target&&(!active||mutationPending||uncertainMutation));
   document.querySelector('#operating-refresh').disabled=!connected||operatingReadPending;
-  document.querySelector('#radio-connect').disabled=!ready||mutationPending||operatingBlocked()||s.control!=='cat'||['ready','connecting','closing'].includes(s.radio.state)||!document.querySelector('#radio-receive-only').checked;
-  document.querySelector('#radio-disconnect').disabled=!ready||s.radio.connection_generation===0||s.radio.state==='closed';
+  catShow();
   if(!s){operatingStatus.textContent=operatingFailure||'Operating selection unavailable until station snapshot';return;}
   operatingMode.value=s.selection.mode;
   const listed=operatingBand.querySelectorAll('option');if([...listed].slice(1).map(o=>o.value).join(',')!==s.available_bands.join(',')){
@@ -680,7 +681,7 @@ function operatingShow(){
   const observed=frequency.value===null?'Actual rig frequency unknown':`Observed ${(frequency.value/1e6).toFixed(6)} MHz · ${connected&&frequency.confirmed?'confirmed query':'stale/unconfirmed'} at ${frequency.observed_at_ms} ms`;
   const nominal=s.selection.nominal_hz===null?'Nominal frequency unknown':`Nominal ${(s.selection.nominal_hz/1e6).toFixed(6)} MHz · ${s.selection.origin==='manual'?'manual, actual rig unconfirmed':'CAT readback at selection'}`;
   document.querySelector('#operating-radio').textContent=`CAT ${s.radio.state}${s.radio.error?' · '+s.radio.error:''} · ${observed} · ${nominal}`;
-  const dial=document.querySelector('#op-dial');dial.value=frequency.value!==null?(frequency.value/1e6).toFixed(6):s.selection.nominal_hz!==null?(s.selection.nominal_hz/1e6).toFixed(6):'';dial.title=`${observed}. ${nominal}`;dial.setAttribute('aria-label',frequency.value!==null?'Observed dial frequency':'Nominal dial frequency, actual rig unconfirmed');
+  const dial=document.querySelector('#op-dial');dial.value=frequency.value!==null?(frequency.value/1e6).toFixed(6):s.selection.nominal_hz!==null?(s.selection.nominal_hz/1e6).toFixed(6):'';dial.title=`${observed}. ${nominal}`;const fresh=connected&&frequency.confirmed;dial.dataset.fresh=String(fresh);dial.setAttribute('aria-label',frequency.value!==null?(fresh?'Observed dial frequency':'Last observed dial frequency, stale/unconfirmed'):'Nominal dial frequency, actual rig unconfirmed');
   const capabilities=document.querySelectorAll('#operating-capabilities dd');capabilities[1].textContent=!connected?'Unavailable · status stale':s.radio.state==='ready'?'Ready · IC-7300 readback':`Unavailable · ${s.radio.error??s.radio.state}`;
   if(live)statusBar.children[1].textContent=`Audio ${live.audio.state} · ${live.job?live.job.mode.toUpperCase()+' '+live.job.state:'Receive stopped'} · CAT ${s.radio.state}`;
   const o=s.operation;
@@ -701,11 +702,9 @@ async function operatingSync(reconcile=false){
     if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
     const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
     if(resolved)operatingUnknown=null;
-    if(operatingRadioUnknown&&reconcile){const unknown=operatingRadioUnknown;
-      if(s.boot_id!==unknown.boot_id||s.profile_revision!==unknown.profile_revision||s.radio.connection_generation>unknown.connection_generation||(unknown.action==='disconnect'&&s.radio.state==='closed')){operatingRadioUnknown=null;operatingFailure='';}
-    }
     if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
-    operatingState=s;operatingSupported=true;if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
+    const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
+    operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
     if(s.selection.confirmed_command_id&&s.selection.confirmed_command_id!==lastOperatingCommit){lastOperatingCommit=s.selection.confirmed_command_id;document.querySelector('#receive-mode').value=s.selection.mode;}
   }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
   finally{operatingReadPending=false;operatingShow();receiveShow();if(operatingReadAgain){operatingReadAgain=false;operatingSync(true);}}
@@ -743,23 +742,11 @@ operatingBand.addEventListener('change',()=>{if(operatingBand.value)operatingSel
 document.querySelector('#operating-monitor').addEventListener('click',()=>{if(operatingState?.operation?.result==='pending'||operatingUnknown||operatingIntent)operatingStop();else if(live?.job&&['running','cancelling'].includes(live.job.state))document.querySelector('#receive-stop').click();else document.querySelector('#receive-start').click();});
 document.querySelector('#operating-stop').addEventListener('click',operatingStop);
 document.querySelector('#operating-refresh').addEventListener('click',()=>operatingSync(true));
-document.querySelector('#radio-receive-only').addEventListener('change',operatingShow);
-for(const action of ['connect','disconnect'])document.querySelector('#radio-'+action).addEventListener('click',async()=>{
-  const s=operatingState;if(!s||mutationPending)return;const epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;receiveMutationEpoch++;mutationPending=true;receiveShow();
-  try{const response=await stationFetch('/radio/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='connect'?{v:1,profile_id:s.profile_id,boot_id:s.boot_id,profile_revision:s.profile_revision,receive_only_verified:document.querySelector('#radio-receive-only').checked}:{v:1,profile_id:s.profile_id,boot_id:s.boot_id,connection_generation:s.radio.connection_generation}),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
-    if(!stationContext(current,authEpoch))throw new Error('Stale CAT completion');
-    if(!response.ok){if(!operatingShape(ack,'error')||!operatingShape(ack.error,'code,field')||typeof ack.error.code!=='string'||ack.error.field!==null)throw new Error('Invalid CAT refusal');operatingFailure=`CAT ${action} refused · ${ack.error.code}`;return;}
-    if(new TextEncoder().encode(text).length>2048)throw new Error('Invalid CAT receipt size');
-    if(!operatingShape(ack,'v,profile_id,boot_id,connection_generation,state,error,device_id,effective_baud,observation')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||!operatingCounter(ack.connection_generation))throw new Error('Invalid CAT receipt');
-  }
-  catch(error){if(epoch===operatingEpoch){operatingRadioUnknown={action,connection_generation:s.radio.connection_generation,profile_revision:s.profile_revision,boot_id:s.boot_id};operatingFailure=`CAT ${action} outcome unknown · ${error.message} · refresh before another action`;}}
-  finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);receiveShow();}}
-});
 refresh.addEventListener('click',()=>{if(operatingUnknown||operatingIntent||operatingFailure.startsWith('Operating state stale')||operatingFailure.startsWith('CAT '))operatingSync(true);});
 addEventListener('station-ready',event=>{
   const replaced=operatingState&&operatingState.boot_id!==profileData?.boot_id;
   const edited=operatingState&&operatingState.profile_revision!==profileData?.revision;
-  if(replaced||edited){if(operatingIntent||operatingRadioUnknown)mutationPending=false;operatingState=null;operatingUnknown=null;operatingRadioUnknown=null;operatingIntent=null;operatingEpoch++;}
+  if(replaced||edited){if(operatingIntent)mutationPending=false;operatingState=null;operatingUnknown=null;operatingIntent=null;operatingEpoch++;catStatus=null;}
   const reconnected=operatingSocket!==event.detail;operatingSocket=event.detail;
   // station-ready also follows routine status/profile refreshes. Those must not
   // bypass the selection cadence or create a second optional HTTP workload.
@@ -773,3 +760,66 @@ setInterval(()=>{
   if(performance.now()-lastOperatingRead>=interval)operatingSync(false);
 },250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected'){operatingSocket=socket;operatingSync(false);}
+
+// CL-022-03/05: automatic CAT health is read from the additive authorization status
+// only when the versioned operating snapshot changes its CAT identity/state/error
+// (connection generation advances on every attempt) or after a confirmation, never
+// on its own timer. Session, CAT and audio/decoder remain separate observations.
+const catConditions=['disabled','unauthorized','commissioningRequired','waitingForDevice','connecting','ready','retryWaiting','closing','quarantined'];
+function validCatStatus(v,scope){
+  return operatingShape(v,'version,scope,condition,error,retry_after_ms,commissioned,receive_state')&&v.version===1&&
+    operatingShape(v.scope,'profile_id,radio_id,safety_revision')&&operatingUuid(v.scope.profile_id)&&operatingUuid(v.scope.radio_id)&&Number.isSafeInteger(v.scope.safety_revision)&&v.scope.safety_revision>0&&
+    (!scope||(scope.profile_id===v.scope.profile_id&&scope.radio_id===v.scope.radio_id))&&catConditions.includes(v.condition)&&
+    operatingNullable(v.error,e=>typeof e==='string'&&/^[a-z_]{1,32}$/.test(e))&&operatingNullable(v.retry_after_ms,n=>Number.isSafeInteger(n)&&n>=0&&n<=8000)&&
+    typeof v.commissioned==='boolean'&&operatingShape(v.receive_state,'audio,decoder');
+}
+async function catSync(){
+  // CAT disabled needs no status read: the saved settings already state it.
+  if(!authorization||connection.dataset.state!=='connected'||profileData?.settings.control.mode!=='cat')return;
+  if(catPending){catAgain=true;return;}
+  catPending=true;const current=socket,authEpoch=authorization.snapshot().epoch;
+  try{
+    const response=await stationFetch('/authorization/v1/status',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:'{"version":1}',signal:AbortSignal.timeout(10000)}),text=await response.text();
+    if(!stationContext(current,authEpoch))return;
+    if(!response.ok||new TextEncoder().encode(text).length>1024)throw new Error('CAT status unavailable');
+    const v=JSON.parse(text);if(!validCatStatus(v,authorization.snapshot().scope))throw new Error('Invalid CAT status');
+    catStatus=v;
+  }catch{if(current===socket)catStatus=null;}
+  finally{catPending=false;catShow();if(catAgain){catAgain=false;catSync();}}
+}
+function catModel(endpoint){return typeof endpoint==='string'&&(/^icom7300:\/\//.test(endpoint)||/^COM[0-9]{1,3}$/i.test(endpoint))?'Icom IC-7300 (CI-V)':'unsupported CAT model';}
+function catShow(){
+  const status=document.querySelector('#cat-status');if(!status)return;
+  const connected=connection.dataset.state==='connected',v=connected?catStatus:null,confirm=document.querySelector('#cat-confirm');
+  const reason=v?.error?` · ${v.error}`:'';
+  const texts={disabled:'CAT disabled',unauthorized:'CAT waiting for station authorization',commissioningRequired:'CAT waiting · receive-only setup not confirmed',
+    waitingForDevice:`CAT waiting for radio${reason}`,connecting:`CAT connecting${reason}`,ready:'CAT ready · fresh readback',
+    retryWaiting:`CAT unavailable${reason} · automatic retry in ${Math.ceil((v?.retry_after_ms??0)/1000)} s`,closing:`CAT closing${reason}`,
+    quarantined:'CAT quarantined · close failed; check the radio connection and restart the station'};
+  status.textContent=!connected?'CAT status stale · station disconnected':profileData?.settings.control.mode!=='cat'?'CAT disabled':!authorization?`CAT ${operatingState?.radio.state??'status unavailable'} · automatic CAT requires the HTTPS station`:v?texts[v.condition]:'CAT status unavailable';
+  status.dataset.condition=v?.condition??'unknown';
+  const needed=!!v&&v.condition==='commissioningRequired'&&profileData?.settings.control.mode==='cat';
+  confirm.hidden=!needed;
+  if(needed){
+    const c=profileData.settings.control,button=document.querySelector('#cat-confirm-button');
+    document.querySelector('#cat-confirm-summary').textContent=`Radio ${v.scope.radio_id} · endpoint ${c.endpoint??'none'} · model ${catModel(c.endpoint)} · PTT ${c.ptt} · setup revision ${v.scope.safety_revision}`;
+    button.textContent=v.scope.safety_revision>1?'Confirm changed receive-only setup':'Confirm receive-only setup';
+    button.disabled=catConfirming||!authorization?.snapshot().ready||!document.querySelector('#cat-confirm-ack').checked;
+  }
+}
+document.querySelector('#cat-confirm-ack').addEventListener('change',catShow);
+document.querySelector('#cat-confirm-button').addEventListener('click',async()=>{
+  const v=catStatus,result=document.querySelector('#cat-confirm-result');
+  if(!v||v.condition!=='commissioningRequired'||catConfirming||!document.querySelector('#cat-confirm-ack').checked)return;
+  catConfirming=true;catShow();const current=socket,authEpoch=authorization.snapshot().epoch,operation_id=crypto.randomUUID();
+  try{
+    // Confirmation persists the acknowledgement only; it never opens CAT itself.
+    const response=await stationFetch('/authorization/v1/commission',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,operation_id,scope:v.scope,receive_only_confirmed:true}),signal:AbortSignal.timeout(10000)}),text=await response.text();
+    if(!stationContext(current,authEpoch))throw new Error('stale completion');
+    if(!response.ok){let code='request_failed';try{code=JSON.parse(text).error?.code??code;}catch{}throw new Error(code);}
+    const receipt=JSON.parse(text);if(receipt.operation_id!==operation_id||receipt.outcome!=='committed')throw new Error('outcome unknown');
+    result.textContent='Receive-only setup confirmed';document.querySelector('#cat-confirm-ack').checked=false;
+  }catch(error){result.textContent=`Confirmation not recorded · ${error.message}`;}
+  finally{catConfirming=false;catSync();}
+});
+addEventListener('station-stale',catShow);

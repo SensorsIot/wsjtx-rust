@@ -10,7 +10,7 @@ const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
 const {server,grant,loginPage}=require('./support.cjs');
 
-async function station(t){
+async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-selection-'));
   t.after(()=>fs.rm(dir,{recursive:true,force:true}));
   const held=net.createServer();held.listen(0,'127.0.0.1');await once(held,'listening');
@@ -18,7 +18,7 @@ async function station(t){
   const origin=`https://localhost:${port}`,id=randomUUID(),token=randomUUID().replaceAll('-','');
   const cert=await selfsigned.generate([{name:'commonName',value:'localhost'}],{days:1,keySize:2048,extensions:[{name:'subjectAltName',altNames:[{type:2,value:'localhost'}]}]});
   await fs.writeFile(path.join(dir,'cert.pem'),cert.cert);await fs.writeFile(path.join(dir,'key.pem'),cert.private);
-  await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify({schema_version:1,profile_id:id,revision:0,display_name:'Selection fixture',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}}));
+  await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify({schema_version:1,profile_id:id,revision:0,display_name:'Selection fixture',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin},connection_type:'standard',audio:{input_device:null,output_device:null},control}));
   const app=await server({WSTX_TLS_CERT:path.join(dir,'cert.pem'),WSTX_TLS_KEY:path.join(dir,'key.pem'),WSTX_TOKEN:token},['--profile',dir]);t.after(()=>app.close());
   let cookie='';
   const request=(route,method='GET',body,extra={})=>new Promise((resolve,reject)=>{
@@ -70,9 +70,9 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:693},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(772),origin,mapping),'automatic');for(const line of [710,724,738,744,755,757,765,774])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(771),origin,mapping),/unknown/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(772).stack.callFrames]}};
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:694},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(759),origin,mapping),'automatic');for(const line of [709,723,737,743,744,752,761])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(758),origin,mapping),/unknown/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(759).stack.callFrames]}};
     assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
@@ -258,7 +258,9 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
   assert.equal((await request('/radio/operation','POST',control)).body.error.code,'radio_unavailable');
   for(const parameters of [{unexpected:true},{mode:'USB',filter:1,unexpected:true}])assert.equal((await request('/radio/operation','POST',{...control,parameters})).status,400);
   const duplicate=JSON.stringify({...control,operation:'set_frequency',parameters:{frequency_hz:7074000}}).replace('"frequency_hz":7074000','"frequency_hz":7074000,"frequency_hz":14074000');assert.equal((await request('/radio/operation','POST',duplicate)).status,400,'nested duplicate parameters must not disappear');
-  const unverified=await request('/radio/connect','POST',{v:1,profile_id:id,boot_id:s.boot_id,profile_revision:0,receive_only_verified:false});assert.equal(unverified.body.error.code,'receive_only_unverified');
+  // CL-022-03/04: deprecated manual lifecycle routes validate, then refuse with zero CAT I/O.
+  for(const verified of [false,true]){const manual=await request('/radio/connect','POST',{v:1,profile_id:id,boot_id:s.boot_id,profile_revision:0,receive_only_verified:verified});assert.equal(manual.status,409);assert.equal(manual.body.error.code,'automatic_lifecycle');}
+  const manualClose=await request('/radio/disconnect','POST',{v:1,profile_id:id,boot_id:s.boot_id,connection_generation:0});assert.equal(manualClose.status,409);assert.equal(manualClose.body.error.code,'automatic_lifecycle');
 });
 
 // Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
@@ -320,6 +322,36 @@ test('TC-009-005 one status refresh coalesces unchanged receive readiness',{time
   await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,5,'missing status identity bypasses dedup instead of becoming a global shared key');
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-ready',{detail:socket})));await page.waitForTimeout(100);assert.equal(reads.length,5,'invalid context did not poison the prior admitted valid context');
 });
+
+// Proves: CL-022-03, CL-022-05; TC-022-009. Actual TLS server/browser. COM250 is an
+// absent exact endpoint (read-only name resolution fails; no UART is opened), so the
+// station reports a truthful retry reason and never a fresh frequency.
+test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT buttons and shows retry reason',{timeout:60000},async t=>{
+  const {origin,token,request}=await station(t,{mode:'cat',endpoint:'COM250',ptt:'disabled'}),{chromium}=require('playwright');
+  const browser=await chromium.launch();t.after(()=>browser.close());
+  const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const manual=[];page.on('request',r=>{if(/\/radio\/(connect|disconnect)$/.test(new URL(r.url()).pathname))manual.push(r.url());});
+  await loginPage(page,origin,token);
+  assert.equal(await page.locator('#radio-connect, #radio-disconnect, #radio-receive-only').count(),0,'normal UI has no Connect/Disconnect CAT controls');
+  await page.locator('#cat-status[data-condition="commissioningRequired"]').waitFor({timeout:20000});
+  const button=page.locator('#cat-confirm-button');
+  await button.waitFor({state:'visible'});assert.equal(await button.textContent(),'Confirm receive-only setup');
+  assert.equal(await button.isDisabled(),true,'explicit acknowledgement is required');
+  assert.match(await page.locator('#cat-confirm-summary').textContent(),/endpoint COM250 · model Icom IC-7300 \(CI-V\) · PTT disabled · setup revision 1/);
+  const before=(await request('/receive/selection')).body;assert.equal(before.radio.connection_generation,0,'no CAT attempt before confirmation');
+  await page.locator('#cat-confirm-ack').check();await button.click();
+  await page.locator('#cat-confirm-result').filter({hasText:'Receive-only setup confirmed'}).waitFor();
+  await page.locator('#cat-confirm').waitFor({state:'hidden',timeout:20000});
+  await page.locator('#cat-status[data-condition="retryWaiting"]').waitFor({timeout:30000});
+  assert.match(await page.locator('#cat-status').textContent(),/^CAT unavailable · [a-z_]+ · automatic retry in [1-8] s$/);
+  const s=(await request('/receive/selection')).body;assert.ok(s.radio.connection_generation>=1,'the station attempted automatically');
+  assert.equal(s.radio.observations.frequency.confirmed,false);
+  assert.equal(await page.locator('#op-dial').getAttribute('data-fresh'),'false');
+  assert.match(await page.locator('#operating-radio').textContent(),/Actual rig frequency unknown/);
+  assert.deepEqual(manual,[],'the browser never calls the deprecated manual lifecycle routes');
+  assert.deepEqual(errors,[]);
+});
 }else{
   assert.equal(process.env.WSTX_SELECTION_FIXTURE,'1','unknown fixture mode is not a skipped positive');
   liveSelectionFixture();
@@ -336,10 +368,10 @@ function selectionNetworkSummary(transfers,start,end){
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'361ed4af3ac7fecfc24cfaee4ee75f77e1660fc1002ddccfa902b7ad01c5f712','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'425caa8a62a1c0421c47f707f5b366a72e02d09d2a39ca9a5da9d4d58e946b6e','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:693,timerLine:772};
+  return {sha256,valid,fetchLine:694,timerLine:759};
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
@@ -353,7 +385,8 @@ function cadenceCaller(initiator,origin,mapping){
   assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
-  const explicitLines=[710,724,738,744,755,757,765,774];
+  // Reviewed for CL-022-03: Connect/Disconnect CAT callers removed; catSync never reads selection.
+  const explicitLines=[709,723,737,743,744,752,761];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';

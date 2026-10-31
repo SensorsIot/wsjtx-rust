@@ -1280,7 +1280,8 @@ required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxe
              replay. Stop/Halt clears receive/RF tokens and pending resume; background
              CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
              zero native open/query/set/PTT. Confirmation itself has no native effect.
-             This target does not claim current source has a reconnect loop. */
+             Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
+             failed-close quarantine lasts until station restart. */
         in scope : WstxProfiles::SelectedRadioAuthorizationScope;
         in commissioning : WstxProfiles::RadioCommissioningRecord;
         out current : AutomaticCatStatus;

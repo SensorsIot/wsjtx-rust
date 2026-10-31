@@ -1969,3 +1969,267 @@ pub(crate) async fn commission_zero_native_io_case() {
         operation
     );
 }
+
+// Proves: CL-022-03, CL-022-04, CL-022-05; TC-022-009. Real grant/commissioning HTTP
+// flow with the independent scripted peer: automatic read-only CAT runs only under
+// a matching unrevoked grant plus durable commissioning, and is cancelled by
+// commissioning invalidation and last-grant revocation.
+mod automatic_cat {
+    use super::*;
+    use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};
+
+    async fn wait_state(f: &HttpFixture, done: impl Fn(&Value) -> bool) -> Value {
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            authorization_http::cat_tick(&state, Instant::now());
+            let view = state.recording.radio_view();
+            if done(&view) {
+                return view;
+            }
+            assert!(Instant::now() < deadline, "radio did not settle: {view}");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+    async fn put_control(f: &HttpFixture, cookie: &str, endpoint: &str) -> HttpReply {
+        let (id, revision, mut settings) = {
+            let store = f.app().profile.as_ref().unwrap().store.lock().unwrap();
+            (
+                store.document.profile_id.clone(),
+                store.document.revision,
+                store.document.settings(),
+            )
+        };
+        settings.control = profile::Control {
+            mode: "cat".into(),
+            endpoint: Some(endpoint.into()),
+            ptt: "disabled".into(),
+        };
+        f.request(
+            axum::http::Method::PUT,
+            "/profile",
+            serde_json::to_vec(&json!({"profile_id":id,"revision":revision,"settings":settings}))
+                .unwrap(),
+            f.headers(Some(cookie)),
+        )
+        .await
+    }
+    async fn status(f: &HttpFixture, cookie: &str) -> Value {
+        let reply = f
+            .post(
+                "/authorization/v1/status",
+                json!({"version":1}),
+                Some(cookie),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK);
+        assert!(reply.body.len() <= 1024);
+        reply.json()
+    }
+    async fn commission(f: &HttpFixture, cookie: &str, scope: &Value) {
+        let reply = f
+            .post(
+                "/authorization/v1/commission",
+                json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":scope,"receive_only_confirmed":true}),
+                Some(cookie),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK);
+    }
+    fn ticks(f: &HttpFixture, n: usize) {
+        let state = f.app().profile.as_ref().unwrap();
+        for _ in 0..n {
+            authorization_http::cat_tick(state, Instant::now());
+        }
+    }
+
+    #[tokio::test]
+    async fn grant_and_commissioning_gate_every_native_effect_and_revocation_releases() {
+        let f = HttpFixture::new("https://localhost:8080");
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let peer = attach_peer(&state.recording, Device::Present);
+        ticks(&f, 20);
+        let g = f.authorize().await;
+        assert_eq!(
+            put_control(&f, &g.cookie, ENDPOINT).await.status,
+            StatusCode::OK
+        );
+        // No commissioning yet: zero native open/query/setter/PTT.
+        let cookie = f.renew(&g).await;
+        ticks(&f, 20);
+        let before = status(&f, &cookie).await;
+        assert_eq!(before["condition"], "commissioningRequired");
+        assert_eq!(before["commissioned"], false);
+        assert_eq!(peer.lock().unwrap().opens, 0);
+        assert!(peer.lock().unwrap().writes.is_empty());
+        // Confirmation itself has no native effect; the next tick attempts once.
+        commission(&f, &cookie, &before["scope"]).await;
+        assert_eq!(peer.lock().unwrap().opens, 0);
+        let ready = wait_state(&f, |v| v["state"] == "ready").await;
+        assert_eq!(ready["observation"]["frequency_hz"], 7_074_000);
+        let current = status(&f, &cookie).await;
+        assert_eq!(current["condition"], "ready");
+        assert_eq!(current["commissioned"], true);
+        assert_eq!(current["error"], Value::Null);
+        // Session, CAT and audio/decoder remain separate lanes.
+        assert_eq!(current["receive_state"]["audio"], "closed");
+        assert_eq!(current["receive_state"]["decoder"], Value::Null);
+        assert_eq!(peer.lock().unwrap().opens, 1);
+        // Review F1: a non-safety edit is a new key; before the next tick the status
+        // reports waiting, never the previous connection's ready/fresh readback.
+        let (id, revision, mut settings) = {
+            let store = state.store.lock().unwrap();
+            (
+                store.document.profile_id.clone(),
+                store.document.revision,
+                store.document.settings(),
+            )
+        };
+        settings.display_name = "Renamed station".into();
+        let reply = f
+            .request(
+                axum::http::Method::PUT,
+                "/profile",
+                serde_json::to_vec(
+                    &json!({"profile_id":id,"revision":revision,"settings":settings}),
+                )
+                .unwrap(),
+                f.headers(Some(&cookie)),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK);
+        let renamed = status(&f, &cookie).await;
+        assert_eq!(renamed["condition"], "waitingForDevice");
+        assert_eq!(renamed["retry_after_ms"], Value::Null);
+        wait_state(&f, |v| v["state"] == "ready").await;
+        assert_eq!(peer.lock().unwrap().opens, 2);
+        // Endpoint edit advances the safety revision and invalidates commissioning:
+        // the lifecycle cancels and releases; no reopen until re-confirmation.
+        assert_eq!(
+            put_control(
+                &f,
+                &cookie,
+                "icom7300://COM4?baud=9600&radio=94&controller=E0"
+            )
+            .await
+            .status,
+            StatusCode::OK
+        );
+        wait_state(&f, |v| v["state"] == "closed").await;
+        assert!(peer.lock().unwrap().closes >= 1);
+        ticks(&f, 40);
+        assert_eq!(peer.lock().unwrap().opens, 2);
+        let cookie = f.renew(&g).await;
+        let changed = status(&f, &cookie).await;
+        assert_eq!(changed["condition"], "commissioningRequired");
+        commission(&f, &cookie, &changed["scope"]).await;
+        wait_state(&f, |v| v["state"] == "ready").await;
+        assert_eq!(peer.lock().unwrap().opens, 3);
+        // Last-grant revocation (logout) cancels the lifecycle and releases the owner.
+        let reply = f
+            .post(
+                "/authorization/v1/revoke",
+                json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":changed["scope"],"all_for_radio":false}),
+                Some(&cookie),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK);
+        wait_state(&f, |v| v["state"] == "closed").await;
+        let writes = peer.lock().unwrap().writes.len();
+        ticks(&f, 40);
+        assert_eq!(peer.lock().unwrap().opens, 3);
+        assert_eq!(peer.lock().unwrap().writes.len(), writes);
+        let queries: [&[u8]; 5] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f]];
+        for w in &peer.lock().unwrap().writes {
+            assert!(
+                queries.contains(&&w[4..w.len() - 1]),
+                "non-query frame {w:02x?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn status_reports_retry_reason_and_never_fresh_frequency_while_unavailable() {
+        let f = HttpFixture::new("https://localhost:8080");
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let peer = attach_peer(&state.recording, Device::Absent);
+        let g = f.authorize().await;
+        assert_eq!(
+            put_control(&f, &g.cookie, ENDPOINT).await.status,
+            StatusCode::OK
+        );
+        let cookie = f.renew(&g).await;
+        let scope = status(&f, &cookie).await["scope"].clone();
+        commission(&f, &cookie, &scope).await;
+        wait_state(&f, |v| v["state"] == "unavailable").await;
+        ticks(&f, 1);
+        let value = status(&f, &cookie).await;
+        assert_eq!(value["condition"], "retryWaiting");
+        assert_eq!(value["error"], "radio_unavailable");
+        let retry = value["retry_after_ms"].as_u64().unwrap();
+        assert!((1..=1000).contains(&retry), "{retry}");
+        let selection = state.recording.selection_snapshot(true).unwrap();
+        assert_eq!(selection["radio"]["state"], "unavailable");
+        assert_eq!(
+            selection["radio"]["observations"]["frequency"]["confirmed"],
+            false
+        );
+        assert_eq!(peer.lock().unwrap().opens, 1);
+    }
+
+    #[tokio::test]
+    async fn deprecated_connect_and_disconnect_validate_then_refuse_with_zero_io() {
+        let f = HttpFixture::new("https://localhost:8080");
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let peer = attach_peer(&state.recording, Device::Present);
+        let g = f.authorize().await;
+        assert_eq!(
+            put_control(&f, &g.cookie, ENDPOINT).await.status,
+            StatusCode::OK
+        );
+        let cookie = f.renew(&g).await;
+        let view = state.recording.radio_view();
+        let (profile_id, boot_id) = (view["profile_id"].clone(), view["boot_id"].clone());
+        let revision = state.store.lock().unwrap().document.revision;
+        for verified in [true, false] {
+            let reply = f
+                .post(
+                    "/radio/connect",
+                    json!({"v":1,"profile_id":profile_id,"boot_id":boot_id,"profile_revision":revision,"receive_only_verified":verified}),
+                    Some(&cookie),
+                )
+                .await;
+            assert_eq!(reply.status, StatusCode::CONFLICT);
+            assert_eq!(reply.json()["error"]["code"], "automatic_lifecycle");
+        }
+        let reply = f
+            .post(
+                "/radio/disconnect",
+                json!({"v":1,"profile_id":profile_id,"boot_id":boot_id,"connection_generation":0}),
+                Some(&cookie),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::CONFLICT);
+        assert_eq!(reply.json()["error"]["code"], "automatic_lifecycle");
+        // Strict validation is unchanged: extra keys and wrong identity refuse first.
+        let reply = f
+            .post(
+                "/radio/connect",
+                json!({"v":1,"profile_id":profile_id,"boot_id":boot_id,"profile_revision":revision,"receive_only_verified":true,"extra":1}),
+                Some(&cookie),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+        let reply = f
+            .post(
+                "/radio/disconnect",
+                json!({"v":1,"profile_id":profile::new_uuid().unwrap(),"boot_id":boot_id,"connection_generation":0}),
+                Some(&cookie),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN);
+        assert_eq!(state.recording.radio_view(), view, "no owner created");
+        let p = peer.lock().unwrap();
+        assert_eq!((p.opens, p.writes.len(), p.closes), (0, 0, 0));
+    }
+}
