@@ -140,13 +140,23 @@ login.addEventListener('submit', async event => {
   }
   finally {secret = null;}
 });
+const logoutButton = document.querySelector('#logout'), forgetButton = document.querySelector('#forget');
 addEventListener('station-authorization', event => {
-  if (!authorization || event.detail.epoch !== authorization.snapshot().epoch || event.detail.ready) return;
+  if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
+  logoutButton.hidden = !event.detail.ready;
+  forgetButton.hidden = !['retained-rejected', 'credential-invalid'].includes(event.detail.authorizationCondition);
+  if (event.detail.ready) return;
   if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail);
   else {stale(); connection.textContent = 'Authorization unavailable · station data stale';}
   if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
   clearTimeout(timer); timer = setTimeout(connect, 4000);
 });
+for (const [button, action] of [[logoutButton, 'logout'], [forgetButton, 'forget']]) {
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {await authorization[action]();} catch {} finally {button.disabled = false;}
+  });
+}
 connect();
 
 function formSettings() {

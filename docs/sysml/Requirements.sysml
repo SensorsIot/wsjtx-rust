@@ -905,7 +905,7 @@ package WstxRequirements {
              query other stations throughout. Run local and cross-station negatives with the same
              four-server fixture. Exercise namespaced transport-cookie expiry and automatic retained-key proof recovery without clearing others; ordinary restart does not revoke grants.
 
-             **Target amendment:** Existing executable companions prove the delivered isolation subset only; new persistent proof/revocation cases TC-022-006/007 remain planned.
+             **Delivered amendment:** the companion converts rotation to the actual revoke-all receipt then restart with a new token; the rejected browser makes no automatic retry, uses Forget to re-enroll with the new token, and Log out deletes its key/cookie while other profiles stay usable. Retained proofs share the 10/60 budget (enrollment 6, retained proof 3 admissions).
 
              **Oracle/outcome:** Exactly one expected namespaced session per logged-in UUID exists
              with the 12.1 attributes and no Domain attribute. All independent sessions survive other
@@ -1576,17 +1576,22 @@ package WstxRequirements {
     dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
     dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
 
-    doc /* Issue22 target contract, not delivered behavior. CL-022-01..05 and
-         TC-022-006..010 are target/planned. Existing99 identities retain meaning and
-         numbering; the changed authentication expectations of TC-022-004 are partial
-         until its companions implement this contract. Independent exact meaning review,
-         supported-browser primitive evidence and source-scope admission precede coding.
-         No parser, model declaration or issue checkpoint proves execution/acceptance. */
+    doc /* Issue22 contract. Delivered (partial): CL-022-01 persistent browser key,
+         enrollment, challenge/proof transport, retained-key recovery and the
+         browser Log out / forget-rejected-credential actions; CL-022-02 durable
+         private record, revocation (logout, revoke-all), dispatch fencing of every
+         operating HTTP/WS effect under the authority lock, safety-revision
+         advance and the commissioning server API (POST /authorization/v1/commission
+         and the status condition). Still target: CL-022-02 explicit radio identity
+         Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
+         CL-022-03 commissioning UI and automatic read-only CAT lifecycle, CL-022-04
+         cadence and CL-022-05 health presentation; TC-022-008..010 stay planned.
+         Existing99 identities retain meaning and numbering. No parser, model
+         declaration or issue checkpoint proves execution/acceptance. */
     requirement 'CL-022-01' {
         doc /* Initial bootstrap authorization enrolls one browser proof key for an
              exact station/profile/radio tuple. Grant validity has no time expiry.
-             Target credential mechanism; independent meaning/security review is
-             required before implementation: browser creates an ECDSA P-256 signing key through WebCrypto;
+             Delivered credential mechanism: browser creates an ECDSA P-256 signing key through WebCrypto;
              private CryptoKey extractable=false, usages=sign only, persisted solely
              in origin-scoped IndexedDB. Public verifier and random grant identifier
              are enrolled over TLS after existing raw-token authorization succeeds.
@@ -1631,8 +1636,18 @@ package WstxRequirements {
              challenge saturation fails closed429, new enrollment beyond grant cap
              fails explicitly and never expires/evicts an existing unrevoked grant.
              Expired/consumed challenges and expired transport handles are removed;
-             no background elapsed-time deletion of active grant verifiers. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             no background elapsed-time deletion of active grant verifiers.
+             Rejected or lost credentials are terminal for automatic recovery: a
+             retained-rejected, invalid or missing credential is never retried
+             without an operator action, so it cannot drain the shared10/60
+             admission budget; transient failures back off exponentially to60s.
+             Browser Log out revokes this grant (revoke all_for_radio=false), then
+             deletes the local key after the committed receipt; the server clears
+             the transport cookie. A confirmed rejected/invalid retained credential
+             offers 'Forget this browser credential and authorize again', which
+             deletes only the local key and shows the bootstrap token form. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "client/authorization.js; client/app.js; server/src/authorization.rs; server/src/authorization_http.rs";
     }
     dependency CL_022_01_to_FR_019 from 'CL-022-01' to 'FR-019';
     dependency CL_022_01_to_FR_021 from 'CL-022-01' to 'FR-021';
@@ -1702,8 +1717,12 @@ package WstxRequirements {
              Lost acknowledgement uses idempotent operation ID and read-only receipt
              reconciliation; no blind new enrollment or mutation replay. If response
              reconciliation is unavailable, browser stays unauthorized/unknown until
-             resolved. Server restart reloads only committed state. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             resolved. Server restart reloads only committed state.
+             Delivered: durable record, logout/revoke-all, dispatch rechecks of every
+             operating HTTP route and WS upgrade, safety-revision advance and the
+             commissioning server API. Explicit Add/Replace/Remove remains target. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
     }
     dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
     dependency CL_022_02_to_FR_021 from 'CL-022-02' to 'FR-021';
@@ -1837,8 +1856,12 @@ package WstxRequirements {
              proof establishes readiness. Contrast pre-commit failure: no retained
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
-             Planned companions: tests/profiles.test.cjs and tests/communication.test.cjs; no executable binding is claimed yet. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Automated companions: tests/profiles.test.cjs TC-022-006 cases and
+             server/src/auth_tests.rs, including plaintext runtime-token operating
+             access. Radio identity Add/Replace and injected-time restart subsets
+             remain pending. */
+        attribute automation : AutomationState = AutomationState::partial;
+        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
         objective {
             verify 'CL-022-01';
             verify 'CL-022-02';
@@ -1874,8 +1897,13 @@ package WstxRequirements {
              failure/restart and verify documented last-committed-state limitation and
              failclosed current process. Cap64 grants without evicting active grants;
              delete verifier and replay old proof/cookie: rejected, no tombstone growth.
-             Planned companions: tests/profiles.test.cjs, server/src/auth_tests.rs and station-authority unit tests; no executable binding is claimed yet. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Automated: server/src/auth_tests.rs (logout/revoke fencing of every
+             operating HTTP route and WS upgrade, foreign grant refusal, commission
+             receipts) and station-authority unit tests; tests/profiles.test.cjs
+             TC-022-004 covers browser logout and revoke-all. Radio identity
+             add/replace/remove cases remain pending with that target slice. */
+        attribute automation : AutomationState = AutomationState::partial;
+        attribute executable : String = "server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
             verify 'CL-022-02';
         }

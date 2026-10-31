@@ -2,7 +2,9 @@
 // This owner stores only the nonextractable signing key and public operation metadata.
 window.stationAuthorization = (() => {
   const encoder = new TextEncoder(), database = 'wstx-authorization-v1';
-  let epoch = 0, state = 'unavailable', scope = null, recovery = null, retryAt = 0, authorizing = false, lastFailure = null;
+  let epoch = 0, state = 'unavailable', scope = null, recovery = null, retryAt = 0, failures = 0, authorizing = false, lastFailure = null;
+  // Only an operator action (token login, logout or forget) leaves these conditions.
+  const terminal = ['retained-rejected', 'credential-invalid', 'credential-missing'];
   const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
   const encoded = bytes => btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
   function decoded(value, size) {
@@ -166,14 +168,20 @@ window.stationAuthorization = (() => {
         const credential = validateCredential(record);
         condition = credential.pending_enrollment ? 'enrollment-pending' : 'retained-transient';
         const currentScope = await renew(credential, AbortSignal.timeout(10000), current);
-        if (current === epoch) {lastFailure = null; publish('ready', currentScope);}
+        if (current === epoch) {lastFailure = null; retryAt = 0; failures = 0; publish('ready', currentScope);}
         return snapshot();
       } catch (error) {
         if (condition === 'credential-storage-unavailable' && error?.authorizationCondition === 'credential-missing') condition = 'credential-missing';
         if (condition === 'retained-transient' && ([401, 403].includes(error?.status) || error?.authorizationCondition === 'retained-rejected')) condition = 'retained-rejected';
         const failure = new Error('Station authorization unavailable'); failure.authorizationCondition = condition;
         if ([401, 403, 429, 503].includes(error?.status)) failure.status = error?.status;
-        if (current === epoch) {lastFailure = {condition, status: failure.status}; retryAt = Date.now() + (failure.status === 429 ? 60000 : 4000); publish('unavailable');}
+        if (current === epoch) {
+          // Every attempt spends the station-wide admission budget: no automatic retry of a
+          // terminal condition, and transient failures back off exponentially to 60 s.
+          lastFailure = {condition, status: failure.status};
+          retryAt = terminal.includes(condition) ? Infinity : Date.now() + (failure.status === 429 ? 60000 : Math.min(60000, 4000 * 2 ** failures++));
+          publish('unavailable');
+        }
         throw failure;
       } finally {recovery = null;}
     })();
@@ -187,7 +195,7 @@ window.stationAuthorization = (() => {
   }
   async function bootstrap(secret) {
     if (recovery || authorizing) throw new Error('Authorization recovery in progress');
-    authorizing = true; lastFailure = null;
+    authorizing = true; lastFailure = null; retryAt = 0; failures = 0;
     const current = ++epoch; publish('authorizing');
     let condition = null;
     try {
@@ -236,6 +244,46 @@ window.stationAuthorization = (() => {
     }
     finally {authorizing = false; secret = null;}
   }
+  async function erase() {
+    let db;
+    try {db = await open(false);}
+    catch (error) {if (error?.authorizationCondition === 'credential-missing') return; throw error;}
+    try {
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction('credential', 'readwrite');
+        transaction.objectStore('credential').delete('current');
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = transaction.onerror = () => reject(new Error('Authorization storage failed'));
+      });
+    } finally {db.close();}
+  }
+  function forgotten() {
+    lastFailure = {condition: 'credential-missing', status: null}; retryAt = Infinity; failures = 0;
+    ++epoch; publish('unavailable', null);
+  }
+  // Logout revokes only this browser's grant; the key is deleted only after the receipt.
+  async function logout() {
+    if (recovery || authorizing || state !== 'ready') throw new Error('Station authorization not ready');
+    authorizing = true; const current = ++epoch, currentScope = scope; publish('authorizing');
+    try {
+      const credential = validateCredential(await stored()), operationId = crypto.randomUUID();
+      const receipt = await raw('revoke', {version: 1, operation_id: operationId, scope: currentScope, all_for_radio: false}, AbortSignal.timeout(10000));
+      if (receipt.version !== 1 || receipt.operation_id !== operationId || receipt.grant_id !== credential.grant_id ||
+          receipt.outcome !== 'committed' || !sameScope(receipt.scope, currentScope)) throw new Error('Logout outcome unknown');
+      await erase();
+    } catch (error) {
+      if (current === epoch) {lastFailure = null; retryAt = 0; publish('unavailable');}
+      throw error;
+    } finally {authorizing = false;}
+    forgotten();
+    return snapshot();
+  }
+  // Recovery from a confirmed rejected or invalid retained credential: forget it locally.
+  async function forget() {
+    if (recovery || authorizing || !['retained-rejected', 'credential-invalid'].includes(lastFailure?.condition)) throw new Error('No rejected credential to forget');
+    await erase(); forgotten();
+    return snapshot();
+  }
   // No await lies between this check and fetch: mutations never wait for proof and
   // are never replayed after an ambiguous response. Callers keep their own context fences.
   function protectedFetch(path, options = {}) {
@@ -247,5 +295,5 @@ window.stationAuthorization = (() => {
       return response;
     });
   }
-  return Object.freeze({snapshot, ensureReady, bootstrap, fetch: protectedFetch});
+  return Object.freeze({snapshot, ensureReady, bootstrap, logout, forget, fetch: protectedFetch});
 })();

@@ -489,7 +489,7 @@ test('TC-022-006: actual browser reports corrupt and erased retained credentials
       report.cookie_unchanged = (await context.cookies(p.origin)).some(value => value.name === cookieName && value.value === cookie);
       report.files_unchanged = JSON.stringify(await hashes()) === JSON.stringify(beforeFiles); report.server_cookie_after = await profileControl();
       await Promise.all(assetWork); report.assets_complete = [1, 2].every(generation => [1, 2].every(code => assets.filter(v => v[0] === generation && v[1] === code && v[2] === 200).length === 1));
-      report.qualified = report.setup_six && report.setup_selection && report.cookie_flags && report.server_cookie_before && report.fault_committed && report.old_page_closed && view.installed && !view.observer_error && view.frozen && view.start_valid && view.collected_at_ms >= 10000 && view.terminal?.at_ms <= 10000 && view.opens >= 2 && view.reads >= 2 && !view.overflow && !report.asset_error && report.assets_complete;
+      report.qualified = report.setup_six && report.setup_selection && report.cookie_flags && report.server_cookie_before && report.fault_committed && report.old_page_closed && view.installed && !view.observer_error && view.frozen && view.start_valid && view.collected_at_ms >= 10000 && view.terminal?.at_ms <= 10000 && view.opens === 1 && view.reads === 1 /* terminal: no automatic retry */ && !view.overflow && !report.asset_error && report.assets_complete;
       assert.equal(report.qualified, true, 'real storage fault and complete observation must qualify');
       assert.equal(report.cookie_unchanged, true, 'local credential failure does not silently replace its retained transport'); assert.equal(report.server_cookie_after, true, 'local credential failure does not revoke the retained server grant');
       assert.equal(view.terminal.login_hidden, mode === 1, 'present-invalid credentials cannot offer token replacement; missing credentials permit explicit authorization');
@@ -671,7 +671,7 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     let startupPhase = true;
     let bootstrapCalls = 0, readinessCalls = 0, networkCalls = 0, closeCalls = 0, scheduled = 0, cleared = 0, staleEvents = 0, timerId = 0;
     const delays = [];
-    for (const id of ['#connection', '#version', '#radio', '#login', '#refresh', '#settings', '#settings-result', '#settings-reload', '#token', '#login-error']) {
+    for (const id of ['#connection', '#version', '#radio', '#login', '#refresh', '#settings', '#settings-result', '#settings-reload', '#token', '#login-error', '#logout', '#forget']) {
       nodes.set(id, {textContent: '', dataset: {}, hidden: false, disabled: false, value: '', elements: [],
         addEventListener(type, handler) {handlers.set(id + ':' + type, handler);}});
     }
@@ -1696,32 +1696,68 @@ async function upgradeStatus(p, cookie, origin = p.origin) {
     ws.on('open', () => finish(101));
   });
 }
-// Proves: FR-019, FR-021, FR-022; CL-005-03/04; TC-022-004.
-test('TC-022-004: same-host four-port TLS cookies, reconnect, negatives and rotation', {timeout: 60000}, async t => {
+async function storedCredential(page) {
+  return page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {const request = indexedDB.open('wstx-authorization-v1', 1); request.onsuccess = () => resolve(request.result); request.onerror = reject;});
+    try {return await new Promise((resolve, reject) => {const request = db.transaction('credential').objectStore('credential').get('current'); request.onsuccess = () => resolve(request.result !== undefined); request.onerror = reject;});}
+    finally {db.close();}
+  });
+}
+// Proves: FR-019, FR-021, FR-022; CL-005-03/04; CL-022-01/02; TC-022-004.
+test('TC-022-004: same-host four-port TLS cookies, reconnect, negatives and rotation', {timeout: 90000}, async t => {
   const {profiles, apps} = await fixture(t, true); const {context, pages} = await browserWindows(t, profiles);
   for (let i = 0; i < 4; i++) {const p = profiles[i]; assert.equal((await request(p.origin)).status, 401); assert.equal((await request(p.origin, 'PUT', edit(i + 1, 0))).status, 401); assert.equal(await upgradeStatus(p), 401); if (i === 0) {await pages[i].route('**/session', route => route.abort()); await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await pages[i].locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor(); assert.equal(await pages[i].locator('#token').inputValue(), ''); await pages[i].unroute('**/session');} await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await connected(pages[i]);}
-  for (let i = 3; i >= 0; i--) {const loggedIn = await login(profiles[i]); assert.equal(loggedIn.status, 204); assert.equal(/(?:^|;)\s*Domain=/i.test(loggedIn.setCookie), false); await pages[i].reload(); await connected(pages[i]); assert.equal(await pages[i].evaluate(async () => (await fetch('/profile')).status), 200);}
+  // Each browser enrollment admits 6 of the shared 10/60 budget (session, bootstrap-scope,
+  // enroll, challenge, proof, status); a retained proof admits 3. Retained authorization is
+  // repeated without a token: profile 2 by reload here, profile 1 by transport expiry below.
+  await pages[1].reload(); await connected(pages[1]); assert.equal(await pages[1].evaluate(async () => (await fetch('/profile')).status), 200);
   const cookies = await context.cookies(); assert.equal(cookies.filter(c => c.name.startsWith('wstx_session_')).length, 4);
-  for (const c of cookies) {assert.equal(c.secure, true); assert.equal(c.httpOnly, true); assert.equal(c.sameSite, 'Strict'); assert.equal(c.path, '/'); assert.equal(c.domain, 'localhost'); assert.ok(c.expires > Date.now() / 1000 + 28700);}
-  const a = profiles[0], b = profiles[1], ca = cookies.find(c => c.name.endsWith(uuid(1))), cb = cookies.find(c => c.name.endsWith(uuid(2)));
+  for (const c of cookies) {assert.equal(c.secure, true); if (c.name.startsWith("wstx_bootstrap_")) continue; assert.equal(c.httpOnly, true); assert.equal(c.sameSite, 'Strict'); assert.equal(c.path, '/'); assert.equal(c.domain, 'localhost'); assert.ok(c.expires > Date.now() / 1000 + 28700);}
+  const a = profiles[0], b = profiles[1], ca = cookies.find(c => c.name === 'wstx_session_' + uuid(1)), cb = cookies.find(c => c.name === 'wstx_session_' + uuid(2));
   assert.equal((await login(b, a.env.WSTX_TOKEN)).status, 401);
   for (const bad of [`${ca.name}=${ca.value}`, `${cb.name}=${ca.value}`, `wstx_session=${b.env.WSTX_TOKEN}`, `${cb.name}=${cb.value}; ${cb.name}=${cb.value}`]) {assert.equal(await upgradeStatus(b, bad), 401); assert.equal((await request(b.origin, 'GET', undefined, {Cookie: bad})).status, 401); assert.equal((await request(b.origin, 'PUT', edit(2, 0), {Cookie: bad})).status, 401);}
   for (const origin of [a.origin, 'https://unrelated.invalid', null]) {assert.equal((await login(b, b.env.WSTX_TOKEN, origin)).status, 403); assert.equal((await request(b.origin, 'PUT', edit(2, 0), {Cookie: `${cb.name}=${cb.value}`, Origin: origin || ''})).status, 403); assert.equal(await upgradeStatus(b, `${cb.name}=${cb.value}`, origin || ''), 403);}
   assert.equal((await request(b.origin, 'PUT', edit(2, 0, settings(2), uuid(1)), {Cookie: `${cb.name}=${cb.value}`})).status, 403);
   const expired = {...ca, expires: Math.floor(Date.now() / 1000) - 10}; await context.addCookies([expired]);
-  await pages[0].reload(); await pages[0].locator('#token').fill(a.env.WSTX_TOKEN); await pages[0].locator('#login button').click(); await connected(pages[0]);
+  // An expired transport recovers by retained-key proof; the token form stays hidden.
+  await pages[0].reload(); await connected(pages[0]); assert.equal(await pages[0].locator('#login').isHidden(), true);
   assert.equal((await context.cookies()).filter(c => c.name.startsWith('wstx_session_')).length, 4);
   const c = profiles[2], d = profiles[3];
   assert.equal((await login(c, 'X'.repeat(1024))).status, 401); assert.equal((await login(c, 'X'.repeat(1025))).status, 413);
-  for (let i = 0; i < 8; i++) assert.equal((await login(d, 'W'.repeat(32))).status, 401);
-  assert.equal((await login(d)).status, 429); assert.equal((await login(c)).status, 204, 'rate budgets belong to their profiles');
-  const own = cookies.find(cookie => cookie.name.endsWith(uuid(3)));
+  for (let i = 0; i < 4; i++) assert.equal((await login(d, 'W'.repeat(32))).status, 401);
+  assert.equal((await login(d)).status, 429, '6 enrollment + 4 login admissions, 11th refused');
+  const own204 = await login(c); assert.equal(own204.status, 204, 'rate budgets belong to their profiles'); assert.equal(/(?:^|;)\s*Domain=/i.test(own204.setCookie), false);
+  const own = cookies.find(cookie => cookie.name === 'wstx_session_' + uuid(3));
   const ws = new WebSocket(c.origin.replace('https', 'wss') + '/ws', 'wstx.v1', {origin: c.origin, rejectUnauthorized: false, headers: {Cookie: `${own.name}=${own.value}`}}); ws.on('error', () => {}); await once(ws, 'open');
   const status = receive(ws); ws.send('{"v":1,"type":"station.get","id":17}'); assert.equal((await status).id, 17); ws.terminate();
+  // Bootstrap rotation: actual durable revoke-all commit for profile 1, then a new token.
+  const current = (await context.cookies()).find(cookie => cookie.name === 'wstx_session_' + uuid(1));
+  const revoked = await pages[0].evaluate(async () => {
+    const operation_id = crypto.randomUUID(), scope = window.stationAuthorization.snapshot().scope;
+    const response = await fetch('/authorization/v1/revoke', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({version: 1, operation_id, scope, all_for_radio: true})});
+    return {status: response.status, body: await response.json(), operation_id};
+  });
+  assert.equal(revoked.status, 200); assert.equal(revoked.body.outcome, 'committed'); assert.equal(revoked.body.operation_id, revoked.operation_id);
+  assert.equal(await upgradeStatus(a, `${current.name}=${current.value}`), 401);
   const oldToken = a.env.WSTX_TOKEN;
   await a.app.close(); a.env.WSTX_TOKEN = crypto.randomBytes(32).toString('hex'); a.app = await start(a, a.env); apps.push(a.app);
-  assert.equal(await upgradeStatus(a, `${ca.name}=${ca.value}`), 401); assert.equal((await login(a, oldToken)).status, 401); await pages[0].locator('#token').fill(a.env.WSTX_TOKEN); await pages[0].locator('#login button').click(); await connected(pages[0]);
-  for (let i = 1; i < 4; i++) {await pages[i].reload(); await connected(pages[i]);}
+  assert.equal((await login(a, oldToken)).status, 401);
+  // The rejected retained grant is terminal: no automatic retry spends the shared budget.
+  const admissions = []; pages[0].on('request', r => {if (new URL(r.url()).pathname.startsWith('/authorization/v1/')) admissions.push(r.url());});
+  await pages[0].reload(); await pages[0].locator('#connection').filter({hasText: 'Retained authorization not accepted'}).waitFor();
+  const rejectedAt = admissions.length; await pages[0].waitForTimeout(9000);
+  assert.equal(admissions.length, rejectedAt, 'a rejected retained grant is not retried automatically');
+  assert.equal(await pages[0].locator('#login').isHidden(), true);
+  await pages[0].locator('#forget').click(); await pages[0].locator('#login').waitFor({state: 'visible'});
+  assert.equal(await storedCredential(pages[0]), false, 'forget deletes only the local rejected key');
+  await pages[0].locator('#token').fill(a.env.WSTX_TOKEN); await pages[0].locator('#login button').click(); await connected(pages[0]);
+  // Logout revokes only this browser's profile-1 grant, then deletes its key and cookie.
+  const before = (await context.cookies()).find(cookie => cookie.name === 'wstx_session_' + uuid(1));
+  await pages[0].locator('#logout').click(); await pages[0].locator('#login').waitFor({state: 'visible'});
+  assert.equal(await storedCredential(pages[0]), false);
+  assert.equal((await context.cookies()).some(cookie => cookie.name === 'wstx_session_' + uuid(1)), false);
+  assert.equal((await request(a.origin, 'GET', undefined, {Cookie: `${before.name}=${before.value}`})).status, 401);
+  for (let i = 1; i < 4; i++) {await connected(pages[i]); assert.equal(await pages[i].evaluate(async () => (await fetch('/profile')).status), 200);}
   for (const page of pages) {assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]); assert.equal(await page.locator('#token').inputValue(), '');}
 });
 
