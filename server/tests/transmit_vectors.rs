@@ -101,6 +101,11 @@ fn tc_005_001_families_and_explicit_refusals() {
     assert_eq!(family("CQ PJ4/K1ABC"), Family::Nonstandard);
     assert_eq!(family("TNX BOB 73 GL"), Family::FreeText);
     assert_eq!(family("123456789ABCDEF012"), Family::Telemetry);
+    assert_eq!(family("<K1ABC> <W9XYZ>"), Family::Standard);
+    // A type 1 shape whose round trip fails falls through to free text, as in WSJT-X.
+    for m in ["AB1 W9XYZ", "AB1 W9XYZ -10", "CQ AB1 FN42"] {
+        assert_eq!(family(m), Family::FreeText, "{m}");
+    }
     let refusal = |m: &str| encode(m).unwrap_err();
     assert_eq!(refusal(""), PackError::Empty);
     assert_eq!(refusal("   "), PackError::Empty);
@@ -109,6 +114,15 @@ fn tc_005_001_families_and_explicit_refusals() {
     assert_eq!(refusal("TNX BOB 73 GL!"), PackError::InvalidText);
     assert_eq!(refusal("HÉLLO"), PackError::InvalidText);
     assert_eq!(refusal("CQ <PJ4/K1ABC>"), PackError::InvalidText);
+    // A hashed call next to a slashed call (also inside brackets) is not type 1.
+    for m in [
+        "<PJ4/K1ABC> <W9XYZ>",
+        "<K1ABC> <PJ4/W9XYZ>",
+        "<K1ABC/P> <W9XYZ>",
+        "<PJ4/K1ABC> <W9XYZ> -10",
+    ] {
+        assert_eq!(refusal(m), PackError::InvalidText, "{m}");
+    }
     assert_eq!(refusal("A"), PackError::NotExact);
     assert_eq!(refusal("CAFE"), PackError::NotExact);
     for m in [

@@ -34,6 +34,9 @@ MESSAGES = [
     "HB9BLA 2E0ABC AA00", "4X1AB 9A1A RR99", "A1B K1A -01", "cq  k1abc   fn42",
     "W9XYZ <PJ4/K1ABC> -11", "<PJ4/K1ABC> W9XYZ R-09", "<YW18FIFA> KA1ABC 73",
     "KA1ABC <YW18FIFA> -11", "<YW18FIFA> KA1ABC",
+    "<K1ABC> <W9XYZ>",
+    # Type 1 shapes whose round trip fails: WSJT-X falls through to free text.
+    "AB1 W9XYZ", "AB1 W9XYZ -10", "CQ AB1 FN42",
     # i3=2 (/P) messages.
     "CQ G4ABC/P IO91", "G4ABC/P PA9XYZ JO22", "PA9XYZ G4ABC/P RR73",
     # i3=4 nonstandard calls with 12-bit hashes.
@@ -47,6 +50,7 @@ MESSAGES = [
     "HELLO WORLD 123", "A", "CAFE", "TNX BOB 73 GL!", "K1ABC W9XYZ -51", "CQ <PJ4/K1ABC>",
     "K1ABC FN42 37", "PJ4/K1ABC 37", "K1A K2B 6A WI", "K1ABC W9XYZ R 17B EMA",
     "K1ABC RR73; W9XYZ <KH1/KH7Z> -08", "K1ABC W9XYZ 579 WI", "<PA9XYZ> <G4ABC/P> 570123 IO91NP",
+    "<PJ4/K1ABC> <W9XYZ>", "<K1ABC> <PJ4/W9XYZ>", "<K1ABC/P> <W9XYZ>", "<PJ4/K1ABC> <W9XYZ> -10",
 ]
 # Zero-noise ft8sim references: message, f0, file.
 WAVES = [("CQ K1ABC FN42", 1500.0, "ft8sim-cq-k1abc-fn42-1500.wav"),
