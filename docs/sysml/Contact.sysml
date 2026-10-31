@@ -9,11 +9,17 @@ package WstxContact {
 
          Ownership. WstxArchitecture::QsoAndLogging owns contact identity, the sequence
          state, next-message choice, completion and the per-profile log. It never keys
-         PTT, opens audio or touches a radio: every transmission is a TransmitRequest to
-         WstxArchitecture::TransmitService (#9), which alone holds the station's
-         explicit transmit authority (WstxArchitecture::RadioAuthority), plans the start
-         with WstxTransmit::PlanTransmitStart, keys PTT and reports TransmitOutcome.
-         Halt Tx, Esc and the watchdogs use #9's priority halt operation. The browser
+         PTT, opens audio or touches a radio. It consumes the TARGET #9 slice B consumer
+         contract in WstxTransmit (TransmitArming, TransmitRequest, TransmitOutcome,
+         HaltTransmit, SetTune) over the qso.transmit -> transmit.contacts connection of
+         WstxArchitecture::StationProcess. #9 slice B owns the armed state, halt, PTT
+         and pending-request replacement; TransmitService alone holds the station's
+         explicit transmit authority (WstxArchitecture::RadioAuthority) and plans starts
+         with WstxTransmit::PlanTransmitStart. Until #9 slice B is delivered the live
+         transmit path of CL-010-03 is unavailable and reported transmit_unavailable.
+         A receive-only station (no transmit capability) can still select rows, prepare
+         contacts and log; every transmit action is then refused with
+         transmit_unavailable. Wire contract: ContactWire below. The browser
          renders server-confirmed state and sends requests; it runs no sequence timer,
          modem or QSO state machine (#10 functional description).
 
@@ -122,7 +128,7 @@ package WstxContact {
         attribute nextSlot : TxSlot;
         attribute lastTransmittedText : String[0..1];
         attribute sequenceState : SequenceStateName;
-        attribute enableTx : Boolean;
+        attribute armState : WstxTransmit::ArmState;
         attribute autoSequence : Boolean;
         attribute startUtc : String[0..1];
         attribute endUtc : String[0..1];
@@ -139,8 +145,8 @@ package WstxContact {
              both shown. Reconnect loads this snapshot; it replays no arm, tune,
              next-message or transmit request. Another profile never inherits it.
              autoSequence is initially on (own choice, operator can switch it off;
-             off means received messages never change nextSlot). enableTx is never
-             set by selection, entry, reconnect or startup (#10 CL-010-01,
+             off means received messages never change nextSlot). armState is the
+             read view of #9's TransmitArming, never armed by selection, entry, reconnect or startup (#10 CL-010-01,
              TransmitSafetyPolicy armedOnStartup=false). */
     }
     action def SelectDecodedRow {
@@ -217,12 +223,22 @@ package WstxContact {
         attribute autoSequenceOn : Boolean;
         attribute tx4IsRr73 : Boolean;
         attribute sentTx4 : Boolean;
+        attribute firstSlot : TxSlot;
+        attribute startedWithTx1Skipped : Boolean;
         entry; then idle;
         state idle; state calling; state replying; state report; state rogerReport;
         state rogers; state signoff; state completed; state cancelled;
         transition cq first idle if acceptedEvent == SequenceEvent::startCq then calling;
-        transition answerFromIdle first idle if acceptedEvent == SequenceEvent::prepareReply then replying;
-        transition answerFromCq first calling if acceptedEvent == SequenceEvent::prepareReply then replying;
+        transition prepareIdleTx1 first idle if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx1 then replying;
+        transition prepareIdleTx2 first idle if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx2 then report;
+        transition prepareIdleTx3 first idle if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx3 then rogerReport;
+        transition prepareIdleTx4 first idle if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx4 then rogers;
+        transition prepareIdleTx5 first idle if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx5 then signoff;
+        transition prepareCqTx1 first calling if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx1 then replying;
+        transition prepareCqTx2 first calling if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx2 then report;
+        transition prepareCqTx3 first calling if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx3 then rogerReport;
+        transition prepareCqTx4 first calling if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx4 then rogers;
+        transition prepareCqTx5 first calling if acceptedEvent == SequenceEvent::prepareReply and firstSlot == TxSlot::tx5 then signoff;
         transition gridToReport first replying if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::grid then report;
         transition reportFromReplying first replying if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::signalReport then rogerReport;
         transition reportFromReport first report if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::signalReport then rogerReport;
@@ -236,14 +252,19 @@ package WstxContact {
         transition sentRr73 first rogers if acceptedEvent == SequenceEvent::transmittedSignoff and sentTx4 and tx4IsRr73 then completed;
         transition sent73 first signoff if acceptedEvent == SequenceEvent::transmittedSignoff then completed;
         transition otherStationWhileReplying first replying if acceptedEvent == SequenceEvent::partnerWorksOther and autoSequenceOn then replying;
-        transition cancelCalling first calling if acceptedEvent == SequenceEvent::cancel or acceptedEvent == SequenceEvent::halt then idle;
+        transition otherStationWhileReport first report if acceptedEvent == SequenceEvent::partnerWorksOther and autoSequenceOn and startedWithTx1Skipped then report;
+        transition cancelCalling first calling if acceptedEvent == SequenceEvent::cancel or acceptedEvent == SequenceEvent::halt or acceptedEvent == SequenceEvent::watchdogExpired then idle;
         transition cancelReplying first replying if acceptedEvent == SequenceEvent::cancel then cancelled;
         transition cancelReport first report if acceptedEvent == SequenceEvent::cancel then cancelled;
         transition cancelRogerReport first rogerReport if acceptedEvent == SequenceEvent::cancel then cancelled;
         transition cancelRogers first rogers if acceptedEvent == SequenceEvent::cancel then cancelled;
         transition cancelSignoff first signoff if acceptedEvent == SequenceEvent::cancel then cancelled;
         doc /* Transition table (DMR planProcessMessage ~528-655, planAutoSequence ~724;
-             MW guiUpdate ~8056-8091). Next message per state: calling tx6, replying tx1,
+             MW guiUpdate ~8056-8091). prepareReply is SelectDecodedRow or EnterDxStation;
+             firstSlot is the FirstSlotOnSelection result (tx1 replying, tx2 report incl.
+             a Tx1-skip start, tx3 rogerReport, tx4 rogers, tx5 signoff). A selection
+             while a contact is active first passes ChangeContact (cancel, then idle).
+             Next message per state: calling tx6, replying tx1,
              report tx2, rogerReport tx3, rogers tx4, signoff tx5; completed and
              cancelled select tx6 with Enable Tx off.
              Received messages count only when: Auto Seq on, a standard message whose
@@ -252,7 +273,9 @@ package WstxContact {
              stations never change the sequence (DMR ~517-524) but stay visible in the
              Rx Frequency pane. Classification: grid exchange -> grid; report without
              R -> signalReport; R+report -> rogerReport; RRR or RR73 -> rogers; 73 ->
-             seventyThree.
+             seventyThree. One decoded row (same validated identity tuple) counts once,
+             however often it is delivered or re-read; a re-decode of the same period
+             yielding the same partner message also counts once per period.
              Repeats: no retry counter or timeout (WSJT-X has none for FT8, DMR/MW
              ~8844 fast modes only); the next message is sent again each of my periods
              while Enable Tx is on until a counted message changes the state; the Tx
@@ -270,60 +293,47 @@ package WstxContact {
              sending more (DMR ~601-616). DIFFERENT: WSJT-X then leaves Enable Tx on
              with Tx6 selected; here Enable Tx turns off because Auto Seq never
              starts another contact (#10).
-             partnerWorksOther (DMR ~778-791, 50 Hz rule): in replying with Auto Seq on,
-             the DX call's decoded message to another call within 50 Hz of my
-             txOffsetHz turns Enable Tx off and halts a transmission already started;
-             the state stays replying.
+             partnerWorksOther (DMR planAutoSequence ~775-791, MW ~7427
+             auto_sequence(decodedtext,25,50); 50 Hz rule): in replying, or in report
+             when the contact started with Tx1 skipped, with Auto Seq on, the DX call's
+             decoded message to another call within 50 Hz inclusive of my txOffsetHz
+             disarms and halts a transmission already started; the state is kept.
              halt and watchdogExpired turn Enable Tx off and keep the state (the
              contact can resume after an explicit Enable Tx), except in calling where
              the CQ ends. cancel follows CancelContact. Esc is halt plus cancel. */
     }
-    attribute def TransmitRequest {
-        attribute contactId : String[0..1];
-        attribute requestSequence : Integer;
-        attribute mode : WstxOfflineDecode::Mode;
-        attribute periodStartUtcMs : Integer;
-        attribute messageText : String;
-        attribute txOffsetHz : Integer;
-        doc /* The only way this package causes RF: submitted to
-             WstxArchitecture::TransmitService (#9), which checks the station's
-             explicit transmit authority, profile capability and PTT configuration,
-             plans the start (WstxTransmit::PlanTransmitStart: 500 ms audio delay,
-             late start to 75 %, no catch-up), encodes the text and keys PTT.
-             Submitted only while enableTx is on, for each period of the contact's
-             txParity; requestSequence is unique per contact so a duplicate or replayed
-             request is refused by #9, never transmitted twice. The text is the
-             nextSlot text current when the audio starts; a sequence change before
-             audio start replaces the pending request, after audio start it applies to
-             the following period (Now buttons are not adopted, D7). Rx/Tx offset and
-             report changes likewise apply to the next transmission. Tx offset domain
-             FT8 200..2950 Hz (Ft8WaveformContract tone 0; FT4-NOTE 200..2916). */
-    }
-    enum def TransmitOutcomeKind { enum started; enum completed; enum halted; enum refused; enum failed; }
-    attribute def TransmitOutcome {
-        attribute requestSequence : Integer;
-        attribute kind : TransmitOutcomeKind;
-        attribute reason : String[0..1];
-        doc /* Reported by #9. lastTransmittedText changes only on started; the contact
-             reaches completed only on a completed Tx4 RR73/Tx5 73. refused/failed turn
-             Enable Tx off with the visible reason; a client timeout, colour change or
-             disconnected button press never means RF stopped. */
+    attribute def TransmitSubmission {
+        attribute contactId : String;
+        attribute slot : TxSlot;
+        doc /* How QsoAndLogging uses WstxTransmit::TransmitRequest. While armed it keeps
+             one pending request for the next period of the contact's txParity with the
+             current nextSlot text, txOffsetHz and mode, and a new requestSequence for
+             every change. A sequence, text, report or offset change replaces the pending
+             request through #9 until its audio starts; #9 then refuses audioStarted and
+             the change applies to the following period (Now buttons are not adopted,
+             D7). lastTransmittedText changes only on a started outcome; the contact
+             reaches completed only on a completed Tx4 RR73/Tx5 73 outcome; refused or
+             failed outcomes disarm with the visible refusal. A client timeout, colour
+             change or disconnected press never means RF stopped. Tx offset domain FT8
+             200..2950 Hz (Ft8WaveformContract tone 0; FT4-NOTE 200..2916). */
     }
     action def SetEnableTx {
         in enable : Boolean;
         doc /* Separate explicit operator action (Alt+N where the browser delivers it,
-             HT Alt+N). On: transmissions of the next slot start in the contact's
-             parity periods through TransmitRequest; with no partner, next Tx6 means
+             HT Alt+N). Maps to WstxTransmit::TransmitArming (armed/disarmed is #9
+             state). On: transmissions of the next slot start in the contact's parity
+             periods through TransmitSubmission; with no partner, next Tx6 means
              calling CQ (state calling). Off (disarm): no new request; a transmission
              already started finishes (WSJT-X Enable Tx off lets the current Tx finish). */
     }
     action def HaltTx {
-        doc /* Halt Tx button, Alt+H (HT) and Esc. Sends #9's immediate high-priority
-             halt, stopping a transmission or Tune now, and turns Enable Tx off
+        doc /* Halt Tx button, Alt+H (HT) and Esc. Sends WstxTransmit::HaltTransmit
+             (POST /transmit/halt), stopping a transmission or Tune now and disarming
              (MW on_stopTxButton_clicked). Esc additionally cancels the active contact
-             as MW keyPressEvent ~3700 (abortQSO); D5: Esc halts on every page state
-             and in every focused field, and closes no panel. Shown as halted only
-             after #9 confirms; until then pending/unknown. */
+             as MW keyPressEvent ~3683 (abortQSO); D5: Esc acts on every page state and
+             in every focused field and closes no panel. With no transmit capability
+             (receive-only station) Esc only cancels the contact and sends no halt.
+             Shown as halted only after #9 confirms; until then pending/unknown. */
     }
 
     // ---------------------------------------------------------------- watchdogs
@@ -390,7 +400,8 @@ package WstxContact {
         assert constraint txDomain { txOffsetHz >= 200 and txOffsetHz <= 2950 }
         doc /* Labelled numeric Rx Hz and Tx Hz inputs (MW RxFreqSpinBox/TxFreqSpinBox),
              Hold Tx (requested vs confirmed shown separately). Tx<-Rx/Rx<-Tx copy
-             buttons and F11/F12 steps are not adopted (D7). FT4-NOTE Tx max 2916. */
+             buttons are not adopted (agent choice 2026-10-31: ctrl-click and the
+             numeric inputs cover them); F11/F12 steps are not adopted (D7). FT4-NOTE Tx max 2916. */
     }
 
     // ---------------------------------------------------------------- Rx pane
@@ -519,15 +530,232 @@ package WstxContact {
              Tx progress (MW ~8388): elapsed whole seconds of the current period over
              the period, "v/15" (FT4-NOTE 7.5), with a Transmitting label (and colour)
              while #9 reports an active transmission. Rx level meter (widgets/
-             signalmeter.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
+             signalmeter.cpp, meterwidget.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
              the canonical receive samples scaled to 16-bit full scale (32768), over the
              last status interval, at most one value per second on the status link;
-             labelled "high" above 85 dB and "low" below 15 dB (signalmeter thresholds)
+             labelled "high" above 85 dB and "low" below 15 dB (meterwidget.cpp ~61/~64 thresholds)
              in text and colour; null shows unavailable when audio is not running. */
     }
 
+    // ---------------------------------------------------------------- ADI log
+    attribute def AdiLimits {
+        attribute importBytesMax : Integer = 67108864;
+        attribute importRecordsMax : Integer = 100000;
+        attribute fieldCharactersMax : Integer = 1024;
+        attribute fieldNameCharactersMax : Integer = 64;
+        attribute importChunkBytesMax : Integer = 16384;
+        attribute historyPageRecordsMax : Integer = 10;
+        attribute historyPageBytesMax : Integer = 16384;
+        doc /* Application admission limits (#10 text; not ADIF limits). Exactly at a
+             limit is admitted, one over is refused and publishes no record of that
+             import. The stored log is not limited by one import's record count. */
+    }
+    enum def AdiError {
+        enum malformed; enum lengthMismatch; enum unsupportedCharacter; enum fieldTooLong;
+        enum tooManyRecords; enum tooLarge; enum missingRequiredField; enum invalidValue;
+        enum identityConflict; enum integrityMismatch;
+    }
+    action def ImportAdi {
+        in importId : String;
+        in totalBytes : Integer;
+        in sha256 : String;
+        out newCount : Integer;
+        out duplicateCount : Integer;
+        out conflictCount : Integer;
+        out error : AdiError[0..1];
+        doc /* ADIF 3.1.8 ADI only (header optional, ended by <EOH>; records end <EOR>;
+             tags case-insensitive <NAME:LEN[:TYPE]> with exact LEN in characters; text
+             between fields ignored). Characters: printable ASCII 0x20-0x7E, plus
+             TAB/CR/LF only inside unknown-field values; anything else
+             unsupportedCharacter. Required per record: CALL, QSO_DATE (valid
+             YYYYMMDD), TIME_ON (HHMM or HHMMSS), MODE; supported fields that are present
+             must be valid (LogRecord domains; FREQ and TX_PWR positive decimals,
+             GRIDSQUARE 2/4/6/8 Maidenhead) else invalidValue with record index and
+             field name. Unknown fields (including other programs' APP_ fields and
+             USERDEF fields) are preserved verbatim, name and value, in the stored record
+             and re-exported unchanged after the supported fields, as WSJT-X
+             logbook/ADIF tools keep unknown tags; they are never interpreted or
+             executed. Header fields are not stored.
+             Identity: a valid APP_WSTXRUST_CONTACT_ID UUID is the record identity.
+             Without it the natural key is (CALL case-folded, QSO_DATE, TIME_ON to the
+             minute, BAND or, without BAND, FREQ's ADIF band, MODE, SUBMODE); a new such
+             record receives a fresh contact id, written as APP_WSTXRUST_CONTACT_ID.
+             Duplicate: same identity (or, without id, same natural key) as a stored or
+             earlier record of the same file and identical supported-field values;
+             skipped and counted. Conflict: same identity with any differing supported
+             field value; counted, reported with record index and the first differing
+             field. Any conflict or error fails the whole import: zero records are
+             published (validation completes before publication); counts are still
+             reported. Otherwise new records are appended in file order in one atomic
+             replace of contacts.adi.
+             Retry identity: importId is a caller-chosen UUID. Reserving the same
+             importId with identical totalBytes and sha256 returns the existing import
+             resource or its final result without a second effect; different values are
+             state_conflict. sha256 of the complete received bytes is checked before
+             validation (integrityMismatch). One import per profile at a time; the
+             resource is retained until the next reservation or restart. Chunks follow
+             the WstxRecordingReceive import pattern: exact Content-Range, at most
+             importChunkBytesMax each, in order. Bulk transfer yields to status/control
+             and never delays HaltTransmit. */
+    }
+    action def ExportAdi {
+        doc /* GET /contacts/export.adi streams the whole profile log as ADIF 3.1.8 ADI:
+             header with ADIF_VER 3.1.8, PROGRAMID WSTXRUST and CREATED_TIMESTAMP, then
+             every stored record in storage order with its supported fields (LogRecord
+             set), APP_WSTXRUST_CONTACT_ID and preserved unknown fields verbatim. Content
+             type application/octet-stream with attachment filename contacts.adi; no
+             content coding; streamed with backpressure behind status/control. Export
+             then import of the same file yields only duplicates. */
+    }
+    action def ContactHistory {
+        in cursor : Integer;
+        in limit : Integer;
+        doc /* GET /contacts?cursor=&limit= returns exactly
+             {v:1,profile_id,total,cursor,next,more,records}; records are the stored
+             records in append (storage) order with index cursor..; storage is
+             append-only in this slice so indexes are stable. limit 1..10 (default 10),
+             cursor 0..total (total returns an empty page), page at most 16384 encoded
+             bytes. Each record is exactly {index,contact_id,call,gridsquare,mode,
+             submode,rst_sent,rst_rcvd,qso_date,time_on,qso_date_off,time_off,band,freq,
+             station_callsign,my_gridsquare,tx_pwr,comment,unknown_field_count} with
+             absent values null, rendered literally. Read-only inspection; no edit or
+             delete. */
+    }
+
+    // ---------------------------------------------------------------- wire contract
+    enum def ContactRefusal {
+        enum invalid_request; enum unsupported_version; enum unauthorized; enum forbidden_origin;
+        enum wrong_profile; enum not_found; enum request_too_large; enum unsupported_media_type;
+        enum state_conflict; enum stale_revision; enum busy; enum counter_exhausted;
+        enum contact_active; enum no_contact; enum row_unavailable; enum row_not_standard;
+        enum invalid_call; enum invalid_grid; enum invalid_report; enum invalid_message;
+        enum out_of_range; enum profile_incomplete; enum transmit_unavailable;
+        enum redecode_unavailable; enum log_invalid_field; enum log_conflict;
+        enum import_failed; enum storage_unavailable; enum snapshot_limit;
+    }
+    enum def ContactAction {
+        enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
+        enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
+        enum set_parity; enum set_auto_seq; enum set_watchdogs; enum enable_tx; enum tune;
+        enum redecode; enum open_log; enum discard_review;
+    }
+    item def ContactCommand :> WstxArchitecture::StationRequest {
+        attribute v : Integer = 1;
+        attribute profile_id : String;
+        attribute boot_id : String;
+        attribute command_id : String;
+        attribute contact_revision : Integer;
+        attribute commandAction : ContactAction;
+        doc /* POST /contact/command, body at most 1024 UTF-8 bytes, exact keys
+             {v,profile_id,boot_id,command_id,contact_revision,action} (commandAction is the JSON key action) plus exactly the
+             parameters of its action (all required, nullable where stated):
+             select_row {row:{source_id,job_id,generation,sequence},replace};
+             enter_dx {dx_call,dx_grid|null,replace}; cancel {};
+             choose_next {slot:"tx1".."tx6"}; edit_message {slot,text};
+             set_report {report}; set_tx1_skip {enabled}; set_tx4 {form:"rrr"|"rr73"};
+             set_frequency {rx_hz|null,tx_hz|null} (null = unchanged; pointer actions use
+             this with the PointerEffect result); set_hold_tx {enabled};
+             set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
+             set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled};
+             tune {enabled}; redecode {} (last completed interval of the current live
+             job); open_log {} (manual Log QSO); discard_review {contact_id}.
+             replace true is the explicit ChangeContact; false with an active contact is
+             contact_active. command_id is a caller UUID: the server retains the last 16
+             command receipts per boot; an identical body with a retained command_id
+             returns 200 with the same receipt and no effect; a different body with it
+             is state_conflict. contact_revision must equal the current revision
+             (stale_revision otherwise), except cancel, enable_tx false and tune false,
+             which are admitted with any earlier revision. Validation order is the
+             WstxOperatingReceive S2 order (route, Origin, TLS/session, size/media/syntax,
+             version/enums/UUIDs/safe integers, profile, boot/revision, capability,
+             state). Transmit actions on a station without transmit capability or
+             before #9 slice B is delivered are transmit_unavailable. */
+    }
+    item def CommandReceipt :> WstxArchitecture::StationOutcome {
+        attribute v : Integer = 1;
+        attribute command_id : String;
+        attribute contact_revision : Integer;
+        attribute accepted : Boolean = true;
+        doc /* 202 exactly {v:1,profile_id,boot_id,command_id,contact_revision,accepted:true},
+             at most 384 bytes: accepted, not yet confirmed effect. Refusals use the
+             existing envelope {error:{code,field}} with code a ContactRefusal and field
+             the offending JSON key or null; nothing is changed by a refusal. */
+    }
+    item def ContactSnapshot :> WstxArchitecture::StationOutcome {
+        attribute v : Integer = 1;
+        attribute contact_revision : Integer;
+        attribute snapshot_sequence : Integer;
+        doc /* GET /contact returns 200 exactly
+             {v:1,profile_id,boot_id,contact_revision,snapshot_sequence,monotonic_ms,
+             utc_ms,transmit,settings,contact,review,watchdog}, at most 4096 encoded
+             bytes (503 snapshot_limit otherwise, never truncated). transmit is #9's read
+             view exactly {capability:"unsupported"|"unavailable"|"available",
+             arm_state,last_disarm_cause,tune,pending_sequence,last_text,
+             last_period_utc,halt_state,refusal}; settings exactly {auto_seq,tx1_skip,
+             tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
+             exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
+             tx4,messages,start_utc,end_utc,offered_for_log,saved} with messages an array
+             of six strings or nulls (Tx1..Tx6, each at most 37 characters); review null
+             or exactly {contact_id,record,outcome,error} with record the LogRecord keys
+             and outcome pending|saved|unsaved; watchdog exactly {tx_remaining_minutes,
+             tx_expired,tune_remaining_seconds}. contact_revision advances on every
+             accepted command and every server-side sequence/transmit/watchdog change;
+             snapshot_sequence also on clock-free material changes. No content coding:
+             /contact, /contacts and /contacts/* are not in the six-route
+             WstxOperatingReceive::ExactCompressedGetRoute allowlist and stay identity. */
+    }
+    item def ContactStateEvent {
+        attribute v : Integer = 1;
+        attribute 'type' : String = "contact.state";
+        doc /* New versioned WebSocket event on the existing wstx.v1 socket, exactly
+             {v:1,type:"contact.state",data:{profile_id,boot_id,contact_revision}}, at
+             most 192 bytes, sent when contact_revision changes, coalesced to at most one
+             per second per peer and always sent within 1 s of a change; the browser then
+             GETs /contact (one pending GET per browser). It is not a StatusReply:
+             station.status stays exactly {v,type,id,data{version,radio}}. Control and
+             status keep priority over it as over optional visualization. */
+    }
+    item def StationTickEvent {
+        attribute v : Integer = 1;
+        attribute 'type' : String = "station.tick";
+        doc /* New versioned WebSocket event, exactly
+             {v:1,type:"station.tick",data:{profile_id,boot_id,utc_ms,period_ms,
+             transmitting,rx_level_db}}, at most 192 bytes. Rate per peer by its display
+             subscription: Detailed 1 per second; Thin and Off 1 per 5 s; plus at most one
+             extra event per transmit start/stop. The browser interpolates the UTC clock
+             and Tx progress locally from utc_ms with its monotonic clock between ticks
+             (display only); rx_level_db shown is the latest tick value. Budget: Off idle
+             with two clients adds at most 2 x (192 + 2 WS + 29 TLS + 160 accounted
+             TCP/ACK) / 5 s = 154 B/s per direction, so the status-only idle total stays
+             within WstxStationProtocol::ThinLinkBudget 1000 B/s; Thin stays within the
+             existing 3000 B/s live envelope. TC-007-005 measures both. */
+    }
+    attribute def ContactWire {
+        doc /* Routes of WstxContact (selected-profile mode only; environment-only mode
+             404 not_found): GET /contact; POST /contact/command; POST /contact/worked
+             (WorkedBeforeQuery: exactly {v,profile_id,boot_id,band,mode,calls}, calls 0..64
+             strings of at most 13 characters, body at most 2048 bytes; 200 exactly
+             {v:1,band,mode,statuses:[{call,status}]}, at most 4096 bytes; read-only, at
+             most one per published period per browser); POST /contacts (SaveContact:
+             exactly {v,profile_id,boot_id,command_id,record}, body at most 2048 bytes;
+             201 {v:1,contact_id,outcome:"saved"}, 200 alreadySaved, 409 log_conflict,
+             400 log_invalid_field with field, 503 storage_unavailable leaving the review
+             unsaved); GET /contacts (ContactHistory); GET /contacts/export.adi
+             (ExportAdi); POST /contacts/imports {v,profile_id,boot_id,import_id,
+             total_bytes,sha256} 201/200 reserve; PUT /contacts/imports/{id} chunks;
+             GET /contacts/imports/{id} exactly {v:1,id,state,received_bytes,total_bytes,
+             new,duplicate,conflict,error} with error null or {code,record,field}
+             (ImportAdi); POST /transmit/halt (WstxTransmit::HaltTransmit).
+             All use the existing HTTP/TLS authentication, exact Origin on mutations,
+             JSON media rules and error envelope; the 1024-byte body cap applies except
+             the stated 2048-byte bodies and 16384-byte import chunks. Mutations are never
+             replayed automatically; reconnect reads GET /contact first. MCP uses the
+             same station operations. */
+    }
+
     dependency contactOwner from Contact to WstxArchitecture::QsoAndLogging;
-    dependency transmitBoundary from TransmitRequest to WstxArchitecture::TransmitService;
+    dependency transmitBoundary from TransmitSubmission to WstxTransmit::TransmitRequest;
+    dependency transmitOwner from TransmitSubmission to WstxArchitecture::TransmitService;
     dependency contactPromise from AutoSequence to WstxRequirements::'FR-007';
     dependency transmitPromise from TxWatchdog to WstxRequirements::'FR-008';
     dependency logPromise from LogRecord to WstxRequirements::'FR-011';

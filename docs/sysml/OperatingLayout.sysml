@@ -32,9 +32,7 @@ package WstxOperatingLayout {
             (liveResultInterfaceAvailable or messageRowCount == 0) and
             messageRowCount >= 0 and messageRowCount <= 2048 and
             (transmit == CapabilityState::available or
-             (selectedContactRowCount == 0 and
-              not transmitEnabled and not haltEnabled and
-              not autoSequenceEnabled and not logEnabled))
+             (not transmitEnabled and not haltEnabled and not autoSequenceEnabled))
         }
         doc /* Link transitions follow existing station.status/socket authority.
              A connected link does not imply audio/CAT/decoder/TX availability.
@@ -55,8 +53,10 @@ package WstxOperatingLayout {
              actual verified native input through converter/manager/modem/HTTP to
              literal browser rows and stale/epoch/stop/cursor/cadence boundaries;
              TC007002 keeps the unsupported/no-input empty-view baseline.
-             The read-only constraint binds whenever transmit is not available; with
-             an available transmit capability the contact controls follow
+             Without an available transmit capability Enable Tx, Halt and Auto Seq stay
+             disabled with the reason, while row selection, contact preparation, the
+             Rx Frequency pane and logging remain usable (receive-only station,
+             WstxContact). With transmit available the contact controls follow
              ContactWorkspace and WstxContact (CL-010-01..04, -06, -10..-14). */
     }
 
@@ -360,7 +360,8 @@ attribute def ActivityOrdering {
              order (station bar, toolbar, signal canvas, separator, band strip, cards);
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
-             Station bar: Halt Tx (always visible, Alt+H, Esc), transmit state with the
+             Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
+             receive-only station, where Esc only cancels the contact), transmit state with the
              last transmitted text, Tx watchdog remaining WD:nm or "Tx watchdog expired",
              UTC clock, Tx progress v/15 with Transmitting label, Rx level meter 0..90 dB
              with high/low text labels (WstxContact::OperatorDisplays).

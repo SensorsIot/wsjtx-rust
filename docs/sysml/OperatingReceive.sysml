@@ -271,7 +271,10 @@ package WstxOperatingReceive {
             (path == "/receive/selection" or path == "/receive" or path == "/receive/results" or
              path == "/profile" or path == "/radio" or path == "/recording");
         doc /* Exact URI path only; valid /receive/results query remains unchanged.
-             This is the complete six-route allowlist, not prefix matching. */
+             This is the complete six-route allowlist, not prefix matching. The #10
+             contact routes (/contact, /contact/*, /contacts, /contacts/*) and
+             /transmit/halt are deliberately excluded and stay identity-coded
+             (WstxContact::ContactSnapshot); this allowlist is unchanged. */
     }
     calc def UncompressedGetLogicalCap {
         in path : String;

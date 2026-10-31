@@ -4,7 +4,8 @@ package WstxTransmit {
          issue #11 slice A): message packing, channel symbols, waveform and pure
          period scheduling. Nothing here
          opens audio, keys PTT or touches a radio; arming, Halt, PTT and played-audio
-         evidence are later #9 clauses. Declared coverage is not a test result.
+         evidence are later #9 clauses. The TARGET section "#9 slice B consumer
+         contract" fixes what WstxContact (#10) consumes; #9 implements it. Declared coverage is not a test result.
          CL-009-01/02, CL-011-01 and TC-005-001/002, TC-006-001/002 are declared in
          WstxRequirements. FT4 reuses PackMessage unchanged (FT4 and FT8 share pack77).
          Behaviour oracle: WSJT-X 3.3.0-beta5 (revision d89fe3) lib/77bit/packjt77.f90,
@@ -230,6 +231,75 @@ package WstxTransmit {
              period is misalignedPeriod; any clock state other than synchronized
              is clockNotSynchronized. */
     }
+    // ------------------------------------------------------------------
+    // #9 slice B consumer contract (TARGET, supervisor decision 2026-10-31 on #10).
+    // #9 slice B owns and implements the armed state, halt, PTT and pending-request
+    // replacement; WstxContact (#10) only consumes these definitions. They are the
+    // minimum #10 needs; #9 declares its own clauses, timing and device policy.
+    enum def ArmState { enum disarmed; enum armed; }
+    enum def DisarmCause {
+        enum operator; enum halt; enum contactCompleted; enum contactCancelled;
+        enum txWatchdog; enum refused; enum failed; enum deviceLost; enum startup;
+    }
+    enum def TransmitRefusal {
+        enum transmitUnsupported; enum notArmed; enum audioStarted; enum duplicateSequence;
+        enum staleRequest; enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod;
+        enum packRefused; enum frequencyOutOfRange; enum busy;
+    }
+    attribute def TransmitArming {
+        attribute armState : ArmState = ArmState::disarmed;
+        attribute lastDisarmCause : DisarmCause = DisarmCause::startup;
+        doc /* TARGET #9 slice B. One armed state per station, owned by
+             WstxArchitecture::TransmitService; disarmed at startup and after every
+             DisarmCause. Arm/Disarm are requests from QsoAndLogging (Enable Tx) through
+             the qso-to-transmit connection. Disarm sends no new request; a transmission
+             whose audio already started finishes unless halted. Arming requires the
+             transmit capability and the station's explicit transmit authority
+             (WstxArchitecture::RadioAuthority); otherwise refused transmitUnsupported. */
+    }
+    attribute def TransmitRequest {
+        attribute contactId : String[0..1];
+        attribute requestSequence : Integer;
+        attribute mode : WstxOfflineDecode::Mode;
+        attribute periodStartUtcMs : Integer;
+        attribute messageText : String;
+        attribute txOffsetHz : Integer;
+        doc /* TARGET #9 slice B. At most one pending request per station. Admitted only
+             while armed; the service packs messageText (PackMessage), plans the start
+             (PlanTransmitStart), encodes, plays and keys PTT. requestSequence is a
+             strictly increasing safe integer per boot: a lower or equal sequence is
+             duplicateSequence and never transmits twice. A request for the same period
+             with a higher sequence REPLACES the pending one while its audio has not
+             started; from audio start the replacement is refused audioStarted and the
+             requester submits it for the next period of its parity. */
+    }
+    enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; }
+    attribute def TransmitOutcome {
+        attribute requestSequence : Integer;
+        attribute kind : TransmitOutcomeKind;
+        attribute refusal : TransmitRefusal[0..1];
+        attribute audioStartUtcMs : Integer[0..1];
+        doc /* TARGET #9 slice B. started is reported at audio start, completed after
+             the last sample and PTT release, halted after confirmed stop. refused and
+             failed disarm (DisarmCause refused/failed). No outcome is inferred from a
+             client timeout or a lost response. */
+    }
+    action def HaltTransmit {
+        doc /* TARGET #9 slice B. Immediate priority stop of a transmission or Tune,
+             cancels the pending request and disarms (DisarmCause halt). Always admitted
+             (no revision check), idempotent, independent of decode/receive/display
+             congestion (ProcessingAndHaltOwnership). Wire: POST /transmit/halt exactly
+             {v,profile_id,boot_id,command_id}, 202 {v:1,command_id,halt_state} with
+             halt_state pending|stopped|idle; a repeated command_id returns the same
+             receipt. */
+    }
+    action def SetTune {
+        in enable : Boolean;
+        doc /* TARGET #9 slice B. Unmodulated tone at the Tx offset; stopped by
+             SetTune(false), HaltTransmit or the WstxContact::TuneWatchdog expiry. */
+    }
+    dependency armingPromise from TransmitArming to WstxRequirements::'FR-008';
+
     action def PlanTransmitStart {
         in mode : WstxOfflineDecode::Mode;
         in nowUtcMs : Integer;

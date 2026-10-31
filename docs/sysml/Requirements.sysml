@@ -634,7 +634,7 @@ package WstxRequirements {
     // #10 standard FT8 contact (decisions: issue #10 comment 6539901776, 2026-10-31);
     // detailed contract in WstxContact. FT4 rules marked FT4-NOTE there belong to #11.
     requirement 'CL-010-01' {
-        doc /* Prepare a contact only from an acknowledged decoded row identity or an operator-entered DX Call/Grid that packs as a standard message; preparation sets partner, grid, report, Rx/Tx offsets, period parity and the six standard messages, and never arms or starts transmission. Details: WstxContact::SelectDecodedRow, EnterDxStation, FirstSlotOnSelection, ChangeContact. */
+        doc /* Prepare a contact only from an acknowledged decoded row identity or an operator-entered DX Call/Grid that packs as a standard message; preparation sets partner, grid, report, Rx/Tx offsets, period parity and the six standard messages, and never arms or starts transmission; a receive-only station can prepare contacts and log. Details: WstxContact::SelectDecodedRow, EnterDxStation, FirstSlotOnSelection, ChangeContact. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_010_01_to_FR_007 from 'CL-010-01' to 'FR-007';
@@ -646,16 +646,22 @@ package WstxRequirements {
     dependency CL_010_02_to_FR_008 from 'CL-010-02' to 'FR-008';
     dependency CL_010_02_to_FR_019 from 'CL-010-02' to 'FR-019';
     requirement 'CL-010-03' {
-        doc /* Offer explicit Enable Tx, disarm, contact cancellation and immediate Halt Tx (button, Alt+H and Esc; Esc also cancels the contact and closes no panel); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. Details: WstxContact::SetEnableTx, HaltTx, CancelContact, TransmitRequest, TransmitOutcome. */
+        doc /* Offer explicit Enable Tx, disarm, contact cancellation and immediate Halt Tx (button, Alt+H and Esc; Esc also cancels the contact and closes no panel); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path depends on the #9 slice B consumer contract (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit), target until #9 delivers it. Details: WstxContact::SetEnableTx, HaltTx, CancelContact, TransmitSubmission, ContactCommand. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
     requirement 'CL-010-04' {
-        doc /* Offer the prefilled log review automatically once at completion and on a manual Log QSO, including power and comments; persist each contact exactly once per profile in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity, Saved only after durable acknowledgement, explicit unsaved retry, and ADI import/export with the #10 limits. Details: WstxContact::LogRecord, OfferLogReview, SaveContact. */
+        doc /* Offer the prefilled log review automatically once at completion and on a manual Log QSO, including power and comments; persist each contact exactly once per profile in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity, Saved only after durable acknowledgement, explicit unsaved retry, and ADI import/export/history with the stated limits, identity, duplicate/conflict and unknown-field rules. Details: WstxContact::LogRecord, OfferLogReview, SaveContact, ImportAdi, ExportAdi, ContactHistory, AdiLimits. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';
+    requirement 'CL-010-15' {
+        doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxContact::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
+    dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
     requirement 'CL-010-06' {
         doc /* Present bounded Band Activity and the Rx Frequency pane routed as WSJT-X (within +/-10 Hz of the confirmed Rx offset, messages to my call, my call with the DX call, own transmissions labelled Tx); local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxContact::RoutesToRxFrequencyPane. */
         attribute coverage : ImplementationState = ImplementationState::target;
@@ -697,8 +703,8 @@ package WstxRequirements {
         doc /* TC-007-001 — Standard FT8 contact
              CL-010-01, CL-010-02, CL-010-03, CL-010-12
              Setup: actual candidate server and Chromium; profile HB9BLA/JN47; virtual UTC clock; independently scripted decoded-result source and a #9 transmit-service double that records TransmitRequests and returns started/completed/halted/refused outcomes (no audio, PTT or radio).
-             Steps: (a) responder: select a hand-authored "CQ K1ABC FN42" row (SNR -12.4, 1234.6 Hz, even period); Enable Tx; feed "HB9BLA K1ABC -05", then "HB9BLA K1ABC RR73"; (b) responder with RRR: feed "HB9BLA K1ABC RRR", then nothing; (c) caller: Enable Tx with no partner (Tx6), feed "HB9BLA K1ABC FN42" and select it, feed "HB9BLA K1ABC R-07", once with Tx4 RRR then "HB9BLA K1ABC 73", once toggled to RR73; (d) repeats: partner repeats each message one to three times; partner misses my Tx3 and resends its report from rogers; (e) other stations and late rows: "HB9BLA W1XYZ -10" during the contact, a row of the previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, report override -50/+49/-51/+50, manual entry "DL1ABC" grid JO62 and invalid "AB1", "<...>" and grid "SS00"; (g) partner answers another call within 50 Hz and at 51 Hz of my Tx offset; (h) Auto Seq off; Esc, Halt, disarm and cancel in every state.
-             Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) Tx5 resent every odd period until the watchdog or operator; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) Tx1 skip starts at Tx2/report, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms, 51 Hz does not; (h) Auto Seq off never changes the next slot; Esc and Halt send the halt request first, Esc also cancels; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action yields one request.
+             Steps: (a) responder: select a hand-authored "CQ K1ABC FN42" row (SNR -12.4, 1234.6 Hz, even period); Enable Tx; feed "HB9BLA K1ABC -05", then "HB9BLA K1ABC RR73"; (b) responder with RRR: feed "HB9BLA K1ABC RRR", then nothing; (c) caller: Enable Tx with no partner (Tx6, state calling), feed "HB9BLA K1ABC FN42" and select that row (prepareReply with firstSlot tx2), feed "HB9BLA K1ABC R-07", once with Tx4 RRR then "HB9BLA K1ABC 73", once toggled to RR73; (d) repeats: partner repeats each message one to three times; partner misses my Tx3 and resends its report from rogers; (e) other stations and late rows: "HB9BLA W1XYZ -10" during the contact, a row of the previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, report override -50/+49/-51/+50, manual entry "DL1ABC" grid JO62 and invalid "AB1", "<...>" and grid "SS00"; (g) partner answers another call at 50 Hz and at 51 Hz from my Tx offset, in replying and again in report after a Tx1-skipped start; the watchdog expires while calling CQ; (h) Auto Seq off; Esc, Halt, disarm and cancel in every state.
+             Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) Tx5 resent every odd period until the watchdog or operator; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) with Tx1 skip, selecting the CQ row enters report directly with next Tx2, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms in replying and in the Tx1-skipped report, 51 Hz does not; watchdog expiry while calling returns to idle; (h) Auto Seq off never changes the next slot; Esc and Halt send the halt request first, Esc also cancels; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action (same command_id) yields one request; one decoded row delivered twice counts once.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server and browser, independent decoded-row and transmit-outcome fixtures; no RF. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -723,10 +729,10 @@ package WstxRequirements {
     }
     verification 'TC-007-004' {
         doc /* TC-007-004 — Authority, control and connection barriers
-             CL-010-02, CL-010-03, CL-010-07, CL-010-08
+             CL-010-02, CL-010-03, CL-010-07, CL-010-08, CL-010-15
              Setup: actual server/browser; transmit-service and radio-control doubles with supported/unsupported transmit, CAT-only/audio-only, delayed/rejected/lost responses; two profiles; all secondary panels open.
-             Steps: Enable Tx, Tune, Halt, Esc (focus in a text field, in the DX Call input and in an open panel), save and contact change while the link drops; reconnect; replay old requests; unauthenticated, wrong-Origin and wrong-profile requests; Tx offset 199/200/2950/2951 Hz.
-             Expected (independent operation/state catalogue): Esc and Halt reach the #9 halt operation first even with panels open; Esc closes no panel; state shows pending/unknown until #9 confirms; reconnect loads the snapshot and replays no arm, tune, next-message or transmit request; no request reaches PTT except through the transmit-service double; unsupported transmit leaves Enable Tx/Tune disabled with a reason; 200 and 2950 accepted, 199/2951 refused; barrier refusals unchanged; no cross-profile contact.
+             Steps: Enable Tx, Tune, Halt, Esc (focus in a text field, in the DX Call input and in an open panel), save and contact change while the link drops; reconnect; replay old requests; unauthenticated, wrong-Origin and wrong-profile requests; Tx offset 199/200/2950/2951 Hz; every ContactCommand action with missing/extra keys, 1024/1025-byte bodies, stale contact_revision (also for cancel and enable_tx false), a retained command_id with identical and different bodies; GET /contact at its 4096-byte maximum shape; Esc on a receive-only station.
+             Expected (independent operation/state catalogue): Esc and Halt reach the #9 halt operation first even with panels open; Esc closes no panel; state shows pending/unknown until #9 confirms; reconnect loads the snapshot and replays no arm, tune, next-message or transmit request; no request reaches PTT except through the transmit-service double; unsupported transmit leaves Enable Tx/Tune disabled with a reason; 200 and 2950 accepted, 199/2951 refused; barrier refusals unchanged; no cross-profile contact. Each malformed command returns the independently expected ContactRefusal code and field with no state change; stale revisions refused except cancel/disarm; an identical retained command_id returns the same receipt with no second effect, a different body state_conflict; the maximum snapshot is exactly admitted and GET /contact is never gzip-coded; StatusReply keeps exactly {version,radio}; on the receive-only station Esc cancels the contact and sends no halt, while row selection and Log QSO still work.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server/browser and independent control, audio and transmit emulators. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -734,19 +740,21 @@ package WstxRequirements {
             verify 'CL-010-03';
             verify 'CL-010-07';
             verify 'CL-010-08';
+            verify 'CL-010-15';
         }
     }
     verification 'TC-007-005' {
         doc /* TC-007-005 — Thin-link and local presentation
-             CL-010-06, CL-010-08
+             CL-010-06, CL-010-08, CL-010-15
              Setup: calibrated TLS 32,000 bit/s per direction, 300 ms RTT, two-client fixture for 60 s with the active result/display workload, contact status, worked-before queries and log page/import/export traffic.
              Steps: filter/sort, resize, switch panes, scroll the Rx Frequency pane, run one contact.
-             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and at most one Rx level value per second; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
+             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and the existing thin-link simulator; no radio. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-010-06';
             verify 'CL-010-08';
+            verify 'CL-010-15';
         }
     }
     verification 'TC-007-007' {
@@ -817,9 +825,9 @@ package WstxRequirements {
     verification 'TC-011-002' {
         doc /* TC-011-002 — ADI interchange and boundaries
              CL-010-04
-             Setup: hand-authored ADIF 3.1.8 ADI fixtures across line/tag/record boundaries and case variations with CALL, GRIDSQUARE, MODE, RST_SENT, RST_RCVD, QSO_DATE, TIME_ON, QSO_DATE_OFF, TIME_OFF, BAND, FREQ, STATION_CALLSIGN, MY_GRIDSQUARE, TX_PWR, COMMENT and APP_WSTXRUST_CONTACT_ID; duplicate/conflicting identities, unknown fields, malformed lengths, unsupported characters, exactly 64 MiB/100,000 records/1024-character field and each one over.
-             Steps: import, retry, export, reopen.
-             Expected (independent ADI parser): exact field values and lengths, FREQ six decimals in MHz, no silent truncation or commands from data; new/duplicate/conflict counts; invalid or over-limit input publishes zero records; retry idempotent; identities and supported fields round-trip.
+             Setup: hand-authored ADIF 3.1.8 ADI fixtures across line/tag/record boundaries and case variations with CALL, GRIDSQUARE, MODE, RST_SENT, RST_RCVD, QSO_DATE, TIME_ON, QSO_DATE_OFF, TIME_OFF, BAND, FREQ, STATION_CALLSIGN, MY_GRIDSQUARE, TX_PWR, COMMENT and APP_WSTXRUST_CONTACT_ID; duplicate/conflicting identities, records without APP_WSTXRUST_CONTACT_ID matching and not matching stored natural keys (CALL case, TIME_ON HHMM vs HHMMSS, BAND vs FREQ only), unknown and other APP_ fields, malformed lengths, unsupported characters, exactly 64 MiB/100,000 records/1024-character field and each one over, a wrong sha256.
+             Steps: import, retry the same import_id with identical and different total/sha256, export, reopen, page history at cursor 0, total-1 and total with limit 1/10/11.
+             Expected (independent ADI parser): exact field values and lengths, FREQ six decimals in MHz, no silent truncation or commands from data; the independently counted new/duplicate/conflict numbers; any conflict, invalid or over-limit input publishes zero records with record/field context; natural-key matches are duplicates, id matches with a differing field conflicts; new records without id gain one; unknown fields re-export byte-identical; same import_id retry has no second effect, different values state_conflict; history pages hold stable indexes, limit 11 refused, at most 16384 bytes; export then import yields only duplicates.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -861,6 +869,8 @@ package WstxRequirements {
     dependency CL_010_12_verified_by_TC_007_001 from 'CL-010-12' to 'TC-007-001';
     dependency CL_010_13_verified_by_TC_011_003 from 'CL-010-13' to 'TC-011-003';
     dependency CL_010_14_verified_by_TC_010_009 from 'CL-010-14' to 'TC-010-009';
+    dependency CL_010_15_verified_by_TC_007_004 from 'CL-010-15' to 'TC-007-004';
+    dependency CL_010_15_verified_by_TC_007_005 from 'CL-010-15' to 'TC-007-005';
     verification 'TC-021-005' {
         doc /* #### TC-021-005 — Message exchange and invalid-input handling
 
