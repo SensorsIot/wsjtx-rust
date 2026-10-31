@@ -91,6 +91,7 @@ impl HttpFixture {
                 authorization: Mutex::new(authority),
                 boot,
                 recording,
+                logbook: Arc::new(crate::logbook::Logbook::open(directory)),
             })),
             profile_id: Some(id),
             token: origin
@@ -284,6 +285,9 @@ async fn http_auth_current_grant_cookie_positive_duplicates_legacy_and_wrong_pro
         StatusCode::UNAUTHORIZED
     );
 }
+
+#[path = "logbook_http_tests.rs"]
+mod logbook_http_tests;
 
 const OPERATING_MUTATIONS: [&str; 8] = [
     "/receive/start",

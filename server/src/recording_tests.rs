@@ -934,6 +934,7 @@ fn selection_profile_fixture() -> (
             authorization: Mutex::new(None),
             boot: r.boot.clone(),
             recording: r.clone(),
+            logbook: Arc::new(crate::logbook::Logbook::open(&fixture.0)),
         })),
         profile_id: Some(r.profile.clone()),
         token: None,

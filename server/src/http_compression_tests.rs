@@ -521,6 +521,7 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
             authorization: Mutex::new(authorization),
             boot: boot.clone(),
             recording: r.clone(),
+            logbook: Arc::new(crate::logbook::Logbook::open(&root)),
         })),
         profile_id: Some(id.clone()),
         token: Some("IsolatedH1FixtureToken012345678901".into()),

@@ -247,6 +247,7 @@ async fn live_native_selection_tls_thin_and_off() {
             authorization: Mutex::new(authorization),
             boot,
             recording: recording.clone(),
+            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
         })),
         profile_id: Some(id),
         token: Some(token),

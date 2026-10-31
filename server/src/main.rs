@@ -9,6 +9,8 @@ mod cat_lifecycle_tests;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
+mod logbook;
+mod logbook_http;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
@@ -58,6 +60,7 @@ struct ProfileState {
     authorization: Mutex<Option<authorization_http::Service>>,
     boot: String,
     recording: Arc<recording::Recording>,
+    logbook: Arc<logbook::Logbook>,
 }
 
 #[derive(Clone)]
@@ -235,6 +238,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             recording.initialize_profile_revision(store.document.revision);
+            let log_base = selected.clone().ok_or("profile directory absent")?;
+            let logbook = Arc::new(
+                tokio::task::spawn_blocking(move || logbook::Logbook::open(&log_base)).await?,
+            );
             let watched = recording.clone();
             tokio::spawn(async move {
                 let mut timer = interval(Duration::from_millis(50));
@@ -248,6 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 authorization: Mutex::new(authorization),
                 boot,
                 recording,
+                logbook,
             });
             // CL-022-03/04: one station-wide timer and at most one tick in flight; it
             // runs whether or not any browser is connected.
@@ -298,6 +306,7 @@ fn router(state: App) -> Router {
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/app.js")) }))
         .route("/recording.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/recording.js")) }))
         .route("/recording.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../client/recording.css")) }))
+        .route("/logbook.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../client/logbook.js")) }))
         .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../client/style.css")) }))
         .route("/session", post(session).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/authorization/v1/bootstrap-scope", post(authorization_http::bootstrap_scope))
@@ -325,6 +334,11 @@ fn router(state: App) -> Router {
         .route("/recording/imports/{id}", get(recording_http::import).put(recording_http::import).delete(recording_http::import).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/recording/replay", post(recording_http::replay).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/jobs/{id}", axum::routing::delete(recording_http::cancel_job))
+        .route("/contacts", get(logbook_http::history).post(logbook_http::save).layer(axum::extract::DefaultBodyLimit::max(2048)))
+        .route("/contacts/export.adi", get(logbook_http::export))
+        .route("/contacts/imports", post(logbook_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/contacts/imports/{id}", get(logbook_http::import).put(logbook_http::import).layer(axum::extract::DefaultBodyLimit::max(logbook::IMPORT_CHUNK_BYTES_MAX)))
+        .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
         .layer(axum::middleware::from_fn(|request, next: axum::middleware::Next| async move {
@@ -349,7 +363,7 @@ fn startup_error(code: &str, path: &std::path::Path) -> String {
 }
 async fn index(State(app): State<App>) -> Html<String> {
     Html(include_str!("../../client/index.html").replace(
-        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script></head>" } else { "</head>" }
+        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script><script src=\"/logbook.js\" defer></script></head>" } else { "</head>" }
     ).replace(
         "<script src=\"/app.js\" defer></script>",
         if app.profile.is_some() { "<script src=\"/authorization.js\" defer></script><script src=\"/app.js\" defer></script>" } else { "<script src=\"/app.js\" defer></script>" }

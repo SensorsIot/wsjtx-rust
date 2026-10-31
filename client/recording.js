@@ -534,6 +534,7 @@ function renderResults(){
     }
     body.append(row);
   }
+  window.wstxLogbook?.annotate(body,ordered);
 }
 function validRecord(r){
   return r&&Object.keys(r).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
