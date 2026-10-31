@@ -448,7 +448,9 @@ package WstxRequirements {
              WSJT-X FT4 transmit waveform (gen_ft4wave convention, 105 symbols with
              ramps, 60480 samples at 12 kHz and 241920 at 48 kHz) within the declared
              ft4sim tolerance; plan FT4 starts for named even/odd 7.5 s UTC periods
-             with the 300 ms audio delay, 75 % late-start limit and the FT8 refusals.
+             with the 300 ms audio delay and the FT8 refusals; a start is stale from
+             the earlier of 75 % of the period and the end of the waveform's audio
+             (5340 ms), deliberately not WSJT-X's fTR < 0.75 empty-start quirk.
              The mode is explicit per request and FT8 behaviour is unchanged.
              Arming, playback, mode selection and QSO/log rules are later #11 clauses.
              Details: WstxTransmit::Ft4ChannelFrame, Ft4WaveformContract, Ft4Schedule,
@@ -496,8 +498,10 @@ package WstxRequirements {
              FT4-only boundaries requested as FT8, and unsynchronized/unknown clocks.
              Oracles: WSJT-X values (Modulator.cpp FT4 delay_ms=300 and late-start m_ic,
              TxStartPolicy.hpp 0.75, mainwindow.cpp m_TRperiod=7.5 and t mod 15 s
-             parity): exact audio start and skipped samples; 5624 ms admitted, 5625 ms
-             stale; FT8 keeps 15 s periods and 500 ms delay.
+             parity): exact audio start and skipped samples. Deliberately not WSJT-X's
+             fTR < 0.75 empty start: 5339 ms admitted (skip below the waveform's sample
+             count), 5340 ms and 5624 ms stale at 12 kHz and 48 kHz, also for the next
+             slot; FT8 keeps 15 s periods, 500 ms delay and its 11.25 s limit.
              2 — Isolated automated tests; Windows development PC, no clock, audio or radio. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {

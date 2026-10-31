@@ -258,8 +258,10 @@ fn tc_006_002_ft4_period_selection_and_parity() {
     assert_eq!(parity(ft4, t0 + 15_000), Parity::Even);
     assert_eq!(next_period(ft4, t0, Parity::Even), t0);
     assert_eq!(next_period(ft4, t0, Parity::Odd), t0 + 7_500);
-    assert_eq!(next_period(ft4, t0 + 5_624, Parity::Even), t0);
-    assert_eq!(next_period(ft4, t0 + 5_625, Parity::Even), t0 + 15_000);
+    // The window closes when the waveform's audio would end (300 + 5040 ms), before 75 %.
+    assert_eq!(next_period(ft4, t0 + 5_339, Parity::Even), t0);
+    assert_eq!(next_period(ft4, t0 + 5_340, Parity::Even), t0 + 15_000);
+    assert_eq!(next_period(ft4, t0 + 5_624, Parity::Even), t0 + 15_000);
     assert_eq!(next_period(ft4, t0 + 7_499, Parity::Odd), t0 + 7_500);
     assert_eq!(next_period(ft4, t0 + 13_125, Parity::Odd), t0 + 22_500);
     assert_eq!(next_period(ft4, t0 - 1, Parity::Even), t0);
@@ -284,8 +286,20 @@ fn tc_006_002_ft4_start_plan_late_start_and_refusals() {
     assert_eq!(start(p + 300, 48_000), at(p + 300, 0));
     assert_eq!(start(p + 301, 48_000), at(p + 301, 48));
     assert_eq!(start(p + 2_750, 48_000), at(p + 2_750, 117_600));
-    assert_eq!(start(p + 5_624, 12_000), at(p + 5_624, 63_888));
-    assert_eq!(start(p + 5_625, 12_000), Err(ScheduleError::StalePeriod));
+    // Never an empty transmission: stale once the skip reaches the waveform's sample
+    // count (60480 at 12 kHz, 241920 at 48 kHz), i.e. 300 + 5040 ms, deliberately
+    // earlier than WSJT-X's fTR < 0.75 (5625 ms).
+    assert_eq!(start(p + 5_339, 12_000), at(p + 5_339, 60_468));
+    assert_eq!(start(p + 5_339, 48_000), at(p + 5_339, 241_872));
+    for rate in [12_000, 48_000] {
+        for now in [p + 5_340, p + 5_341, p + 5_624, p + 5_625] {
+            assert_eq!(
+                start(now, rate),
+                Err(ScheduleError::StalePeriod),
+                "{now} {rate}"
+            );
+        }
+    }
     assert_eq!(start(p + 7_501, 48_000), Err(ScheduleError::StalePeriod));
     assert_eq!(
         plan_start(Mode::Ft4, p, sync, p + 1, 48_000),

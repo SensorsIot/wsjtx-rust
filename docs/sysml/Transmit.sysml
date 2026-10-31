@@ -188,14 +188,23 @@ package WstxTransmit {
         attribute periodMs : Integer = 7500;
         attribute audioDelayMs : Integer = 300;
         attribute latestStartMs : Integer = 5625;
+        attribute waveformMs : Integer = 5040;
+        attribute audioEndMs : Integer = 5340;
         assert constraint startWindow { latestStartMs * 4 == periodMs * 3 and audioDelayMs < latestStartMs }
+        assert constraint audioEnd { audioEndMs == audioDelayMs + waveformMs and audioEndMs < latestStartMs }
         doc /* Ft8Schedule rules with FT4 values: periods start at UTC multiples of
              7.5 s (mainwindow.cpp m_TRperiod=7.5); even when (start/7.5 s) is even
              (Tx even/1st = t mod 15 s < 7.5 s); audio starts 300 ms after the period
              start (Modulator.cpp FT4 delay_ms=300) with the ramp-up symbol, so the
-             first channel tone starts 348 ms after it; start admitted below 75 %
-             (5.625 s, TxStartPolicy.hpp); later starts skip floor((e-300 ms)*rate/1000 ms)
-             samples; stale, misaligned and clock refusals as FT8. The ft4sim receive
+             first channel tone starts 348 ms after it; later starts skip
+             floor((e-300 ms)*rate/1000 ms) samples. The 105-symbol waveform lasts
+             5040 ms, so its audio ends 5340 ms into the period, before the 75 % limit
+             (5.625 s, TxStartPolicy.hpp): a start is admitted only while the skip is
+             below the waveform's sample count at that rate (60480 at 12 kHz, 241920 at
+             48 kHz), i.e. elapsed below 5340 ms; from 5340 ms the request is
+             stalePeriod. This deliberately differs from WSJT-X, whose fTR < 0.75 check
+             would start an empty transmission between 5340 and 5625 ms. Misaligned and
+             clock refusals as FT8. The ft4sim receive
              placement (channel tones from 0.5 s) is a simulator convention, not
              transmit timing. */
     }
@@ -232,6 +241,11 @@ package WstxTransmit {
         out refusal : ScheduleRefusal[0..1];
         doc /* The mode is explicit in every request and selects Ft8Schedule or
              Ft4Schedule; a period aligned for one mode only is misalignedPeriod for
-             the other. Selecting the next slot also takes the mode. */
+             the other. Selecting the next slot also takes the mode. For every mode a
+             start is stalePeriod once elapsed time reaches the 75 % limit or once the
+             skipped samples would reach the waveform's sample count (audio delay plus
+             waveform duration: FT4 5340 ms; FT8 13140 ms, after its 11.25 s limit), so
+             an empty transmission is never admitted; the next slot uses the same
+             window. */
     }
 }
