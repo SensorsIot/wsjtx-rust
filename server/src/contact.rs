@@ -778,7 +778,9 @@ impl Engine {
                     return Err("invalid_message");
                 }
                 c.next = slot;
-                if !matches!(c.state, State::Completed | State::Cancelled) || slot == Slot::Tx6 {
+                // A finished (completed or cancelled) contact is never reopened by a
+                // slot choice; Enable Tx then starts a fresh own-CQ contact.
+                if !matches!(c.state, State::Completed | State::Cancelled) {
                     c.state = State::of_slot(slot);
                 }
             }

@@ -1133,3 +1133,88 @@ fn cancel_keeps_a_held_completed_contact_loggable_and_discard_clears_the_hold() 
         "the queued reviews are untouched"
     );
 }
+
+// Re-check of fd6c776d2, item 1: slot choices never reopen a finished contact.
+#[test]
+fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
+    let mut s = station();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: Some("FN42".into()),
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(&[seventy_three]);
+    assert_eq!(s.state().0, State::Completed);
+    let done = s.engine.contact.as_ref().unwrap().id.clone();
+    let end = s
+        .engine
+        .review()
+        .unwrap()
+        .fields(s.now())
+        .unwrap()
+        .end_utc_ms;
+    s.command(Command::ChooseNext(Slot::Tx5)).unwrap();
+    s.command(Command::ChooseNext(Slot::Tx6)).unwrap();
+    assert_eq!(
+        s.state(),
+        (State::Completed, Slot::Tx6),
+        "the state never changes"
+    );
+    // Enable Tx starts a fresh own-CQ contact; the completed one stays loggable.
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    let cq = s.engine.contact.clone().unwrap();
+    assert_ne!(cq.id, done);
+    assert_eq!((cq.origin, cq.state), (Origin::OwnCq, State::Calling));
+    s.command(Command::Cancel).unwrap();
+    let review = s
+        .engine
+        .reviews()
+        .find(|r| r.contact.id == done)
+        .expect("still offered");
+    assert_eq!(
+        review.fields(s.now()).unwrap().end_utc_ms,
+        end,
+        "TIME_OFF unchanged"
+    );
+    assert_eq!(review.contact.dx_call.as_deref(), Some("K1ABC"));
+
+    // A held contact (full queue) is not stranded by slot choices either.
+    let mut s = station();
+    for i in 0..8 {
+        s.command(Command::EnterDx {
+            call: format!("DL{i}ABC"),
+            grid: None,
+            replace: true,
+        })
+        .unwrap();
+        s.command(Command::OpenLog).unwrap();
+    }
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(&[seventy_three]);
+    s.command(Command::ChooseNext(Slot::Tx6)).unwrap();
+    assert_eq!(s.state().0, State::Completed);
+    assert_eq!(
+        s.command(Command::EnableTx(true, Some(7))),
+        Err("state_conflict")
+    );
+    assert!(!s.armed());
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
+        Some("K1ABC")
+    );
+    let first = s.engine.review().unwrap().contact.id.clone();
+    s.command(Command::DiscardReview(first)).unwrap();
+    s.command(Command::OpenLog).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.engine.contact.as_ref().unwrap().origin, Origin::OwnCq);
+}

@@ -875,9 +875,9 @@ halt.addEventListener('click',async()=>{
 });
 // WstxContact::HaltTx: Esc and Alt+H send #9's priority halt from this always-loaded
 // script, in every page state and focused field. Skipped only when the station is known
-// receive-only (the contact snapshot says unsupported, or without one the profile has
-// no CAT PTT). contact.js adds only the contact cancellation for Esc.
-function keyboardHaltSkipped(){const s=window.wstxContact?.snapshot?.();return s?s.transmit.capability==='unsupported':!transmitConfigured();}
+// receive-only (the contact snapshot says unsupported); without a snapshot it is sent
+// (halt is idempotent). contact.js adds only the contact cancellation for Esc.
+function keyboardHaltSkipped(){const s=window.wstxContact?.snapshot?.();return !!s&&s.transmit.capability==='unsupported';}
 addEventListener('keydown',event=>{
   const altH=event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='h';
   if(event.key!=='Escape'&&!altH)return;

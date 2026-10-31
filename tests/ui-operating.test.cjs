@@ -316,7 +316,10 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await returnToOperation(page);await page.locator('#open-recordings').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations');
+ // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
+ // shows a receive-only station it sends the idempotent #9 halt, never anything else.
+ assert.deepEqual(mutations.filter(m=>new URL(m.url).pathname!=='/transmit/halt'),[],'navigation does not save/import or issue station mutations');
+ assert.ok(mutations.every(m=>m.method==='POST'),'only the keyboard halt POST');
  assert.deepEqual(errors,[]);
 });
 
