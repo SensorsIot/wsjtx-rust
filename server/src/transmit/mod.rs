@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
 //! Pure FT8/FT4 transmit preparation: message packing, channel symbols, waveform and
-//! period scheduling. No audio device, PTT or radio access (WstxTransmit model).
+//! period scheduling; `service` is the slice B transmit owner (arming, PTT, audio, halt).
 mod pack;
 mod schedule;
+pub mod service;
 mod waveform;
 use crate::decoder::{Channel, Mode};
 pub use pack::{Family, PackError, Packed, pack};

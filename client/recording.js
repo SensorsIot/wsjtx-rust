@@ -823,3 +823,53 @@ document.querySelector('#cat-confirm-button').addEventListener('click',async()=>
   finally{catConfirming=false;catSync();}
 });
 addEventListener('station-stale',catShow);
+// WstxTransmit::TransmitWire operator panel (#9 slice B). Active only for a profile with
+// CAT PTT; the browser renders server-confirmed transmit state and sends explicit
+// requests. It runs no transmit timer: the server plans, keys and halts.
+const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
+transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p><p id="transmit-result" role="status"></p>';
+const transmitDetails=secondary('transmit-details','Transmit',transmitPanel,connectionRegion);transmitDetails.hidden=true;
+let transmitView=null,transmitSequence=0,transmitTimer=null;
+const transmitConfigured=()=>profileData?.settings.control.ptt==='cat';
+function transmitBody(extra){return JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...extra});}
+async function transmitPost(path,extra){
+  const response=await stationFetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:transmitBody(extra),signal:AbortSignal.timeout(10000)}),text=await response.text();
+  if(!response.ok){let code='request_failed';try{code=JSON.parse(text).error?.code??code;}catch{}throw new Error(code);}
+  return JSON.parse(text);
+}
+function transmitShow(){
+  const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;
+  if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
+  const v=transmitView,status=document.querySelector('#transmit-status');
+  if(!on||!v){status.textContent='Transmit unavailable';return;}
+  const t=v.transmit;
+  status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_minutes} min`;
+  document.querySelector('#tx-tune').textContent=t.tune?'Tune off':'Tune';
+}
+async function transmitSync(){
+  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return;}
+  try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok)transmitView=await response.json();}catch{}
+  transmitShow();
+}
+function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
+setInterval(transmitPoll,2000);
+async function transmitAction(extra,label){
+  const result=document.querySelector('#transmit-result');
+  try{const reply=await transmitPost('/transmit/command',extra),r=reply.result;result.textContent=`${label}: ${r.kind??(r.accepted?'accepted':'refused')}${r.refusal?' · '+r.refusal:''}${r.failure?' · '+r.failure:''}`;}
+  catch(error){result.textContent=`${label} not sent · ${error.message}`;}
+  transmitSync();
+}
+document.querySelector('#tx-arm').addEventListener('click',()=>{const revision=catStatus?.scope?.safety_revision;if(!revision){document.querySelector('#transmit-result').textContent='Arm needs the current setup revision (CAT status)';return;}transmitAction({action:'arm',safety_revision:revision},'Arm');});
+document.querySelector('#tx-disarm').addEventListener('click',()=>transmitAction({action:'disarm'},'Disarm'));
+document.querySelector('#tx-send').addEventListener('click',()=>{
+  const mode=document.querySelector('#tx-mode').value,period=mode==='ft4'?7500:15000,wanted=document.querySelector('#tx-parity').value==='even'?0:1;
+  let start=Math.floor(Date.now()/period)*period;if(Date.now()-start>=period*0.75-1000||(start/period)%2!==wanted)start+=period;if((start/period)%2!==wanted)start+=period;
+  transmitSequence=Math.max(transmitSequence+1,Date.now());
+  transmitAction({action:'request',request_sequence:transmitSequence,mode,period_start_utc_ms:start,message_text:document.querySelector('#tx-message').value,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Send');
+});
+document.querySelector('#tx-tune').addEventListener('click',()=>{const on=transmitView?.transmit.tune;transmitAction(on?{action:'tune',enabled:false}:{action:'tune',enabled:true,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Tune');});
+halt.addEventListener('click',async()=>{
+  const result=document.querySelector('#transmit-result');
+  try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
+  transmitSync();
+});

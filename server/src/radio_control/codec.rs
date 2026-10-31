@@ -66,6 +66,42 @@ pub fn request(config: &Configuration, operation: &Operation) -> Result<Vec<u8>>
     Ok(bytes)
 }
 
+/// Typed CI-V transmit switch (command 0x1C 0x00, data 01 transmit / 00 receive).
+/// It is compiled here, never catalogue- or wire-authorized; only the transmit
+/// service reaches it through the actor's transmit hold (WstxTransmit::PttControl).
+pub fn ptt_request(config: &Configuration, on: bool) -> Result<Vec<u8>> {
+    config.validate()?;
+    Ok(vec![
+        0xfe,
+        0xfe,
+        config.radio_address,
+        config.controller_address,
+        0x1c,
+        0,
+        u8::from(on),
+        0xfd,
+    ])
+}
+/// ACK (FB) or NG (FA) of an addressed reply to the PTT setter; anything else is not
+/// its completion.
+pub fn ptt_reply(config: &Configuration, frame: &[u8]) -> Result<Option<Reply>> {
+    if frame.len() < 6
+        || frame.len() > MAX_FRAME
+        || frame[..2] != [0xfe, 0xfe]
+        || frame.last() != Some(&0xfd)
+    {
+        return Err(Error::Protocol);
+    }
+    if frame[2] != config.controller_address || frame[3] != config.radio_address {
+        return Ok(None);
+    }
+    Ok(match &frame[4..frame.len() - 1] {
+        [0xfb] => Some(Reply::Ack),
+        [0xfa] => Some(Reply::Rejected),
+        _ => None,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     Ack,

@@ -27,6 +27,9 @@ mod selection_http;
 mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
 mod spectrum;
+mod transmit_http;
+#[cfg(test)]
+mod transmit_http_tests;
 use axum::{Json, body::Bytes};
 use axum::{
     Router,
@@ -235,6 +238,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             recording.initialize_profile_revision(store.document.revision);
+            // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
+            let transmit =
+                transmit_http::Station::start().map_err(|_| error("resource_unavailable", ""))?;
+            let _ = recording.transmit.set(transmit);
             let watched = recording.clone();
             tokio::spawn(async move {
                 let mut timer = interval(Duration::from_millis(50));
@@ -321,6 +328,9 @@ fn router(state: App) -> Router {
         .route("/radio/connect", post(radio_http::connect).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/disconnect", post(radio_http::disconnect).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/operation", post(radio_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/transmit", get(transmit_http::snapshot))
+        .route("/transmit/command", post(transmit_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/transmit/halt", post(transmit_http::halt).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/imports", post(recording_http::reserve).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/recording/imports/{id}", get(recording_http::import).put(recording_http::import).delete(recording_http::import).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/recording/replay", post(recording_http::replay).layer(axum::extract::DefaultBodyLimit::max(1024)))

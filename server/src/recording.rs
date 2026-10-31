@@ -256,6 +256,8 @@ pub struct Recording {
     pub boot: String,
     /// The one CL-022-03/04 automatic CAT policy of this station.
     cat: Mutex<crate::cat_lifecycle::Lifecycle>,
+    /// WstxTransmit slice B transmit owner of this station, started once by the process.
+    pub(crate) transmit: std::sync::OnceLock<Arc<crate::transmit_http::Station>>,
     #[cfg(test)]
     cat_transport: Mutex<Option<CatTransport>>,
     #[cfg(test)]
@@ -2443,6 +2445,7 @@ impl Recording {
                 profile,
                 boot,
                 cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
+                transmit: std::sync::OnceLock::new(),
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
                 #[cfg(test)]
@@ -2505,6 +2508,7 @@ impl Recording {
             profile,
             boot,
             cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
+            transmit: std::sync::OnceLock::new(),
             #[cfg(test)]
             cat_transport: Mutex::new(None),
             #[cfg(test)]

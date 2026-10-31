@@ -281,6 +281,88 @@ impl<T: Transport> Executor<T> {
             }
         }
     }
+    /// Transmit switch with independent readback (WstxTransmit::PttControl): write
+    /// 1C 00 01|00, require ACK, then read 1C 00 and require the requested state.
+    /// Only the actor's transmit hold calls this; it is not an `Operation`, so neither
+    /// the catalogue nor the wire can reach it. Exchange failure closes the connection
+    /// as for every other exchange; the PTT state is then indeterminate.
+    pub fn set_ptt(&self, on: bool, deadline: Instant, cancel: &AtomicBool) -> Result<()> {
+        check(deadline, cancel)?;
+        let mut inner = self.inner.try_lock().map_err(|e| match e {
+            TryLockError::WouldBlock => Error::Busy,
+            TryLockError::Poisoned(_) => Error::Unavailable,
+        })?;
+        // An off-only release is still admitted on a connection whose close was
+        // requested but whose transport is not yet closed.
+        let state = self.snapshot()?.state;
+        if state != State::Ready && (on || state != State::Closing) {
+            return Err(Error::Unavailable);
+        }
+        let overall = std::cmp::min(deadline, Instant::now() + Duration::from_secs(2));
+        let Inner {
+            transport,
+            configuration,
+            ..
+        } = &mut *inner;
+        let result = (|| {
+            {
+                let mut s = self.snapshot.lock().map_err(|_| Error::Unavailable)?;
+                if s.facts.rx_tx.confirmed {
+                    s.facts.rx_tx.confirmed = false;
+                    s.publish()?;
+                }
+            }
+            let bytes = codec::ptt_request(configuration, on)?;
+            let write_deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
+            let reply = exchange_bytes(transport, &bytes, write_deadline, cancel, |frame| {
+                codec::ptt_reply(configuration, frame)
+            })?;
+            match reply {
+                Reply::Ack => {}
+                Reply::Rejected => return Err(Error::Rejected),
+                _ => return Err(Error::Protocol),
+            }
+            let read_deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
+            let read = exchange(
+                transport,
+                configuration,
+                &Operation::ReadRxTx,
+                read_deadline,
+                cancel,
+            )
+            .map_err(|error| {
+                if error == Error::Cancelled {
+                    error
+                } else {
+                    Error::Indeterminate
+                }
+            })?;
+            self.update(&read)?;
+            match read {
+                Reply::Transmitting(actual) if actual == on => Ok(()),
+                Reply::Transmitting(_) => Err(Error::ReadbackMismatch),
+                _ => Err(Error::Indeterminate),
+            }
+        })();
+        if let Err(error) = result {
+            let must_close = !matches!(
+                error,
+                Error::Rejected | Error::ReadbackMismatch | Error::InvalidRequest
+            );
+            if must_close {
+                self.set_state(State::Closing, Some(error))?;
+                if transport.close().is_err() {
+                    self.set_state(State::Closing, Some(Error::FailedClose))?;
+                    return Err(Error::FailedClose);
+                }
+                self.set_state(State::Unavailable, Some(error))?;
+            } else {
+                self.set_state(State::Ready, Some(error))?;
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
     pub fn refresh(&self, cancel: Arc<AtomicBool>, deadline: Instant) -> Result<Observation> {
         let mut inner = self.inner.try_lock().map_err(|_| Error::Busy)?;
         if self.snapshot()?.state != State::Ready {
@@ -528,9 +610,20 @@ fn exchange<T: Transport>(
     deadline: Instant,
     cancel: &AtomicBool,
 ) -> Result<Reply> {
-    check(deadline, cancel)?;
     let bytes = codec::request(configuration, operation)?;
-    let count = transport.write(&bytes, deadline, cancel)?;
+    exchange_bytes(transport, &bytes, deadline, cancel, |frame| {
+        codec::reply(configuration, frame, operation)
+    })
+}
+fn exchange_bytes<T: Transport>(
+    transport: &mut T,
+    bytes: &[u8],
+    deadline: Instant,
+    cancel: &AtomicBool,
+    parse: impl Fn(&[u8]) -> Result<Option<Reply>>,
+) -> Result<Reply> {
+    check(deadline, cancel)?;
+    let count = transport.write(bytes, deadline, cancel)?;
     if count != bytes.len() {
         return Err(Error::PartialWrite);
     }
@@ -549,7 +642,7 @@ fn exchange<T: Transport>(
             continue;
         }
         for frame in framer.feed(&buffer[..count])? {
-            if let Some(reply) = codec::reply(configuration, &frame, operation)? {
+            if let Some(reply) = parse(&frame)? {
                 return Ok(reply);
             }
         }
