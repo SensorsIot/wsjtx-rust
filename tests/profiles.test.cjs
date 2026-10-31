@@ -10,6 +10,7 @@ const http = require('node:http');
 const https = require('node:https');
 const {spawn, execFileSync} = require('node:child_process');
 const {once} = require('node:events');
+const {listenBrowser} = require('./support.cjs');
 const crypto = require('node:crypto');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
@@ -36,7 +37,7 @@ after(async () => {
 });
 async function ports(n) {
   const held = [];
-  try {for (let i = 0; i < n; i++) {const s = net.createServer(); s.listen(0, '127.0.0.1'); await once(s, 'listening'); held.push(s);} return held.map(s => s.address().port);}
+  try {for (let i = 0; i < n; i++) {const s = net.createServer(); held.push(s); await listenBrowser(s);} return held.map(s => s.address().port);}
   finally {await Promise.all(held.map(s => new Promise(resolve => s.close(resolve))));}
 }
 function launch(args, env = {}, cwd) {

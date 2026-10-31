@@ -11,7 +11,7 @@ const https = require('node:https');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
 const WebSocket = require('ws');
-const {server, link} = require('./support.cjs');
+const {server, link, restrictedPorts, listenBrowser, browserPort} = require('./support.cjs');
 const {receive} = require('./peer.cjs');
 let browser, temporary, tlsEnv;
 const token = 'TestOnlyRandomCredential0123456789ABCDEF';
@@ -46,6 +46,31 @@ async function contextFor(origin, authenticated = false) {
 }
 
 // Test-tool oracle: a protocol fixture proves heartbeat interleaving and a fixed deadline.
+// #35: Chromium refuses its kRestrictedPorts with ERR_UNSAFE_PORT; Windows here hands out
+// dynamic ports from 1024, so a browser-facing listen(0) can land on one.
+test('port helper: browser-facing ports are never Chromium restricted ports', async () => {
+  // Spot values of Chromium net/base/port_util.cc kRestrictedPorts, including the ones seen on HB9BLA.
+  for (const port of [1, 25, 1719, 1720, 1723, 2049, 5060, 5061, 6000, 6665, 6666, 6667, 6668, 6669, 6697, 10080]) assert.ok(restrictedPorts.has(port), String(port));
+  for (const port of [80, 443, 1024, 8080, 18001]) assert.equal(restrictedPorts.has(port), false, String(port));
+  // A listener that the OS gives restricted ports first: the helper must skip all of them.
+  const offered = [1719, 1723, 6000, 10080, 40000];
+  let closed = 0;
+  const fake = Object.assign(new EventEmitter(), {
+    listen(port, host) { assert.equal(port, 0); assert.equal(host, '127.0.0.1'); setImmediate(() => this.emit('listening')); },
+    address() { return {port: offered[closed]}; },
+    close(done) { closed++; setImmediate(done); },
+  });
+  assert.equal(await listenBrowser(fake), 40000);
+  assert.equal(closed, 4, 'each restricted port is released');
+  // Only restricted ports: the helper fails instead of returning one.
+  const stuck = Object.assign(new EventEmitter(), {listen() { setImmediate(() => this.emit('listening')); }, address() { return {port: 1720}; }, close(done) { setImmediate(done); }});
+  await assert.rejects(listenBrowser(stuck), /No browser-accepted port/);
+  // Real allocations are free, distinct-enough ports outside the list.
+  for (let i = 0; i < 50; i++) {
+    const port = await browserPort();
+    assert.ok(Number.isInteger(port) && port > 0 && port < 65536 && !restrictedPorts.has(port), String(port));
+  }
+});
 test('peer helper: heartbeat interleaving preserves response and total deadline', {timeout: 2000}, async () => {
   const fixture = new EventEmitter();
   const result = receive(fixture);

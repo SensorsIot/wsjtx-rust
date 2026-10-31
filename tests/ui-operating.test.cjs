@@ -9,12 +9,12 @@ const net=require('node:net');
 const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
-const {server}=require('./support.cjs');
+const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
 async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
-  const listener=net.createServer();listener.listen(0,'127.0.0.1');await once(listener,'listening');const port=listener.address().port;await new Promise(r=>listener.close(r));
+  const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));

@@ -8,13 +8,12 @@ const {once}=require('node:events');
 const {randomUUID}=require('node:crypto');
 const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
-const {server,grant,loginPage}=require('./support.cjs');
+const {server,grant,loginPage,browserPort}=require('./support.cjs');
 
 async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-selection-'));
   t.after(()=>fs.rm(dir,{recursive:true,force:true}));
-  const held=net.createServer();held.listen(0,'127.0.0.1');await once(held,'listening');
-  const port=held.address().port;await new Promise(resolve=>held.close(resolve));
+  const port=await browserPort();
   const origin=`https://localhost:${port}`,id=randomUUID(),token=randomUUID().replaceAll('-','');
   const cert=await selfsigned.generate([{name:'commonName',value:'localhost'}],{days:1,keySize:2048,extensions:[{name:'subjectAltName',altNames:[{type:2,value:'localhost'}]}]});
   await fs.writeFile(path.join(dir,'cert.pem'),cert.cert);await fs.writeFile(path.join(dir,'key.pem'),cert.private);
