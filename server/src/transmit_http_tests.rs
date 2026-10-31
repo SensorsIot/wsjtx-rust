@@ -151,6 +151,7 @@ async fn app() -> (Router, String, String, String, std::path::PathBuf) {
             authorization: Mutex::new(None),
             boot: boot.clone(),
             recording,
+            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
         })),
         profile_id: Some(id.clone()),
         token: None,
