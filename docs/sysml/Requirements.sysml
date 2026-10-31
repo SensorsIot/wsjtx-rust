@@ -736,25 +736,33 @@ package WstxRequirements {
     // detailed contract in WstxContact. FT4 rules marked FT4-NOTE there belong to #11.
     requirement 'CL-010-01' {
         doc /* Prepare a contact only from an acknowledged decoded row identity or an operator-entered DX Call/Grid that packs as a standard message; preparation sets partner, grid, report, Rx/Tx offsets, period parity and the six standard messages, and never arms or starts transmission; a receive-only station can prepare contacts and log. Details: WstxContact::SelectDecodedRow, EnterDxStation, FirstSlotOnSelection, ChangeContact. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
     }
     dependency CL_010_01_to_FR_007 from 'CL-010-01' to 'FR-007';
     requirement 'CL-010-02' {
         doc /* Progress the contact on the server by the WstxContact::AutoSequence table (messages from the partner addressed to my call; repeats resend, other stations ignored, completion after a transmitted RR73/73 or a received 73 after RRR) and show confirmed sequence, next message, last transmitted message, pending requests, stale observations and failures separately. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
     }
     dependency CL_010_02_to_FR_007 from 'CL-010-02' to 'FR-007';
     dependency CL_010_02_to_FR_008 from 'CL-010-02' to 'FR-008';
     dependency CL_010_02_to_FR_019 from 'CL-010-02' to 'FR-019';
     requirement 'CL-010-03' {
-        doc /* Offer explicit Enable Tx, disarm, contact cancellation and immediate Halt Tx (button, Alt+H and Esc; Esc also cancels the contact and closes no panel); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path depends on the #9 slice B consumer contract (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit), target until #9 delivers it. Details: WstxContact::SetEnableTx, HaltTx, CancelContact, TransmitSubmission, ContactCommand. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Offer explicit Enable Tx, disarm, contact cancellation and immediate Halt Tx (button, Alt+H and Esc; Esc also cancels the contact and closes no panel); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path consumes the delivered #9 slice B owner (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit) in-process. Details: WstxContact::SetEnableTx, HaltTx, CancelContact, TransmitSubmission, ContactCommand. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; server/src/transmit/service.rs; client/contact.js";
     }
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
-    // CL-010-04 partial coverage, open items: the automatic review offer at completion,
-    // TIME_ON/TIME_OFF from the contact engine, and ExportAdi built in memory rather than
-    // streamed with backpressure.
+    // CL-010-04 partial coverage, open item: ExportAdi built in memory rather than
+    // streamed with backpressure. The automatic review offer and TIME_ON/TIME_OFF come
+    // from the contact engine (server/src/contact.rs).
+    // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted and MCP does
+    // not yet expose the contact operations. CL-010-11 partial: left double-click
+    // Re-decode is refused redecode_unavailable (no re-decode service exists yet).
+    // CL-010-13 partial: worked-before marks are not yet shown in the Rx Frequency pane.
+    // CL-010-15 partial: TC-007-005 Thin/Off measurement with the new events and MCP.
     requirement 'CL-010-04' {
         doc /* Offer the prefilled log review automatically once at completion and on a manual Log QSO, including power and comments; persist each contact exactly once per profile in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity, Saved only after durable acknowledgement, explicit unsaved retry, and ADI import/export/history with the stated limits, identity, duplicate/conflict and unknown-field rules. Details: WstxContact::LogRecord, OfferLogReview, SaveContact, ImportAdi, ExportAdi, ContactHistory, AdiLimits. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -764,31 +772,35 @@ package WstxRequirements {
     requirement 'CL-010-15' {
         doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxContact::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/logbook_http.rs; server/src/main.rs";
+        attribute implementation : String = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs";
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
     requirement 'CL-010-06' {
         doc /* Present bounded Band Activity and the Rx Frequency pane routed as WSJT-X (within +/-10 Hz of the confirmed Rx offset, messages to my call, my call with the DX call, own transmissions labelled Tx); local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxContact::RoutesToRxFrequencyPane. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js";
     }
     dependency CL_010_06_to_FR_004 from 'CL-010-06' to 'FR-004';
     dependency CL_010_06_to_FR_007 from 'CL-010-06' to 'FR-007';
     dependency CL_010_06_to_FR_021 from 'CL-010-06' to 'FR-021';
     requirement 'CL-010-10' {
         doc /* Bound unattended transmission with a server-owned Tx watchdog (default 6 min, 1..99, counting only while Enable Tx is on, reset by accepted operating requests and changed transmitted text; expiry halts and disarms) and an always-on Tune watchdog (default 90 s, 1..300 s). Details: WstxContact::TxWatchdog, TuneWatchdog. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/transmit/service.rs; client/contact.js";
     }
     dependency CL_010_10_to_FR_008 from 'CL-010-10' to 'FR-008';
     requirement 'CL-010-11' {
         doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (click Rx; shift- or right-click Tx; ctrl-click both; left double-click Rx and re-decode; right double-click both), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_010_11_to_FR_007 from 'CL-010-11' to 'FR-007';
     dependency CL_010_11_to_FR_010 from 'CL-010-11' to 'FR-010';
     requirement 'CL-010-12' {
         doc /* Generate the WSJT-X standard messages Tx1 grid, Tx2 report, Tx3 R+report, Tx4 RRR or RR73, Tx5 73 and Tx6 CQ on the server with the -50..+49 report rendering, operator report override, Tx1 skip and the RRR/RR73 toggle (FT8 default RRR); Now buttons and F11/F12 steps are not offered. Details: WstxContact::StandardMessageSet, ReportRange, OverrideReport, ToggleTx1Skip, ToggleTx4Form. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; client/contact.js";
     }
     dependency CL_010_12_to_FR_005 from 'CL-010-12' to 'FR-005';
     dependency CL_010_12_to_FR_007 from 'CL-010-12' to 'FR-007';
@@ -801,7 +813,8 @@ package WstxRequirements {
     dependency CL_010_13_to_FR_011 from 'CL-010-13' to 'FR-011';
     requirement 'CL-010-14' {
         doc /* Show a UTC clock, a Tx period progress indicator and an Rx audio level meter (0..90 dB, high above 85, low below 15) from server observations, display-only and marked stale with the status link. Details: WstxContact::OperatorDisplays. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact_http.rs; server/src/recording.rs; server/src/main.rs; client/contact.js";
     }
     dependency CL_010_14_to_FR_006 from 'CL-010-14' to 'FR-006';
     dependency CL_010_14_to_FR_010 from 'CL-010-14' to 'FR-010';
@@ -813,13 +826,14 @@ package WstxRequirements {
              Steps: (a) responder: select a hand-authored "CQ K1ABC FN42" row (SNR -12.4, 1234.6 Hz, even period); Enable Tx; feed "HB9BLA K1ABC -05", then "HB9BLA K1ABC RR73"; (b) responder with RRR: feed "HB9BLA K1ABC RRR", then nothing; (c) caller: Enable Tx with no partner (Tx6, state calling), feed "HB9BLA K1ABC FN42" and select that row (prepareReply with firstSlot tx2), feed "HB9BLA K1ABC R-07", once with Tx4 RRR then "HB9BLA K1ABC 73", once toggled to RR73; (d) repeats: partner repeats each message one to three times; partner misses my Tx3 and resends its report from rogers; (e) other stations and late rows: "HB9BLA W1XYZ -10" during the contact, a row of the previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, report override -50/+49/-51/+50, manual entry "DL1ABC" grid JO62 and invalid "AB1", "<...>" and grid "SS00"; (g) partner answers another call at 50 Hz and at 51 Hz from my Tx offset, in replying and again in report after a Tx1-skipped start; the watchdog expires while calling CQ; (h) Auto Seq off; Esc, Halt, disarm and cancel in every state.
              Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) Tx5 resent every odd period until the watchdog or operator; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) with Tx1 skip, selecting the CQ row enters report directly with next Tx2, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms in replying and in the Tx1-skipped report, 51 Hz does not; watchdog expiry while calling returns to idle; (h) Auto Seq off never changes the next slot; Esc and Halt send the halt request first, Esc also cancels; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action (same command_id) yields one request; one decoded row delivered twice counts once.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server and browser, independent decoded-row and transmit-outcome fixtures; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-01';
             verify 'CL-010-02';
             verify 'CL-010-03';
             verify 'CL-010-12';
         }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs";
     }
     verification 'TC-007-003' {
         doc /* TC-007-003 — Received views, Rx Frequency pane and partner selection
@@ -828,11 +842,12 @@ package WstxRequirements {
              Steps: filter/sort/clear Band Activity; read the Rx Frequency pane over several periods with rows at 1489.9, 1490.0, 1510.0, 1510.1 Hz, "HB9BLA W1XYZ -10" at 400 Hz, "K1ABC HB9BLA R-05" at 2500 Hz, "HB9BLAX K1ABC" and own transmissions; change Rx; exceed 500 pane rows; select rows by click/Enter and by manual DX entry; switch profile.
              Expected (fixed input catalogue): pane contains exactly 1490.0, 1510.0, the HB9BLA and HB9BLA-plus-K1ABC rows and Tx-labelled own messages, not 1489.9, 1510.1 or HB9BLAX; Rx change affects later rows only; at most 500 rows with unread count; clearing the pane or Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and independent result source. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-01';
             verify 'CL-010-06';
         }
+        attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs";
     }
     verification 'TC-007-004' {
         doc /* TC-007-004 — Authority, control and connection barriers
@@ -841,7 +856,7 @@ package WstxRequirements {
              Steps: Enable Tx, Tune, Halt, Esc (focus in a text field, in the DX Call input and in an open panel), save and contact change while the link drops; reconnect; replay old requests; unauthenticated, wrong-Origin and wrong-profile requests; Tx offset 199/200/2950/2951 Hz; every ContactCommand action with missing/extra keys, 1024/1025-byte bodies, stale contact_revision (also for cancel and enable_tx false), a retained command_id with identical and different bodies; GET /contact at its 4096-byte maximum shape; Esc on a receive-only station.
              Expected (independent operation/state catalogue): Esc and Halt reach the #9 halt operation first even with panels open; Esc closes no panel; state shows pending/unknown until #9 confirms; reconnect loads the snapshot and replays no arm, tune, next-message or transmit request; no request reaches PTT except through the transmit-service double; unsupported transmit leaves Enable Tx/Tune disabled with a reason; 200 and 2950 accepted, 199/2951 refused; barrier refusals unchanged; no cross-profile contact. Each malformed command returns the independently expected ContactRefusal code and field with no state change; stale revisions refused except cancel/disarm; an identical retained command_id returns the same receipt with no second effect, a different body state_conflict; the maximum snapshot is exactly admitted and GET /contact is never gzip-coded; StatusReply keeps exactly {version,radio}; on the receive-only station Esc cancels the contact and sends no halt, while row selection and Log QSO still work.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server/browser and independent control, audio and transmit emulators. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-02';
             verify 'CL-010-03';
@@ -849,6 +864,7 @@ package WstxRequirements {
             verify 'CL-010-08';
             verify 'CL-010-15';
         }
+        attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
     }
     verification 'TC-007-005' {
         doc /* TC-007-005 — Thin-link and local presentation
@@ -888,10 +904,11 @@ package WstxRequirements {
              Steps: Enable Tx with limits 1, 6 (default) and 99 minutes; refuse 0 and 100; let periods pass with identical and changed transmitted texts; send accepted and refused operating requests at 5:59; disarm and re-enable; Tune with 90 s default, 1 and 300 s, refuse 0 and 301; Halt during Tune.
              Expected (hand-computed timeline): expiry exactly at the configured whole minute after the last reset while Enable Tx stays on; changed text and accepted requests reset, identical text and refused requests do not; the counter is 0 while disarmed; at expiry a halt request precedes Enable Tx off, the contact state is kept and "Tx watchdog expired" is shown; Tune ends at its limit through #9; remaining minutes/seconds displayed; startup default 6 min and 90 s.
              2 — Isolated automated functional tests; Windows development PC, virtual clock and independent transmit double; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-10';
         }
+        attribute executable : String = "server/src/contact_tests.rs";
     }
     verification 'TC-010-008' {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
@@ -900,10 +917,11 @@ package WstxRequirements {
              Steps: at independently computed pixel positions for 200, 1500 and 2950 Hz perform click, shift-click, right-click, ctrl-click, left and right double-click, each with Hold Tx on and off; touch tap; numeric Rx/Tx inputs with 0/3000 Rx and 199/200/2950/2951 Tx.
              Expected: requested offsets equal the independently computed axis frequency rounded to integer Hz; click Rx only, shift/right Tx only, ctrl and right double-click both, left double-click Rx plus one re-decode request (or its unavailable reason); Tx pointer actions apply with Hold Tx on; markers move only after confirmation; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-11';
         }
+        attribute executable : String = "tests/contact.test.cjs";
     }
     verification 'TC-010-009' {
         doc /* TC-010-009 — UTC clock, Tx progress and Rx level meter
@@ -912,10 +930,11 @@ package WstxRequirements {
              Steps: observe across period boundaries, during a transmission, after link loss, with audio stopped.
              Expected: clock shows the server UTC HH:MM:SS (independent of a skewed browser clock) and is marked stale with the link; progress shows v/15 with v = whole elapsed seconds and a Transmitting label while transmitting; level = round(10 log10(mean(s^2))) with s scaled to 32768 (full-scale sine 87, -40 dBFS sine 47, silence clamped 0), labelled high above 85 and low below 15, unavailable with audio stopped, at most one value per second.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-14';
         }
+        attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs";
     }
     verification 'TC-011-001' {
         doc /* TC-011-001 — Exactly-once contact persistence

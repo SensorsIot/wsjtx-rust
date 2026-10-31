@@ -15,8 +15,9 @@ package WstxContact {
          WstxArchitecture::StationProcess. #9 slice B owns the armed state, halt, PTT
          and pending-request replacement; TransmitService alone holds the station's
          explicit transmit authority (WstxArchitecture::RadioAuthority) and plans starts
-         with WstxTransmit::PlanTransmitStart. Until #9 slice B is delivered the live
-         transmit path of CL-010-03 is unavailable and reported transmit_unavailable.
+         with WstxTransmit::PlanTransmitStart. #9 slice B is delivered (WstxTransmit
+         transmit owner); the engine consumes it in-process, so a station with transmit
+         capability and a current CL-022 grant can arm through Enable Tx.
          A receive-only station (no transmit capability) can still select rows, prepare
          contacts and log; every transmit action is then refused with
          transmit_unavailable. Wire contract: ContactWire below. The browser
@@ -672,8 +673,10 @@ package WstxContact {
              which are admitted with any earlier revision. Validation order is the
              WstxOperatingReceive S2 order (route, Origin, TLS/session, size/media/syntax,
              version/enums/UUIDs/safe integers, profile, boot/revision, capability,
-             state). Transmit actions on a station without transmit capability or
-             before #9 slice B is delivered are transmit_unavailable. */
+             state). Transmit actions on a station without transmit capability, or
+             without a current CL-022 grant (a plaintext profile), are
+             transmit_unavailable; Enable Tx arms #9 with the station's current CL-022
+             safety revision. */
     }
     item def CommandReceipt :> WstxArchitecture::StationOutcome {
         attribute v : Integer = 1;
@@ -724,13 +727,16 @@ package WstxContact {
         attribute 'type' : String = "station.tick";
         doc /* New versioned WebSocket event, exactly
              {v:1,type:"station.tick",data:{profile_id,boot_id,utc_ms,period_ms,
-             transmitting,rx_level_db}}, at most 192 bytes. Rate per peer by its display
+             transmitting,rx_level_db}}, at most 224 bytes (the exact keys with two UUIDs
+             and a 13-digit utc_ms already need 220; corrected from 192 by the #10
+             implementation, review required). Rate per peer by its display
              subscription: Detailed 1 per second; Thin and Off 1 per 5 s; plus at most one
-             extra event per transmit start/stop. The browser interpolates the UTC clock
+             extra event per transmit start/stop. A peer that never chose a display
+             subscription (a bare status observer) receives neither event. The browser interpolates the UTC clock
              and Tx progress locally from utc_ms with its monotonic clock between ticks
              (display only); rx_level_db shown is the latest tick value. Budget: Off idle
-             with two clients adds at most 2 x (192 + 2 WS + 29 TLS + 160 accounted
-             TCP/ACK) / 5 s = 154 B/s per direction, so the status-only idle total stays
+             with two clients adds at most 2 x (224 + 2 WS + 29 TLS + 160 accounted
+             TCP/ACK) / 5 s = 166 B/s per direction, so the status-only idle total stays
              within WstxStationProtocol::ThinLinkBudget 1000 B/s; Thin stays within the
              existing 3000 B/s live envelope. TC-007-005 measures both. */
     }
