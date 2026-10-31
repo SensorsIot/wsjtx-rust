@@ -16,7 +16,7 @@ pub(super) fn erf(x: f64) -> f64 {
     }
     x.signum() * (2. * a / PI.sqrt() * (-a * a).exp() * s).min(1.)
 }
-fn gaussian_pulse(mode: Mode, t: f64) -> f64 {
+pub(crate) fn gaussian_pulse(mode: Mode, t: f64) -> f64 {
     let k = PI * (2. / 2f64.ln()).sqrt() * mode.gaussian_bt();
     (erf(k * (t + 0.5)) - erf(k * (t - 0.5))) / 2.
 }

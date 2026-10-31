@@ -9,12 +9,14 @@ package WstxProductScope {
     private import WstxRadioIO::*;
     private import WstxOperatingLayout::*;
     private import WstxOperatingReceive::*;
+    private import WstxTransmit::*;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
          WstxProfiles configuration/persistence; WstxRecordingReceive recording/display;
          WstxOfflineDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
-         capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding.
+         capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding;
+         WstxTransmit FT8 message packing, waveform and transmit period scheduling.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is
          not an extra architecture. Declared coverage is not an execution verdict.
@@ -240,6 +242,7 @@ package WstxProductScope {
         alias Operating for WstxOperatingLayout;
         alias OperatingReceive for WstxOperatingReceive;
         alias Architecture for WstxArchitecture;
+        alias Transmit for WstxTransmit;
         alias SharedRecord for WstxOfflineDecode::ResultRecord;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
