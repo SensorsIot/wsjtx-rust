@@ -39,6 +39,7 @@ struct Bench {
     stopped_by_handle: AtomicBool,
     /// Wall-clock delay of each PTT exchange (Service real-time tests).
     ptt_delay_ms: AtomicI64,
+    radio_tx: Mutex<Option<bool>>,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -85,6 +86,7 @@ impl Hardware for Fake {
         Context {
             capability: self.0.capability.lock().unwrap().unwrap(),
             safety_revision: *self.0.revision.lock().unwrap(),
+            radio_transmitting: *self.0.radio_tx.lock().unwrap(),
         }
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
@@ -856,4 +858,49 @@ fn output_renderer_plays_from_the_planned_sample_on_every_channel_then_silence()
             && (v[3] + 1.0).abs() < 1e-6
     );
     assert!(!tone.exhausted());
+}
+
+// Proves: CL-009-04, CL-022-03; TC-008-003.
+#[test]
+fn startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed() {
+    // Radio found transmitting before this boot keyed: exactly one release.
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.tick();
+    assert_eq!(core.view().startup_release, StartupRelease::Pending);
+    assert!(f.keys().is_empty(), "no readback, no action");
+    *f.0.radio_tx.lock().unwrap() = Some(true);
+    core.tick();
+    core.tick();
+    assert_eq!(f.keys(), vec![(P - 20_000, false)]);
+    assert_eq!(core.view().startup_release, StartupRelease::Released);
+    // Radio in receive at boot: nothing.
+    let f = Fake::new();
+    *f.0.radio_tx.lock().unwrap() = Some(false);
+    let mut core = Core::new(f.clone());
+    run(&mut core, &f, P - 19_000);
+    *f.0.radio_tx.lock().unwrap() = Some(true); // later TX (e.g. the operator's mic) is not ours to end
+    run(&mut core, &f, P - 18_000);
+    assert!(f.keys().is_empty());
+    assert_eq!(core.view().startup_release, StartupRelease::NotNeeded);
+    // This boot keyed first: TX is our own transmission, no extra switch.
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    f.at(P - 100);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 10);
+    *f.0.radio_tx.lock().unwrap() = Some(true);
+    run(&mut core, &f, P + 20);
+    assert_eq!(f.keys(), vec![(P, true)]);
+    assert_eq!(core.view().startup_release, StartupRelease::NotNeeded);
+    // A release that is not confirmed is attempted once; Arm stays refused.
+    let f = Fake::new();
+    *f.0.radio_tx.lock().unwrap() = Some(true);
+    *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
+    let mut core = Core::new(f.clone());
+    run(&mut core, &f, P - 19_000);
+    assert_eq!(f.keys().len(), 1);
+    assert_eq!(core.view().startup_release, StartupRelease::Failed);
+    assert_eq!(core.arm(7), Err(TransmitRefusal::RadioUnavailable));
 }

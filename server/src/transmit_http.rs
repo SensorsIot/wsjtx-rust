@@ -51,16 +51,24 @@ impl Hardware for StationHardware {
     }
     fn context(&self) -> Context {
         let i = self.inputs.lock().unwrap_or_else(|p| p.into_inner());
+        let snapshot = i.actor.as_ref().and_then(|a| a.snapshot().ok());
+        let ready = snapshot
+            .as_ref()
+            .is_some_and(|s| s.state == wstx_rust::radio_control::State::Ready);
+        // Only a fresh confirmed 1C 00 readback of a ready connection counts.
+        let radio_transmitting = snapshot
+            .as_ref()
+            .filter(|s| {
+                s.state == wstx_rust::radio_control::State::Ready && s.facts.rx_tx.confirmed
+            })
+            .and_then(|s| s.facts.rx_tx.value);
         if !i.configured {
             return Context {
                 capability: Capability::Unsupported,
                 safety_revision: None,
+                radio_transmitting,
             };
         }
-        let ready = i.actor.as_ref().is_some_and(|a| {
-            a.snapshot()
-                .is_ok_and(|s| s.state == wstx_rust::radio_control::State::Ready)
-        });
         Context {
             capability: if ready && i.safety_revision.is_some() {
                 Capability::Available
@@ -68,6 +76,7 @@ impl Hardware for StationHardware {
                 Capability::Unavailable
             },
             safety_revision: i.safety_revision,
+            radio_transmitting,
         }
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
@@ -232,7 +241,7 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
         "ptt":name(v.ptt),"transmitting":v.transmitting,"clock":name(v.clock),
         "watchdog":{"tx_minutes":v.tx_minutes,"tx_remaining_minutes":v.tx_remaining_minutes,"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
-        "outcomes":recent})
+        "outcomes":recent,"startup_release":name(v.startup_release)})
 }
 fn station(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
     r.transmit.get().cloned().ok_or("not_found")

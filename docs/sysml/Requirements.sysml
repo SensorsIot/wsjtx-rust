@@ -420,8 +420,10 @@ package WstxRequirements {
              audio device loss, CAT errors or timeouts, authority changes, an
              unsynchronized clock and late or stale requests release or never key PTT,
              report an unconfirmed release as indeterminate and recover it off-only, and
-             never resume or replay a transmission after a restart or reconnect. Details:
-             WstxTransmit::HaltTransmit, TransmitTiming, PttControl, TransmitOutcome. */
+             never resume or replay a transmission after a restart or reconnect; after a
+             boot, a radio found transmitting before the boot ever keyed gets exactly one
+             off-only release with readback. Details: WstxTransmit::HaltTransmit,
+             TransmitTiming, PttControl, StartupSafetyRelease, TransmitOutcome. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs";
     }
@@ -500,7 +502,9 @@ package WstxRequirements {
              unconfirmed release is indeterminate and recovered off-only; restart is
              disarmed (startup) with nothing pending; watchdog expiry at the configured
              minute; no poll during the transmit hold; one off-only release on close of
-             a keyed connection; exact wire shapes and refusals.
+             a keyed connection; exact wire shapes and refusals; a radio in TX at boot
+             gets exactly one 1C 00 00 then a 1C 00 readback, a radio in RX at boot sees
+             zero setter bytes.
              2 — Isolated automated tests; Windows development PC, no audio device,
              radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
@@ -2244,7 +2248,8 @@ package WstxRequirements {
              obtains actual fresh readback automatically after preconditions hold.
              Selection/query/set refer to the same current observable values and
              identity/provenance. Automatic lifecycle never sends a setter/PTT command,
-             replays user commands, starts audio/decoder or grants transmit authority.
+             replays user commands, starts audio/decoder or grants transmit authority;
+             the single permitted exception is the #9 StartupSafetyRelease (WstxTransmit): one off-only PTT release 1C 00 00 with readback, once per boot, only when the first fresh 1C 00 readback of the boot shows TX before that boot ever keyed, sent by the transmit owner through the same actor. It never keys and never grants transmit authority.
              Delivered (issue22 slice B): the browser operating panel shows the
              action with radio identity, endpoint, model, PTT and setup revision,
              requires an explicit receive-only acknowledgement checkbox and posts the

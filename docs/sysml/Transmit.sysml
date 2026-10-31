@@ -297,8 +297,9 @@ package WstxTransmit {
              within 250 ms while CAT answers; a release exchange that fails or times
              out (pttExchangeMs per exchange, RadioIO 1 s) leaves PttState
              indeterminate, closes that CAT connection and is reported, never hidden.
-             playbackScale: the unit-peak waveform is played at -6.02 dBFS; drive level
-             is set at the radio (IC-7300 USB MOD level) in this slice. */
+             playbackScale: the unit-peak waveform is played at -6.02 dBFS, fixed for
+             now (supervisor decision); drive level is set at the radio (IC-7300 USB MOD
+             level), no attenuation setting is offered in this slice. */
     }
     attribute def TransmitClock {
         doc /* ClockState of the station's system UTC clock: synchronized when Windows
@@ -332,6 +333,21 @@ package WstxTransmit {
              any thread. A render error or invalidated device during audio is
              audioDeviceLost: PTT is released and the station disarms. Capture never
              opens it; it never touches CAT. */
+    }
+    enum def StartupRelease { enum pending; enum notNeeded; enum released; enum failed; }
+    action def StartupSafetyRelease {
+        doc /* Safety release after a station boot (supervisor decision 2026-10-31 on #9):
+             a crash while keyed can leave the radio transmitting (a CI-V TX switch
+             latches). On the first fresh confirmed 1C 00 readback of the boot (whoever
+             queried it, normally the CL-022 automatic poll), if it shows TX and this
+             boot has never keyed, the transmit owner sends exactly one off-only release
+             1C 00 00 with readback through PttControl (released, or failed if not
+             confirmed); otherwise notNeeded. Once per boot, never a key, never
+             anything else, regardless of the profile's PTT configuration; a later TX
+             (for example the operator's microphone) is not ended. failed keeps Arm
+             refused for the boot. This is the single permitted exception to "the
+             automatic CAT lifecycle never sends a setter/PTT" (CL-022-03). Reported as
+             GET /transmit startup_release pending|not_needed|released|failed. */
     }
     attribute def TransmitArming {
         attribute armState : ArmState = ArmState::disarmed;
@@ -416,13 +432,14 @@ package WstxTransmit {
              JSON media rules, 1024-byte bodies and error envelope; identity-coded (not
              in the compressed GET allowlist); no WebSocket or StatusReply change.
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
-             clock,watchdog,outcomes} with transmit exactly the WstxContact read view
+             clock,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
              {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
              last_period_utc,halt_state,refusal}, ptt released|keyed|indeterminate,
              clock synchronized|unsynchronized|unknown, watchdog exactly {tx_minutes,
              tx_remaining_minutes,tx_expired,tune_seconds,tune_remaining_seconds} and
              outcomes the last 8 {outcome_sequence,request_sequence,kind,refusal,failure,
-             audio_start_utc_ms}; enum values snake_case.
+             audio_start_utc_ms} and startup_release the StartupSafetyRelease state;
+             enum values snake_case.
              POST /transmit/command: exactly {v,profile_id,boot_id,command_id,action}
              plus the action's parameters: arm {safety_revision}; disarm {};
              request {request_sequence,mode ft8|ft4,period_start_utc_ms,message_text,

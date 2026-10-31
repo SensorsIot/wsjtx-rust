@@ -110,6 +110,21 @@ pub struct Context {
     pub capability: Capability,
     /// Current CL-022 safety revision of the selected radio scope.
     pub safety_revision: Option<u64>,
+    /// The radio's transmit state from the latest fresh (confirmed) 1C 00 readback of
+    /// the CAT owner, whoever queried it; None when no fresh readback exists.
+    pub radio_transmitting: Option<bool>,
+}
+/// WstxTransmit::StartupSafetyRelease: the once-per-boot off-only release.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartupRelease {
+    /// No fresh transmit-state readback yet in this boot.
+    Pending,
+    /// The first fresh readback showed receive, or this boot had already keyed.
+    NotNeeded,
+    /// TX was observed before this boot ever keyed; one release was confirmed.
+    Released,
+    /// The one release attempt was not confirmed (PTT indeterminate).
+    Failed,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
@@ -200,6 +215,7 @@ pub struct View {
     pub tune_seconds: u32,
     pub tune_remaining_seconds: u32,
     pub outcomes: Vec<Outcome>,
+    pub startup_release: StartupRelease,
 }
 
 struct Prepared {
@@ -240,6 +256,8 @@ pub struct Core<H: Hardware> {
     tune_seconds: u32,
     watchdog_from: Option<i64>,
     tx_expired: bool,
+    ever_keyed: bool,
+    startup_release: StartupRelease,
 }
 
 fn schedule_refusal(error: ScheduleError) -> TransmitRefusal {
@@ -317,6 +335,8 @@ impl<H: Hardware> Core<H> {
             tune_seconds: 90,
             watchdog_from: None,
             tx_expired: false,
+            ever_keyed: false,
+            startup_release: StartupRelease::Pending,
         }
     }
     pub fn hardware(&self) -> &H {
@@ -390,7 +410,7 @@ impl<H: Hardware> Core<H> {
             self.refusal = Some(refusal);
             return Err(refusal);
         }
-        if self.ptt == PttState::Indeterminate {
+        if self.ptt == PttState::Indeterminate || self.startup_release == StartupRelease::Failed {
             self.refusal = Some(TransmitRefusal::RadioUnavailable);
             return Err(TransmitRefusal::RadioUnavailable);
         }
@@ -610,6 +630,7 @@ impl<H: Hardware> Core<H> {
             self.refusal = Some(TransmitRefusal::Busy);
             return Err(TransmitRefusal::Busy);
         }
+        self.ever_keyed = true;
         if let Err(e) = self.hardware.ptt(true) {
             self.hardware.stop_audio();
             self.release();
@@ -641,6 +662,22 @@ impl<H: Hardware> Core<H> {
     pub fn tick(&mut self) {
         let now = self.hardware.now_utc_ms();
         let context = self.hardware.context();
+        // Startup safety release: the first fresh transmit-state readback of this boot
+        // that shows TX, before this boot ever keyed, gets exactly one off-only release.
+        if self.startup_release == StartupRelease::Pending
+            && let Some(transmitting) = context.radio_transmitting
+        {
+            self.startup_release = if transmitting && !self.ever_keyed {
+                if self.hardware.ptt(false).is_ok() {
+                    StartupRelease::Released
+                } else {
+                    // Exactly one attempt; Arm stays refused for this boot.
+                    StartupRelease::Failed
+                }
+            } else {
+                StartupRelease::NotNeeded
+            };
+        }
         // Tune: limit, device loss, authority.
         if let Some(tune) = &self.tune {
             let _ = (tune.hz, tune.keyed);
@@ -720,6 +757,7 @@ impl<H: Hardware> Core<H> {
                     self.fail_current(TransmitFailure::AudioUnavailable, DisarmCause::DeviceLost);
                     return;
                 }
+                self.ever_keyed = true;
                 if let Err(e) = self.hardware.ptt(true) {
                     self.ptt = PttState::Indeterminate;
                     let cause = match e {
@@ -868,6 +906,7 @@ impl<H: Hardware> Core<H> {
                 u32::try_from(((t.until_utc_ms - now).max(0) + 999) / 1000).unwrap_or(0)
             }),
             outcomes: self.outcomes.iter().cloned().collect(),
+            startup_release: self.startup_release,
         }
     }
     /// Outcomes published after `after` (contact consumer cursor).

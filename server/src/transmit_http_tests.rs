@@ -80,6 +80,11 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
         0,
         "lifecycle/disarmed owner keyed"
     );
+    // A radio in receive at boot: the safety release is not needed and sends nothing.
+    assert_eq!(
+        station.service.view().startup_release,
+        wstx_rust::transmit::service::StartupRelease::NotNeeded
+    );
     assert!(
         peer.lock().unwrap().writes.len() >= 5,
         "the read-only lifecycle polled"
@@ -201,6 +206,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "outcomes",
             "profile_id",
             "ptt",
+            "startup_release",
             "transmit",
             "transmitting",
             "v",
@@ -224,6 +230,10 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
     assert_eq!(view["transmit"]["arm_state"], "disarmed");
     assert_eq!(view["transmit"]["last_disarm_cause"], "startup");
     assert_eq!(view["transmit"]["capability"], "unsupported");
+    assert_eq!(
+        view["startup_release"], "pending",
+        "no CAT readback, no release"
+    );
     let command = "00000000-0000-4000-8000-000000000001";
     let halt = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":command});
     let (status, receipt) = call(
@@ -370,4 +380,54 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
         );
     }
     let _ = std::fs::remove_dir_all(dir);
+}
+
+// Proves: CL-009-04, CL-022-03; TC-008-003. Startup safety release: a radio found
+// transmitting by the first fresh readback after boot gets exactly one off-only switch.
+#[test]
+fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() {
+    let directory = std::env::temp_dir().join(format!(
+        "wstx-transmit-boot-{}",
+        profile::new_uuid().unwrap()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let id = profile::new_uuid().unwrap();
+    let recording =
+        recording::Recording::open(&directory, id.clone(), profile::new_uuid().unwrap());
+    let peer = attach_peer(&recording, Device::Present);
+    peer.lock().unwrap().transmitting = true;
+    let station = transmit_http::Station::start().unwrap();
+    let _ = recording.transmit.set(station.clone());
+    // Even a receive-only profile gets the release: it only ever turns RF off.
+    let doc = document(&id, "disabled", None);
+    let g = gate(3);
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(3_500) {
+        recording.cat_maintain(&g, Instant::now());
+        station.update(&doc, &g, recording.radio_actor());
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let writes = peer.lock().unwrap().writes.clone();
+    let off = [0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0, 0xfd];
+    let read = [0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0xfd];
+    assert_eq!(
+        ptt_setters(&writes),
+        1,
+        "exactly one switch frame: {writes:02x?}"
+    );
+    let at = writes
+        .iter()
+        .position(|w| w[..] == off)
+        .expect("off-only release");
+    assert_eq!(writes[at + 1], read, "release is read back");
+    assert!(!peer.lock().unwrap().transmitting);
+    assert_eq!(
+        station.service.view().startup_release,
+        wstx_rust::transmit::service::StartupRelease::Released
+    );
+    if let Some(actor) = recording.radio_actor() {
+        actor.request_close();
+    }
+    drop(station);
+    let _ = std::fs::remove_dir_all(&directory);
 }

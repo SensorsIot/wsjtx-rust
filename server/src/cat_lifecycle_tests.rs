@@ -212,6 +212,8 @@ pub(crate) struct Peer {
     pub opens: usize,
     pub closes: usize,
     pub writes: Vec<Vec<u8>>,
+    /// Radio transmit state reported by 1C 00 (a #9 transmit owner may release it).
+    pub transmitting: bool,
 }
 struct Port {
     peer: Arc<Mutex<Peer>>,
@@ -236,8 +238,12 @@ impl Transport for Port {
             [3] => vec![3, 0, 0x40, 7, 7, 0],
             [4] => vec![4, 1, 1],
             [0x1a, 6] => vec![0x1a, 6, 1, 1],
-            [0x1c, 0] => vec![0x1c, 0, 0],
+            [0x1c, 0] => vec![0x1c, 0, u8::from(peer.transmitting)],
             [0x0f] => vec![0x0f, 0],
+            [0x1c, 0, 0] => {
+                peer.transmitting = false;
+                vec![0xfb]
+            }
             _ => vec![0xfa],
         };
         self.pending.extend([0xfe, 0xfe, 0xe0, 0x94]);
@@ -296,6 +302,7 @@ pub(crate) fn attach_peer(recording: &Recording, device: Device) -> Arc<Mutex<Pe
         opens: 0,
         closes: 0,
         writes: Vec::new(),
+        transmitting: false,
     }));
     let physical = peer.clone();
     recording.fixture_cat_transport(Arc::new(move |_, _, _| {

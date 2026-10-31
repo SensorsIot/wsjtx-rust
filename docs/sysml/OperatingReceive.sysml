@@ -1277,7 +1277,9 @@ required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxe
              remain hard bounds. Failed close quarantines; no timed reopen until
              explicit recovery proves release. Late completions are identity fenced.
              Automatic I/O is read-only queries only, no setters/PTT/audio start or
-             replay. Stop/Halt clears receive/RF tokens and pending resume; background
+             replay, except the WstxTransmit::StartupSafetyRelease (one off-only PTT
+             release with readback per boot, only when TX is observed before the boot
+             ever keyed). Stop/Halt clears receive/RF tokens and pending resume; background
              CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
              zero native open/query/set/PTT. Confirmation itself has no native effect.
              Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
