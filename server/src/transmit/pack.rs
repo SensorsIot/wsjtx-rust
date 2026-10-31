@@ -79,11 +79,17 @@ pub fn pack(message: &str) -> Result<Packed, PackError> {
     if wspr(&words) {
         return Err(PackError::UnsupportedFamily);
     }
-    if let Some((family, bits)) = standard(&words) {
-        return checked(text, family, bits);
+    // A structured candidate that fails the round trip falls through to the next
+    // family, as WSJT-X take_candidate does.
+    if let Some((family, bits)) = standard(&words)
+        && let Ok(packed) = checked(text.clone(), family, bits)
+    {
+        return Ok(packed);
     }
-    if let Some(bits) = nonstandard(&words) {
-        return checked(text, Family::Nonstandard, bits);
+    if let Some(bits) = nonstandard(&words)
+        && let Ok(packed) = checked(text.clone(), Family::Nonstandard, bits)
+    {
+        return Ok(packed);
     }
     if !text.bytes().all(|c| TEXT42.contains(&c)) {
         return Err(PackError::InvalidText);
@@ -347,7 +353,9 @@ fn standard(w: &[&str]) -> Option<(Family, [u8; 77])> {
     };
     let a = slot(&first, true)?;
     let b = slot(w.get(second)?, false)?;
-    if (a.cq && b.hash) || (a.hash && b.suffix.is_some()) || (b.hash && a.suffix.is_some()) {
+    // A hashed call never pairs with a slashed call, including a bracketed one.
+    let slashed = |t: &str| t.contains('/');
+    if (a.cq && b.hash) || (a.hash && slashed(w[second])) || (b.hash && slashed(&first)) {
         return None;
     }
     if a.suffix.is_some() && b.suffix.is_some() && a.suffix != b.suffix {
