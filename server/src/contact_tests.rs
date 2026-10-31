@@ -414,7 +414,7 @@ fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
     // The partner misses my Tx3 and repeats its report: Tx3 is sent again.
     s.run(period(4) + 14 * SECOND);
     let again = s.row(period(4), "HB9BLA K1ABC -05", 1500.0, None);
-    s.deliver(&[again]);
+    s.deliver(&[again.clone()]);
     assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
     s.run(period(5) + 14 * SECOND);
     assert_eq!(s.sent_in(period(3)), s.sent_in(period(5)));
@@ -424,6 +424,10 @@ fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
     s.run(period(6) + 14 * SECOND);
     s.deliver(&[roger, redecode]);
     assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    // The earlier report row delivered again (same identity) counts once: it does not
+    // send the contact back to Tx3.
+    s.deliver(&[again.clone()]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4), "one row counts once");
     // The partner did not copy my R-report and sends its report again: back to Tx3.
     s.run(period(8) + 14 * SECOND);
     let report_again = s.row(period(8), "HB9BLA K1ABC -06", 1500.0, None);
