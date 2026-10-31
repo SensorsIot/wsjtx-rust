@@ -731,7 +731,10 @@ package WstxOperatingReceive {
         return allowed : Boolean = committedBandKnown or
             (exactReadbackBandUnique and readbackCurrent);
         doc /* S1a: otherwise409select_band_first beforeanydevice/start/stop/revision
-             change. Explicitband selectsitsentry. Noapproximate/defaultbandguess. */
+             change. Explicitband selectsitsentry. Noapproximate/defaultbandguess.
+             #11: a band action resolves its entry in WstxContact::StationOperatingMode
+             (the last started ft4/ft8 live job or admitted selection), so a band change
+             keeps the station's mode; WireSelection mode then follows the commit. */
     }
     attribute def NormalSelectionRequest {
         attribute version : Integer = 1;

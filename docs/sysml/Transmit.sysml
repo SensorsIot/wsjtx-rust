@@ -475,6 +475,21 @@ package WstxTransmit {
     dependency authorityPromise from TransmitAuthority to WstxRequirements::'CL-009-03';
     dependency haltClausePromise from HaltTransmit to WstxRequirements::'CL-009-04';
 
+    attribute def StationModeGate {
+        attribute stationMode : WstxOfflineDecode::Mode[0..1];
+        doc /* #11 CL-011-04 (review repair 2026-11-01). The transmit owner holds the
+             station's operating mode (WstxContact::StationOperatingMode), set by the
+             station at every change of that mode (live job start, admitted operating
+             selection, owner start) and refreshed by every contact step. A request
+             whose mode differs is refused staleRequest at admission (disarming as any
+             admission refusal) and, if the mode changes after admission, refused
+             staleRequest when its period starts, before PTT is keyed or audio starts
+             (a request keyed before audio is released); it is never keyed or played.
+             A transmission whose audio already started finishes, as with any disarm,
+             and a mode selection is refused busy meanwhile (WstxContact::ModeChange).
+             The gate does not depend on the 50 ms contact step. Absent stationMode
+             (an owner not yet told) gates nothing. */
+    }
     action def PlanTransmitStart {
         in mode : WstxOfflineDecode::Mode;
         in nowUtcMs : Integer;

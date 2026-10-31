@@ -600,13 +600,16 @@ package WstxRequirements {
              Steps: select the next FT4 slot and plan starts before the period, at the
              300 ms delay, late, at the 75 % boundary, after it, for unaligned periods,
              FT4-only boundaries requested as FT8, and unsynchronized/unknown clocks.
-             CL-011-02: with an FT4 live job read station.tick and prepare an own CQ and
-             a manual entry; request an operating selection with action mode while Tune
-             is on, and again after Tune ends.
+             CL-011-02: with an FT4 live job read station.tick and prepare a manual
+             entry; request an operating selection with action mode while Tune is on,
+             while PTT is keyed before the audio, while the FT4 waveform plays, and after
+             Tune ends; stop FT4 receive with an active FT4 contact.
              CL-011-02 oracles (WstxContact::StationOperatingMode, ModeChange):
              station.tick period_ms 7500 in FT4 and 15000 in FT8; the manual contact
-             uses FT4 (Tx4 RR73); the mode selection while Tune is on is 409 busy and
-             nothing changes; after Tune it is not refused busy.
+             uses FT4 (Tx4 RR73); the mode selection while Tune is on, PTT keyed or
+             transmitting is 409 busy and nothing changes (operating revision, receive
+             mode ft4); after Tune it is not refused busy; after the receive stop the
+             period stays 7500 and the FT4 contact stays replying with K1ABC.
              Oracles: WSJT-X values (Modulator.cpp FT4 delay_ms=300 and late-start m_ic,
              TxStartPolicy.hpp 0.75, mainwindow.cpp m_TRperiod=7.5 and t mod 15 s
              parity): exact audio start and skipped samples. Deliberately not WSJT-X's
@@ -634,12 +637,13 @@ package WstxRequirements {
              and receive start, without a second browser, rig-control, logging or
              transmit-authority path: the station's operating mode (the running live
              decoding job's mode, else the operating selection's mode) sets the mode of
-             manual entries and own CQs, the Tx offset domain and the period shown; an
-             operating mode selection is refused busy while #9 reports PTT keyed, a
-             transmission or Tune. Details: WstxContact::StationOperatingMode,
-             ModeChange. */
+             manual entries and own CQs, the Tx offset domain and the period shown; the
+             mode persists across a receive stop and a band change; an operating mode
+             selection is refused busy while #9 reports PTT keyed, a transmission or
+             Tune; the #9 panel's mode is a read-only display of it. Details:
+             WstxContact::StationOperatingMode, ModeChange. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/recording.rs; server/src/selection_http.rs; server/src/contact_http.rs; server/src/contact.rs";
+        attribute implementation : String = "server/src/recording.rs; server/src/selection_http.rs; server/src/receive_http.rs; server/src/contact_http.rs; server/src/contact.rs; client/contact.js; client/recording.js";
     }
     dependency CL_011_02_to_FR_006 from 'CL-011-02' to 'FR-006';
     dependency CL_011_02_to_FR_007 from 'CL-011-02' to 'FR-007';
@@ -661,11 +665,12 @@ package WstxRequirements {
         doc /* Keep FT8 behaviour unchanged and isolate the modes: a change of the
              station's operating mode disarms #9 and cancels a calling or active
              contact of the other mode (a completed contact keeps its review and mode),
-             clamps the Tx offset into the new domain, and simultaneous FT4 and FT8
-             stations share no contact, arm or log state. Details:
-             WstxContact::ModeChange, ContactMode. */
+             clamps the Tx offset into the new domain, the #9 owner never keys or plays
+             a request of another station mode, and simultaneous FT4 and FT8 stations
+             share no contact, arm or log state. Details: WstxContact::ModeChange,
+             ContactMode, WstxTransmit::StationModeGate. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/transmit/service.rs; server/src/recording.rs; server/src/receive_http.rs";
     }
     dependency CL_011_04_to_FR_006 from 'CL-011-04' to 'FR-006';
     dependency CL_011_04_to_FR_007 from 'CL-011-04' to 'FR-007';
@@ -686,7 +691,10 @@ package WstxRequirements {
              station mode with an armed FT8 contact and a pending request and a
              2940 Hz Tx offset, and with a completed unsaved FT8 contact, then Enable Tx
              in FT4; (e) an FT4 and an FT8 station prepare and review contacts at the
-             same time; (f) the FT8 contact tests of TC-007-001 unchanged.
+             same time; (f) the FT8 contact tests of TC-007-001 unchanged; (g) an armed
+             FT8 request pending, the station mode set to FT4 in the #9 owner only, the
+             owner run across the period start without any contact step, then a new FT8
+             request.
              Expected (independent hand-written values): (a) Tx4 text
              "K1ABC HB9BLA RR73", transmissions only in odd FT4 periods P0+7.5 s,
              P0+22.5 s, P0+37.5 s with audio 300 ms after the period start and 241920
@@ -700,7 +708,9 @@ package WstxRequirements {
              the switch, contact cancelled, Tx offset 2916, the completed contact's
              review kept with MODE FT8, a later CQ transmitted in FT4 periods;
              (e) each station keeps its own contact, messages, arm state and review mode
-             (FT4 MFSK/FT4, FT8 FT8); (f) FT8 results identical to TC-007-001.
+             (FT4 MFSK/FT4, FT8 FT8); (f) FT8 results identical to TC-007-001; (g) no
+             PTT key and no audio, the pending request refused staleRequest and Enable
+             Tx off, the new FT8 request refused staleRequest.
              2 — Isolated automated functional tests; Windows development PC, actual
              engine, #9 owner core and router, independent row and outcome fixtures; no
              RF. */

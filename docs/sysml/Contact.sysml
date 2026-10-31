@@ -161,16 +161,25 @@ package WstxContact {
         in liveDecodingMode : WstxOfflineDecode::Mode[0..1];
         in selectionMode : WstxOfflineDecode::Mode;
         return mode : WstxOfflineDecode::Mode;
-        doc /* #11 CL-011-02. The station's operating mode is the mode of the running
-             live decoding job (WstxOperatingReceive receive job ft4|ft8, not
-             terminal), else the operating selection's mode (WstxOperatingReceive::
-             WireSelection mode; FT8 at a fresh boot). FT4 is selected per station
-             through the existing operating selection (action mode ft4, which retunes
-             the dial to the FT4 entry and restarts the live job in FT4) or the
-             existing receive start; there is no second mode control, browser,
-             rig-control, log or transmit authority for FT4. It sets the mode of a
-             manually entered contact and of an own CQ, the Tx offset domain
-             (FrequencyControls) and station.tick period_ms (7500 FT4, 15000 FT8). */
+        doc /* #11 CL-011-02. The station's operating mode is the mode of whichever came
+             last: the last started ft4|ft8 live decoding job (WstxOperatingReceive
+             receive start, including the old Next receive mode control) or the last
+             admitted operating selection (its requested mode, from admission on, even
+             if the restart later fails); FT8 at a fresh boot. It persists across a
+             receive stop and a spectrum-only job (review repair 2026-11-01: an FT4
+             contact is not cancelled by stopping receive). An operating selection with
+             action band keeps it: the band's entry is resolved in the station's
+             operating mode, not in WireSelection's last mode (WSJT-X keeps the mode on
+             a band change). FT4 is selected per station through the existing
+             operating selection (action mode ft4, which retunes the dial to the FT4
+             entry and restarts the live job in FT4) or the existing receive start;
+             there is no second mode control, browser, rig-control, log or transmit
+             authority for FT4: the #9 transmit panel's mode is a read-only display of
+             this mode, its Tx offset input and the contact Tx input are bounded by the
+             mode's domain (2916 Hz FT4, 2950 Hz FT8), both following station.tick. It
+             sets the mode of a manually entered contact and of an own CQ, the Tx offset
+             domain (FrequencyControls), station.tick period_ms (7500 FT4, 15000 FT8)
+             and WstxTransmit::StationModeGate. */
     }
     attribute def ContactMode {
         doc /* #11 CL-011-03. A contact's mode is fixed when it is prepared: the selected
@@ -190,7 +199,9 @@ package WstxContact {
     action def ModeChange {
         doc /* #11 CL-011-04. When StationOperatingMode differs from the mode of a contact
              in calling, replying, report, rogerReport, rogers or signoff, the engine
-             (at its next step or command, at most one 50 ms step later) turns Enable
+             (at its next step or command: POST /receive/start, /receive/stop and an
+             admitted /receive/select run one synchronous contact step before their
+             202 reply, otherwise at most one 50 ms step later) turns Enable
              Tx off through #9 (TransmitArming disarm, DisarmCause contactCancelled: no
              unkeyed request of the old mode remains) and cancels the contact as
              CancelContact (calling -> idle; replying..signoff -> cancelled, DX call and
@@ -204,7 +215,11 @@ package WstxContact {
              As WSJT-X (MW updateModeControlLock disables the mode controls while
              transmitting), an operating selection with action mode is refused busy,
              after the profile/revision checks and before any effect, while #9 reports
-             PTT keyed, a transmission or Tune. */
+             PTT keyed, a transmission or Tune. Independently of the contact step, the
+             #9 owner never keys or plays a request of another mode
+             (WstxTransmit::StationModeGate), so no transmission of the old mode starts
+             on the new mode's dial in the interval before the step; the contact's
+             disarm cause is then refused (staleRequest) instead of contactCancelled. */
     }
     action def SelectDecodedRow {
         in rowIdentity : String;
