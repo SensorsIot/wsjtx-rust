@@ -773,7 +773,8 @@ function validCatStatus(v,scope){
     typeof v.commissioned==='boolean'&&operatingShape(v.receive_state,'audio,decoder');
 }
 async function catSync(){
-  if(!authorization||connection.dataset.state!=='connected')return;
+  // CAT disabled needs no status read: the saved settings already state it.
+  if(!authorization||connection.dataset.state!=='connected'||profileData?.settings.control.mode!=='cat')return;
   if(catPending){catAgain=true;return;}
   catPending=true;const current=socket,authEpoch=authorization.snapshot().epoch;
   try{
@@ -794,7 +795,7 @@ function catShow(){
     waitingForDevice:`CAT waiting for radio${reason}`,connecting:`CAT connecting${reason}`,ready:'CAT ready · fresh readback',
     retryWaiting:`CAT unavailable${reason} · automatic retry in ${Math.ceil((v?.retry_after_ms??0)/1000)} s`,closing:`CAT closing${reason}`,
     quarantined:'CAT quarantined · close failed; check the radio connection and restart the station'};
-  status.textContent=!connected?'CAT status stale · station disconnected':!authorization?`CAT ${operatingState?.radio.state??'status unavailable'} · automatic CAT requires the HTTPS station`:v?texts[v.condition]:'CAT status unavailable';
+  status.textContent=!connected?'CAT status stale · station disconnected':profileData?.settings.control.mode!=='cat'?'CAT disabled':!authorization?`CAT ${operatingState?.radio.state??'status unavailable'} · automatic CAT requires the HTTPS station`:v?texts[v.condition]:'CAT status unavailable';
   status.dataset.condition=v?.condition??'unknown';
   const needed=!!v&&v.condition==='commissioningRequired'&&profileData?.settings.control.mode==='cat';
   confirm.hidden=!needed;
