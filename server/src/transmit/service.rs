@@ -174,6 +174,11 @@ pub enum AudioPoll {
 }
 pub trait Hardware: Send {
     fn now_utc_ms(&self) -> i64;
+    /// Monotonic milliseconds for the release deadline (never steps with UTC). The
+    /// default follows `now_utc_ms`, for virtual-clock doubles only.
+    fn monotonic_ms(&self) -> i64 {
+        self.now_utc_ms()
+    }
     fn clock(&self) -> ClockState;
     fn context(&self) -> Context;
     /// Key or release the transmit switch; Ok only after a matching readback.
@@ -239,7 +244,7 @@ struct Job {
     keyed: bool,
     audio_start_utc_ms: Option<i64>,
     /// Device-independent release deadline once audio started.
-    release_by_utc_ms: Option<i64>,
+    release_by_mono_ms: Option<i64>,
 }
 struct Tune {
     hz: f64,
@@ -546,7 +551,7 @@ impl<H: Hardware> Core<H> {
                 prepared,
                 keyed: false,
                 audio_start_utc_ms: None,
-                release_by_utc_ms: None,
+                release_by_mono_ms: None,
             });
         }
         self.emit(sequence, OutcomeKind::Accepted)
@@ -859,7 +864,8 @@ impl<H: Hardware> Core<H> {
                 / i64::from(SAMPLE_RATE_HZ);
             if let Some(job) = &mut self.current {
                 job.audio_start_utc_ms = Some(now);
-                job.release_by_utc_ms = Some(now + remaining + RELEASE_MARGIN_MS);
+                job.release_by_mono_ms =
+                    Some(self.hardware.monotonic_ms() + remaining + RELEASE_MARGIN_MS);
             }
             self.emit_full(sequence, OutcomeKind::Started, None, None, Some(now));
             return;
@@ -869,8 +875,8 @@ impl<H: Hardware> Core<H> {
         if self
             .current
             .as_ref()
-            .and_then(|j| j.release_by_utc_ms)
-            .is_some_and(|by| now >= by)
+            .and_then(|j| j.release_by_mono_ms)
+            .is_some_and(|by| self.hardware.monotonic_ms() >= by)
         {
             self.fail_current(TransmitFailure::AudioStalled, DisarmCause::DeviceLost);
             return;
@@ -891,7 +897,7 @@ impl<H: Hardware> Core<H> {
                             prepared: next,
                             keyed: false,
                             audio_start_utc_ms: None,
-                            release_by_utc_ms: None,
+                            release_by_mono_ms: None,
                         });
                     }
                 } else {
@@ -1230,8 +1236,15 @@ pub fn actor_ptt(
 
 /// A station may select its hardware at runtime (devices or fixtures).
 impl Hardware for Box<dyn Hardware> {
+    // Every method, including those with default bodies, is forwarded.
     fn now_utc_ms(&self) -> i64 {
         (**self).now_utc_ms()
+    }
+    fn monotonic_ms(&self) -> i64 {
+        (**self).monotonic_ms()
+    }
+    fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
+        (**self).attach_abort(abort)
     }
     fn clock(&self) -> ClockState {
         (**self).clock()

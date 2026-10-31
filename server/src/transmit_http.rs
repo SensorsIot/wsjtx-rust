@@ -30,10 +30,14 @@ pub(crate) struct StationHardware {
     output: Option<wstx_rust::playback::Output>,
     slot: Arc<Mutex<Option<Stopper>>>,
     abort: Arc<std::sync::atomic::AtomicBool>,
+    origin: Instant,
 }
 impl Hardware for StationHardware {
     fn attach_abort(&mut self, abort: Arc<std::sync::atomic::AtomicBool>) {
         self.abort = abort;
+    }
+    fn monotonic_ms(&self) -> i64 {
+        self.origin.elapsed().as_millis() as i64
     }
     fn now_utc_ms(&self) -> i64 {
         std::time::SystemTime::now()
@@ -180,6 +184,7 @@ impl Station {
             output: None,
             slot: slot.clone(),
             abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            origin: Instant::now(),
         };
         Ok(Arc::new(Self {
             inputs,

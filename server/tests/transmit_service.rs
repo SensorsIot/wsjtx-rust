@@ -1150,3 +1150,89 @@ fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
     assert!(ptt_frames(&state.lock().unwrap()).is_empty());
     assert!(!actor.ptt_indeterminate());
 }
+
+/// A double whose key wait honours the attached priority-halt flag, as the station's
+/// CAT actor wait does.
+struct AbortAware {
+    fake: Fake,
+    abort: Option<Arc<AtomicBool>>,
+}
+impl Hardware for AbortAware {
+    fn now_utc_ms(&self) -> i64 {
+        self.fake.now_utc_ms()
+    }
+    fn clock(&self) -> ClockState {
+        self.fake.clock()
+    }
+    fn context(&self) -> Context {
+        self.fake.context()
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        if on {
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_millis(1_000) {
+                if self
+                    .abort
+                    .as_ref()
+                    .is_some_and(|a| a.load(Ordering::SeqCst))
+                {
+                    return Err(PttError::Busy);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        self.fake.ptt(on)
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        self.fake.open_audio()
+    }
+    fn play(&mut self, p: Program) -> Result<(), AudioError> {
+        self.fake.play(p)
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        self.fake.poll_audio()
+    }
+    fn stop_audio(&mut self) {
+        self.fake.stop_audio()
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.fake.audio_stopper()
+    }
+    fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
+        self.abort = Some(abort);
+    }
+}
+
+// Proves: CL-009-04; TC-008-003. Re-check finding: the boxed station hardware receives
+// the halt flag, so a halt during the CAT key wait sends no key and is confirmed in bound.
+#[test]
+fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
+    let f = Fake::new();
+    let (stop, driver) = drive(&f, P - 50);
+    let boxed: Box<dyn Hardware> = Box::new(AbortAware {
+        fake: f.clone(),
+        abort: None,
+    });
+    let service = Service::start(boxed).unwrap();
+    service.with(|c| {
+        c.arm(7).unwrap();
+        c.submit(request(1, P, "CQ HB9BLA JN47"))
+    });
+    wait_for("open", Duration::from_secs(2), || {
+        f.log().iter().any(|(_, e)| *e == Event::Open)
+    });
+    std::thread::sleep(Duration::from_millis(20));
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000c4");
+    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS + 20));
+    assert_ne!(state, HaltState::Pending, "halt confirmed within the bound");
+    std::thread::sleep(Duration::from_millis(1_200));
+    assert!(
+        f.keys().iter().all(|k| !k.1),
+        "keyed after halt: {:?}",
+        f.log()
+    );
+    assert_eq!(service.view().arm_state, ArmState::Disarmed);
+    stop.store(true, Ordering::SeqCst);
+    driver.join().unwrap();
+}
