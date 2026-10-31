@@ -327,7 +327,7 @@ package WstxOperatingReceive {
              /session, all nonGET including PUTprofile/POSToperations, /ws handshake or
              messages, auth/error/credential/authority responses are excluded. HEAD,
              no-body, existingContent-Encoding andContent-Range preserve original semantics.
-             Static / is excluded. Static /app.js,/authorization.js,/recording.js,
+             Static / is excluded. Static /app.js,/authorization.js,/recording.js,/logbook.js,
              /style.css,/recording.css (public, no secret or reflected input, so no
              BREACH exposure) are gzip only when the pinned algorithm positively selects
              gzip; every other negotiation, including all encodings forbidden, returns

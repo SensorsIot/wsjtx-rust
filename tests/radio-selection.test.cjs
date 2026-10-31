@@ -365,6 +365,9 @@ function selectionNetworkSummary(transfers,start,end){
   let active=0,maxActive=0;for(const event of events){active+=event.delta;assert.ok(active>=0);maxActive=Math.max(maxActive,active);}
   return {maxActive,requests,pendingAtEnd:requests.filter(r=>r.ended===null||r.ended>end).length};
 }
+// WstxContact::ContactWire: POST /contact/worked is a read-only worked-before query, not a
+// station mutation; every other non-GET request still counts.
+function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&r.route==='/contact/worked');}
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
@@ -444,7 +447,7 @@ function cadenceQualification(seen){
     if(event.action){epoch++;actions++;}assert.equal(event.epoch,epoch,'all source epoch changes accounted for');
   }
   for(const {at,body:profile}of seen.profileBodies.filter(p=>p.at>=q.socketBaseline.at))for(const [key,field]of [['profile_id','profile_id'],['boot_id','boot_id'],['profile_revision','revision']])assert.equal(profile[field],q.expected[key],'authoritative profile remains fixed within qualified segment');
-  const mutations=seen.transfers.filter(r=>r.wallStarted>=events[0].at&&!['GET','HEAD'].includes(r.method));
+  const mutations=seen.transfers.filter(r=>r.wallStarted>=events[0].at&&stationMutation(r));
   assert.equal(mutations.length,actions,'each epoch action has exactly one actual mutation');
   assert.ok(mutations.every(r=>r.method==='POST'&&r.route==='/receive/select'),'no unaccounted epoch-changing mutation');
   return q;
@@ -634,7 +637,7 @@ function liveSelectionFixture(){
           const mapping=cadenceSource(seen.cadenceSource);evidence.sourceSha256=mapping.sha256;
           cadenceQualification(seen);
           evidence.joined=cadenceJoin(seen,origin,mapping);
-          const mutations=observations.flatMap(o=>o.transfers).filter(r=>!['GET','HEAD'].includes(r.method));
+          const mutations=observations.flatMap(o=>o.transfers).filter(stationMutation);
           for(let n=1;n<evidence.joined.length;n++){
             const previous=evidence.joined[n-1],current=evidence.joined[n];
             if(previous.started<start||current.started>=start+seconds*1000)continue;

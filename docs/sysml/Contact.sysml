@@ -455,8 +455,10 @@ package WstxContact {
              FREQ in MHz with six decimals = confirmed dial + Tx offset (LQ ~384,
              mainwindow_slots.cpp ~545), absent when unconfirmed; STATION_CALLSIGN and
              MY_GRIDSQUARE from the profile; TX_PWR watts (operator entry, decimal >0,
-             optional, D10); COMMENT single line, printable ASCII, at most 1024
-             characters (optional, D10); APP_WSTXRUST_CONTACT_ID = contactId.
+             optional, D10); COMMENT single line, printable ASCII without '<' and '>', at
+             most 1024 characters (optional, D10); a COMMENT containing '<' or '>' is
+             refused beside the field (DIFFERENT from WSJT-X to_adi_text stripping them:
+             a reviewed record is never altered); APP_WSTXRUST_CONTACT_ID = contactId.
              Name, operator, propagation, satellite and contest exchange fields are not
              adopted (D10). Retain checkboxes: power and comments may be retained for
              the next review within the station session.
@@ -548,7 +550,9 @@ package WstxContact {
         attribute historyPageBytesMax : Integer = 16384;
         doc /* Application admission limits (#10 text; not ADIF limits). Exactly at a
              limit is admitted, one over is refused and publishes no record of that
-             import. The stored log is not limited by one import's record count. */
+             import. Inside a record only white space is permitted between a field value
+             and the next tag; any other text there is length_mismatch (an inexact LEN is
+             never silently truncated). The stored log is not limited by one import's record count. */
     }
     enum def AdiError {
         enum malformed; enum lengthMismatch; enum unsupportedCharacter; enum fieldTooLong;
@@ -564,8 +568,8 @@ package WstxContact {
         out conflictCount : Integer;
         out error : AdiError[0..1];
         doc /* ADIF 3.1.8 ADI only (header optional, ended by <EOH>; records end <EOR>;
-             tags case-insensitive <NAME:LEN[:TYPE]> with exact LEN in characters; text
-             between fields ignored). Characters: printable ASCII 0x20-0x7E, plus
+             tags case-insensitive <NAME:LEN[:TYPE]> with exact LEN in characters; only
+             white space between fields within a record, see AdiLimits). Characters: printable ASCII 0x20-0x7E, plus
              TAB/CR/LF only inside unknown-field values; anything else
              unsupportedCharacter. Required per record: CALL, QSO_DATE (valid
              YYYYMMDD), TIME_ON (HHMM or HHMMSS), MODE; supported fields that are present
@@ -737,7 +741,8 @@ package WstxContact {
              strings of at most 13 characters, body at most 2048 bytes; 200 exactly
              {v:1,band,mode,statuses:[{call,status}]}, at most 4096 bytes; read-only, at
              most one per published period per browser); POST /contacts (SaveContact:
-             exactly {v,profile_id,boot_id,command_id,record}, body at most 2048 bytes;
+             exactly {v,profile_id,boot_id,command_id,record}, body at most 8192 bytes so
+             that a 1024-character comment fits with worst-case JSON escaping;
              201 {v:1,contact_id,outcome:"saved"}, 200 alreadySaved, 409 log_conflict,
              400 log_invalid_field with field, 503 storage_unavailable leaving the review
              unsaved); GET /contacts (ContactHistory); GET /contacts/export.adi
@@ -748,7 +753,8 @@ package WstxContact {
              (ImportAdi); POST /transmit/halt (WstxTransmit::HaltTransmit).
              All use the existing HTTP/TLS authentication, exact Origin on mutations,
              JSON media rules and error envelope; the 1024-byte body cap applies except
-             the stated 2048-byte bodies and 16384-byte import chunks. Mutations are never
+             the stated 2048-byte worked-before body, 8192-byte save body and 16384-byte
+             import chunks. Mutations are never
              replayed automatically; reconnect reads GET /contact first. MCP uses the
              same station operations. */
     }
