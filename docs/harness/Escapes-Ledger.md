@@ -2,7 +2,7 @@
 
 
 **Layer:** HOW (method self-measurement). The rule is
-[testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md) §Self-measurement.
+[testing](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/testing.md) §Self-measurement.
 
 An **escape** is a defect caught later, or by a more expensive check, than the cheapest
 check that should have caught it: by the review or the operator when a wired check

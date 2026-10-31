@@ -1,7 +1,7 @@
-"""Declared-authority SysML checks and real OMG Pilot validation.
+"""Canonical-authority SysML checks and real OMG Pilot validation.
 
-sync is generation, not semantic proof. check additionally calls the pinned Java
-parser/name resolver/semantic validator. Neither executes modeled behavior.
+traces checks catalog and source/model bindings only. check additionally calls the
+pinned Java parser/name resolver/semantic validator. Neither executes modeled behavior.
 """
 from __future__ import annotations
 
@@ -47,19 +47,19 @@ for _group, _suffixes in {
 
 
 def authority(directory: Path, fsd: Path) -> str:
-    """Select exactly one reviewed authority; never inspect archived Markdown."""
+    """Admit only canonical SysML; refuse an active FSD; never inspect archived Markdown."""
     entry = directory / "Requirements.sysml"
     text = entry.read_text(encoding="utf-8") if entry.is_file() else ""
     markers = re.findall(r"^// Canonical authority:[^\r\n]*$", text, re.MULTILINE)
     if markers and markers != [CANONICAL_MARKER]:
         raise ValueError("Invalid or duplicate canonical-authority declaration")
-    if markers:
-        if fsd.exists():
+    if fsd.exists():
+        if markers:
             raise ValueError("Two functional authorities: canonical SysML and active FSD")
-        return "sysml"
-    if fsd.is_file():
-        return "markdown"
-    raise ValueError("No declared functional authority: canonical model or active FSD required")
+        raise ValueError("Retired Markdown FSD is not a functional authority: archive it and declare canonical SysML")
+    if not markers:
+        raise ValueError("No declared functional authority: canonical SysML marker required")
+    return "sysml"
 
 
 def without_comments(text: str) -> str:
@@ -208,64 +208,6 @@ def library_digest(directory: Path) -> str:
     return fingerprint.hexdigest()
 
 
-def legacy_catalog(text: str) -> dict[str, dict]:
-    """Read only defined table rows/headings, never incidental ID mentions."""
-    entries: dict[str, dict] = {}
-    lines = text.splitlines()
-
-    def add(identifier: str, kind: str, prose: str, refs: list[str]):
-        # The operator keeps documentation/harness methods in Markdown only.
-        if identifier.startswith(("CL-014-", "TC-DOC-")):
-            return
-        if identifier in entries:
-            raise ValueError(f"Duplicate definition: {identifier}")
-        if "*/" in prose:
-            raise ValueError(f"SysML doc terminator in Markdown: {identifier}")
-        entries[identifier] = {"kind": kind, "text": prose.strip(), "refs": sorted(set(refs))}
-
-    for index, line in enumerate(lines):
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if line.startswith("|") and cells[0].startswith(("FR-", "CL-", "TC-")) and not ID.match(cells[0]):
-            raise ValueError(f"Malformed definition identity: {cells[0]}")
-        if line.startswith("|") and re.fullmatch(r"FR-\d{3}", cells[0]):
-            if len(cells) != 3:
-                raise ValueError(f"Expected three requirement columns: {cells[0]}")
-            add(cells[0], "requirement", f"{cells[1]}\n{cells[2]}", [])
-        elif line.startswith("|") and re.fullmatch(r"CL-\d{3}-\d{2}", cells[0]):
-            if len(cells) != 4:
-                raise ValueError(f"Expected four clause columns: {cells[0]}")
-            add(cells[0], "clause", cells[2], re.findall(r"FR-\d{3}", cells[1]))
-        elif line.startswith("|") and re.match(r"TC-(?:\d{3}|DOC)-\d{3}\b", cells[0]):
-            identifier = ID.match(cells[0]).group()
-            add(identifier, "verification", "\n".join(cells), re.findall(r"FR-\d{3}|CL-\d{3}-\d{2}", cells[1]))
-        else:
-            match = re.match(r"#### (TC-\d{3}-\d{3})\b", line)
-            if match:
-                end = index + 1
-                while end < len(lines) and not re.match(r"#{1,4} ", lines[end]):
-                    end += 1
-                body = "\n".join(lines[index:end])
-                refs = re.findall(r"FR-\d{3}|CL-\d{3}-\d{2}", body)
-                add(match[1], "verification", body, refs or ["FR-" + match[1].split("-")[1]])
-    if not entries:
-        raise ValueError("No FSD definitions found")
-    for identifier, entry in entries.items():
-        for ref in entry["refs"]:
-            if ref not in entries:
-                raise ValueError(f"{identifier} refers to undefined {ref}")
-    return entries
-
-
-PROJECTION_V2 = "<!-- sysml-projection: 2 -->"
-
-
-def projection_v2(text: str) -> bool:
-    markers = re.findall(r"<!--\s*sysml-projection:[^>]*-->", text)
-    if markers and markers != [PROJECTION_V2]:
-        raise ValueError("Expected one exact sysml-projection: 2 marker")
-    return bool(markers)
-
-
 def references(text: str) -> list[str]:
     """Expand complete identities and same-prefix numeric suffix shorthand."""
     for candidate in re.findall(r"\b(?:FR|CL|TC)-[A-Za-z0-9-]+", text):
@@ -293,174 +235,6 @@ def references(text: str) -> list[str]:
                 found.append(prefix + "-" + suffix)
             previous = value
     return sorted(set(found))
-
-
-def declared_metadata(text: str, entries: dict[str, dict]) -> tuple[dict[str, str], dict[str, list[str]]]:
-    states, companions = {}, {}
-    table = None
-    for line in text.splitlines():
-        if not line.startswith("|"):
-            table = None
-            continue
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if cells == ["Model identity", "Declared state"]:
-            table = "states"
-            continue
-        if cells == ["Manual companion", "FSD sections"]:
-            table = "companions"
-            continue
-        if not table or all(re.fullmatch(r"[-:]+", cell) for cell in cells):
-            continue
-        if not re.fullmatch(r"`[^`]+`", cells[0]):
-            raise ValueError("Expected backticked metadata identity: " + cells[0])
-        key = cells[0][1:-1]
-        if table == "states":
-            if len(cells) != 2 or key not in entries or key in states:
-                raise ValueError("Invalid/duplicate/undefined declared metadata: " + key)
-            allowed = {"planned", "partial", "implemented"} if entries[key]["kind"] == "verification" else {"target", "partial", "implemented"}
-            if cells[1] not in allowed:
-                raise ValueError("Invalid declared state: " + key)
-            states[key] = cells[1]
-        elif table == "companions":
-            if len(cells) != 2 or not key.endswith(".sysml") or Path(key).name != key or "/" in key or "\\" in key or key == "Requirements.sysml" or key in companions:
-                raise ValueError("Invalid/duplicate manual companion: " + key)
-            sections = [section.strip() for section in cells[1].split(",")]
-            if any(not re.fullmatch(r"\d+(?:\.\d+)*", section) for section in sections):
-                raise ValueError("Invalid FSD section selection: " + key)
-            companions[key] = sections
-    if set(states) != set(entries):
-        raise ValueError("Missing declared metadata: " + ", ".join(sorted(set(entries) - set(states))))
-    return states, companions
-
-
-def section_digest(text: str, sections: list[str]) -> str:
-    """Hash selected numbered heading subtrees, once, with exact UTF-8 text."""
-    lines = text.splitlines(keepends=True)
-    headings = {}
-    for index, line in enumerate(lines):
-        match = re.match(r"(#{1,6}) (\d+(?:\.\d+)*)\.?\s+", line)
-        if match:
-            key = match[2]
-            if key in headings:
-                raise ValueError("Duplicate numbered FSD heading: " + key)
-            headings[key] = (index, len(match[1]))
-    ranges = []
-    for section in sections:
-        if section not in headings:
-            raise ValueError("Missing FSD section: " + section)
-        start, depth = headings[section]
-        end = next((i for i in range(start + 1, len(lines)) if re.match(r"#{1," + str(depth) + r"} ", lines[i])), len(lines))
-        ranges.append((start, end, section))
-    ranges.sort()
-    if any(left[1] > right[0] for left, right in zip(ranges, ranges[1:])):
-        raise ValueError("Overlapping or repeated FSD sections")
-    payload = "".join(section + "\0" + "".join(lines[start:end]) + "\0" for start, end, section in ranges)
-    return digest(payload)
-
-
-def catalog(text: str) -> dict[str, dict]:
-    entries = legacy_catalog(text)
-    if not projection_v2(text):
-        return entries
-    clause_tests = {}
-    for line in text.splitlines():
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if line.startswith("|") and re.fullmatch(r"CL-\d{3}-\d{2}", cells[0]) and cells[0] in entries:
-            entries[cells[0]]["refs"] = references(cells[1])
-            if any(not ref.startswith("FR-") for ref in entries[cells[0]]["refs"]):
-                raise ValueError("Clause requirement reference must name FR: " + cells[0])
-            clause_tests[cells[0]] = references(cells[3])
-    for identifier, entry in entries.items():
-        if entry["kind"] == "verification":
-            entry["refs"] = [ref for ref in references(entry["text"]) if ref != identifier and not ref.startswith("TC-")]
-        for ref in entry["refs"]:
-            if ref not in entries:
-                raise ValueError(f"{identifier} refers to undefined {ref}")
-    for clause, tests in clause_tests.items():
-        if not tests:
-            raise ValueError("Missing linked verification: " + clause)
-        for test in tests:
-            if test not in entries or entries[test]["kind"] != "verification":
-                raise ValueError(f"{clause} refers to undefined verification {test}")
-            if clause not in entries[test]["refs"]:
-                raise ValueError(f"Verification mismatch: {clause} lists {test}, which does not verify it")
-    for test, entry in entries.items():
-        if entry["kind"] == "verification":
-            if not entry["refs"]:
-                raise ValueError("Missing verification objective: " + test)
-            for clause in (ref for ref in entry["refs"] if ref.startswith("CL-")):
-                if test not in clause_tests.get(clause, []):
-                    raise ValueError(f"Verification mismatch: {test} verifies {clause}, whose table omits it")
-    states, _ = declared_metadata(text, entries)
-    for identifier, state in states.items():
-        entries[identifier]["state"] = state
-    return entries
-
-
-def companion_fingerprints(text: str) -> dict[str, str]:
-    _, companions = declared_metadata(text, catalog(text))
-    if not companions:
-        raise ValueError("Missing manual companion declarations")
-    return {name: section_digest(text, sections) for name, sections in companions.items()}
-
-
-def check_companions(text: str, directory: Path):
-    expected = companion_fingerprints(text)
-    actual = {path.name for path in directory.glob("*.sysml") if path.name != "Requirements.sysml"}
-    if actual != set(expected):
-        raise ValueError("Manual companion declaration/file mismatch: " + ", ".join(sorted(actual ^ set(expected))))
-    for name, fingerprint in expected.items():
-        model = (directory / name).read_text(encoding="utf-8")
-        markers = re.findall(r"^// Canonical FSD slices SHA256: ([a-f0-9]{64})$", model, re.MULTILINE)
-        if markers != [fingerprint]:
-            raise ValueError("Manual companion source slices changed: " + name + "; reconcile meaning before renewing its marker")
-
-def render(text: str) -> str:
-    entries = catalog(text)
-    result = [
-        "// GENERATED by python tools/sysml.py sync; edit canonical Markdown instead.",
-        f"// Canonical FSD SHA256: {digest(text)}",
-        "package WstxRequirements {",
-        "    doc /* Markdown FSD is authoritative. Prose requirements and verification",
-        "         definitions are projected here; validation does not execute tests.",
-        "         Coverage flags describe implemented source slices, not acceptance or whole-project parity. */",
-        "    enum def ImplementationState { enum target; enum partial; enum implemented; }",
-        ("    enum def AutomationState { enum planned; enum partial; enum implemented; }" if projection_v2(text) else "    enum def AutomationState { enum planned; enum implemented; }"),
-    ]
-    for identifier, entry in entries.items():
-        kind = "verification" if entry["kind"] == "verification" else "requirement"
-        result.append(f"    {kind} '{identifier}' {{")
-        result.append("        doc /* " + entry["text"].replace("\n", "\n             ") + " */")
-        if kind == "requirement":
-            state = "implemented" if entry["kind"] == "clause" and identifier.startswith(("CL-003-", "CL-005-", "CL-006-")) else "implemented" if identifier in ("FR-018", "FR-022") else "partial" if identifier in ("FR-001", "FR-010", "FR-016", "FR-019", "FR-021") else "target"
-            state = entry.get("state", state)
-            result.append(f"        attribute coverage : ImplementationState = ImplementationState::{state};")
-        else:
-            automated = {f"TC-021-{i:03}" for i in range(5, 10)} | {f"TC-022-{i:03}" for i in range(1, 6)} | {f"TC-018-{i:03}" for i in range(1, 4)} | {f"TC-010-{i:03}" for i in range(1, 8)}
-            state = "implemented" if identifier in automated else "planned"
-            state = entry.get("state", state)
-            result.append(f"        attribute automation : AutomationState = AutomationState::{state};")
-            result.append("        objective {")
-            result.extend(f"            verify '{ref}';" for ref in entry["refs"])
-            result.append("        }")
-        result.append("    }")
-        if entry["kind"] == "clause":
-            for ref in entry["refs"]:
-                name = (identifier + "_to_" + ref).replace("-", "_")
-                result.append(f"    dependency {name} from '{identifier}' to '{ref}';")
-    return "\n".join(line.rstrip() for line in "\n".join(result + ["}", ""]).split("\n"))
-
-
-def check_architecture(model: str, source: str):
-    marker = re.search(r"^// Canonical architecture SHA256: ([a-f0-9]{64})$", model, re.MULTILINE)
-    if not marker or marker[1] != digest(source):
-        raise ValueError("Architecture source changed: review Architecture.sysml against FSD chapter 11 and update its source-hash marker explicitly")
-
-
-def check_profiles_contract(model: str, source: str):
-    marker = re.search(r"^// Canonical profile contract SHA256: ([a-f0-9]{64})$", model, re.MULTILINE)
-    if not marker or marker[1] != digest(source):
-        raise ValueError("Profile contract source changed: reconcile Profiles.sysml with FSD 4.2, 6.2 and 12.5 before updating its source-hash marker")
 
 
 def setup(cache: Path):
@@ -508,11 +282,11 @@ def tool_paths(cache: Path) -> tuple[Path, Path, Path]:
 
 
 def architecture_integrity(output: str) -> dict[str, int]:
-    """TC-DOC-005: independent structural oracle for FSD section 11.9.
+    """TC-DOC-005 (CL-014-03, CL-014-06): independent structural oracle for WstxArchitecture.
 
     Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
-    viewer graph. Endpoint expectations bind the Markdown responsibilities to model
-    names; they are deliberately not generated from the candidate model.
+    viewer graph. Endpoint expectations bind the reviewed architecture responsibilities
+    to model names; they are deliberately not generated from the candidate model.
     """
     rows = [line.split("\t")[1:] for line in output.splitlines() if line.startswith("AST\t")]
     if not rows:
@@ -582,7 +356,7 @@ def architecture_integrity(output: str) -> dict[str, int]:
             ("authorityRequest.request.resourceContext", "radioBinding"), ("catAdapter.authorized.request.resourceContext", "radioBinding")],
         station + ".profile": [("upload", "recordings.upload"), ("recordings.samples", "recordedSamples")],
     }
-    # Independent role/contract bindings from FSD section 11.9. A leading
+    # Independent TC-DOC-005 role/contract bindings. A leading
     # ~ marks the provider/conjugate role. Do not infer expected roles from the model.
     role_contracts = {}
 
@@ -684,9 +458,8 @@ def main(argv=None):
     parser.add_argument("--cache-dir", type=Path, default=Path.home() / ".cache/wsjtx-rust/sysml-tools")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Download and verify pinned portable tools; no global installation")
-    commands.add_parser("sync", help="Legacy Markdown projection only; refused for canonical SysML")
-    commands.add_parser("fingerprints", help="Print authority-source fingerprints for review; never updates models")
-    commands.add_parser("check", help="Check the declared functional authority and run full semantic validation")
+    commands.add_parser("fingerprints", help="Print canonical model fingerprints for review; never updates models")
+    commands.add_parser("check", help="Check canonical SysML authority and run full semantic validation")
     commands.add_parser("traces", help="Check canonical source/model bindings only; no Pilot or behavior execution")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
@@ -696,43 +469,19 @@ def main(argv=None):
             setup(args.cache_dir)
             return 0
         if args.command == "traces":
-            if authority(MODELS, FSD) != "sysml":
-                raise ValueError("Source/model traces require canonical SysML; the active FSD is not a trace catalog")
+            authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
             print(f"Canonical source/model trace checks passed: {len(entries)} identities; no semantic validation or behavior execution.")
             return 0
         if args.command == "fingerprints":
-            if authority(MODELS, FSD) == "sysml":
-                canonical_catalog(MODELS, ROOT)
-                print(json.dumps({path.name: digest(path.read_text(encoding="utf-8")) for path in sorted(MODELS.glob("*.sysml"))}, indent=2))
-            else:
-                print(json.dumps(companion_fingerprints(FSD.read_text(encoding="utf-8")), indent=2))
+            authority(MODELS, FSD)
+            canonical_catalog(MODELS, ROOT)
+            print(json.dumps({path.name: digest(path.read_text(encoding="utf-8")) for path in sorted(MODELS.glob("*.sysml"))}, indent=2))
             return 0
-        if args.command in ("sync", "check"):
-            if authority(MODELS, FSD) == "sysml":
-                if args.command == "sync":
-                    raise ValueError("SysML is canonical: edit and review the model directly; sync never rewrites it")
-                entries = canonical_catalog(MODELS, ROOT)
-                print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
-            else:
-                expected = render(FSD.read_text(encoding="utf-8"))
-                generated = MODELS / "Requirements.sysml"
-                if args.command == "sync":
-                    generated.write_text(expected, encoding="utf-8", newline="\n")
-                    print("FSD projection regenerated; run check for syntax/name/semantic validation.")
-                    return 0
-                if not generated.exists() or generated.read_text(encoding="utf-8") != expected:
-                    raise ValueError("FSD projection is stale; run python tools/sysml.py sync")
-                source = FSD.read_text(encoding="utf-8")
-                if projection_v2(source):
-                    check_companions(source, MODELS)
-                else:
-                    print("WARNING: legacy projection uses fixed status lists and whole-source markers; v2 fidelity is NOT active.", file=sys.stderr)
-                    architecture = MODELS / "Architecture.sysml"
-                    check_architecture(architecture.read_text(encoding="utf-8"), source)
-                    profiles = MODELS / "Profiles.sysml"
-                    check_profiles_contract(profiles.read_text(encoding="utf-8"), source)
-                print("Markdown synchronization passed; this alone is not semantic validation.")
+        if args.command == "check":
+            authority(MODELS, FSD)
+            entries = canonical_catalog(MODELS, ROOT)
+            print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
             entry = MODELS / "Requirements.sysml"
             paths = [entry, *sorted(path for path in MODELS.glob("*.sysml") if path != entry)]
         else:

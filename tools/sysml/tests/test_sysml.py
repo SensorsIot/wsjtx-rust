@@ -1,4 +1,4 @@
-"""TC-DOC-001..004: level 2, local fixtures plus the real pinned OMG validator."""
+"""TC-DOC-003..004: level 2, local fixtures plus the real pinned OMG validator."""
 import contextlib
 import importlib.util
 import io
@@ -13,89 +13,6 @@ TOOL = Path(__file__).resolve().parents[2] / "sysml.py"
 spec = importlib.util.spec_from_file_location("sysml_tool", TOOL)
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
-
-SOURCE = """| FR-001 | Setup | Retain the station identity. |
-| CL-003-01 | FR-001 | Display its identity. | TC-001-001 |
-#### TC-001-001 — Identity
-**Promise:** FR-001.
-Send a status query and expect its own identity.
-"""
-
-
-class ProjectionTests(unittest.TestCase):
-    # Proves: CL-014-01, CL-014-02, CL-014-05; TC-DOC-001.
-    def test_stable_definitions_and_references(self):
-        entries = tool.catalog(SOURCE)
-        self.assertEqual(set(entries), {"FR-001", "CL-003-01", "TC-001-001"})
-        rendered = tool.render(SOURCE)
-        self.assertIn("requirement 'FR-001'", rendered)
-        self.assertIn("verification 'TC-001-001'", rendered)
-        self.assertIn("verify 'FR-001';", rendered)
-        self.assertIn("Retain the station identity.", rendered)
-        self.assertEqual(rendered, tool.render(SOURCE))
-
-    # The single FSD contains both definitions and linked architecture coverage rows.
-    def test_architecture_coverage_references_do_not_redefine_requirements(self):
-        merged = SOURCE + "\n## 11. Architecture\n| [FR-001](#4-proposed-functional-requirements) | Profile responsibility | Target coverage |\n"
-        self.assertEqual(set(tool.catalog(merged)), {"FR-001", "CL-003-01", "TC-001-001"})
-
-    # Proves: CL-014-04, CL-014-05; TC-DOC-002.
-    def test_reject_duplicate_and_unknown_identity(self):
-        with self.assertRaisesRegex(ValueError, "Duplicate definition"):
-            tool.catalog(SOURCE + "\n| FR-001 | Other | Incorrect duplicate. |")
-        with self.assertRaisesRegex(ValueError, "undefined FR-999"):
-            tool.catalog(SOURCE.replace("**Promise:** FR-001", "**Promise:** FR-999"))
-        with self.assertRaisesRegex(ValueError, "Malformed definition identity"):
-            tool.catalog(SOURCE.replace("| FR-001 |", "| FR-1 |"))
-
-    # Proves: CL-014-02; TC-DOC-001. Method documentation remains Markdown-only.
-    def test_documentation_method_identities_are_not_product_model_elements(self):
-        method = "\n### Documentation methods\n| CL-014-01 | Authority | Markdown remains authoritative. | TC-DOC-001 |\n| TC-DOC-001 | CL-014-01 | Generate | Current |\n"
-        entries = tool.catalog(SOURCE + method)
-        self.assertNotIn("CL-014-01", entries)
-        self.assertNotIn("TC-DOC-001", entries)
-
-    # Proves: CL-014-01, CL-014-04, CL-014-05; TC-DOC-001, TC-DOC-002.
-    def test_sync_does_not_mutate_source_and_check_rejects_drift(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            fsd = root / "FSD.md"
-            fsd.write_text(SOURCE, encoding="utf-8")
-            with mock.patch.object(tool, "FSD", fsd), mock.patch.object(tool, "MODELS", root):
-                with contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(tool.main(["sync"]), 0)
-                self.assertEqual(fsd.read_text(encoding="utf-8"), SOURCE)
-                generated = root / "Requirements.sysml"
-                for action in ("source", "corrupt", "missing"):
-                    generated.write_text(tool.render(SOURCE), encoding="utf-8")
-                    fsd.write_text(SOURCE + ("\nChanged source." if action == "source" else ""), encoding="utf-8")
-                    if action == "corrupt":
-                        generated.write_text("package Wrong {}", encoding="utf-8")
-                    elif action == "missing":
-                        generated.unlink()
-                    errors = io.StringIO()
-                    with contextlib.redirect_stderr(errors):
-                        self.assertEqual(tool.main(["check"]), 2)
-                    self.assertIn("FSD projection is stale", errors.getvalue())
-
-    # Proves: CL-014-03, CL-014-05; TC-DOC-002.
-    def test_manual_architecture_source_drift_is_not_auto_accepted(self):
-        original = "Independent audio and control."
-        model = "// Canonical architecture SHA256: " + tool.digest(original)
-        tool.check_architecture(model, original)
-        with self.assertRaisesRegex(ValueError, "Architecture source changed"):
-            tool.check_architecture(model, original + " Changed interface.")
-
-    # Proves: CL-014-02, CL-014-04; TC-DOC-001 (documentation freshness, not runtime).
-    # CR #5: a generated requirements projection cannot replace the behavior contract.
-    def test_manual_profile_contract_source_drift_is_not_auto_accepted(self):
-        original = "Approved profile/settings/session contract."
-        model = "// Canonical profile contract SHA256: " + tool.digest(original)
-        tool.check_profiles_contract(model, original)
-        for candidate, source in ((model, original + " Changed."), ("", original)):
-            with self.subTest(model=candidate, source=source):
-                with self.assertRaisesRegex(ValueError, "Profile contract source changed"):
-                    tool.check_profiles_contract(candidate, source)
 
 
 class ValidatorTests(unittest.TestCase):

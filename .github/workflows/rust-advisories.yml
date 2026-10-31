@@ -1,0 +1,29 @@
+# RustSec advisories sensor of the harness rust-supply-chain pack (#23). Advisories are
+# published without a commit of ours, so the push gate cannot notice them; this scheduled,
+# read-only run does. A red names the crate and the advisory; the fix is a CR.
+name: Rust advisories
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'   # weekly, Monday 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: cargo deny check advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out Rust project
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check RustSec advisories
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1 (cargo-deny 0.20.2)
+        with:
+          arguments: --locked --workspace
+          command: check advisories

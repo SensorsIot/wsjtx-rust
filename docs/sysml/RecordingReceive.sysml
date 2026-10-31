@@ -1196,4 +1196,20 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
          receive/radio/result shapes and owner/cancellation/source contracts.
          New selection uses the same authority, explicit actual release before
          setters/new capture and a fresh context, not a second pipeline or actor. */
+
+    doc /* Issue22 target health contract CL-022-05: browser/session authorization,
+         CAT connection/readback and audio/decoder are separate lifecycles. HTTP401
+         invalidates session readiness and affected current data within2seconds even
+         if the old WS is open; retained-key proof can restore authorization without
+         replaying mutations. Actual CAT identity/query provenance alone confirms radio
+         frequency. Waiting/retry/quarantine marks retained radio facts unconfirmed;
+         source/job/generation fences continue to govern latest decoded rows. Automatic
+         CAT recovery never starts audio/decoder, clears unknown-operation barriers,
+         replays user commands or keys PTT. Existing shared issue10 continuity helpers
+         are reused. Authentication/challenge/recovery/status traffic belongs inside
+         the existing Thin/Off32kbit/s accounted-traffic regression with unchanged
+         windows/limits, not a new unmeasured side channel. TC-022-008/009/010 own the
+         independent target regression/native/live evidence. Actual dated freeze cause
+         remains unproved until reproduced; this contract is not a diagnosis. */
+
 }

@@ -4,7 +4,7 @@
 **Status:** present-state. **Layer:** HOW. **Scope:** WSTX Rust bindings.
 
 How an AI agent session works with the operator on this project. The build procedure is
-the [CR process](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Process.md); this page holds the standing
+the [CR process](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Process.md); this page holds the standing
 rules around it. Agent memory only points here.
 
 ## Who changes what
@@ -16,7 +16,7 @@ rules around it. Agent memory only points here.
   is recorded on that issue. Without it the session writes the change text (outcome,
   changes, acceptance, evidence) and the operator implements it.
 - **Another person's checkout** is never touched.
-- **Development placement.** Application implementation, builds and radio acceptance run on HB9BLA. This PC may prepare issues and execute the approved model/authority transition in isolated worktrees. Shared model ownership, integration and publication remain serialized across both PCs.
+- **Development placement.** Follow [machines and roles](Project-Specifics.md#machines-and-roles): application implementation, builds, installs, live tests and radio acceptance run on HB9BLA, where the product and the transceiver are; PC Andreas does SysML model work in isolated worktrees, and documentation work. The issue's `owner:` label names the machine building it. Shared model ownership, integration and publication remain serialized across both PCs.
 
 ## Deciding
 

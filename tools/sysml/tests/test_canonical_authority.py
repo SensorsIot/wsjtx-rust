@@ -57,15 +57,25 @@ class CanonicalAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Two functional authorities"):
             tool.authority(self.models, self.fsd)
         self.requirements.write_text(MODEL.replace(tool.CANONICAL_MARKER, "// legacy"), encoding="utf-8")
-        self.assertEqual(tool.authority(self.models, self.fsd), "markdown")
+        with self.assertRaisesRegex(ValueError, "Retired Markdown FSD is not a functional authority"):
+            tool.authority(self.models, self.fsd)
         self.fsd.unlink()
         with self.assertRaisesRegex(ValueError, "No declared functional authority"):
             tool.authority(self.models, self.fsd)
+        self.requirements.unlink()
+        with self.assertRaisesRegex(ValueError, "No declared functional authority"):
+            tool.authority(self.models, self.fsd)
+        self.fsd.write_text("Active FSD without any model", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Retired Markdown FSD"):
+            tool.authority(self.models, self.fsd)
+        self.fsd.unlink()
+        self.requirements.write_text(MODEL, encoding="utf-8")
         for changed in (MODEL + tool.CANONICAL_MARKER, MODEL.replace("authority: SysML", "authority: Markdown")):
             self.requirements.write_text(changed, encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Invalid or duplicate"):
                 tool.authority(self.models, self.fsd)
 
+    # TC-DOC-002: a mutated identity, state or link, or a missing artifact, is refused by name.
     def test_missing_file_duplicate_id_missing_id_and_wrong_state_refused(self):
         self.assertEqual(set(self.check()), REQUIRED)
         for changed, message in (
@@ -139,7 +149,8 @@ class CanonicalAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate canonical"):
             self.check()
 
-    def test_check_never_reads_archive_and_sync_never_rewrites_model(self):
+    # TC-DOC-001: canonical tooling reads the model directly and never rewrites it.
+    def test_check_never_reads_archive_and_retired_sync_never_rewrites_model(self):
         archive = self.root / "docs/archive/FSD.md"
         archive.parent.mkdir()
         real_catalog, real_read = tool.canonical_catalog, Path.read_text
@@ -156,9 +167,15 @@ class CanonicalAuthorityTests(unittest.TestCase):
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(tool.main(["check"]), 0)
                 self.assertEqual(len(validate.call_args.args[0]), 10)
-            with contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(tool.main(["sync"]), 2)
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+                tool.main(["sync"])
+            self.assertEqual(refused.exception.code, 2)
             self.assertEqual(self.requirements.read_text(encoding="utf-8"), MODEL)
+            self.fsd.write_text("Reinstated active Markdown", encoding="utf-8")
+            for command in ("check", "fingerprints"):
+                with contextlib.redirect_stderr(io.StringIO()) as errors:
+                    self.assertEqual(tool.main([command]), 2)
+                self.assertIn("Two functional authorities", errors.getvalue())
 
     def test_fast_traces_refuse_deleted_source_without_invoking_java(self):
         self.requirements.write_text(MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "tests/case.cjs";'), encoding="utf-8")
@@ -181,7 +198,7 @@ class CanonicalAuthorityTests(unittest.TestCase):
             self.fsd.write_text("Existing legacy authority", encoding="utf-8")
             with contextlib.redirect_stderr(io.StringIO()) as errors:
                 self.assertEqual(tool.main(["traces"]), 2)
-            self.assertIn("require canonical SysML", errors.getvalue())
+            self.assertIn("Retired Markdown FSD is not a functional authority", errors.getvalue())
 
     def test_binding_outside_fingerprinted_roots_requires_how_coverage_update(self):
         probe = self.root / "tools/probe.rs"
@@ -197,6 +214,14 @@ class CanonicalAuthorityTests(unittest.TestCase):
         source.write_text("// Proves: TC-001-001/002", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "undefined model identities.*TC-001-002"):
             self.check()
+
+    # TC-DOC-007: reference shorthand expands exactly; malformed shorthand is refused.
+    def test_full_slash_comma_and_range_references(self):
+        self.assertEqual(tool.references("CL-005-02/03,04; FR-008/FR-009; TC-001-001..003"),
+                         ["CL-005-02", "CL-005-03", "CL-005-04", "FR-008", "FR-009", "TC-001-001", "TC-001-002", "TC-001-003"])
+        for bad in ("CL-005-02/3", "CL-05-02", "TC-001-01", "CL-005-02/03x", "CL-005-02,3", "TC-001-003..001", "CL-005-02..02"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                tool.references(bad)
 
 
 if __name__ == "__main__":

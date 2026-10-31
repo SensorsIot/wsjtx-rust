@@ -242,7 +242,12 @@ package WstxRadioIO {
              setup5s/poll<=1cycle/s/IOcancel50ms. Echo/foreign/broadcastnotcompletion,
              malformedexpectedreplyerror, deadlinesneverrenew. Auto-baudconnectionphase
              [9600,19200,4800,115200,57600,38400],one03/rate500ms+100msquiet,total5s;
-             explicitrateone1sprobe. Noaddressscan/runtimeautomaticretry/write replay.
+             explicitrateone1sprobe. Noaddressscan or write replay. No retry of an
+             issued exchange. Target CL-022-03/04 alone permits new read-only
+             connection attempts after confirmed release, under persisted matching
+             grant/commissioning, bounded backoff and failed-close quarantine.
+             This supersedes only the former runtime-automatic-retry prohibition;
+             it creates no second owner and never retries a setter or resumes audio.
              Validateimmutableboundedcatalogue separately fromcompiledoperations/state.
              Failed close retains owner. No guarantee of no initial USB-line glitch:
              physicalUSB SEND/CW/RTTY OFF or independentlyverifiedinhibit beforeopen. */
@@ -443,7 +448,11 @@ setup deadline and at most50 ms I/O cancellation slices. Invalid/foreign traffic
 extend deadlines. A receive_setup workflow holds one lease for mode/DATA/frequency
 changes and final readback; manual radio tuning can still intervene. Poll a complete
 read cycle at most once/second and never while an explicit operation holds the lease.
-No automatic runtime query/setter retries. Timeout/cancel/partial write closes the
+No automatic retry of an issued query/setter exchange. The target automatic
+connection lifecycle is exclusively CL-022-03/04: after confirmed failed-attempt
+release it may start a new read-only connection attempt using the prescribed
+1/2/4/8-second capped delays and grant/commissioning checks. Failed close retains
+ownership and forbids timed reopen. Timeout/cancel/partial write closes the
 connection generation before another owner; reconnect never replays a write. CI-V has
 no transaction ID, so local generation tags cannot prove a late identical reply belongs
 to a new request. Draining/closing and explicit state prevent stronger unsupported claims.
@@ -468,7 +477,7 @@ transmit authority and halt. Optional native FlexRadio remains the later #13 ada
 | Test | Promises | Inputs/actions | Expected result/oracle | Level / where it runs |
 |---|---|---|---|---|
 | TC-002-001 — Canonical live audio | CL-008-01, CL-008-02, CL-008-03 | Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently. | Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT. | 2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. |
-| TC-009-001 — Typed radio control | CL-008-01, CL-008-03, CL-008-04, CL-008-06 | Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send. | Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource. | 2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. |
+| TC-009-001 — Typed radio control | CL-008-01, CL-008-03, CL-008-04, CL-008-06 | Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send. | Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource. | 2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. |
 | TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
 | TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
 | TC-009-003 — Control without audio | CL-008-05, CL-008-06 | Exercise every supported query and receive setter while audio is closed/unavailable. | Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations. | 2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. |
@@ -590,15 +599,23 @@ until measured, time a nonnegative monotonic millisecond counter. Unknown receiv
 is an uppercase two-hex-digit code, not a guessed supported mode. Closed/stale state
 never presents its retained observation as current readiness. Snapshot<=2048 bytes.
 
-`POST /radio/connect` requires exactly
-`{v,profile_id,boot_id,profile_revision,receive_only_verified}`; the last is true only
-after the4.5 external keying/inhibit precondition. It never bypasses capability/PTT
-guards. `POST /radio/disconnect` requires
-`{v,profile_id,boot_id,connection_generation}`. `POST /radio/operation` adds exactly
+Target issue22 deprecates manual CAT lifecycle operations. `POST /radio/connect`
+retains exactly `{v,profile_id,boot_id,profile_revision,receive_only_verified}` and
+`POST /radio/disconnect` retains exactly
+`{v,profile_id,boot_id,connection_generation}` for strict validation/refusal only.
+After unchanged authentication, exact Origin, schema, identity and size checks,
+a valid request returns409 `automatic_lifecycle` in the existing error envelope,
+with zero CAT open/query/close/setter/PTT I/O. Neither route succeeds200 or creates
+a connection owner. Normal UI has no Connect/Disconnect CAT buttons. Only the
+CL-022-03/04 automatic read-only lifecycle may open/retry under its matching durable
+grant and receive-only commissioning; capability/PTT guards, physical inhibit,
+resource ownership and acknowledged release remain mandatory.
+`POST /radio/operation` adds exactly
 operation and parameters to that disconnect identity envelope. Operations are the eight
 4.5 names or receive_setup. Query parameters are `{}`; set_frequency uses `{frequency_hz}`;
 set_mode `{mode,filter}`; set_data `{enabled,filter}`; receive_setup
-`{frequency_hz,mode,filter,data,data_filter}` with the4.5 bounds. A synchronous success200
+`{frequency_hz,mode,filter,data,data_filter}` with the4.5 bounds. Only a successful
+`/radio/operation` returns synchronous200, not either deprecated lifecycle route. It
 returns `{v,profile_id,boot_id,connection_generation,operation,observation}` after readback.
 Failure uses the existing error envelope; a request timeout cannot justify retrying a
 setter. Connection generation is independent of receive generation, so audio lifecycle
@@ -608,7 +625,8 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
     */
     doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
-         receive/radio/result shapes and owner/cancellation/source contracts.
+         receive/radio/result shapes and owner/cancellation/source contracts, with
+         only the explicit target manual-route refusal/retry amendment above.
          New selection uses the same authority, explicit actual release before
          setters/new capture and a fresh context, not a second pipeline or actor. */
 }

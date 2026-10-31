@@ -1,0 +1,619 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Harness: the CR loop from issue to close",
+    "locale": "en",
+    "output": "workflow-harness-cr-loop-20261030-204026/harness-cr-loop.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/SensorsIot/harness.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "859d3461d15f05e95edc6e1402c7c0416489b999"
+    },
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Operator decision"
+        },
+        "external": {
+          "label": "Agent step"
+        },
+        "backend": {
+          "label": "Test or review"
+        },
+        "security": {
+          "label": "Automatic gate"
+        },
+        "cloud": {
+          "label": "Deploy or live test"
+        },
+        "database": {
+          "label": "Record"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "operator",
+      "label": "Operator"
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor (your session)"
+    },
+    {
+      "id": "cragent",
+      "label": "CR agent (sub-agent)"
+    },
+    {
+      "id": "reviewer",
+      "label": "Reviewer (sub-agent)"
+    },
+    {
+      "id": "gates",
+      "label": "Hooks and gate (automatic)",
+      "variant": "exception"
+    },
+    {
+      "id": "prod",
+      "label": "Deploy and live tests"
+    },
+    {
+      "id": "records",
+      "label": "Records"
+    }
+  ],
+  "phases": [
+    {
+      "id": "build",
+      "label": "Intake and build in a development clone",
+      "fromCol": 0,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "ship",
+      "label": "Deploy, test live, close",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "intake",
+    "approve",
+    "prepare",
+    "implement",
+    "selftest",
+    "review",
+    "prepush",
+    "deploy",
+    "accept",
+    "close"
+  ],
+  "nodes": [
+    {
+      "id": "intake",
+      "lane": "supervisor",
+      "col": 0,
+      "type": "external",
+      "label": "0 Intake",
+      "sublabel": "enough value? open issue to reuse?",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 29,
+          "end_line": 79,
+          "label": "intake and authorization"
+        }
+      ]
+    },
+    {
+      "id": "existing",
+      "lane": "records",
+      "col": 0,
+      "type": "database",
+      "label": "Open issue, same goal",
+      "sublabel": "the finding goes there",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 31,
+          "end_line": 36,
+          "label": "reuse and combine"
+        }
+      ]
+    },
+    {
+      "id": "approve",
+      "lane": "operator",
+      "col": 0,
+      "type": "frontend",
+      "label": "Approve the CR",
+      "sublabel": "goal, acceptance items, blast",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 13,
+          "end_line": 28,
+          "label": "the issue"
+        }
+      ]
+    },
+    {
+      "id": "prepare",
+      "lane": "supervisor",
+      "col": 1,
+      "type": "external",
+      "label": "1 Prepare",
+      "sublabel": "contract + test design",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 96,
+          "end_line": 104,
+          "label": "prepare"
+        },
+        {
+          "path": "core/skills/test-design/SKILL.md",
+          "line": 14,
+          "end_line": 86,
+          "label": "test-design: plan before code"
+        }
+      ]
+    },
+    {
+      "id": "implement",
+      "lane": "cragent",
+      "col": 1,
+      "type": "external",
+      "label": "2 Implement",
+      "sublabel": "least code, exactly the issue",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 105,
+          "end_line": 111,
+          "label": "implement"
+        },
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 178,
+          "end_line": 242,
+          "label": "programming rules (Ponytail)"
+        },
+        {
+          "path": "core/skills/test-design/SKILL.md",
+          "line": 87,
+          "end_line": 102,
+          "label": "implement the tests"
+        }
+      ]
+    },
+    {
+      "id": "commitmsg",
+      "lane": "gates",
+      "col": 1,
+      "type": "security",
+      "label": "Commit hooks",
+      "sublabel": "whitespace, secrets, no closes #N",
+      "sources": [
+        {
+          "path": "core/hooks/pre-commit",
+          "line": 1,
+          "end_line": 12,
+          "label": "pre-commit: whitespace and secret scan"
+        },
+        {
+          "path": "core/hooks/commit-msg",
+          "line": 1,
+          "end_line": 11,
+          "label": "closing keyword refused"
+        }
+      ]
+    },
+    {
+      "id": "selftest",
+      "lane": "cragent",
+      "col": 2,
+      "type": "backend",
+      "label": "Run the tests",
+      "sublabel": "build, tests, red-on-parent",
+      "sources": [
+        {
+          "path": "core/tools/red_on_parent.py",
+          "line": 1,
+          "end_line": 10,
+          "label": "new test must fail on the old code"
+        },
+        {
+          "path": "core/skills/test-design/SKILL.md",
+          "line": 99,
+          "end_line": 102,
+          "label": "red on the parent"
+        }
+      ]
+    },
+    {
+      "id": "guard",
+      "lane": "gates",
+      "col": 2,
+      "type": "security",
+      "label": "Agent guard",
+      "sublabel": "no hook bypass by an agent",
+      "sources": [
+        {
+          "path": "core/hooks/agent-guard",
+          "line": 1,
+          "end_line": 13,
+          "label": "pre-tool-use guard"
+        }
+      ]
+    },
+    {
+      "id": "issue",
+      "lane": "records",
+      "col": 2,
+      "type": "database",
+      "label": "Issue record",
+      "sublabel": "test plan, Review:, Accepted live",
+      "sources": [
+        {
+          "path": "core/skills/test-design/SKILL.md",
+          "line": 68,
+          "end_line": 86,
+          "label": "test plan on the issue"
+        },
+        {
+          "path": "core/skills/conformance-review/SKILL.md",
+          "line": 40,
+          "end_line": 43,
+          "label": "Review: line"
+        },
+        {
+          "path": "core/docs/CR-Reporting.md",
+          "line": 96,
+          "end_line": 115,
+          "label": "restart and handoff checkpoint"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "lane": "reviewer",
+      "col": 3,
+      "type": "backend",
+      "label": "3 Review once",
+      "sublabel": "simplest? exactly the issue?",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 112,
+          "end_line": 119,
+          "label": "review"
+        },
+        {
+          "path": "core/skills/conformance-review/SKILL.md",
+          "line": 13,
+          "end_line": 48,
+          "label": "conformance-review"
+        }
+      ]
+    },
+    {
+      "id": "prepush",
+      "lane": "gates",
+      "col": 3,
+      "type": "security",
+      "label": "4 Push gate",
+      "sublabel": "tests cost 1-2, secret scan",
+      "sources": [
+        {
+          "path": "core/hooks/pre-push",
+          "line": 74,
+          "end_line": 86,
+          "label": "gate call"
+        },
+        {
+          "path": "core/tools/gate.py",
+          "line": 20,
+          "end_line": 35,
+          "label": "gate order and memo"
+        }
+      ]
+    },
+    {
+      "id": "refused",
+      "lane": "gates",
+      "col": 4,
+      "type": "security",
+      "label": "Push refused",
+      "sublabel": "fix the red, never carry it",
+      "sources": [
+        {
+          "path": "core/hooks/pre-push",
+          "line": 78,
+          "end_line": 83,
+          "label": "BLOCKED"
+        },
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 166,
+          "end_line": 168,
+          "label": "every red goes back"
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "lane": "prod",
+      "col": 4,
+      "type": "cloud",
+      "label": "5 Deploy",
+      "sublabel": "after operator OK on dry run",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 136,
+          "end_line": 142,
+          "label": "deploy"
+        },
+        {
+          "path": "core/docs/standards/security.md",
+          "line": 75,
+          "end_line": 110,
+          "label": "deployment authority"
+        }
+      ]
+    },
+    {
+      "id": "accept",
+      "lane": "prod",
+      "col": 5,
+      "type": "cloud",
+      "label": "6 Live tests",
+      "sublabel": "cost 3; 4-5 with consent",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 143,
+          "end_line": 150,
+          "label": "accept"
+        },
+        {
+          "path": "core/tools/gate.py",
+          "line": 35,
+          "end_line": 40,
+          "label": "gate.py --live"
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "lane": "records",
+      "col": 4,
+      "type": "database",
+      "label": "Canonical contract",
+      "sublabel": "clauses and test cases",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 151,
+          "end_line": 160,
+          "label": "reconcile before closing"
+        }
+      ]
+    },
+    {
+      "id": "close",
+      "lane": "supervisor",
+      "col": 5,
+      "type": "frontend",
+      "label": "7 Close by hand",
+      "sublabel": "after the model is reconciled",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 151,
+          "end_line": 165,
+          "label": "close"
+        },
+        {
+          "path": "core/docs/Parallel-Work.md",
+          "line": 88,
+          "end_line": 92,
+          "label": "supervisor confirms closure"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-intake-approve",
+      "from": "intake",
+      "to": "approve",
+      "label": "qualifies",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-intake-existing",
+      "from": "intake",
+      "to": "existing",
+      "label": "same goal",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-approve-prepare",
+      "from": "approve",
+      "to": "prepare",
+      "label": "approved",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-prepare-implement",
+      "from": "prepare",
+      "to": "implement",
+      "label": "brief",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-implement-commit",
+      "from": "implement",
+      "to": "commitmsg",
+      "label": "commit",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-implement-test",
+      "from": "implement",
+      "to": "selftest",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-test-implement",
+      "from": "selftest",
+      "to": "implement",
+      "label": "compile or test red",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-test-review",
+      "from": "selftest",
+      "to": "review",
+      "label": "green",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-review-implement",
+      "from": "review",
+      "to": "implement",
+      "label": "N findings",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-review-push",
+      "from": "review",
+      "to": "prepush",
+      "label": "supervisor pushes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-guard-push",
+      "from": "guard",
+      "to": "prepush",
+      "label": "no --no-verify",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "e-push-refused",
+      "from": "prepush",
+      "to": "refused",
+      "label": "red",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e-refused-implement",
+      "from": "refused",
+      "to": "implement",
+      "label": "fix, push again",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-push-deploy",
+      "from": "prepush",
+      "to": "deploy",
+      "label": "green",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-deploy-accept",
+      "from": "deploy",
+      "to": "accept",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-accept-implement",
+      "from": "accept",
+      "to": "implement",
+      "label": "red item: revert",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-accept-close",
+      "from": "accept",
+      "to": "close",
+      "label": "Accepted live",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-model-close",
+      "from": "model",
+      "to": "close",
+      "variant": "dashed",
+      "role": "branch",
+      "label": "reconciled"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "orange",
+      "title": "Value and Ponytail rules",
+      "items": [
+        "Intake: a finding qualifies if reproduced or seen live, or a real trigger with high blast (medium: small fix), or a missing required protection; purely theoretical cases are dropped",
+        "Same area and goal as an open issue: added there, not a new issue",
+        "Implement: least code: no code, reuse, standard library, platform, existing dependency, then minimum new code",
+        "Review: is it the simplest solution, and exactly the issue?"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Where tests run",
+      "items": [
+        "Cost 1 compile, format, lint: every push",
+        "Cost 2 offline with fixtures: every push that touches its paths",
+        "Cost 3 live read-only: after the deploy",
+        "Cost 4-5 test account or outside effects: only with the operator's consent"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Who tests",
+      "items": [
+        "Supervisor: designs the tests first, pushes, runs the live tests",
+        "CR agent (sub-agent): writes and runs them, proves each new one red on the parent",
+        "Reviewer (sub-agent): reads them; a test that passes without the change is a finding",
+        "Push gate: automatic, independent of any agent"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Refusals",
+      "items": [
+        "pre-push: a red affected check or suite, a secret in the pushed commits, a gate that cannot run",
+        "pre-commit: whitespace errors, a secret in the staged change",
+        "commit-msg: fixes/closes/resolves #N",
+        "agent guard: an agent's --no-verify or gate override"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Escapes on record",
+      "items": [
+        "HARNESS_GATE_OVERRIDE=\"<reason>\" git push, by the operator only",
+        "Every red sends the CR back to step 2; a red live item is reverted first",
+        "Harness changes are reviewed, not gated"
+      ]
+    }
+  ]
+}
