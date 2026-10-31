@@ -153,5 +153,8 @@ function annotate(body,records){
   askedPeriod=period;answered=new Map();if(!calls.length)return;
   worked(band,mode.toUpperCase(),calls).then(map=>{if(map&&askedPeriod===period){answered=map;decorate();}}).catch(()=>{});
 }
+// Observe the rendered rows instead of changing recording.js (its served source is pinned).
+const activity=document.querySelector('#band-activity tbody');
+if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
 window.wstxLogbook=Object.freeze({openReview,annotate,loadHistory});
 })();

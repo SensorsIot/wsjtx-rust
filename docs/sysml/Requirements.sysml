@@ -691,7 +691,7 @@ package WstxRequirements {
     requirement 'CL-010-13' {
         doc /* Indicate worked-before status of decoded calls in Band Activity, the Rx Frequency pane and the log review (this band and mode, other band or mode, not worked, unknown) determined by the server from the profile log, by text or icon as well as colour, with at most one bounded query per published period. Details: WstxContact::WorkedBeforeQuery. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; client/logbook.js; client/recording.js";
+        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; client/logbook.js";
     }
     dependency CL_010_13_to_FR_010 from 'CL-010-13' to 'FR-010';
     dependency CL_010_13_to_FR_011 from 'CL-010-13' to 'FR-011';
