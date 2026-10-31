@@ -56,7 +56,8 @@ pub(crate) struct Lifecycle {
     failures: usize,
     next_at: Option<Instant>,
     quarantined: bool,
-    last_error: Option<cat::Error>,
+    /// Mapped error code of the last failed attempt.
+    last_error: Option<&'static str>,
     gate: Gate,
     observed: Observed,
     now: Option<Instant>,
@@ -81,7 +82,7 @@ impl Lifecycle {
         if observed == Observed::FailedClose {
             // No timed reopen: the failed resource stays owned until process restart.
             self.quarantined = true;
-            self.last_error = Some(cat::Error::FailedClose);
+            self.last_error = Some("radio_failed_close");
             self.next_at = None;
         }
         let live = matches!(
@@ -119,7 +120,7 @@ impl Lifecycle {
             }
             Observed::FailedReleased(_) | Observed::Closed | Observed::Absent => {
                 if let Observed::FailedReleased(error) = observed {
-                    self.last_error = Some(error);
+                    self.last_error = Some(crate::selection::radio_error(error));
                 }
                 let due = *self.next_at.get_or_insert_with(|| {
                     let delay = DELAYS[self.failures.min(DELAYS.len() - 1)];
@@ -140,9 +141,32 @@ impl Lifecycle {
     pub(crate) fn deferred(&mut self, now: Instant) {
         self.next_at.get_or_insert(now);
     }
+    /// An attempt failed before any actor existed (for example Actor::begin refused):
+    /// it is a failed released attempt with this mapped reason.
+    pub(crate) fn failed(&mut self, error: &'static str, now: Instant) {
+        self.last_error = Some(error);
+        let delay = DELAYS[self.failures.min(DELAYS.len() - 1)];
+        self.failures += 1;
+        self.next_at = Some(now + Duration::from_secs(delay));
+        self.observed = Observed::Absent;
+        self.now = Some(now);
+    }
+    /// Status against the freshly computed gate: an eligible configuration the policy
+    /// has not yet observed is only waiting, never the previous key's ready/retry.
+    pub(crate) fn status_for(
+        &self,
+        gate: &Gate,
+    ) -> (&'static str, Option<&'static str>, Option<u64>) {
+        if let Gate::Eligible { key, .. } = gate
+            && self.key.as_ref() != Some(key)
+        {
+            return ("waitingForDevice", None, None);
+        }
+        self.status()
+    }
     /// Condition, mapped error and retry delay for the additive status object.
     pub(crate) fn status(&self) -> (&'static str, Option<&'static str>, Option<u64>) {
-        let error = self.last_error.map(crate::selection::radio_error);
+        let error = self.last_error;
         match &self.gate {
             Gate::Disabled => return ("disabled", None, None),
             Gate::Unauthorized => return ("unauthorized", None, None),

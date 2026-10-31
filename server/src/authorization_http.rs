@@ -545,13 +545,13 @@ fn operate(
                 service.authority.automatic_cat(&store.document.control) == Some(true);
             // Before the lifecycle policy observes an eligible gate it reports waiting,
             // never a fabricated ready/readback.
-            let (condition, error, retry_after_ms) = match gate {
+            let (condition, error, retry_after_ms) = match &gate {
                 crate::cat_lifecycle::Gate::Disabled => ("disabled", None, None),
                 crate::cat_lifecycle::Gate::Unauthorized => ("unauthorized", None, None),
                 crate::cat_lifecycle::Gate::CommissioningRequired => {
                     ("commissioningRequired", None, None)
                 }
-                _ => match state.recording.cat_status() {
+                _ => match state.recording.cat_status(&gate) {
                     ("disabled" | "unauthorized" | "commissioningRequired", _, _) => {
                         ("waitingForDevice", None, None)
                     }

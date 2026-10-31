@@ -2075,6 +2075,34 @@ mod automatic_cat {
         assert_eq!(current["receive_state"]["audio"], "closed");
         assert_eq!(current["receive_state"]["decoder"], Value::Null);
         assert_eq!(peer.lock().unwrap().opens, 1);
+        // Review F1: a non-safety edit is a new key; before the next tick the status
+        // reports waiting, never the previous connection's ready/fresh readback.
+        let (id, revision, mut settings) = {
+            let store = state.store.lock().unwrap();
+            (
+                store.document.profile_id.clone(),
+                store.document.revision,
+                store.document.settings(),
+            )
+        };
+        settings.display_name = "Renamed station".into();
+        let reply = f
+            .request(
+                axum::http::Method::PUT,
+                "/profile",
+                serde_json::to_vec(
+                    &json!({"profile_id":id,"revision":revision,"settings":settings}),
+                )
+                .unwrap(),
+                f.headers(Some(&cookie)),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK);
+        let renamed = status(&f, &cookie).await;
+        assert_eq!(renamed["condition"], "waitingForDevice");
+        assert_eq!(renamed["retry_after_ms"], Value::Null);
+        wait_state(&f, |v| v["state"] == "ready").await;
+        assert_eq!(peer.lock().unwrap().opens, 2);
         // Endpoint edit advances the safety revision and invalidates commissioning:
         // the lifecycle cancels and releases; no reopen until re-confirmation.
         assert_eq!(
@@ -2090,13 +2118,13 @@ mod automatic_cat {
         wait_state(&f, |v| v["state"] == "closed").await;
         assert!(peer.lock().unwrap().closes >= 1);
         ticks(&f, 40);
-        assert_eq!(peer.lock().unwrap().opens, 1);
+        assert_eq!(peer.lock().unwrap().opens, 2);
         let cookie = f.renew(&g).await;
         let changed = status(&f, &cookie).await;
         assert_eq!(changed["condition"], "commissioningRequired");
         commission(&f, &cookie, &changed["scope"]).await;
         wait_state(&f, |v| v["state"] == "ready").await;
-        assert_eq!(peer.lock().unwrap().opens, 2);
+        assert_eq!(peer.lock().unwrap().opens, 3);
         // Last-grant revocation (logout) cancels the lifecycle and releases the owner.
         let reply = f
             .post(
@@ -2109,7 +2137,7 @@ mod automatic_cat {
         wait_state(&f, |v| v["state"] == "closed").await;
         let writes = peer.lock().unwrap().writes.len();
         ticks(&f, 40);
-        assert_eq!(peer.lock().unwrap().opens, 2);
+        assert_eq!(peer.lock().unwrap().opens, 3);
         assert_eq!(peer.lock().unwrap().writes.len(), writes);
         let queries: [&[u8]; 5] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f]];
         for w in &peer.lock().unwrap().writes {

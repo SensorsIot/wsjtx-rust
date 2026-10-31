@@ -1094,18 +1094,21 @@ impl Recording {
                 };
                 drop(old);
                 drop(actor);
-                if let Err("busy" | "state_conflict") =
-                    self.radio_connect(configuration.clone(), key.profile_revision)
-                {
-                    self.cat.lock().unwrap().deferred(now);
+                match self.radio_connect(configuration.clone(), key.profile_revision) {
+                    Ok(_) => {}
+                    Err("busy" | "state_conflict") => self.cat.lock().unwrap().deferred(now),
+                    Err(error) => self.cat.lock().unwrap().failed(error, now),
                 }
             }
         }
         self.refresh_radio_cache();
     }
     /// Current automatic CAT condition for the additive authorization status.
-    pub(crate) fn cat_status(&self) -> (&'static str, Option<&'static str>, Option<u64>) {
-        self.cat.lock().unwrap().status()
+    pub(crate) fn cat_status(
+        &self,
+        gate: &crate::cat_lifecycle::Gate,
+    ) -> (&'static str, Option<&'static str>, Option<u64>) {
+        self.cat.lock().unwrap().status_for(gate)
     }
     fn radio_install(
         &self,

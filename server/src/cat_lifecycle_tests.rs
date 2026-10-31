@@ -414,7 +414,7 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
     );
     s.settle(FAILED);
     s.tick(&gate, secs(t0, 0.1));
-    let (condition, error, retry) = s.recording.cat_status();
+    let (condition, error, retry) = s.recording.cat_status(&gate);
     assert_eq!(
         (condition, error, retry),
         ("retryWaiting", Some("radio_unavailable"), Some(1000))
@@ -426,7 +426,7 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
     assert_eq!(s.attempts(), 2);
     s.settle(FAILED);
     s.tick(&gate, secs(t0, 1.2));
-    assert_eq!(s.recording.cat_status().2, Some(2000));
+    assert_eq!(s.recording.cat_status(&gate).2, Some(2000));
     // Radio powered on / plugged in: the next due attempt connects and reads back.
     s.set(Device::Present);
     s.tick(&gate, secs(t0, 3.19));
@@ -435,7 +435,7 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
     assert_eq!(s.attempts(), 3);
     s.settle(READY);
     s.tick(&gate, secs(t0, 3.3));
-    assert_eq!(s.recording.cat_status(), ("ready", None, None));
+    assert_eq!(s.recording.cat_status(&gate), ("ready", None, None));
     assert!(s.frequency_confirmed(), "fresh readback is confirmed");
     assert_eq!(
         s.recording.radio_view()["observation"]["frequency_hz"],
@@ -447,8 +447,8 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
     s.settle(FAILED);
     assert!(!s.frequency_confirmed());
     s.tick(&gate, secs(t0, 10.0));
-    assert_eq!(s.recording.cat_status().0, "retryWaiting");
-    assert_eq!(s.recording.cat_status().2, Some(1000));
+    assert_eq!(s.recording.cat_status(&gate).0, "retryWaiting");
+    assert_eq!(s.recording.cat_status(&gate).2, Some(1000));
     assert!(s.peer.lock().unwrap().closes >= 1);
     s.set(Device::Present);
     s.tick(&gate, secs(t0, 11.0));
@@ -473,7 +473,7 @@ fn station_open_failure_and_timeout_report_reason_and_release() {
         s.settle(FAILED);
         s.tick(&gate, secs(t0, 0.1));
         assert_eq!(
-            s.recording.cat_status(),
+            s.recording.cat_status(&gate),
             ("retryWaiting", Some(reason), Some(1000))
         );
         let peer = s.peer.lock().unwrap();
@@ -502,7 +502,7 @@ fn station_failed_close_is_quarantined_and_never_reopened() {
         1,
         "failed close retains the owner; no timed reopen"
     );
-    assert_eq!(s.recording.cat_status().0, "quarantined");
+    assert_eq!(s.recording.cat_status(&gate).0, "quarantined");
     assert!(!s.frequency_confirmed());
     s.assert_read_only();
 }
@@ -596,4 +596,42 @@ fn station_identity_change_mid_attempt_fences_late_result() {
         generation
     );
     s.assert_read_only();
+}
+
+// Review F2: an attempt refused before any actor exists (Actor::begin validation)
+// is a failed attempt with its reason and the normal backoff, not a silent wait.
+#[test]
+fn station_begin_failure_reports_retry_reason_and_backs_off() {
+    let s = Station::new(Device::Present);
+    let mut configuration = cat::Configuration::parse(ENDPOINT).unwrap();
+    configuration.port = 0; // Actor::begin rejects this before spawning any I/O.
+    let gate = Gate::Eligible {
+        key: key(1),
+        configuration,
+    };
+    let t0 = Instant::now();
+    s.tick(&gate, t0);
+    assert_eq!(s.attempts(), 1);
+    assert_eq!(
+        s.recording.cat_status(&gate),
+        ("retryWaiting", Some("invalid_request"), Some(1000))
+    );
+    s.tick(&gate, secs(t0, 0.5));
+    assert_eq!(s.attempts(), 1, "no attempt before the 1 s delay");
+    s.tick(&gate, secs(t0, 1.0));
+    assert_eq!(s.attempts(), 2);
+    assert_eq!(s.recording.cat_status(&gate).2, Some(2000));
+    assert_eq!(s.peer.lock().unwrap().opens, 0, "zero native open");
+}
+
+// Review F1: a configuration the policy has not yet observed is only waiting, even
+// when the previous key is ready.
+#[test]
+fn status_for_unobserved_key_is_waiting_not_previous_ready() {
+    let mut p = Lifecycle::new();
+    let t0 = Instant::now();
+    p.step(&eligible(1), Observed::Absent, t0);
+    p.step(&eligible(1), Observed::Ready, t0);
+    assert_eq!(p.status_for(&eligible(1)), ("ready", None, None));
+    assert_eq!(p.status_for(&eligible(2)), ("waitingForDevice", None, None));
 }
