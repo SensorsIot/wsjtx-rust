@@ -252,3 +252,197 @@ async fn live_native_browser_mode(mode: &str) {
     );
     println!("{}", String::from_utf8_lossy(&outcome.stdout));
 }
+
+#[cfg(all(windows, not(debug_assertions)))]
+struct StationMetrics {
+    child: std::process::Child,
+    output: std::io::BufReader<std::process::ChildStdout>,
+    sequence: u64,
+}
+#[cfg(all(windows, not(debug_assertions)))]
+impl StationMetrics {
+    fn helper() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("tools/windows_process_metrics.py")
+    }
+    /// The existing metrics helper binds this waiting test process by its creation time.
+    fn bind_self() -> Self {
+        use std::io::BufRead;
+        use std::process::{Command, Stdio};
+        let identity = Command::new("python")
+            .arg(Self::helper())
+            .arg("--parent-identity")
+            .output()
+            .unwrap();
+        assert!(identity.status.success(), "{identity:?}");
+        let identity: Value = serde_json::from_slice(&identity.stdout).unwrap();
+        assert_eq!(identity["pid"], std::process::id());
+        let creation = identity["creation_filetime"].as_u64().unwrap();
+        let mut child = Command::new("python")
+            .arg(Self::helper())
+            .args(["--pid", &std::process::id().to_string()])
+            .args(["--creation", &creation.to_string()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut output = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        let bound: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(bound["state"], "bound", "{line}");
+        assert_eq!(bound["creation_filetime"], creation);
+        Self {
+            child,
+            output,
+            sequence: 0,
+        }
+    }
+    fn request(&mut self, op: &str) -> Value {
+        use std::io::{BufRead, Write};
+        self.sequence += 1;
+        let stdin = self.child.stdin.as_mut().unwrap();
+        writeln!(stdin, "{}", json!({"op":op,"id":self.sequence})).unwrap();
+        stdin.flush().unwrap();
+        let mut line = String::new();
+        self.output.read_line(&mut line).unwrap();
+        let value: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["id"], self.sequence, "{line}");
+        value
+    }
+    fn sample(&mut self) -> Value {
+        let value = self.request("sample");
+        assert_eq!(value["unit"], "bytes");
+        assert_eq!(value["pid"], std::process::id());
+        value
+    }
+}
+
+// Proves: CL-007-04; TC-004-003. Station process private-commit delta <=96MiB over idle and
+// receive-owner release <=250ms after Stop, on the actual manager, provider and decoder.
+// Exclusive resource window only (station capture paused, no concurrent builds).
+#[cfg(all(windows, not(debug_assertions)))]
+#[test]
+#[ignore = "exclusive resource window: station process delta and owner release"]
+fn resource_station_process_delta_and_owner_release() {
+    let dir = std::env::temp_dir().join(format!(
+        "wstx-station-resource-{}",
+        profile::new_uuid().unwrap()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    let profile_id = profile::new_uuid().unwrap();
+    let boot = profile::new_uuid().unwrap();
+    let doc = json!({"schema_version":1,"profile_id":profile_id,"revision":0,"display_name":"Station resource fixture",
+        "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:0","origin":null},"connection_type":"standard",
+        "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
+    std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
+    let recording = recording::Recording::open(&dir, profile_id.clone(), boot.clone());
+    let mut metrics = StationMetrics::bind_self();
+    let idle = metrics.sample();
+    let mut phases = Vec::new();
+    for (phase, mode) in [
+        ("after-decode", "ft8"),
+        ("busy-window", "ft8"),
+        ("after-decode", "ft4"),
+        ("busy-window", "ft4"),
+    ] {
+        let fixture = NativeFt8Fixture::load_mode(mode);
+        let payload = fixture.expected["payload77"].as_str().unwrap().to_owned();
+        let window = if mode == "ft8" { 180_000 } else { 90_000 };
+        let generation = recording.receive_snapshot()["generation"].as_u64().unwrap();
+        let started = recording
+            .receive_start_input(
+                &profile_id,
+                &boot,
+                generation,
+                "explicit-test-native-input".into(),
+                if mode == "ft8" { "ft8" } else { "ft4" },
+                Box::new(Input::new(fixture)),
+            )
+            .unwrap();
+        let job = started["job"]["id"].as_str().unwrap().to_owned();
+        let job_generation = started["generation"].as_u64().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let mut decoded = false;
+        loop {
+            let snapshot = recording.receive_snapshot();
+            assert_eq!(snapshot["job"]["state"], "running", "{snapshot}");
+            if phase == "busy-window"
+                && snapshot["job"]["processed_frames"].as_u64().unwrap_or(0) >= window
+            {
+                break;
+            }
+            if phase == "after-decode"
+                && snapshot["job"]["available_count"].as_u64().unwrap_or(0) > 0
+            {
+                let source = snapshot["source"]["id"].as_str().unwrap();
+                let page = recording
+                    .receive_results(source, &job, job_generation, 0, 64)
+                    .unwrap();
+                if page.to_string().contains(&payload) {
+                    decoded = true;
+                    break;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{phase} {mode}: no progress {snapshot}"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let during = metrics.sample();
+        let published = recording.receive_snapshot()["job"]["available_count"].clone();
+        let stop = Instant::now();
+        recording
+            .receive_stop(&profile_id, &boot, job_generation, &job)
+            .unwrap();
+        while recording.selection_snapshot(false).unwrap()["receive"]["owner_released"] != true {
+            assert!(
+                stop.elapsed() < Duration::from_secs(5),
+                "{phase} {mode}: owner never released"
+            );
+            std::thread::sleep(Duration::from_micros(200));
+        }
+        let release = stop.elapsed();
+        phases.push(json!({"phase":phase,"mode":mode,"decoded_expected":decoded,
+            "published_at_stop":published,"release_seconds":release.as_secs_f64(),
+            "private_usage_before_stop":during["private_usage"]}));
+        assert!(phase != "after-decode" || decoded);
+        assert!(
+            release <= Duration::from_millis(250),
+            "{phase} {mode}: receive owner release {release:?} > 250ms"
+        );
+    }
+    let final_sample = metrics.sample();
+    let idle_private = idle["private_usage"].as_u64().unwrap();
+    let peak = final_sample["lifetime_peak_commit"].as_u64().unwrap();
+    let delta = peak.saturating_sub(idle_private);
+    let power = std::process::Command::new("powercfg")
+        .arg("/getactivescheme")
+        .output()
+        .unwrap();
+    let os = std::process::Command::new("cmd")
+        .args(["/c", "ver"])
+        .output()
+        .unwrap();
+    println!(
+        "RESOURCE_STATION {}",
+        json!({"idle":idle,"final":final_sample,"lifetime_peak_minus_idle_private_bytes":delta,
+            "limit_bytes":96u64*1024*1024,"phases":phases,
+            "delta_basis":"lifetime peak commit of the whole test process (manager, provider, decoder, harness) minus idle private usage; conservative upper bound",
+            "os_version":String::from_utf8_lossy(&os.stdout),"power_scheme":String::from_utf8_lossy(&power.stdout),
+            "processor_identifier":std::env::var("PROCESSOR_IDENTIFIER").unwrap_or_default(),
+            "parallelism":std::thread::available_parallelism().unwrap().get(),
+            "executable":std::env::current_exe().unwrap()})
+    );
+    assert_eq!(metrics.request("close")["state"], "closed");
+    metrics.child.wait().unwrap();
+    drop(recording);
+    let _ = std::fs::remove_dir_all(dir);
+    assert!(
+        delta <= 96 * 1024 * 1024,
+        "station process delta {delta} bytes > 96MiB"
+    );
+}

@@ -1224,7 +1224,7 @@ fn resource_runtime_parent() {
         "os_version":String::from_utf8_lossy(&os_version.stdout),"build_profile":"release",
         "arch":std::env::consts::ARCH,"processor_identifier":std::env::var("PROCESSOR_IDENTIFIER").unwrap_or_default(),
         "parallelism":std::thread::available_parallelism().unwrap().get(),"power_scheme":String::from_utf8_lossy(&power.stdout),
-        "host_scope":"supplemental actual host; not a5950X claim","full_station_proof":false,
+        "host_scope":"designated reference station PC HB9BLA (AMD Ryzen 9 3900X, 32 GB, Windows 11); identity as recorded","full_station_proof":false,
         "metrics_source_identity":metrics_source_identity})
     );
     let mut completed_configurations = 0;
@@ -1857,13 +1857,13 @@ fn resource_busy_live_overlap_and_pending_cancel() {
         "parallelism":std::thread::available_parallelism().unwrap().get(),
         "build_profile":if cfg!(debug_assertions){"debug"}else{"release"},
         "debug_assertions":cfg!(debug_assertions),
-        "host_scope":"supplemental actual host; not5950X","total_cpu_time_measured":false})
+        "host_scope":"designated reference station PC HB9BLA (AMD Ryzen 9 3900X, 32 GB, Windows 11); identity as recorded","total_cpu_time_measured":false})
     );
     eprintln!(
         "RESOURCE_LIVE_INPUTS {}",
         serde_json::json!({"source_sha":resource_source(),
         "executable_sha256":resource_hash(&std::env::current_exe().unwrap()),"inputs":live,
-        "oracle_manifest_raw_sha256":resource_hash(&oracle_path),"host_scope":"actual current host supplemental; not5950X",
+        "oracle_manifest_raw_sha256":resource_hash(&oracle_path),"host_scope":"designated reference station PC HB9BLA (AMD Ryzen 9 3900X, 32 GB, Windows 11); identity as recorded",
         "geometry":{"stream_frames":720000,"window_frames":360000,"advance_frames":180000},
         "cpu_time_measured":false,"four_profile_or_memory_or_station_proof":false})
     );

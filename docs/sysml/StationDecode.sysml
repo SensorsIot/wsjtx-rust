@@ -839,7 +839,8 @@ package WstxOfflineDecode {
                  Repeatpayloadmultiset,time<=1frame,freq<=.2HzFT8/.5HzFT4. Cancelallphases,
                  stale/restart/busy/limits/strictHTTP/realbrowser/twopeer32kbitlink<=2sstatus.
                  OneCPUworker:15sFT8<=5s,7.5sFT4<=3s,120s<=40s,cold+<=2s; tenruns+warmup,
-                 actual5950XWindowsOS/build/power/hash/workload/min/median/p95/max/memory;
+                 actualreferencePC HB9BLA(AMDRyzen9 3900X,32GB,Windows11)
+                 OS/build/power/hash/workload/min/median/p95/max/memory;
                  fourprofiles<=2xruntime,64MiBworker/96MiBprocessdelta,<=250msrelease.
                  Futurejoint48kcapture+FFT+decode provesfairness, notlargerringassumption.
                  Rust/fixture/HTTP/browser/link bindings are declared in WstxRequirements; no execution verdict. */
