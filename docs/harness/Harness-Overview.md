@@ -1,7 +1,7 @@
 # Harness reference index
 
-The build procedure is the [CR process](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Process.md); method changes
-follow [Harness changes](https://github.com/SensorsIot/harness/blob/V2/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
+The build procedure is the [CR process](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Process.md); method changes
+follow [Harness changes](https://github.com/SensorsIot/harness/blob/main/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
 contract; the references below are the constraints a change must respect.
 
 | Subject | Reference |
@@ -10,13 +10,14 @@ contract; the references below are the constraints a change must respect.
 | Product component/interface boundaries | [Architecture](../sysml/Architecture.sysml) and its referenced behaviour/interface packages |
 | Product SysML artifacts and view scope | [Architecture model](../sysml/Architecture.sysml); [catalog and validation](Project-Specifics.md#canonical-model-catalog-and-source-bindings) |
 | Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
+| Which machine does what (HB9BLA station, PC Andreas) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
-| Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/V2/lang/rust/standard.md) |
-| Security | [principles](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/security.md) |
-| Testing | [testing](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
-| Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/V2/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
+| Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/main/lang/rust/standard.md) |
+| Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md) |
+| Testing | [testing](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
+| Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
 | Parallel issue workspaces and supervised sub-agents | [Parallel work](../../harness/core/docs/Parallel-Work.md); `python harness/core/tools/parallel.py status` |
-| Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md) |
+| Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | [Escapes ledger](Escapes-Ledger.md) |
@@ -29,7 +30,7 @@ in `harness/lang/rust/`. Project configuration is in `.harness/`, and project-sp
 environment, build and model-maintenance instructions are in [Project specifics](Project-Specifics.md).
 
 - **Main branch:** `master`; the push gate compares against `origin/master`.
-- **Execution mode:** local. The Windows PC is authoritative for compiler checks,
+- **Execution mode:** local. HB9BLA is authoritative for compiler checks,
   selected functional groups including their required bandwidth measurements, and release
   packaging. The local pre-push hook enforces the ordinary gate. GitHub Actions has
   only a manual trigger and is an explicit alternative when requested, not a second
@@ -41,11 +42,13 @@ environment, build and model-maintenance instructions are in [Project specifics]
   `.harness/suites.yaml`; see [functional test selection](Project-Specifics.md#functional-test-selection).
   Shared or unmapped changes select broader checks. `--plan` explains the selection;
   `--full` executes every eligible group without memo reuse.
-- **Deploy:** a locally built Windows release executable ([Project specifics](Project-Specifics.md));
-  the dry run uses that candidate on this PC. The manual hosted alternative can provide
-  the same evidence when explicitly chosen instead.
+- **Deploy:** a Windows release executable built and installed on HB9BLA
+  ([machines and roles](Project-Specifics.md#machines-and-roles)); the dry run uses that
+  candidate on HB9BLA. The manual hosted workflow can supply build and test evidence
+  when explicitly chosen; its artifact is never installed on the station.
 - **Live tests:** none yet. Tests that need a radio, a sound device or the network are
-  cost 3–5, marked `#[ignore]`, and get their own suites.
+  cost 3–5, marked `#[ignore]`, get their own suites and run only on HB9BLA, where the
+  transceiver is connected.
 
 ## Harness paths
 
@@ -62,10 +65,25 @@ The paths a harness change may touch; everything else is product:
 
 - `harness/` (the submodule: its pinned version; fixes are made inside it)
 - `.harness/`
-- `docs/harness/`, `AGENTS.md`, `CLAUDE.md`
+- `docs/harness/`, `AGENTS.md`, `CLAUDE.md`, `.claude/` (the agent guard and skill entrypoints)
+- `deny.toml` (the `rust-supply-chain` pack's licence and source policy)
 - `.github/ISSUE_TEMPLATE/`
-- `.github/workflows/` (the CI build)
-- `tools/sysml.py`, `tools/sysml/` (project-specific authority/trace checks, semantic validation and their tests)
+- `.github/workflows/rust-advisories.yml` (the pack's scheduled advisories sensor)
+- `.gitmodules` (the harness submodule's URL and branch; it holds only that submodule, and adding
+  another submodule is a product change)
+
+They are declared as `harness_paths` in `.harness/config.yaml`: a push that changes only
+these paths is a harness change, reviewed and not gated.
+
+Maintained with the harness but inputs of product suites, so a change to them is gated
+as a CR: `.github/workflows/windows-rust.yml` (the CI build), `tools/sysml.py` and
+`tools/sysml/` (authority/trace checks, semantic validation and product contract oracles
+such as coverage tables and property tests).
+`.github/workflows/fortran-stage-diagnostics.yml` is product diagnostic tooling. A reviewer of a `deny.toml` change runs `cargo deny --locked --workspace check bans
+licenses sources`, since the gate does not. The `rust-supply-chain` pack's
+advisories sensor is `.github/workflows/rust-advisories.yml`: weekly and on demand, read-only,
+it runs `cargo deny --locked --workspace check advisories`. A red run is GitHub's failed-workflow
+notice to the operator (the user who last edited the schedule); it names the crate and the advisory, and the fix is a CR.
 
 ## Documentation is current-state
 
@@ -96,7 +114,7 @@ behavioural equivalence or implementation readiness; independent review and rele
 application tests supply that evidence.
 
 The active canonical contract and these bindings state the rule that holds now, never
-its history ([documentation](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/documentation.md)).
+its history ([documentation](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/documentation.md)).
 Open work and review/execution evidence live in GitHub issues; history is `git log`.
 
 ## Backlog

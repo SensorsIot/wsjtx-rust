@@ -73,7 +73,7 @@ Build, test and packaging instructions are in the [project-specific harness](doc
 - [Stable requirements and verification cases](docs/sysml/Requirements.sysml)
 - [Architecture](docs/sysml/Architecture.sysml)
 - [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)
-- [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/V2/core/docs/standards/sysml-v2.md)
+- [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md)
 
 ## Branches
 

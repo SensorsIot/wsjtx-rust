@@ -4,7 +4,7 @@ For the container transfer, first read [the handoff and project memory](docs/har
 It records the last verified state and skills setup; current contracts and GitHub issues
 remain authoritative. Recheck repository state before continuing.
 
-This project uses the harness (https://github.com/SensorsIot/harness, branch `V2`) as a
+This project uses the harness (https://github.com/SensorsIot/harness, branch `main`) as a
 git submodule at `harness/`. That copy is the version this project pins and the place
 the harness is maintained; use it, not the user-level `harness` skill.
 
@@ -18,4 +18,4 @@ the harness is maintained; use it, not the user-level `harness` skill.
   relevant to the task.
 - Once per clone: `git submodule update --init`, then
   `python3 harness/core/tools/install_hooks.py`, and the same inside the submodule
-  (`cd harness && python3 core/tools/install_hooks.py`) for its own gate.
+  (`cd harness && python3 core/tools/install_hooks.py`) for its commit hook. Harness changes are reviewed, not gated.

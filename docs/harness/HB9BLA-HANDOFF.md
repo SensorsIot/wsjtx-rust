@@ -57,7 +57,13 @@ $env:WSTX_DECODER_VECTORS = Join-Path $data 'frozen'
 $env:WSTX_DECODER_SYNCHRONIZATION = Join-Path $data 'synchronization'
 $env:WSTX_DECODER_OFFICIAL_FT8 = Join-Path $data 'official-ft8\210703_133430.wav'
 $env:CARGO_BUILD_JOBS = '2'
+$sim = Join-Path (git rev-parse --path-format=absolute --git-common-dir) 'harness-parallel\resources\issue-18\delivery-v2\CR18-simulated-samples-v2-03aef7cde-toold06cee63463b'
+$env:WSTX_SIMULATOR_SAMPLE_DIR = Join-Path $sim 'ft4'
+$env:WSTX_SIMULATOR_ORACLE_DIR = Join-Path (git rev-parse --show-toplevel) 'fixtures\decoder'
 ```
+
+Without these, a push that selects any suite whose `needs` in `.harness/suites.yaml`
+names a WSTX_* input is refused red.
 
 Use this synchronization set, not stale `synchronization-inputs-final`/`-lf` caches.
 Evidence: `.git\migration-evidence\hardware-preparation\`; original design: sibling
@@ -69,6 +75,8 @@ namespace, never overwrite main or blindly apply historical FSDs. Private proof/
 stays `.git\migration-private\` and must not be uploaded publicly.
 
 Use the exact harness gitlink of the checked-out candidate. A source-harness publication
-alone is not project adoption: updates require their separate rollout and actual trial.
-Skills source is `D:\Github\agent-skills`; registered skills preserve user state. Never
+alone is not project adoption: a pin update is its own harness change, reviewed and then
+pushed.
+Skills are the pinned harness's, through the generated `.claude/skills/` entrypoints
+(`install_skills.py`); registered user skills preserve user state. Never
 install Fortran locally.
