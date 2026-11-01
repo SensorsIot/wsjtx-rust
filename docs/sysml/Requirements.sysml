@@ -320,6 +320,14 @@ package WstxRequirements {
     dependency CL_007_04_to_FR_004 from 'CL-007-04' to 'FR-004';
     dependency CL_007_04_to_FR_019 from 'CL-007-04' to 'FR-019';
     dependency CL_007_04_to_FR_021 from 'CL-007-04' to 'FR-021';
+    requirement 'CL-007-05' {
+        doc /* Live decode latency (#47). With a correlated UTC source clock, live FT8 MUST publish every decode of a frame with DT -1.5 s to +0.66 s by its period start + 15.0 s, and live FT4 every decode with DT -1.5 s to +0.96 s by period start + 7.5 s, on the reference PC HB9BLA under normal station load (receive, waterfall, one browser, UDP enabled). Frames starting later, up to DT +2.5 s (FT8) or +2.0 s (FT4), MUST still be published from a late window early in the next period. No per-period decode count cap applies; the only search bound is the existing 256 qualified-candidate limit with explicit SearchLimited. Without a correlated UTC clock the source-counter window grid of AdvanceDecode applies and no latency is promised. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/search.rs; server/src/decoder/subtraction.rs";
+    }
+    dependency CL_007_05_to_FR_003 from 'CL-007-05' to 'FR-003';
+    dependency CL_007_05_to_FR_004 from 'CL-007-05' to 'FR-004';
+    dependency CL_007_05_to_FR_021 from 'CL-007-05' to 'FR-021';
     requirement 'CL-008-01' {
         doc /* Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -1835,6 +1843,21 @@ package WstxRequirements {
         }
         attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release";
     }
+    verification 'TC-004-004' {
+        doc /* TC-004-004 — Live decode latency on a recorded busy period (#47)
+             FR-003, FR-004, FR-021; CL-007-04, CL-007-05
+             Cost 2 (release, decoder-quality suite, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. Cost 1: the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length. Cost 1: band-ranked known-word refinement agrees with the exhaustive full-rate grid search on a crowded synthetic frame within 32 frames and 0.02 Hz and returns a full-rate score.
+             Cost 5 acceptance: live on HB9BLA, 10 consecutive FT8 periods publish their last decode by +15.0 s and FT4 by +7.5 s, with decode parity against jt9 on the same captured periods unchanged or better. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-007-04';
+            verify 'CL-007-05';
+            verify 'FR-003';
+            verify 'FR-004';
+            verify 'FR-021';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs::live_busy_period_publishes_every_decode_promptly; server/tests/receive_integration.rs::receive_schedule_completes_windows_at_period_residues; server/src/recording_tests.rs::live_window_schedule_follows_the_utc_period_grid; server/src/decoder/search_test.rs::ranked_refinement_matches_exhaustive_grid_search";
+    }
     verification 'TC-018-001' {
         doc /* TC-018-001
              CL-006-01, CL-006-02
@@ -2214,6 +2237,8 @@ package WstxRequirements {
     dependency CL_007_04_verified_by_TC_004_001 from 'CL-007-04' to 'TC-004-001';
     dependency CL_007_04_verified_by_TC_004_002 from 'CL-007-04' to 'TC-004-002';
     dependency CL_007_04_verified_by_TC_004_003 from 'CL-007-04' to 'TC-004-003';
+    dependency CL_007_04_verified_by_TC_004_004 from 'CL-007-04' to 'TC-004-004';
+    dependency CL_007_05_verified_by_TC_004_004 from 'CL-007-05' to 'TC-004-004';
     dependency CL_008_01_verified_by_TC_002_001 from 'CL-008-01' to 'TC-002-001';
     dependency CL_008_01_verified_by_TC_009_001 from 'CL-008-01' to 'TC-009-001';
     dependency CL_008_02_verified_by_TC_002_001 from 'CL-008-02' to 'TC-002-001';

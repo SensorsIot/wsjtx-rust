@@ -1,4 +1,4 @@
-use super::baseband::BandPlan;
+use super::baseband::{BandPlan, BandWindow, PassBand};
 use super::bitmetrics::{self, channel_gates};
 use super::fit::{fit_coefficients, fit_signal};
 use super::history::DecodeState;
@@ -6,6 +6,7 @@ use super::physical_sync;
 use super::subtraction::Subtractor;
 use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
+use rustfft::num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use std::{
     f64::consts::PI,
@@ -236,7 +237,16 @@ impl Decoder {
                     continue;
                 }
                 let tones = self.channel.tones(&word, mode);
-                let fitted = refine_known(&samples, mode, &tones, c, cancel, &mut budget).await?;
+                let fitted = refine_known(
+                    &samples,
+                    mode,
+                    &tones,
+                    c,
+                    cancel,
+                    &mut budget,
+                    &mut physical,
+                )
+                .await?;
                 let absolute = origin + fitted.start as u64;
                 if window_seen.iter().any(|(bits, start)| {
                     *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
@@ -304,26 +314,53 @@ fn coherent(
     frequency: f64,
     stride: usize,
 ) -> f64 {
-    let step = 2. * PI * frequency * stride as f64 / 12000.;
+    // Interleaved lanes break the serial phasor and accumulator chains; every sample of the
+    // range still contributes at full rate (same Gram, different summation order).
+    const LANES: usize = 4;
+    let lanes = if stride == 1 { LANES } else { 1 };
+    let step = 2. * PI * frequency * (stride * lanes) as f64 / 12000.;
     let (dc, ds) = (step.cos(), step.sin());
     let mut score = 0.;
     for &(lo, hi) in ranges {
-        let angle = 2. * PI * frequency * (lo + 1) as f64 / 12000.;
-        let (mut co, mut si) = (angle.cos(), angle.sin());
-        let (mut re, mut im) = (0., 0.);
-        let (mut cc, mut ss, mut cs) = (0., 0., 0.);
-        for j in (lo..hi).step_by(stride) {
-            let w = wave[j];
+        let mut co = [0f64; LANES];
+        let mut si = [0f64; LANES];
+        for lane in 0..lanes {
+            let angle = 2. * PI * frequency * (lo + lane * stride + 1) as f64 / 12000.;
+            (co[lane], si[lane]) = (angle.cos(), angle.sin());
+        }
+        let mut sums = [[0f64; LANES]; 5];
+        let mut add = |lane: usize, w: [f32; 2], x: f32, co: f64, si: f64| {
             let a = w[0] as f64 * co - w[1] as f64 * si;
             let b = w[0] as f64 * si + w[1] as f64 * co;
-            cc += a * a;
-            ss += b * b;
-            cs += a * b;
-            let x = samples[start + j] as f64;
-            re += x * a;
-            im += x * b;
-            (co, si) = (co * dc - si * ds, si * dc + co * ds);
+            let x = x as f64;
+            sums[0][lane] += a * a;
+            sums[1][lane] += b * b;
+            sums[2][lane] += a * b;
+            sums[3][lane] += x * a;
+            sums[4][lane] += x * b;
+        };
+        if lanes == LANES {
+            let w = &wave[lo..hi];
+            let x = &samples[start + lo..start + hi];
+            let (wb, wt) = w.as_chunks::<LANES>();
+            let (xb, xt) = x.as_chunks::<LANES>();
+            for (wq, xq) in wb.iter().zip(xb) {
+                for lane in 0..LANES {
+                    add(lane, wq[lane], xq[lane], co[lane], si[lane]);
+                    (co[lane], si[lane]) =
+                        (co[lane] * dc - si[lane] * ds, si[lane] * dc + co[lane] * ds);
+                }
+            }
+            for (lane, (&wq, &xq)) in wt.iter().zip(xt).enumerate() {
+                add(lane, wq, xq, co[lane], si[lane]);
+            }
+        } else {
+            for j in (lo..hi).step_by(stride) {
+                add(0, wave[j], samples[start + j], co[0], si[0]);
+                (co[0], si[0]) = (co[0] * dc - si[0] * ds, si[0] * dc + co[0] * ds);
+            }
         }
+        let [cc, ss, cs, re, im] = sums.map(|v| v.iter().sum::<f64>());
         let Some((_, _, explained)) = fit_coefficients(cc, ss, cs, re, im) else {
             return f64::NEG_INFINITY;
         };
@@ -331,7 +368,231 @@ fn coherent(
     }
     score
 }
+/// Band-limited ranking of known-word grid points. `band` is the current-pass candidate
+/// baseband (the same transform the physical sync uses), so carriers outside the candidate
+/// band are filtered, never aliased. It only orders grid points; scores stay full rate.
+struct Ranking<'a> {
+    band: &'a BandWindow,
+    down: usize,
+    wave: &'a [[f32; 2]],
+    lo: usize,
+    hi: usize,
+    /// Forward transform of length 2*frame/down: bin k is grid frequency base + k*step.
+    fft: &'a dyn rustfft::Fft<f64>,
+    base: f64,
+    step: f64,
+}
+impl Ranking<'_> {
+    /// Squared magnitude of the decimated analytic correlation for one start and a set of
+    /// carrier frequencies. It approximates the full-rate explained energy up to one common
+    /// scale, without the small image term.
+    fn scores(&self, start: usize, frequencies: &[f64], out: &mut Vec<f64>) {
+        let d = self.down;
+        let first = (self.lo + start).div_ceil(d);
+        let last = (self.hi + start).div_ceil(d).min(self.band.samples.len());
+        let products = (first..last)
+            .map(|m| {
+                let w = self.wave[m * d - start];
+                self.band.samples[m] * Complex64::new(w[0] as f64, -(w[1] as f64))
+            })
+            .collect::<Vec<_>>();
+        let angle =
+            |frequency: f64| 2. * PI * (self.band.center_hz - frequency) * d as f64 / 12000.;
+        let size = self.fft.len();
+        let mut bins = None;
+        if frequencies.len() > 16 && products.len() <= size {
+            let rotation = Complex64::from_polar(1., angle(self.base));
+            let mut phasor = Complex64::new(1., 0.);
+            let mut buffer = vec![Complex64::new(0., 0.); size];
+            for (z, &p) in buffer.iter_mut().zip(&products) {
+                *z = p * phasor;
+                phasor *= rotation;
+            }
+            self.fft.process(&mut buffer);
+            bins = Some(buffer);
+        }
+        for &frequency in frequencies {
+            let k = ((frequency - self.base) / self.step).round();
+            if let Some(bins) = &bins
+                && (self.base + k * self.step - frequency).abs() <= 1e-9
+                && k.abs() < size as f64 / 2.
+            {
+                out.push(bins[(k as isize).rem_euclid(size as isize) as usize].norm_sqr());
+                continue;
+            }
+            let rotation = Complex64::from_polar(1., angle(frequency));
+            let mut phasor = Complex64::new(1., 0.);
+            let mut sum = Complex64::new(0., 0.);
+            for &p in &products {
+                sum += p * phasor;
+                phasor *= rotation;
+            }
+            out.push(sum.norm_sqr());
+        }
+    }
+}
+/// Grid points (start, frequencies) in contract order. When a ranking is available, only the
+/// `keep` best-ranked points are scored at full rate; they are compared in grid order with the
+/// unchanged tie rule, so the result is always a full-rate score at a contract grid point.
+#[allow(clippy::too_many_arguments)]
+async fn refine_stage(
+    samples: &[f32],
+    wave: &[[f32; 2]],
+    ranges: &[(usize, usize)],
+    points: &[(usize, Vec<f64>)],
+    ranking: Option<&Ranking<'_>>,
+    keep: usize,
+    best: &mut Candidate,
+    cancel: &impl Fn() -> bool,
+    budget: &mut CpuBudget<'_>,
+) -> Result<(), DecodeError> {
+    let total = points.iter().map(|(_, f)| f.len()).sum::<usize>();
+    let mut selected = vec![true; total];
+    if let Some(ranking) = ranking.filter(|_| total > keep) {
+        let mut approximate = Vec::with_capacity(total);
+        for (start, frequencies) in points {
+            budget.checkpoint().await?;
+            ranking.scores(*start, frequencies, &mut approximate);
+        }
+        let mut order = (0..total).collect::<Vec<_>>();
+        order.sort_by(|&a, &b| approximate[b].total_cmp(&approximate[a]).then(a.cmp(&b)));
+        selected = vec![false; total];
+        for &index in &order[..keep] {
+            selected[index] = true;
+        }
+    }
+    let mut index = 0;
+    for (start, frequencies) in points {
+        for &frequency in frequencies {
+            let chosen = selected[index];
+            index += 1;
+            if !chosen {
+                continue;
+            }
+            budget.checkpoint().await?;
+            if cancel() {
+                return Err(DecodeError::Cancelled);
+            }
+            let score = coherent(samples, *start, wave, ranges, frequency, 1);
+            if score > best.score
+                || score == best.score
+                    && (frequency < best.frequency
+                        || frequency == best.frequency && *start < best.start)
+            {
+                *best = Candidate {
+                    start: *start,
+                    frequency,
+                    score,
+                };
+            }
+        }
+    }
+    Ok(())
+}
+/// Full-rate grid evaluations kept per refinement stage after band-limited ranking.
+const REFINE_KEEP: [usize; 3] = [6, 3, 2];
+#[allow(clippy::too_many_arguments)]
 async fn refine_known(
+    samples: &[f32],
+    mode: Mode,
+    tones: &[u8],
+    c: Candidate,
+    cancel: &impl Fn() -> bool,
+    budget: &mut CpuBudget<'_>,
+    pass: &mut PassBand<'_>,
+) -> Result<Candidate, DecodeError> {
+    let wave = quadratures(mode, tones, 0.).unwrap();
+    let n = mode.symbol_frames();
+    let ranges = [(n / 2, wave.len() - n / 2)];
+    let step = 6000. / wave.len() as f64;
+    let count = mode.symbol_count() as i32;
+    let lower = (c.frequency - mode.spacing() / 2.).max(200.);
+    let upper = (c.frequency + mode.spacing() / 2.).min(3500.);
+    let mut frequencies = (-count..=count)
+        .map(|df| c.frequency + df as f64 * step)
+        .filter(|&f| f >= lower && f <= upper)
+        .chain([lower, upper])
+        .collect::<Vec<_>>();
+    frequencies.sort_by(f64::total_cmp);
+    frequencies.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    frequencies.retain(|f| (200. - 1e-7..=3500. + 1e-7).contains(f));
+    let fits = |start: isize| start >= 0 && start as usize + wave.len() <= samples.len();
+    let band = pass.window(c.frequency, budget).await?;
+    let ranking = band.as_ref().map(|band| Ranking {
+        band,
+        down: if mode == Mode::Ft8 { 60 } else { 18 },
+        wave: &wave,
+        lo: ranges[0].0,
+        hi: ranges[0].1,
+        fft: pass.plan.ranking.as_ref(),
+        base: c.frequency,
+        step,
+    });
+    let mut best = Candidate { score: -1., ..c };
+    let coarse_points = (-4isize..=4)
+        .map(|dt| c.start as isize + dt * (n / 16) as isize)
+        .filter(|&start| fits(start))
+        .map(|start| (start as usize, frequencies.clone()))
+        .collect::<Vec<_>>();
+    refine_stage(
+        samples,
+        &wave,
+        &ranges,
+        &coarse_points,
+        ranking.as_ref(),
+        REFINE_KEEP[0],
+        &mut best,
+        cancel,
+        budget,
+    )
+    .await?;
+    let coarse = best;
+    let fine_frequencies = (-4..=4)
+        .map(|df| coarse.frequency + df as f64 * step / 8.)
+        .filter(|f| (200. - 1e-7..=3500. + 1e-7).contains(f))
+        .collect::<Vec<_>>();
+    let fine_points = (-(n as isize / 16)..=n as isize / 16)
+        .filter(|dt| dt % (n as isize / 128).max(1) == 0)
+        .map(|dt| coarse.start as isize + dt)
+        .filter(|&start| fits(start))
+        .map(|start| (start as usize, fine_frequencies.clone()))
+        .collect::<Vec<_>>();
+    refine_stage(
+        samples,
+        &wave,
+        &ranges,
+        &fine_points,
+        ranking.as_ref(),
+        REFINE_KEEP[1],
+        &mut best,
+        cancel,
+        budget,
+    )
+    .await?;
+    let fine = best;
+    let radius = (n as isize / 128).max(1);
+    let last_points = (-radius..=radius)
+        .map(|dt| fine.start as isize + dt)
+        .filter(|&start| fits(start))
+        .map(|start| (start as usize, vec![fine.frequency]))
+        .collect::<Vec<_>>();
+    refine_stage(
+        samples,
+        &wave,
+        &ranges,
+        &last_points,
+        ranking.as_ref(),
+        REFINE_KEEP[2],
+        &mut best,
+        cancel,
+        budget,
+    )
+    .await?;
+    Ok(best)
+}
+/// The unpruned three-stage search: every grid point at full rate (test oracle).
+#[cfg(test)]
+async fn refine_exhaustive(
     samples: &[f32],
     mode: Mode,
     tones: &[u8],

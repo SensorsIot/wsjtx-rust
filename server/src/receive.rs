@@ -30,6 +30,9 @@ pub(crate) struct WindowBuffer {
     previous_end: Option<u64>,
     next_due: u64,
     advance: u64,
+    /// Due boundaries as (source-counter residue modulo the advance, window frames).
+    /// The default is the plain counter grid with the whole span.
+    schedule: Vec<(u64, usize)>,
     span: usize,
     complete_support: usize,
 }
@@ -55,9 +58,40 @@ impl WindowBuffer {
             previous_end: None,
             next_due: advance,
             advance,
+            schedule: vec![(0, span)],
             span,
             complete_support: mode.symbol_frames() * mode.symbol_count(),
         })
+    }
+
+    /// Replaces the counter grid with due boundaries at fixed residues of the advance, each
+    /// with its own window length (at most the span), so windows can complete at fixed points
+    /// of the source's period grid. Positions remain source counters.
+    // The audio test targets include this file without the live worker that calls it.
+    #[allow(dead_code)]
+    pub(crate) fn with_schedule(mut self, schedule: &[(u64, usize)]) -> Self {
+        let mut entries = schedule
+            .iter()
+            .map(|&(phase, frames)| (phase % self.advance, frames.min(self.span)))
+            .collect::<Vec<_>>();
+        entries.sort_unstable();
+        entries.dedup_by_key(|entry| entry.0);
+        if !entries.is_empty() {
+            self.schedule = entries;
+        }
+        self
+    }
+
+    /// The first scheduled due boundary strictly after `position`.
+    fn due_after(&self, position: u64) -> u64 {
+        self.schedule
+            .iter()
+            .map(|&(phase, _)| {
+                let behind = (position % self.advance + self.advance - phase) % self.advance;
+                position + (self.advance - behind)
+            })
+            .min()
+            .expect("schedule is never empty")
     }
 
     pub(crate) fn push(&mut self, block: &SampleBlock) -> Result<IngestOutcome, WindowError> {
@@ -99,9 +133,10 @@ impl WindowBuffer {
         if self.previous_end.is_none() || reset_decoder {
             self.history.clear();
             self.history_first = block.first_frame;
-            // Source counters, not UTC or callback arrival time, fix the advance grid.
-            // The private due boundary may exceed MAX_COUNTER; accepted sample counters never do.
-            self.next_due = (block.first_frame / self.advance + 1) * self.advance;
+            // Source counters, not callback arrival time, fix the advance grid; its residue is
+            // the caller's period phase. The private due boundary may exceed MAX_COUNTER;
+            // accepted sample counters never do.
+            self.next_due = self.due_after(block.first_frame);
         }
         if self.timing.is_none() {
             self.timing = Some(timing.clone());
@@ -115,18 +150,26 @@ impl WindowBuffer {
             self.history.push_back(sample);
             let position = block.first_frame + offset as u64 + 1;
             if position == self.next_due {
-                if self.history.len() >= self.complete_support {
+                let residue = position % self.advance;
+                let frames = self
+                    .schedule
+                    .iter()
+                    .find(|entry| entry.0 == residue)
+                    .map_or(self.span, |entry| entry.1)
+                    .min(self.history.len());
+                if frames >= self.complete_support {
+                    let skip = self.history.len() - frames;
                     let mut samples = Vec::new();
                     samples
-                        .try_reserve_exact(self.history.len())
+                        .try_reserve_exact(frames)
                         .map_err(|_| WindowError::DecodeLimit)?;
-                    samples.extend(self.history.iter().copied());
+                    samples.extend(self.history.iter().skip(skip).copied());
                     window = Some(AnalysisWindow {
                         samples,
-                        origin: self.history_first,
+                        origin: self.history_first + skip as u64,
                     });
                 }
-                self.next_due += self.advance;
+                self.next_due = self.due_after(position);
             }
         }
         self.previous_end = Some(end);

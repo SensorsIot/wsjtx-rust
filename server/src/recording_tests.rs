@@ -2292,3 +2292,39 @@ fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
     }
     actor.request_close();
 }
+
+// Proves: CL-007-05; TC-004-004. Hand-calculated residues from a correlated UTC anchor.
+#[test]
+fn live_window_schedule_follows_the_utc_period_grid() {
+    let timing = |anchor: Option<&str>, frame: u64| source::SourceTiming {
+        source_id: "s".into(),
+        segment: 0,
+        native_rate: 48000,
+        native_anchor_frame: 0.0,
+        canonical_anchor_frame: frame,
+        converter_delay_native_frames: 0.0,
+        qpc_anchor_100ns: Some(0),
+        system_utc_anchor: anchor.map(Into::into),
+        uncertainty_ns: Some(500),
+        correlated: anchor.is_some(),
+        external_accuracy: source::ExternalAccuracy::Unknown,
+    };
+    // 7.5 s into an FT8 period (= an FT4 period start) at canonical frame 1000:
+    // FT8 +13.8 s/+15.7 s are 6.3 s/8.2 s later; FT4 +6.5 s/+7.9 s are 6.5 s/0.4 s later.
+    let anchored = timing(Some("2026-11-01T19:23:07.5000000Z"), 1000);
+    assert_eq!(
+        window_schedule(&anchored, decoder::Mode::Ft8),
+        Some(vec![(76600, 180000), (99400, 180000)])
+    );
+    assert_eq!(
+        window_schedule(&anchored, decoder::Mode::Ft4),
+        Some(vec![(79000, 90000), (5800, 90000)])
+    );
+    // A completion before the anchor wraps into the next period, modulo the advance.
+    let late = timing(Some("2026-11-01T19:23:14.0000000Z"), 179000);
+    assert_eq!(
+        window_schedule(&late, decoder::Mode::Ft8),
+        Some(vec![(176600, 180000), (19400, 180000)])
+    );
+    assert_eq!(window_schedule(&timing(None, 0), decoder::Mode::Ft8), None);
+}

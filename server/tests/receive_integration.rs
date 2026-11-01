@@ -178,3 +178,58 @@ fn receive_input_limits_and_initial_discontinuity_are_explicit() {
     reset.discontinuity = true;
     assert!(buffer.push(&reset).unwrap().reset_decoder);
 }
+
+// Proves: FR-003, CL-007-05; TC-004-004. Scheduled residues fix completion and length.
+#[test]
+fn receive_schedule_completes_windows_at_period_residues() {
+    // FT8 prompt/late residues for a UTC anchor 7.5 s into a period at frame 1000:
+    // +13.8 s and +15.7 s lie 75600 and 98400 frames after the anchor.
+    for partitions in [&[240usize][..], &[239, 1, 117, 240]] {
+        let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
+            .unwrap()
+            .with_schedule(&[(99400, 180000), (76600, 180000)]);
+        let mut output = vec![];
+        let (mut first, mut partition) = (0u64, 0);
+        while first < 480000 {
+            let count = (partitions[partition % partitions.len()] as u64).min(480000 - first);
+            if let Some(window) = buffer.push(&block(first, count as usize)).unwrap().window {
+                output.push((window.origin + window.samples.len() as u64, window));
+            }
+            first += count;
+            partition += 1;
+        }
+        // 76600 and 99400 lack complete support; 256600 and 279400 hold the last 15 s, and
+        // the next prompt window follows one advance later.
+        let ends = output.iter().map(|(end, _)| *end).collect::<Vec<_>>();
+        assert_eq!(ends, [256600, 279400, 436600, 459400]);
+        for (end, window) in &output {
+            assert_eq!(window.samples.len(), 180000);
+            assert_eq!(window.origin, end - 180000);
+            for (offset, &sample) in window.samples.iter().enumerate().step_by(997) {
+                assert_eq!(sample, ((window.origin + offset as u64) % 97) as f32 / 128.);
+            }
+        }
+    }
+    // A shorter scheduled length and the plain grid without a schedule.
+    let mut buffer = WindowBuffer::new(Mode::Ft4, descriptor())
+        .unwrap()
+        .with_schedule(&[(5800, 63000)]);
+    let mut windows = vec![];
+    for first in (0..200000).step_by(240) {
+        if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+            windows.push((window.origin, window.samples.len()));
+        }
+    }
+    assert_eq!(windows, [(95800 - 63000, 63000), (185800 - 63000, 63000)]);
+    let plain = WindowBuffer::new(Mode::Ft4, descriptor())
+        .unwrap()
+        .with_schedule(&[]);
+    let mut buffer = plain;
+    let mut ends = vec![];
+    for first in (0..200000).step_by(240) {
+        if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+            ends.push(window.origin + window.samples.len() as u64);
+        }
+    }
+    assert_eq!(ends, [90000, 180000]);
+}

@@ -2118,9 +2118,12 @@ impl LiveWorker {
         l.source = Some(descriptor.clone());
         l.timing = Some(timing.clone());
         drop(s);
+        let mode = self.mode.unwrap_or(decoder::Mode::Ft8);
+        let schedule = window_schedule(&timing, mode).unwrap_or_default();
         self.window = Some(
-            receive::WindowBuffer::new(self.mode.unwrap_or(decoder::Mode::Ft8), descriptor)
-                .map_err(window_error)?,
+            receive::WindowBuffer::new(mode, descriptor)
+                .map_err(window_error)?
+                .with_schedule(&schedule),
         );
         self.spectrum.reset(0);
         self.reset = true;
@@ -2359,6 +2362,53 @@ fn period_parameters(mode: &str) -> Option<(i128, i128, i128)> {
         "ft4" => Some((75_000_000, 4_520_000, 50_400_000)),
         _ => None,
     }
+}
+/// UTC-aligned live analysis windows of one mode, as (completion after the period start,
+/// window length), both in 100 ns ticks. A window holds the complete frames that start
+/// between (completion - length) and (completion - frame duration).
+/// - Prompt: FT8 completes at +13.8 s with 15 s of audio (DT -1.7 s to +0.66 s; frames
+///   nominally end at +13.14 s), FT4 at +6.5 s with 7.5 s (DT -1.5 s to +0.96 s), leaving
+///   1.2 s and 1.0 s to publish every decode by +15.0 s and +7.5 s (#47).
+/// - Late: completes early in the next period for the late starters, FT8 at +15.7 s
+///   (DT +0.2 s to +2.56 s) and FT4 at +7.9 s (DT -0.1 s to +2.36 s); repeated frames of
+///   the overlap are deduplicated by the modem history.
+///
+/// Without a correlated UTC anchor the plain 30 s/15 s (FT4 15 s/7.5 s) counter grid stays.
+pub(crate) const LIVE_WINDOWS: [(decoder::Mode, [(i128, i128); 2]); 2] = [
+    (
+        decoder::Mode::Ft8,
+        [(138_000_000, 150_000_000), (157_000_000, 150_000_000)],
+    ),
+    (
+        decoder::Mode::Ft4,
+        [(65_000_000, 75_000_000), (79_000_000, 75_000_000)],
+    ),
+];
+/// Source-counter residues and lengths (frames) of the UTC-aligned live windows; None
+/// without a correlated UTC anchor.
+fn window_schedule(
+    timing: &source::SourceTiming,
+    mode: decoder::Mode,
+) -> Option<Vec<(u64, usize)>> {
+    let (period, _, _) = period_parameters(match mode {
+        decoder::Mode::Ft8 => "ft8",
+        decoder::Mode::Ft4 => "ft4",
+    })?;
+    let windows = LIVE_WINDOWS.iter().find(|(m, _)| *m == mode)?.1;
+    let anchor = source_ticks(timing, timing.canonical_anchor_frame)?;
+    let advance = period * 12000 / 10_000_000;
+    windows
+        .iter()
+        .map(|&(completion, length)| {
+            let after = (completion - anchor).rem_euclid(period);
+            let frames = (after * 12000 + 5_000_000) / 10_000_000;
+            let residue = (i128::from(timing.canonical_anchor_frame) + frames).rem_euclid(advance);
+            Some((
+                u64::try_from(residue).ok()?,
+                usize::try_from(length * 12000 / 10_000_000).ok()?,
+            ))
+        })
+        .collect()
 }
 fn source_ticks(timing: &source::SourceTiming, frame: u64) -> Option<i128> {
     if !timing.correlated {

@@ -24,14 +24,41 @@ fn better(candidate: Candidate, best: Option<Candidate>) -> bool {
                     && (candidate.frequency, candidate.start) < (b.frequency, b.start)
         })
 }
-fn sync8(window: &BandWindow, origin: usize, frequency: f64) -> f64 {
+/// Costas reference phasors for one carrier offset. They depend only on the offset, so one
+/// table serves every time lag of that offset; values are computed exactly as before.
+struct SyncTable {
+    delta: f64,
+    sync: Vec<(usize, u8)>,
+    phasors: [[Complex64; 32]; 8],
+}
+impl SyncTable {
+    fn new(delta: f64) -> Self {
+        let mut phasors = [[Complex64::new(0., 0.); 32]; 8];
+        for (tone, row) in phasors.iter_mut().enumerate() {
+            for (j, z) in row.iter_mut().enumerate() {
+                let phase = -2. * PI * (tone as f64 / 32. + delta / 200.) * j as f64;
+                *z = Complex64::from_polar(1., phase);
+            }
+        }
+        Self {
+            delta,
+            sync: Mode::Ft8.sync(),
+            phasors,
+        }
+    }
+}
+fn sync8(window: &BandWindow, origin: usize, frequency: f64, table: &mut Option<SyncTable>) -> f64 {
     let delta = frequency - window.center_hz;
+    let table = match table {
+        Some(t) if t.delta.to_bits() == delta.to_bits() => t,
+        _ => table.insert(SyncTable::new(delta)),
+    };
     let mut power = 0.;
-    for (symbol, tone) in Mode::Ft8.sync() {
+    for &(symbol, tone) in &table.sync {
         let mut dot = Complex64::new(0., 0.);
-        for j in 0..32 {
-            let phase = -2. * PI * (tone as f64 / 32. + delta / 200.) * j as f64;
-            dot += window.samples[origin + symbol * 32 + j] * Complex64::from_polar(1., phase);
+        let phasors = &table.phasors[tone as usize];
+        for (j, phasor) in phasors.iter().enumerate() {
+            dot += window.samples[origin + symbol * 32 + j] * *phasor;
         }
         power += dot.norm_sqr();
     }
@@ -46,6 +73,7 @@ async fn ft8(
         return Ok(None);
     };
     let initial = ((coarse.start + 30) / 60) as isize;
+    let mut table = None;
     let mut best = None;
     for b in initial - 10..=initial + 10 {
         budget.checkpoint().await?;
@@ -55,7 +83,7 @@ async fn ft8(
         let c = Candidate {
             start: b as usize * 60,
             frequency: coarse.frequency,
-            score: sync8(&window, b as usize, coarse.frequency),
+            score: sync8(&window, b as usize, coarse.frequency, &mut table),
         };
         if better(c, best) {
             best = Some(c);
@@ -74,7 +102,7 @@ async fn ft8(
         let c = Candidate {
             start: time.start,
             frequency: frequency.clamp(200., 3500.),
-            score: sync8(&window, time.start / 60, frequency),
+            score: sync8(&window, time.start / 60, frequency, &mut table),
         };
         if better(c, best) {
             best = Some(c);
@@ -95,7 +123,7 @@ async fn ft8(
         let c = Candidate {
             start: b as usize * 60,
             frequency: frequency.frequency,
-            score: sync8(&window, b as usize, frequency.frequency),
+            score: sync8(&window, b as usize, frequency.frequency, &mut table),
         };
         if better(c, best) {
             best = Some(c);

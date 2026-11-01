@@ -548,7 +548,9 @@ package WstxOfflineDecode {
         doc /* Adaptedsubtractft8, boundedCENTEREDzerobasedproductdefinition:
              c[k]=x[start+k]*conj(reference[k]),zerooutsideframe;
              h[j]=cos(pi*j/4000)^2/sum[a=-2000..2000]cos(pi*a/4000)^2,j=-2000..2000.
-             y[k]=sumj h[j]*c[k-j],linearFFTpadding>=151680+4000.
+             y[k]=sumj h[j]*c[k-j], exact linear (zero outside frame): with
+             h~(1+cos(pi*j/2000))/2, y = constant plus two cosine-modulated window
+             sums of exact prefix sums, O(frame) per subtraction, no FFT padding (#47).
              Atedge-distancea0..2000 dividebyavailableweight sumj[-2000..a]h[j].
              Subtract2*Re(reference[k]*y[k])ONLYwithinframe; originalsourceimmutable.
              <=3passes/32verifiedsubtractions, invalidatepassFFTafterresidualchanges.
@@ -676,7 +678,8 @@ package WstxOfflineDecode {
         out residual : ModemSampleWindow;
         doc /* Sameboundedcomplex-envelopeoperationasFt8SubtractVerifiedFrame,
              h[j]=cos(pi*j/1400)^2/sum[-700..700]cos(pi*j/1400)^2,j[-700..700],1401taps.
-             Centeredlinearconvolution,FFTpad>=60480+1400,NOedgeavailabilitycorrection.
+             Centeredlinearconvolution (same exact prefix-sum window sums, R700),
+             NOedgeavailabilitycorrection.
              Referenceincludesramp,alreadycanonicalorigin,NOsecond-576frameadjustment.
              Originalsamplesimmutable,3passes/32verifiedsubtractions,passFFTinvalidated.
              Sharedpurewaveform/measurement/FFT/cancelownership,within64MiB. */
@@ -704,6 +707,13 @@ package WstxOfflineDecode {
              physicalalgorithmsconsumeTHATprivatewindow,notone4096-framecaptureblock.
              Purecanonical12kconsumer,noWAV/device/network/UTCaccess. LiveFT8<=30s/15sadvance,
              FT4<=15s/7.5sadvance;finiteinternaltestutilitywindow/historyunchanged.
+             Live window schedule (#47, CL-007-05): with a correlated source UTC anchor the
+             shared receive owner completes two windows per period at fixed source-counter
+             residues of the advance: FT8 prompt +13.8 s/15 s of audio (DT -1.7..+0.66 s)
+             and late +15.7 s/15 s (DT +0.2..+2.56 s); FT4 prompt +6.5 s/7.5 s (DT
+             -1.5..+0.96 s) and late +7.9 s/7.5 s (DT -0.1..+2.36 s). Overlapping frames are
+             deduplicated by the modem history. Without a correlated anchor the counter grid
+             (30 s/15 s, 15 s/7.5 s) applies. The modem itself still reads no UTC.
              FT8coarseN1920/hop480/half-tone200..3500inclusive/endpoints;FT4N576/hop144
              noisegridseparatefromFt4FrequencyCandidates/Ft4BandLimitAndFineSync.
              FT8BandLimit/FineSynchronization/ObserveMetricFamilies/DecodeMetricFamilies;
@@ -753,6 +763,12 @@ package WstxOfflineDecode {
              determinant<=1e-12; noquadratureorthogonalityassumption. Nounfilteredsubsampling:
               unrelatedcarriersmustnotaliasintocandidatequadratures. Samegridcoordinates/order
               andcandidate/pass/subtraction/FECcaps.
+             Grid pruning (#47): each stage ranks its grid points by the decimated
+             correlation with the current-pass candidate baseband (the band-limited
+             transform of physical sync: carriers outside the band are filtered, never
+             aliased), and scores only the 6/3/2 best-ranked points of stages 1/2/3 with
+             the full-rate Gram above; the result is the full-rate maximum among them under
+             the same tie rule. Without a candidate band every grid point is scored.
              finalamplitude/SNR/subtractionallsamples. No whole-frame phase rejection,
              ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
              No UTC/dBFS/noiseless/crowded reference-SNR inference. */
@@ -779,6 +795,7 @@ package WstxOfflineDecode {
     satisfy WstxRequirements::'CL-007-02' by publishResults;
     satisfy WstxRequirements::'CL-007-03' by measureFrame;
     satisfy WstxRequirements::'CL-007-04' by advanceDecode;
+    satisfy WstxRequirements::'CL-007-05' by advanceDecode;
     dependency admissionOwner from admitDecode to WstxArchitecture::physicalStation::backend::stations::receive;
     dependency calculationOwner from advanceDecode to WstxArchitecture::physicalStation::backend::stations::modes;
     dependency measurementOwner from measureFrame to WstxArchitecture::physicalStation::backend::stations::modes;
