@@ -39,7 +39,8 @@ let snap=null,sending=false,openedReviews=new Set(),tick=null,lastTx=null,change
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,monotonic_ms,profile_id,review,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
-let loading=null,queued=null;
+// contactMissing: this station has no contact engine (404); routine refreshes then skip /contact.
+let loading=null,queued=null,contactMissing=false;
 function load(){
   if(!loading){loading=fetchSnapshot().finally(()=>{loading=null;});return loading;}
   if(!queued)queued=loading.then(()=>{queued=null;return load();});
@@ -48,6 +49,7 @@ function load(){
 async function fetchSnapshot(){
   try{
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
+    contactMissing=response.status===404;
     if(response.ok){const value=await response.json();if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
   }catch{}
 }
@@ -407,7 +409,7 @@ setInterval(displays,250);
 // same socket does not (contact.state announces every change).
 let readySocket=null;
 // The automation state is read once per socket (then announced by automation.state).
-addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();if(fresh){loadAutomation();loadStartup();}});
+addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&(contactMissing||snap&&snap.boot_id===profileData?.boot_id))return;readySocket=event.detail;load();if(fresh){loadAutomation();loadStartup();}});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;

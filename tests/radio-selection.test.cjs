@@ -69,9 +69,9 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:754},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(829),origin,mapping),'automatic');for(const line of [768,782,796,813,814,822,831])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(828),origin,mapping),/unknown/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(829).stack.callFrames]}};
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:757},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(832),origin,mapping),'automatic');for(const line of [771,785,799,816,817,825,834])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(831),origin,mapping),/unknown/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(832).stack.callFrames]}};
     assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
@@ -378,10 +378,10 @@ function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.metho
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'b25853f7ac60edbf3e3d3b7ce09c49cdc979eab2b4b0465a514e1c96ae90163b','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'abf49036e37cfc1814bcf0175e0e417d2ba047cab27acf32e676bed11f1f1c03','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:754,timerLine:829};
+  return {sha256,valid,fetchLine:757,timerLine:832};
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
@@ -396,7 +396,7 @@ function cadenceCaller(initiator,origin,mapping){
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
   // Reviewed for CL-022-03: Connect/Disconnect CAT callers removed; catSync never reads selection.
-  const explicitLines=[768,782,796,813,814,822,831];
+  const explicitLines=[771,785,799,816,817,825,834];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';

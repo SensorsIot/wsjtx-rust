@@ -402,7 +402,8 @@ addEventListener('station-message',event => {
   else snapshot.job.processed_frames=f.end_frame;
   show();
 });
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot)socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
+// While the live job this snapshot shows is running, receive.state carries its changes (below), so the poll rests.
+setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot && !liveCovered())socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
 setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot?.import && !uploading)sync();},5000);
 function startBody(){return {v:1,profile_id:snapshot.profile_id,boot_id:snapshot.boot_id,generation:snapshot.generation};}
 document.querySelector('#recording-import').addEventListener('click',async()=>{
@@ -672,7 +673,9 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-addEventListener('station-message',event=>{if(event.detail.current===socket&&event.detail.message.type==='receive.state')receiveSync(event.detail.current);});
+function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;receiveSync(current);
+  const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
 
