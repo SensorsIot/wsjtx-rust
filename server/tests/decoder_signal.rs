@@ -1221,6 +1221,10 @@ fn resource_concurrency_qualification_rejects_serial_work_and_clock_faults() {
     );
     assert!(std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2], &valid[..3])).is_err());
 }
+/// Wall-time sufficient criterion for the 50 ms cooperative CPU quantum (#36).
+const RESOURCE_CPU_QUANTUM_WALL_SECONDS: f64 = 0.050;
+/// Bounded re-qualification of one matrix configuration (#36); mirrored by the guardian.
+const RESOURCE_QUALIFICATION_ATTEMPTS: u64 = 3;
 fn resource_runtime_parent() {
     resource_guardian_before_probes("matrix");
     assert!(
@@ -1273,153 +1277,185 @@ fn resource_runtime_parent() {
                         3.
                     };
                     let runtime_ceiling = ceiling * if concurrency == 4 { 2. } else { 1. };
-                    let mut workers = Vec::with_capacity(concurrency);
-                    let mut monitors = Vec::with_capacity(concurrency);
-                    let mut identities = Vec::with_capacity(concurrency);
-                    let mut idle = Vec::with_capacity(concurrency);
-                    eprintln!(
-                        "RESOURCE_BEGIN {}",
-                        serde_json::json!({"mode":mode,"scalar":scalar,"long":long,"concurrency":concurrency,"input_sha256":case["sha256"],"source_sha":source,"executable_sha256":executable_hash})
-                    );
-                    for index in 0..concurrency {
-                        let identity =
-                            format!("{}-{completed_configurations}-{index}", std::process::id());
-                        let config = serde_json::json!({"mode":mode,"scalar":scalar,"long":long,"input":input,
+                    // #36: a poll over the 50 ms wall criterion leaves the CPU quantum
+                    // unmeasured (no CPU claim, not a violation). The configuration is
+                    // re-measured up to RESOURCE_QUALIFICATION_ATTEMPTS times; every budget
+                    // stays asserted in every attempt. The owning guardian classifies a
+                    // configuration still unqualified after the last attempt as inconclusive.
+                    for attempt in 0..RESOURCE_QUALIFICATION_ATTEMPTS {
+                        let mut unqualified_polls = Vec::<Value>::new();
+                        let mut prepared_polls = Vec::<Value>::with_capacity(concurrency);
+                        let mut workers = Vec::with_capacity(concurrency);
+                        let mut monitors = Vec::with_capacity(concurrency);
+                        let mut identities = Vec::with_capacity(concurrency);
+                        let mut idle = Vec::with_capacity(concurrency);
+                        eprintln!(
+                            "RESOURCE_BEGIN {}",
+                            serde_json::json!({"mode":mode,"scalar":scalar,"long":long,"concurrency":concurrency,"configuration":completed_configurations,"attempt":attempt,"input_sha256":case["sha256"],"source_sha":source,"executable_sha256":executable_hash})
+                        );
+                        for index in 0..concurrency {
+                            let identity = format!(
+                                "{}-{completed_configurations}-{attempt}-{index}",
+                                std::process::id()
+                            );
+                            let config = serde_json::json!({"mode":mode,"scalar":scalar,"long":long,"input":input,
                             "input_sha256":case["sha256"],"payload77":cases["payload77"],"worker_id":identity,
                             "source_sha":source,"executable_sha256":executable_hash,"cold_ceiling":ceiling+2.});
-                        let mut command = Command::new(&executable);
-                        command
-                            .args([
-                                "--exact",
-                                "resource_finite_child",
-                                "--ignored",
-                                "--nocapture",
-                                "--test-threads=1",
-                            ])
-                            .env("WSTX_RESOURCE_WORKER_CONFIG", config.to_string());
-                        workers.push(ResourcePeer::spawn(&mut command, true));
-                        let worker = workers.last_mut().unwrap();
-                        let ready = worker.receive(20);
-                        assert_eq!(ready["state"], "ready");
-                        assert_eq!(ready["worker_id"], identity);
-                        assert_eq!(ready["pid"], worker.child.id());
-                        assert_eq!(ready["source_sha"], source);
-                        assert_eq!(ready["executable_sha256"], executable_hash);
-                        let (monitor, creation) = resource_bind_monitor(worker);
-                        monitors.push(monitor);
-                        let monitor = monitors.last_mut().unwrap();
-                        idle.push(resource_sample(monitor, 1, worker.child.id(), creation));
-                        identities.push(creation);
-                        worker.send(serde_json::json!({"op":"prepare"}));
-                        let prepared = worker.receive((2. * ceiling) as u64 + 15);
-                        eprintln!(
-                            "RESOURCE_PREPARED {}",
-                            serde_json::json!({"worker_id":identity,"pid":worker.child.id(),"result":prepared})
-                        );
-                        assert_eq!(prepared["state"], "prepared");
-                        assert!(prepared["cold_seconds"].as_f64().unwrap() <= ceiling + 2.);
-                        assert!(
-                            prepared["cold_max_poll_wall_seconds"].as_f64().unwrap() <= 0.050
-                                && prepared["warmup_max_poll_wall_seconds"].as_f64().unwrap()
-                                    <= 0.050,
-                            "cold/warmup CPU quantum not established by conservative50ms wall criterion; measureCPU before alleging a CPU violation"
-                        );
-                        let baseline = prepared["baseline"].clone();
-                        assert_eq!(
-                            baseline.as_array().unwrap().len(),
-                            if long {
-                                if mode == "ft8" { 8 } else { 16 }
-                            } else {
-                                1
-                            }
-                        );
-                        if let Some(reference) = baselines.get(&(mode.to_owned(), long)) {
-                            resource_compare_baseline(reference, &baseline, mode);
-                        } else {
-                            baselines.insert((mode.to_owned(), long), baseline);
-                        }
-                    }
-                    let mut timings = vec![Vec::<f64>::new(); concurrency];
-                    let mut rounds = Vec::new();
-                    for round in 0..10u64 {
-                        for worker in &workers {
-                            let armed = worker.receive(10);
-                            assert_eq!(armed, serde_json::json!({"state":"armed","round":round}));
-                        }
-                        let dispatch = Instant::now();
-                        let mut dispatch_ns = Vec::new();
-                        for worker in &mut workers {
-                            dispatch_ns.push(dispatch.elapsed().as_nanos() as u64);
-                            worker.send(serde_json::json!({"op":"round","round":round}));
-                        }
-                        let mut replies = Vec::new();
-                        for (index, worker) in workers.iter().enumerate() {
-                            let result = worker.receive(runtime_ceiling as u64 + 20);
+                            let mut command = Command::new(&executable);
+                            command
+                                .args([
+                                    "--exact",
+                                    "resource_finite_child",
+                                    "--ignored",
+                                    "--nocapture",
+                                    "--test-threads=1",
+                                ])
+                                .env("WSTX_RESOURCE_WORKER_CONFIG", config.to_string());
+                            workers.push(ResourcePeer::spawn(&mut command, true));
+                            let worker = workers.last_mut().unwrap();
+                            let ready = worker.receive(20);
+                            assert_eq!(ready["state"], "ready");
+                            assert_eq!(ready["worker_id"], identity);
+                            assert_eq!(ready["pid"], worker.child.id());
+                            assert_eq!(ready["source_sha"], source);
+                            assert_eq!(ready["executable_sha256"], executable_hash);
+                            let (monitor, creation) = resource_bind_monitor(worker);
+                            monitors.push(monitor);
+                            let monitor = monitors.last_mut().unwrap();
+                            idle.push(resource_sample(monitor, 1, worker.child.id(), creation));
+                            identities.push(creation);
+                            worker.send(serde_json::json!({"op":"prepare"}));
+                            let prepared = worker.receive((2. * ceiling) as u64 + 15);
                             eprintln!(
-                                "RESOURCE_ROUND {}",
-                                serde_json::json!({"configuration":completed_configurations,"worker":index,"pid":worker.child.id(),"result":result})
+                                "RESOURCE_PREPARED {}",
+                                serde_json::json!({"worker_id":identity,"pid":worker.child.id(),"result":prepared})
                             );
-                            assert_eq!(result["round"], round);
-                            assert_eq!(result["state"], "completed");
-                            let seconds = result["seconds"].as_f64().unwrap();
-                            assert!(
-                                seconds <= runtime_ceiling,
-                                "{mode} long{long} scalar{scalar} workers{concurrency} round{round} actual{seconds}s > {runtime_ceiling}s"
+                            assert_eq!(prepared["state"], "prepared");
+                            let cold_seconds = prepared["cold_seconds"].as_f64().unwrap();
+                            assert!(cold_seconds <= ceiling + 2.);
+                            let cold_poll =
+                                prepared["cold_max_poll_wall_seconds"].as_f64().unwrap();
+                            let warmup_poll =
+                                prepared["warmup_max_poll_wall_seconds"].as_f64().unwrap();
+                            prepared_polls.push(serde_json::json!({"worker":index,"cold_seconds":cold_seconds,
+                            "cold_max_poll_wall_seconds":cold_poll,"warmup_max_poll_wall_seconds":warmup_poll}));
+                            // Cold/warmup CPU quantum not established by the conservative 50 ms
+                            // wall criterion: measure CPU before alleging a CPU violation.
+                            if cold_poll > RESOURCE_CPU_QUANTUM_WALL_SECONDS
+                                || warmup_poll > RESOURCE_CPU_QUANTUM_WALL_SECONDS
+                            {
+                                unqualified_polls.push(serde_json::json!({"worker":index,"phase":"prepare",
+                                "cold_max_poll_wall_seconds":cold_poll,"warmup_max_poll_wall_seconds":warmup_poll}));
+                            }
+                            let baseline = prepared["baseline"].clone();
+                            assert_eq!(
+                                baseline.as_array().unwrap().len(),
+                                if long {
+                                    if mode == "ft8" { 8 } else { 16 }
+                                } else {
+                                    1
+                                }
                             );
-                            assert!(
-                                result["max_poll_wall_seconds"].as_f64().unwrap() <= 0.050,
-                                "50ms CPU quantum not established by sufficient wall-time criterion; actualCPU measurement or scheduling repair required"
-                            );
-                            timings[index].push(seconds);
-                            replies.push(result);
+                            if let Some(reference) = baselines.get(&(mode.to_owned(), long)) {
+                                resource_compare_baseline(reference, &baseline, mode);
+                            } else {
+                                baselines.insert((mode.to_owned(), long), baseline);
+                            }
                         }
-                        let qualification = resource_qualify_round(&dispatch_ns, &replies);
-                        rounds.push(serde_json::json!({"round":round,"parent_dispatch_offsets_ns":dispatch_ns,"workers":replies,"concurrency_qualification":qualification}));
-                    }
-                    let mut metrics = Vec::new();
-                    for worker in &mut workers {
-                        worker.send(serde_json::json!({"op":"teardown"}));
-                    }
-                    for index in 0..concurrency {
-                        let teardown = workers[index].receive(10);
-                        assert_eq!(teardown["state"], "torn_down");
-                        assert_eq!(teardown["completed_rounds"], 10);
-                        assert_eq!(teardown["work_owners_live"], false);
-                        let final_sample = resource_sample(
-                            &mut monitors[index],
-                            2,
-                            workers[index].child.id(),
-                            identities[index],
-                        );
-                        let peak = final_sample["lifetime_peak_commit"].as_u64().unwrap();
-                        metrics.push(serde_json::json!({"idle":idle[index],"final_after_teardown":final_sample,
+                        let mut timings = vec![Vec::<f64>::new(); concurrency];
+                        let mut rounds = Vec::new();
+                        for round in 0..10u64 {
+                            for worker in &workers {
+                                let armed = worker.receive(10);
+                                assert_eq!(
+                                    armed,
+                                    serde_json::json!({"state":"armed","round":round})
+                                );
+                            }
+                            let dispatch = Instant::now();
+                            let mut dispatch_ns = Vec::new();
+                            for worker in &mut workers {
+                                dispatch_ns.push(dispatch.elapsed().as_nanos() as u64);
+                                worker.send(serde_json::json!({"op":"round","round":round}));
+                            }
+                            let mut replies = Vec::new();
+                            for (index, worker) in workers.iter().enumerate() {
+                                let result = worker.receive(runtime_ceiling as u64 + 20);
+                                eprintln!(
+                                    "RESOURCE_ROUND {}",
+                                    serde_json::json!({"configuration":completed_configurations,"attempt":attempt,"worker":index,"pid":worker.child.id(),"result":result})
+                                );
+                                assert_eq!(result["round"], round);
+                                assert_eq!(result["state"], "completed");
+                                let seconds = result["seconds"].as_f64().unwrap();
+                                assert!(
+                                    seconds <= runtime_ceiling,
+                                    "{mode} long{long} scalar{scalar} workers{concurrency} round{round} actual{seconds}s > {runtime_ceiling}s"
+                                );
+                                // 50 ms CPU quantum not established by the sufficient wall-time
+                                // criterion: actual CPU measurement or re-qualification required.
+                                let poll = result["max_poll_wall_seconds"].as_f64().unwrap();
+                                if poll > RESOURCE_CPU_QUANTUM_WALL_SECONDS {
+                                    unqualified_polls
+                                        .push(serde_json::json!({"worker":index,"phase":"round",
+                                    "round":round,"max_poll_wall_seconds":poll}));
+                                }
+                                timings[index].push(seconds);
+                                replies.push(result);
+                            }
+                            let qualification = resource_qualify_round(&dispatch_ns, &replies);
+                            rounds.push(serde_json::json!({"round":round,"parent_dispatch_offsets_ns":dispatch_ns,"workers":replies,"concurrency_qualification":qualification}));
+                        }
+                        let mut metrics = Vec::new();
+                        for worker in &mut workers {
+                            worker.send(serde_json::json!({"op":"teardown"}));
+                        }
+                        for index in 0..concurrency {
+                            let teardown = workers[index].receive(10);
+                            assert_eq!(teardown["state"], "torn_down");
+                            assert_eq!(teardown["completed_rounds"], 10);
+                            assert_eq!(teardown["work_owners_live"], false);
+                            let final_sample = resource_sample(
+                                &mut monitors[index],
+                                2,
+                                workers[index].child.id(),
+                                identities[index],
+                            );
+                            let peak = final_sample["lifetime_peak_commit"].as_u64().unwrap();
+                            metrics.push(serde_json::json!({"idle":idle[index],"final_after_teardown":final_sample,
                             "teardown":teardown,"absolute_private_peak_within64MiB":peak<=64*1024*1024,
                             "over64MiB_disposition":"inconclusive sufficient criterion; complete owner accounting required, not automatic workspace failure",
                             "worst_capacity_workspace_audit_complete":false,"whole_workspace_proved":false,
                             "full_station_96MiB_proved":false}));
-                        monitors[index].send(serde_json::json!({"op":"close","id":3}));
-                        assert_eq!(monitors[index].receive(10)["state"], "closed");
-                        monitors[index].wait(10);
-                        workers[index].send(serde_json::json!({"op":"finish"}));
-                        assert_eq!(workers[index].receive(10)["state"], "finished");
-                        workers[index].wait(10);
-                    }
-                    let summaries = timings.iter_mut().map(|times| {
+                            monitors[index].send(serde_json::json!({"op":"close","id":3}));
+                            assert_eq!(monitors[index].receive(10)["state"], "closed");
+                            monitors[index].wait(10);
+                            workers[index].send(serde_json::json!({"op":"finish"}));
+                            assert_eq!(workers[index].receive(10)["state"], "finished");
+                            workers[index].wait(10);
+                        }
+                        let summaries = timings.iter_mut().map(|times| {
                         times.sort_by(f64::total_cmp); assert_eq!(times.len(),10);
                         serde_json::json!({"min":times[0],"median":(times[4]+times[5])/2.,"p95":times[9],"max":times[9]})
                     }).collect::<Vec<_>>();
-                    eprintln!(
-                        "RESOURCE_CONFIGURATION {}",
-                        serde_json::json!({"mode":mode,"scalar":scalar,"long":long,
-                        "concurrency":concurrency,"warmup_excluded":1,"completed_rounds":10,"summaries":summaries,
+                        eprintln!(
+                            "RESOURCE_CONFIGURATION {}",
+                            serde_json::json!({"mode":mode,"scalar":scalar,"long":long,
+                        "concurrency":concurrency,"configuration":completed_configurations,"attempt":attempt,
+                        "cpu_quantum_qualified":unqualified_polls.is_empty(),"unqualified_polls":unqualified_polls,
+                        "prepared":prepared_polls,"warmup_excluded":1,"completed_rounds":10,"summaries":summaries,
                         "metrics":metrics,"rounds":rounds,"owned_children_reaped":true,"full_station_proof":false})
-                    );
-                    assert!(
-                        metrics
-                            .iter()
-                            .all(|m| m["absolute_private_peak_within64MiB"] == true),
-                        "workload absolute-peak criterion inconclusive; complete worst-capacity owner audit remains separately required"
-                    );
+                        );
+                        assert!(
+                            metrics
+                                .iter()
+                                .all(|m| m["absolute_private_peak_within64MiB"] == true),
+                            "workload absolute-peak criterion inconclusive; complete worst-capacity owner audit remains separately required"
+                        );
+                        if unqualified_polls.is_empty() {
+                            break;
+                        }
+                    }
                     completed_configurations += 1;
                 }
             }

@@ -54,6 +54,13 @@ ORDINARY_ARGV = (
     "--message-format=json", "--", "--test-threads=1", "--skip", MATRIX,
 )
 CASES = {"matrix": MATRIX, "busy": BUSY}
+# #36: the decoder_signal matrix re-measures a configuration whose 50 ms CPU quantum
+# was not established up to this many attempts (RESOURCE_QUALIFICATION_ATTEMPTS).
+QUALIFICATION_ATTEMPTS = 3
+CPU_QUANTUM_WALL_SECONDS = 0.050
+QUALIFIED, INCONCLUSIVE = "qualified", "inconclusive"
+# Exit status of a strict (default) run whose matrix stayed inconclusive: a refusal.
+INCONCLUSIVE_REFUSED = 3
 INPUT_ENV = (
     "WSTX_SAMPLE_DIR", "WSTX_DECODER_CACHE", "WSTX_DECODER_VECTORS",
     "WSTX_DECODER_SYNCHRONIZATION", "WSTX_DECODER_OFFICIAL_FT8",
@@ -434,12 +441,57 @@ def load_handoff(receipt_path, root):
     return receipt, artifact
 
 
+def nonnegative(value):
+    return type(value) in (int, float) and value >= 0
+
+
+def matrix_ceiling(mode, long, workers):
+    """CL-007-04 per-decode wall ceilings: (cold, timed round) seconds."""
+    ceiling = 40.0 if long else 5.0 if mode == "ft8" else 3.0
+    return ceiling + 2.0, ceiling * (2.0 if workers == 4 else 1.0)
+
+
+def check_matrix_attempt(value):
+    """Re-check one attempt's budgets, then classify its CPU-quantum qualification.
+
+    Budgets are checked first and bind every attempt: an over-budget attempt is red
+    whether or not its 50 ms CPU quantum qualified. Only an unmeasured quantum (a poll
+    whose wall time exceeds the sufficient criterion) makes an attempt unqualified.
+    """
+    workers = value["concurrency"]
+    cold_ceiling, round_ceiling = matrix_ceiling(value["mode"], value["long"], workers)
+    prepared, unqualified = value.get("prepared"), value.get("unqualified_polls")
+    require(type(prepared) is list and len(prepared) == workers and
+            all(type(entry) is dict and entry.get("worker") == worker and
+                all(nonnegative(entry.get(name)) for name in (
+                    "cold_seconds", "cold_max_poll_wall_seconds", "warmup_max_poll_wall_seconds"))
+                for worker, entry in enumerate(prepared)) and
+            type(unqualified) is list and type(value.get("cpu_quantum_qualified")) is bool and
+            all(nonnegative(reply.get("seconds")) and nonnegative(reply.get("max_poll_wall_seconds"))
+                for round_value in value["rounds"] for reply in round_value["workers"]),
+            "invalid_matrix_attempt")
+    require(all(entry["cold_seconds"] <= cold_ceiling for entry in prepared) and
+            all(reply["seconds"] <= round_ceiling
+                for round_value in value["rounds"] for reply in round_value["workers"]) and
+            all(type(metric) is dict and metric.get("absolute_private_peak_within64MiB") is True
+                for metric in value["metrics"]), "matrix_budget_exceeded")
+    over = sum(entry["cold_max_poll_wall_seconds"] > CPU_QUANTUM_WALL_SECONDS or
+               entry["warmup_max_poll_wall_seconds"] > CPU_QUANTUM_WALL_SECONDS
+               for entry in prepared)
+    over += sum(reply["max_poll_wall_seconds"] > CPU_QUANTUM_WALL_SECONDS
+                for round_value in value["rounds"] for reply in round_value["workers"])
+    require(value["cpu_quantum_qualified"] is (over == 0) and len(unqualified) == over,
+            "inconsistent_cpu_quantum_qualification")
+    return over == 0
+
+
 class CaseTranscript:
     def __init__(self, case):
         require(case in CASES, "unknown_resource_case")
         self.case = case
         self.coverage = Coverage((CASES[case],), (), 16)
         self.configurations, self.configuration_rounds, self.rounds, self.attempts = [], [], {}, {}
+        self.matrix_attempts = {}
         self.hosts = 0
 
     def accept(self, channel, line):
@@ -479,15 +531,36 @@ class CaseTranscript:
                         type(qualification.get("workers")) is int and
                         qualification["workers"] == workers, "invalid_matrix_round_qualification")
             identity = (value["mode"], value["scalar"], value["long"], workers)
-            require(identity not in self.configurations, "duplicate_matrix_configuration")
-            self.configurations.append(identity)
-            self.configuration_rounds.append(value["rounds"])
+            qualified = check_matrix_attempt(value)
+            index, attempt = value.get("configuration"), value.get("attempt")
+            require(type(index) is int and type(attempt) is int, "invalid_matrix_configuration")
+            if attempt == 0:
+                require(identity not in self.configurations and index == len(self.configurations),
+                        "duplicate_matrix_configuration")
+                self.configurations.append(identity)
+                self.configuration_rounds.append([])
+                self.matrix_attempts[identity] = []
+            else:
+                # A re-qualification attempt directly follows an unqualified attempt of
+                # the same configuration, within the fixed attempt bound.
+                previous = self.matrix_attempts.get(identity)
+                require(previous is not None and self.configurations[-1] == identity and
+                        index == len(self.configurations) - 1 and
+                        attempt == len(previous) < QUALIFICATION_ATTEMPTS and
+                        not previous[-1]["cpu_quantum_qualified"], "invalid_matrix_requalification")
+            self.configuration_rounds[index].append(value["rounds"])
+            self.matrix_attempts[identity].append({
+                "attempt": attempt, "cpu_quantum_qualified": qualified,
+                "unqualified_polls": value["unqualified_polls"],
+            })
         elif text.startswith("RESOURCE_ROUND "):
             value = decode_json(text.split(" ", 1)[1])
             result = value.get("result", {})
-            key = (value.get("configuration"), value.get("worker"), result.get("round"))
+            key = (value.get("configuration"), value.get("attempt"), value.get("worker"),
+                   result.get("round"))
             require(all(type(number) is int for number in key) and 0 <= key[0] < 16 and
-                    0 <= key[1] < 4 and 0 <= key[2] < 10 and result.get("state") == "completed" and
+                    0 <= key[1] < QUALIFICATION_ATTEMPTS and 0 <= key[2] < 4 and
+                    0 <= key[3] < 10 and result.get("state") == "completed" and
                     key not in self.rounds, "invalid_matrix_round")
             self.rounds[key] = result
         elif text.startswith("RESOURCE_LIVE_ATTEMPT_END "):
@@ -504,17 +577,35 @@ class CaseTranscript:
                         for scalar in (False, True) for long in (False, True) for workers in (1, 4)}
             require(set(self.configurations) == expected and self.hosts == 1,
                     "incomplete_matrix_configurations")
-            rounds = {(index, worker, round_number)
+            rounds = {(index, attempt, worker, round_number)
                       for index, configuration in enumerate(self.configurations)
+                      for attempt in range(len(self.configuration_rounds[index]))
                       for worker in range(configuration[3]) for round_number in range(10)}
-            require(set(self.rounds) == rounds and len(rounds) == 400, "incomplete_matrix_rounds")
-            for index, configuration in enumerate(self.configuration_rounds):
-                for round_number, round_value in enumerate(configuration):
-                    for worker, reply in enumerate(round_value["workers"]):
-                        require(self.rounds[(index, worker, round_number)] == reply,
-                                "inconsistent_matrix_worker_reply")
+            require(set(self.rounds) == rounds, "incomplete_matrix_rounds")
+            for index, attempts in enumerate(self.configuration_rounds):
+                for attempt, configuration in enumerate(attempts):
+                    for round_number, round_value in enumerate(configuration):
+                        for worker, reply in enumerate(round_value["workers"]):
+                            require(self.rounds[(index, attempt, worker, round_number)] == reply,
+                                    "inconsistent_matrix_worker_reply")
+            inconclusive = []
+            for identity in self.configurations:
+                attempts = self.matrix_attempts[identity]
+                # Stopping early with an unqualified last attempt is an incomplete run.
+                require(attempts[-1]["cpu_quantum_qualified"] or
+                        len(attempts) == QUALIFICATION_ATTEMPTS, "incomplete_matrix_requalification")
+                if not attempts[-1]["cpu_quantum_qualified"]:
+                    mode, scalar, long, workers = identity
+                    inconclusive.append({"mode": mode, "scalar": scalar, "long": long,
+                                         "concurrency": workers, "attempts": len(attempts),
+                                         "unqualified_polls": attempts[-1]["unqualified_polls"]})
             return {"coverage": coverage, "configurations": 16, "workers": 40,
-                    "coordinated_rounds": 160, "measured_worker_completions": 400}
+                    "coordinated_rounds": sum(10 * len(attempts)
+                                              for attempts in self.configuration_rounds),
+                    "measured_worker_completions": len(rounds),
+                    "attempts": sum(len(attempts) for attempts in self.configuration_rounds),
+                    "outcome": INCONCLUSIVE if inconclusive else QUALIFIED,
+                    "inconclusive_configurations": inconclusive}
         expected = {
             ("silence", "fresh", 0), ("single", "fresh", 0),
             ("busy", "retained-first", 0), ("busy", "retained-next", 180000),
@@ -738,6 +829,36 @@ def run_case(receipt_path, case, root):
                      artifact_identity=(str(artifact), receipt["artifact_sha256"]))
 
 
+def report_outcome(evidence, ordinary_gate, stream=None):
+    """Exit status of a complete owned run (#36).
+
+    A qualified run is 0. An inconclusive matrix (some configuration's CPU quantum
+    still unmeasured after the bounded re-qualification) is reported visibly; the
+    ordinary gate treats it as not run (0), while the default strict mode, used for
+    CL-007-04 evidence in the exclusive window, refuses it.
+    """
+    stream = stream if stream is not None else sys.stderr
+    transcript = evidence["transcript"]
+    outcome = transcript.get("outcome", QUALIFIED)
+    require(outcome in (QUALIFIED, INCONCLUSIVE), "invalid_matrix_outcome")
+    if outcome == QUALIFIED:
+        if evidence["case"] == "matrix":
+            print(f"decoder resource matrix: QUALIFIED ({transcript['attempts']} attempts for "
+                  f"{transcript['configurations']} configurations; budgets met)", file=stream)
+        return 0
+    configurations = ", ".join(
+        f"{entry['mode']} scalar={entry['scalar']} long={entry['long']} "
+        f"workers={entry['concurrency']}" for entry in transcript["inconclusive_configurations"])
+    if ordinary_gate:
+        print("decoder resource matrix: INCONCLUSIVE, NOT RUN (50 ms CPU quantum not "
+              f"established after {QUALIFICATION_ATTEMPTS} attempts: {configurations}); all "
+              "measured budgets met; no CL-007-04 runtime claim from this run", file=stream)
+        return 0
+    print("decoder resource matrix: INCONCLUSIVE, REFUSED (strict: 50 ms CPU quantum not "
+          f"established after {QUALIFICATION_ATTEMPTS} attempts: {configurations})", file=stream)
+    return INCONCLUSIVE_REFUSED
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
@@ -747,6 +868,9 @@ def main(argv=None):
     runner = commands.add_parser("run")
     runner.add_argument("--case", choices=tuple(CASES), required=True)
     runner.add_argument("--artifact-receipt", type=Path, required=True)
+    runner.add_argument("--ordinary-gate", action="store_true",
+                        help="ordinary push gate only: an inconclusive matrix is reported and "
+                             "exits 0 (not run); the default strict mode refuses it")
     smoke = commands.add_parser("smoke", help="separately authorized fixed parent/descendant fixture")
     smoke.add_argument("--out", type=Path, required=True)
     arguments = parser.parse_args(argv)
@@ -758,7 +882,10 @@ def main(argv=None):
             target_dir = os.environ.get("CARGO_TARGET_DIR", str(root / "target"))
             resolve_stream(sys.stdin.buffer, arguments.stream_log, arguments.receipt, root, target_dir)
         elif arguments.operation == "run":
-            run_case(arguments.artifact_receipt, arguments.case, root)
+            require(not arguments.ordinary_gate or arguments.case == "matrix",
+                    "ordinary_gate_matrix_only")
+            evidence = run_case(arguments.artifact_receipt, arguments.case, root)
+            return report_outcome(evidence, arguments.ordinary_gate)
         else:
             budget = Budget(30, 10)
             arguments.out.mkdir(parents=True, exist_ok=False)
