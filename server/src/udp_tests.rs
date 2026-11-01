@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-040-01, CL-040-02, CL-040-03, CL-040-04, TC-012-001, TC-012-002, TC-012-003, TC-012-004.
+// Proves: CL-040-01, CL-040-02, CL-040-03, CL-040-04, CL-040-06, TC-012-001, TC-012-002, TC-012-003,
+// TC-012-004, TC-012-006.
 // The actual router, UDP owner, contact engine and #9 transmit
 // owner on the recording hardware double (no audio, PTT or radio), hand-authored rows
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
@@ -766,7 +767,10 @@ async fn tc_012_004_target_configuration_and_persistence() {
         (duplicate, "targets[1].address"),
         (t("address", json!("127.0.0.1:0")), "targets[0].address"),
         (t("address", json!("0.0.0.0:2237")), "targets[0].address"),
-        (t("address", json!("[ff02::1]:2237")), "targets[0].address"),
+        (
+            t("address", json!("[ff02::1]:2237")),
+            "targets[0].multicast_interface",
+        ),
         (
             t("address", json!("255.255.255.255:2237")),
             "targets[0].address",
@@ -1064,5 +1068,171 @@ fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
         snap["ignored"].as_u64().unwrap(),
         before + 1,
         "the oversize datagram is counted"
+    );
+}
+
+/// The Windows loopback pseudo-interface ("Loopback Pseudo-Interface 1").
+const LOOPBACK_INDEX: u32 = 1;
+/// A transient link-local test group (flags 1, scope 2), never a well-known one.
+const GROUP: &str = "ff12::5754:5358";
+fn multicast_json(address: &str, hops: u32, interface: Value, accept: bool) -> Value {
+    json!({"address":address,"enabled":true,"multicast_ttl":hops,"multicast_interface":interface,
+        "messages":["heartbeat","status"],"accept_commands":accept})
+}
+
+// Proves: CL-040-06, TC-012-006
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_006_ipv6_multicast_targets() {
+    let f = fixture("http://127.0.0.1:18407", false);
+    let owner = install(&f, vec![]);
+    // A peer joined to the group on the loopback interface.
+    let group: Ipv6Addr = GROUP.parse().unwrap();
+    let joined = socket2::Socket::new(
+        socket2::Domain::IPV6,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )
+    .unwrap();
+    joined
+        .bind(&SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)).into())
+        .unwrap();
+    joined.join_multicast_v6(&group, LOOPBACK_INDEX).unwrap();
+    let joined: UdpSocket = joined.into();
+    joined
+        .set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
+    let port = joined.local_addr().unwrap().port();
+    let address = format!("[{GROUP}]:{port}");
+
+    // Refusals: each with its field, nothing saved.
+    let good = multicast_json(&address, 2, json!("1"), false);
+    let with = |k: &str, value: Value| {
+        let mut t = good.clone();
+        t[k] = value;
+        t
+    };
+    let mut refused = vec![
+        (with("address", json!("[ff00::1]:2237")), "address"),
+        (with("address", json!("[ff0f::1]:2237")), "address"),
+        (with("address", json!("[ff1f::1]:2237")), "address"),
+        (
+            with("multicast_interface", Value::Null),
+            "multicast_interface",
+        ),
+        (
+            {
+                let mut t = with("address", json!("[ff01::1]:2237"));
+                t["multicast_interface"] = Value::Null;
+                t
+            },
+            "multicast_interface",
+        ),
+        (with("multicast_ttl", json!(0)), "multicast_ttl"),
+        (with("multicast_ttl", json!(256)), "multicast_ttl"),
+        (with("accept_commands", json!(true)), "accept_commands"),
+        (
+            {
+                let mut t = with("address", json!("239.255.0.1:2237"));
+                t["multicast_interface"] = json!("1");
+                t
+            },
+            "multicast_interface",
+        ),
+    ];
+    for interface in [
+        json!("0"),
+        json!("01"),
+        json!("-1"),
+        json!("+1"),
+        json!(" 1"),
+        json!("4294967296"),
+        json!("Ethernet"),
+        json!("127.0.0.1"),
+        json!("::1"),
+        json!(""),
+        json!(1),
+    ] {
+        refused.push((
+            with("multicast_interface", interface),
+            "multicast_interface",
+        ));
+    }
+    for (target, field) in refused {
+        let body = config_body(&f, 0, json!([target]));
+        let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+        assert_eq!(
+            (s, v["error"]["code"].as_str(), v["error"]["field"].clone()),
+            (
+                StatusCode::BAD_REQUEST,
+                Some("invalid_request"),
+                json!(format!("targets[0].{field}"))
+            ),
+            "{body}"
+        );
+    }
+    let (_, v) = call(&f, "GET", "/udp", None).await;
+    assert_eq!(
+        (v["revision"].clone(), v["configuration"]["targets"].clone()),
+        (json!(0), json!([])),
+        "nothing saved"
+    );
+
+    // Admitted: the link-local group on the loopback interface with hop limit 2, a
+    // site-local group with hop limit 255 (on loopback, so nothing leaves the machine),
+    // an index no interface has, and a disabled organization-local group without an
+    // interface (optional above link scope).
+    let mut org = multicast_json("[ff08::5754:5358]:2239", 1, Value::Null, false);
+    org["enabled"] = json!(false);
+    let targets = json!([
+        good,
+        multicast_json("[ff05::5754:5358]:2237", 255, json!("1"), false),
+        multicast_json("[ff15::5754:5358]:2238", 1, json!("4000000000"), false),
+        org,
+    ]);
+    let body = config_body(&f, 0, targets.clone());
+    let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["configuration"]["targets"], targets, "saved as given");
+    let reopened = Owner::open(&f.state, true).snapshot(&f.state.recording);
+    assert_eq!(reopened["configuration"]["targets"], targets);
+
+    // The socket carries the hop limit and the interface.
+    {
+        let inner = owner.lock();
+        let socket = socket2::SockRef::from(inner.runtimes[0].socket.as_ref().unwrap());
+        assert_eq!(socket.multicast_hops_v6().unwrap(), 2);
+        assert_eq!(socket.multicast_if_v6().unwrap(), LOOPBACK_INDEX);
+        assert!(socket.multicast_loop_v6().unwrap());
+        let site = socket2::SockRef::from(inner.runtimes[1].socket.as_ref().unwrap());
+        assert_eq!(site.multicast_hops_v6().unwrap(), 255);
+    }
+    let status = &v["status"];
+    assert_eq!(
+        (&status[0]["active"], &status[0]["error"]),
+        (&json!(true), &Value::Null)
+    );
+    assert_eq!(
+        (&status[2]["active"], &status[2]["error"]),
+        (&json!(false), &json!("socket_unavailable")),
+        "an index no interface has"
+    );
+
+    // The joined peer receives Heartbeat and Status.
+    owner.step(&f.state);
+    let got = drain(&joined);
+    assert_eq!(kinds(&got), [0, 1], "Heartbeat then Status to the group");
+    let (schema, _, id, _) = head(&got[0]);
+    assert_eq!((schema, id.as_str()), (2, "WSTX-Rust"));
+
+    // A command sent to the multicast target's socket from a host is not accepted.
+    let host = UdpSocket::bind("[::1]:0").unwrap();
+    let to = SocketAddr::from((Ipv6Addr::LOCALHOST, station_socket(&owner, 0).port()));
+    host.send_to(&free_text("TNX 73 GL"), to).unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    owner.step(&f.state);
+    let last = owner.snapshot(&f.state.recording)["status"][0]["last_command"].clone();
+    assert_eq!(
+        (last["type"].as_str(), outcome(&last).0.as_str()),
+        (Some("free_text"), "not_accepted")
     );
 }
