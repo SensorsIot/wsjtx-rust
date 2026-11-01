@@ -453,7 +453,7 @@ function cadenceQualification(seen){
     for(const key of ['profile_id','boot_id','profile_revision'])assert.equal(event[key],q.expected[key],`fixed workload expected ${key}`);
     if(event.action){epoch++;actions++;}assert.equal(event.epoch,epoch,'all source epoch changes accounted for');
   }
-  for(const {at,body:profile}of seen.profileBodies.filter(p=>p.at>=q.socketBaseline.at))for(const [key,field]of [['profile_id','profile_id'],['boot_id','boot_id'],['profile_revision','revision']])assert.equal(profile[field],q.expected[key],'authoritative profile remains fixed within qualified segment');
+  for(const {at,body:profile,bodyError}of seen.profileBodies.filter(p=>p.at>=q.socketBaseline.at)){assert.ok(profile,`profile body read within the qualified segment ${bodyError??''}`);for(const [key,field]of [['profile_id','profile_id'],['boot_id','boot_id'],['profile_revision','revision']])assert.equal(profile[field],q.expected[key],'authoritative profile remains fixed within qualified segment');}
   const mutations=seen.transfers.filter(r=>r.wallStarted>=events[0].at&&stationMutation(r));
   assert.equal(mutations.length,actions,'each epoch action has exactly one actual mutation');
   assert.ok(mutations.every(r=>r.method==='POST'&&r.route==='/receive/select'),'no unaccounted epoch-changing mutation');
@@ -521,7 +521,8 @@ function liveSelectionFixture(){
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
-      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[]};observations.push(seen);
+      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[]};observations.push(seen);
+      page.on('framenavigated',frame=>{if(frame===page.mainFrame())seen.navigations.push({url:frame.url(),at:performance.now()});});
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
       cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,wallStarted:event.wallTime*1000,wallEnded:null,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
       cdp.on('Network.loadingFinished',event=>{const transfer=transfers.get(event.requestId);if(transfer&&transfer.ended===null){transfer.ended=performance.now();transfer.browserEnded=event.timestamp;transfer.wallEnded=transfer.wallStarted+(event.timestamp-transfer.browserStarted)*1000;transfer.encodedBytes=event.encodedDataLength;}});
@@ -537,7 +538,10 @@ function liveSelectionFixture(){
       page.on('response',async response=>{
         const route=new URL(response.url()).pathname;
         if(route==='/recording.js'){seen.cadenceSource=await response.body();return;}
-        if(route==='/profile'&&response.status()===200)seen.profileBodies.push({at:performance.now(),body:await response.json()});
+        // On the starved cold link Chromium can report a /profile response whose body it no longer
+        // holds (the request then ends net::ERR_ABORTED). Keep the entry without a body, with how
+        // the request ended, as evidence; the qualified segment below still requires every body.
+        if(route==='/profile'&&response.status()===200){const entry={at:performance.now(),body:null};try{entry.body=await response.json();}catch(error){entry.bodyError=error.message;entry.finished=await response.finished().then(e=>e?String(e):'finished',e=>String(e));entry.failure=response.request().failure()?.errorText??null;}seen.profileBodies.push(entry);}
         const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         try{const text=await response.text();entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);
@@ -568,7 +572,8 @@ function liveSelectionFixture(){
     }
     coldRemaining();
     for(const [index,page]of pages.entries()){
-      const authoritative=observations[index].profileBodies.at(-1)?.body;assert.ok(authoritative,'authoritative setup profile observed');
+      const authoritative=observations[index].profileBodies.filter(p=>p.body).at(-1)?.body;assert.ok(authoritative,'authoritative setup profile observed');
+      assert.deepEqual(observations[index].navigations.map(n=>n.url),[origin+'/'],'one main-frame navigation (the goto): the client never navigates or reloads');
       const socketBaseline={index:observations[index].sockets.length-1,count:observations[index].sockets.length,at:performance.now(),end:null};
       observations[index].acceptance={socketBaseline,expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
         const initialSocket=socket,events=[];
@@ -581,7 +586,7 @@ function liveSelectionFixture(){
         window.__cadenceAcceptanceCheckpoint=()=>{snapshot(false);return events;};return events;
       })};
     }
-    report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),countedBytes:{...proxy.counters},pages:observations.map(seen=>({navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
+    report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),countedBytes:{...proxy.counters},pages:observations.map(seen=>({navigations:seen.navigations,abortedProfileBodies:seen.profileBodies.filter(p=>!p.body).map(p=>({at:p.at,error:p.bodyError,finished:p.finished,failure:p.failure})),navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}
