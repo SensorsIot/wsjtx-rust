@@ -2025,7 +2025,8 @@ impl LiveWorker {
         s.decode_counter = 0;
         let l = s.live.as_mut().ok_or("state_conflict")?;
         l.clear_context();
-        if p.reason == "capture_loss" {
+        // Count rotations only: an initial epoch replaces nothing, whatever its trigger.
+        if self.epoch_seen && p.reason == "capture_loss" {
             l.loss_epochs = l.loss_epochs.saturating_add(1).min(source::MAX_COUNTER);
             l.last_loss = Some(p.trigger);
             eprintln!(

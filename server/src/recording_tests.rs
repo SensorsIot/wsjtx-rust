@@ -291,12 +291,14 @@ fn live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs() {
         *frame += 480;
         *qpc += 100_150;
     };
-    push(audio::DATA_DISCONTINUITY, &mut frame, &mut qpc);
+    // The initial epoch (here without a valid timestamp) replaces nothing: not a loss restart.
+    push(audio::TIMESTAMP_ERROR, &mut frame, &mut qpc);
     for _ in 0..4 {
         worker.step().unwrap();
     }
     let first = worker.job.clone();
     assert!(first.source_id.is_some());
+    assert_eq!(r.receive_snapshot()["audio"]["loss_epochs"], 0);
     for i in 0..300 {
         let flags = if i % 50 == 7 {
             audio::DATA_DISCONTINUITY
