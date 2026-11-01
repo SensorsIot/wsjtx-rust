@@ -163,7 +163,7 @@ package WstxContact {
         return mode : WstxOfflineDecode::Mode;
         doc /* #11 CL-011-02. The station's operating mode is the mode of whichever came
              last: the last started ft4|ft8 live decoding job (WstxOperatingReceive
-             receive start, including the old Next receive mode control) or the last
+             receive start, including the former Next receive mode control) or the last
              admitted operating selection (its requested mode, from admission on, even
              if the restart later fails); FT8 at a fresh boot. It persists across a
              receive stop and a spectrum-only job (review repair 2026-11-01: an FT4
@@ -393,7 +393,16 @@ package WstxContact {
     }
     action def SetEnableTx {
         in enable : Boolean;
-        doc /* Separate explicit operator action (Alt+N where the browser delivers it,
+        doc /* #37 (operator design interview 2026-11-01): there is no Enable Tx control.
+             Starting a QSO means transmitting: the QSO pane CQ button (no transmitting
+             contact: a new own CQ; an active contact is cancelled first after a
+             confirmation), Reply (the prepared contact), a double-click on a decoded row
+             (SelectDecodedRow, then on) and RR73/73 (choose Tx4 RR73/Tx5, then on) send
+             enable_tx {enabled:true} with the shown safety revision, so grant, clock,
+             period and safety-revision checks are unchanged. Transmission ends by itself
+             on completion (Enable Tx off after a completed Tx4 RR73/Tx5 73, see the
+             transition table) or by HALT; there is no other off control. Alt+N has no
+             function. Earlier text: Separate explicit operator action (Alt+N where the browser delivers it,
              HT Alt+N). Maps to WstxTransmit::TransmitArming (armed/disarmed is #9
              state). On: transmissions of the next slot start in the contact's parity
              periods through TransmitSubmission; with no partner, next Tx6 means
@@ -460,10 +469,10 @@ package WstxContact {
              pointer from the fixed 0..3000 Hz axis, rounded to integer Hz (the native/
              projected readout of WstxRecordingReceive is unchanged). click -> Rx;
              shiftClick or rightClick -> Tx; ctrlClick -> Rx and Tx; leftDoubleClick
-             -> Rx, then the Re-decode of the last completed interval (D3 "decode
-             there"; the fixed full-band decoder of D8 has no narrow decode, results
-             within the Rx window then route to the Rx Frequency pane); rightDoubleClick
-             -> Rx and Tx. Explicit Tx pointer actions move Tx even with Hold Tx on, as
+             -> Rx only, as two clicks (#37: no decode-at-point; the fixed full-band
+             decoder always runs and the browser sends no redecode); rightDoubleClick
+             -> Rx and Tx. Dragging the Rx or Tx marker sets that offset on release
+             (WstxOperatingLayout::RxTxStrip). Explicit Tx pointer actions move Tx even with Hold Tx on, as
              WSJT-X setFreq4 (Hold Tx only stops implicit moves on selection).
              A Tx outside its domain is refused with the domain; Rx accepts 0..3000.
              Each is a server request; markers move only after confirmation, the
@@ -752,7 +761,8 @@ package WstxContact {
              the snapshot transmit view; for enabled true a value different from the
              station's current revision is stale_revision with field safety_revision);
              tune {enabled}; redecode {} (last completed interval of the current live
-             job); open_log {} (manual Log QSO); discard_review {contact_id}.
+             job; no browser control sends it since #37); open_log {} (manual Log QSO);
+             discard_review {contact_id}.
              replace true is the explicit ChangeContact; false with an active contact is
              contact_active. command_id is a caller UUID: the server retains the last 16
              command receipts per boot; an identical body with a retained command_id
