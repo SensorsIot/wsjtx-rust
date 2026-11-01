@@ -1091,6 +1091,17 @@ impl Recording {
         } else {
             (first.max(l.first_sequence), l.next_sequence)
         };
+        // A later window of the same period (the scheduled late window) extends that period's
+        // view under the same id: an unchanged view publishes nothing, a grown one only moves
+        // next_sequence, so clients keep their rows and cursor (#47).
+        if let Some(view) = s.latest_decode.as_mut().filter(|v| {
+            period.is_some() && v.period_start_utc == period && v.first_sequence == first_sequence
+        }) && next_sequence >= view.next_sequence
+        {
+            view.next_sequence = next_sequence;
+            view.complete |= complete;
+            return Ok(());
+        }
         let id = s
             .decode_counter
             .checked_add(1)

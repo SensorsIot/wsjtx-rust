@@ -547,7 +547,10 @@ the first 60 s), both null until measured. Snapshot<=8192 bytes.
 
 latest_decode is null until an attempt publishes a view, otherwise exactly
 `{id,first_sequence,next_sequence,period_start_utc,complete}`. id is a positive safe
-integer increasing per publication within the source/job epoch. Sequence bounds are
+integer increasing per publication within the source/job epoch, except that a later
+window of the same correlated period with the same first_sequence (the #47 late window)
+extends that view under the same id: unchanged it publishes nothing, grown it only raises
+next_sequence (complete once any of its windows completed). Sequence bounds are
 nonnegative safe integers, first_sequence<=next_sequence<=the publication-end counter
 frozen with this descriptor. Correlated period_start_utc is the selected mode's UTC
 period start string; bounds enclose retained records matching that period, or both

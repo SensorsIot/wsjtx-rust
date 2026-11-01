@@ -2548,8 +2548,9 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
     assert!(last.0 > 1.2, "fixed schedule drifted only {:.3} s", last.0);
 }
 
-// Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) republishes its
-// period's view, so a late starter (DT +1.2 s) is inside the browser's period range.
+// Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) extends its period's
+// view under the same id: nothing new publishes nothing, a late starter (DT +1.2 s) only grows
+// next_sequence, so the browser keeps its rows and cursor.
 #[test]
 fn late_window_republishes_its_period_view_with_late_starters() {
     let fixture = Fixture::new();
@@ -2572,10 +2573,6 @@ fn late_window_republishes_its_period_view_with_late_starters() {
         ),
         (json!(0), json!(1))
     );
-    // A DT +1.2 s frame found by the late window, which begins at +0.7 s and ends at +15.7 s.
-    decoded.start_frame = period + 20400;
-    decoded.payload.payload77 = "1".repeat(77);
-    r.publish_decode(&job, &decoded).unwrap();
     let late = (period + 8400, period + 188400);
     // The live worker analyses the scheduled late window and publishes through its flag.
     let context = {
@@ -2591,16 +2588,29 @@ fn late_window_republishes_its_period_view_with_late_starters() {
         clock: Arc::new(Mutex::new(None)),
     };
     let mut worker = LiveWorker::new(r.clone(), job.clone(), Box::new(input), "ft8");
-    worker
-        .analyze(receive::AnalysisWindow {
-            origin: late.0,
-            samples: vec![0.0; (late.1 - late.0) as usize],
-            waits: true,
-        })
-        .unwrap();
+    let mut analyse_late = || {
+        worker
+            .analyze(receive::AnalysisWindow {
+                origin: late.0,
+                samples: vec![0.0; (late.1 - late.0) as usize],
+                waits: true,
+            })
+            .unwrap()
+    };
+    // A late window that adds nothing leaves the view and the whole snapshot unchanged.
+    let before = r.receive_snapshot();
+    analyse_late();
+    assert_eq!(r.receive_snapshot(), before);
+    // A DT +1.2 s frame found by the late window, which begins at +0.7 s and ends at +15.7 s:
+    // the same view (same id) only grows next_sequence.
+    decoded.start_frame = period + 20400;
+    decoded.payload.payload77 = "1".repeat(77);
+    r.publish_decode(&job, &decoded).unwrap();
+    analyse_late();
     let view = r.receive_snapshot()["job"]["latest_decode"].clone();
     assert_eq!(view["period_start_utc"], "2026-10-27T12:00:15.0000000Z");
-    assert_eq!(view["id"], prompt["id"].as_u64().unwrap() + 1);
+    assert_eq!(view["id"], prompt["id"]);
+    assert_eq!(view["complete"], true);
     assert_eq!(
         (
             view["first_sequence"].clone(),

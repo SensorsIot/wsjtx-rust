@@ -722,7 +722,7 @@ package WstxOfflineDecode {
              wrap by a period). One moved into the past completes now; coinciding ones
              complete one after the other in schedule order (prompt, then late); each then
              returns to its grid, so none is dropped or repeated. A scheduled late window
-             republishes its period's view.
+             extends its period's view under the same id.
              Without a correlated anchor the counter grid (30 s/15 s, 15 s/7.5 s) applies.
              The modem reads no UTC.
              FT8coarseN1920/hop480/half-tone200..3500inclusive/endpoints;FT4N576/hop144
