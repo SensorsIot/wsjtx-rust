@@ -195,6 +195,9 @@ test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeo
 
 // Review decision 6 (OpenRegion) / #37 SettingsDrawer: a pointer action outside the drawer closes it.
 test('TC-007-002 a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
+  // An unsaved log review from the earlier test may have opened the Logbook page.
+  if(await page.locator('#region-logbook').isVisible())await page.locator('#region-logbook .return-operate').click();
+  await page.locator('#operating-workspace').waitFor({state:'visible'});
   await page.locator('#open-server-settings').click();
   assert.equal(await page.locator('#settings-drawer').isVisible(),true);
   await page.locator('#band-activity > header').click({timeout:5000});

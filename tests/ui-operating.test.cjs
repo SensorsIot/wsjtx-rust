@@ -397,9 +397,11 @@ test('TC-007-009 exception chips appear only for an exception and start, stop an
 });
 
 // Proves: CL-010-16; TC-007-009 Settings drawer sections and reachability.
-test('TC-007-009 the Settings drawer has four sections holding every control moved off the screen',{timeout:40000},async t=>{
+test('TC-007-009 the Settings drawer has four sections holding every control moved off the screen',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];page.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+  // The contact client (loaded after the first snapshots) adds the watchdog, MCP and logging sections.
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   await page.locator('#open-server-settings').click();
   assert.deepEqual((await page.locator('#settings-drawer .op-drawer-tabs button').allTextContents()).map(t=>t.replace(/\s*\u27F3$/,'')),['General','Radio','Logging & Reporting','Expert']);
   assert.equal(await page.locator('#settings-drawer .op-drawer-section').count(),4,'exactly four sections');
@@ -546,10 +548,11 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
 });
 
 // Proves: CL-010-16; TC-007-009 themes are browser-local.
-test('TC-007-009 Day, Dark and Night themes switch manually and by time without a station request',{timeout:30000},async t=>{
+test('TC-007-009 Day, Dark and Night themes switch manually and by time without a station request',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push(new URL(r.url()).pathname);});
   assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'dark');
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
   for(const theme of ['day','night','dark']){await page.selectOption('#theme-choice',theme);assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),theme);}
   await page.selectOption('#theme-choice','night');await page.selectOption('#theme-switch','time');

@@ -8,9 +8,7 @@ signal.innerHTML = '<div class="op-signal-heading"></div><h2 id="signal-status" 
 const splitter = document.createElement('div'); splitter.id = 'splitter'; splitter.className='op-splitter'; splitter.tabIndex = 0; splitter.innerHTML='<span></span>';
 for (const [key,value] of Object.entries({role:'separator','aria-orientation':'horizontal','aria-label':'Resize spectrum and controls','aria-controls':'signal controls'})) splitter.setAttribute(key,value);
 main.append(signal,splitter,controls);
-// WstxOperatingLayout::OperatingScreen (#37, operator design interview 2026-11-01). One fixed
-// screen: top bar, waterfall with the Rx/Tx strip, Band Activity (with the strategy element)
-// and the QSO pane. Setup and diagnostics are the Settings drawer; Logbook and Help are pages.
+// WstxOperatingLayout::OperatingScreen (#37): top bar, waterfall + RxTxStrip, Band Activity, QsoPane.
 const stationBar=controls.querySelector('header');stationBar.id='station-bar';stationBar.className='op-header op-topbar';
 const stationConnectionNode=document.querySelector('#connection');
 const tuning=document.createElement('div');tuning.id='radio-toolbar';tuning.className='op-tuning';tuning.setAttribute('role','group');tuning.setAttribute('aria-label','Radio operation');
@@ -20,13 +18,11 @@ const headerActions=document.createElement('div');headerActions.className='op-he
 headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
 const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx (Esc, Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
 stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
-// The Rx/Tx strip under the waterfall (WstxOperatingLayout::RxTxStrip); contact.js binds it.
 const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 strip.innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const workspace=document.createElement('div');workspace.id='operating-workspace';
-// Band Activity sorts within a period by its column headers (ActivityOrdering).
-// The header cell itself is the sort control (focusable, Enter/Space), keeping header typography.
+// ActivityOrdering: the focusable header cell is the sort control.
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
@@ -38,8 +34,7 @@ workspace.innerHTML=`<div class="operating-grid op-desk">
 <div class="op-qso-next"><span class="op-eyebrow">NEXT &#9656;</span><strong id="contact-next">None</strong><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div><span id="qso-countdown" class="op-muted"></span><span class="op-eyebrow">LAST</span><strong id="contact-last">None</strong></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
-<details id="qso-more"><summary>Messages Tx1&ndash;Tx6, report and period</summary><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${['tx1','tx2','tx3','tx4','tx5','tx6'].map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
-<div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label><label>Tx period<select id="contact-parity" disabled><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-cancel" disabled>Cancel contact</button><button type="button" id="contact-discard" hidden>Discard log review</button><span id="contact-watchdog" class="op-muted"></span></div></details></div></section></div>`;
+</div></section></div>`;
 controls.prepend(workspace);
 const secondaryRoot=document.createElement('div');secondaryRoot.id='workspace-secondary';secondaryRoot.hidden=true;controls.append(secondaryRoot);
 const secondaryRegions=new Map();
@@ -47,11 +42,11 @@ function region(id,title,intro){const section=document.createElement('section');
 const logRegion=region('logbook','Logbook','Contact history and ADIF operations are unavailable until this station offers contact logging.');
 logRegion.insertAdjacentHTML('beforeend','<p>No server-confirmed contacts are available.</p><button type="button" disabled>Import ADIF</button> <button type="button" disabled>Export ADIF</button>');
 const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Esc and Alt+H always halt.');
-helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys"><div><dt>Esc / Alt+H / HALT</dt><dd>Halt Tx now (Esc also cancels the contact). Panels stay open.</dd></div><div><dt>CQ / Reply / double-click a decode</dt><dd>Start the QSO: transmission starts with the next period and ends after RR73/73 or HALT</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div><div><dt>F2</dt><dd>Settings</dd></div><div><dt>F4</dt><dd>Clear the DX call (cancel the contact)</dd></div><div><dt>Alt+1 &hellip; Alt+6</dt><dd>Next message Tx1&hellip;Tx6</dd></div><div><dt>Alt+M</dt><dd>Start or stop receive</dd></div><div><dt>Alt+T / Alt+Q</dt><dd>Tune / Log QSO</dd></div><div><dt>F11 / F12</dt><dd>Rx &minus;/+ 1 Hz</dd></div><div><dt>Shift+F11 / Shift+F12</dt><dd>Tx &minus;/+ 60 Hz (FT4 90 Hz)</dd></div><div><dt>Ctrl+F11 / Ctrl+F12</dt><dd>Rx and Tx &minus;/+ 1 Hz</dd></div><div><dt>Waterfall click / Shift+click / Ctrl+click</dt><dd>Set Rx / Tx / both; drag the Rx or Tx marker</dd></div><div><dt>Rx/Tx fields: wheel, arrows, &minus;/+</dt><dd>1 Hz; with Shift 10 Hz</dd></div><div><dt>Band Activity: click / double-click / right-click</dt><dd>Select / Reply / menu</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the spectrum and waterfall</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
+helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Esc / Alt+H / HALT</dt><dd>Halt Tx now (Esc also cancels the contact). Panels stay open.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
 function block(id,title,parent,html=''){const section=document.createElement('section');section.id=id;section.className='op-section';section.setAttribute('aria-labelledby',id+'-title');section.innerHTML=`<h3 id="${id}-title">${title}</h3>${html}`;parent.append(section);return section;}
 // ---------------------------------------------------------------- Settings drawer
-// WstxOperatingLayout::SettingsDrawer: four sections; the waterfall keeps running; HALT stays.
+// WstxOperatingLayout::SettingsDrawer.
 const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');
 const drawerSections=[['general','General'],['radio','Radio &#10227;'],['logging','Logging &amp; Reporting'],['expert','Expert']];
 drawer.innerHTML=`<header><div><span class="op-eyebrow">WSTX / <span id="operating-station">Waiting for station</span></span><h2 id="drawer-title">Settings</h2></div><button type="button" data-region="operate" class="return-operate" aria-label="Close settings">&#10005; Close</button></header><nav class="op-drawer-tabs" aria-label="Settings sections">${drawerSections.map(([key,label],i)=>`<button type="button" id="tab-${key}" data-drawer-tab="${key}" aria-controls="settings-${key}"${i?'':' aria-current="true"'}>${label}</button>`).join('')}</nav><div class="op-drawer-body">${drawerSections.map(([key,label])=>`<section id="settings-${key}" aria-labelledby="settings-${key}-heading" class="op-drawer-section"><h2 id="settings-${key}-heading" class="op-drawer-heading">${label}</h2></section>`).join('')}</div>`;
@@ -60,7 +55,6 @@ const [generalSection,radioSection,loggingSection,expertSection]=drawerSections.
 function markTab(key){for(const [k] of drawerSections){const tab=drawer.querySelector('#tab-'+k);if(k===key)tab.setAttribute('aria-current','true');else tab.removeAttribute('aria-current');}}
 function drawerTab(key){markTab(key);const body=drawer.querySelector('.op-drawer-body'),section=drawer.querySelector('#settings-'+key);body.scrollTop=section.offsetTop-body.offsetTop;}
 drawer.querySelector('.op-drawer-tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-drawer-tab]');if(tab){drawerTab(tab.dataset.drawerTab);tab.focus();}});
-// The section button follows the scroll position.
 drawer.querySelector('.op-drawer-body').addEventListener('scroll',event=>{const body=event.currentTarget;let current=drawerSections[0][0];for(const [k] of drawerSections)if(drawer.querySelector('#settings-'+k).offsetTop-body.offsetTop<=body.scrollTop+8)current=k;markTab(current);},{passive:true});
 drawer.querySelector('.op-drawer-tabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;const keys=drawerSections.map(([k])=>k),current=keys.indexOf((event.target.closest('[data-drawer-tab]')??drawer.querySelector('[aria-current=true]')).dataset.drawerTab),next=keys[(current+(event.key==='ArrowRight'?1:keys.length-1))%keys.length];drawerTab(next);drawer.querySelector('#tab-'+next).focus();});
 function showSection(id){
@@ -70,23 +64,19 @@ function showSection(id){
   target.scrollIntoView({block:'nearest'});
   (target.matches('details')?target.querySelector('summary'):target.querySelector('input:not([type=hidden]):not(:disabled),select:not(:disabled),button:not(:disabled),summary')??target).focus();
 }
-// General: station, continent, clock, display/themes, access & grants, MCP.
 const serverForm=document.querySelector('#settings');
 const stationFields=document.createElement('fieldset');stationFields.id='server-fields-general';stationFields.className='op-server-fieldset';stationFields.innerHTML='<legend>Station &#10227;</legend>';
 for(const id of ['display-name','callsign','locator']){const input=document.getElementById(id);input.setAttribute('form','settings');stationFields.append(input.closest('label'));}
 stationFields.insertAdjacentHTML('beforeend','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label><p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
-// Station fields live outside the form element; their edits still mark the form edited.
+// Station fields sit outside the form element; their edits still mark it edited.
 for(const type of ['input','change'])stationFields.addEventListener(type,event=>{if(event.target.form===serverForm&&event.target.id!=='station-continent')serverForm.dispatchEvent(new Event(type));});
 generalSection.append(stationFields);
 block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clock: system UTC. Measured offset unavailable.</p>');
 const displaySettings=block('settings-display','Display',generalSection,'<label>Theme<select id="theme-choice"><option value="dark">Dark</option><option value="day">Day</option><option value="night">Night (dim red)</option></select></label><label>Switch<select id="theme-switch"><option value="manual">Manually</option><option value="time">By time</option><option value="sun">By sunrise and sunset at my locator</option></select></label><span id="theme-times"><label>Day from<input id="theme-day-start" type="time" value="07:00"></label><label>Night from<input id="theme-night-start" type="time" value="20:00"></label></span><p id="theme-status" class="op-muted"></p><p class="op-muted">Display settings affect this browser only and apply at once.</p>');
 const browserSettings=block('settings-browsers','Access &amp; grants',generalSection,'<p class="op-muted">This browser holds its own station authorization. Logging out or forgetting the credential needs the station access token to authorize again.</p>');
 browserSettings.append(document.querySelector('#authorization-actions'));
-// Forgetting a rejected or invalid credential is the action for that exception; it shows
-// beside the exception chips only while app.js offers it.
+// Forget credential is the action of its exception: shown beside the chips while offered.
 chips.after(document.querySelector('#forget'));
-block('settings-automation','MCP and automation',generalSection,'<p class="op-muted">Automation runs on the station (MCP). Its state shows beside the strategy element; HALT ends it. Strategies (Highlight/Auto) arrive with the strategy engine.</p>');
-// Radio (restart changes on Apply): CAT, audio, transmit.
 const profilePanel=document.querySelector('#profile-panel'),profileMetadata=profilePanel.querySelector('dl');
 for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']],['audio','Audio &#10227;',['audio-input','audio-output']]]){
   const group=document.createElement('fieldset');group.id='server-fields-'+name;group.className='op-server-fieldset';group.innerHTML=`<legend>${legendText}</legend>`;
@@ -98,12 +88,6 @@ document.querySelector('#settings-save').textContent='Apply ⟳';
 radioSection.append(profilePanel);
 const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
 block('settings-audio','Audio input',radioSection,'<div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><p class="op-muted">Listing the inputs reads the device names only; it never opens audio.</p><button type="button" id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output>');
-block('settings-transmit','Transmit',radioSection,'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
-// Logging & Reporting: the existing log; the UDP interface and PSK Reporter are later CRs.
-block('settings-log','Log',loggingSection,'<p>Each logged QSO is saved in this station profile’s contacts.adi (ADIF). Log QSO opens the log review.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
-block('settings-udp','WSJT-X UDP interface',loggingSection,'<p class="op-muted">Not available yet (separate change): targets, message selection and accepted commands.</p>');
-block('settings-pskreporter','PSK Reporter',loggingSection,'<p class="op-muted">Not available yet.</p>');
-// Expert: connection, raw receive/CAT/timing, receive start/stop, recordings, #9 panel.
 const connectionPanel=document.createElement('div');connectionPanel.append(controls.querySelector('section[aria-label="Station status"]'),profileMetadata);
 const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionPanel.append(capabilities);
 const receivePanel=document.createElement('div');receivePanel.id='receive-diagnostics';
@@ -111,14 +95,12 @@ receivePanel.append(signal.querySelector('#signal-status'));
 receivePanel.insertAdjacentHTML('beforeend','<p id="receive-status" role="status">Live receive unavailable until station snapshot</p><p id="receive-generation">Receive generation unknown</p><p id="clock-detail">Clock detail unavailable until station snapshot</p><p><button type="button" id="receive-toggle" disabled>Start receive</button></p>');
 secondary('receive-details','Receive, CAT and timing',receivePanel,expertSection).open=true;
 secondary('connection-details','Connection details',connectionPanel,expertSection).open=true;
-// The profile save outcome is shown beside both Apply buttons (Radio and General).
 new MutationObserver(()=>{document.querySelector('#general-apply-result').textContent=document.querySelector('#settings-result').textContent;}).observe(document.querySelector('#settings-result'),{childList:true,characterData:true,subtree:true});
 const operatingRefresh=connectionPanel.querySelector('#refresh');operatingRefresh.className='op-icon-button';operatingRefresh.setAttribute('aria-label','Refresh status');operatingRefresh.title='Refresh status';operatingRefresh.innerHTML='&#8635;';headerActions.insertBefore(operatingRefresh,headerActions.firstChild);
 const updateIdentity=()=>{document.querySelector('#operating-station').textContent=profileData?.settings.display_name??'Waiting for station';};
 new MutationObserver(updateIdentity).observe(document.querySelector('#profile-name'),{childList:true,subtree:true,characterData:true});updateIdentity();
 const panel = document.createElement('section'); panel.id = 'recording-controls'; panel.setAttribute('aria-label','Recording controls');
 panel.innerHTML = '<label>Import mono 12 kHz PCM16 WAV (up to 120 seconds)<input id="recording-file" type="file" accept=".wav,audio/wav"></label><button id="recording-import">Import recording</button><button id="recording-replay" disabled>Replay spectrum</button><button id="recording-cancel" disabled>Cancel operation</button><p>One processing worker per station &#183; no speaker playback</p><p id="recording-progress" role="status"></p>';
-// Display preferences (General > Display): one set of controls in the Settings column.
 const localPreferences=document.createElement('div');localPreferences.id='local-display-preferences';
 localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Waterfall speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
@@ -129,11 +111,10 @@ const sliders=document.createElement('div');sliders.id='presentation-sliders';sl
 sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
-// WstxOperatingLayout::UnauthorizedView: only the token form and its status line.
+// WstxOperatingLayout::UnauthorizedView.
 const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
 loginView.innerHTML='<span class="op-eyebrow">WSTX / REMOTE STATION</span><h1>Authorize this browser</h1><p class="op-muted">Enter the station access token. The station is shown once this browser is authorized.</p>';
 loginView.append(login);
-// Confirmations that matter (restart during a QSO, abandoning a QSO) use one modal dialog.
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 function confirmAction(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
@@ -143,7 +124,6 @@ main.append(stationBar,signal,strip,splitter,controls,drawer,loginView,confirmDi
 const authorizationView=()=>{const required=!login.hidden;main.dataset.auth=required?'required':'granted';loginView.hidden=!required;};
 new MutationObserver(authorizationView).observe(login,{attributes:true,attributeFilter:['hidden']});authorizationView();
 let currentRegion='operate',returnFocus=null;
-// Region names: logbook and help are pages; everything set up or diagnosed is a drawer section.
 const drawerAlias={'server-settings':null,connection:'connection-details',recordings:'recorded-input','client-preferences':'settings-display',strategies:'settings-automation',expert:'receive-details'};
 function drawerOpen(){return !drawer.hidden;}
 function closeDrawer(){if(drawer.hidden)return;drawer.hidden=true;main.dataset.drawer='closed';if(returnFocus?.isConnected&&currentRegion==='operate'){returnFocus.focus();returnFocus=null;}}
@@ -166,10 +146,8 @@ function showRegion(name,opener,anchor=null){
   else secondaryRegions.get(name).querySelector('.return-operate').focus();
 }
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
-// A pointer action outside the open drawer closes it (the top bar and the waterfall excepted).
 document.addEventListener('pointerdown',event=>{if(drawer.hidden||event.target.closest?.('#settings-drawer,#station-bar,#signal,#rxtx-strip,#splitter,dialog'))return;closeDrawer();},true);
-// WstxOperatingLayout::KeyboardShortcuts. Esc and Alt+H (halt) are handled below in every
-// state; the other keys act only while no text field has focus.
+// WstxOperatingLayout::KeyboardShortcuts (Esc/Alt+H halt is handled at the end of this file).
 const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]),textarea,select,[contenteditable=true]');
 addEventListener('keydown',event=>{
   if(event.defaultPrevented)return;
@@ -236,7 +214,6 @@ let upper, snapshot, importOutcome, rows = [], drawPending = false, syncPending 
 const identity = s => s ? `${s.boot_id}/${s.job?.source_id}/${s.job?.id}/${s.generation}` : '';
 function split(value) {
   const otherHeight=stationBar.offsetHeight+strip.offsetHeight;
-  // The Sensitivity control sits in the top-right corner row of the signal area.
   const signalText=[signal.querySelector(".op-signal-heading"),document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")].reduce((height,node)=>height+(node?.offsetHeight||0),0);
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
@@ -251,7 +228,6 @@ splitter.addEventListener('keydown',event => {
   if (event.key in values) {event.preventDefault();split(values[event.key]);}
 });
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
-// The Rx/Tx strip sits between the signal and the separator.
 splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top-strip.offsetHeight)/(box.height/signal.offsetHeight));}});
 addEventListener('resize',() => split(upper));
 const textLayoutObserver=new ResizeObserver(()=>split(upper));
@@ -485,9 +461,6 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
-// WstxOperatingLayout::SingleReceiveControl (#37): Monitor is the only receive control. The
-// legacy Start/Stop receive and Next receive mode controls left the page; their routes and
-// the strict receive contract are unchanged and Monitor uses them.
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
@@ -512,8 +485,7 @@ function applyLatestDecode(view,first){
   if(resultView&&view&&view.id<resultView.id)return false;
   if(resultView&&view&&view.id===resultView.id){if(['id','first_sequence','next_sequence','period_start_utc','complete'].some(k=>view[k]!==resultView[k]))throw new Error('Changed decode descriptor');return true;}
   if(resultView===null&&view===null)return true;
-  // WstxOperatingLayout::BandActivityView: the replaced period of the same receive identity
-  // stays below a divider (newest first, bounded); a new identity clears it (receiveSync).
+  // BandActivityView: the replaced period stays as history; a new identity clears it.
   if(resultView&&resultRows.length&&live?.job){
     activityHistory.unshift({id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]});
     let total=0;activityHistory=activityHistory.slice(0,20).filter(h=>(total+=h.rows.length)<=2048);
@@ -568,8 +540,7 @@ async function receiveSync(current=socket){
     if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
-      // ExceptionChip receiveRestarted: a new receive generation that neither this browser
-      // (own start/stop/selection within 15 s) nor an operating revision change explains.
+      // ExceptionChip receiveRestarted: a new generation not explained by this browser or a selection.
       if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;activityHistory=[];
       if(data.job||live?.job){rows=[];resetLevels();paint();}
@@ -592,8 +563,6 @@ function activityOrdering(records=resultRows){
     return compared*(activitySortDirection==='asc'?1:-1)||a.sequence-b.sequence;
   });
 }
-// A column header chooses its field (signal strength strongest first, others ascending);
-// the active header reverses the direction. Presentation only: no request is sent.
 function sortBy(button){
   if(button.dataset.sort===activitySortField)activitySortDirection=activitySortDirection==='asc'?'desc':'asc';
   else{activitySortField=button.dataset.sort;activitySortDirection=activitySortField==='signal'?'desc':'asc';}
@@ -704,9 +673,8 @@ async function receiveResults(){
   }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
   finally{resultPending=false;}
 }
-// Monitor start/stop use the unchanged strict /receive/start and /receive/stop requests, only
-// from an operator action (Monitor click or keyboard activation): no timer, reconnect,
-// readiness or snapshot path calls them. Start uses the operating FT8/FT4 selection.
+// Strict /receive/start and /receive/stop, only from an operator action (chip, Expert, Alt+M),
+// never from a timer, reconnect, readiness or snapshot path. Start uses the selection mode.
 async function receiveStart(){
   const active=live?.job&&['running','cancelling'].includes(live.job.state);
   if(!live||active||mutationPending||uncertainMutation||operatingBlocked()||!profileData?.settings.audio.input_device)return;
@@ -754,12 +722,7 @@ if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state===
 const operatingControls=document.createElement('div');operatingControls.id='operating-receive-controls';
 operatingControls.innerHTML='<label class="op-compact-label">Band &#10227;<select id="operating-band" disabled title="Band: changing it restarts receive"><option value="">Choose band</option></select></label><label class="op-compact-label">Mode &#10227;<select id="operating-mode" disabled title="Mode: changing it restarts receive"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label>';
 tuning.prepend(operatingControls);
-// WstxOperatingLayout::OperatingScreen: no Monitor control on the screen. Receive follows the
-// band/mode selection; the explicit start/stop is the Expert receive control, the Receive
-// stopped chip and Alt+M (all operator actions).
 const receiveToggleButton=document.querySelector('#receive-toggle');
-// Diagnostics (Expert > Receive and CAT) and the receive-only CAT confirmation (Settings >
-// Radio & CAT) keep their element identities.
 receivePanel.insertAdjacentHTML('beforeend','<p id="operating-selection-status" role="status">Operating selection unavailable until station snapshot</p><output id="operating-radio">CAT readback unavailable</output><p><button id="operating-refresh" type="button" disabled>Refresh operating state</button></p>');
 catSettings.insertAdjacentHTML('beforeend','<div id="cat-lifecycle"><p id="cat-status" role="status">CAT status unavailable</p><div id="cat-confirm" hidden><p id="cat-confirm-summary"></p><label class="receive-only-verification"><input type="checkbox" id="cat-confirm-ack">USB SEND/CW/RTTY keying is OFF or receive inhibit is verified</label><button id="cat-confirm-button" type="button" disabled>Confirm receive-only setup</button></div><p id="cat-confirm-result" role="status"></p></div>');
 const operatingMode=document.querySelector('#operating-mode'),operatingBand=document.querySelector('#operating-band'),operatingStatus=document.querySelector('#operating-selection-status');
@@ -805,8 +768,7 @@ function operatingShow(){
   const blocked=!ready||mutationPending||uncertainMutation||operatingBlocked();
   operatingMode.disabled=blocked;operatingBand.disabled=blocked;
   const active=live?.job&&['running','cancelling'].includes(live.job.state),target=operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);
-  // The receive control also carries the former Stop: with a pending, intended or unknown
-  // selection it cancels/fences that command, otherwise it stops or starts receive.
+  // With a pending/unknown selection the receive control cancels it (the former Stop).
   receiveToggleButton.disabled=!receiveToggleAvailable();
   receiveToggleButton.textContent=target?'Cancel band/mode change':active?'Stop receive':'Start receive';
   receiveToggleButton.setAttribute('aria-pressed',String(!!active||!!target));
@@ -940,9 +902,7 @@ async function catSync(){
   finally{catPending=false;catShow();if(catAgain){catAgain=false;catSync();}}
 }
 function catModel(endpoint){return typeof endpoint==='string'&&(/^icom7300:\/\//.test(endpoint)||/^COM[0-9]{1,3}$/i.test(endpoint))?'Icom IC-7300 (CI-V)':'unsupported CAT model';}
-// WstxOperatingLayout::ExceptionChip: the top bar shows a chip only while a condition holds;
-// a healthy station shows none. Each names its cause and opens its detail (or, for a stopped
-// receive, starts receive as an explicit operator action).
+// WstxOperatingLayout::ExceptionChip: only while a condition holds; each opens its detail.
 var chipsReady=false,restartedAt=-Infinity;
 function chip(key,severity,text,action){const button=document.createElement('button');button.type='button';button.className='op-chip';button.dataset.chip=key;button.dataset.severity=severity;button.textContent=`${severity==='error'?'\u2716':'\u26A0'} ${text}`;button.title=text;button.addEventListener('click',action);return button;}
 function chipsShow(){
@@ -1080,65 +1040,8 @@ addEventListener('keydown',event=>{
   const result=document.querySelector('#transmit-result');
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
 },true);
-// WstxOperatingLayout::ThemeChoice: Day / Dark / Night for this browser only, manually, by
-// two local times or by sunrise and sunset at the profile locator. No station request.
-const themeKey='wstx.theme.v1';
-function themeSettings(){let saved=null;try{saved=JSON.parse(localStorage.getItem(themeKey));}catch{}return {theme:['day','dark','night'].includes(saved?.theme)?saved.theme:'dark',mode:['manual','time','sun'].includes(saved?.mode)?saved.mode:'manual',day:/^\d\d:\d\d$/.test(saved?.day)?saved.day:'07:00',night:/^\d\d:\d\d$/.test(saved?.night)?saved.night:'20:00'};}
-function sunTimes(locator,date=new Date()){
-  // NOAA-style approximation, minutes after UTC midnight; null for polar day/night.
-  const position=maidenhead(locator);if(!position)return null;const [lat,lon]=position,r=Math.PI/180;
-  const day=Math.floor((Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())-Date.UTC(date.getUTCFullYear(),0,0))/864e5);
-  const g=2*Math.PI/365*(day-1),eq=229.18*(0.000075+0.001868*Math.cos(g)-0.032077*Math.sin(g)-0.014615*Math.cos(2*g)-0.040849*Math.sin(2*g));
-  const decl=0.006918-0.399912*Math.cos(g)+0.070257*Math.sin(g)-0.006758*Math.cos(2*g)+0.000907*Math.sin(2*g)-0.002697*Math.cos(3*g)+0.00148*Math.sin(3*g);
-  const cos=(Math.cos(90.833*r)/(Math.cos(lat*r)*Math.cos(decl)))-Math.tan(lat*r)*Math.tan(decl);if(cos<-1||cos>1)return null;
-  const ha=Math.acos(cos)/r;return {rise:720-4*(lon+ha)-eq,set:720-4*(lon-ha)-eq};
-}
-function themeNow(settings=themeSettings()){
-  if(settings.mode==='manual')return settings.theme;
-  const now=new Date();
-  if(settings.mode==='time'){const minutes=now.getHours()*60+now.getMinutes(),[d,n]=[settings.day,settings.night].map(t=>Number(t.slice(0,2))*60+Number(t.slice(3)));return (d<n?minutes>=d&&minutes<n:minutes>=d||minutes<n)?'day':'night';}
-  const sun=sunTimes(profileData?.settings?.locator,now);if(!sun)return settings.theme;
-  const utc=now.getUTCHours()*60+now.getUTCMinutes(),rise=(sun.rise+1440)%1440,set=(sun.set+1440)%1440;
-  return (rise<set?utc>=rise&&utc<set:utc>=rise||utc<set)?'day':'night';
-}
-function applyTheme(){
-  const settings=themeSettings(),theme=themeNow(settings);document.documentElement.dataset.theme=theme;
-  for(const [id,value] of [['theme-choice',settings.theme],['theme-switch',settings.mode],['theme-day-start',settings.day],['theme-night-start',settings.night]]){const node=document.getElementById(id);if(node&&document.activeElement!==node)node.value=value;}
-  document.querySelector('#theme-times').hidden=settings.mode!=='time';
-  const sun=settings.mode==='sun'?sunTimes(profileData?.settings?.locator):null,clock=m=>`${String(Math.floor(((m%1440)+1440)%1440/60)).padStart(2,'0')}:${String(Math.floor(((m%60)+60)%60)).padStart(2,'0')}`;
-  document.querySelector('#theme-status').textContent=`Now ${theme}${settings.mode==='sun'?(sun?` · sunrise ${clock(sun.rise)} UTC, sunset ${clock(sun.set)} UTC at ${profileData?.settings?.locator}`:' · sunrise/sunset unknown for this locator; manual theme used'):''}`;
-}
-for(const id of ['theme-choice','theme-switch','theme-day-start','theme-night-start'])document.getElementById(id).addEventListener('change',()=>{
-  const value={theme:document.querySelector('#theme-choice').value,mode:document.querySelector('#theme-switch').value,day:document.querySelector('#theme-day-start').value,night:document.querySelector('#theme-night-start').value};
-  try{localStorage.setItem(themeKey,JSON.stringify(value));}catch{}applyTheme();
-});
-setInterval(applyTheme,60000);addEventListener('station-ready',applyTheme);applyTheme();
-// General > Station > Continent: browser-local until the strategy engine needs it at the
-// station; the default derives from the locator (coarse bounding regions).
-function continentOf(locator){
-  const p=maidenhead(locator);if(!p)return null;const [lat,lon]=p;
-  if(lat<-60)return 'AN';if(lon>=-170&&lon<-30)return lat>12||(lon<-77&&lat>7)?'NA':'SA';
-  if(lon>=-30&&lon<60&&lat>=35)return lon>40&&lat<42?'AS':'EU';if(lon>=-30&&lon<52&&lat<37)return lon>33&&lat>12?'AS':'AF';
-  if(lat>=-11&&lon>=60||lat>=35)return 'AS';return 'OC';
-}
-const continentKey=()=>`wstx.continent.v1:${profileData?.profile_id??''}`;
-function showContinent(){
-  const select=document.querySelector('#station-continent');let saved='';try{saved=localStorage.getItem(continentKey())??'';}catch{}
-  if(document.activeElement!==select)select.value=saved;
-  const derived=continentOf(profileData?.settings?.locator);document.querySelector('#continent-derived').textContent=`From locator: ${derived??'unknown'}${saved?` · using ${saved}`:''}`;
-}
-document.querySelector('#station-continent').addEventListener('change',event=>{try{if(event.target.value)localStorage.setItem(continentKey(),event.target.value);else localStorage.removeItem(continentKey());}catch{}showContinent();});
-addEventListener('station-ready',showContinent);showContinent();
 // The drawer starts below the top bar, whose height depends on the window width.
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
-// SettingsDrawer: restart changes (the saved profile) apply only on Apply and, during a QSO or
-// transmission, only after a confirmation. Runs before app.js's own submit handler.
-let applyConfirmed=false;
-serverForm.addEventListener('submit',async event=>{
-  if(applyConfirmed){applyConfirmed=false;return;}
-  const s=window.wstxContact?.snapshot?.(),c=s?.contact,busy=(c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;
-  if(!busy)return;
-  event.preventDefault();event.stopImmediatePropagation();
-  if(await confirmAction('Applying these settings may restart receive and interrupt the QSO in progress. Apply now?','Apply')){applyConfirmed=true;serverForm.requestSubmit();}
-},true);
+// ThemeChoice: a manual theme applies at once; contact.js adds the rest.
+try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
 chipsReady=true;chipsShow();
