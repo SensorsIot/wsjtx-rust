@@ -1196,6 +1196,29 @@ async fn tc_012_006_ipv6_multicast_targets() {
     let reopened = Owner::open(&f.state, true).snapshot(&f.state.recording);
     assert_eq!(reopened["configuration"]["targets"], targets);
 
+    // An IPv6 unicast target keeps the #40 IPv4 interface form (a saved file loads).
+    let mut unicast = multicast_json("[::1]:2240", 1, json!("127.0.0.1"), false);
+    unicast["enabled"] = json!(false);
+    let mut with_unicast = targets.as_array().unwrap().clone();
+    with_unicast.push(unicast.clone());
+    let body = config_body(&f, 1, Value::from(with_unicast.clone()));
+    let (s, v2) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(s, StatusCode::OK, "{v2}");
+    assert_eq!(v2["configuration"]["targets"][4], unicast);
+    let mut index = unicast.clone();
+    index["multicast_interface"] = json!("1");
+    let mut refused_list = targets.as_array().unwrap().clone();
+    refused_list.push(index);
+    let body = config_body(&f, 2, Value::from(refused_list));
+    let (s, v2) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(
+        (s, v2["error"]["field"].clone()),
+        (
+            StatusCode::BAD_REQUEST,
+            json!("targets[4].multicast_interface")
+        )
+    );
+
     // The socket carries the hop limit and the interface.
     {
         let inner = owner.lock();

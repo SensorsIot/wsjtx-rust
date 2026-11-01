@@ -84,9 +84,10 @@ package WstxUdp {
              multicast group of scope 0 or 15 are refused; an address is unique in the
              list (it is the target's identity). multicast_ttl 1..255 is the TTL of an
              IPv4 multicast address (224.0.0.0/4) and the hop limit of an IPv6 multicast
-             address (ff00::/8). multicast_interface is null or, for an IPv4 address, an
-             IPv4 address; for an IPv6 address, an interface index as decimal text
-             1..4294967295 without sign or leading zero (D6); an IPv6 multicast group of
+             address (ff00::/8). multicast_interface is null or, for an IPv6 multicast
+             address, an interface index as decimal text 1..4294967295 without sign or
+             leading zero (D6); for any other address, an IPv4 address (unchanged from
+             #40, so a saved file keeps loading); an IPv6 multicast group of
              scope 1 or 2 requires it. Both apply only to a multicast address;
              accept_commands true is
              refused for a multicast address (a command's source is a host, never the

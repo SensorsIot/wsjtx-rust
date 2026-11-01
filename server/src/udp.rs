@@ -168,14 +168,16 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
         .as_u64()
         .filter(|t| (1..=255).contains(t))
         .ok_or_else(|| f("multicast_ttl"))? as u32;
+    // An IPv6 group names an interface index; every other address keeps the IPv4 form
+    // (a unicast target ignores it), so a saved udp.json of #40 still loads.
     let interface = match (&v["multicast_interface"], address.ip()) {
         (Value::Null, _) => None,
-        (Value::String(s), IpAddr::V4(_)) => Some(Interface::V4(
+        (Value::String(s), IpAddr::V6(ip)) if ip.is_multicast() => Some(Interface::Index(
+            interface_index(s).ok_or_else(|| f("multicast_interface"))?,
+        )),
+        (Value::String(s), _) => Some(Interface::V4(
             s.parse::<Ipv4Addr>()
                 .map_err(|_| f("multicast_interface"))?,
-        )),
-        (Value::String(s), IpAddr::V6(_)) => Some(Interface::Index(
-            interface_index(s).ok_or_else(|| f("multicast_interface"))?,
         )),
         _ => return Err(f("multicast_interface")),
     };
