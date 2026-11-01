@@ -15,6 +15,14 @@ struct Start {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct StartupEdit {
+    v: u64,
+    profile_id: String,
+    boot_id: String,
+    monitor_off_at_startup: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Stop {
     v: u64,
     profile_id: String,
@@ -47,6 +55,56 @@ pub async fn snapshot(
         return error(e);
     }
     Json(r.receive_snapshot()).into_response()
+}
+/// #45 CL-045-01: the persisted startup choice, Monitor-off setting and resume outcome.
+pub async fn startup(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, false).await {
+        Ok(r) => r,
+        Err(e) => return error(e),
+    };
+    if query.is_some() {
+        return error("invalid_request");
+    }
+    if let Err(e) = empty(body) {
+        return error(e);
+    }
+    Json(r.startup_view()).into_response()
+}
+/// #45 CL-045-01: sets "Monitor off at startup"; it takes effect at the next start.
+pub async fn startup_update(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, true).await {
+        Ok(r) => r,
+        Err(e) => return error(e),
+    };
+    if query.is_some() {
+        return error("invalid_request");
+    }
+    let b: StartupEdit = match parse(&headers, body) {
+        Ok(b) => b,
+        Err(e) => return error(e),
+    };
+    if let Err(e) = syntax(b.v, &b.profile_id, &b.boot_id, 0) {
+        return error(e);
+    }
+    match tokio::task::spawn_blocking(move || {
+        r.set_monitor_off(&b.profile_id, &b.boot_id, b.monitor_off_at_startup)
+    })
+    .await
+    {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => error(e),
+        Err(_) => error("storage_unavailable"),
+    }
 }
 pub async fn devices(
     State(app): State<App>,
@@ -176,7 +234,13 @@ pub async fn stop(
     if !profile::valid_uuid(&b.job_id) {
         return error("invalid_request");
     }
-    match r.receive_stop(&b.profile_id, &b.boot_id, b.generation, &b.job_id) {
+    // Stop also clears the persisted startup choice (#45): file I/O off the runtime.
+    let stopped = tokio::task::spawn_blocking(move || {
+        r.receive_stop(&b.profile_id, &b.boot_id, b.generation, &b.job_id)
+    })
+    .await
+    .unwrap_or(Err("storage_unavailable"));
+    match stopped {
         Ok(v) => {
             if let Some(state) = app.profile.clone() {
                 contact_step(state).await;

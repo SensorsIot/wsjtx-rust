@@ -28,7 +28,8 @@ package WstxUdp {
          D5 Location (11) sets a session-only grid (CL-040-05): it replaces the profile
             locator for Status, generated messages and the log's my_gridsquare until the
             process restarts and is never saved to the profile.
-         D6 Scope of this slice: IPv6 multicast targets are refused (CL-040-06, target); the
+         D6 Scope of this slice: IPv6 multicast targets are refused (CL-040-06, target,
+            issue #46); the
             Settings UI is #37's; Close is sent when a target is disabled or removed (the
             station has no graceful-shutdown path). */
 
