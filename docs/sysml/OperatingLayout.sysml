@@ -561,14 +561,20 @@ attribute def ActivityOrdering {
              (SettingsSection):
              General: station (display name, callsign, locator, continent), clock/NTP
              state, display (theme Day/Dark/Night and its switch, waterfall display
-             preferences), access and grants (log out, forget credential), MCP/automation.
+             preferences), access and grants (log out, forget credential), MCP/automation,
+             and "Monitor off at startup" (#45 CL-045-01: read with GET /receive/startup,
+             saved on change with POST /receive/startup; it acts at the next station start
+             and restarts nothing, so it carries no restart mark).
              Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
              audio (input, output, input listing, Rx level meter), transmit (Tx watchdog
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
              Logging & Reporting: the existing log (Logbook page, ADIF), placeholders for
-             the WSJT-X UDP interface and PSK Reporter (later CRs).
+             the WSJT-X UDP interface (its UDP targets, wired by #40; no /udp request
+             before then) and PSK Reporter (later CRs).
              Expert: raw CAT readback, receive job/generation, timing, the explicit receive
-             start/stop, selection refresh, connection details, recordings/replay and the
+             start/stop, the startup resume state of #45 (resume state and last receive
+             choice from GET /receive/startup), selection refresh, connection details,
+             recordings/replay and the
              raw transmit test panel (WstxTransmit, #9).
              Operative changes (display, theme, watchdogs) apply immediately and never
              interrupt decoding. Restart changes (the saved profile: station, CAT, audio,

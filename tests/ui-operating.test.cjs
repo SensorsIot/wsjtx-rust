@@ -324,7 +324,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#rx-pane','#contact-next','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -433,6 +433,40 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   await page.locator('#open-logbook').click();assert.equal(await page.locator('#region-logbook').isVisible(),true,'Logbook is a full page');
   assert.equal(await page.locator('#waterfall').isVisible(),false);assert.equal(await page.locator('#halt-tx').isVisible(),true);
   await page.locator('#region-logbook .return-operate').click();assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-045-01, CL-010-16; TC-007-009 "Monitor off at startup" is a plain General setting.
+test('TC-007-009 Monitor off at startup reads and saves the station setting without touching receive',{timeout:60000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
+  const requests=[],posts=[];
+  page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/receive/startup')posts.push(JSON.parse(r.postData()));});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  const initial=await (await fetch(app.origin+'/receive/startup')).json();
+  assert.equal(initial.monitor_off_at_startup,false,'the station default is off, as WSJT-X');
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  const box=page.locator('#monitor-off-startup');await page.locator('#monitor-off-startup:enabled').waitFor();
+  await box.scrollIntoViewIfNeeded();assert.equal(await inViewport(page,'#monitor-off-startup'),true,'the setting is in Settings > General');
+  assert.equal(await page.locator('#settings-general #monitor-off-startup').count(),1);
+  assert.equal(await box.isChecked(),false,'shows the station value');
+  assert.doesNotMatch(await page.locator('#settings-startup').textContent(),/\u27F3/,'a plain setting has no restart mark');
+  await box.check();await page.locator('#startup-result',{hasText:'Saved'}).filter({hasText:'Saved'}).waitFor();
+  assert.deepEqual(posts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,monitor_off_at_startup:true}],'exactly one exact-key save');
+  assert.equal((await (await fetch(app.origin+'/receive/startup')).json()).monitor_off_at_startup,true,'the station stored it');
+  await page.route('**/receive/startup',route=>route.request().method()==='POST'?route.fulfill({status:409,json:{error:{code:'state_conflict'}}}):route.continue());
+  await box.uncheck();await page.locator('#startup-result').filter({hasText:'Not saved'}).waitFor();
+  assert.match(await page.locator('#startup-result').textContent(),/state_conflict/);
+  assert.equal(await box.isChecked(),true,'a refusal restores the stored value');
+  await page.unroute('**/receive/startup');
+  await page.locator('#tab-expert').click();await page.locator('#startup-resume').scrollIntoViewIfNeeded();
+  assert.match(await page.locator('#startup-resume').textContent(),/^Nothing to resume at start/,'Expert shows the startup resume state');
+  await page.locator('#tab-logging').click();await page.locator('#udp-targets').scrollIntoViewIfNeeded();
+  assert.equal(await inViewport(page,'#udp-targets'),true,'Logging & Reporting holds the UDP targets placeholder');
+  assert.match(await page.locator('#settings-udp').textContent(),/UDP targets/);
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  await page.waitForFunction(()=>!document.querySelector('#monitor-off-startup').disabled);assert.equal(await page.locator('#monitor-off-startup').isChecked(),true,'the saved value reads back');
+  assert.equal(posts.length,2,'one save plus the refused one');
+  assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)||/\/udp/.test(r)),[],'no receive mutation and no /udp request');
   assert.deepEqual(errors,[]);
 });
 

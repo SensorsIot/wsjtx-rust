@@ -2012,11 +2012,17 @@ package WstxRequirements {
              the shown safety revision. Theme switch changes the theme without a request. Keyboard
              shortcuts act as KeyboardShortcuts and letters are inactive while typing. An
              unauthorized browser shows only the token form and its status line, then the full
-             screen after authorization. Independent oracles: the design-interview decisions in the
+             screen after authorization. Settings > General shows "Monitor off at startup" as read
+             from GET /receive/startup; toggling it sends exactly one POST /receive/startup
+             {v 1, profile_id, boot_id, monitor_off_at_startup} and no receive start, stop or
+             selection, a refusal restores the previous value, and Expert shows the resume state;
+             Logging & Reporting holds the UDP targets placeholder and the page requests no /udp.
+             Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-16';
+            verify 'CL-045-01';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -2274,6 +2280,7 @@ package WstxRequirements {
     dependency CL_008_07_verified_by_TC_009_005 from 'CL-008-07' to 'TC-009-005';
     dependency CL_010_05_verified_by_TC_007_002 from 'CL-010-05' to 'TC-007-002';
     dependency CL_010_16_verified_by_TC_007_009 from 'CL-010-16' to 'TC-007-009';
+    dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
     dependency CL_010_05_verified_by_TC_009_005 from 'CL-010-05' to 'TC-009-005';
     dependency CL_010_07_verified_by_TC_007_002 from 'CL-010-07' to 'TC-007-002';

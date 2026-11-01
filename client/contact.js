@@ -4,10 +4,13 @@
 const focus=document.querySelector('#rx-focus');
 if(!focus||document.body.dataset.profile!=='true')return;
 const $=id=>document.getElementById(id);
+// #45 CL-045-01: a plain setting, saved on change; it acts at the next station start.
+block('settings-startup','Receive at startup',document.querySelector('#settings-general'),'<label class="op-check"><input type="checkbox" id="monitor-off-startup" disabled>Monitor off at startup</label><p id="startup-result" class="op-muted" role="status"></p><p class="op-muted">Saved at once; it takes effect at the next station start and does not restart receive.</p>');
+block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station (MCP). Its state shows beside the strategy element; HALT ends it. Strategies (Highlight/Auto) arrive with the strategy engine.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each logged QSO is saved in this station profile’s contacts.adi (ADIF). Log QSO opens the log review.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
-block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet (separate change): targets, message selection and accepted commands.</p>');
+block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<h4 id="udp-targets-title">UDP targets</h4><p id="udp-targets" class="op-muted">Not available yet (separate change): targets, message selection and accepted commands.</p>');
 block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet.</p>');
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
@@ -198,6 +201,28 @@ for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',
   if(!Number.isInteger(tx)||!Number.isInteger(tune)){$('watchdog-result').textContent='Watchdogs must be whole numbers';return;}
   await send('set_watchdogs',{tx_minutes:tx,tune_seconds:tune},'Watchdogs');$('watchdog-result').textContent=resultText.textContent;
 });
+let startupView=null,startupLoading=null;
+const resumeText={idle:'Nothing to resume at start',off:'Monitor off at startup',waiting:'Resuming receive',started:'Resumed at start',started_untuned:'Resumed at start on the present dial',skipped:'Resume skipped: receive was already chosen',failed:'Resume failed'};
+function startupShow(){
+  const v=startupView,box=$('monitor-off-startup');box.disabled=!v;if(!v)return;box.checked=v.monitor_off_at_startup;
+  const last=v.last_receive,choice=last?` · last ${[last.band,last.mode.toUpperCase()].filter(Boolean).join(' ')}`:'';
+  $('startup-resume').textContent=`${resumeText[v.resume.state]??v.resume.state}${v.resume.error?` · ${v.resume.error}`:''}${choice}${v.storage_error?` · ${v.storage_error}`:''}`;
+}
+function loadStartup(){
+  if(startupLoading)return startupLoading;
+  startupLoading=stationFetch('/receive/startup',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){startupView=v;startupShow();}}).catch(()=>{}).finally(()=>{startupLoading=null;});
+  return startupLoading;
+}
+$('monitor-off-startup').addEventListener('change',async event=>{
+  const box=event.target,v=startupView;if(!v)return;box.disabled=true;$('startup-result').textContent='Saving';
+  try{
+    const response=await stationFetch('/receive/startup',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,monitor_off_at_startup:box.checked}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1)throw new Error(data?.error?.code||'request_failed');
+    startupView=data;$('startup-result').textContent='Saved';
+  }catch(error){$('startup-result').textContent=`Not saved · ${error.message}`;}
+  startupShow();
+});
 async function logQso(){
   const c=snap?.contact;if(!c?.dx_call)return;
   if(snap.review?.contact_id===c.id&&window.wstxLogbook){window.wstxLogbook.openReview(snap.review.record);return;}
@@ -379,7 +404,7 @@ setInterval(displays,250);
 // same socket does not (contact.state announces every change).
 let readySocket=null;
 // The automation state is read once per socket (then announced by automation.state).
-addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();if(fresh)loadAutomation();});
+addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();if(fresh){loadAutomation();loadStartup();}});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
@@ -393,7 +418,7 @@ addEventListener('station-message',event=>{
   }
 });
 render();
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();}
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();loadStartup();}
 // WstxTransmit::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;
