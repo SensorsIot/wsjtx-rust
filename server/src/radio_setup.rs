@@ -171,6 +171,12 @@ fn read_all(
     (readings, None)
 }
 
+/// USB serial bridges of the model table's radios (Silicon Labs CP210x, VID 10C4 PID EA60).
+pub(crate) const RADIO_BRIDGES: [(&str, &str); 1] = [("10C4", "EA60")];
+fn radio_bridge(port: &PortInfo) -> bool {
+    port.vid_pid()
+        .is_some_and(|(v, p)| RADIO_BRIDGES.iter().any(|(a, b)| v == *a && p == *b))
+}
 /// CL-044-01..03: POST /radio/detect. Read-only; never opens the station's CAT port.
 pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
     let owner = &state.recording.radio_setup;
@@ -236,6 +242,9 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
             }
         } else if started.elapsed() >= DETECT_BUDGET {
             port_state = "not_probed";
+        } else if !radio_bridge(port) {
+            // CL-044-01: only known radio USB bridges are opened; others are manual.
+            port_state = "not_radio_bridge";
         } else {
             let deadline = Instant::now() + PORT_BUDGET;
             match hardware.open(port.port, deadline, &cancel) {
@@ -433,6 +442,7 @@ pub(crate) fn apply(state: &ProfileState, generation: u64) -> Result<Value, &'st
         let existing = Some(&record).filter(|r| !r.items.is_empty());
         return Ok(outcome(state, "apply", Vec::new(), None, existing));
     }
+    let recorded: Vec<String> = record.items.iter().map(|i| i.item.clone()).collect();
     for (setting, old, new) in &plan {
         let item = setting.item_text();
         match record.items.iter_mut().find(|i| i.item == item) {
@@ -454,7 +464,31 @@ pub(crate) fn apply(state: &ProfileState, generation: u64) -> Result<Value, &'st
         .map_err(|_| "storage_unavailable")?;
     let writes: Vec<_> = plan.iter().map(|(s, _, n)| (*s, *n)).collect();
     let (done, failed) = write_all(&actor, &writes);
-    Ok(outcome(state, "apply", done, failed, Some(&record)))
+    if let Some((failed_setting, error)) = failed {
+        // An item not reached is unchanged, and so is one the radio refused (FA) or one
+        // refused before its frame (busy: TX or lease); only
+        // what may have changed stays recorded, so a later undo can restore it all.
+        let written: Vec<String> = done
+            .iter()
+            .filter_map(|v| v["item"].as_str().map(str::to_owned))
+            .collect();
+        let failed_item = failed_setting.item_text();
+        record.items.retain(|i| {
+            recorded.contains(&i.item)
+                || written.contains(&i.item)
+                || (i.item == failed_item && !matches!(error, "radio_rejected" | "busy"))
+        });
+        let mut store = state.store.lock().map_err(|_| "storage_unavailable")?;
+        if record.items.is_empty() {
+            store.remove_document_file(UNDO_FILE)
+        } else {
+            store.write_document_file(UNDO_FILE, &record)
+        }
+        .map_err(|_| "storage_unavailable")?;
+        let kept = Some(&record).filter(|r| !r.items.is_empty());
+        return Ok(outcome(state, "apply", done, failed, kept));
+    }
+    Ok(outcome(state, "apply", done, None, Some(&record)))
 }
 /// CL-044-04 undo: recorded old values in reverse order; the record goes only on success.
 pub(crate) fn undo(state: &ProfileState, generation: u64) -> Result<Value, &'static str> {
@@ -536,6 +570,10 @@ struct Detect {
     v: u64,
     profile_id: String,
     boot_id: String,
+    /// CL-044-01: the operator confirms that USB SEND/keying are OFF (or the radio is on
+    /// a dummy load) before ports are opened: an open can pulse DTR/RTS before they
+    /// are disabled.
+    keying_inhibit_confirmed: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -575,6 +613,9 @@ pub async fn detect_route(
         .and_then(|()| context(&r, &b.profile_id, &b.boot_id))
     {
         return error(e);
+    }
+    if !b.keying_inhibit_confirmed {
+        return error("confirmation_required");
     }
     let Some(state) = app.profile.clone() else {
         return error("not_found");

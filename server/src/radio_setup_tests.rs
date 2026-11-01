@@ -250,6 +250,7 @@ fn apply_refusals_and_failures_stop_without_keying() {
         (Some("failed"), Some("busy"), Some("0078"))
     );
     assert!(menu_writes(&radio).is_empty());
+    assert!(undo_file(&f).is_none(), "nothing changed, nothing recorded");
     assert_eq!(radio_setup::apply(&f.state, g + 1), Err("state_conflict"));
     // Transmitter armed: refused before any exchange.
     radio.lock().unwrap().transmitting = false;
@@ -279,7 +280,18 @@ fn apply_refusals_and_failures_stop_without_keying() {
         menu_writes(&radio),
         [("0078".into(), 0x00), ("0080".into(), 0x00)]
     );
-    assert_eq!(undo_file(&f).unwrap()["items"].as_array().unwrap().len(), 4);
+    // Only the item that may have changed stays recorded: 0080 was refused (FA,
+    // unchanged), 0067 and 0071 were never written.
+    assert_eq!(
+        undo_file(&f).unwrap()["items"],
+        json!([{"item":"0078","old":1,"new":0}])
+    );
+    // Undo then restores it and clears the record.
+    let u = radio_setup::undo(&f.state, generation(&f)).unwrap();
+    assert_eq!(u["result"], "done", "{u}");
+    assert_eq!(menu_writes(&radio)[2..], [("0078".into(), 0x01)]);
+    assert_eq!(radio.lock().unwrap().menu, hb9bla_menu());
+    assert!(undo_file(&f).is_none());
     drop(f);
 
     // Readback of 0067 stays 00.
@@ -450,6 +462,16 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
             port(5, "USB\\HUB\\IC705"),
             port(7, "USB\\HUB\\X"),
             port(8, "USB\\HUB\\Y"),
+            // An FTDI microcontroller board: never opened.
+            PortInfo {
+                port: 9,
+                instance_id: "FTDIBUS\\VID_0403+PID_6001+A1\\0000".into(),
+                friendly_name: Some("USB Serial Port (COM9)".into()),
+                topology: Topology {
+                    usb_device: Some("USB\\VID_0403&PID_6001\\A1".into()),
+                    ..Default::default()
+                },
+            },
         ],
         HashMap::from([(5, (0xa4, 115200))]),
         vec![7],
@@ -467,7 +489,16 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
         .iter()
         .map(|p| p["state"].as_str().unwrap())
         .collect();
-    assert_eq!(states, ["station_cat", "identified", "in_use", "no_reply"]);
+    assert_eq!(
+        states,
+        [
+            "station_cat",
+            "identified",
+            "in_use",
+            "no_reply",
+            "not_radio_bridge"
+        ]
+    );
     let com3 = &v["ports"][0];
     assert_eq!(
         (com3["vid"].as_str(), com3["pid"].as_str()),
@@ -568,7 +599,7 @@ async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let f = fixture("http://127.0.0.1:18046", false);
     let hw = double(vec![], HashMap::new(), vec![]);
     *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
-    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot});
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":true});
     let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body.clone())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(
@@ -578,24 +609,34 @@ async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let other = profile::new_uuid().unwrap();
     let cases = [
         (
-            json!({"v":1,"profile_id":other,"boot_id":f.boot}),
+            json!({"v":1,"profile_id":other,"boot_id":f.boot,"keying_inhibit_confirmed":true}),
             StatusCode::FORBIDDEN,
             "wrong_profile",
         ),
         (
-            json!({"v":1,"profile_id":f.id,"boot_id":other}),
+            json!({"v":1,"profile_id":f.id,"boot_id":other,"keying_inhibit_confirmed":true}),
             StatusCode::CONFLICT,
             "state_conflict",
         ),
         (
-            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"x":1}),
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":true,"x":1}),
             StatusCode::BAD_REQUEST,
             "invalid_request",
         ),
         (
-            json!({"v":2,"profile_id":f.id,"boot_id":f.boot}),
+            json!({"v":2,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":true}),
             StatusCode::BAD_REQUEST,
             "unsupported_version",
+        ),
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot}),
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        ),
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":false}),
+            StatusCode::CONFLICT,
+            "confirmation_required",
         ),
     ];
     for (b, status, code) in cases {
