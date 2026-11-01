@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! WstxMcp::McpEndpoint: the station's MCP Streamable HTTP endpoint (POST /mcp).
 //! Dual-era: modern 2026-07-28 (per-request `_meta`, `server/discover`) and legacy
-//! 2025-11-25/2025-06-18/2025-03-26 (`initialize`, stateless: no Mcp-Session-Id).
+//! 2025-11-25/2025-06-18 (`initialize`, stateless: no Mcp-Session-Id). 2025-03-26 is not
+//! offered: it requires JSON-RPC batches, which this endpoint refuses.
 //! Every tool is one existing versioned station operation, dispatched in-process
 //! through the station router with the caller's validated auth-v1 grant transport;
 //! the adapter keeps no station state, modem, QSO engine or transmit authority.
@@ -14,12 +15,12 @@ use tower::ServiceExt;
 
 pub const BODY_MAX: usize = 8192;
 pub const MODERN: &str = "2026-07-28";
-pub const LEGACY: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
+pub const LEGACY: [&str; 2] = ["2025-11-25", "2025-06-18"];
 /// Station responses carried in one tool result (the largest is a results page).
 const STATION_BYTES_MAX: usize = 65536;
 
 fn supported() -> Value {
-    json!([MODERN, LEGACY[0], LEGACY[1], LEGACY[2]])
+    json!([MODERN, LEGACY[0], LEGACY[1]])
 }
 fn rpc_error(
     status: StatusCode,
@@ -412,7 +413,10 @@ pub async fn endpoint(
             .into_response();
         }
         None => {
-            let version = header_version.unwrap_or("2025-03-26");
+            // Both supported legacy versions send the header after initialize.
+            let Some(version) = header_version else {
+                return rpc_error(StatusCode::BAD_REQUEST, id, -32020, "Header mismatch", None);
+            };
             if version == MODERN {
                 return rpc_error(StatusCode::BAD_REQUEST, id, -32020, "Header mismatch", None);
             }

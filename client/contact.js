@@ -110,6 +110,20 @@ function render(){
 // Compact transmit state in the station bar, visible in every region (review decision 5).
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
 document.querySelector('#halt-tx')?.before(stationTxNode);
+// WstxMcp::AutomationIndicator: a running automation (waiting or in a contact) is always
+// visible in the station bar; read-only, Halt Tx ends it.
+const automationNode=document.createElement('span');automationNode.id='station-automation';automationNode.className='ct-station-tx';automationNode.setAttribute('role','status');automationNode.hidden=true;
+stationTxNode.before(automationNode);
+let automationLoading=null;
+function loadAutomation(){
+  if(automationLoading)return automationLoading;
+  automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
+    const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
+    automationNode.hidden=!active;
+    automationNode.textContent=active?`Automation ${run.state==='waiting'?'waiting':'in contact'} · run ${String(run.id).slice(0,8)} · Halt ends it`:'';
+  }).catch(()=>{}).finally(()=>{automationLoading=null;});
+  return automationLoading;
+}
 function stationTx(){
   const t=snap?.transmit,capable=transmitCapable();stationTxNode.hidden=!capable;if(!capable)return;
   const wd=snap.watchdog,armed=t.arm_state==='armed';
@@ -284,6 +298,7 @@ addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
   const d=message.data;
   if(message.type==='contact.state'&&d&&(!snap||d.contact_revision!==snap.contact_revision||d.boot_id!==snap.boot_id))load();
+  else if(message.type==='automation.state'&&d)loadAutomation();
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;
     tick={utc:d.utc_ms,at:performance.now(),period:d.period_ms,transmitting:d.transmitting===true,level:Number.isInteger(d.rx_level_db)?d.rx_level_db:null};$('contact-tx').max=d.period_ms===7500?'2916':'2950';

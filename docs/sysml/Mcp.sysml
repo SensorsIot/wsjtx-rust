@@ -14,9 +14,10 @@ package WstxMcp {
             child process whose exit (Claude Code may kill stdio children within 300 ms on
             Windows) would own station lifecycle, and needs no lease custody or delegated
             renewal: station state, grant and transmit authority stay in the station.
-         D2 Eras: modern 2026-07-28 and legacy 2025-11-25 (also 2025-06-18, 2025-03-26),
-            both stateless with JSON responses; no SSE, sessions, subscriptions, sampling,
-            elicitation, resources or prompts.
+         D2 Eras: modern 2026-07-28 and legacy 2025-11-25 (also 2025-06-18), both
+            stateless with JSON responses; no SSE, sessions, subscriptions, sampling,
+            elicitation, resources or prompts. 2025-03-26 is not offered: it requires
+            JSON-RPC batches, which this endpoint refuses (review finding 6).
          D3 Authorization: the auth-v1 grant model of CL-022-01 unchanged. An MCP client
             enrolls its own P-256 key with the bootstrap token like a browser and proves
             it for a grant transport, presented as Authorization: Bearer. No new credential
@@ -33,7 +34,12 @@ package WstxMcp {
          D6 Selection: only plain CQ from a resolved call of the latest completed receive
             publication; three explicit rankings; no worked-before filter, directed CQ,
             CQ calling or attempt counter in this CR (max_unanswered_periods and
-            max_contacts bound a run; the Tx watchdog stays in force unchanged). */
+            max_contacts bound a run; the Tx watchdog stays in force unchanged).
+         D7 Run lifetime (supervisor decision on the #12 review, 2026-11-01): a run lives no
+            longer than the starting request's grant transport (its 8 h deadline, a newer
+            proof of the grant, revocation or a safety edit stop it authority_lost) and no
+            longer than max_run_minutes (default 120, 1..480; stop time_limit). A running
+            automation is shown read-only in the browser station bar (AutomationIndicator). */
 
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";
@@ -52,8 +58,8 @@ package WstxMcp {
     }
     attribute def ProtocolEras {
         attribute modern : String = "2026-07-28";
-        attribute legacy : String[3];
-        doc /* legacy = 2025-11-25, 2025-06-18, 2025-03-26; supported list in this order:
+        attribute legacy : String[2];
+        doc /* legacy = 2025-11-25, 2025-06-18; supported list in this order:
              modern then legacy. Modern: a request whose params._meta carries
              io.modelcontextprotocol/protocolVersion; another value is 400 -32022 with
              data {supported, requested}; MCP-Protocol-Version must equal it, Mcp-Method the
@@ -64,7 +70,7 @@ package WstxMcp {
              unknown tool or non-object arguments 400 -32602. Legacy: initialize answers
              {protocolVersion (the requested legacy version, else 2025-11-25),
              capabilities, serverInfo, instructions} statelessly; later requests use the
-             MCP-Protocol-Version header (absent: 2025-03-26); another value 400 -32022,
+             MCP-Protocol-Version header (absent: 400 -32020); another value 400 -32022,
              the modern value without _meta 400 -32020; JSON-RPC errors of known requests
              are HTTP 200 and results carry no resultType. Era handling never changes
              station idempotency: the JSON-RPC id is correlation only. */
@@ -123,13 +129,17 @@ package WstxMcp {
         attribute maxContacts : Integer;
         attribute maxUnansweredPeriods : Integer;
         attribute completionAction : CompletionAction;
+        attribute maxRunMinutes : Integer = 120;
+        assert constraint runLimit { maxRunMinutes >= 1 and maxRunMinutes <= 480 }
         assert constraint contactLimit { maxContacts >= 1 and maxContacts <= 100 }
         assert constraint answerLimit { maxUnansweredPeriods >= 1 and maxUnansweredPeriods <= 20 }
         doc /* Wire keys exactly modes, ranking, min_snr_db, allowed_calls, blocked_calls,
-             max_contacts, max_unanswered_periods, completion_action, all required; null
-             is the unconfigured state. modes: nonempty unique subset of ft8, ft4.
-             min_snr_db null or integer -50..49. Calls: unique, 3..13 of A-Z, 0-9, /,
-             at most 16 per list, never in both. No default policy is filled in. */
+             max_contacts, max_unanswered_periods, completion_action, all required, and
+             max_run_minutes, optional (absent: 120; D7); null is the unconfigured state;
+             the snapshot always shows max_run_minutes. modes: nonempty unique subset of
+             ft8, ft4. min_snr_db null or integer -50..49. Calls: unique, 3..13 of A-Z,
+             0-9, /, at most 16 per list, never in both. No default selection policy is
+             filled in. */
     }
     attribute def CandidateSelection {
         doc /* Input: the records [first_sequence, next_sequence) of the latest receive
@@ -149,36 +159,53 @@ package WstxMcp {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
         enum context_changed; enum transmit_refused; enum provider_error;
+        enum time_limit;
     }
     attribute def OperatingAutomation {
         attribute runState : RunState;
         attribute stopReason : StopReason[0..1];
         doc /* One owner per station beside the contact engine; one run at a time. Start
              captures the configuration, mode, live identity (source, job, generation),
-             the request's current grant, its safety revision and the station's HaltTransmit
-             count, and the latest publication id (earlier publications are never used).
+             the request's grant and its grant transport (memory only), the station's
+             current safety revision (equal to the start's), the HaltTransmit count, the
+             run deadline (start + max_run_minutes) and the latest publication id (earlier
+             publications are never used).
              Each station step (after the contact step, with the publication descriptor
-             read before it): any HaltTransmit since start (browser button, Esc or MCP)
-             stops halted; a different live identity, live mode or operating mode stops
-             context_changed; a grant no longer current stops authority_lost; a contact
-             armed by the run is disarmed (Enable Tx off, never a Halt) on these and on
-             contact_changed and no_answer.
-             waiting: on a fresh publication record last_decision {period_start_utc,
-             candidates, selected_call}; with a candidate send ContactCommand select_row
-             {row, replace false} then enable_tx {enabled true, safety_revision} with the
-             grant; refusal of the first stops provider_error, of the second
-             transmit_refused; success: contact_active with that contact.
-             contact_active: contact gone or replaced stops contact_changed (disarm);
-             completed adds the call to the run's worked list and counts it; reaching
-             max_contacts stops limit_reached, completion_action stop stops completed,
-             else waiting; cancelled or idle stops contact_changed; not armed stops
-             transmit_stopped; each fresh publication without a change of (state,
-             report_rcvd) since the selection or the last change counts unanswered, at
-             max_unanswered_periods stop no_answer.
-             A run never starts over a contact in progress (calling..signoff), without Auto
-             Seq (not_ready auto_seq), without a live job of its mode or a station operating
-             mode equal to it (not_ready receive/mode), or without a grant
-             (transmit_unavailable). Stopped runs stay visible until the next start. */
+             read before it), in this order: any HaltTransmit since start (browser button,
+             Esc or MCP) stops halted; a different live identity, live mode or operating
+             mode stops context_changed; the starting transport no longer this grant's
+             current unexpired transport stops authority_lost; the run deadline stops
+             time_limit; a contact armed by the run is disarmed (Enable Tx off, never a
+             Halt) on these and on contact_changed (run's contact gone or replaced) and
+             no_answer.
+             waiting: a contact calling or in progress that the run did not create (an
+             operator's CQ or contact) stops contact_changed and is left as it is; on a
+             fresh publication record last_decision {period_start_utc, candidates,
+             selected_call}; with a candidate send ContactCommand select_row {row, replace
+             false} then enable_tx {enabled true, safety_revision} with the grant. Refusal
+             of select_row stops provider_error; refusal of enable_tx cancels the selected
+             contact and stops transmit_refused. After an accepted enable_tx the HaltTransmit
+             count is read again; a Halt since start (one that raced the arming) is answered
+             with a new HaltTransmit, never only a disarm, and stops halted. Otherwise
+             contact_active with that contact.
+             contact_active: completed adds the call to the run's worked list and counts it;
+             reaching max_contacts stops limit_reached, completion_action stop stops
+             completed, else waiting; cancelled or idle stops contact_changed; not armed
+             stops transmit_stopped; each fresh publication of the partner's period parity
+             (the opposite of the contact's own; unknown period: not counted) without a
+             change of (state, report_rcvd) since the selection or the last change counts
+             unanswered, at max_unanswered_periods stop no_answer.
+             Stopped runs stay visible until the next start. */
+    }
+    attribute def AutomationIndicator {
+        doc /* Browser station bar, read-only, beside the transmit state: while a run is
+             waiting or in a contact it shows "Automation waiting" or "Automation in
+             contact", the first 8 characters of the run id and "Halt ends it"; hidden
+             otherwise. The station sends automation.state {profile_id, boot_id,
+             policy_revision, run_revision} (an optional write paced with contact.state)
+             after each change since boot, also once to a peer that subscribes while
+             either revision is nonzero; the browser then reads GET /automation. No event
+             or request while automation is never used. */
     }
     attribute def AutomationWire {
         attribute receiptsRetained : Integer = 16;
@@ -198,8 +225,11 @@ package WstxMcp {
              state_conflict command_id. configure: stale_revision on
              expected_policy_revision, state_conflict run while a run is active, then
              policy_revision + 1. start: stale_revision on either revision, state_conflict
-             run, not_configured, not_ready mode/receive/auto_seq, state_conflict contact,
-             transmit_unavailable; then run_revision + 1 and a new run id. stop: a current
+             run, not_configured, not_ready mode (configuration), not_ready receive,
+             not_ready mode (live job or operating mode), not_ready auto_seq,
+             state_conflict contact, transmit_unavailable (no grant transport, no transmit
+             owner or no current safety revision), stale_revision safety_revision; then
+             run_revision + 1 and a new run id. stop: a current
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,
              then the run's contact is disarmed. Accepted: 202 {v:1, profile_id, boot_id,
              command_id, accepted:true, policy_revision, run_revision, run_id, state

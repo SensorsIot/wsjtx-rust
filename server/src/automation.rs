@@ -31,7 +31,10 @@ impl Ranking {
         }
     }
 }
-/// WstxMcp::AutomationConfiguration (every key required, no defaults).
+/// The run duration when the configuration omits max_run_minutes (D7).
+pub const RUN_MINUTES_DEFAULT: u64 = 120;
+/// WstxMcp::AutomationConfiguration (every policy key required; only the run duration
+/// bound has a default).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Config {
     pub modes: Vec<&'static str>,
@@ -42,13 +45,15 @@ pub(crate) struct Config {
     pub max_contacts: u64,
     pub max_unanswered: u64,
     pub next_candidate: bool,
+    pub max_run_minutes: u64,
 }
 impl Config {
     fn json(&self) -> Value {
         json!({"modes":self.modes,"ranking":self.ranking.name(),"min_snr_db":self.min_snr_db,
             "allowed_calls":self.allowed,"blocked_calls":self.blocked,"max_contacts":self.max_contacts,
             "max_unanswered_periods":self.max_unanswered,
-            "completion_action":if self.next_candidate {"next_candidate"} else {"stop"}})
+            "completion_action":if self.next_candidate {"next_candidate"} else {"stop"},
+            "max_run_minutes":self.max_run_minutes})
     }
 }
 type Refusal = (&'static str, Option<&'static str>);
@@ -98,7 +103,8 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
         "completion_action",
     ];
     let o = v.as_object().ok_or(bad("configuration"))?;
-    if o.len() != keys.len() || !keys.iter().all(|k| o.contains_key(*k)) {
+    let optional = usize::from(o.contains_key("max_run_minutes"));
+    if o.len() != keys.len() + optional || !keys.iter().all(|k| o.contains_key(*k)) {
         return Err(bad("configuration"));
     }
     let mut modes = Vec::new();
@@ -153,6 +159,10 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
             1..=20,
         )?,
         next_candidate,
+        max_run_minutes: match o.get("max_run_minutes") {
+            None => RUN_MINUTES_DEFAULT,
+            Some(m) => bounded(m, "max_run_minutes", 1..=480)?,
+        },
     }))
 }
 
@@ -266,6 +276,10 @@ struct Run {
     config: Config,
     identity: (String, String, u64),
     access: authorization::Access,
+    /// The starting request's grant transport (memory only, never serialized): the run
+    /// lives no longer than it (D7).
+    token: String,
+    deadline: Instant,
     safety_revision: u64,
     halts: u64,
     last_decode: u64,
@@ -289,11 +303,18 @@ struct Inner {
 #[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
+    /// Test seam: added to the monotonic clock of every automation step.
+    #[cfg(test)]
+    pub(crate) skew: Mutex<Duration>,
+    /// Test seam: runs between select_row and enable_tx (a racing Halt).
+    #[cfg(test)]
+    pub(crate) before_enable: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The descriptor of the latest receive publication, read before the contact step so
 /// that the engine has already consumed every record of a publication it reports.
-pub(crate) type Publication = Option<(u64, u64, u64, bool)>;
+/// (id, first_sequence, next_sequence, complete, period_start_utc).
+pub(crate) type Publication = Option<(u64, u64, u64, bool, Option<String>)>;
 
 fn refusal(code: &str, field: Option<&str>) -> Response {
     let status = match code {
@@ -315,6 +336,31 @@ fn owner(r: &recording::Recording) -> Result<Arc<contact_http::Station>, &'stati
 impl Owner {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    fn now(&self) -> Instant {
+        #[cfg(test)]
+        let skew = *self.skew.lock().unwrap_or_else(|p| p.into_inner());
+        #[cfg(not(test))]
+        let skew = Duration::ZERO;
+        Instant::now() + skew
+    }
+    #[cfg(test)]
+    fn before_enable(&self) {
+        let hook = self
+            .before_enable
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+    #[cfg(not(test))]
+    fn before_enable(&self) {}
+    /// (policy_revision, run_revision): the automation.state event cursor.
+    pub(crate) fn revisions(&self) -> (u64, u64) {
+        let inner = self.lock();
+        (inner.policy_revision, inner.run_revision)
     }
     /// AutomationSnapshot.
     pub(crate) fn snapshot(&self, r: &recording::Recording) -> Value {
@@ -340,7 +386,7 @@ impl Owner {
         &self,
         state: &ProfileState,
         body: Value,
-        access: Option<authorization::Access>,
+        access: Option<(authorization::Access, String)>,
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
         let o = body.as_object().ok_or(("invalid_request", None))?;
@@ -459,9 +505,6 @@ impl Owner {
                 if !config.modes.contains(&mode) {
                     return Err(("not_ready", Some("mode")));
                 }
-                // Transmit authority: a current CL-022 grant of this request (no grant,
-                // no automation); the grant is rechecked at every automation step.
-                let access = access.ok_or(("transmit_unavailable", None))?;
                 let (source, job, generation, live_mode) =
                     r.live_identity().ok_or(("not_ready", Some("receive")))?;
                 if live_mode != mode || r.operating_mode() != mode {
@@ -474,12 +517,25 @@ impl Owner {
                 if facts.as_ref().is_some_and(|c| c.active) {
                     return Err(("state_conflict", Some("contact")));
                 }
+                // Transmit authority: a current CL-022 grant transport of this request
+                // (no grant, no automation), rechecked at every automation step.
+                let (access, token) = access.ok_or(("transmit_unavailable", None))?;
                 let transmit = r.transmit.get().ok_or(("transmit_unavailable", None))?;
+                // The safety revision the operator acknowledged must be the current one,
+                // so a run never selects a contact it then cannot arm.
+                let current = transmit
+                    .service
+                    .with(|c| c.hardware().context().safety_revision)
+                    .ok_or(("transmit_unavailable", None))?;
+                if body["safety_revision"].as_u64() != Some(current) {
+                    return Err(("stale_revision", Some("safety_revision")));
+                }
                 if inner.run_revision >= MAX_SAFE {
                     return Err(("counter_exhausted", None));
                 }
                 let id = profile::new_uuid().map_err(|_| ("storage_unavailable", None))?;
                 let last_decode = r.latest_publication().map_or(0, |p| p.0);
+                let deadline = self.now() + Duration::from_secs(config.max_run_minutes * 60);
                 inner.run = Some(Run {
                     id,
                     state: RunState::Waiting,
@@ -488,7 +544,9 @@ impl Owner {
                     config,
                     identity: (source, job, generation),
                     access,
-                    safety_revision: body["safety_revision"].as_u64().unwrap_or(0),
+                    token,
+                    deadline,
+                    safety_revision: current,
                     halts: transmit.service.halt_requests(),
                     last_decode,
                     completed: 0,
@@ -571,17 +629,21 @@ impl Owner {
         {
             return stop(&mut inner, "context_changed", armed);
         }
-        if !grant_current(state, &run.access) {
+        let now = self.now();
+        if !grant_current(state, &run.access, &run.token, now) {
             return stop(&mut inner, "authority_lost", armed);
+        }
+        if now >= run.deadline {
+            return stop(&mut inner, "time_limit", armed);
         }
         let fresh = publication
             .filter(|p| p.3 && p.0 > run.last_decode)
-            .map(|p| (p.0, p.1, p.2));
+            .map(|p| (p.0, p.1, p.2, p.4));
         let (_, facts, _) = contact.facts();
         let arm = r.transmit.get().map(|t| t.service.view().arm_state);
         let run = inner.run.as_mut().expect("checked");
-        if let Some((id, _, _)) = fresh {
-            run.last_decode = id;
+        if let Some((id, _, _, _)) = &fresh {
+            run.last_decode = *id;
         }
         match run.state {
             RunState::ContactActive => {
@@ -616,7 +678,11 @@ impl Owner {
                 if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
                     return stop(&mut inner, "transmit_stopped", false);
                 }
-                if fresh.is_some() {
+                // Only a publication of the partner's period parity can answer.
+                let partner = fresh.as_ref().and_then(|f| f.3.as_deref()).and_then(contact::parse_utc).is_some_and(|ms| {
+                    wstx_rust::transmit::parity(contact_http::mode_of(run.mode), ms) != c.parity
+                });
+                if partner {
                     let progress = (c.state.to_owned(), c.report_rcvd);
                     if run.progress.as_ref() == Some(&progress) {
                         run.unanswered += 1;
@@ -631,7 +697,11 @@ impl Owner {
                 }
             }
             RunState::Waiting => {
-                let Some((_, first, next)) = fresh else {
+                // An operator's CQ or contact in progress is never taken over.
+                if facts.as_ref().is_some_and(|c| c.active) {
+                    return stop(&mut inner, "contact_changed", false);
+                }
+                let Some((_, first, next, _)) = fresh else {
                     return;
                 };
                 let my = contact_http::my_call(state).unwrap_or_default();
@@ -676,6 +746,7 @@ impl Owner {
                     return stop(&mut inner, "provider_error", false);
                 };
                 let revision = receipt["contact_revision"].as_u64().unwrap_or(revision);
+                self.before_enable();
                 let enabled = contact.operate(
                     state,
                     contact_body(
@@ -687,7 +758,21 @@ impl Owner {
                     true,
                 );
                 if enabled.is_err() {
+                    // No unarmed selected contact is left behind.
+                    cancel(contact, state);
                     return stop(&mut inner, "transmit_refused", false);
+                }
+                // A Halt that raced the arming wins: halt again (not merely disarm), so
+                // an Enable Tx admitted after the operator's Halt never keys.
+                let halts = r.transmit.get().map(|t| t.service.halt_requests());
+                if halts != Some(run.halts) {
+                    if let (Some(t), Ok(id)) = (r.transmit.get(), profile::new_uuid()) {
+                        t.service.halt(&id);
+                    }
+                    let current = r.transmit.get().map(|t| t.service.halt_requests());
+                    let run = inner.run.as_mut().expect("checked");
+                    run.halts = current.unwrap_or(run.halts);
+                    return stop(&mut inner, "halted", false);
                 }
                 // Progress is measured from the prepared contact: the next publication
                 // without a partner step already counts as unanswered.
@@ -703,6 +788,13 @@ impl Owner {
         }
     }
 }
+/// automation.state: announces a policy or run change; the browser then reads GET
+/// /automation for its station-bar indicator.
+pub(crate) fn state_event(r: &recording::Recording, (policy, run): (u64, u64)) -> String {
+    json!({"v":1,"type":"automation.state","data":{"profile_id":r.profile,"boot_id":r.boot,
+        "policy_revision":policy,"run_revision":run}})
+    .to_string()
+}
 fn contact_body(r: &recording::Recording, revision: u64, action: &str, extra: Value) -> Value {
     let mut b = json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
         "command_id":profile::new_uuid().unwrap_or_default(),"contact_revision":revision,"action":action});
@@ -710,6 +802,12 @@ fn contact_body(r: &recording::Recording, revision: u64, action: &str, extra: Va
         o.extend(e.clone());
     }
     b
+}
+/// Contact cancel through the same contact command path.
+fn cancel(contact: &contact_http::Station, state: &ProfileState) {
+    let (revision, _, _) = contact.facts();
+    let body = contact_body(&state.recording, revision, "cancel", json!({}));
+    let _ = contact.operate(state, body, false);
 }
 /// Enable Tx off through the same contact command path (never a Halt).
 fn disarm(contact: &contact_http::Station, state: &ProfileState) {
@@ -722,11 +820,15 @@ fn disarm(contact: &contact_http::Station, state: &ProfileState) {
     );
     let _ = contact.operate(state, body, false);
 }
-fn grant_current(state: &ProfileState, access: &authorization::Access) -> bool {
+/// The starting transport is still this grant's current, unexpired transport (a
+/// revocation, safety edit, expiry or a newer proof of the grant ends it).
+fn grant_current(state: &ProfileState, access: &authorization::Access, token: &str, now: Instant) -> bool {
     state.authorization.lock().ok().is_some_and(|owner| {
-        owner
-            .as_ref()
-            .is_some_and(|s| s.authority.current_grant(access).is_ok())
+        owner.as_ref().is_some_and(|s| {
+            s.authority
+                .access(token, &access.scope.https_origin, now)
+                .is_ok_and(|current| current.grant_id == access.grant_id)
+        })
     })
 }
 
@@ -768,7 +870,8 @@ pub async fn command(
     let access = authorization_http::operating_access_async(&headers, &app)
         .await
         .ok()
-        .flatten();
+        .flatten()
+        .zip(authorization_http::transport_token(&headers, &app));
     let (Ok(contact), Some(state)) = (owner(&r), app.profile.clone()) else {
         return refusal("not_found", None);
     };

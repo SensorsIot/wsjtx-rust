@@ -22,6 +22,8 @@ pub(crate) struct Mcp {
     pub(crate) bench: Bench,
     pub(crate) token: String,
     pub(crate) scope: authorization::WireScope,
+    key: Option<ring::signature::EcdsaKeyPair>,
+    gid: String,
 }
 pub(crate) struct Reply {
     pub(crate) status: StatusCode,
@@ -86,6 +88,8 @@ pub(crate) async fn station(transmit: bool) -> Mcp {
             radio_id: String::new(),
             safety_revision: 0,
         },
+        key: None,
+        gid: String::new(),
     };
     f.enroll().await;
     f
@@ -141,11 +145,41 @@ impl Mcp {
         .await
     }
     async fn enroll(&mut self) {
-        let (token, scope) = self.grant().await;
-        self.token = token;
+        let (scope, key, gid) = self.grant().await;
         self.scope = scope;
+        self.key = Some(key);
+        self.gid = gid;
+        self.renew().await;
     }
-    async fn grant(&self) -> (String, authorization::WireScope) {
+    /// A fresh proof of the retained key: a new transport replaces this grant's old one.
+    pub(crate) async fn renew(&mut self) {
+        let origin = self.app.origin.clone();
+        let h = vec![
+            ("origin", origin.clone()),
+            ("content-type", "application/json".to_string()),
+        ];
+        let body = json!({"version":1,"grant_id":self.gid});
+        let r = self
+            .http("POST", "/authorization/v1/challenge", &h, Some(serde_json::to_vec(&body).unwrap()))
+            .await;
+        let nonce = r.json["nonce"].as_str().unwrap().to_owned();
+        let signed = self.scope.clone().in_validated_origin(&origin).unwrap();
+        let signature = authorization::authorization_tests::peer_sign(
+            self.key.as_ref().unwrap(),
+            &signed,
+            &self.gid,
+            &nonce,
+            None,
+        );
+        let body = json!({"version":1,"grant_id":self.gid,"nonce":nonce,"signature":signature});
+        let r = self
+            .http("POST", "/authorization/v1/proof", &h, Some(serde_json::to_vec(&body).unwrap()))
+            .await;
+        assert_eq!(r.status, StatusCode::NO_CONTENT);
+        let cookie = r.headers[header::SET_COOKIE].to_str().unwrap();
+        self.token = cookie.split(';').next().unwrap().split_once('=').unwrap().1.to_owned();
+    }
+    async fn grant(&self) -> (authorization::WireScope, ring::signature::EcdsaKeyPair, String) {
         let me = self;
         let origin = self.app.origin.clone();
         let base = |cookie: Option<String>| {
@@ -205,24 +239,7 @@ impl Mcp {
         )
         .await;
         assert_eq!(r.json["outcome"], "committed", "{}", r.json);
-        let r = post(
-            "/authorization/v1/challenge",
-            json!({"version":1,"grant_id":gid}),
-            None,
-        )
-        .await;
-        let nonce = r.json["nonce"].as_str().unwrap().to_owned();
-        let signed = scope.clone().in_validated_origin(&origin).unwrap();
-        let signature =
-            authorization::authorization_tests::peer_sign(&key, &signed, &gid, &nonce, None);
-        let r = post(
-            "/authorization/v1/proof",
-            json!({"version":1,"grant_id":gid,"nonce":nonce,"signature":signature}),
-            None,
-        )
-        .await;
-        assert_eq!(r.status, StatusCode::NO_CONTENT);
-        (set_cookie(&r).split_once('=').unwrap().1.to_owned(), scope)
+        (scope, key, gid)
     }
     /// A modern (2026-07-28) request with its mirrored headers and the bearer.
     pub(crate) async fn modern(&self, method: &str, mut params: Value) -> Reply {
@@ -310,7 +327,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     assert_eq!(d.status, StatusCode::OK);
     assert_eq!(
         d.json["result"]["supportedVersions"],
-        json!(["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"])
+        json!(["2026-07-28", "2025-11-25", "2025-06-18"])
     );
     assert_eq!(
         d.json["result"]["capabilities"],
@@ -599,6 +616,24 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         (StatusCode::BAD_REQUEST, Some(-32022)),
         "unsupported legacy version"
     );
+    // 2025-03-26 (which needs batches) is not offered: a legacy request without the
+    // version header and the 2025-03-26 header are both refused.
+    for version in [None, Some("2025-03-26")] {
+        let mut h = vec![
+            ("content-type", "application/json".to_string()),
+            ("authorization", format!("Bearer {}", f.token)),
+        ];
+        if let Some(v) = version {
+            h.push(("mcp-protocol-version", v.to_string()));
+        }
+        let r = f.http("POST", "/mcp", &h, body(&list)).await;
+        let expected = if version.is_some() { -32022 } else { -32020 };
+        assert_eq!(
+            (r.status, code(&r)),
+            (StatusCode::BAD_REQUEST, Some(expected)),
+            "{version:?}"
+        );
+    }
     // Modern era: version, mirrored headers, unknown method/tool.
     let modern = |version: &str,
                   header_method: &str,
@@ -631,7 +666,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
     );
     assert_eq!(
         r.json["error"]["data"],
-        json!({"supported":["2026-07-28","2025-11-25","2025-06-18","2025-03-26"],"requested":"1900-01-01"})
+        json!({"supported":["2026-07-28","2025-11-25","2025-06-18"],"requested":"1900-01-01"})
     );
     let r = modern("2026-07-28", "tools/call", None, "tools/list", json!({})).await;
     assert_eq!(

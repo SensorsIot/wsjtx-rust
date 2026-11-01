@@ -83,8 +83,10 @@ pub(crate) struct Facts {
     pub dx_call: Option<String>,
     pub report_rcvd: Option<i32>,
     pub active: bool,
+    /// The engine's own transmit period parity.
+    pub parity: Parity,
 }
-fn mode_of(text: &str) -> decoder::Mode {
+pub(crate) fn mode_of(text: &str) -> decoder::Mode {
     if text == "ft4" {
         decoder::Mode::Ft4
     } else {
@@ -177,6 +179,7 @@ impl Station {
             dx_call: c.dx_call.clone(),
             report_rcvd: c.report_rcvd,
             active: c.state.active() || c.state == contact::State::Calling,
+            parity: e.settings.parity,
         });
         (e.revision, facts, e.settings.auto_seq)
     }

@@ -148,6 +148,11 @@ fn cookie(headers: &HeaderMap, name: &str) -> Result<String, Error> {
     }
     found.ok_or(Error::Unauthorized)
 }
+/// The grant transport handle of a selected HTTPS profile request (cookie), for an owner
+/// that must outlive the request no longer than that transport (WstxMcp D7).
+pub(crate) fn transport_token(headers: &HeaderMap, app: &App) -> Option<String> {
+    cookie(headers, &cookie_name(app)).ok()
+}
 /// Operating HTTP/WS authority. A selected HTTPS profile requires its durable grant
 /// transport, validated (scope, grant, current revocation generation) under the one
 /// authority lock; a plaintext profile keeps the runtime-token contract with no grant.

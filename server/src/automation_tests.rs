@@ -119,6 +119,7 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
         ),
         (Ranking::StrongestSnr, 2, 5, true)
     );
+    assert_eq!(ok.max_run_minutes, 120, "only the run duration bound has a default (D7)");
     let calls16: Vec<String> = (0..16).map(|i| format!("K{i}AAA")).collect();
     let mut edge = config_json();
     edge["allowed_calls"] = json!(calls16);
@@ -126,7 +127,11 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
     edge["max_contacts"] = json!(100);
     edge["max_unanswered_periods"] = json!(20);
     edge["modes"] = json!(["ft4", "ft8"]);
+    edge["max_run_minutes"] = json!(480);
     assert!(parse_config(&edge).is_ok(), "upper bounds admitted");
+    let mut low = config_json();
+    low["max_run_minutes"] = json!(1);
+    assert_eq!(parse_config(&low).unwrap().unwrap().max_run_minutes, 1);
     let calls17: Vec<String> = (0..17).map(|i| format!("K{i}AAA")).collect();
     for (key, value, field) in [
         ("modes", json!([]), "modes"),
@@ -149,6 +154,9 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
             "max_unanswered_periods",
         ),
         ("completion_action", json!("loop"), "completion_action"),
+        ("max_run_minutes", json!(0), "max_run_minutes"),
+        ("max_run_minutes", json!(481), "max_run_minutes"),
+        ("max_run_minutes", json!("120"), "max_run_minutes"),
     ] {
         let mut c = config_json();
         c[key] = value.clone();
@@ -184,6 +192,14 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
 fn at_even(f: &Mcp) -> i64 {
     let e = (now_ms().div_euclid(30_000) + 4) * 30_000;
     f.bench.offset.store(e + 1000 - now_ms(), Ordering::SeqCst);
+    e
+}
+/// The next even period after the bench's current UTC, the bench set 1 s after it.
+fn next_even(f: &Mcp) -> i64 {
+    let e = (f.bench.now_utc_ms().div_euclid(30_000) + 1) * 30_000;
+    f.bench
+        .offset
+        .fetch_add(e + 1000 - f.bench.now_utc_ms(), Ordering::SeqCst);
     e
 }
 fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
@@ -531,9 +547,16 @@ async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm(
         "W1AW",
         "first seen"
     );
+    // Only the partner's (even) periods can answer: the own odd period is not counted.
     publish(&f, e + 15_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
-    assert_eq!(run_state(&f).await.0, "contact_active");
+    let a = f.read("automation").await["run"].clone();
+    assert_eq!((a["state"].clone(), a["unanswered_periods"].clone()), (json!("contact_active"), json!(0)));
     publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1000.0, Some(0.0))]);
+    let a = f.read("automation").await["run"].clone();
+    assert_eq!((a["state"].clone(), a["unanswered_periods"].clone()), (json!("contact_active"), json!(1)));
+    publish(&f, e + 45_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
+    assert_eq!(run_state(&f).await.0, "contact_active", "own period again not counted");
+    publish(&f, e + 60_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
     assert_eq!(run_state(&f).await, ("stopped".into(), json!("no_answer")));
     assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
     // A new live job (receive context) ends a running contact and disarms it.
@@ -541,7 +564,7 @@ async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm(
     let a = f.read("automation").await;
     let s = automation(&f, "start", json!({"expected_policy_revision":a["policy_revision"],"expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":3})).await;
     assert_eq!(s["status"], 202, "{s}");
-    publish(&f, e + 60_000, &[("CQ K1ABC FN42", 1500.0, Some(9.0))]);
+    publish(&f, e + 90_000, &[("CQ K1ABC FN42", 1500.0, Some(9.0))]);
     assert_eq!(f.read("contact").await["transmit"]["arm_state"], "armed");
     f.state.recording.fixture_live_job("ft8");
     f.tick();
@@ -557,7 +580,7 @@ async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm(
     assert_eq!(s["status"], 202, "{s}");
     let r = f.browser("POST", "/authorization/v1/revoke", Some(json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":f.scope,"all_for_radio":false}))).await;
     assert_eq!(r.json["outcome"], "committed", "{}", r.json);
-    publish(&f, e + 90_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
+    publish(&f, e + 120_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
     let snapshot = f
         .state
         .recording
@@ -626,4 +649,222 @@ async fn tc_020_003_ft4_uses_the_same_policy_and_mode_mismatch_is_not_ready() {
         (json!("W1AW"), json!("rr73"), json!("armed")),
         "{c}"
     );
+}
+
+/// One complete responder contact with `call` from its CQ at even period `e`.
+async fn complete_contact(f: &Mcp, e: i64, call: &str) {
+    publish(f, e, &[(&format!("CQ {call} FN31"), 900.0, Some(-3.0))]);
+    assert_eq!(f.read("contact").await["contact"]["dx_call"], call);
+    publish(f, e + 30_000, &[(&format!("HB9BLA {call} -05"), 905.0, Some(-6.0))]);
+    publish(f, e + 60_000, &[(&format!("HB9BLA {call} RR73"), 905.0, Some(-6.0))]);
+    assert_eq!(f.read("contact").await["contact"]["state"], "signoff");
+    transmit_own_period(f, e + 15_000).await;
+    assert_eq!(f.read("contact").await["contact"]["state"], "completed");
+}
+async fn start_again(f: &Mcp) -> Value {
+    let a = f.read("automation").await;
+    let s = automation(f, "start", json!({"expected_policy_revision":a["policy_revision"],
+        "expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":3})).await;
+    assert_eq!(s["status"], 202, "{s}");
+    s
+}
+async fn reconfigure(f: &Mcp, cfg: Value) {
+    let a = f.read("automation").await;
+    let c = automation(f, "configure", json!({"expected_policy_revision":a["policy_revision"],"configuration":cfg})).await;
+    assert_eq!(c["status"], 202, "{c}");
+}
+fn halts(f: &Mcp) -> u64 {
+    f.state.recording.transmit.get().unwrap().service.halt_requests()
+}
+fn owner(f: &Mcp) -> Arc<contact_http::Station> {
+    f.state.recording.contact.get().unwrap().clone()
+}
+fn skew(f: &Mcp, d: Duration) {
+    *owner(f).automation.skew.lock().unwrap() = d;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_003_contact_limit_and_completion_stop_the_run() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let mut cfg = config_json();
+    cfg["max_contacts"] = json!(1);
+    let e = at_even(&f);
+    run(&f, cfg.clone(), "ft8").await;
+    complete_contact(&f, e, "W1AW").await;
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("limit_reached")));
+    assert_eq!(f.read("automation").await["run"]["completed_contacts"], 1);
+    // completion_action stop ends the run after one contact even below the limit.
+    cfg["max_contacts"] = json!(5);
+    cfg["completion_action"] = json!("stop");
+    reconfigure(&f, cfg).await;
+    start_again(&f).await;
+    let e2 = next_even(&f);
+    complete_contact(&f, e2, "K1ABC").await;
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("completed")));
+    publish(&f, e2 + 90_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(c["contact"]["dx_call"], "K1ABC", "no selection after completion");
+    assert_eq!(c["transmit"]["arm_state"], "disarmed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_003_a_halt_racing_the_arming_halts_and_never_keys() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    run(&f, config_json(), "ft8").await;
+    let before = halts(&f);
+    let recording = f.state.recording.clone();
+    *owner(&f).automation.before_enable.lock().unwrap() = Some(Box::new(move || {
+        recording
+            .transmit
+            .get()
+            .unwrap()
+            .service
+            .halt("00000000-0000-4000-8000-0000000000aa");
+    }));
+    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("halted")));
+    let c = f.read("contact").await;
+    assert_eq!(c["transmit"]["arm_state"], "disarmed", "{c}");
+    assert_eq!(halts(&f), before + 2, "the operator's Halt and the automation's own Halt");
+    assert!(f.bench.keys.lock().unwrap().iter().all(|(_, on)| !on), "never keyed");
+    publish(&f, e + 30_000, &[("CQ K1ABC FN42", 1500.0, Some(0.0))]);
+    assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
+    let mut f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut cfg = config_json();
+    cfg["max_run_minutes"] = json!(1);
+    run(&f, cfg.clone(), "ft8").await;
+    skew(&f, Duration::from_secs(59));
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "waiting", "inside the duration");
+    skew(&f, Duration::from_secs(61));
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("time_limit")));
+    skew(&f, Duration::ZERO);
+    // A newer proof of the grant replaces the starting transport: the run ends.
+    cfg["max_run_minutes"] = json!(480);
+    reconfigure(&f, cfg).await;
+    start_again(&f).await;
+    f.renew().await;
+    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("authority_lost")));
+    assert_eq!(f.read("contact").await["contact"], Value::Null, "nothing selected");
+    // The starting transport's 8 h deadline ends a waiting run (checked before duration).
+    start_again(&f).await;
+    skew(&f, Duration::from_secs(8 * 3600 - 60));
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "waiting");
+    skew(&f, Duration::from_secs(8 * 3600 + 1));
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("authority_lost")));
+    skew(&f, Duration::ZERO);
+}
+
+/// One accepted ContactCommand from the MCP client (the operator's own action).
+async fn operator(f: &Mcp, action: &str, extra: Value) {
+    let revision = f.read("contact").await["contact_revision"].as_u64().unwrap();
+    let v = f
+        .tool("wstx_contact_command", json!({"command":f.command(revision, action, extra)}))
+        .await;
+    assert_eq!(v["status"], 202, "{action}: {v}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_003_operator_actions_end_the_run_and_are_never_taken_over() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    // An operator CQ while the run waits: the run stops and leaves the CQ alone.
+    run(&f, config_json(), "ft8").await;
+    operator(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("contact_changed")));
+    let c = f.read("contact").await;
+    assert_eq!(
+        (c["contact"]["state"].clone(), c["transmit"]["arm_state"].clone()),
+        (json!("calling"), json!("armed"))
+    );
+    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    assert_eq!(f.read("contact").await["contact"]["state"], "calling", "never taken over");
+    operator(&f, "enable_tx", json!({"enabled":false,"safety_revision":null})).await;
+    operator(&f, "cancel", json!({})).await;
+    // An operator contact prepared while the run waits is not adopted either.
+    start_again(&f).await;
+    operator(&f, "enter_dx", json!({"dx_call":"W1AW","dx_grid":null,"replace":false})).await;
+    publish(&f, e + 30_000, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("contact_changed")));
+    assert_eq!(f.read("contact").await["contact"]["origin"], "manual_entry");
+    operator(&f, "cancel", json!({})).await;
+    // Operator cancel of the run's contact.
+    start_again(&f).await;
+    publish(&f, e + 60_000, &[("CQ K1ABC FN42", 1500.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await.0, "contact_active");
+    operator(&f, "cancel", json!({})).await;
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("contact_changed")));
+    // Operator Enable Tx off: transmit_stopped (no Halt).
+    let before = halts(&f);
+    start_again(&f).await;
+    publish(&f, e + 90_000, &[("CQ G4ABC IO91", 1000.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await.0, "contact_active");
+    operator(&f, "enable_tx", json!({"enabled":false,"safety_revision":null})).await;
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("transmit_stopped")));
+    assert_eq!(halts(&f), before);
+    operator(&f, "cancel", json!({})).await;
+    // Operator replaces the run's contact: contact_changed, and the run disarms.
+    start_again(&f).await;
+    publish(&f, e + 120_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-3.0))]);
+    assert_eq!(f.read("contact").await["transmit"]["arm_state"], "armed");
+    operator(&f, "enter_dx", json!({"dx_call":"DL1ABC","dx_grid":"JO62","replace":true})).await;
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("contact_changed")));
+    let c = f.read("contact").await;
+    assert_eq!(
+        (c["contact"]["dx_call"].clone(), c["transmit"]["arm_state"].clone()),
+        (json!("DL1ABC"), json!("disarmed"))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_003_refused_selection_or_arming_stops_without_a_contact_left_behind() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    // A start with another than the current safety revision is refused.
+    reconfigure(&f, config_json()).await;
+    let a = f.read("automation").await;
+    let stale = automation(&f, "start", json!({"expected_policy_revision":a["policy_revision"],
+        "expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":4})).await;
+    assert_eq!(
+        (stale["result"]["error"]["code"].clone(), stale["result"]["error"]["field"].clone()),
+        (json!("stale_revision"), json!("safety_revision"))
+    );
+    // select_row refused (profile callsign gone): provider_error, nothing prepared.
+    start_again(&f).await;
+    let callsign = std::mem::take(&mut f.state.store.lock().unwrap().document.callsign);
+    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("provider_error")));
+    assert_eq!(f.read("contact").await["contact"], Value::Null);
+    f.state.store.lock().unwrap().document.callsign = callsign;
+    // enable_tx refused (transmit became unsupported): the selected contact is cancelled.
+    start_again(&f).await;
+    f.bench.unsupported.store(true, Ordering::SeqCst);
+    publish(&f, e + 30_000, &[("CQ K1ABC FN42", 1500.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("transmit_refused")));
+    let c = f.read("contact").await;
+    assert_eq!(
+        (c["contact"]["dx_call"].clone(), c["contact"]["state"].clone(), c["transmit"]["arm_state"].clone()),
+        (json!("K1ABC"), json!("cancelled"), json!("disarmed")),
+        "{c}"
+    );
+    assert!(f.bench.keys.lock().unwrap().is_empty());
 }
