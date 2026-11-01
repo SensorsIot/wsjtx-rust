@@ -526,56 +526,79 @@ class CaseTranscriptTests(ApiFreeCase):
     """Synthetic protocol transcripts, not decoded-signal or resource acceptance."""
 
     @staticmethod
-    def matrix_events():
+    def attempt_events(index, mode, scalar, long, workers, attempt=0, slow=None):
+        """One attempt of one configuration; slow=(worker, round, poll, seconds) or None."""
+        events, rounds, unqualified = [], [], []
+        for number in range(10):
+            replies = []
+            for worker in range(workers):
+                start = 1_000_000_000 + number * 100_000_000 + worker * 1000
+                poll, seconds = 0.001, 0.020
+                if slow is not None and slow[:2] == (worker, number):
+                    poll, seconds = slow[2], slow[3]
+                result = {
+                    "state": "completed", "round": number, "seconds": seconds,
+                    "started_unix_ns": start, "ended_unix_ns": start + 20_000_000,
+                    "monotonic_duration_ns": 20_000_000,
+                    "records": (8 if mode == "ft8" else 16) if long else 1,
+                    "max_poll_wall_seconds": poll,
+                }
+                if poll > 0.050:
+                    unqualified.append({"worker": worker, "phase": "round", "round": number,
+                                        "max_poll_wall_seconds": poll})
+                replies.append(result)
+                events.append(("RESOURCE_ROUND", {
+                    "configuration": index, "attempt": attempt, "worker": worker,
+                    "pid": 10000 + index * 4 + worker, "result": result,
+                }))
+            rounds.append({
+                "round": number,
+                "parent_dispatch_offsets_ns": [worker * 1000 for worker in range(workers)],
+                "workers": replies,
+                "concurrency_qualification": {
+                    "qualified": True, "workers": workers,
+                    "dispatch_skew_ns": (workers - 1) * 1000,
+                    "actual_start_spread_ns": (workers - 1) * 1000,
+                    "wall_monotonic_discrepancy_ns": [0] * workers,
+                    "boundary_margin_ns": 5_000_000,
+                    "qualified_common_overlap_ns":
+                        10_000_000 - (workers - 1) * 1000 if workers == 4 else None,
+                    "measurement_qualification_only": True,
+                    "padding_or_serialized_work_used": False,
+                },
+            })
+        events.append(("RESOURCE_CONFIGURATION", {
+            "mode": mode, "scalar": scalar, "long": long, "concurrency": workers,
+            "configuration": index, "attempt": attempt,
+            "cpu_quantum_qualified": not unqualified, "unqualified_polls": unqualified,
+            "prepared": [{"worker": worker, "cold_seconds": 0.030,
+                          "cold_max_poll_wall_seconds": 0.002,
+                          "warmup_max_poll_wall_seconds": 0.002} for worker in range(workers)],
+            "warmup_excluded": 1, "completed_rounds": 10,
+            "summaries": [{"min": 0.020, "median": 0.020, "p95": 0.020,
+                           "max": 0.020} for _ in range(workers)],
+            "metrics": [{"absolute_private_peak_within64MiB": True,
+                         "whole_workspace_proved": False} for _ in range(workers)],
+            "rounds": rounds, "owned_children_reaped": True,
+            "full_station_proof": False,
+        }))
+        return events
+
+    @classmethod
+    def matrix_events(cls, extra=None):
+        """All 16 configurations; extra maps an index to its leading unqualified-or-not
+        attempts as (attempt slow tuples), followed by one final attempt of its own."""
+        extra = extra or {}
         events = [("RESOURCE_HOST", {"fixture": "API-free source-shaped transcript"})]
         index = 0
         for mode in ("ft8", "ft4"):
             for scalar in (False, True):
                 for long in (False, True):
                     for workers in (1, 4):
-                        rounds = []
-                        for number in range(10):
-                            replies = []
-                            for worker in range(workers):
-                                start = 1_000_000_000 + number * 100_000_000 + worker * 1000
-                                result = {
-                                    "state": "completed", "round": number, "seconds": 0.020,
-                                    "started_unix_ns": start, "ended_unix_ns": start + 20_000_000,
-                                    "monotonic_duration_ns": 20_000_000,
-                                    "records": (8 if mode == "ft8" else 16) if long else 1,
-                                    "max_poll_wall_seconds": 0.001,
-                                }
-                                replies.append(result)
-                                events.append(("RESOURCE_ROUND", {
-                                    "configuration": index, "worker": worker,
-                                    "pid": 10000 + index * 4 + worker, "result": result,
-                                }))
-                            rounds.append({
-                                "round": number,
-                                "parent_dispatch_offsets_ns": [worker * 1000 for worker in range(workers)],
-                                "workers": replies,
-                                "concurrency_qualification": {
-                                    "qualified": True, "workers": workers,
-                                    "dispatch_skew_ns": (workers - 1) * 1000,
-                                    "actual_start_spread_ns": (workers - 1) * 1000,
-                                    "wall_monotonic_discrepancy_ns": [0] * workers,
-                                    "boundary_margin_ns": 5_000_000,
-                                    "qualified_common_overlap_ns":
-                                        10_000_000 - (workers - 1) * 1000 if workers == 4 else None,
-                                    "measurement_qualification_only": True,
-                                    "padding_or_serialized_work_used": False,
-                                },
-                            })
-                        events.append(("RESOURCE_CONFIGURATION", {
-                            "mode": mode, "scalar": scalar, "long": long, "concurrency": workers,
-                            "warmup_excluded": 1, "completed_rounds": 10,
-                            "summaries": [{"min": 0.020, "median": 0.020, "p95": 0.020,
-                                           "max": 0.020} for _ in range(workers)],
-                            "metrics": [{"absolute_private_peak_within64MiB": True,
-                                         "whole_workspace_proved": False} for _ in range(workers)],
-                            "rounds": rounds, "owned_children_reaped": True,
-                            "full_station_proof": False,
-                        }))
+                        attempts = extra.get(index, [None])
+                        for attempt, slow in enumerate(attempts):
+                            events += cls.attempt_events(index, mode, scalar, long, workers,
+                                                         attempt, slow)
                         index += 1
         return events
 
@@ -674,6 +697,129 @@ class CaseTranscriptTests(ApiFreeCase):
             with self.subTest(events=events[-1]):
                 with self.assertRaises(guardian.JobError):
                     self.parse("busy", events)
+
+
+class MatrixQualificationTests(ApiFreeCase):
+    """#36 outcome classification: qualified, bounded re-qualification, inconclusive,
+    and budgets that stay red in every attempt. Synthetic transcripts only."""
+
+    parse = staticmethod(CaseTranscriptTests.parse)
+    matrix_events = staticmethod(CaseTranscriptTests.matrix_events)
+    SLOW = (0, 3, 0.0556, 0.020)  # the observed 55.6 ms poll; decode well within budget
+
+    def test_requalified_configuration_is_qualified_with_all_attempts_recorded(self):
+        # Proves: CL-007-04 (#36 bounded re-qualification).
+        result = self.parse("matrix", self.matrix_events({5: [self.SLOW, self.SLOW, None]}))
+        self.assertEqual(result["outcome"], guardian.QUALIFIED)
+        self.assertEqual(result["attempts"], 18)
+        self.assertEqual(result["measured_worker_completions"], 400 + 2 * 40)
+        self.assertEqual(result["inconclusive_configurations"], [])
+
+    def test_three_unqualified_attempts_are_inconclusive_not_failed(self):
+        # Proves: CL-007-04 (#36 inconclusive outcome).
+        result = self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))
+        self.assertEqual(result["outcome"], guardian.INCONCLUSIVE)
+        self.assertEqual(len(result["inconclusive_configurations"]), 1)
+        entry = result["inconclusive_configurations"][0]
+        self.assertEqual((entry["mode"], entry["scalar"], entry["long"], entry["concurrency"],
+                          entry["attempts"]), ("ft8", True, False, 4, 3))
+        self.assertEqual(entry["unqualified_polls"][0]["max_poll_wall_seconds"], 0.0556)
+
+    def test_ordinary_gate_reports_inconclusive_as_not_run_and_strict_refuses_it(self):
+        # Proves: CL-007-04 (#36 ordinary gate vs exclusive window).
+        evidence = {"case": "matrix",
+                    "transcript": self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))}
+        ordinary, strict = io.StringIO(), io.StringIO()
+        self.assertEqual(guardian.report_outcome(evidence, True, ordinary), guardian.NOT_RUN)
+        self.assertEqual(guardian.NOT_RUN, 77)
+        self.assertIn("INCONCLUSIVE, NOT RUN", ordinary.getvalue())
+        self.assertIn("ft8 scalar=True long=False workers=4", ordinary.getvalue())
+        self.assertEqual(guardian.report_outcome(evidence, False, strict),
+                         guardian.INCONCLUSIVE_REFUSED)
+        self.assertIn("INCONCLUSIVE, REFUSED", strict.getvalue())
+        qualified = {"case": "matrix", "transcript": self.parse("matrix", self.matrix_events())}
+        for ordinary_gate in (True, False):
+            output = io.StringIO()
+            self.assertEqual(guardian.report_outcome(qualified, ordinary_gate, output), 0)
+            self.assertIn("QUALIFIED", output.getvalue())
+
+    def test_cli_default_is_strict_and_ordinary_gate_is_matrix_only(self):
+        # Proves: CL-007-04 (#36 exclusive window stays strict by default).
+        evidence = {"case": "matrix",
+                    "transcript": self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))}
+        receipt = ["--artifact-receipt", "unused.json"]
+        with patch.object(guardian, "run_case", return_value=evidence), \
+                patch.object(sys, "stderr", io.StringIO()):
+            self.assertEqual(guardian.main(["run", "--case", "matrix", *receipt]),
+                             guardian.INCONCLUSIVE_REFUSED)
+            self.assertEqual(guardian.main(["run", "--case", "matrix", "--ordinary-gate",
+                                            *receipt]), 77)
+        with patch.object(guardian, "run_case",
+                          side_effect=AssertionError("must refuse before launch")), \
+                patch.object(sys, "stderr", io.StringIO()):
+            self.assertEqual(guardian.main(["run", "--case", "busy", "--ordinary-gate",
+                                            *receipt]), 1)
+
+    def test_qualified_or_unqualified_budget_violation_is_still_red(self):
+        # Proves: CL-007-04 (#36: a qualified run over budget stays red).
+        # Injected slow decodes: ft8 short single worker has 5 s rounds and 7 s cold.
+        over_round = (0, 3, 0.001, 5.5)
+        cases = {
+            "qualified slow round": {0: [over_round]},
+            "slow round in an unqualified attempt": {0: [(0, 3, 0.0556, 5.5), None]},
+            "slow round in a requalification": {0: [self.SLOW, over_round]},
+            "slow round with four workers over the 2x bound": {1: [(2, 7, 0.001, 10.5)]},
+        }
+        for name, extra in cases.items():
+            with self.subTest(name):
+                with self.assertRaises(guardian.JobError) as caught:
+                    self.parse("matrix", self.matrix_events(extra))
+                self.assertEqual(caught.exception.operation, "matrix_budget_exceeded")
+        within = self.parse("matrix", self.matrix_events({1: [(2, 7, 0.001, 9.9)]}))
+        self.assertEqual(within["outcome"], guardian.QUALIFIED)
+        original = self.matrix_events()
+        first = next(index for index, (prefix, _value) in enumerate(original)
+                     if prefix == "RESOURCE_CONFIGURATION")
+        for name, mutate in (
+            ("slow cold decode", lambda value: value["prepared"][0].update(cold_seconds=7.5)),
+            ("worker over 64 MiB", lambda value: value["metrics"][0].update(
+                absolute_private_peak_within64MiB=False)),
+        ):
+            with self.subTest(name):
+                events = json.loads(json.dumps(original))
+                mutate(events[first][1])
+                with self.assertRaises(guardian.JobError) as caught:
+                    self.parse("matrix", events)
+                self.assertEqual(caught.exception.operation, "matrix_budget_exceeded")
+
+    def test_false_qualification_claims_and_unbounded_or_early_stop_refuse(self):
+        # Proves: CL-007-04 (#36: inconclusive cannot be forged or stopped early).
+        original = self.matrix_events()
+        first = next(index for index, (prefix, _value) in enumerate(original)
+                     if prefix == "RESOURCE_CONFIGURATION")
+        claims = (
+            lambda value: value["rounds"][0]["workers"][0].update(max_poll_wall_seconds=0.06),
+            lambda value: value["prepared"][0].update(warmup_max_poll_wall_seconds=0.06),
+            lambda value: value.update(cpu_quantum_qualified=False),
+            lambda value: value.update(unqualified_polls=[{}]),
+            lambda value: value.pop("prepared"),
+        )
+        for mutate in claims:
+            with self.subTest(mutation=mutate):
+                events = json.loads(json.dumps(original))
+                mutate(events[first][1])
+                rounds = events[first][1]["rounds"]
+                for prefix, value in events:
+                    if prefix == "RESOURCE_ROUND" and value["configuration"] == 0:
+                        value["result"] = rounds[value["result"]["round"]]["workers"][
+                            value["worker"]]
+                with self.assertRaises(guardian.JobError):
+                    self.parse("matrix", events)
+        for extra in ({5: [self.SLOW, self.SLOW]}, {5: [self.SLOW] * 4},
+                      {5: [None, self.SLOW]}):
+            with self.subTest(extra=extra):
+                with self.assertRaises(guardian.JobError):
+                    self.parse("matrix", self.matrix_events(extra))
 
 
 class FakeRunPipe(FakePipe):
@@ -882,6 +1028,8 @@ class RegistryTests(ApiFreeCase):
         self.assertIn("--test-threads=1 --skip release_runtime_and_overlapping_window_history", entry)
         self.assertIn("| python tools/windows_resource_job.py resolve", entry)
         self.assertIn("python tools/windows_resource_job.py run --case matrix", entry)
+        # #36: only the ordinary gate tolerates an inconclusive matrix.
+        self.assertIn("run --case matrix --ordinary-gate --artifact-receipt", entry)
         for name in ("tools/windows_resource_job.py", "tools/test_windows_resource_job.py",
                      "tools/windows_process_metrics.py", "tools/test_windows_process_metrics.py"):
             self.assertGreaterEqual(entry.count("- " + name), 2)
