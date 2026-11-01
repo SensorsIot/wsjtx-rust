@@ -953,4 +953,20 @@ addEventListener('keydown',event=>{
 },true);
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
 document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
+// The log client (WstxContact OfferLogReview) and then the contact client load after this
+// browser's first recording and receive snapshots (or 20 s after the station is ready), so
+// their bytes never compete with the cold page, authorization or the first state reads on a
+// 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
+let clientLoader=null;
+addEventListener('station-ready',()=>{
+  if(clientLoader||document.querySelector('script[src="/logbook.js"]'))return;
+  const since=performance.now();
+  clientLoader=setInterval(()=>{
+    if(!(snapshot&&live!==undefined)&&performance.now()-since<20000)return;
+    clearInterval(clientLoader);
+    const load=src=>new Promise(resolve=>{const script=document.createElement('script');script.src=src;script.onload=script.onerror=resolve;document.head.append(script);});
+    const append=()=>load('/logbook.js').then(()=>load('/contact.js'));
+    if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
+  },250);
+});
 chipsReady=true;chipsShow();

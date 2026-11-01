@@ -157,20 +157,6 @@ function annotate(body,records){
 const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
 window.wstxLogbook=Object.freeze({openReview,annotate,loadHistory});
-// The contact client (WstxContact) loads after this browser's first recording and
-// receive snapshots (or 20 s after the station is ready), when the link is idle, so its
-// bytes never compete with the cold page, authorization or the first state reads on a
-// 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
-let contactLoader=null;
-addEventListener('station-ready',()=>{
-  if(contactLoader||document.querySelector('script[src="/contact.js"]'))return;
-  const since=performance.now();
-  contactLoader=setInterval(()=>{
-    const ready=typeof snapshot!=='undefined'&&snapshot&&typeof live!=='undefined'&&live!==undefined;
-    if(!ready&&performance.now()-since<20000)return;
-    clearInterval(contactLoader);
-    const append=()=>{const script=document.createElement('script');script.src='/contact.js';document.head.append(script);};
-    if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
-  },250);
-});
+// Annotate rows already shown when this client arrives.
+if(activity)annotate(activity,resultRows);
 })();
