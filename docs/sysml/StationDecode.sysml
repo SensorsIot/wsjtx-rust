@@ -717,9 +717,12 @@ package WstxOfflineDecode {
              during a decode abandons it as an overrun (last_overrun names the newest skipped
              support). The residues come from the epoch's UTC anchor plus the measured
              capture-clock offset (CL-007-05): when it moved by more than 50 ms the residues
-             are recomputed and each scheduled window moves by the signed correction, a
-             completion moved into the past occurring with the next sample, so none is
-             dropped or repeated. A scheduled late window republishes its period's view.
+             are recomputed and each scheduled window's next completion moves by the signed
+             correction of any size, staying the completion of the same UTC period (no
+             wrap by a period). One moved into the past completes now; coinciding ones
+             complete one after the other in schedule order (prompt, then late); each then
+             returns to its grid, so none is dropped or repeated. A scheduled late window
+             republishes its period's view.
              Without a correlated anchor the counter grid (30 s/15 s, 15 s/7.5 s) applies.
              The modem reads no UTC.
              FT8coarseN1920/hop480/half-tone200..3500inclusive/endpoints;FT4N576/hop144

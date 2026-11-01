@@ -250,10 +250,10 @@ fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
     for first in (0..1_200_000).step_by(240) {
         // +0.5 s just after the 436600 prompt, then a -1 s step just before 639400.
         if first == 439920 {
-            buffer.reschedule(&schedule(6000));
+            buffer.reschedule(&schedule(6000), 6000);
         }
         if first == 636000 {
-            buffer.reschedule(&schedule(-6000));
+            buffer.reschedule(&schedule(-6000), -12000);
         }
         if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
             ends.push((window.origin + window.samples.len() as u64, window.waits));
@@ -278,4 +278,86 @@ fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
             (1173400, true),
         ]
     );
+}
+
+// Proves: CL-007-05; TC-004-004. UTC steps of +2 s, -2 s and +8 s taken 0.06 s before a
+// prompt completion: every period's prompt and late window complete exactly once, in order.
+#[test]
+fn receive_clock_steps_keep_each_period_window_once_and_in_order() {
+    let schedule = [(76600, 180000, false), (99400, 180000, true)];
+    // (UTC step in seconds, completions after the step as (end, late)).
+    let cases: [(i64, &[(u64, bool)]); 3] = [
+        // +2 s: the prompt (436600) and late (459400) completions both moved into the past;
+        // they complete now, one after the other, then return to the moved grid.
+        (
+            2,
+            &[
+                (435841, false),
+                (436081, true),
+                (592600, false),
+                (615400, true),
+                (772600, false),
+                (795400, true),
+            ],
+        ),
+        // -2 s: both completions move 2 s later.
+        (
+            -2,
+            &[
+                (460600, false),
+                (483400, true),
+                (640600, false),
+                (663400, true),
+                (820600, false),
+                (843400, true),
+            ],
+        ),
+        // +8 s, more than half a period: the same period's windows complete now, not a
+        // period later.
+        (
+            8,
+            &[
+                (435841, false),
+                (436081, true),
+                (520600, false),
+                (543400, true),
+                (700600, false),
+                (723400, true),
+                (880600, false),
+                (903400, true),
+            ],
+        ),
+    ];
+    for (step, after) in cases {
+        let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
+            .unwrap()
+            .with_schedule(&schedule);
+        let mut ends = vec![];
+        for first in (0..920_000).step_by(240) {
+            if first == 435840 {
+                // A UTC step forward makes every completion that many seconds earlier.
+                let shift = -step * 12000;
+                let moved = schedule.map(|(phase, frames, waits)| {
+                    (
+                        (phase as i64 + shift).rem_euclid(180000) as u64,
+                        frames,
+                        waits,
+                    )
+                });
+                buffer.reschedule(&moved, shift);
+            }
+            if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+                assert_eq!(window.samples.len(), 180000);
+                ends.push((window.origin + window.samples.len() as u64, window.waits));
+            }
+        }
+        let mut expected = vec![(256600, false), (279400, true)];
+        expected.extend_from_slice(after);
+        assert_eq!(ends, expected, "UTC step {step:+} s");
+        // Exactly one prompt and one late window per period, alternating.
+        assert!(
+            ends.chunks(2)
+                .all(|pair| matches!(pair, [(_, false), (_, true)]))
+        );
+    }
 }

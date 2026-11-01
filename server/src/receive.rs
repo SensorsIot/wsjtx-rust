@@ -33,9 +33,9 @@ struct Due {
     frames: usize,
     waits: bool,
     next: u64,
-    /// How far `next` was held after its aligned position (a correction moved it into the
-    /// past); the following completion returns to the residue grid.
-    held: u64,
+    /// The aligned completion after `next` when `next` is off the residue grid: a correction
+    /// moved it into the past, or it was deferred behind a coinciding window.
+    after: Option<u64>,
 }
 
 pub(crate) struct WindowBuffer {
@@ -76,7 +76,7 @@ impl WindowBuffer {
                 frames: span,
                 waits: false,
                 next: advance,
-                held: 0,
+                after: None,
             }],
             span,
             complete_support: mode.symbol_frames() * mode.symbol_count(),
@@ -97,7 +97,7 @@ impl WindowBuffer {
                     frames: frames.min(self.span),
                     waits,
                     next: 0,
-                    held: 0,
+                    after: None,
                 })
                 .collect();
             for due in &mut self.schedule {
@@ -107,31 +107,36 @@ impl WindowBuffer {
         self
     }
 
-    /// Moves the scheduled residues (same entries, same order) by the small corrections of a
-    /// re-anchored clock. Every entry still completes once per advance: a boundary moved
-    /// into the past completes with the next sample, a boundary moved later just waits, so
-    /// no window is dropped or repeated at the adjustment.
+    /// Re-anchors the schedule (same entries, same order) after a clock correction that moved
+    /// every completion by `shift` source frames (positive: later). Each entry's next
+    /// completion stays the completion of the same UTC period, whatever the size or sign of
+    /// the shift: one moved into the past completes now (coinciding entries one after the
+    /// other, in schedule order), one moved later waits, and the entry then returns to its
+    /// residue grid, so no window is dropped, repeated or moved by a period.
     #[allow(dead_code)]
-    pub(crate) fn reschedule(&mut self, schedule: &[(u64, usize, bool)]) {
+    pub(crate) fn reschedule(&mut self, schedule: &[(u64, usize, bool)], shift: i64) {
         if schedule.len() != self.schedule.len() {
             return;
         }
         let advance = self.advance as i128;
-        let floor = self.previous_end.map_or(0, |end| end + 1);
+        let floor = self.previous_end.map_or(0, |end| end + 1) as i128;
         for (due, &(phase, frames, waits)) in self.schedule.iter_mut().zip(schedule) {
-            let phase = phase % self.advance;
-            // The signed shift in (-advance/2, advance/2].
-            let mut shift = (phase as i128 - due.phase as i128).rem_euclid(advance);
-            if shift > advance / 2 {
-                shift -= advance;
-            }
-            let moved = (due.next as i128 - due.held as i128 + shift).max(0) as u64;
+            // The aligned (on-grid) completion this entry is waiting for, moved by the shift.
+            let aligned = due.after.map_or(due.next, |after| after - self.advance) as i128;
+            let moved = aligned + i128::from(shift);
+            let (next, after) = if moved >= floor {
+                (moved, None)
+            } else {
+                // Completes now; the next aligned completion is the first one after now.
+                let periods = (floor - moved).div_euclid(advance) + 1;
+                (floor, Some(moved + periods * advance))
+            };
             *due = Due {
-                phase,
+                phase: phase % self.advance,
                 frames: frames.min(self.span),
                 waits,
-                next: moved.max(floor),
-                held: floor.saturating_sub(moved),
+                next: next as u64,
+                after: after.map(|a| a as u64),
             };
         }
     }
@@ -180,7 +185,7 @@ impl WindowBuffer {
             // accepted sample counters never do.
             for due in &mut self.schedule {
                 due.next = due_after(due.phase, self.advance, block.first_frame);
-                due.held = 0;
+                due.after = None;
             }
         }
         if self.timing.is_none() {
@@ -194,12 +199,17 @@ impl WindowBuffer {
             }
             self.history.push_back(sample);
             let position = block.first_frame + offset as u64 + 1;
-            // Entries that coincide (after a correction) complete once, as the first one.
+            // One window per ingest call: a coinciding entry (after a correction) is deferred
+            // to the next block's first sample, keeping its aligned completion.
             let mut first = None;
             for due in self.schedule.iter_mut().filter(|due| due.next == position) {
-                due.next += self.advance - due.held;
-                due.held = 0;
-                first.get_or_insert((due.frames, due.waits));
+                if first.is_some() || window.is_some() {
+                    due.after = due.after.or(Some(due.next + self.advance));
+                    due.next = end + 1;
+                    continue;
+                }
+                due.next = due.after.take().unwrap_or(due.next + self.advance);
+                first = Some((due.frames, due.waits));
             }
             let Some((frames, waits)) = first else {
                 continue;

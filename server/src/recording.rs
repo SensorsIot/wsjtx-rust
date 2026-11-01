@@ -2282,11 +2282,14 @@ impl LiveWorker {
     ) -> Option<(i128, Option<f64>)> {
         let timing = timing.filter(|t| t.correlated)?;
         let (frame, utc) = self.input.clock_utc()?;
+        let before = self.clock.applied;
         let update = self.clock.observe(timing, frame, utc)?;
         if let (Some(mode), Some(window)) = (self.mode, self.window.as_mut())
             && let Some(schedule) = window_schedule(timing, mode, update.0)
         {
-            window.reschedule(&schedule);
+            // A larger measured offset (capture clock behind UTC) completes windows earlier.
+            let shift = -((update.0 - before) * 12000 / 10_000_000);
+            window.reschedule(&schedule, i64::try_from(shift).unwrap_or(0));
         }
         Some(update)
     }
