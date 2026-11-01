@@ -279,6 +279,8 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  assert.ok(shortSignal.current>=shortSignal.minimum&&shortSignal.current<=shortSignal.maximum,'short viewport respects the accessible splitter bounds');
  assert.equal(Math.round(shortSignal.height),shortSignal.current,'accessible splitter value matches the displayed signal height');
  assert.equal(await page.getByRole('separator').getAttribute('tabindex'),'0','short viewport retains keyboard resizing');
+ // The strategy element and the chips come with the contact client (loaded after the first snapshots).
+ await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
  for(const id of ['radio-toolbar','rxtx-strip','strategy-element','band-activity','rx-focus'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the operating screen`);
  for(const id of ['band-strip','strategy-panel','workspace-statusbar','rx-frequency'])assert.equal(await page.locator('#'+id).count(),0,`${id} is not on the operating screen`);
  const composition=await page.evaluate(()=>{

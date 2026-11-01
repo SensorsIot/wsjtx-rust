@@ -26,7 +26,7 @@ const workspace=document.createElement('div');workspace.id='operating-workspace'
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span id="qso-crowd" class="op-qso-badge" hidden></span><span class="op-contact-badge">Unavailable</span></header>
 <div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
@@ -67,12 +67,12 @@ function showSection(id){
 const serverForm=document.querySelector('#settings');
 const stationFields=document.createElement('fieldset');stationFields.id='server-fields-general';stationFields.className='op-server-fieldset';stationFields.innerHTML='<legend>Station &#10227;</legend>';
 for(const id of ['display-name','callsign','locator']){const input=document.getElementById(id);input.setAttribute('form','settings');stationFields.append(input.closest('label'));}
-stationFields.insertAdjacentHTML('beforeend','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label><p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
+stationFields.insertAdjacentHTML('beforeend','<p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
 // Station fields sit outside the form element; their edits still mark it edited.
 for(const type of ['input','change'])stationFields.addEventListener(type,event=>{if(event.target.form===serverForm&&event.target.id!=='station-continent')serverForm.dispatchEvent(new Event(type));});
 generalSection.append(stationFields);
 block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clock: system UTC. Measured offset unavailable.</p>');
-const displaySettings=block('settings-display','Display',generalSection,'<label>Theme<select id="theme-choice"><option value="dark">Dark</option><option value="day">Day</option><option value="night">Night (dim red)</option></select></label><label>Switch<select id="theme-switch"><option value="manual">Manually</option><option value="time">By time</option><option value="sun">By sunrise and sunset at my locator</option></select></label><span id="theme-times"><label>Day from<input id="theme-day-start" type="time" value="07:00"></label><label>Night from<input id="theme-night-start" type="time" value="20:00"></label></span><p id="theme-status" class="op-muted"></p><p class="op-muted">Display settings affect this browser only and apply at once.</p>');
+const displaySettings=block('settings-display','Display',generalSection,'<p class="op-muted">Display settings affect this browser only and apply at once.</p>');
 const browserSettings=block('settings-browsers','Access &amp; grants',generalSection,'<p class="op-muted">This browser holds its own station authorization. Logging out or forgetting the credential needs the station access token to authorize again.</p>');
 browserSettings.append(document.querySelector('#authorization-actions'));
 // Forget credential is the action of its exception: shown beside the chips while offered.
@@ -590,23 +590,11 @@ function renderResults(){
       message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
       if(resultView){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
     }
-    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;renderHistory(body);return;
+    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;window.wstxRenderHistory?.(body);return;
   }
   body.replaceChildren();
   for(const record of ordered)body.append(activityRow(record,'latest',liveIdentity(live),live.job.mode));
-  renderHistory(body);
-}
-const maidenhead=grid=>{
-  if(typeof grid!=='string'||!/^[A-R]{2}[0-9]{2}([A-X]{2})?$/i.test(grid))return null;
-  const g=grid.toUpperCase(),sub=g.length===6;
-  const lon=(g.charCodeAt(0)-65)*20-180+Number(g[2])*2+(sub?(g.charCodeAt(4)-65)*(2/24)+1/24:1);
-  const lat=(g.charCodeAt(1)-65)*10-90+Number(g[3])+(sub?(g.charCodeAt(5)-65)*(1/24)+1/48:.5);
-  return [lat,lon];
-};
-function distanceKm(from,to){
-  const a=maidenhead(from),b=maidenhead(to);if(!a||!b)return null;
-  const r=Math.PI/180,h=Math.sin((b[0]-a[0])*r/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin((b[1]-a[1])*r/2)**2;
-  return Math.round(12742*Math.asin(Math.min(1,Math.sqrt(h))));
+  window.wstxRenderHistory?.(body);
 }
 function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
@@ -614,7 +602,7 @@ function activityRow(record,period,context,mode){
   const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
   if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(decoded&&my&&to===my)row.classList.add('ba-tome');
-  const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?distanceKm(profileData?.settings?.locator,grid):null;
+  const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null;
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,'\u2014',km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
@@ -623,13 +611,6 @@ function activityRow(record,period,context,mode){
     row.append(cell);
   }
   return row;
-}
-function renderHistory(body){
-  for(const block of activityHistory){
-    const divider=document.createElement('tr');divider.className='ba-divider';divider.setAttribute('role','row');
-    const cell=document.createElement('td');cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`${block.mode.toUpperCase()} period ${periodLabel(block.period,block.mode)}${block.period?' UTC':''}`;divider.append(cell);body.append(divider);
-    for(const record of activityOrdering(block.rows))body.append(activityRow(record,'history',block.context,block.mode));
-  }
 }
 function validRecord(r){
   return r&&Object.keys(r).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
@@ -906,36 +887,9 @@ async function catSync(){
 function catModel(endpoint){return typeof endpoint==='string'&&(/^icom7300:\/\//.test(endpoint)||/^COM[0-9]{1,3}$/i.test(endpoint))?'Icom IC-7300 (CI-V)':'unsupported CAT model';}
 // WstxOperatingLayout::ExceptionChip: only while a condition holds; each opens its detail.
 var chipsReady=false,restartedAt=-Infinity;
-function chip(key,severity,text,action){const button=document.createElement('button');button.type='button';button.className='op-chip';button.dataset.chip=key;button.dataset.severity=severity;button.textContent=`${severity==='error'?'\u2716':'\u26A0'} ${text}`;button.title=text;button.addEventListener('click',action);return button;}
-function chipsShow(){
-  if(!chipsReady)return;
-  const list=[],connected=connection.dataset.state==='connected',open=section=>()=>showRegion('server-settings',null,section);
-  if(connected){
-    const mode=profileData?.settings.control.mode,radio=operatingState?.radio.state;
-    if(mode==='cat'&&catStatus?.condition==='commissioningRequired')list.push(chip('cat','warn','CAT setup not confirmed',open('settings-cat')));
-    else if(mode==='cat'&&catStatus&&catStatus.condition!=='ready')list.push(chip('cat','error',document.querySelector('#cat-status').textContent,open('settings-cat')));
-    else if(mode==='cat'&&!catStatus&&radio&&radio!=='ready')list.push(chip('cat','error',`CAT ${radio}`,open('receive-details')));
-    const a=live?.audio,active=live?.job&&['running','cancelling'].includes(live.job.state);
-    if(a?.state==='unavailable')list.push(chip('audio','error',`Audio unavailable${a.error?' \u00b7 '+a.error:''}`,open('settings-audio')));
-    const level=document.querySelector('#settings-audio .op-input-meter')?.dataset.level;
-    if(active&&level==='low')list.push(chip('level','warn','Audio level low',open('settings-audio')));
-    if(active&&level==='high')list.push(chip('level','warn','Audio overdriven',open('settings-audio')));
-    if(transmitConfigured()&&transmitView?.clock==='unsynchronized')list.push(chip('clock','error','Clock off \u00b7 Tx blocked',open('settings-clock')));
-    if(uncertainMutation)list.push(chip('receive','warn',receiveFailure||'Receive outcome unknown',open('receive-details')));
-    else if(operatingFailure&&operatingSupported!==false)list.push(chip('selection','warn',operatingFailure,open('receive-details')));
-    else if(operatingUnknown)list.push(chip('selection','warn','Band/mode outcome unknown',open('receive-details')));
-    else if(operatingState?.operation?.result==='failed')list.push(chip('selection','error',`Band/mode change failed${operatingState.operation.error?' \u00b7 '+operatingState.operation.error:''}`,open('receive-details')));
-    else if(live&&!active&&!mutationPending&&!receiveTarget()&&a?.state!=='unavailable'){
-      if(profileData?.settings.audio.input_device)list.push(chip('receive','warn','Receive stopped \u00b7 start',()=>receiveToggle()));
-      else list.push(chip('receive','warn','No audio input',open('server-fields-audio')));
-    }
-    if(performance.now()-restartedAt<60000)list.push(chip('restart','warn','Receive restarted',open('receive-details')));
-  }
-  const key=list.map(b=>b.dataset.chip+b.textContent).join('|');
-  if(chips.dataset.key!==key){chips.dataset.key=key;chips.replaceChildren(...list);}
-}
+// The chips are drawn by contact.js (window.wstxChipsShow) once it has loaded.
+function chipsShow(){if(chipsReady)window.wstxChipsShow?.();}
 addEventListener('station-stale',()=>chipsShow());
-setInterval(chipsShow,1000);
 function catShow(){
   const status=document.querySelector('#cat-status');if(!status)return;
   const connected=connection.dataset.state==='connected',v=connected?catStatus:null,confirm=document.querySelector('#cat-confirm');

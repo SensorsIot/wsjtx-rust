@@ -17,6 +17,8 @@ block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each logged QSO is saved in this station profile’s contacts.adi (ADIF). Log QSO opens the log review.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet (separate change): targets, message selection and accepted commands.</p>');
 block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet.</p>');
+// Strategy element above Band Activity (placeholder until the strategy engine; shows the #12 run).
+document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 // QsoPane fold-out: Tx1-Tx6, report, period and Auto Seq in place (built with the contact client).
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>DX call, messages Tx1&ndash;Tx6, report and period</summary><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div><p class="ct-more-row"><button type="button" id="rx-pane-erase">Erase dialogue</button></p><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
@@ -426,6 +428,58 @@ $('tx-send').addEventListener('click',()=>{
   transmitAction({action:'request',request_sequence:transmitSequence,mode,period_start_utc_ms:start,message_text:document.querySelector('#tx-message').value,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Send');
 });
 $('tx-tune').addEventListener('click',()=>{const on=transmitView?.transmit.tune;transmitAction(on?{action:'tune',enabled:false}:{action:'tune',enabled:true,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Tune');});
+// ---------------------------------------------------------------- operating extras (cold-load: built here)
+document.querySelector('#server-fields-general .op-apply-row').insertAdjacentHTML('beforebegin','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label>');
+document.querySelector('#settings-display h3').insertAdjacentHTML('afterend','<label>Theme<select id="theme-choice"><option value="dark">Dark</option><option value="day">Day</option><option value="night">Night (dim red)</option></select></label><label>Switch<select id="theme-switch"><option value="manual">Manually</option><option value="time">By time</option><option value="sun">By sunrise and sunset at my locator</option></select></label><span id="theme-times"><label>Day from<input id="theme-day-start" type="time" value="07:00"></label><label>Night from<input id="theme-night-start" type="time" value="20:00"></label></span><p id="theme-status" class="op-muted"></p>');
+const maidenhead=grid=>{
+  if(typeof grid!=='string'||!/^[A-R]{2}[0-9]{2}([A-X]{2})?$/i.test(grid))return null;
+  const g=grid.toUpperCase(),sub=g.length===6;
+  const lon=(g.charCodeAt(0)-65)*20-180+Number(g[2])*2+(sub?(g.charCodeAt(4)-65)*(2/24)+1/24:1);
+  const lat=(g.charCodeAt(1)-65)*10-90+Number(g[3])+(sub?(g.charCodeAt(5)-65)*(1/24)+1/48:.5);
+  return [lat,lon];
+};
+function distanceKm(from,to){
+  const a=maidenhead(from),b=maidenhead(to);if(!a||!b)return null;
+  const r=Math.PI/180,h=Math.sin((b[0]-a[0])*r/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin((b[1]-a[1])*r/2)**2;
+  return Math.round(12742*Math.asin(Math.min(1,Math.sqrt(h))));
+}
+window.wstxRenderHistory=function renderHistory(body){
+  for(const block of activityHistory){
+    const divider=document.createElement('tr');divider.className='ba-divider';divider.setAttribute('role','row');
+    const cell=document.createElement('td');cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`${block.mode.toUpperCase()} period ${periodLabel(block.period,block.mode)}${block.period?' UTC':''}`;divider.append(cell);body.append(divider);
+    for(const record of activityOrdering(block.rows))body.append(activityRow(record,'history',block.context,block.mode));
+  }
+}
+window.wstxDistanceKm=distanceKm;
+function chip(key,severity,text,action){const button=document.createElement('button');button.type='button';button.className='op-chip';button.dataset.chip=key;button.dataset.severity=severity;button.textContent=`${severity==='error'?'\u2716':'\u26A0'} ${text}`;button.title=text;button.addEventListener('click',action);return button;}
+window.wstxChipsShow=function(){
+  const list=[],connected=connection.dataset.state==='connected',open=section=>()=>showRegion('server-settings',null,section);
+  if(connected){
+    const mode=profileData?.settings.control.mode,radio=operatingState?.radio.state;
+    if(mode==='cat'&&catStatus?.condition==='commissioningRequired')list.push(chip('cat','warn','CAT setup not confirmed',open('settings-cat')));
+    else if(mode==='cat'&&catStatus&&catStatus.condition!=='ready')list.push(chip('cat','error',document.querySelector('#cat-status').textContent,open('settings-cat')));
+    else if(mode==='cat'&&!catStatus&&radio&&radio!=='ready')list.push(chip('cat','error',`CAT ${radio}`,open('receive-details')));
+    const a=live?.audio,active=live?.job&&['running','cancelling'].includes(live.job.state);
+    if(a?.state==='unavailable')list.push(chip('audio','error',`Audio unavailable${a.error?' \u00b7 '+a.error:''}`,open('settings-audio')));
+    const level=document.querySelector('#settings-audio .op-input-meter')?.dataset.level;
+    if(active&&level==='low')list.push(chip('level','warn','Audio level low',open('settings-audio')));
+    if(active&&level==='high')list.push(chip('level','warn','Audio overdriven',open('settings-audio')));
+    if(transmitConfigured()&&transmitView?.clock==='unsynchronized')list.push(chip('clock','error','Clock off \u00b7 Tx blocked',open('settings-clock')));
+    if(uncertainMutation)list.push(chip('receive','warn',receiveFailure||'Receive outcome unknown',open('receive-details')));
+    else if(operatingFailure&&operatingSupported!==false)list.push(chip('selection','warn',operatingFailure,open('receive-details')));
+    else if(operatingUnknown)list.push(chip('selection','warn','Band/mode outcome unknown',open('receive-details')));
+    else if(operatingState?.operation?.result==='failed')list.push(chip('selection','error',`Band/mode change failed${operatingState.operation.error?' \u00b7 '+operatingState.operation.error:''}`,open('receive-details')));
+    else if(live&&!active&&!mutationPending&&!receiveTarget()&&a?.state!=='unavailable'){
+      if(profileData?.settings.audio.input_device)list.push(chip('receive','warn','Receive stopped \u00b7 start',()=>receiveToggle()));
+      else list.push(chip('receive','warn','No audio input',open('server-fields-audio')));
+    }
+    if(performance.now()-restartedAt<60000)list.push(chip('restart','warn','Receive restarted',open('receive-details')));
+  }
+  const key=list.map(b=>b.dataset.chip+b.textContent).join('|');
+  if(chips.dataset.key!==key){chips.dataset.key=key;chips.replaceChildren(...list);}
+}
+setInterval(()=>window.wstxChipsShow(),1000);
+window.wstxChipsShow();if(typeof renderResults==='function')renderResults();
 // ---------------------------------------------------------------- browser settings
 // KeyboardShortcuts overview (the halt lines are in recording.js from the start).
 document.querySelector('#help-keys').insertAdjacentHTML('beforeend','<div><dt>CQ / Reply / double-click a decode</dt><dd>Start the QSO: transmission starts with the next period and ends after RR73/73 or HALT</dd></div><div><dt>F2</dt><dd>Settings</dd></div><div><dt>F4</dt><dd>Clear the DX call (cancel the contact)</dd></div><div><dt>Alt+1 &hellip; Alt+6</dt><dd>Next message Tx1&hellip;Tx6</dd></div><div><dt>Alt+M</dt><dd>Start or stop receive</dd></div><div><dt>Alt+T / Alt+Q</dt><dd>Tune / Log QSO</dd></div><div><dt>F11 / F12</dt><dd>Rx &minus;/+ 1 Hz</dd></div><div><dt>Shift+F11 / Shift+F12</dt><dd>Tx &minus;/+ 60 Hz (FT4 90 Hz)</dd></div><div><dt>Ctrl+F11 / Ctrl+F12</dt><dd>Rx and Tx &minus;/+ 1 Hz</dd></div><div><dt>Waterfall click / Shift+click / Ctrl+click</dt><dd>Set Rx / Tx / both; drag the Rx or Tx marker</dd></div><div><dt>Rx/Tx fields: wheel, arrows, &minus;/+</dt><dd>1 Hz; with Shift 10 Hz</dd></div><div><dt>Band Activity: click / double-click / right-click</dt><dd>Select / Reply / menu</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the spectrum and waterfall</dd></div>');
