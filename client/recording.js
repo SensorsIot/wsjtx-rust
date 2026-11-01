@@ -796,12 +796,11 @@ async function operatingStop(){
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=target;operatingFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}}
   finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);await receiveSync();receiveShow();}}
 }
-async function restartAllowed(what){
-  const s=window.wstxContact?.snapshot?.(),c=s?.contact,busy=(c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;
-  return !busy||await confirmAction(`${what} restarts receive and interrupts the QSO in progress. Continue?`,'Restart receive');
-}
-operatingMode.addEventListener('change',async()=>{if(await restartAllowed('Changing the mode'))operatingSelect('mode',operatingMode.value);else operatingShow();});
-operatingBand.addEventListener('change',async()=>{if(!operatingBand.value)return;if(await restartAllowed('Changing the band'))operatingSelect('band',operatingBand.value);else operatingShow();});
+// Selects synchronously when nothing is in progress so the epoch moves within the change event.
+function restartBusy(){const s=window.wstxContact?.snapshot?.(),c=s?.contact;return (c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;}
+function restartSelect(what,action,value){if(!restartBusy())return operatingSelect(action,value);confirmAction(`${what} restarts receive and interrupts the QSO in progress. Continue?`,'Restart receive').then(ok=>ok?operatingSelect(action,value):operatingShow());}
+operatingMode.addEventListener('change',()=>restartSelect('Changing the mode','mode',operatingMode.value));
+operatingBand.addEventListener('change',()=>{if(operatingBand.value)restartSelect('Changing the band','band',operatingBand.value);});
 function receiveTarget(){const s=operatingState;return operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);}
 function receiveToggleAvailable(){
   const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
