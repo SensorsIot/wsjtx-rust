@@ -378,7 +378,8 @@ setInterval(displays,250);
 // Reconnect (a new socket) reloads the authoritative snapshot; a status refresh on the
 // same socket does not (contact.state announces every change).
 let readySocket=null;
-addEventListener('station-ready',event=>{if(event.detail===readySocket&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();loadAutomation();});
+// The automation state is read once per socket (then announced by automation.state).
+addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();if(fresh)loadAutomation();});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
