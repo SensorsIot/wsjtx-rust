@@ -627,6 +627,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
   await page.setViewportSize({width:1366,height:768});
   await page.locator('#token').fill(token);await page.locator('#login button').click();await page.locator('#connection[data-state="connected"]').waitFor();
   assert.equal(await page.locator('#login-view').isVisible(),false);
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   for(const selector of ['#operating-workspace','#radio-toolbar','#halt-tx','#rxtx-strip','#qso-cq'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
   assert.deepEqual(errors,[]);
 });
@@ -724,6 +725,8 @@ const bandPresentationFixture={"purpose":"Presentation-only text fixture; not de
 test('TC-007-002 populated Band Activity has dominant width and complete readable field details',{timeout:25000},async t=>{
  // #37 columns: UTC, dB, DT, Freq, Message, DXCC, Dist (the payload status is in the message).
  const {page,errors}=await fixture(t,{width:1440,height:1000}),rows=bandPresentationFixture.rows.map((r,i)=>({...r,values:[...r.values.slice(0,5),'—',i%3?'—':'19999 km']}));
+ // The contact client re-renders Band Activity when it arrives; insert the fixture after it.
+ await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
  await page.locator('#band-activity header .op-muted').evaluate(node=>node.textContent='Presentation fixture: captured FT4/FT8 text and synthetic edge cases; not decoder truth');
  await page.locator('#band-activity tbody').evaluate((tbody,rows)=>{const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);tbody.replaceChildren();for(const item of rows){const row=document.createElement('tr');row.dataset.presentationFixture=item.kind;row.setAttribute('role','row');for(const [index,value] of item.values.entries()){const td=document.createElement('td');td.setAttribute('role','cell');td.dataset.label=labels[index];td.textContent=value;row.append(td);}tbody.append(row);}},rows);
  assert.equal(await page.locator('tr[data-result-id]').count(),0,'presentation fixtures never claim production decoder records');
