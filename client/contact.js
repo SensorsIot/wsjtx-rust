@@ -1,29 +1,17 @@
 'use strict';
-// CR #10 standard FT8 contact (WstxContact, OperatingLayout::ContactWorkspace). The server
-// owns the contact, its sequence, next message, transmit requests, watchdogs and times;
-// this browser renders the confirmed GET /contact snapshot, sends POST /contact/command
-// requests and never runs a sequence timer, modem or QSO state machine. The UTC clock
-// and Tx progress are interpolated locally from station.tick for display only.
+// CR #10 standard FT8 contact (WstxContact) in the #37 operating screen
+// (WstxOperatingLayout::QsoPane, RxTxStrip, BandActivityView). The server owns the contact,
+// its sequence, next message, transmit requests, watchdogs and times; this browser renders
+// the confirmed GET /contact snapshot, sends POST /contact/command requests and never runs a
+// sequence timer, modem or QSO state machine. The UTC clock, period progress and countdown
+// are interpolated locally from station.tick for display only. recording.js builds the
+// markup; this client binds it.
 (()=>{
 const focus=document.querySelector('#rx-focus');
 if(!focus||document.body.dataset.profile!=='true')return;
-const body=focus.querySelector('.op-contact-body');
-const identity=body.querySelector('.op-contact-identity');
-for(const node of [...body.children])if(!node.matches('.op-contact-identity,.op-qso-steps,.op-receive-bubble'))node.remove();
-const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
-body.insertAdjacentHTML('beforeend',`<div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false"></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false"></label><button type="button" id="dx-generate">Generate</button></div>
-<p id="contact-state" class="ct-state" role="status">No contact</p>
-<ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slots.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}">Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false">${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip">Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73">RR73</label>':''}</li>`).join('')}</ol>
-<div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1"><span>dB</span></label><label>Rx audio<input id="contact-rx" type="number" min="0" max="3000" step="1"><span>Hz</span></label><label>Tx audio<input id="contact-tx" type="number" min="200" max="2950" step="1"><span>Hz</span></label><label class="op-check"><input type="checkbox" id="contact-hold">Hold Tx</label><label>Tx period<select id="contact-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label></div>
-<p class="ct-tx"><span>NEXT</span> <strong id="contact-next">None</strong> <span>LAST SENT</span> <strong id="contact-last">None</strong></p>
-<div class="op-auto-row"><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-tune" disabled>Tune</button><span id="contact-watchdog" class="op-muted"></span></div>
-<div class="op-contact-actions"><button type="button" id="contact-enable" class="op-primary" disabled aria-pressed="false" aria-describedby="transmit-unavailable" title="Enable Tx (Alt+N)"><span aria-hidden="true">&#9655;</span>Enable Tx</button><button type="button" id="contact-cancel" disabled>Cancel contact</button><button type="button" id="contact-log" disabled aria-describedby="contact-unavailable" title="Log QSO (Alt+Q)">Log QSO</button><button type="button" id="contact-discard" hidden>Discard log review</button></div>
-<p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
-<section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Rx Frequency <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button><button type="button" id="rx-pane-erase">Erase</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="Rx Frequency messages"><table aria-label="Rx Frequency messages"><tbody id="rx-pane-rows"></tbody></table></div></section>`);
 const $=id=>document.getElementById(id);
-// WstxOperatingLayout::OperatingScreen (#37): the Rx Frequency pane is its own card beside
-// Band Activity; without that card it stays in the Current QSO card.
-const rxCard=document.querySelector('#rx-frequency');if(rxCard)rxCard.replaceChildren($('rx-pane'));
+const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
+const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
 let snap=null,sending=false,openedReviews=new Set(),tick=null,lastTx=null,changeTarget=null;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,monotonic_ms,profile_id,review,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
@@ -64,32 +52,44 @@ async function sendNow(action,params={},label=action){
 addEventListener('keyboard-halt',event=>{
   const h=event.detail?.reply?.halt_state;
   if(h)resultText.textContent=`Halt: ${h==='stopped'?'stopped (confirmed)':h==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`;
-  // Esc: the contact cancellation follows the answered (or skipped) halt.
   const c=snap?.contact;
   if(event.detail?.escape&&c&&!['idle','cancelled','completed'].includes(c.state))send('cancel',{},'Cancel contact');else load();
 });
 // ---------------------------------------------------------------- render
 const stateText={idle:'Idle',calling:'Calling CQ',replying:'Replying',report:'Sending report',roger_report:'Sending R+report',rogers:'Sending acknowledgement',signoff:'Signing off',completed:'Completed',cancelled:'Cancelled'};
+const transmitting=c=>!!c&&!['idle','completed','cancelled'].includes(c.state);
 function setValue(input,value){if(document.activeElement!==input)input.value=value??'';}
 function render(){
   const c=snap?.contact,t=snap?.transmit,s=snap?.settings,capable=transmitCapable(),armed=t?.arm_state==='armed';
   focus.dataset.contact=c?.dx_call?'true':'';
   const strong=identity.querySelector('strong'),detail=identity.querySelector('div > span');
-  if(c?.dx_call){strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}`;detail.textContent=`Report sent ${c.report_sent} · received ${c.report_rcvd??'none'}${c.saved?' · logged':''}`;}
+  if(c?.dx_call){
+    const km=c.dx_grid&&typeof distanceKm==='function'?distanceKm(profileData?.settings?.locator,c.dx_grid):null;
+    strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}`;
+    detail.textContent=`Report sent ${c.report_sent} · received ${c.report_rcvd??'none'}${km!==null?` · ${km} km`:''}${c.saved?' · logged':''}`;
+  }
   else if(c){strong.textContent=c.state==='calling'?'Calling CQ':'No contact selected';detail.textContent='Select a decoded station or enter a DX call.';}
-  $('contact-state').textContent=!snap?'Contact state unavailable':c?`${stateText[c.state]??c.state} · next ${c.next_slot.toUpperCase()}${armed?' · Enable Tx on':' · Enable Tx off'}`:'No contact';
-  focus.querySelector('header .op-muted').textContent=c?`${stateText[c.state]??c.state}${c.dx_call?' with '+c.dx_call:''}`:capable?'No active contact':'No active contact · transmission unavailable';
-  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Enable Tx on'):c?.state==='completed'?'Completed':capable?'Ready':'Receive only';
+  for(const id of ['dx-call','dx-grid','dx-generate','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
+  for(const button of document.querySelectorAll('#rxtx-strip [data-strip-step]'))button.disabled=!snap;
+  $('contact-state').textContent=!snap?'Contact state unavailable':c?`${stateText[c.state]??c.state} · next ${c.next_slot.toUpperCase()}${armed?' · transmitting':''}`:'No contact';
+  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):c?.state==='completed'?'Completed':capable?'Ready':'Receive only';
+  focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
     const row=body.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
     const message=c?.messages?.[i]??null;setValue(text,message);text.disabled=!message;radio.disabled=!message;radio.checked=c?.next_slot===slot;
     row.classList.toggle('ct-next-row',c?.next_slot===slot);
   }
   $('contact-tx1-skip').checked=!!s?.tx1_skip;$('contact-rr73').checked=c?.tx4==='rr73';$('contact-rr73').disabled=!c?.dx_call;
-  if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;$('contact-auto').checked=s.auto_seq;}
-  const auto=$('contact-auto');auto.disabled=!capable;if(capable)auto.setAttribute('aria-label','Auto sequence');else auto.setAttribute('aria-label','Auto sequence unavailable');
-  const enable=$('contact-enable');enable.disabled=!capable;enable.setAttribute('aria-pressed',String(armed));enable.classList.toggle('ct-on',armed);
-  if(capable)enable.removeAttribute('aria-describedby');else enable.setAttribute('aria-describedby','transmit-unavailable');
+  if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;$('contact-auto').checked=s.auto_seq;
+    setValue($('watchdog-tx'),s.tx_minutes);setValue($('watchdog-tune'),s.tune_seconds);}
+  $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
+  const auto=$('contact-auto');auto.disabled=!capable;auto.setAttribute('aria-label',capable?'Auto sequence':'Auto sequence unavailable');
+  // WstxContact::SetEnableTx (#37): no Enable Tx control; the direct buttons start a QSO.
+  const prepared=!!c?.dx_call&&transmitting(c);
+  $('qso-cq').disabled=!capable||(armed&&c?.state==='calling');
+  $('qso-reply').disabled=!capable||!prepared||armed;
+  $('qso-rr73').disabled=$('qso-73').disabled=!capable||!c?.dx_call||c.state==='cancelled';
+  for(const id of ['qso-cq','qso-reply','qso-rr73','qso-73','contact-tune'])if(capable)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
   $('transmit-unavailable').hidden=capable;
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
   const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
@@ -105,43 +105,39 @@ function render(){
   if(t?.last_text&&t.last_period_utc&&lastTx!==`${t.last_period_utc}/${t.last_text}`){if(lastTx!==null)paneTx(t.last_text,t.last_period_utc);lastTx=`${t.last_period_utc}/${t.last_text}`;}
   const pendingReview=snap?.review&&snap.review.outcome!=='saved';const discard=$('contact-discard');discard.hidden=!pendingReview;
   if(pendingReview)discard.textContent=`Discard log review ${snap.review.record.call}`;
-  stationTx();
+  stationTx();countdown();
   paneUpdate();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   const review=snap?.review;
   if(review&&!openedReviews.has(review.contact_id)&&review.outcome!=='saved'&&window.wstxLogbook){openedReviews.add(review.contact_id);window.wstxLogbook.openReview(review.record);}
 }
-// Compact transmit state in the station bar, visible in every region (review decision 5).
+// Compact transmit state in the top bar, shown only while transmission is on or expired.
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
 document.querySelector('#halt-tx')?.before(stationTxNode);
-// WstxMcp::AutomationIndicator: a running automation (waiting or in a contact) is always
-// visible in the station bar; read-only, Halt Tx ends it.
-const automationNode=document.createElement('span');automationNode.id='station-automation';automationNode.className='ct-station-tx';automationNode.setAttribute('role','status');automationNode.hidden=true;
-stationTxNode.before(automationNode);
+// WstxMcp::AutomationIndicator: the run state sits in the strategy element; HALT ends it.
+const automationNode=$('station-automation');
 let automationLoading=null;
 function loadAutomation(){
   if(automationLoading)return automationLoading;
   automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
-    automationNode.hidden=!active;
-    automationNode.textContent=active?`Automation ${run.state==='waiting'?'waiting':'in contact'} · run ${String(run.id).slice(0,8)} · Halt ends it`:'';
+    automationNode.dataset.active=String(!!active);
+    automationNode.textContent=active?`Automation ${run.state==='waiting'?'waiting':'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:'Automation idle';
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
 }
 function stationTx(){
-  const t=snap?.transmit,capable=transmitCapable();stationTxNode.hidden=!capable;if(!capable)return;
-  const wd=snap.watchdog,armed=t.arm_state==='armed';
-  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx enabled':'Tx off'}${armed?` · WD:${wd.tx_remaining_minutes}m`:wd.tx_expired?' · Tx watchdog expired':''}${t.last_text?` · last ${t.last_text}`:''}`;
+  const t=snap?.transmit,capable=transmitCapable(),wd=snap?.watchdog,armed=t?.arm_state==='armed';
+  stationTxNode.hidden=!capable||!(armed||tick?.transmitting||wd?.tx_expired);if(stationTxNode.hidden)return;
+  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_minutes}m`:wd.tx_expired?' · Tx watchdog expired':''}${t.last_text?` · last ${t.last_text}`:''}`;
 }
-// OperatingLayout::OpenRegion: a pointer action outside an open secondary region returns to
-// operation (the signal area of Recordings/Preferences and the station bar excepted).
+// OperatingLayout::OpenRegion: a pointer action outside an open page returns to operation
+// (the top bar excepted); the Settings drawer closes the same way (recording.js).
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
-  // A control outside the region acts on its own; closing first would move it away
-  // from under the pointer.
-  if(event.target.closest?.('.op-secondary,#station-bar,#signal,#splitter,button,input,select,textarea,a,label,summary,[tabindex]'))return;
+  if(event.target.closest?.('.op-secondary,#station-bar,#signal,#splitter,dialog,button,input,select,textarea,a,label,summary,[tabindex]'))return;
   showRegion('operate');
 },true);
-// ---------------------------------------------------------------- controls
+// ---------------------------------------------------------------- QSO commands
 $('dx-generate').addEventListener('click',()=>enterDx(false));
 for(const id of ['dx-call','dx-grid'])$(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();enterDx(false);}});
 async function enterDx(replace){
@@ -154,6 +150,26 @@ function offerChange(run,call){
   changeTarget?.remove();const button=document.createElement('button');button.type='button';button.id='contact-change';button.textContent=`Change contact to ${call}`;
   button.addEventListener('click',()=>{button.remove();changeTarget=null;run();});resultText.after(button);changeTarget=button;
 }
+// Starting a QSO means transmitting: enable_tx with the safety revision the operator sees,
+// so grant, clock, period and revision checks stay with the station.
+const arm=label=>send('enable_tx',{enabled:true,safety_revision:snap?.transmit.safety_revision??null},label);
+$('qso-cq').addEventListener('click',async()=>{
+  const c=snap?.contact;
+  if(c?.dx_call&&transmitting(c)){
+    if(!await confirmAction(`Abandon the QSO with ${c.dx_call} and call CQ?`,'Call CQ'))return;
+    const reply=await send('cancel',{},'Cancel contact');if(!reply||reply.refused)return;
+  }
+  arm('CQ');
+});
+$('qso-reply').addEventListener('click',()=>arm('Reply'));
+async function finalMessage(slot,label){
+  const c=snap?.contact;if(!c?.dx_call)return;
+  if(slot==='tx4'&&c.tx4!=='rr73'){const r=await send('set_tx4',{form:'rr73'},'RR73');if(!r||r.refused)return;}
+  const r=await send('choose_next',{slot},label);if(!r||r.refused)return;
+  if(snap?.transmit.arm_state!=='armed')arm(label);
+}
+$('qso-rr73').addEventListener('click',()=>finalMessage('tx4','RR73'));
+$('qso-73').addEventListener('click',()=>finalMessage('tx5','73'));
 body.querySelector('#contact-messages').addEventListener('change',event=>{
   const radio=event.target.closest('input[type=radio]');if(radio){send('choose_next',{slot:radio.value},`Next ${radio.value.toUpperCase()}`);return;}
   const text=event.target.closest('.ct-text');if(text)send('edit_message',{slot:text.dataset.slot,text:text.value},`Edit ${text.dataset.slot.toUpperCase()}`);
@@ -161,13 +177,16 @@ body.querySelector('#contact-messages').addEventListener('change',event=>{
 $('contact-tx1-skip').addEventListener('change',event=>send('set_tx1_skip',{enabled:event.target.checked},'Skip Tx1'));
 $('contact-rr73').addEventListener('change',event=>send('set_tx4',{form:event.target.checked?'rr73':'rrr'},'RRR/RR73'));
 $('contact-report').addEventListener('change',event=>{const n=Number(event.target.value);if(Number.isInteger(n))send('set_report',{report:n},'Report');else resultText.textContent='Report must be a whole number of dB';});
-for(const [id,key] of [['contact-rx','rx_hz'],['contact-tx','tx_hz']])$(id).addEventListener('change',event=>{const n=Number(event.target.value);if(!Number.isSafeInteger(n)||n<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx_hz'?n:null,tx_hz:key==='tx_hz'?n:null},key==='rx_hz'?'Rx frequency':'Tx frequency');});
-$('contact-hold').addEventListener('change',event=>send('set_hold_tx',{enabled:event.target.checked},'Hold Tx'));
 $('contact-parity').addEventListener('change',event=>send('set_parity',{parity:event.target.value},'Tx period'));
 $('contact-auto').addEventListener('change',event=>send('set_auto_seq',{enabled:event.target.checked},'Auto sequence'));
-$('contact-enable').addEventListener('click',()=>send('enable_tx',{enabled:snap?.transmit.arm_state!=='armed',safety_revision:snap?.transmit.safety_revision??null},'Enable Tx'));
 $('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune},'Tune'));
 $('contact-cancel').addEventListener('click',()=>send('cancel',{},'Cancel contact'));
+// Settings > Radio > Transmit: watchdogs are operative changes and apply at once.
+for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',async()=>{
+  const tx=Number($('watchdog-tx').value),tune=Number($('watchdog-tune').value);
+  if(!Number.isInteger(tx)||!Number.isInteger(tune)){$('watchdog-result').textContent='Watchdogs must be whole numbers';return;}
+  await send('set_watchdogs',{tx_minutes:tx,tune_seconds:tune},'Watchdogs');$('watchdog-result').textContent=resultText.textContent;
+});
 async function logQso(){
   const c=snap?.contact;if(!c?.dx_call)return;
   if(snap.review?.contact_id===c.id&&window.wstxLogbook){window.wstxLogbook.openReview(snap.review.record);return;}
@@ -176,36 +195,63 @@ async function logQso(){
 $('contact-log').addEventListener('click',logQso);
 // The offered review is the oldest unsaved one; discarding it shows the next.
 $('contact-discard').addEventListener('click',()=>{const id=snap?.review?.contact_id;if(id)send('discard_review',{contact_id:id},'Discard log review');});
-// Esc halts Tx and aborts the contact in every page state and focused field; it closes
-// no panel (D5). On a receive-only station it only cancels. Alt+N/H/Q where delivered.
+// WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc and
+// Alt+H halt from recording.js in every state; Esc closes no panel.
+const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select,[contenteditable=true]');
+function nudge(rx,tx,label){const s=snap?.settings;if(!s)return;send('set_frequency',{rx_hz:rx===null?null:Math.max(0,Math.min(3000,s.rx_hz+rx)),tx_hz:tx===null?null:s.tx_hz+tx},label);}
 addEventListener('keydown',event=>{
-  if(event.key==='Escape'){
-    event.preventDefault();
-    // The halt and then the cancellation run from the 'keyboard-halt' event above.
+  if(event.key==='Escape'){event.preventDefault();return;}
+  if(event.key==='F4'){event.preventDefault();if(snap?.contact&&!['idle','cancelled'].includes(snap.contact.state))send('cancel',{},'Clear DX');return;}
+  if(event.key==='F11'||event.key==='F12'){
+    event.preventDefault();const sign=event.key==='F11'?-1:1,ft4=tick?.period===7500;
+    if(event.shiftKey)nudge(null,sign*(ft4?90:60),'Tx frequency');else if(event.ctrlKey)nudge(sign,sign,'Rx and Tx frequency');else nudge(sign,null,'Rx frequency');
     return;
   }
   if(!event.altKey||event.ctrlKey||event.metaKey)return;
   const key=event.key.toLowerCase();
-  if(key==='n'&&transmitCapable()){event.preventDefault();$('contact-enable').click();}
-  else if(key==='q'){event.preventDefault();logQso();}
+  if(key==='q'){event.preventDefault();logQso();}
+  else if(key==='t'&&transmitCapable()){event.preventDefault();$('contact-tune').click();}
+  else if(/^[1-6]$/.test(key)&&snap?.contact?.messages?.[Number(key)-1]){event.preventDefault();send('choose_next',{slot:'tx'+key},`Next TX${key}`);}
 },true);
 // ---------------------------------------------------------------- Band Activity selection
+// BandActivityView: click selects (prepares, never transmits), double-click replies,
+// right-click (or the context-menu key) opens Reply / Select / Set Rx here.
 const activity=document.querySelector('#band-activity tbody');
 function rowIdentity(row){
-  if(!live?.source||!live?.job)return null;const sequence=Number(row.dataset.sequence);if(!Number.isSafeInteger(sequence))return null;
-  return {source_id:live.source.id,job_id:live.job.id,generation:live.generation,sequence};
+  const context=row.dataset.resultId?.split('/');if(!context||context.length<6)return null;
+  const sequence=Number(row.dataset.sequence);if(!Number.isSafeInteger(sequence))return null;
+  // data-result-id is profile/boot/source/job/generation/sequence of the row's own period.
+  const [,,source_id,job_id,generation]=context;if(!source_id||!job_id)return null;
+  return {source_id,job_id,generation:Number(generation),sequence};
 }
 async function selectRow(tr){
-  const row=rowIdentity(tr);if(!row)return;
-  const text=tr.children[4]?.textContent??'';
+  const row=rowIdentity(tr);if(!row)return null;
+  const text=tr.children[4]?.firstChild?.textContent??'';
   const reply=await send('select_row',{row,replace:false},'Select station');
   if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true},'Change contact'),text);
+  return reply;
 }
-activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(tr)selectRow(tr);});
-activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[data-sequence]');if(tr&&event.key==='Enter'){event.preventDefault();selectRow(tr);}});
-// ---------------------------------------------------------------- Rx Frequency pane
-// WstxContact::RoutesToRxFrequencyPane: within +/-10 Hz of the confirmed Rx offset, the
-// first call equal to my call, or my call followed by the DX call. At most 500 rows.
+async function replyRow(tr){const reply=await selectRow(tr);if(reply&&!reply.refused&&transmitCapable())arm('Reply');}
+let clickTimer=null;
+activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>selectRow(tr),250);});
+activity?.addEventListener('dblclick',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);replyRow(tr);});
+activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;if(event.key==='Enter'){event.preventDefault();selectRow(tr);}else if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();openMenu(tr,tr.getBoundingClientRect().left+20,tr.getBoundingClientRect().bottom);}});
+const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-menu';menu.setAttribute('role','menu');menu.hidden=true;
+menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
+document.querySelector('main').append(menu);let menuRow=null;
+function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.style.left=`${Math.min(x,innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(y,innerHeight-menu.offsetHeight-8)}px`;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();menu.querySelector('button:not(:disabled)').focus();}
+function closeMenu(){menu.hidden=true;menuRow=null;}
+activity?.addEventListener('contextmenu',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;event.preventDefault();openMenu(tr,event.clientX,event.clientY);});
+menu.addEventListener('click',event=>{
+  const item=event.target.closest('[data-menu]');if(!item||!menuRow)return;const tr=menuRow;closeMenu();
+  if(item.dataset.menu==='reply')replyRow(tr);else if(item.dataset.menu==='select')selectRow(tr);
+  else{const hz=Math.round(Number(tr.children[3].textContent));if(Number.isFinite(hz))send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency');}
+});
+menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
+document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
+// ---------------------------------------------------------------- QSO dialogue
+// WstxContact::RoutesToRxFrequencyPane (sent/received dialogue) plus QsoPaneCrowding: other
+// stations within +/-50 Hz of my Rx frequency are shown with a warning sign and counted.
 const pane=$('rx-pane-rows'),paneWrap=$('rx-pane').querySelector('.ct-pane-wrap');let paneSeen=new Set(),paneContext=null,paneUnread=0,paneFollow=true;
 const myCall=()=>(profileData?.settings?.callsign??'').trim().toUpperCase();
 function routes(record){
@@ -215,13 +261,15 @@ function routes(record){
   if(my&&to===my)return true;
   return !!(my&&dx&&typeof record.text==='string'&&record.text.split(' ').some((w,i,a)=>w===my&&a[i+1]===dx));
 }
-function paneAppend(cells,kind){
-  const tr=document.createElement('tr');tr.dataset.kind=kind;
+function crowding(record){const rx=snap?.settings?.rx_hz,dx=snap?.contact?.dx_call;return typeof rx==='number'&&record.fields?.from?.text!==dx&&record.frequency_hz>=rx-50&&record.frequency_hz<=rx+50;}
+function paneAppend(cells,kind,flags={}){
+  const tr=document.createElement('tr');tr.dataset.kind=kind;if(flags.crowd)tr.dataset.crowd='true';if(flags.tome)tr.dataset.tome='true';
   for(const text of cells){const td=document.createElement('td');td.textContent=text;tr.append(td);}
+  if(flags.crowd)tr.firstElementChild.prepend('⚠ ');
   pane.append(tr);while(pane.children.length>500)pane.firstElementChild.remove();
   if(paneFollow)paneWrap.scrollTop=paneWrap.scrollHeight;else{paneUnread++;showUnread();}
 }
-function paneTx(text,utc){paneAppend([new Date(utc).toISOString().slice(11,19),'Tx','','',text],'tx');}
+function paneTx(text,utc){paneAppend([new Date(utc).toISOString().slice(11,19),'Tx','','',`▸ ${text}`],'tx');}
 function showUnread(){$('rx-pane-unread').textContent=paneUnread?`· ${paneUnread} new`:'';$('rx-pane-resume').hidden=paneFollow;}
 paneWrap.addEventListener('scroll',()=>{const atEnd=paneWrap.scrollTop+paneWrap.clientHeight>=paneWrap.scrollHeight-4;if(atEnd!==paneFollow){paneFollow=atEnd;if(atEnd)paneUnread=0;showUnread();}});
 $('rx-pane-resume').addEventListener('click',()=>{paneFollow=true;paneUnread=0;paneWrap.scrollTop=paneWrap.scrollHeight;showUnread();});
@@ -232,34 +280,62 @@ function paneUpdate(){
   if(!snap||typeof resultRows==='undefined'||!live?.job)return;
   const context=`${profileData?.profile_id}/${live.job.mode}/${operatingState?.selection?.band??''}`;
   if(context!==paneContext){paneClear();paneContext=context;}
-  const ordered=[...resultRows].sort((a,b)=>a.sequence-b.sequence);
+  const ordered=[...resultRows].sort((a,b)=>a.sequence-b.sequence),my=myCall(),dx=snap.contact?.dx_call;
   for(const record of ordered){
     const key=`${liveIdentity(live)}/${record.sequence}`;if(paneSeen.has(key))continue;paneSeen.add(key);
-    if(record.status!=='decoded'||!routes(record))continue;
-    paneAppend([periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(0),record.dt_seconds===null?'—':record.dt_seconds.toFixed(1),record.frequency_hz.toFixed(0),record.text],'rx');
-    const dx=snap?.contact?.dx_call;
-    if(dx&&record.fields?.from?.text===dx)body.querySelector('.op-receive-bubble p').textContent=record.text;
+    if(record.status!=='decoded')continue;
+    const routed=routes(record),crowd=crowding(record);if(!routed&&!crowd)continue;
+    const to=record.fields?.to?.kind==='call'?record.fields.to.text:null,tome=!!my&&to===my&&record.fields?.from?.text!==dx;
+    paneAppend([periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(0),record.dt_seconds===null?'—':record.dt_seconds.toFixed(1),record.frequency_hz.toFixed(0),record.fields?.from?.text===dx&&dx?`◂ ${record.text}`:record.text],routed?'rx':'crowd',{crowd,tome});
+    if(dx&&record.fields?.from?.text===dx)body.querySelector('#contact-state').title=record.text;
   }
+  const latest=resultRows.filter(r=>r.status==='decoded'&&crowding(r)).length,badge=$('qso-crowd');
+  badge.hidden=!latest;badge.textContent=latest?`⚠ ${latest} near Rx`:'';badge.title=`${latest} other station${latest===1?'':'s'} within 50 Hz of my Rx frequency in the latest period`;
 }
 if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;paneUpdate();}).observe(activity,{childList:true});
-// ---------------------------------------------------------------- waterfall pointer actions
+// ---------------------------------------------------------------- Rx/Tx strip and markers
+// WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
+function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
+const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];
+for(const key of ['rx','tx']){
+  const input=$('contact-'+key),label=key==='rx'?'Rx frequency':'Tx frequency';
+  input.addEventListener('change',()=>setFrequency(key,Number(input.value),label));
+  input.addEventListener('keydown',event=>{if(!['ArrowUp','ArrowDown'].includes(event.key)||typeof confirmed(key)!=='number')return;event.preventDefault();setFrequency(key,confirmed(key)+(event.key==='ArrowUp'?1:-1)*(event.shiftKey?10:1),label);});
+  input.addEventListener('wheel',event=>{if(typeof confirmed(key)!=='number'||input.disabled)return;event.preventDefault();setFrequency(key,confirmed(key)+(event.deltaY<0?1:-1)*(event.shiftKey?10:1),label);},{passive:false});
+}
+document.querySelector('#rxtx-strip').addEventListener('click',event=>{
+  const button=event.target.closest('[data-strip-step]');if(!button)return;
+  const [key,step]=button.dataset.stripStep.split(':'),base=confirmed(key);if(typeof base!=='number')return;
+  setFrequency(key,base+Number(step)*(event.shiftKey?10:1),key==='rx'?'Rx frequency':'Tx frequency');
+});
+$('contact-hold').addEventListener('change',event=>send('set_hold_tx',{enabled:event.target.checked},'Hold Tx'));
+$('strip-tx-from-rx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:null,tx_hz:s.rx_hz},'Tx=Rx');});
+$('strip-rx-from-tx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:s.tx_hz,tx_hz:null},'Rx=Tx');});
 // WstxContact::PointerEffect: click Rx; shift- or right-click Tx; ctrl-click Rx and Tx;
 // right double-click Rx and Tx. A left double-click is two Rx clicks: the full-band decoder
-// always runs, so there is no decode-at-point (#37 decision 7). Markers move only after
-// confirmation; no pointer action enables Tx.
+// always runs, so there is no decode-at-point (#37). Markers move only after confirmation,
+// can be dragged (release sends one request); no pointer action enables Tx.
 const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector('#waterfall-wrap');
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
-rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.setAttribute('aria-hidden','true');txMarker.setAttribute('aria-hidden','true');
+rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.dataset.key='rx';txMarker.dataset.key='tx';
+for(const m of [rxMarker,txMarker]){m.setAttribute('role','slider');m.setAttribute('aria-valuemin','0');m.setAttribute('aria-valuemax','3000');m.setAttribute('aria-label',m===rxMarker?'Rx marker, drag to set the Rx frequency':'Tx marker, drag to set the Tx frequency');}
 wrap?.append(rxMarker,txMarker);
 // Labels only where the waterfall has room for them (no clipped text at 360 px/200 %).
 if(wrap)new ResizeObserver(()=>markers()).observe(wrap);
+let dragging=null;
 function markers(){
   const s=snap?.settings,room=!wrap||wrap.clientHeight>=3*parseFloat(getComputedStyle(rxMarker).fontSize||'14');
-  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.textContent=room?`${label} ${hz}`:'';m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;}}
+  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.textContent=room?`${label} ${hz}`:'';m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
   // Close markers share one label so the texts never overlap.
   if(room&&s&&Math.abs(s.rx_hz-s.tx_hz)<400){rxMarker.textContent=s.rx_hz===s.tx_hz?`Rx/Tx ${s.rx_hz}`:`Rx ${s.rx_hz} · Tx ${s.tx_hz}`;txMarker.textContent='';}
 }
 const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
+for(const m of [rxMarker,txMarker]){
+  m.addEventListener('pointerdown',event=>{if(event.button!==0||!snap)return;event.preventDefault();event.stopPropagation();dragging=m;m.setPointerCapture(event.pointerId);m.classList.add('ct-dragging');});
+  m.addEventListener('pointermove',event=>{if(dragging!==m)return;m.style.left=`${pointerHz(event)/30}%`;m.textContent=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)}`;});
+  m.addEventListener('pointerup',event=>{if(dragging!==m)return;dragging=null;m.classList.remove('ct-dragging');const hz=pointerHz(event);if(String(hz)!==m.dataset.hz)send('set_frequency',{rx_hz:m.dataset.key==='rx'?hz:null,tx_hz:m.dataset.key==='tx'?hz:null},m.dataset.key==='rx'?'Rx frequency':'Tx frequency');else markers();});
+  m.addEventListener('click',event=>event.stopPropagation());
+}
 let lastRight=0;
 function pointer(rx,tx,label){send('set_frequency',{rx_hz:rx,tx_hz:tx},label);}
 waterfall?.addEventListener('contextmenu',event=>event.preventDefault());
@@ -271,8 +347,8 @@ waterfall?.addEventListener('mouseup',event=>{
   if(event.button!==2)return;const hz=pointerHz(event),now=performance.now();
   if(now-lastRight<400){lastRight=0;pointer(hz,hz,'Rx and Tx frequency');}else{lastRight=now;pointer(null,hz,'Tx frequency');}
 });
-// ---------------------------------------------------------------- UTC clock, Tx progress, Rx level
-const period=document.querySelector('#radio-toolbar .op-period'),meter=document.querySelector('#radio-toolbar .op-input-meter');
+// ---------------------------------------------------------------- UTC clock, period, Rx level
+const period=document.querySelector('#radio-toolbar .op-period'),meter=document.querySelector('#settings-audio .op-input-meter');
 function displays(){
   if(!period||!meter)return;
   const label=period.querySelector('span'),small=period.querySelector('small'),track=period.querySelector('.op-period-track');
@@ -286,13 +362,25 @@ function displays(){
   const level=tick.level,strong=meter.querySelector('strong');
   strong.textContent=level===null?'Unavailable':`${level} dB${level>85?' high':level<15?' low':''}`;
   meter.dataset.level=level===null?'':level>85?'high':level<15?'low':'ok';
+  meter.querySelector('div').style.setProperty('--ct-level',`${level===null?0:Math.min(100,level/0.9)}%`);
+  countdown();
+}
+// QsoPane "Next": progress of the current period and the countdown to the next period of
+// the contact's parity (even = first, odd = second period of each pair).
+function countdown(){
+  const bar=$('qso-progress'),text=$('qso-countdown');if(!bar||!text)return;
+  if(!tick||!snap){bar.style.width='0%';text.textContent='';return;}
+  const utc=tick.utc+(performance.now()-tick.at),p=tick.period,index=Math.floor(utc/p),parity=snap.settings.parity==='odd'?1:0;
+  bar.style.width=`${Math.min(100,100*(utc%p)/p)}%`;
+  const next=(index+1)%2===parity?index+1:index+2,wait=Math.ceil((next*p-utc)/1000),armed=snap.transmit.arm_state==='armed';
+  text.textContent=tick.transmitting?'Transmitting':armed?`Tx in ${wait} s`:`next ${parity?'odd':'even'} period in ${wait} s`;
 }
 setInterval(displays,250);
 // ---------------------------------------------------------------- station events
 // Reconnect (a new socket) reloads the authoritative snapshot; a status refresh on the
 // same socket does not (contact.state announces every change).
 let readySocket=null;
-addEventListener('station-ready',event=>{if(event.detail===readySocket&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();});
+addEventListener('station-ready',event=>{if(event.detail===readySocket&&snap&&snap.boot_id===profileData?.boot_id)return;readySocket=event.detail;load();loadAutomation();});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
@@ -306,6 +394,6 @@ addEventListener('station-message',event=>{
   }
 });
 render();
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();}
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();}
 window.wstxContact=Object.freeze({load,snapshot:()=>snap});
 })();

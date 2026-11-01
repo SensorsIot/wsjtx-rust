@@ -145,7 +145,7 @@ function annotate(body,records){
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
   const complete=resultView?.complete&&resultCursor>=resultView.next_sequence;
   const from=r=>r.status==='decoded'&&r.fields?.type==='standard'&&r.fields.from?.kind==='call'&&typeof r.fields.from.text==='string'?r.fields.from.text.toUpperCase():null;
-  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);const cell=row.lastElementChild;if(!cell||!status||cell.querySelector('.log-worked'))continue;const mark=document.createElement('span');mark.className='log-worked';mark.dataset.worked=status;mark.title=statusText[status];mark.textContent=` \u00b7 ${statusMark[status]}`;mark.style.color=statusColor[status];cell.append(mark);}};
+  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);const cell=row.querySelector('td[data-col=message]')??row.lastElementChild;if(!cell||!status||cell.querySelector('.log-worked'))continue;const mark=document.createElement('span');mark.className='log-worked';mark.dataset.worked=status;mark.title=statusText[status];mark.textContent=` \u00b7 ${statusMark[status]}`;mark.style.color=statusColor[status];cell.append(mark);}};
   if(!period||!band||!['ft8','ft4'].includes(mode))return;
   if(period===askedPeriod){decorate();return;}
   if(!complete)return;
