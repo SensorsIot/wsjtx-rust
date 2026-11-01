@@ -558,7 +558,9 @@ function liveSelectionFixture(){
       await page.locator('#connection[data-state=connected]').waitFor({timeout:coldRemaining()});seen.connectedObserved=performance.now();
       await page.locator('#operating-band:enabled').waitFor({timeout:coldRemaining()});seen.operatingObserved=performance.now();
       await page.locator('#open-server-settings').click({timeout:coldRemaining()});await page.selectOption('#display-profile','thin',{timeout:coldRemaining()});await page.locator('#tab-expert').click({timeout:coldRemaining()});
-      assert.equal(await page.locator('#display-profile').inputValue({timeout:coldRemaining()}),'thin');seen.thinConfigured=performance.now();coldRemaining();
+      assert.equal(await page.locator('#display-profile').inputValue({timeout:coldRemaining()}),'thin');seen.thinConfigured=performance.now();
+      // The cold load ends with the log and contact clients, loaded after the first snapshots (#37).
+      await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:coldRemaining()});seen.clientsLoaded=performance.now();coldRemaining();
     }));}
     catch(error){
       const state=await Promise.all(pages.map(async(page,i)=>{const state=await page.evaluate(()=>({connection:document.querySelector('#connection')?.textContent,connectionState:document.querySelector('#connection')?.dataset.state,loginHidden:document.querySelector('#login')?.hidden,profileInitialized:typeof profileData==='object',body:document.body.innerText.slice(0,3500)})).catch(e=>({evaluationError:e.message}));await page.screenshot({path:`test-results/radio-selection/cold-failure-${i}.png`,fullPage:true}).catch(()=>{});return {...state,network:observations[i]};}));
