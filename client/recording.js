@@ -1030,5 +1030,5 @@ addEventListener('keydown',event=>{
 // The drawer starts below the top bar, whose height depends on the window width.
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
 // ThemeChoice: a manual theme applies at once; contact.js adds the rest.
-try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
+document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
 chipsReady=true;chipsShow();
