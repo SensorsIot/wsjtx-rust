@@ -120,7 +120,7 @@ async function connected(page) {
   if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
 }
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
-async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await refreshStatus(page);if(!open)await page.locator('#settings-drawer .return-operate').click();}
+async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
 // Proves the CL-022-01 browser proof path against independent cryptographic bytes.

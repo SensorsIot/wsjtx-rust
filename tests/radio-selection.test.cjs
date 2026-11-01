@@ -373,7 +373,7 @@ function selectionNetworkSummary(transfers,start,end){
 // WstxContact::ContactWire: POST /contact/worked is a read-only worked-before query, not a
 // station mutation; every other non-GET request still counts.
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
-async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await refreshStatus(page);if(!open)await page.locator('#settings-drawer .return-operate').click();}
+async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&r.route==='/contact/worked');}
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){

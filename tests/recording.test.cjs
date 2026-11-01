@@ -69,7 +69,7 @@ function wav(seconds=1,amplitude=.5,frequency=750){
 }
 async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});if(await p.locator('#open-server-settings').count()){await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();}await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
-async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await refreshStatus(page);if(!open)await page.locator('#settings-drawer .return-operate').click();}
+async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
 // Proves: CL-003-04, CL-010-07; TC-009-005. Only a current accepted snapshot clears disconnected presentation.
