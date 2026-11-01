@@ -339,15 +339,24 @@ impl Actor {
         outcome
     }
     /// #44 menu exchange (ID read, menu read, menu write with readback) through this
-    /// single I/O owner. It takes the ordinary lease: refused Busy during any operation,
-    /// transition, poll or transmit hold; no queue.
+    /// single I/O owner. It takes the ordinary lease, waiting until deadline while an
+    /// operation, transition, poll or transmit hold holds it (then Busy); no queue.
     pub fn setup(&self, command: SetupCommand, deadline: Instant) -> Result<SetupReply> {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
-        self.lease
+        // The 1 s poll holds the lease briefly; wait for it (bounded by the deadline)
+        // instead of refusing, as the transmit hold does.
+        while self
+            .lease
             .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| Error::Busy)?;
+            .is_err()
+        {
+            if Instant::now() >= deadline || self.shutdown.load(Ordering::Acquire) {
+                return Err(Error::Busy);
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
         let (response, result) = mpsc::sync_channel(1);
         if let Err(error) = self.setup.try_send(SetupRequest {
             command,
