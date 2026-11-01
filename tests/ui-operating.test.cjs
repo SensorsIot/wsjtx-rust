@@ -9,12 +9,12 @@ const net=require('node:net');
 const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
-const {server}=require('./support.cjs');
+const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
 async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
-  const listener=net.createServer();listener.listen(0,'127.0.0.1');await once(listener,'listening');const port=listener.address().port;await new Promise(r=>listener.close(r));
+  const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
@@ -591,4 +591,23 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
  assert.equal(await page.locator('.log-worked[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on this band and mode','text label beside colour');
  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-009-05; TC-006-003. The transmit status line shows the station's SNTP clock
+// state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
+// CAT PTT setting is set in the page only, the server keeps transmit unsupported).
+test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:20000},async t=>{
+  let view;
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
+    view=await (await fetch(app.origin+'/transmit')).json();
+    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
+  }});
+  assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
+  const status=async()=>page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();return document.querySelector('#transmit-status').textContent;});
+  assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
+  view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};
+  assert.match(await status(),/ · clock synchronized \+12 ms ch\.pool\.ntp\.org 34 s ago · halt /);
+  view={...view,clock:'unsynchronized',clock_measurement:{server:'time.windows.com',offset_ms:-2089,round_trip_ms:22,age_ms:5600}};
+  assert.match(await status(),/ · clock unsynchronized -2089 ms time\.windows\.com 6 s ago · halt /);
+  assert.deepEqual(errors,[]);
 });

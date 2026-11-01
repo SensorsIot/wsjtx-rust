@@ -6,12 +6,45 @@ const path = require('node:path');
 const fs = require('node:fs');
 const {performance} = require('node:perf_hooks');
 
+// Chromium net/base/port_util.cc kRestrictedPorts (main branch, read 2026-10-31). A page on
+// one of these ports fails with ERR_UNSAFE_PORT, and Windows may hand out dynamic ports
+// from 1024, so every port a browser loads comes from listenBrowser/browserPort (#35).
+const restrictedPorts = new Set([0,1,7,9,11,13,15,17,19,20,21,22,23,25,37,42,43,53,69,77,79,87,95,101,102,103,104,109,110,111,113,115,117,119,123,135,137,139,143,161,179,389,427,465,512,513,514,515,526,530,531,532,540,548,554,556,563,587,601,636,989,990,993,995,1719,1720,1723,2049,3659,4045,5060,5061,6000,6566,6665,6666,6667,6668,6669,6697,10080]);
+// Listens `listener` on an OS-chosen port of `host` that Chromium accepts, closing and
+// retrying while the port is restricted. Resolves the port.
+async function listenBrowser(listener, host = '127.0.0.1') {
+  for (let attempt = 0; attempt < 64; attempt++) {
+    listener.listen(0, host); await once(listener, 'listening');
+    const {port} = listener.address();
+    if (!restrictedPorts.has(port)) return port;
+    await new Promise(resolve => listener.close(resolve));
+  }
+  throw new Error('No browser-accepted port after 64 attempts');
+}
+// A free port Chromium accepts, released again for a child process to bind.
+async function browserPort(host = '127.0.0.1') {
+  const held = net.createServer();
+  const port = await listenBrowser(held, host);
+  await new Promise(resolve => held.close(resolve));
+  return port;
+}
+
+// Without arguments or WSTX_BIND the server binds 127.0.0.1:0 itself; a restricted port
+// it reports is discarded and the server started again.
 async function server(env = {}, args = []) {
+  for (let attempt = 0; ; attempt++) {
+    const started = await serverOnce(env, args);
+    if (args.length || 'WSTX_BIND' in env || attempt >= 63 || !restrictedPorts.has(Number(new URL(started.origin).port))) return started;
+    await started.close();
+  }
+}
+async function serverOnce(env, args) {
   const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
   if (!fs.existsSync(exe)) throw new Error(`Missing candidate ${exe}; run cargo build --locked`);
   const clean = {...process.env};
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  const child = spawn(exe, args, {env: {...clean, ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
+  // WstxTransmit::TransmitClock: isolated tests never ask a public SNTP server.
+  const child = spawn(exe, args, {env: {...clean, WSTX_SNTP_SERVERS: '', ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
   let output = '';
   const origin = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Server readiness timeout: ' + output)); }, 10000);
@@ -76,8 +109,8 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
     client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy());
     forward(client, upstream, 'up'); forward(upstream, client, 'down');
   });
-  listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
-  return {port: listener.address().port, counters, target,
+  const port = await listenBrowser(listener);
+  return {port, counters, target,
     cut() {enabled = false; for (const socket of sockets) socket.destroy();},
     blackhole() {blackholed = true;},
     restore() {enabled = true; blackholed = false;},
@@ -122,4 +155,4 @@ async function loginPage(page, origin, token, timeout = 30000) {
   await page.locator('#token').fill(token); await page.locator('#login button').click();
   await page.locator('#connection[data-state="connected"]').waitFor({timeout});
 }
-module.exports = {server, link, grant, loginPage};
+module.exports = {server, link, grant, loginPage, restrictedPorts, listenBrowser, browserPort};

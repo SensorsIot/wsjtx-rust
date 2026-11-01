@@ -180,6 +180,10 @@ pub trait Hardware: Send {
         self.now_utc_ms()
     }
     fn clock(&self) -> ClockState;
+    /// The measurement behind `clock` (TransmitClock), shown on the wire; none for doubles.
+    fn clock_measurement(&self) -> Option<super::clock::Measurement> {
+        None
+    }
     fn context(&self) -> Context;
     /// Key or release the transmit switch; Ok only after a matching readback.
     fn ptt(&mut self, on: bool) -> Result<(), PttError>;
@@ -225,6 +229,7 @@ pub struct View {
     pub ptt: PttState,
     pub transmitting: bool,
     pub clock: ClockState,
+    pub clock_measurement: Option<super::clock::Measurement>,
     pub tx_minutes: u32,
     pub tx_remaining_minutes: u32,
     pub tx_expired: bool,
@@ -1029,6 +1034,7 @@ impl<H: Hardware> Core<H> {
                 .is_some_and(|j| j.audio_start_utc_ms.is_some())
                 || self.tune.is_some(),
             clock: self.hardware.clock(),
+            clock_measurement: self.hardware.clock_measurement(),
             tx_minutes: self.tx_minutes,
             tx_remaining_minutes,
             tx_expired: self.tx_expired,
@@ -1267,6 +1273,9 @@ impl Hardware for Box<dyn Hardware> {
     }
     fn clock(&self) -> ClockState {
         (**self).clock()
+    }
+    fn clock_measurement(&self) -> Option<super::clock::Measurement> {
+        (**self).clock_measurement()
     }
     fn context(&self) -> Context {
         (**self).context()

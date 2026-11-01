@@ -11,7 +11,7 @@ use std::sync::Arc;
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{Output, install_exit_guard, system_time_disciplined};
+pub use windows::{Output, install_exit_guard};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputError {

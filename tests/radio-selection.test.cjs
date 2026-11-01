@@ -8,13 +8,12 @@ const {once}=require('node:events');
 const {randomUUID}=require('node:crypto');
 const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
-const {server,grant,loginPage}=require('./support.cjs');
+const {server,grant,loginPage,browserPort}=require('./support.cjs');
 
 async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-selection-'));
   t.after(()=>fs.rm(dir,{recursive:true,force:true}));
-  const held=net.createServer();held.listen(0,'127.0.0.1');await once(held,'listening');
-  const port=held.address().port;await new Promise(resolve=>held.close(resolve));
+  const port=await browserPort();
   const origin=`https://localhost:${port}`,id=randomUUID(),token=randomUUID().replaceAll('-','');
   const cert=await selfsigned.generate([{name:'commonName',value:'localhost'}],{days:1,keySize:2048,extensions:[{name:'subjectAltName',altNames:[{type:2,value:'localhost'}]}]});
   await fs.writeFile(path.join(dir,'cert.pem'),cert.cert);await fs.writeFile(path.join(dir,'key.pem'),cert.private);
@@ -371,7 +370,7 @@ function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.metho
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'8fd74fba8e7af9b9177215c7ed8af89ba0a47021d5306f4ab1c392d84250579e','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'8eaea160b2f5462e13f469d3e149c28dfb176fb17756bdacd1dfa4404afcf026','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   return {sha256,valid,fetchLine:694,timerLine:759};
