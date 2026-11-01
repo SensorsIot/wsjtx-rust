@@ -25,6 +25,8 @@ pub const REPLAY_PER_STEP: usize = 32;
 pub const HIGHLIGHTS_MAX: usize = 100;
 const HEARTBEAT: Duration = Duration::from_secs(15);
 const DATAGRAMS_PER_STEP: usize = 64;
+/// Winsock WSAEMSGSIZE: a received datagram was larger than the buffer.
+const WSAEMSGSIZE: i32 = 10040;
 const FILE_BYTES_MAX: u64 = 65_536;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 /// OutboundMessage names in enum order (bit i of a target's selection).
@@ -236,6 +238,30 @@ pub(crate) struct Owner {
     inner: Mutex<Inner>,
     /// WSTX_UDP=off: no socket is opened (isolated tests of the executable).
     disabled: bool,
+    /// The Location (11) session grid: volatile, never saved to the profile. A leaf lock
+    /// of its own, because the contact engine reads it while `inner` is held.
+    grid: Mutex<Option<String>>,
+}
+/// The station's grid: the Location session grid when one was accepted, else the
+/// profile locator (upper case; None when empty).
+pub(crate) fn effective_locator(state: &ProfileState, profile: &str) -> Option<String> {
+    let session = state
+        .recording
+        .udp
+        .get()
+        .and_then(|o| o.grid.lock().unwrap_or_else(|p| p.into_inner()).clone());
+    session.or_else(|| Some(profile.trim().to_ascii_uppercase()).filter(|l| !l.is_empty()))
+}
+/// A Location text as WSJT-X MainWindow::locationChange reads it: at most 6 characters
+/// is a grid, longer needs a "GRID:" prefix; a 4- or 6-character Maidenhead locator.
+pub(crate) fn location_grid(text: &str) -> Option<String> {
+    let mut grid = text.trim();
+    if grid.chars().count() > 6 {
+        let prefix = grid.get(..5).filter(|p| p.eq_ignore_ascii_case("GRID:"))?;
+        grid = grid[prefix.len()..].trim();
+    }
+    let grid = grid.to_ascii_uppercase();
+    contact::valid_grid(&grid).then_some(grid)
 }
 
 fn wall_ms() -> i64 {
@@ -423,7 +449,7 @@ fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::Status {
         let d = &store.document;
         (
             d.callsign.trim().to_ascii_uppercase(),
-            d.locator.trim().to_ascii_uppercase(),
+            effective_locator(state, &d.locator).unwrap_or_default(),
             d.display_name.clone(),
         )
     };
@@ -537,6 +563,7 @@ impl Owner {
         Arc::new(Self {
             inner: Mutex::new(inner),
             disabled,
+            grid: Mutex::new(None),
         })
     }
     /// UdpSnapshot.
@@ -800,6 +827,7 @@ impl Owner {
             return;
         };
         let mut datagrams = Vec::new();
+        let mut oversize: u64 = 0;
         for (i, rt) in inner.runtimes.iter().enumerate() {
             let Some(socket) = &rt.socket else {
                 continue;
@@ -810,10 +838,18 @@ impl Owner {
                     Ok((n, from)) => datagrams.push((i, from, buffer[..n].to_vec())),
                     // Windows reports an earlier send's ICMP port unreachable here.
                     Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => continue,
+                    // A datagram larger than the buffer (Windows WSAEMSGSIZE; elsewhere it
+                    // arrives truncated and parse refuses it) is dropped and counted; the
+                    // datagrams behind it, a Halt Tx among them, are still read.
+                    Err(e) if e.raw_os_error() == Some(WSAEMSGSIZE) => {
+                        oversize += 1;
+                        continue;
+                    }
                     Err(_) => break,
                 }
             }
         }
+        inner.ignored = inner.ignored.saturating_add(oversize);
         for (i, from, bytes) in datagrams {
             let Some(d) = nm::parse(&bytes).filter(|d| d.id == config.instance) else {
                 inner.ignored = inner.ignored.saturating_add(1);
@@ -842,9 +878,7 @@ impl Owner {
             let outcome = match d.message {
                 // Emergency off: any source, whatever accept_commands says.
                 I::HaltTx { .. } => halt(state),
-                I::Close | I::Location { .. } | I::SwitchConfiguration | I::Configure => {
-                    ("ignored", None)
-                }
+                I::Close | I::SwitchConfiguration | I::Configure => ("ignored", None),
                 _ if !(t.accept && from_target) => ("not_accepted", None),
                 I::Clear { window } => {
                     if window != 1
@@ -900,6 +934,13 @@ impl Owner {
                         }
                     }
                 }
+                I::Location { location } => match location_grid(&location) {
+                    Some(grid) => {
+                        *self.grid.lock().unwrap_or_else(|p| p.into_inner()) = Some(grid);
+                        APPLIED
+                    }
+                    None => ("refused", Some("invalid_grid")),
+                },
                 I::Replay => {
                     let schema = inner.runtimes[i].schema;
                     let decodes = if t.messages & DECODE_BIT != 0 {

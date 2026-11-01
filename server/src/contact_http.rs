@@ -69,7 +69,7 @@ fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
     let d = &store.document;
     (
         Some(d.callsign.trim().to_ascii_uppercase()).filter(|c| !c.is_empty()),
-        Some(d.locator.trim().to_ascii_uppercase()).filter(|l| !l.is_empty()),
+        crate::udp::effective_locator(state, &d.locator),
     )
 }
 /// The selected profile's callsign (upper case), as the contact engine uses it.

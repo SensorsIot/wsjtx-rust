@@ -569,10 +569,7 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     command(&f, &owner, &c, 1, &highlight("CLEARALL!", Some((0, 0, 0))));
     assert_eq!(owner.snapshot(&f.state.recording)["highlights"], json!([]));
 
-    let mut location = header(11, 2, "WSTX-Rust");
-    put_s(&mut location, "JN47");
     for (bytes, kind) in [
-        (location, "location"),
         (header(6, 2, "WSTX-Rust"), "close"),
         (header(15, 2, "WSTX-Rust"), "configure"),
     ] {
@@ -900,5 +897,172 @@ async fn tc_012_004_target_configuration_and_persistence() {
         kinds(&drain(&p)),
         [0, 1],
         "Heartbeat and Status, no stale Decode"
+    );
+}
+
+fn location(text: &str) -> Vec<u8> {
+    let mut b = header(11, 2, "WSTX-Rust");
+    put_s(&mut b, text);
+    b
+}
+
+// Proves: CL-040-05, TC-012-005
+#[test]
+fn tc_012_005_location_text_rules() {
+    // WSJT-X MainWindow::locationChange: <= 6 characters is a grid, longer needs GRID:.
+    assert_eq!(location_grid("JN47"), Some("JN47".into()));
+    assert_eq!(location_grid(" jn36ab "), Some("JN36AB".into()));
+    assert_eq!(location_grid("GRID:JN36AB"), Some("JN36AB".into()));
+    assert_eq!(location_grid("grid: fn42"), Some("FN42".into()));
+    for bad in [
+        "",
+        "XX",
+        "JN4",
+        "JN47A",
+        "JN47AA11",
+        "47.1,8.5",
+        "LOC:JN47AA",
+        "ZZ99",
+    ] {
+        assert_eq!(location_grid(bad), None, "{bad}");
+    }
+}
+
+// Proves: CL-040-05, TC-012-005
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_005_location_sets_a_session_grid() {
+    let f = fixture("http://127.0.0.1:18405", true);
+    early_in_period(&f);
+    let (a, c) = (peer(), peer());
+    let owner = install(
+        &f,
+        vec![
+            target_json(a.local_addr().unwrap(), &MESSAGES, false),
+            target_json(c.local_addr().unwrap(), &MESSAGES, true),
+        ],
+    );
+    owner.step(&f.state);
+    let first = drain(&c);
+    assert_eq!(status_fields(&first[1])["de_grid"], "JN47AA");
+    // From a target without accept_commands: no effect.
+    let v = command(&f, &owner, &a, 0, &location("JN36AB"));
+    assert_eq!(outcome(&v).0, "not_accepted");
+    let v = command(&f, &owner, &c, 1, &location("XX"));
+    assert_eq!(outcome(&v), ("refused".into(), json!("invalid_grid")));
+    assert!(drain(&c).is_empty(), "nothing changed");
+    let v = command(&f, &owner, &c, 1, &location("GRID:JN36AB"));
+    assert_eq!(
+        (v["type"].as_str(), outcome(&v).0.as_str()),
+        (Some("location"), "applied")
+    );
+    let changed = drain(&c);
+    assert_eq!(kinds(&changed), [1]);
+    assert_eq!(
+        status_fields(&changed[0])["de_grid"],
+        "JN36AB",
+        "Status DE grid"
+    );
+
+    // Generated messages use the session grid (Tx1 carries its 4-character square).
+    f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_publish_period(
+        &period_text(1_793_536_470_000),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    owner.step(&f.state);
+    let v = command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &reply(45_270_000, -12, 1235, "CQ K1ABC FN42"),
+    );
+    assert_eq!(outcome(&v).0, "applied", "{v}");
+    assert_eq!(
+        f.contact().status_facts().next_message.as_deref(),
+        Some("K1ABC HB9BLA JN36")
+    );
+    let snapshot: Value = serde_json::from_slice(&f.contact().snapshot(&f.state).unwrap()).unwrap();
+    assert_eq!(snapshot["contact"]["messages"][5], "CQ HB9BLA JN36");
+
+    // The log takes the session grid as my_gridsquare; the profile grid is refused.
+    let body = |grid: &str| {
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+            "record":{"contact_id":profile::new_uuid().unwrap(),"call":"K1ABC","gridsquare":"FN42","mode":"FT8",
+            "submode":null,"rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123430",
+            "qso_date_off":"20261101","time_off":"123615","band":"20m","freq":"14.075500",
+            "station_callsign":"HB9BLA","my_gridsquare":grid,"tx_pwr":null,"comment":null}})
+    };
+    let (s, v) = call(
+        &f,
+        "POST",
+        "/contacts",
+        Some(serde_json::to_vec(&body("JN47AA")).unwrap()),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["field"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("record.my_gridsquare")),
+        "{v}"
+    );
+    let (s, v) = call(
+        &f,
+        "POST",
+        "/contacts",
+        Some(serde_json::to_vec(&body("JN36AB")).unwrap()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+
+    // Session only: the profile is unchanged and a new owner (a restart) has no override.
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join("profile.json")).unwrap()).unwrap();
+    assert_eq!(saved["locator"], "JN47AA");
+    assert_eq!(f.state.store.lock().unwrap().document.locator, "JN47AA");
+    let restarted = Owner::open(&f.state, true);
+    assert_eq!(*restarted.grid.lock().unwrap(), None);
+    assert!(f.bench.keys.lock().unwrap().iter().all(|(_, on)| !on));
+}
+
+// Proves: CL-040-03, TC-012-003
+#[test]
+fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
+    let f = fixture("http://127.0.0.1:18406", true);
+    early_in_period(&f);
+    let a = peer();
+    let owner = install(
+        &f,
+        vec![target_json(a.local_addr().unwrap(), &MESSAGES, false)],
+    );
+    owner.step(&f.state);
+    f.contact().grant.store(true, Ordering::SeqCst);
+    operate(
+        &f,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":3}),
+        true,
+    );
+    assert_eq!(arm_state(&f), ArmState::Armed);
+    let before = owner.snapshot(&f.state.recording)["ignored"]
+        .as_u64()
+        .unwrap();
+    let to = station_socket(&owner, 0);
+    let mut big = header(7, 2, "WSTX-Rust");
+    big.resize(5000, 0);
+    a.send_to(&big, to).unwrap();
+    a.send_to(&halt_tx(2, "WSTX-Rust"), to).unwrap();
+    std::thread::sleep(Duration::from_millis(30));
+    owner.step(&f.state);
+    let snap = owner.snapshot(&f.state.recording);
+    assert_eq!(
+        arm_state(&f),
+        ArmState::Disarmed,
+        "the Halt behind it acts in the same step"
+    );
+    assert_eq!(snap["status"][0]["last_command"]["type"], "halt_tx");
+    assert_eq!(
+        snap["ignored"].as_u64().unwrap(),
+        before + 1,
+        "the oversize datagram is counted"
     );
 }

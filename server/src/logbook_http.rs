@@ -260,9 +260,10 @@ pub async fn save(
             Ok(None) => {}
         }
         let (callsign, locator) = match state.store.lock() {
+            // WstxUdp Location: a session grid replaces the profile's for the log.
             Ok(store) => (
                 store.document.callsign.clone(),
-                store.document.locator.clone(),
+                crate::udp::effective_locator(&state, &store.document.locator).unwrap_or_default(),
             ),
             Err(_) => return error("storage_unavailable", None),
         };

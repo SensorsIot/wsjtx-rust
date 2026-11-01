@@ -2815,7 +2815,7 @@ package WstxRequirements {
     dependency CL_040_02_to_FR_012 from 'CL-040-02' to 'FR-012';
     dependency CL_040_02_to_FR_001 from 'CL-040-02' to 'FR-001';
     requirement 'CL-040-03' {
-        doc /* Halt Tx from any source always acts as the HALT button (HaltTransmit), whether or not accept_commands is on. Clear, Reply, Replay, Free Text and Highlight Callsign act only from a target with accept_commands on and only on datagrams whose source is that target. No inbound command keys the transmitter: Reply prepares the QSO like a single click (ContactCommand select_row, no transmit authority) and Free Text sets the Tx5 text of a prepared contact (a standard message, as the browser edit); both are refused while Enable Tx is on, and the Send flag is ignored. Details: WstxUdp::InboundRules. */
+        doc /* Halt Tx from any source always acts as the HALT button (HaltTransmit), whether or not accept_commands is on. Clear, Reply, Replay, Free Text and Highlight Callsign act only from a target with accept_commands on and only on datagrams whose source is that target. No inbound command keys the transmitter: Reply prepares the QSO like a single click (ContactCommand select_row, no transmit authority) and Free Text sets the Tx5 text of a prepared contact (a standard message, as the browser edit); both are refused while Enable Tx is on, and the Send flag is ignored. A datagram too large for the receive buffer is dropped, counted and never holds back the datagrams behind it. Details: WstxUdp::InboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/network_message.rs";
     }
@@ -2828,23 +2828,43 @@ package WstxRequirements {
     }
     dependency CL_040_04_to_FR_012 from 'CL-040-04' to 'FR-012';
     requirement 'CL-040-05' {
-        doc /* Outstanding on #40 (not in the first slice): an accepted Location (11) with a 4- or 6-character Maidenhead grid (or "GRID:" prefix) replaces the station grid for this session only (messages, Status DE grid, log my_gridsquare), and IPv6 multicast targets with hop limit and interface. Until delivered, Location has no effect and IPv6 multicast addresses are refused (WstxUdp D5). */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Location (11) from a target with accept_commands on and from that target's address, carrying a 4- or 6-character Maidenhead grid (longer text only after a "GRID:" prefix), sets a session-only station grid: it replaces the profile locator for the Status DE grid, the generated messages and the logged my_gridsquare until the station restarts, and is never saved to the profile. An invalid location is refused invalid_grid and changes nothing. Details: WstxUdp D5, InboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/contact_http.rs; server/src/logbook_http.rs";
     }
     dependency CL_040_05_to_FR_012 from 'CL-040-05' to 'FR-012';
     verification 'TC-012-005' {
-        doc /* TC-012-005 — Session location and IPv6 multicast (outstanding)
+        doc /* TC-012-005 — Session location
              CL-040-05
-             Setup: as TC-012-003 with target C accept_commands on; a second station with an IPv6 multicast target ff02::1:2237 on a loopback-capable interface.
-             Steps: from C, Location "JN47" then "GRID:JN36AB", then an invalid "XX"; prepare a contact; restart the station; PUT the IPv6 multicast target with hop limit 2.
-             Expected: Status DE grid JN47 then JN36AB and the generated messages use them; the invalid location changes nothing; after restart the profile grid is back; the IPv6 multicast PUT is admitted and the peer joined to the group receives Heartbeat.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP only; not implemented. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Setup: actual candidate router, UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA); target A accept_commands off and C on, loopback peers; an injected FT8 live job with the row "CQ K1ABC FN42" 1234.6 Hz -12.4 dB at 12:34:30.
+             Steps: (a) pure rule table: "JN47", " jn36ab ", "GRID:JN36AB", "grid: fn42", and "", "XX", "JN4", "JN47A", "JN47AA11", "47.1,8.5", "LOC:JN47AA", "ZZ99"; (b) one step; Location "JN36AB" from A; "XX" from C; "GRID:JN36AB" from C; step; Reply to the CQ row from C; POST /contacts with my_gridsquare JN47AA, then JN36AB; read profile.json; open a new owner.
+             Expected: (a) JN47, JN36AB, JN36AB, FN42, the rest refused; (b) first Status DE grid JN47AA; A not_accepted; XX refused invalid_grid with no Status; GRID:JN36AB applied and one Status with DE grid JN36AB; Tx1 "K1ABC HB9BLA JN36" and Tx6 "CQ HB9BLA JN36"; the JN47AA log record refused 400 log_invalid_field record.my_gridsquare and the JN36AB one 201; profile.json and the store keep JN47AA; the new owner has no session grid; PTT never keyed.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-040-05';
         }
+        attribute executable : String = "server/src/udp_tests.rs";
     }
     dependency CL_040_05_verified_by_TC_012_005 from 'CL-040-05' to 'TC-012-005';
+    requirement 'CL-040-06' {
+        doc /* Outstanding on #40 (not in this slice): IPv6 multicast targets (ff00::/8) with hop limit and an interface index. Until delivered, an IPv6 multicast address is refused at PUT /udp (WstxUdp D6). */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_040_06_to_FR_012 from 'CL-040-06' to 'FR-012';
+    verification 'TC-012-006' {
+        doc /* TC-012-006 — IPv6 multicast targets (outstanding)
+             CL-040-06
+             Setup: actual candidate router on a disposable profile; a loopback-capable IPv6 interface; a peer joined to the group.
+             Steps: PUT a target [ff02::1]:2237 with hop limit 2 and the interface index; one station step.
+             Expected: the PUT is admitted with the hop limit and interface saved; the joined peer receives Heartbeat and Status.
+             2 — Isolated automated functional tests; Windows development PC, loopback only; not implemented. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-040-06';
+        }
+    }
+    dependency CL_040_06_verified_by_TC_012_006 from 'CL-040-06' to 'TC-012-006';
     verification 'TC-012-001' {
         doc /* TC-012-001 — NetworkMessage wire vectors
              CL-040-01, CL-040-03, CL-040-04
@@ -2885,8 +2905,8 @@ package WstxRequirements {
         doc /* TC-012-003 — Inbound commands and transmit safety
              CL-040-03
              Setup: as TC-012-002 with target A accept_commands off and target C accept_commands on; the PTT log of the hardware double.
-             Steps: Halt Tx from A, from C and from an unconfigured third socket (to A's socket) while armed by the browser's enable_tx; Reply, Free Text, Replay, Clear and Highlight Callsign from A; the same from a socket other than C's address to C's socket; from C: Reply matching the published CQ row while disarmed, Reply with a different snr, Reply while armed, Free Text before any contact and "TNX 73 GL", Free Text "K1ABC HB9BLA 73" with Send true, Replay, Clear window 0 then Replay and Reply, Highlight Callsign K1ABC and CLEARALL!, Location JN47, Close, Configure; a datagram with another id; a Halt Tx with schema 4.
-             Expected: every Halt Tx with this id and schema 2 or 3 disarms (arm_state disarmed, last cause halt, halt count +1) with outcome applied; the schema-4 or foreign-id Halt has no effect; commands from A and from the wrong source have outcome not_accepted and change nothing; C's Reply selects K1ABC (contact replying, Tx1 "K1ABC HB9BLA JN47") with arm_state disarmed; the mismatching Reply is refused no_match; a Reply or Free Text while armed is refused tx_enabled; Free Text without a contact is refused no_contact and a non-standard text invalid_message; Free Text sets Tx5 and leaves arm_state disarmed; Replay sends the retained decodes with New false then Status, to C only; after Clear Replay sends nothing and Reply is refused no_match; highlights list K1ABC then empty; Location, Close and Configure ignored; the PTT log stays empty throughout.
+             Steps: Halt Tx from A, from C and from an unconfigured third socket (to A's socket) while armed by the browser's enable_tx; Reply, Free Text, Replay, Clear and Highlight Callsign from A; the same from a socket other than C's address to C's socket; from C: Reply matching the published CQ row while disarmed, Reply with a different snr, Reply while armed, Free Text before any contact and "TNX 73 GL", Free Text "K1ABC HB9BLA 73" with Send true, Replay, Clear window 0 then Replay and Reply, Highlight Callsign K1ABC and CLEARALL!, Close, Configure; a 5000-byte datagram followed by Halt Tx while armed; a datagram with another id; a Halt Tx with schema 4.
+             Expected: every Halt Tx with this id and schema 2 or 3 disarms (arm_state disarmed, last cause halt, halt count +1) with outcome applied; the schema-4 or foreign-id Halt has no effect; commands from A and from the wrong source have outcome not_accepted and change nothing; C's Reply selects K1ABC (contact replying, Tx1 "K1ABC HB9BLA JN47") with arm_state disarmed; the mismatching Reply is refused no_match; a Reply or Free Text while armed is refused tx_enabled; Free Text without a contact is refused no_contact and a non-standard text invalid_message; Free Text sets Tx5 and leaves arm_state disarmed; Replay sends the retained decodes with New false then Status, to C only; after Clear Replay sends nothing and Reply is refused no_match; highlights list K1ABC then empty; Close and Configure ignored; the 5000-byte datagram is counted ignored and the Halt Tx behind it disarms in the same step; the PTT log stays empty throughout.
              2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

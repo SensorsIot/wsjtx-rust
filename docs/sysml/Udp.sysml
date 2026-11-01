@@ -25,9 +25,10 @@ package WstxUdp {
             ContactCommand path without transmit authority, are refused while Enable Tx
             is on, and never send enable_tx or tune.
          D4 Text form: Decode and log texts use the WSJT-X form "R-09" / "R+03".
-         D5 Scope of this slice: Location (11) is received but has no effect (the session
-            grid override is CL-040-05, target); IPv6 multicast targets are refused (also
-            CL-040-05); the
+         D5 Location (11) sets a session-only grid (CL-040-05): it replaces the profile
+            locator for Status, generated messages and the log's my_gridsquare until the
+            process restarts and is never saved to the profile.
+         D6 Scope of this slice: IPv6 multicast targets are refused (CL-040-06, target); the
             Settings UI is #37's; Close is sent when a target is disabled or removed (the
             station has no graceful-shutdown path). */
 
@@ -46,7 +47,8 @@ package WstxUdp {
              ms since midnight, quint8 timespec 1 (UTC); QColor qint8 spec (0 = invalid,
              1 = RGB), quint16 alpha, red, green, blue, pad (component c of 0..255 is
              c * 257). id is the configured instance_name.
-             Inbound: a datagram larger than inboundDatagramBytesMax, with another magic, a
+             Inbound: a datagram larger than inboundDatagramBytesMax (also when the socket
+             reports it as too large for the receive buffer; reading continues behind it), with another magic, a
              schema other than 2 or 3, a truncated or malformed known field, or an id other
              than instance_name is ignored and counted; unknown types and trailing bytes
              after the known fields are ignored (protocol rule 1 and 2). A Heartbeat
@@ -149,11 +151,11 @@ package WstxUdp {
              Halt Tx (8) from any source, whether or not accept_commands is on and whatever
              Auto Tx Only says (also when that field is missing): HaltTransmit, the same as
              the HALT button (outcome applied).
-             Clear (3), Reply (4), Replay (7), Free Text (9) and Highlight Callsign (13) act
-             only when the target's accept_commands is on and the datagram's source equals
+             Clear (3), Reply (4), Replay (7), Free Text (9), Location (11) and Highlight
+             Callsign (13) act only when the target's accept_commands is on and the datagram's source equals
              the target address; otherwise outcome not_accepted and no effect.
-             Heartbeat (0), Close (6), Location (11, D5), Switch Configuration (14) and
-             Configure (15) have no effect (Heartbeat is not recorded as a command; the
+             Heartbeat (0), Close (6), Switch Configuration (14) and Configure (15) have no
+             effect (Heartbeat is not recorded as a command; the
              others outcome ignored).
              Reply: refused tx_enabled while Enable Tx is on; else it must match a decode of
              the current live job retained after the last inbound Clear of window 0 or 2
@@ -162,6 +164,11 @@ package WstxUdp {
              confidence and Modifiers ignored), else refused no_match; then ContactCommand
              select_row {row, replace false} without transmit authority (engine refusals
              such as contact_active or row_not_standard are outcome refused with that code).
+             Location (WSJT-X MainWindow::locationChange): the trimmed text, when longer
+             than 6 characters only after a case-insensitive "GRID:" prefix, upper-cased,
+             must be a 4- or 6-character Maidenhead locator, else refused invalid_grid; it
+             becomes the session grid (D5), the same for every target; a later Location
+             replaces it.
              Free Text: refused tx_enabled while Enable Tx is on; an empty text is ignored;
              else ContactCommand edit_message {slot tx5, text}, as the browser's Tx5 edit:
              without a prepared contact it is refused no_contact, and a text that does not
