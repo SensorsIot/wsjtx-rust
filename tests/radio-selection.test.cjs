@@ -378,7 +378,7 @@ function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.metho
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'5f542a1cd9eaace2e7d75b5e15d0e4ca06e216c766f22be16d191dafffc82b81','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'014a103af58b6f2d66cc6ec42f5efa8b80687001f37a9795a06a8b0a7edd2441','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   return {sha256,valid,fetchLine:754,timerLine:830};
