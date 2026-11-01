@@ -190,6 +190,8 @@ $('qso-cq').addEventListener('click',async()=>{
   arm('CQ');
 });
 $('qso-reply').addEventListener('click',()=>arm('Reply'));
+// The QSO-bar HALT is the same priority halt as the top-bar HALT (and follows its availability).
+$('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 async function finalMessage(slot,label){
   const c=snap?.contact;if(!c?.dx_call)return;
   if(slot==='tx4'&&c.tx4!=='rr73'){const r=await send('set_tx4',{form:'rr73'},'RR73');if(!r||r.refused)return;}

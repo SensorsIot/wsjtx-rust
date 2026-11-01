@@ -930,7 +930,7 @@ async function transmitPost(path,extra){
   return JSON.parse(text);
 }
 function transmitShow(){
-  const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;document.querySelector('#qso-halt').disabled=!on;
+  const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;const qsoHalt=document.querySelector('#qso-halt');if(qsoHalt)qsoHalt.disabled=!on;
   if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
   const v=transmitView,status=document.querySelector('#transmit-status');
   const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement;
@@ -948,8 +948,6 @@ async function transmitSync(){
 }
 function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
 setInterval(transmitPoll,2000);
-// The QSO-bar HALT is the same priority halt as the top-bar HALT.
-document.querySelector('#qso-halt').addEventListener('click',()=>halt.click());
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
