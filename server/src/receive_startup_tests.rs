@@ -212,6 +212,26 @@ fn startup_resume_off_or_stopped_stays_off() {
     assert_eq!(receive["job"]["mode"], "ft8");
 }
 
+// Proves: CL-045-02; TC-045-001. Transient refusals while CAT comes up (radio not yet
+// ready, the actor's poll holding its lease, a connection change between preflights)
+// are retried within the wait: the resume still selects the stored band.
+#[test]
+fn startup_resume_retries_transient_selection_refusals() {
+    let dir = Dir::new();
+    dir.write(&stored(false, "ft8", Some("40m")));
+    let r = dir.open();
+    r.resources.lock().unwrap().resume_refusals =
+        ["radio_unavailable", "busy", "state_conflict"].into();
+    inject(&r);
+    let view = resume(&r, false, Duration::from_secs(5));
+    assert_eq!(view["resume"], json!({"state":"started","error":null}));
+    assert!(r.resources.lock().unwrap().resume_refusals.is_empty());
+    let selection = r.selection_snapshot(false).unwrap();
+    assert_eq!(selection["selection"]["band"], "40m");
+    assert_eq!(selection["selection"]["nominal_hz"], 7074000);
+    assert_eq!(r.receive_snapshot()["job"]["state"], "running");
+}
+
 // Proves: CL-045-02; TC-045-001. Configured CAT that never becomes ready within the wait still
 // resumes receive on the stored mode (untuned), and keeps the stored band.
 #[test]

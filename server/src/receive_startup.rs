@@ -263,12 +263,25 @@ impl Recording {
                 }
             };
             let command = intent.command_id.clone();
-            match self.selection_begin(intent, Some(device.into()), cat) {
+            #[cfg(test)]
+            let refused = self.resources.lock().unwrap().resume_refusals.pop_front();
+            #[cfg(not(test))]
+            let refused: Option<&'static str> = None;
+            let begun = match refused {
+                Some(e) => Err(e),
+                None => self.selection_begin(intent, Some(device.into()), cat),
+            };
+            match begun {
                 Ok(_) => {
                     *own = Some(command.clone());
                     break command;
                 }
-                Err("radio_unavailable") if Instant::now() < deadline => {
+                // CAT not ready yet, the actor's background poll holding its lease, or the
+                // connection/snapshot changing between the two preflights: all transient
+                // while the CAT lifecycle brings the radio up.
+                Err("radio_unavailable" | "busy" | "state_conflict")
+                    if Instant::now() < deadline =>
+                {
                     std::thread::sleep(Duration::from_millis(250));
                 }
                 Err(e) => return Err(e),

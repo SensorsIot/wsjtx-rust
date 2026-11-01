@@ -2643,6 +2643,8 @@ struct Resources {
     live_inputs: VecDeque<Box<dyn LiveInput>>,
     fail_live_spawn: bool,
     fail_source_uuid: bool,
+    /// Refusals the startup resume sees instead of its next selection admission.
+    resume_refusals: VecDeque<&'static str>,
 }
 fn io<T>(value: std::io::Result<T>) -> Result<T> {
     value.map_err(|_| "storage_unavailable")
