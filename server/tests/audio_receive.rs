@@ -260,7 +260,7 @@ fn live_provider_unknown_loss_requires_ack_and_rejects_old_window_context() {
     provider.source.stop();
 }
 
-// Proves: CL-007-01/02, CL-008-02; TC-004-001, TC-002-001/003, TC-009-004.
+// Proves: CL-007-01/02, CL-008-02; TC-004-002, TC-002-001/003, TC-009-004.
 // Mandatory release execution is registered as live-receive-integration. Debug
 // retains the three cheaper actual-provider boundary tests above.
 #[cfg(not(debug_assertions))]
