@@ -25,8 +25,9 @@ package WstxUdp {
             ContactCommand path without transmit authority, are refused while Enable Tx
             is on, and never send enable_tx or tune.
          D4 Text form: Decode and log texts use the WSJT-X form "R-09" / "R+03".
-         D5 Scope of this slice: Location (11) is received but has no effect (session grid
-            override is outstanding on #40); IPv6 multicast targets are refused; the
+         D5 Scope of this slice: Location (11) is received but has no effect (the session
+            grid override is CL-040-05, target); IPv6 multicast targets are refused (also
+            CL-040-05); the
             Settings UI is #37's; Close is sent when a target is disabled or removed (the
             station has no graceful-shutdown path). */
 
@@ -68,7 +69,9 @@ package WstxUdp {
              "[v6]:port", port 1..65535; unspecified, 255.255.255.255 and IPv6 multicast
              are refused; an address is unique in the list (it is the target's identity).
              multicast_ttl 1..255 and multicast_interface (null or an IPv4 address) apply
-             only to an IPv4 multicast address (224.0.0.0/4). messages: unique names of
+             only to an IPv4 multicast address (224.0.0.0/4); accept_commands true is
+             refused for a multicast address (a command's source is a host, never the
+             group, so it could never act). messages: unique names of
              OutboundMessage, any order, stored in the enum order; empty sends nothing. */
     }
     attribute def UdpConfiguration {
@@ -133,7 +136,8 @@ package WstxUdp {
              frequency "" (MessageClient fields after the documented ones; protocol rule 2).
              Logged ADIF text: "\n<adif_ver:5>3.1.8\n<programid:9>WSTX-Rust\n<EOH>\n" plus
              the stored record's ADI fields plus " <EOR>".
-             Close (6): to a target that is disabled or removed by a configuration change.
+             Close (6): to a target that is disabled or removed by a configuration change,
+             and before its socket is reopened when its address, TTL or interface changes.
              WSPRDecode (10) is not applicable. */
     }
     attribute def InboundRules {
@@ -159,7 +163,10 @@ package WstxUdp {
              select_row {row, replace false} without transmit authority (engine refusals
              such as contact_active or row_not_standard are outcome refused with that code).
              Free Text: refused tx_enabled while Enable Tx is on; an empty text is ignored;
-             else ContactCommand edit_message {slot tx5, text}; the Send flag is ignored.
+             else ContactCommand edit_message {slot tx5, text}, as the browser's Tx5 edit:
+             without a prepared contact it is refused no_contact, and a text that does not
+             pack as a standard message is refused invalid_message; the Send flag is
+             ignored.
              Replay: the retained decodes (as for Reply) are sent to that target only, New
              false, in sequence order, at most replayPerStep per station step, then Status.
              Clear: window 0 (also when missing) or 2 sets the Reply/Replay floor to the
@@ -188,7 +195,8 @@ package WstxUdp {
              counter_exhausted, 503 storage_unavailable (nothing changes). Field names:
              instance_name, targets, targets[i].<key>. Accepted: 200 with the new
              UdpSnapshot; the running sockets follow the saved configuration at once
-             (Close to a removed or disabled target, activation of a new or changed one;
+             (Close to a removed, disabled or socket-changed target, activation of a new or
+             changed one;
              an unchanged target keeps its socket, schema and status). */
     }
 

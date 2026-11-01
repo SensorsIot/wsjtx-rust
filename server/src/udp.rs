@@ -160,6 +160,10 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
     let accept = v["accept_commands"]
         .as_bool()
         .ok_or_else(|| f("accept_commands"))?;
+    // A command's source is a host, never the group: accept_commands could never act.
+    if accept && address.ip().is_multicast() {
+        return Err(f("accept_commands"));
+    }
     Ok(Target {
         address,
         enabled,
@@ -677,9 +681,12 @@ impl Owner {
             self.inbound(&mut inner, state, now);
         }
         let inner = &mut *inner;
-        let Some(config) = inner.config.clone() else {
-            return;
-        };
+        // An invalid configuration has no targets; its cursor still advances, so a later
+        // valid PUT never sends the retained decodes as new ones.
+        let config = inner.config.clone().unwrap_or(Config {
+            instance: String::new(),
+            targets: Vec::new(),
+        });
         let id = config.instance.as_str();
         let version = env!("CARGO_PKG_VERSION");
         for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {

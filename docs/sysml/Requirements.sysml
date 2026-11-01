@@ -2815,7 +2815,7 @@ package WstxRequirements {
     dependency CL_040_02_to_FR_012 from 'CL-040-02' to 'FR-012';
     dependency CL_040_02_to_FR_001 from 'CL-040-02' to 'FR-001';
     requirement 'CL-040-03' {
-        doc /* Halt Tx from any source always acts as the HALT button (HaltTransmit), whether or not accept_commands is on. Clear, Reply, Replay, Free Text and Highlight Callsign act only from a target with accept_commands on and only on datagrams whose source is that target. No inbound command keys the transmitter: Reply prepares the QSO like a single click (ContactCommand select_row, no transmit authority) and Free Text sets the Tx5 text; both are refused while Enable Tx is on, and the Send flag is ignored. Details: WstxUdp::InboundRules. */
+        doc /* Halt Tx from any source always acts as the HALT button (HaltTransmit), whether or not accept_commands is on. Clear, Reply, Replay, Free Text and Highlight Callsign act only from a target with accept_commands on and only on datagrams whose source is that target. No inbound command keys the transmitter: Reply prepares the QSO like a single click (ContactCommand select_row, no transmit authority) and Free Text sets the Tx5 text of a prepared contact (a standard message, as the browser edit); both are refused while Enable Tx is on, and the Send flag is ignored. Details: WstxUdp::InboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/network_message.rs";
     }
@@ -2827,6 +2827,24 @@ package WstxRequirements {
         attribute implementation : String = "server/src/udp.rs";
     }
     dependency CL_040_04_to_FR_012 from 'CL-040-04' to 'FR-012';
+    requirement 'CL-040-05' {
+        doc /* Outstanding on #40 (not in the first slice): an accepted Location (11) with a 4- or 6-character Maidenhead grid (or "GRID:" prefix) replaces the station grid for this session only (messages, Status DE grid, log my_gridsquare), and IPv6 multicast targets with hop limit and interface. Until delivered, Location has no effect and IPv6 multicast addresses are refused (WstxUdp D5). */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_040_05_to_FR_012 from 'CL-040-05' to 'FR-012';
+    verification 'TC-012-005' {
+        doc /* TC-012-005 — Session location and IPv6 multicast (outstanding)
+             CL-040-05
+             Setup: as TC-012-003 with target C accept_commands on; a second station with an IPv6 multicast target ff02::1:2237 on a loopback-capable interface.
+             Steps: from C, Location "JN47" then "GRID:JN36AB", then an invalid "XX"; prepare a contact; restart the station; PUT the IPv6 multicast target with hop limit 2.
+             Expected: Status DE grid JN47 then JN36AB and the generated messages use them; the invalid location changes nothing; after restart the profile grid is back; the IPv6 multicast PUT is admitted and the peer joined to the group receives Heartbeat.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only; not implemented. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-040-05';
+        }
+    }
+    dependency CL_040_05_verified_by_TC_012_005 from 'CL-040-05' to 'TC-012-005';
     verification 'TC-012-001' {
         doc /* TC-012-001 — NetworkMessage wire vectors
              CL-040-01, CL-040-03, CL-040-04
@@ -2867,8 +2885,8 @@ package WstxRequirements {
         doc /* TC-012-003 — Inbound commands and transmit safety
              CL-040-03
              Setup: as TC-012-002 with target A accept_commands off and target C accept_commands on; the PTT log of the hardware double.
-             Steps: Halt Tx from A, from C and from an unconfigured third socket (to A's socket) while armed by the browser's enable_tx; Reply, Free Text, Replay, Clear and Highlight Callsign from A; the same from a socket other than C's address to C's socket; from C: Reply matching the published CQ row while disarmed, Reply with a different snr, Reply while armed, Free Text "K1ABC HB9BLA 73" with Send true, Replay, Clear window 0 then Replay and Reply, Highlight Callsign K1ABC and CLEARALL!, Location JN47, Close, Configure; a datagram with another id; a Halt Tx with schema 4.
-             Expected: every Halt Tx with this id and schema 2 or 3 disarms (arm_state disarmed, last cause halt, halt count +1) with outcome applied; the schema-4 or foreign-id Halt has no effect; commands from A and from the wrong source have outcome not_accepted and change nothing; C's Reply selects K1ABC (contact replying, Tx1 "K1ABC HB9BLA JN47") with arm_state disarmed; the mismatching Reply is refused no_match; a Reply or Free Text while armed is refused tx_enabled; Free Text sets Tx5 and leaves arm_state disarmed; Replay sends the retained decodes with New false then Status, to C only; after Clear Replay sends nothing and Reply is refused no_match; highlights list K1ABC then empty; Location, Close and Configure ignored; the PTT log stays empty throughout.
+             Steps: Halt Tx from A, from C and from an unconfigured third socket (to A's socket) while armed by the browser's enable_tx; Reply, Free Text, Replay, Clear and Highlight Callsign from A; the same from a socket other than C's address to C's socket; from C: Reply matching the published CQ row while disarmed, Reply with a different snr, Reply while armed, Free Text before any contact and "TNX 73 GL", Free Text "K1ABC HB9BLA 73" with Send true, Replay, Clear window 0 then Replay and Reply, Highlight Callsign K1ABC and CLEARALL!, Location JN47, Close, Configure; a datagram with another id; a Halt Tx with schema 4.
+             Expected: every Halt Tx with this id and schema 2 or 3 disarms (arm_state disarmed, last cause halt, halt count +1) with outcome applied; the schema-4 or foreign-id Halt has no effect; commands from A and from the wrong source have outcome not_accepted and change nothing; C's Reply selects K1ABC (contact replying, Tx1 "K1ABC HB9BLA JN47") with arm_state disarmed; the mismatching Reply is refused no_match; a Reply or Free Text while armed is refused tx_enabled; Free Text without a contact is refused no_contact and a non-standard text invalid_message; Free Text sets Tx5 and leaves arm_state disarmed; Replay sends the retained decodes with New false then Status, to C only; after Clear Replay sends nothing and Reply is refused no_match; highlights list K1ABC then empty; Location, Close and Configure ignored; the PTT log stays empty throughout.
              2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -2881,8 +2899,8 @@ package WstxRequirements {
         doc /* TC-012-004 — Target configuration and persistence
              CL-040-02
              Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
-             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands on); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
-             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null, accept_commands false} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket.
+             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
+             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null, accept_commands false} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status).
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

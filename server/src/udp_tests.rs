@@ -469,6 +469,9 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     let time = 45_270_000;
     let matching = reply(time, -12, 1235, "CQ K1ABC FN42");
     let none = || f.contact().facts().1.is_none();
+    // Free Text needs a prepared contact and a standard message (browser parity).
+    let v = command(&f, &owner, &c, 1, &free_text("CQ POTA HB9BLA"));
+    assert_eq!(outcome(&v), ("refused".into(), json!("no_contact")), "{v}");
 
     // Accept commands off (A), and C's socket from a source that is not C: no effect.
     for (from, i) in [(&a, 0usize), (&x, 1)] {
@@ -521,6 +524,12 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     );
     assert_eq!(arm_state(&f), ArmState::Disarmed);
 
+    let v = command(&f, &owner, &c, 1, &free_text("TNX 73 GL"));
+    assert_eq!(
+        outcome(&v),
+        ("refused".into(), json!("invalid_message")),
+        "{v}"
+    );
     let v = command(&f, &owner, &c, 1, &free_text("K1ABC HB9BLA 73"));
     assert_eq!(outcome(&v).0, "applied", "{v}");
     let snapshot: Value = serde_json::from_slice(&f.contact().snapshot(&f.state).unwrap()).unwrap();
@@ -686,7 +695,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
         {"address":"127.0.0.1:52001","enabled":true,"multicast_ttl":1,"multicast_interface":null,
          "messages":["decode"],"accept_commands":false},
         {"address":"239.255.0.1:2237","enabled":false,"multicast_ttl":2,"multicast_interface":"127.0.0.1",
-         "messages":["logged_adif","heartbeat","status"],"accept_commands":true}]);
+         "messages":["logged_adif","heartbeat","status"],"accept_commands":false}]);
     let good = config_body(&f, 0, targets.clone());
     let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&good).unwrap())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
@@ -778,6 +787,14 @@ async fn tc_012_004_target_configuration_and_persistence() {
         ),
         (t("messages", json!(["wspr_decode"])), "targets[0].messages"),
         (t("enabled", json!("yes")), "targets[0].enabled"),
+        (
+            {
+                let mut list = targets.clone();
+                list[1]["accept_commands"] = json!(true);
+                list
+            },
+            "targets[1].accept_commands",
+        ),
     ] {
         cases.push((
             config_body(&f, 1, list),
@@ -856,5 +873,32 @@ async fn tc_012_004_target_configuration_and_persistence() {
             v["status"].clone()
         ),
         (Value::Null, json!("invalid_configuration"), json!([]))
+    );
+    // Decodes published while the configuration was invalid are never sent as new
+    // after a valid PUT repairs it.
+    assert!(g.state.recording.udp.set(broken.clone()).is_ok());
+    g.state.recording.fixture_live_job("ft8");
+    g.state.recording.fixture_publish_period(
+        &period_text(1_793_536_470_000),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    broken.step(&g.state);
+    let p = peer();
+    let body = config_body(
+        &g,
+        0,
+        json!([target_json(p.local_addr().unwrap(), &MESSAGES, false)]),
+    );
+    let (s, v) = call(&g, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(
+        (s, v["configuration_error"].clone()),
+        (StatusCode::OK, Value::Null),
+        "{v}"
+    );
+    broken.step(&g.state);
+    assert_eq!(
+        kinds(&drain(&p)),
+        [0, 1],
+        "Heartbeat and Status, no stale Decode"
     );
 }
