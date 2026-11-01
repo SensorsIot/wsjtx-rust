@@ -155,7 +155,7 @@ test('receive frame race updates its live owner while recording job is absent',{
 
 // Band Activity sorts by its column headers (WstxOperatingLayout::ActivityOrdering): a new
 // header chooses its field with its default direction, the active header reverses it.
-async function clickSort(page,field){await page.locator(`#band-activity th[data-sort="${field}"] button`).click();}
+async function clickSort(page,field){await page.locator(`#band-activity th[data-sort="${field}"]`).click();}
 async function sortState(page){return page.evaluate(()=>{const th=document.querySelector('#band-activity th[aria-sort=ascending],#band-activity th[aria-sort=descending]');return th?[th.dataset.sort,th.getAttribute('aria-sort')==='ascending'?'asc':'desc']:null;});}
 // Proves: CL-010-07, CL-010-08; TC-009-004. A pre-mutation read is not reconciliation evidence.
 test('receive snapshot race preserves unknown mutation until a later read',{timeout:15000},async t=>{
@@ -165,28 +165,28 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
     await p.route('**/receive',async route=>{if(hold){entered.resolve();await release.promise;}await route.fulfill({json:idle});});
     await p.route('**/receive/start',route=>route.abort('failed'));
   }});
-  // Monitor is the single receive control (#37); a stopped receive starts through it.
-  const monitor=page.getByRole('button',{name:'Monitor',exact:true});
-  await page.waitForFunction(()=>live&&!livePending&&!document.querySelector('#operating-monitor').disabled);
+  // #37: a stopped receive starts from its exception chip (or Expert / Alt+M).
+  const chip=page.locator('#exception-chips [data-chip=receive]');
+  await chip.filter({hasText:'Receive stopped'}).waitFor();await page.waitForFunction(()=>live&&!livePending);
   hold=true;await page.evaluate(()=>{void receiveSync();});await entered.promise;
-  await monitor.click({timeout:2000});
+  await chip.click({timeout:2000});
   await page.waitForFunction(()=>document.querySelector('#receive-status').textContent.includes('Start outcome unknown'),null,{timeout:2000});
   hold=false;release.resolve();await page.waitForFunction(()=>!livePending);
   assert.equal(await page.evaluate(()=>uncertainMutation),true,'the old idle response cannot clear an unknown newer mutation');
-  assert.equal(await monitor.isDisabled(),true);
+  assert.equal(await page.locator('#receive-toggle').isDisabled(),true);
   assert.match(await page.locator('#receive-status').textContent(),/Start outcome unknown/);
-  assert.match(await page.locator('#dot-audio').getAttribute('aria-label'),/Start outcome unknown/,'the operating screen shows the unknown outcome on the audio dot');
-  assert.equal(await page.locator('#dot-audio').getAttribute('data-state'),'warn');
+  await chip.filter({hasText:'Start outcome unknown'}).waitFor();
   await page.getByRole('button',{name:'Refresh status',exact:true}).click();
-  await page.waitForFunction(()=>!uncertainMutation&&!document.querySelector('#operating-monitor').disabled);
+  await page.waitForFunction(()=>!uncertainMutation&&!document.querySelector('#receive-toggle').disabled);
+  await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
 // WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
-// aborts the contact but closes no panel; the region's Back control (keyboard) returns.
+// aborts the contact but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
   await page.keyboard.press('Escape');
-  if(open)assert.equal(await page.locator('#operating-workspace').isVisible(),false,'Escape closes no panel');
+  if(open)assert.equal(await page.locator('.op-secondary:not([hidden])').count(),open,'Escape closes no panel');
   if(open){await page.locator('.op-secondary:not([hidden]) .return-operate').focus();await page.keyboard.press('Enter');}
 }
 async function geometry(page){return page.evaluate(()=>{const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};return {bar:box('#station-bar'),signal:box('#signal'),split:box('#splitter'),workspace:box('#controls'),overflow:document.documentElement.scrollWidth>innerWidth};});}
@@ -198,9 +198,11 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station').textContent(),'HB9BLA <station>');
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
-  for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
-  assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
-  await page.getByRole('button',{name:'Station connection details',exact:true}).click();
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
+  for(const name of ['CQ','Reply','RR73','73','Tune','Halt Tx','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  assert.equal(await page.locator('#contact-auto').isDisabled(),true);assert.equal(await page.locator('#contact-auto').getAttribute('aria-label'),'Auto sequence unavailable');
+  assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is next to the disabled transmit buttons');
+  await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
   assert.match(await page.locator('#operating-capabilities').innerText(),/Audio.*unavailable/is);
   assert.match(await page.locator('#operating-capabilities').innerText(),/CAT.*unavailable/is);
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
@@ -224,7 +226,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
 });
 
 // Proves: CL-010-05, CL-010-08; TC-007-002 desktop/mobile/200% CSS viewport and keyboard.
-test('TC-007-002 operating split and secondary regions remain accessible at narrow and zoom equivalent sizes',{timeout:20000},async t=>{
+test('TC-007-002 operating split, drawer and pages remain accessible at narrow and zoom equivalent sizes',{timeout:30000},async t=>{
   const {page,errors}=await fixture(t,{width:360,height:800});
   for(const viewport of [{width:360,height:800},{width:720,height:450}]){
     await page.setViewportSize(viewport);const separator=page.getByRole('separator');await separator.focus();
@@ -232,16 +234,22 @@ test('TC-007-002 operating split and secondary regions remain accessible at narr
     await page.keyboard.press('ArrowDown');const stepped=Number(await separator.getAttribute('aria-valuenow'));assert.equal(stepped,minimum+16);
     await page.keyboard.press('End');const maximum=Number(await separator.getAttribute('aria-valuenow'));assert.ok(maximum>=stepped);assert.equal(maximum,Number(await separator.getAttribute('aria-valuemax')));
     await page.keyboard.press('Home');let g=await geometry(page);assert.equal(g.overflow,false);assert.ok(g.signal.height>=160);assert.ok(g.signal.bottom<=g.workspace.top,JSON.stringify(g));
-    for(const [opener,name] of [['#open-server-settings','Station settings'],['#open-expert','Recorded input'],['.op-station-button','Connection details']]){
+    // Settings drawer by keyboard: open, move to Expert with the arrow keys, toggle a section.
+    await page.locator('#open-server-settings').focus();await page.keyboard.press('Enter');
+    await page.locator('#tab-general').focus();for(let i=0;i<3;i++)await page.keyboard.press('ArrowRight');
+    assert.equal(await page.locator('#tab-expert').getAttribute('aria-current'),'true');
+    const summary=page.locator('#recorded-input summary');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
+    await summary.focus();await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),false);
+    await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
+    assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
+    await returnToOperation(page);assert.equal(await page.locator('#settings-drawer').isVisible(),false);
+    assert.equal(await page.locator('#open-server-settings').evaluate(el=>document.activeElement===el),true,'focus returns to the opener');
+    for(const opener of ['#open-logbook','#station-bar [data-region=help]']){
       await page.locator(opener).focus();await page.keyboard.press('Enter');
-      const summary=page.locator('summary').filter({hasText:name});assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
-      await summary.focus();await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),false);
-      await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
       assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
       await returnToOperation(page);assert.equal(await page.locator('#operating-workspace').isVisible(),true);
       assert.equal(await page.locator(opener).evaluate(el=>document.activeElement===el),true);
     }
-    assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   }
   await page.setViewportSize({width:360,height:800});await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await page.screenshot({path:'test-results/ui-operating/mobile.png',fullPage:true});assert.deepEqual(errors,[]);
 });
@@ -253,14 +261,14 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+box.height/2-40);await page.mouse.up();
   assert.ok(Number(await separator.getAttribute('aria-valuenow'))<before);
   await app.close();await page.locator('#connection[data-state=stale]').waitFor();
-  for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+  for(const name of ['CQ','Reply','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
   assert.ok(sent.some(m=>m.type==='station.get'),'recorder observes actual allowed station traffic');
   assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
 });
 
 
-// Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 agreed design and authority-preserving regions.
-test('TC-007-002 agreed workspace has the top bar, Band Activity, Rx Frequency and Current QSO with truthful state',{timeout:20000},async t=>{
+// Proves: CL-010-05, CL-010-07, CL-010-08, CL-010-16; TC-007-002 agreed design and authority-preserving regions.
+test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:1200});
  assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),210,'sufficiently tall desktop starts with the specified compact signal height');
  await page.setViewportSize({width:1200,height:800});
@@ -269,35 +277,35 @@ test('TC-007-002 agreed workspace has the top bar, Band Activity, Rx Frequency a
  assert.ok(shortSignal.current>=shortSignal.minimum&&shortSignal.current<=shortSignal.maximum,'short viewport respects the accessible splitter bounds');
  assert.equal(Math.round(shortSignal.height),shortSignal.current,'accessible splitter value matches the displayed signal height');
  assert.equal(await page.getByRole('separator').getAttribute('tabindex'),'0','short viewport retains keyboard resizing');
- for(const id of ['radio-toolbar','band-activity','rx-frequency','rx-focus'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the operating screen`);
- // #37: the band strip and Strategy card left the operating screen (band and mode are top-bar selects).
- for(const id of ['band-strip','strategy-panel','workspace-statusbar'])assert.equal(await page.locator('#'+id).count(),0,`${id} is not on the operating screen`);
+ for(const id of ['radio-toolbar','rxtx-strip','strategy-element','band-activity','rx-focus'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the operating screen`);
+ for(const id of ['band-strip','strategy-panel','workspace-statusbar','rx-frequency'])assert.equal(await page.locator('#'+id).count(),0,`${id} is not on the operating screen`);
  const composition=await page.evaluate(()=>{
   const rect=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,height:r.height};};
-  return Object.fromEntries(['#station-bar','#radio-toolbar','#signal','#splitter','#band-activity','#rx-frequency','#rx-focus'].map(id=>[id,rect(id)]));
+  return Object.fromEntries(['#station-bar','#signal','#rxtx-strip','#splitter','#band-activity','#rx-focus'].map(id=>[id,rect(id)]));
  });
- assert.ok(composition['#station-bar'].bottom<=composition['#radio-toolbar'].top+1);
- assert.ok(composition['#radio-toolbar'].bottom<=composition['#signal'].top+1);
+ assert.ok(composition['#station-bar'].bottom<=composition['#signal'].top+1);
+ assert.ok(composition['#signal'].bottom<=composition['#rxtx-strip'].top+1,'the Rx/Tx strip is directly below the waterfall');
+ assert.ok(composition['#rxtx-strip'].bottom<=composition['#splitter'].top+1);
  assert.ok(composition['#splitter'].bottom<=composition['#band-activity'].top+1);
- assert.ok(composition['#splitter'].bottom<=composition['#rx-frequency'].top+1);
  await page.setViewportSize({width:1600,height:1000});
- const cards=await page.evaluate(()=>Object.fromEntries(['#band-activity','#rx-frequency','#rx-focus'].map(id=>{const r=document.querySelector(id).getBoundingClientRect();return [id,{left:r.left,right:r.right,top:r.top,bottom:r.bottom}];})));
- assert.ok(cards['#band-activity'].right<=cards['#rx-frequency'].left&&cards['#band-activity'].right<=cards['#rx-focus'].left,'Band Activity left of Rx Frequency and Current QSO when readable space permits');
- assert.ok(cards['#rx-frequency'].bottom<=cards['#rx-focus'].top+1,'Rx Frequency above Current QSO');
+ const cards=await page.evaluate(()=>Object.fromEntries(['#band-activity','#rx-focus','#strategy-element'].map(id=>{const r=document.querySelector(id).getBoundingClientRect();return [id,{left:r.left,right:r.right,top:r.top,bottom:r.bottom}];})));
+ assert.ok(cards['#band-activity'].right<=cards['#rx-focus'].left,'Band Activity left of the QSO pane');
+ assert.ok(cards['#strategy-element'].left>=cards['#band-activity'].left&&cards['#strategy-element'].right<=cards['#band-activity'].right,'the strategy element is above Band Activity');
  await page.setViewportSize({width:1200,height:800});
- assert.equal(await page.locator('#focus-heading').textContent(),'Current QSO');
+ assert.equal(await page.locator('#focus-heading').textContent(),'QSO');
  assert.deepEqual(await page.locator('#radio-toolbar select').evaluateAll(s=>s.map(e=>e.id)),['operating-band','operating-mode'],'one band and one FT8/FT4 selector');
- assert.equal(await page.locator('#radio-toolbar button.op-monitor').count(),1,'one receive control');
- for(const selector of ['#op-dial','#operating-monitor'])assert.equal(await page.locator(selector).isDisabled(),true,`${selector} disabled without CAT/audio input`);
- assert.match(await page.locator('#operating-monitor').getAttribute('title'),/no audio input saved/);
- assert.equal(await page.locator('#op-dial').inputValue(),'');
+ assert.match(await page.locator('#radio-toolbar').innerText(),/Band \u27F3[\s\S]*Mode \u27F3/,'band and mode are marked as restart changes');
+ assert.equal(await page.locator('#op-dial').isDisabled(),true);assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/Sensitivity/,'Sensitivity stays in the waterfall corner');
+ for(const id of ['#strategy-name','#strategy-edit','#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).isDisabled(),true,`${id} waits for the strategy engine`);
+ assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
  // WstxContact::OperatorDisplays (D11): server UTC and period progress replace the former 'Timing unavailable'.
  await page.locator('#radio-toolbar .op-period small').filter({hasText:/^\d{1,2}\/15/}).waitFor();assert.match(await page.locator('#radio-toolbar .op-period > span').textContent(),/^UTC \d\d:\d\d:\d\d$/);
- for(const key of ['cat','audio','clock']){const state=await page.locator('#dot-'+key).getAttribute('data-state');assert.ok(['ok','warn','error','off','stale','unknown'].includes(state),`${key} dot state ${state}`);}
- assert.equal(await page.locator('#dot-cat').getAttribute('data-state'),'off','CAT disabled profile shows the CAT dot off');
+ // Without an audio input the only exception is that one, named as such.
+ await page.locator('#exception-chips [data-chip=receive]').filter({hasText:'No audio input'}).waitFor();
+ assert.equal(await page.locator('#exception-chips button').count(),1);
  assert.equal(await page.locator('tr[data-result-id]').count(),0);
- for(const width of [360,720,1200,1440,1499,1500,1600]){
+ for(const width of [360,720,1200,1366,1440,1499,1500,1600]){
   await page.setViewportSize({width,height:900});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`no page overflow ${width}`);
  }
@@ -307,97 +315,256 @@ test('TC-007-002 agreed workspace has the top bar, Band Activity, Rx Frequency a
 });
 
 // ---------------------------------------------------------------- #37 operating screen
-// WstxOperatingLayout::OperatingScreen. The expected lists below come from the issue's layout
-// and the model's placement table, not from the candidate markup.
-const operateItems=['#operating-band','#operating-mode','#op-dial','#operating-monitor','#radio-toolbar .op-period','#dot-cat','#dot-audio','#dot-clock','#halt-tx','#waterfall','#band-activity','#rx-frequency','#rx-focus'];
-const settingsItems=[['server-fields-general','#display-name'],['server-fields-general','#callsign'],['server-fields-general','#locator'],['server-fields-radio','#control-mode'],['server-fields-radio','#control-endpoint'],['server-fields-radio','#ptt-mode'],['settings-radio','#cat-status'],['server-fields-audio','#audio-input'],['server-fields-audio','#audio-output'],['settings-audio','#audio-enumerate'],['settings-transmit','#settings-transmit p'],['settings-clock','#clock-setting'],['settings-display','#display-profile'],['settings-display','#display-black'],['settings-display','#display-range'],['settings-display','#display-auto'],['settings-display','#display-speed'],['settings-browsers','#authorization-actions'],['settings-automation','#settings-automation fieldset']];
-const expertItems=[['connection-details','#version'],['connection-details','#operating-capabilities'],['connection-details','#profile-id'],['receive-details','#signal-status'],['receive-details','#receive-status'],['receive-details','#operating-selection-status'],['receive-details','#operating-radio'],['receive-details','#operating-refresh'],['receive-details','#clock-detail'],['recorded-input','#recording-file'],['recorded-input','#recording-import'],['recorded-input','#recording-replay']];
-const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar'];
-async function visible(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return !!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
+// WstxOperatingLayout::OperatingScreen and friends (operator design interview 2026-11-01). The
+// expected sets below come from the model's decisions, not from the candidate markup.
+const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
+const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#dx-call','#rx-pane','#contact-next','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#display-speed','#settings-browsers','#settings-automation'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay']};
+const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
+async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return !!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
+async function shown(page,selector){return page.locator(selector).first().evaluate(el=>!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden');}
+function contactSnapshot(base,{contact=null,transmit={},settings={}}={}){
+  return {v:1,profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.revision??3,snapshot_sequence:base.sequence??3,monotonic_ms:1000,utc_ms:Date.now(),review:null,
+    transmit:{capability:'available',arm_state:'disarmed',last_disarm_cause:'startup',tune:false,pending_sequence:null,last_text:null,last_period_utc:null,halt_state:'idle',safety_revision:7,refusal:null,...transmit},
+    settings:{auto_seq:true,tx1_skip:false,tx_minutes:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
+    contact,watchdog:{tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:0}};
+}
+const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,offered_for_log:false,saved:false,...extra});
+// Records a page's contact commands and answers them like the station (202) without effects.
+async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
-// Proves: CL-010-16; TC-007-009 layout at 1366x768 and 360 px.
-test('TC-007-009 one operating screen holds only operating and display items at 1366x768 and 360 px',{timeout:30000},async t=>{
+// Proves: CL-010-16; TC-007-009 one fixed laptop screen and phone safety.
+test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating items',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
-  await page.locator('#rx-frequency #rx-pane').waitFor({state:'attached',timeout:25000});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:25000});
   for(const selector of removedControls)assert.equal(await page.locator(selector).count(),0,`${selector} is not part of the page`);
-  for(const [width,height] of [[1366,768],[360,800]]){
-    await page.setViewportSize({width,height});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-    const page_=await page.evaluate(()=>({overflowX:document.documentElement.scrollWidth>innerWidth,overflowY:document.documentElement.scrollHeight>innerHeight}));
-    assert.equal(page_.overflowX,false,`no horizontal page overflow at ${width}px`);
-    if(width===1366)assert.equal(page_.overflowY,false,'1366x768 is one screen: no page scrolling, cards scroll inside');
-    for(const selector of operateItems){
-      const shown=await page.locator(selector).first().evaluate(el=>!!el.getClientRects().length);
-      assert.equal(shown,true,`${selector} is on the operating screen at ${width}px`);
-    }
-    if(width===1366)for(const selector of operateItems)assert.equal(await visible(page,selector),true,`${selector} is within the 1366x768 viewport`);
-    for(const [,selector] of [...settingsItems,...expertItems]){
-      assert.equal(await page.locator(selector).first().evaluate(el=>!!el.getClientRects().length),false,`${selector} is not on the operating screen at ${width}px`);
-    }
-    const receiveControls=await page.locator('button:visible').evaluateAll(nodes=>nodes.filter(b=>/^(Monitor|Stop|Start receive|Stop receive)$/.test(b.textContent.trim())).map(b=>b.id));
-    assert.deepEqual(receiveControls,['operating-monitor'],`one receive control at ${width}px`);
-    await page.screenshot({path:`test-results/ui-operating/operating-screen-${width}x${height}.png`});
-  }
+  assert.equal(await page.getByRole('button',{name:/Enable Tx|Monitor|Start receive|Stop receive/}).filter({visible:true}).count(),0,'no Enable Tx or receive control on the screen');
+  assert.deepEqual(await page.locator('#band-activity thead th').allTextContents(),['UTC','dB','DT','Freq','Message','DXCC','Dist']);
+  const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight,main:document.querySelector('main').scrollHeight>document.querySelector('main').clientHeight+1}));
+  assert.deepEqual(metrics,{x:false,y:false,main:false},'1366x768 is one fixed screen; lists scroll inside');
+  for(const selector of operateItems)assert.equal(await inViewport(page,selector),true,`${selector} on the 1366x768 screen`);
+  for(const selector of [...Object.values(drawerItems).flat(),...healthyTexts])assert.equal(await shown(page,selector),false,`${selector} is not on the operating screen`);
+  // Top bar holds only band, mode, dial, UTC/period, chips, Logbook, Settings, HALT (plus the
+  // status refresh and "?" overview affordances).
+  const allowed=['operating-band','operating-mode','op-dial','open-logbook','open-server-settings','Help','Refresh status','halt-tx'];
+  const extra=await page.locator('#station-bar').evaluate((bar,allowed)=>[...bar.querySelectorAll('button,select,input')].filter(n=>n.getClientRects().length&&!n.closest('#exception-chips')&&!allowed.includes(n.id)&&!allowed.includes(n.getAttribute('aria-label'))).map(n=>n.id||n.textContent),allowed);
+  assert.deepEqual(extra,[],'the top bar holds only its decided items');
+  assert.equal(await page.locator('#connection').evaluate(el=>el.getBoundingClientRect().width<=1),true,'a connected link shows no status text');
+  await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
+  await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'a phone does not overflow horizontally');
+  for(const selector of ['#halt-tx','#operating-band','#waterfall','#band-activity','#rx-focus','#qso-cq'])assert.equal(await shown(page,selector),true,`${selector} still present at 360 px`);
+  await page.screenshot({path:'test-results/ui-operating/operating-screen-360x800.png',fullPage:true});
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16; TC-007-009 Settings/Expert reachability of the moved controls.
-test('TC-007-009 every control moved off the operating screen is reachable in Settings or Expert',{timeout:30000},async t=>{
-  const {page,errors}=await fixture(t,{width:1366,height:768});
-  const requests=[];page.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
-  await page.locator('#open-server-settings').click();
-  assert.deepEqual(await page.locator('#region-server-settings .op-settings-sidebar button').allTextContents(),['Station','Radio & CAT','Audio','Transmit','Clock','Display','Browsers & grants','Automation / MCP']);
-  for(const [region,items,opener] of [['server-settings',settingsItems,'#open-server-settings'],['expert',expertItems,'#open-expert']]){
-    await page.locator(opener).click();
-    for(const [section,selector] of items){
-      await page.locator(`#region-${region} .op-settings-sidebar button[data-section-target="${section}"]`).click();
-      await page.locator(selector).first().scrollIntoViewIfNeeded();
-      assert.equal(await visible(page,selector),true,`${selector} reachable in ${region} > ${section}`);
-      assert.equal(await page.locator('#halt-tx').isVisible(),true,'Halt Tx stays visible');
-    }
-    await page.locator(`#region-${region} .return-operate`).click();
-  }
-  // The raw #9 transmit panel is an Expert section (shown for a CAT PTT profile).
-  assert.equal(await page.locator('#region-expert #transmit-details #transmit-panel').count(),1);
-  // Listing audio inputs reads devices only; it is not a settings-form submission.
-  await page.locator('#open-server-settings').click();await page.locator('#audio-enumerate').click();
-  await page.locator('#audio-inputs').filter({hasText:/\S/}).waitFor();
-  assert.ok(requests.includes('GET /audio/devices'));assert.equal(requests.some(r=>r==='PUT /profile'),false,'no profile save');
-  // Former region names (station identity, status dots) open their Settings/Expert section.
-  await page.locator('.op-secondary:not([hidden]) .return-operate').click();
-  await page.locator('#dot-audio').click();assert.equal(await page.locator('#region-expert').isVisible(),true);
-  assert.equal(await page.locator('#receive-details').evaluate(el=>el.open),true);
-  await page.locator('.op-secondary:not([hidden]) .return-operate').click();
-  await page.keyboard.press('F2');assert.equal(await page.locator('#region-server-settings').isVisible(),true,'F2 opens Settings');
-  assert.deepEqual(errors,[]);
-});
-
-// Proves: CL-010-16, CL-008-03; TC-007-009 single receive control on the unchanged strict routes.
-test('TC-007-009 Monitor is the single receive control and starts and stops the exact receive tuple',{timeout:30000},async t=>{
+// Proves: CL-010-16, CL-008-03; TC-007-009 exception chips and the explicit receive start/stop.
+test('TC-007-009 exception chips appear only for an exception and start, stop and explain receive',{timeout:40000},async t=>{
   let current,idle;const posts=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
     idle=await (await fetch(app.origin+'/receive')).json();current=idle;
-    await p.route('**/receive',async route=>{await route.fulfill({json:current});});
+    await p.route('**/receive',route=>route.fulfill({json:current}));
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(current)}));
     await p.route('**/receive/start',async route=>{posts.push(['start',JSON.parse(route.request().postData())]);current=liveFixture({...idle,generation:idle.generation+1});await route.fulfill({status:202,json:current});});
     await p.route('**/receive/stop',async route=>{posts.push(['stop',JSON.parse(route.request().postData())]);current={...current,audio:{...current.audio,state:'closed'},job:{...current.job,state:'cancelled'}};await route.fulfill({status:202,json:current});});
+    // The recording snapshot names the same live job as the mocked receive snapshot.
+    await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:current.generation,job:current.job?{id:current.job.id,source_id:current.source?.id??null,generation:current.generation,kind:'live',state:current.job.state,processed_frames:0,error:null}:null}});});
   }});
-  const monitor=page.getByRole('button',{name:'Monitor',exact:true});
-  await page.waitForFunction(()=>live&&operatingState&&!document.querySelector('#operating-monitor').disabled);
-  assert.equal(await monitor.getAttribute('aria-pressed'),'false');
+  const chipTexts=()=>page.locator('#exception-chips button').allTextContents();
+  await page.locator('#exception-chips [data-chip=receive]').filter({hasText:'Receive stopped'}).waitFor();
   const mode=await page.evaluate(()=>operatingState.selection.mode),profile=await page.evaluate(()=>[profileData.profile_id,profileData.boot_id,profileData.revision]);
-  await monitor.click();await page.waitForFunction(()=>document.querySelector('#operating-monitor').getAttribute('aria-pressed')==='true');
-  assert.deepEqual(posts[0],['start',{v:1,profile_id:profile[0],boot_id:profile[1],generation:idle.generation,profile_revision:profile[2],mode}],'Monitor start uses the strict start body in the operating mode');
-  await page.waitForFunction(()=>!document.querySelector('#operating-monitor').disabled);
-  const job=current.job.id;
-  await monitor.click();await page.waitForFunction(()=>document.querySelector('#operating-monitor').getAttribute('aria-pressed')==='false');
-  assert.deepEqual(posts[1],['stop',{v:1,profile_id:profile[0],boot_id:profile[1],generation:idle.generation+1,job_id:job}],'Monitor stop cancels the exact running tuple');
+  await page.locator('#exception-chips [data-chip=receive]').click();
+  await page.waitForFunction(()=>live?.job?.state==='running');
+  assert.deepEqual(posts[0],['start',{v:1,profile_id:profile[0],boot_id:profile[1],generation:idle.generation,profile_revision:profile[2],mode}],'the chip start is the strict start in the operating mode');
+  await page.waitForFunction(()=>document.querySelectorAll('#exception-chips button').length===0);
+  assert.deepEqual(await chipTexts(),[],'a healthy receiving station shows no chip');
+  // The explicit stop is an Expert action (and Alt+M), never a screen control.
+  const job=current.job.id;await page.keyboard.press('Alt+m');
+  for(let i=0;i<40&&posts.length<2;i++)await page.waitForTimeout(50);
+  // The fixture's real /recording snapshot has no live job; re-read the mocked receive state.
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>live?.job?.state==='cancelled');
+  assert.deepEqual(posts[1],['stop',{v:1,profile_id:profile[0],boot_id:profile[1],generation:idle.generation+1,job_id:job}],'Alt+M stops the exact running tuple');
+  await page.locator('#exception-chips [data-chip=receive]').filter({hasText:'Receive stopped'}).waitFor({timeout:5000}).catch(async e=>{throw new Error(`chips ${await page.locator('#exception-chips').textContent()} ${JSON.stringify(await page.evaluate(()=>[live?.job?.state,live?.audio?.state,mutationPending,uncertainMutation,operatingFailure,String(receiveTarget())]))}`);});
+  current={...current,audio:{...current.audio,state:'unavailable',error:'device_lost'}};await page.evaluate(()=>receiveSync());
+  await page.locator('#exception-chips [data-chip=audio]').filter({hasText:'Audio unavailable · device_lost'}).waitFor();
+  await page.locator('#exception-chips [data-chip=audio]').click();
+  assert.equal(await page.locator('#settings-drawer').isVisible(),true,'the chip opens its detail in the Settings drawer');
+  assert.equal(await page.locator('#tab-radio').getAttribute('aria-current'),'true');assert.equal(await inViewport(page,'#settings-audio'),true);
+  await page.locator('#settings-drawer .return-operate').click();
+  await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();
+  assert.equal(await page.locator('#connection').evaluate(el=>el.getBoundingClientRect().width>20),true,'a stale link shows its status');
   assert.equal(posts.length,2);assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-16; TC-007-009 Settings drawer sections and reachability.
+test('TC-007-009 the Settings drawer has four sections holding every control moved off the screen',{timeout:40000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  const requests=[];page.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+  await page.locator('#open-server-settings').click();
+  assert.deepEqual((await page.locator('#settings-drawer .op-drawer-tabs button').allTextContents()).map(t=>t.replace(/\s*\u27F3$/,'')),['General','Radio','Logging & Reporting','Expert']);
+  assert.equal(await page.locator('#settings-drawer .op-drawer-section').count(),4,'exactly four sections');
+  assert.match(await page.locator('#tab-radio').textContent(),/\u27F3/,'Radio is marked as a restart section');
+  for(const [tab,items] of Object.entries(drawerItems)){
+    await page.locator('#tab-'+tab).click();
+    for(const selector of items){await page.locator(selector).first().scrollIntoViewIfNeeded();assert.equal(await inViewport(page,selector),true,`${selector} in Settings > ${tab}`);}
+    assert.equal(await inViewport(page,'#waterfall'),true,'the waterfall keeps running beside the drawer');
+    assert.equal(await inViewport(page,'#halt-tx'),true,'HALT stays reachable');
+  }
+  assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
+  await page.locator('#tab-radio').click();await page.locator('#audio-enumerate').click();
+  await page.locator('#audio-inputs').filter({hasText:/\S/}).waitFor();
+  assert.ok(requests.includes('GET /audio/devices'));assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
+  await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
+  await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
+  await page.locator('#settings-drawer .return-operate').click();
+  await page.locator('#open-logbook').click();assert.equal(await page.locator('#region-logbook').isVisible(),true,'Logbook is a full page');
+  assert.equal(await page.locator('#waterfall').isVisible(),false);assert.equal(await page.locator('#halt-tx').isVisible(),true);
+  await page.locator('#region-logbook .return-operate').click();assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-16; TC-007-009 restart changes ask first during a QSO.
+test('TC-007-009 band, mode and Apply ask before restarting receive during a QSO',{timeout:40000},async t=>{
+  let contact=null;const selects=[],puts=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
+    await p.route('**/receive/select',async route=>{selects.push(JSON.parse(route.request().postData()));await route.fulfill({status:409,json:{error:{code:'state_conflict'}}});});
+    p.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/profile')puts.push(r);});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&operatingState&&!document.querySelector('#operating-band').disabled,null,{timeout:25000});
+  contact=partner('report');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='report');
+  await page.selectOption('#operating-band','20m');
+  await page.locator('#op-confirm[open]').waitFor();assert.match(await page.locator('#op-confirm-text').textContent(),/restarts receive and interrupts the QSO/);
+  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
+  assert.deepEqual(selects,[],'cancelled band change sends nothing');assert.equal(await page.locator('#operating-band').inputValue(),await page.evaluate(()=>operatingState.selection.band??''),'the select shows the confirmed band again');
+  await page.selectOption('#operating-band','20m');await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
+  for(let i=0;i<40&&!selects.length;i++)await page.waitForTimeout(50);
+  assert.equal(selects.length,1);assert.equal(selects[0].band,'20m');
+  await page.locator('#open-server-settings').click();await page.locator('#callsign').fill('HB9BLB');await page.locator('#station-continent').scrollIntoViewIfNeeded();
+  await page.locator('#settings-general .op-apply').click();await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.equal(puts.length,0,'Apply waits for the confirmation');
+  await page.locator('#settings-general .op-apply').click();await page.locator('#op-confirm-ok').click();
+  await page.locator('#general-apply-result').filter({hasText:/Saved revision/}).waitFor();assert.equal(puts.length,1);
+  contact=null;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!window.wstxContact.snapshot().contact);
+  await page.locator('#callsign').fill('HB9BLA');await page.locator('#settings-general .op-apply').click();
+  await page.locator('#general-apply-result').filter({hasText:/Saved revision 2/}).waitFor();assert.equal(await page.locator('#op-confirm').evaluate(d=>d.open),false,'without a QSO Apply needs no confirmation');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-16, CL-010-11; TC-007-009 Rx/Tx strip, markers and keyboard.
+test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the expected requests',{timeout:70000},async t=>{
+  const commands=[];let settings={rx_hz:1500,tx_hz:1200,hold_tx:false};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{settings})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled,null,{timeout:45000}).catch(async e=>{throw new Error('strip '+JSON.stringify(await page.evaluate(()=>[!!window.wstxContact,!!window.wstxContact?.snapshot(),document.querySelector('#contact-rx').disabled,typeof live,String(snapshot),connection.dataset.state])));});
+  const last=async n=>{for(let i=0;i<40&&commands.length<n;i++)await page.waitForTimeout(50);assert.equal(commands.length,n,`command ${n}: ${JSON.stringify(commands.slice(-3))}`);const c=commands.at(-1);return [c.action,c.rx_hz,c.tx_hz,c.enabled];};
+  await page.locator('#rxtx-strip [data-strip-step="rx:1"]').click();assert.deepEqual(await last(1),['set_frequency',1501,null,undefined]);
+  await page.locator('#rxtx-strip [data-strip-step="tx:-1"]').click({modifiers:['Shift']});assert.deepEqual(await last(2),['set_frequency',null,1190,undefined],'Shift steps 10 Hz from the confirmed value');
+  await page.locator('#contact-rx').hover();await page.mouse.wheel(0,-100);assert.deepEqual(await last(3),['set_frequency',1501,null,undefined],'wheel up +1 Hz');
+  await page.locator('#contact-tx').focus();await page.keyboard.press('Shift+ArrowUp');assert.deepEqual(await last(4),['set_frequency',null,1210,undefined]);
+  await page.locator('#contact-tx').fill('1650');await page.keyboard.press('Tab');assert.deepEqual(await last(5),['set_frequency',null,1650,undefined],'exact Hz typed');
+  await page.locator('#strip-tx-from-rx').click();assert.deepEqual(await last(6),['set_frequency',null,1500,undefined]);
+  await page.locator('#strip-rx-from-tx').click();assert.deepEqual(await last(7),['set_frequency',1200,null,undefined]);
+  await page.locator('#contact-hold').check();assert.deepEqual(await last(8),['set_hold_tx',undefined,undefined,true]);
+  await page.locator('#waterfall').focus();
+  await page.keyboard.press('F12');assert.deepEqual(await last(9),['set_frequency',1501,null,undefined],'F12 Rx +1 Hz');
+  await page.keyboard.press('Shift+F11');assert.deepEqual(await last(10),['set_frequency',null,1140,undefined],'Shift+F11 Tx -60 Hz (FT8)');
+  await page.keyboard.press('Control+F11');assert.deepEqual(await last(11),['set_frequency',1499,1199,undefined]);
+  // The Tx marker drags: one request on release, at the released axis frequency.
+  const box=await page.locator('#waterfall').boundingBox(),marker=await page.locator('#waterfall-wrap .ct-txm').boundingBox();
+  await page.mouse.move(marker.x+2,marker.y+marker.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*2000/3000,marker.y+marker.height/2,{steps:5});await page.mouse.up();
+  const drag=await last(12);assert.equal(drag[0],'set_frequency');assert.equal(drag[1],null);assert.ok(Math.abs(drag[2]-2000)<=2,`dragged Tx ${drag[2]}`);
+  // Letters and ? are inactive while typing; outside a field ? opens the overview.
+  await page.locator('#dx-call').focus();await page.keyboard.type('?');assert.equal(await page.locator('#region-help').isVisible(),false);
+  await page.locator('#waterfall').focus();await page.keyboard.press('?');assert.equal(await page.locator('#region-help').isVisible(),true);
+  await page.locator('#region-help .return-operate').click();
+  assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='redecode'),false,'no strip, pointer or key action enables Tx or re-decodes');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-16, CL-010-01, CL-010-09; TC-007-009 QSO pane, Band Activity history and menu.
+test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
+  let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
+  const standard=(from,to='CQ')=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
+  const record=(sequence,text,from,hz,p,to='CQ')=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:p});
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    records=[record(0,'CQ K1ABC FN42','K1ABC',1000,period[0]),record(1,'CQ W1XYZ FN42','W1XYZ',1480,period[0])];
+    Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period[0],complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  // Independent great-circle distance between the JN47AA and FN42 square centres (R 6371 km).
+  const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
+  assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
+  // QSO pane: W1XYZ at 1480 Hz is within +/-50 Hz of Rx 1500: marked and counted.
+  await page.locator('#qso-crowd').filter({hasText:'1 near Rx'}).waitFor();
+  assert.equal(await page.locator('#rx-pane-rows tr[data-crowd=true]').filter({hasText:'CQ W1XYZ FN42'}).count(),1);
+  // A new period keeps the previous one below a divider, newest first.
+  records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
+  Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:2,first_sequence:2,next_sequence:3,period_start_utc:period[1],complete:true}});
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===1&&document.querySelectorAll('tr[data-period=history]').length===2);
+  const order=await page.locator('#band-activity tbody tr').evaluateAll(rows=>rows.map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.children[4].textContent));
+  assert.deepEqual(order,['HB9BLA K1ABC -05','|FT8 period 12:00:00 UTC','CQ K1ABC FN42','CQ W1XYZ FN42']);
+  assert.equal(await page.locator('tr[data-period=latest]').getAttribute('class'),'ba-tome','a call to my callsign is highlighted');
+
+  // Right-click menu: Select prepares, Set Rx sets only Rx; neither transmits.
+  const k1abc=page.locator('tr[data-period=history]').filter({hasText:'CQ K1ABC FN42'});
+  await k1abc.click({button:'right'});await page.locator('#ba-menu [data-menu=select]').click();
+  for(let i=0;i<40&&!commands.length;i++)await page.waitForTimeout(50);
+  assert.equal(commands.at(-1).action,'select_row');assert.equal(commands.at(-1).row.sequence,0);
+  await k1abc.click({button:'right'});await page.locator('#ba-menu [data-menu=rx]').click();for(let i=0;i<40&&commands.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual([commands[1].action,commands[1].rx_hz,commands[1].tx_hz],['set_frequency',1000,null]);
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'selection never transmits');
+  // Double-click replies: select, then enable_tx with the shown safety revision.
+  const n=commands.length;await k1abc.dblclick();for(let i=0;i<60&&commands.length<n+2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(n).map(c=>c.action),['select_row','enable_tx'],'one select then arm, no second select from the clicks');
+  assert.deepEqual([commands.at(-1).enabled,commands.at(-1).safety_revision],[true,7]);
+  // CQ with no contact arms (a new own CQ); with an active contact it asks first.
+  let m=commands.length;await page.locator('#qso-cq').click();for(let i=0;i<40&&commands.length<m+1;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled,c.safety_revision]),[['enable_tx',true,7]]);
+  contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-reply').disabled);
+  m=commands.length;await page.locator('#qso-reply').click();for(let i=0;i<40&&commands.length<m+1;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled]),[['enable_tx',true]],'Reply arms the prepared contact');
+  m=commands.length;await page.locator('#qso-rr73').click();for(let i=0;i<60&&commands.length<m+3;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.form??c.slot??c.enabled]),[['set_tx4','rr73'],['choose_next','tx4'],['enable_tx',true]],'RR73: Tx4 as RR73 next, then transmit');
+  m=commands.length;await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Abandon the QSO with K1ABC/);await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
+  assert.equal(commands.length,m,'cancelled CQ sends nothing');
+  assert.equal(await page.locator('#contact-enable').count(),0);assert.equal(commands.some(c=>c.action==='redecode'),false);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-16; TC-007-009 themes are browser-local.
+test('TC-007-009 Day, Dark and Night themes switch manually and by time without a station request',{timeout:30000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push(new URL(r.url()).pathname);});
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'dark');
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  for(const theme of ['day','night','dark']){await page.selectOption('#theme-choice',theme);assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),theme);}
+  await page.selectOption('#theme-choice','night');await page.selectOption('#theme-switch','time');
+  const expected=await page.evaluate(()=>{const m=new Date().getHours()*60+new Date().getMinutes();return m>=420&&m<1200?'day':'night';});
+  assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),expected,'by time: Day 07:00-20:00, otherwise Night');
+  await page.selectOption('#theme-switch','sun');assert.match(await page.locator('#theme-status').textContent(),/sunrise \d\d:\d\d UTC, sunset \d\d:\d\d UTC at JN47AA/);
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('wstx.theme.v1')).mode),'sun','the choice persists in this browser');
+  assert.deepEqual(mutations,[],'themes never send a station request');assert.deepEqual(errors,[]);
 });
 
 // Proves: CL-008-03, CL-010-16; TC-009-005 case1 (no automatic restart or mutation retry).
 // Investigation guard for #37: with a running receive, reconnects, status refreshes, repeated
 // readiness and a second tab never send a receive start, stop or selection by themselves.
-test('TC-009-005 no receive start, stop or selection without an operator action across reconnects and two tabs',{timeout:60000},async t=>{
+test('TC-009-005 no receive start, stop or selection without an operator action across reconnects and two tabs',{timeout:90000},async t=>{
   let running;const mutations=[];
   const watch=p=>{p.on('request',r=>{const path=new URL(r.url()).pathname;if(r.method()!=='GET'&&/^\/receive\/(start|stop|select)$/.test(path))mutations.push(path);});};
   const route=async(p,app)=>{
@@ -407,17 +574,18 @@ test('TC-009-005 no receive start, stop or selection without an operator action 
   };
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{watch(p);await route(p,app);}});
   const second=await page.context().newPage();watch(second);await route(second,app);await second.goto(app.origin);await second.locator('#connection[data-state=connected]').waitFor();
-  for(const p of [page,second])await p.waitForFunction(()=>live?.job?.state==='running'&&document.querySelector('#operating-monitor').getAttribute('aria-pressed')==='true');
+  const running_=async p=>{for(let i=0;i<80;i++){const state=await p.evaluate(()=>{if(!livePending&&connection.dataset.state==='connected')receiveSync();return live?.job?.state;});if(state==='running')return true;await p.waitForTimeout(250);}return false;};
+  for(const p of [page,second])assert.equal(await running_(p),true);
   const until=Date.now()+15000;
   for(let round=0;Date.now()<until;round++){
     const p=round%2?second:page;
-    if(round%3===0){await p.evaluate(()=>socket.close());await p.locator('#connection[data-state=connected]').waitFor();}
+    if(round%3===0){await p.evaluate(()=>socket.close());await p.locator('#connection[data-state=connected]').waitFor({timeout:20000});}
     else if(round%3===1)await p.getByRole('button',{name:'Refresh status',exact:true}).click();
     else await p.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{}}}}));});
     await p.waitForTimeout(1500);
   }
   assert.deepEqual(mutations,[],'no receive mutation without an operator action');
-  for(const p of [page,second])assert.equal(await p.locator('#operating-monitor').getAttribute('aria-pressed'),'true');
+  for(const p of [page,second])assert.equal(await running_(p),true);
   await second.close();assert.deepEqual(errors,[]);
 });
 
@@ -434,8 +602,8 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
   await page.goto(origin);await page.locator('#login').waitFor({state:'visible'});
   for(const [width,height] of [[1366,768],[360,800]]){
     await page.setViewportSize({width,height});
-    const shown=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&(el.matches('button,input,select,textarea,a,canvas,table,[tabindex]')||[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))).map(el=>({id:el.id,inLogin:!!el.closest('#login-view'),connection:el.id==='connection'})).filter(e=>!e.inLogin&&!e.connection));
-    assert.deepEqual(shown,[],`only the token form and its status line are shown at ${width}px`);
+    const visible=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&(el.matches('button,input,select,textarea,a,canvas,table,[tabindex]')||[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))).map(el=>({id:el.id,inLogin:!!el.closest('#login-view'),connection:el.id==='connection'})).filter(e=>!e.inLogin&&!e.connection));
+    assert.deepEqual(visible,[],`only the token form and its status line are shown at ${width}px`);
     assert.equal(await page.locator('#token').isVisible(),true);assert.equal(await page.locator('#login button').isVisible(),true);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/ui-operating/unauthorized-${width}.png`});
@@ -443,7 +611,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
   await page.setViewportSize({width:1366,height:768});
   await page.locator('#token').fill(token);await page.locator('#login button').click();await page.locator('#connection[data-state="connected"]').waitFor();
   assert.equal(await page.locator('#login-view').isVisible(),false);
-  for(const selector of ['#operating-workspace','#radio-toolbar','#halt-tx','#operating-monitor'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
+  for(const selector of ['#operating-workspace','#radio-toolbar','#halt-tx','#rxtx-strip','#qso-cq'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
   assert.deepEqual(errors,[]);
 });
 
@@ -451,21 +619,21 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
 test('TC-007-002 in-page navigation preserves unsaved profile and selected recording with no command replay',{timeout:20000},async t=>{
  const {page,errors}=await fixture(t,{width:1440,height:950});
  const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push({method:r.method(),url:r.url()});});
- await page.keyboard.press('F2');assert.equal(await page.locator('#region-server-settings').isVisible(),true);
- await page.locator('#display-name').fill('Unsaved operator edit');
- await returnToOperation(page);assert.equal(await page.locator('#operating-workspace').isVisible(),true);
- await page.locator('#open-expert').click();
+ await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true);
+ await page.locator('#tab-general').click();await page.locator('#display-name').fill('Unsaved operator edit');
+ await returnToOperation(page);assert.equal(await page.locator('#settings-drawer').isVisible(),false);
+ await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
  await page.locator('#recording-file').setInputFiles({name:'selected-but-not-imported.wav',mimeType:'audio/wav',buffer:Buffer.from('not imported')});
  await returnToOperation(page);
- for(const name of ['logbook','server-settings','expert','help']){
+ for(const name of ['logbook','help']){
   const button=page.locator(`#station-bar [data-region="${name}"]`);await button.focus();await page.keyboard.press('Enter');
   assert.equal(await page.locator(`#region-${name}`).isVisible(),true);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isDisabled(),true);
   await returnToOperation(page);assert.equal(await button.evaluate(el=>document.activeElement===el),true);
  }
- await page.locator('#open-server-settings').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
- await returnToOperation(page);await page.locator('#open-expert').click();
+ await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
+ await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
  // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
  // shows a receive-only station it sends the idempotent #9 halt, never anything else.
@@ -477,7 +645,7 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
 // Proves: TC-007-002 readable rem typography and actual 200% text enlargement, every region.
 test('TC-007-002 readable text reflows throughout every operating region at 200 percent',{timeout:60000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:900});
- const regions=['operate','server-settings','expert','logbook','help'];
+ const regions=['operate','general','radio','logging','expert','logbook','help'];
  const findings=[];
  for(const scale of [1,2])for(const width of [360,1200,1600]){
   await page.setViewportSize({width,height:1000});
@@ -485,13 +653,18 @@ test('TC-007-002 readable text reflows throughout every operating region at 200 
   await page.evaluate(factor=>document.documentElement.style.fontSize=`${factor*100}%`,scale);
   await page.waitForTimeout(60);
   for(const region of regions){
-   await page.locator(`#station-bar button[data-region="${region}"]`).focus();await page.keyboard.press('Enter');
-   const container=region==='operate'?'#operating-workspace':`#region-${region}`;
+   const drawerTabs=['general','radio','logging','expert'];
+   // Pages open from the top bar; the drawer sections from Settings (navigation itself is tested above).
+   await page.evaluate(()=>showRegion('operate'));await page.evaluate(()=>showRegion('operate'));
+   if(drawerTabs.includes(region))await page.evaluate(r=>{showRegion('server-settings');drawerTab(r);},region);
+   else if(region!=='operate'){await page.locator(`#station-bar button[data-region="${region}"]`).focus();await page.keyboard.press('Enter');}
+   const container=region==='operate'?'#operating-workspace':drawerTabs.includes(region)?`#settings-${region}`:`#region-${region}`;
    await page.locator(container).evaluate(async el=>{for(const details of el.querySelectorAll('details'))details.open=true;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
    const result=await page.evaluate(({container,scale})=>{
-    const regions=[document.querySelector('#station-bar'),document.querySelector('#radio-toolbar'),document.querySelector('#signal'),document.querySelector(container)];
+    // The drawer covers part of the running waterfall by design; its own text is checked.
+    const regions=container.startsWith('#settings-')?[document.querySelector('#station-bar'),document.querySelector(container)]:[document.querySelector('#station-bar'),document.querySelector('#signal'),document.querySelector('#rxtx-strip'),document.querySelector(container)];
     const violations=[],clipped=[],overlap=[],textBoxes=[];let checked=0;
-    const visible=el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';
+    const visible=el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&getComputedStyle(el).clipPath!=='inset(50%)';
     for(const region of regions)for(const el of [region,...region.querySelectorAll('*')]){
      if(!visible(el)||el.matches('canvas,option,script,style'))continue;
      // Responsive rows repeat visible field labels; originals remain accessible. Populated fixture verifies all6label/value and column semantics.
@@ -533,7 +706,8 @@ test('TC-007-002 readable text reflows throughout every operating region at 200 
 // Presentation-only captured FT4/FT8 text plus independent edge cases; no decoder/RF success claim.
 const bandPresentationFixture={"purpose":"Presentation-only text fixture; not decoder/RF truth. Captured DT is unavailable and normalized to U+2014. Independent edge rows are explicitly synthetic.","capture_sha256":"030d849cdc8fbc5a62b7251f1dbb1c275fd1485ef11baca297f8eed67dd347ca","rows":[{"kind":"captured-physical-FT4-text-only","values":["64.987 s","10.8","\u2014","2199.2","R4SF LZ2MP KN23","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["64.916 s","6.5","\u2014","2733.3","DL1LN SP9JBT +00","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["64.916 s","-15.6","\u2014","1774.9","CQ LB1PI JO49","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["73.198 s","22.3","\u2014","399.9","CQ LZ2II KN22","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.898 s","22.3","\u2014","1195.0","DB1BC EB4FSM IN80","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.711 s","12.5","\u2014","1454.5","IW1BYR IZ8EYN +17","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.744 s","-6.4","\u2014","449.9","G5ACE/P LA1KKA 73","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.678 s","-7.6","\u2014","1844.3","NF3R SQ8AA 73","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.718 s","-16.3","\u2014","2768.4","CQ AA3B FN20","Decoded"]},{"kind":"independent-presentation-edge","values":["123456.789 s","-60.0","-0.123","3499.9","CQ PJ4/PA3XYZ FK52","Decoded"]},{"kind":"independent-presentation-edge","values":["23:59:59","+23.0","+0.123","1000.0","PJ4/PA3XYZ HB9BLA RR73 THANKS FOR THE CONTACT 73","unsupported"]},{"kind":"independent-presentation-edge","values":["Unknown","\u2014","\u2014","200.0","Payload invalid_payload","invalid_payload"]}],"capture_ft8_sha256":"820f9dfc5744f30f0cb1d30c5aff6843d364e4df44a5961d0e186bdb83f6a353"};
 test('TC-007-002 populated Band Activity has dominant width and complete readable field details',{timeout:25000},async t=>{
- const {page,errors}=await fixture(t,{width:1440,height:1000}),rows=bandPresentationFixture.rows;
+ // #37 columns: UTC, dB, DT, Freq, Message, DXCC, Dist (the payload status is in the message).
+ const {page,errors}=await fixture(t,{width:1440,height:1000}),rows=bandPresentationFixture.rows.map((r,i)=>({...r,values:[...r.values.slice(0,5),'—',i%3?'—':'19999 km']}));
  await page.locator('#band-activity header .op-muted').evaluate(node=>node.textContent='Presentation fixture: captured FT4/FT8 text and synthetic edge cases; not decoder truth');
  await page.locator('#band-activity tbody').evaluate((tbody,rows)=>{const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);tbody.replaceChildren();for(const item of rows){const row=document.createElement('tr');row.dataset.presentationFixture=item.kind;row.setAttribute('role','row');for(const [index,value] of item.values.entries()){const td=document.createElement('td');td.setAttribute('role','cell');td.dataset.label=labels[index];td.textContent=value;row.append(td);}tbody.append(row);}},rows);
  assert.equal(await page.locator('tr[data-result-id]').count(),0,'presentation fixtures never claim production decoder records');
@@ -542,13 +716,13 @@ test('TC-007-002 populated Band Activity has dominant width and complete readabl
   const cells=await page.locator('#band-activity tbody td').evaluateAll(nodes=>nodes.map((td,index)=>{const box=td.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(td);return {text:td.textContent,font:parseFloat(getComputedStyle(td).fontSize),whiteSpace:getComputedStyle(td).whiteSpace,label:td.dataset.label,generatedLabel:getComputedStyle(td,'::before').content,lines:range.getClientRects().length,inside:[...range.getClientRects()].every(r=>r.left>=box.left-1&&r.right<=box.right+1&&r.top>=box.top-1&&r.bottom<=box.bottom+1)};}));
   assert.deepEqual(cells.map(c=>c.text),rows.flatMap(r=>r.values));
   assert.ok(cells.every(c=>c.font>=16*scale&&c.inside),`literal text stays within its own field ${width}px ${scale}x: ${JSON.stringify(cells.filter(c=>!c.inside))}`);
-  assert.ok(cells.every((c,i)=>i%6===4?c.whiteSpace==='normal':c.whiteSpace==='nowrap'&&c.lines===1),`numbers/time/status never split ${width}px ${scale}x`);
+  assert.ok(cells.every((c,i)=>i%7===4?c.whiteSpace==='normal':c.whiteSpace==='nowrap'&&c.lines===1),`numbers/time/status never split ${width}px ${scale}x`);
   const layout=await page.evaluate(()=>{const b=document.querySelector('#band-activity').getBoundingClientRect(),q=document.querySelector('#rx-focus').getBoundingClientRect(),g=document.querySelector('.operating-grid'),cs=getComputedStyle(g),available=g.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);return {band:b.width,available,ratio:b.width/(b.width+q.width),details:getComputedStyle(document.querySelector('#band-activity tbody tr')).display==='grid',overflow:document.documentElement.scrollWidth>innerWidth};});
   assert.equal(layout.overflow,false,`no page overflow ${width}px ${scale}x`);
   if(scale===1&&width>1200)assert.ok(layout.ratio>=.55&&layout.ratio<=.6,`Band Activity owns 55-60% of allocated card widths: ${JSON.stringify(layout)}`);
   else assert.ok(Math.abs(layout.band-layout.available)<2,`Band Activity full width ${width}px ${scale}x`);
   if(layout.details)assert.ok(cells.every(c=>c.generatedLabel.includes(c.label)),`all6 field labels visible ${width}px ${scale}x`);
-  assert.equal(await page.getByRole('columnheader').count(),6,'column semantics retained in row-details view');
+  assert.equal(await page.getByRole('columnheader').count(),7,'column semantics retained in row-details view');
   const splitCalls=await page.locator('#band-activity td:nth-child(5)').evaluateAll(nodes=>nodes.flatMap(td=>{const word='PJ4/PA3XYZ',at=td.textContent.indexOf(word);if(at<0)return [];const r=document.createRange();r.setStart(td.firstChild,at);r.setEnd(td.firstChild,at+word.length);return r.getClientRects().length===1?[]:[td.textContent];}));assert.deepEqual(splitCalls,[],'long callsign tokens stay intact where they fit');
   await page.locator('#band-activity tbody tr').last().scrollIntoViewIfNeeded();await page.locator('#band-activity tbody tr').first().scrollIntoViewIfNeeded();
   await page.evaluate(()=>{document.querySelector('#controls').scrollTop=0;document.querySelector('#band-activity .op-table-wrap').scrollTop=0;});
@@ -575,25 +749,31 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
       if(hold&&cursor>=35){held={route,response};pending.resolve();}else await route.fulfill({json:response});
     });
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===16);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===16);
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===18);
-  assert.equal(await page.locator('tr[data-result-id]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
+  assert.equal(await page.locator('tr[data-period=latest]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
-  assert.doesNotMatch(await page.locator('#band-activity tbody').innerText(),/STATION 0\b/);
-  const cells=page.locator('tr[data-result-id]').first().locator('td');assert.equal(await cells.nth(0).textContent(),'12:00:15');assert.equal(await cells.nth(2).textContent(),'-0.2');
-  assert.equal(await page.locator('tr[data-result-id]').nth(1).locator('td').nth(2).textContent(),'+0.2');assert.equal(await page.locator('tr[data-result-id]').nth(2).locator('td').nth(2).textContent(),'+0.0');
+  assert.doesNotMatch((await page.locator('tr[data-period=latest]').allInnerTexts()).join('\n'),/STATION 0\b/);
+
+  const cells=page.locator('tr[data-period=latest]').first().locator('td');assert.equal(await cells.nth(0).textContent(),'12:00:15');assert.equal(await cells.nth(2).textContent(),'-0.2');
+  assert.equal(await page.locator('tr[data-period=latest]').nth(1).locator('td').nth(2).textContent(),'+0.2');assert.equal(await page.locator('tr[data-period=latest]').nth(2).locator('td').nth(2).textContent(),'+0.0');
   for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(await cells.evaluateAll(nodes=>nodes.filter(n=>n.scrollWidth>n.clientWidth+1).map(n=>n.textContent)),[]);await page.screenshot({path:`test-results/ui-operating/latest-period-${width}-${scale}x.png`,fullPage:true});}
   await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   const nextPeriod='2026-10-27T12:00:30.0000000Z';records.push(...Array.from({length:18},(_,i)=>makeRecord(i+19,nextPeriod,0.1)));
   Object.assign(state.job,{next_sequence:37,available_count:37,latest_decode:{id:2,first_sequence:19,next_sequence:37,period_start_utc:nextPeriod,complete:false}});hold=true;
   await page.getByRole('button',{name:'Refresh status',exact:true}).click();await pending.promise;
-  assert.equal(await page.locator('tr[data-result-id]').count(),16);assert.match(await page.locator('#band-activity header').innerText(),/Partial.*Loading results/);
-  assert.doesNotMatch(await page.locator('#band-activity tbody').innerText(),/STATION 1\b/);
+  assert.equal(await page.locator('tr[data-period=latest]').count(),16);assert.match(await page.locator('#band-activity header').innerText(),/Partial.*Loading results/);
+  assert.doesNotMatch((await page.locator('tr[data-period=latest]').allInnerTexts()).join('\n'),/STATION 1\b/);
+  // BandActivityView: the replaced period stays below its divider, never in the latest view.
+  assert.equal(await page.locator('tr[data-period=history]').count(),18);assert.match(await page.locator('tr.ba-divider').first().textContent(),/12:00:15 UTC/);
+  assert.equal(await page.locator('tr[data-period=history]').filter({hasText:/STATION 1(?!\d)/}).count(),1);
   state.job.latest_decode={id:3,first_sequence:37,next_sequence:37,period_start_utc:'2026-10-27T12:00:45.0000000Z',complete:true};
-  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===0);
+  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
   await held.route.fulfill({json:held.response});held=null;hold=false;
-  await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-result-id]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
+  const history=await page.locator('tr[data-period=history]').count();
+  await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-period=latest]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
+  assert.equal(await page.locator('tr[data-period=history]').count(),history,'an obsolete page cannot add to the history either');
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
 });
 
@@ -612,9 +792,9 @@ test('TC-007-006 a page-announced period refetches its prefix instead of skippin
       return route.fulfill({json:{...emptyResults(state),next_sequence:19,available_count:19,next,more:next<19,records:batch,latest_decode:view}});
     });
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===18);
-  assert.ok(announced);assert.equal(await page.locator('tr[data-result-id]').first().locator('td').nth(4).textContent(),'PAGE FIXTURE 1');
-  assert.equal(await page.locator('tr[data-result-id]').last().locator('td').nth(4).textContent(),'PAGE FIXTURE 18');assert.deepEqual(errors,[]);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
+  assert.ok(announced);assert.equal(await page.locator('tr[data-period=latest]').first().locator('td').nth(4).textContent(),'PAGE FIXTURE 1');
+  assert.equal(await page.locator('tr[data-period=latest]').last().locator('td').nth(4).textContent(),'PAGE FIXTURE 18');assert.deepEqual(errors,[]);
 });
 
 // Proves: CL-010-09; TC-007-006. Numeric/literal presentation sorting never selects a station.
@@ -633,8 +813,8 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
     await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await page.route('**/receive/results?*',route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor,cursor+16),next=cursor+batch.length;return route.fulfill({json:{...emptyResults(state),next_sequence:5,available_count:5,next,more:next<5,records:batch}});});
   }});
-  const order=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===5);
+  const order=()=>page.locator('tr[data-period=latest]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
   assert.deepEqual(await order(),[1,4,0,3,2],'frequency200 precedes1000, numeric ties retain sequence');
   assert.deepEqual(await sortState(page),['frequency','asc']);
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);assert.deepEqual(await order(),[2,0,3,4,1]);
@@ -642,10 +822,10 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await clickSort(page,'signal');assert.deepEqual(await sortState(page),['signal','asc']);assert.deepEqual(await order(),[0,3,4,1,2],'unknown SNR stays last when ascending');
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,3,2,4,1]);await clickSort(page,'dt');assert.deepEqual(await order(),[1,4,2,3,0]);
   await clickSort(page,'message');assert.deepEqual(await sortState(page),['message','asc']);assert.deepEqual(await order(),[4,1,2,0,3]);await clickSort(page,'message');assert.deepEqual(await order(),[0,2,1,4,3]);
-  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===0);
+  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
   assert.deepEqual(await sortState(page),['message','desc']);
   state.generation++;state.source.id=crypto.randomUUID();state.job.id=crypto.randomUUID();state.job.mode='ft4';state.job.latest_decode={id:1,first_sequence:0,next_sequence:5,period_start_utc:null,complete:true};records=records.map(r=>({...r,period_start_utc:null,dt_seconds:null}));
-  await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>document.querySelectorAll('tr[data-result-id]').length===5);
+  await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
   assert.deepEqual(await sortState(page),['message','desc']);
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,1,2,3,4]);await clickSort(page,'dt');assert.deepEqual(await order(),[0,1,2,3,4],'all unknown DT stays in sequence order');
   for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
@@ -735,7 +915,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id] .log-worked').first().waitFor();
- const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.querySelector('.log-worked')?.dataset.worked??null,r.querySelector('.log-worked')?.textContent??null]));
+ const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].firstChild.textContent,r.querySelector('.log-worked')?.dataset.worked??null,r.querySelector('.log-worked')?.textContent??null]));
  assert.deepEqual(marks,[['CQ K1ABC FN42','worked_this_band_and_mode',' \u00b7 \u2713 worked'],['CQ W1XYZ FN42','not_worked',' \u00b7 \u2605 new'],['FREE TEXT',null,null]]);
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForTimeout(500);

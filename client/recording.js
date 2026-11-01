@@ -26,7 +26,8 @@ const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input
 strip.innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 // Band Activity sorts within a period by its column headers (ActivityOrdering).
-const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none"><button type="button" class="op-sort" data-sort="${field}" title="Sort by ${label}">${label}</button></th>`;
+// The header cell itself is the sort control (focusable, Enter/Space), keeping header typography.
+const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
 <section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
@@ -53,15 +54,18 @@ function block(id,title,parent,html=''){const section=document.createElement('se
 // WstxOperatingLayout::SettingsDrawer: four sections; the waterfall keeps running; HALT stays.
 const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');
 const drawerSections=[['general','General'],['radio','Radio &#10227;'],['logging','Logging &amp; Reporting'],['expert','Expert']];
-drawer.innerHTML=`<header><div><span class="op-eyebrow">WSTX / <span id="operating-station">Waiting for station</span></span><h2 id="drawer-title">Settings</h2></div><button type="button" data-region="operate" class="return-operate" aria-label="Close settings">&#10005; Close</button></header><div class="op-drawer-tabs" role="tablist" aria-label="Settings sections">${drawerSections.map(([key,label],i)=>`<button type="button" role="tab" id="tab-${key}" data-drawer-tab="${key}" aria-controls="settings-${key}" aria-selected="${i===0}">${label}</button>`).join('')}</div><div class="op-drawer-body">${drawerSections.map(([key],i)=>`<section id="settings-${key}" role="tabpanel" aria-labelledby="tab-${key}" class="op-drawer-section"${i?' hidden':''}></section>`).join('')}</div>`;
+drawer.innerHTML=`<header><div><span class="op-eyebrow">WSTX / <span id="operating-station">Waiting for station</span></span><h2 id="drawer-title">Settings</h2></div><button type="button" data-region="operate" class="return-operate" aria-label="Close settings">&#10005; Close</button></header><nav class="op-drawer-tabs" aria-label="Settings sections">${drawerSections.map(([key,label],i)=>`<button type="button" id="tab-${key}" data-drawer-tab="${key}" aria-controls="settings-${key}"${i?'':' aria-current="true"'}>${label}</button>`).join('')}</nav><div class="op-drawer-body">${drawerSections.map(([key,label])=>`<section id="settings-${key}" aria-labelledby="settings-${key}-heading" class="op-drawer-section"><h2 id="settings-${key}-heading" class="op-drawer-heading">${label}</h2></section>`).join('')}</div>`;
 main.append(drawer);
 const [generalSection,radioSection,loggingSection,expertSection]=drawerSections.map(([key])=>drawer.querySelector('#settings-'+key));
-function drawerTab(key){for(const [k] of drawerSections){const on=k===key;drawer.querySelector('#tab-'+k).setAttribute('aria-selected',String(on));drawer.querySelector('#settings-'+k).hidden=!on;}}
+function markTab(key){for(const [k] of drawerSections){const tab=drawer.querySelector('#tab-'+k);if(k===key)tab.setAttribute('aria-current','true');else tab.removeAttribute('aria-current');}}
+function drawerTab(key){markTab(key);const body=drawer.querySelector('.op-drawer-body'),section=drawer.querySelector('#settings-'+key);body.scrollTop=section.offsetTop-body.offsetTop;}
 drawer.querySelector('.op-drawer-tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-drawer-tab]');if(tab){drawerTab(tab.dataset.drawerTab);tab.focus();}});
-drawer.querySelector('.op-drawer-tabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;const keys=drawerSections.map(([k])=>k),current=keys.indexOf(drawer.querySelector('[aria-selected=true]').dataset.drawerTab),next=keys[(current+(event.key==='ArrowRight'?1:keys.length-1))%keys.length];drawerTab(next);drawer.querySelector('#tab-'+next).focus();});
+// The section button follows the scroll position.
+drawer.querySelector('.op-drawer-body').addEventListener('scroll',event=>{const body=event.currentTarget;let current=drawerSections[0][0];for(const [k] of drawerSections)if(drawer.querySelector('#settings-'+k).offsetTop-body.offsetTop<=body.scrollTop+8)current=k;markTab(current);},{passive:true});
+drawer.querySelector('.op-drawer-tabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;const keys=drawerSections.map(([k])=>k),current=keys.indexOf((event.target.closest('[data-drawer-tab]')??drawer.querySelector('[aria-current=true]')).dataset.drawerTab),next=keys[(current+(event.key==='ArrowRight'?1:keys.length-1))%keys.length];drawerTab(next);drawer.querySelector('#tab-'+next).focus();});
 function showSection(id){
   const target=document.getElementById(id);if(!target)return;
-  const section=target.closest('.op-drawer-section');if(section)drawerTab(section.id.slice(9));
+  const section=target.closest('.op-drawer-section');if(section)markTab(section.id.slice(9));
   for(let node=target;node;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
   target.scrollIntoView({block:'nearest'});
   (target.matches('details')?target.querySelector('summary'):target.querySelector('input:not([type=hidden]):not(:disabled),select:not(:disabled),button:not(:disabled),summary')??target).focus();
@@ -70,7 +74,7 @@ function showSection(id){
 const serverForm=document.querySelector('#settings');
 const stationFields=document.createElement('fieldset');stationFields.id='server-fields-general';stationFields.className='op-server-fieldset';stationFields.innerHTML='<legend>Station &#10227;</legend>';
 for(const id of ['display-name','callsign','locator']){const input=document.getElementById(id);input.setAttribute('form','settings');stationFields.append(input.closest('label'));}
-stationFields.insertAdjacentHTML('beforeend','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label><p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p>');
+stationFields.insertAdjacentHTML('beforeend','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label><p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
 // Station fields live outside the form element; their edits still mark the form edited.
 for(const type of ['input','change'])stationFields.addEventListener(type,event=>{if(event.target.form===serverForm&&event.target.id!=='station-continent')serverForm.dispatchEvent(new Event(type));});
 generalSection.append(stationFields);
@@ -101,16 +105,17 @@ const connectionPanel=document.createElement('div');connectionPanel.append(contr
 const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionPanel.append(capabilities);
 const receivePanel=document.createElement('div');receivePanel.id='receive-diagnostics';
 receivePanel.append(signal.querySelector('#signal-status'));
-receivePanel.insertAdjacentHTML('beforeend','<p id="receive-status" role="status">Live receive unavailable until station snapshot</p><p id="receive-generation"></p><p id="clock-detail">Clock detail unavailable until station snapshot</p><p><button type="button" id="receive-toggle" disabled>Start receive</button></p>');
+receivePanel.insertAdjacentHTML('beforeend','<p id="receive-status" role="status">Live receive unavailable until station snapshot</p><p id="receive-generation">Receive generation unknown</p><p id="clock-detail">Clock detail unavailable until station snapshot</p><p><button type="button" id="receive-toggle" disabled>Start receive</button></p>');
 secondary('receive-details','Receive, CAT and timing',receivePanel,expertSection).open=true;
-secondary('connection-details','Connection details',connectionPanel,expertSection).open=false;
+secondary('connection-details','Connection details',connectionPanel,expertSection).open=true;
+// The profile save outcome is shown beside both Apply buttons (Radio and General).
+new MutationObserver(()=>{document.querySelector('#general-apply-result').textContent=document.querySelector('#settings-result').textContent;}).observe(document.querySelector('#settings-result'),{childList:true,characterData:true,subtree:true});
 const operatingRefresh=connectionPanel.querySelector('#refresh');operatingRefresh.className='op-icon-button';operatingRefresh.setAttribute('aria-label','Refresh status');operatingRefresh.title='Refresh status';operatingRefresh.innerHTML='&#8635;';headerActions.insertBefore(operatingRefresh,headerActions.firstChild);
 const updateIdentity=()=>{document.querySelector('#operating-station').textContent=profileData?.settings.display_name??'Waiting for station';};
 new MutationObserver(updateIdentity).observe(document.querySelector('#profile-name'),{childList:true,subtree:true,characterData:true});updateIdentity();
 const panel = document.createElement('section'); panel.id = 'recording-controls'; panel.setAttribute('aria-label','Recording controls');
 panel.innerHTML = '<label>Import mono 12 kHz PCM16 WAV (up to 120 seconds)<input id="recording-file" type="file" accept=".wav,audio/wav"></label><button id="recording-import">Import recording</button><button id="recording-replay" disabled>Replay spectrum</button><button id="recording-cancel" disabled>Cancel operation</button><p>One processing worker per station &#183; no speaker playback</p><p id="recording-progress" role="status"></p>';
-// Display preferences (General > Display); the same controls follow into Expert > Recordings
-// while that tab is open, where a replay is inspected.
+// Display preferences (General > Display): one set of controls in the Settings column.
 const localPreferences=document.createElement('div');localPreferences.id='local-display-preferences';
 localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Waterfall speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
@@ -144,8 +149,7 @@ function showRegion(name,opener,anchor=null){
     if(opener)returnFocus=opener;
     drawer.hidden=false;main.dataset.drawer='open';
     const section=anchor??drawerAlias[name];
-    (section==='recorded-input'?panel:displaySettings).append(localPreferences);
-    if(section)showSection(section);else{drawerTab(drawer.querySelector('[aria-selected=true]').dataset.drawerTab);drawer.querySelector('[aria-selected=true]').focus();}
+    if(section)showSection(section);else drawer.querySelector('[aria-current=true]').focus();
     return;
   }
   if(name!=='operate'&&!secondaryRegions.has(name))return;
@@ -158,8 +162,6 @@ function showRegion(name,opener,anchor=null){
   if(name==='operate') {split(upper);if(returnFocus?.isConnected){returnFocus.focus();returnFocus=null;}}
   else secondaryRegions.get(name).querySelector('.return-operate').focus();
 }
-drawer.querySelector('#settings-expert').addEventListener('focusin',()=>panel.append(localPreferences));
-drawer.querySelector('#settings-general').addEventListener('focusin',()=>displaySettings.append(localPreferences));
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
 // A pointer action outside the open drawer closes it (the top bar and the waterfall excepted).
 document.addEventListener('pointerdown',event=>{if(drawer.hidden||event.target.closest?.('#settings-drawer,#station-bar,#signal,#rxtx-strip,#splitter,dialog'))return;closeDrawer();},true);
@@ -231,8 +233,8 @@ let upper, snapshot, importOutcome, rows = [], drawPending = false, syncPending 
 const identity = s => s ? `${s.boot_id}/${s.job?.source_id}/${s.job?.id}/${s.generation}` : '';
 function split(value) {
   const otherHeight=stationBar.offsetHeight+strip.offsetHeight;
-  // The Sensitivity control overlays the spectrum corner; it adds no signal-area height.
-  const signalText=[document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")].reduce((height,node)=>height+(node?.offsetHeight||0),0);
+  // The Sensitivity control sits in the top-right corner row of the signal area.
+  const signalText=[signal.querySelector(".op-signal-heading"),document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")].reduce((height,node)=>height+(node?.offsetHeight||0),0);
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
@@ -246,7 +248,8 @@ splitter.addEventListener('keydown',event => {
   if (event.key in values) {event.preventDefault();split(values[event.key]);}
 });
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
-splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top)/(box.height/signal.offsetHeight));}});
+// The Rx/Tx strip sits between the signal and the separator.
+splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top-strip.offsetHeight)/(box.height/signal.offsetHeight));}});
 addEventListener('resize',() => split(upper));
 const textLayoutObserver=new ResizeObserver(()=>split(upper));
 for(const node of [stationBar,strip,document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")])textLayoutObserver.observe(node); split();
@@ -541,6 +544,7 @@ function receiveShow(){
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
     capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
+    document.querySelector('#receive-generation').textContent=`Receive generation ${live.generation} · source ${live.source?.id??'none'} · job ${live.job?.id??'none'}`;
     const c=live.clock;document.querySelector('#clock-detail').textContent=`Clock ${c.basis} · ${c.correlated?`receive periods correlated to UTC anchor ${c.utc_anchor}, uncertainty ${c.uncertainty_ns} ns`:'receive periods not correlated to UTC'} · external accuracy ${c.external_accuracy}`;
     const focus=document.querySelector('#rx-focus .op-contact-identity');
     // A contact rendered by contact.js keeps its own identity text.
@@ -587,12 +591,13 @@ function activityOrdering(records=resultRows){
 }
 // A column header chooses its field (signal strength strongest first, others ascending);
 // the active header reverses the direction. Presentation only: no request is sent.
-document.querySelector('#band-activity thead').addEventListener('click',event=>{
-  const button=event.target.closest('button[data-sort]');if(!button)return;
+function sortBy(button){
   if(button.dataset.sort===activitySortField)activitySortDirection=activitySortDirection==='asc'?'desc':'asc';
   else{activitySortField=button.dataset.sort;activitySortDirection=activitySortField==='signal'?'desc':'asc';}
   renderResults();
-});
+}
+document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
+document.querySelector('#band-activity thead').addEventListener('keydown',event=>{const th=event.target.closest('th[data-sort]');if(th&&(event.key==='Enter'||event.key===' ')){event.preventDefault();sortBy(th);}});
 function renderResults(){
   const ordered=activityOrdering();
   const body=document.querySelector('#band-activity tbody');
@@ -954,6 +959,7 @@ function chipsShow(){
     if(uncertainMutation)list.push(chip('receive','warn',receiveFailure||'Receive outcome unknown',open('receive-details')));
     else if(operatingFailure&&operatingSupported!==false)list.push(chip('selection','warn',operatingFailure,open('receive-details')));
     else if(operatingUnknown)list.push(chip('selection','warn','Band/mode outcome unknown',open('receive-details')));
+    else if(operatingState?.operation?.result==='failed')list.push(chip('selection','error',`Band/mode change failed${operatingState.operation.error?' \u00b7 '+operatingState.operation.error:''}`,open('receive-details')));
     else if(live&&!active&&!mutationPending&&!receiveTarget()&&a?.state!=='unavailable'){
       if(profileData?.settings.audio.input_device)list.push(chip('receive','warn','Receive stopped \u00b7 start',()=>receiveToggle()));
       else list.push(chip('receive','warn','No audio input',open('server-fields-audio')));

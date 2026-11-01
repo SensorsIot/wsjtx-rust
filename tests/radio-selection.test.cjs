@@ -69,9 +69,9 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:694},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(759),origin,mapping),'automatic');for(const line of [709,723,737,743,744,752,761])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(758),origin,mapping),/unknown/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(759).stack.callFrames]}};
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:831},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(908),origin,mapping),'automatic');for(const line of [845,859,873,892,893,901,910])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(907),origin,mapping),/unknown/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(908).stack.callFrames]}};
     assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
@@ -270,7 +270,11 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();
+  // #37: selection diagnostics and the explicit receive control are in Settings > Expert; the
+  // drawer leaves the top-bar band and mode selects reachable.
+  await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
   await page.selectOption('#operating-band','40m');await page.locator('#operating-selection-status').filter({hasText:'audio_unconfigured'}).waitFor();
+  await page.locator('#exception-chips [data-chip=selection]').filter({hasText:'audio_unconfigured'}).waitFor();
   assert.match(await page.locator('#operating-radio').textContent(),/Nominal 7\.074000 MHz.*manual, actual rig unconfirmed/);
   await page.selectOption('#operating-mode','ft4');await page.waitForFunction(()=>document.querySelector('#op-dial').value==='7.047500');
   await page.locator('#operating-mode:enabled').waitFor();
@@ -280,7 +284,7 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   page.on('response',response=>{if(response.url().endsWith('/receive/select'))delayed.push(response.status());});
   await page.route('**/receive/select',async route=>{const body=route.request().postDataJSON();if(body.action==='mode'&&body.mode==='ft8'){held();await gate;}await route.continue();});
   await page.selectOption('#operating-mode','ft8');await captured;
-  await page.locator('#operating-stop:enabled').click();
+  await page.locator('#receive-toggle:enabled').filter({hasText:'Cancel band/mode change'}).click();
   await page.waitForFunction(async()=>{const s=await(await fetch('/receive/selection')).json();return s.cancellation?.result==='fenced';});
   const fenced=(await request('/receive/selection')).body;assert.equal(fenced.operation.command_id,before.operation.command_id);assert.equal(fenced.selection.mode,'ft4');assert.equal(fenced.operating_revision,before.operating_revision+1);
   const refused=page.waitForResponse(response=>response.url().endsWith('/receive/select')&&response.status()===409);release();await refused;await page.waitForFunction(()=>!document.querySelector('#operating-mode').disabled);
@@ -333,6 +337,8 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
   const manual=[];page.on('request',r=>{if(/\/radio\/(connect|disconnect)$/.test(new URL(r.url()).pathname))manual.push(r.url());});
   await loginPage(page,origin,token);
   assert.equal(await page.locator('#radio-connect, #radio-disconnect, #radio-receive-only').count(),0,'normal UI has no Connect/Disconnect CAT controls');
+  // #37: an unconfirmed receive-only setup is an exception chip that opens Settings > Radio.
+  await page.locator('#exception-chips [data-chip=cat]').filter({hasText:'CAT setup not confirmed'}).click({timeout:20000});
   await page.locator('#cat-status[data-condition="commissioningRequired"]').waitFor({timeout:20000});
   const button=page.locator('#cat-confirm-button');
   await button.waitFor({state:'visible'});assert.equal(await button.textContent(),'Confirm receive-only setup');
@@ -370,10 +376,10 @@ function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.metho
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'8eaea160b2f5462e13f469d3e149c28dfb176fb17756bdacd1dfa4404afcf026','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'850d0d01c83c4dfa7d48bae919794df68ea114f823590a1f2cb2f70d74206529','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:694,timerLine:759};
+  return {sha256,valid,fetchLine:831,timerLine:908};
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
@@ -388,7 +394,7 @@ function cadenceCaller(initiator,origin,mapping){
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
   // Reviewed for CL-022-03: Connect/Disconnect CAT callers removed; catSync never reads selection.
-  const explicitLines=[709,723,737,743,744,752,761];
+  const explicitLines=[845,859,873,892,893,901,910];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';
@@ -549,7 +555,7 @@ function liveSelectionFixture(){
       await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
       await page.locator('#connection[data-state=connected]').waitFor({timeout:coldRemaining()});seen.connectedObserved=performance.now();
       await page.locator('#operating-band:enabled').waitFor({timeout:coldRemaining()});seen.operatingObserved=performance.now();
-      await page.locator('[data-region=client-preferences]').first().click({timeout:coldRemaining()});await page.selectOption('#display-profile','thin',{timeout:coldRemaining()});await page.locator('.op-secondary:not([hidden]) .return-operate').click({timeout:coldRemaining()});
+      await page.locator('#open-server-settings').click({timeout:coldRemaining()});await page.selectOption('#display-profile','thin',{timeout:coldRemaining()});await page.locator('#tab-expert').click({timeout:coldRemaining()});
       assert.equal(await page.locator('#display-profile').inputValue({timeout:coldRemaining()}),'thin');seen.thinConfigured=performance.now();coldRemaining();
     }));}
     catch(error){
@@ -617,7 +623,7 @@ function liveSelectionFixture(){
     await command('band','40m','ft8',7074000);
     async function measure(profile,steps){
       const offProofs=[];
-      for(const [index,page]of pages.entries()){const after=performance.now();await page.locator('[data-region=client-preferences]').first().click();await page.selectOption('#display-profile',profile);await page.locator('.op-secondary:not([hidden]) .return-operate').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
+      for(const [index,page]of pages.entries()){const after=performance.now();if(!await page.locator('#settings-drawer').isVisible())await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',profile);await page.locator('#tab-expert').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
       await sleep(500);const baseline={...proxy.counters},start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
       const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};

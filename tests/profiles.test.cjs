@@ -1061,7 +1061,7 @@ test('TC-022-006: simulated reservation upload intent cannot cross authorization
   const page = await context.newPage(); await page.goto(p.origin);
   await page.locator('#login').waitFor({state: 'visible'});
   await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
-  await page.locator('#open-recordings').click();
+  await page.locator('#open-server-settings').click(); await page.locator('#tab-expert').click();
   await page.locator('#recording-import').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#recording-import').disabled);
   const baseline = await page.evaluate(async () => (await window.stationAuthorization.fetch('/recording')).json());

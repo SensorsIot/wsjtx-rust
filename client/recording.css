@@ -243,9 +243,8 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #band-activity tr.ba-tome td{background:rgba(255,95,86,.16)}#band-activity tr.ba-tome td[data-col=message]{color:var(--op-tome);font-weight:600}
 #band-activity tr.ba-divider td{padding:3px 12px;font:600 var(--op-font-secondary) 'Segoe UI',system-ui,sans-serif;color:#7e9bad;background:#0f1e29;letter-spacing:.06em}
 #band-activity tr[data-period=history] td{opacity:.78}
-#band-activity th[data-sort]{padding:0}
-#band-activity button.op-sort{width:100%;background:transparent;border:0;border-radius:0;padding:8px 5px;color:inherit;font:inherit;text-align:left;cursor:pointer}
-#band-activity th[aria-sort=ascending] button.op-sort:after{content:" \25B2"}#band-activity th[aria-sort=descending] button.op-sort:after{content:" \25BC"}
+#band-activity th.op-sort{cursor:pointer}#band-activity th.op-sort:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
+#band-activity th[aria-sort=ascending]:after{content:" \25B2"}#band-activity th[aria-sort=descending]:after{content:" \25BC"}
 #band-activity thead:focus-within{clip-path:none!important;position:static!important;width:auto!important;height:auto!important}
 @container (max-width:44em){#band-activity tr.ba-divider{display:block!important}#band-activity tr.ba-divider td{display:block}}
 .op-qso{display:flex;flex-direction:column}
@@ -286,10 +285,11 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-drawer h2{margin:2px 0 0;font-size:1.25rem}
 .op-drawer-tabs{display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid #2b4252;flex-wrap:wrap}
 .op-drawer-tabs button{padding:6px 10px;background:transparent;border-color:transparent;font-size:var(--op-font-normal)}
-.op-drawer-tabs button[aria-selected=true]{background:#203c3e;border-color:#31584e;color:#b5e4d2}
+.op-drawer-tabs button[aria-current=true]{background:#203c3e;border-color:#31584e;color:#b5e4d2}
+.op-drawer-body{position:relative}.op-drawer-section+.op-drawer-section{margin-top:22px}
+.op-drawer h2.op-drawer-heading{font-size:var(--op-font-normal);letter-spacing:.08em;text-transform:uppercase;color:#7e9bad;margin:0}
 .op-drawer-body{flex:1;overflow:auto;padding:12px 16px 24px}
 .op-drawer-section{display:flex;flex-direction:column;gap:14px}
-.op-drawer-section[hidden]{display:none}
 .op-drawer .op-section,.op-drawer fieldset,.op-drawer details{border:1px solid #2a4151;border-radius:8px;padding:10px 14px;background:#11212d;margin:0}
 .op-drawer .op-section h3{margin:0 0 8px;font-size:var(--op-font-normal)}
 .op-drawer label{display:flex;flex-direction:column;gap:4px;margin:0 0 8px;min-width:0}
@@ -337,5 +337,13 @@ html[data-theme=night] main.op-app{filter:grayscale(1) sepia(1) saturate(6) hue-
 #rx-focus .op-contact-body{gap:5px}
 .op-qso-buttons button{padding:6px 4px}
 @media(max-width:900px){#station-bar.op-topbar{flex-wrap:wrap}.op-chips{order:3;flex:1 1 100%;justify-content:flex-start}}
-@media(max-width:650px){body[data-profile=true] main.op-app{height:auto;min-height:100dvh;overflow:visible}}
 #rx-pane header button{padding:2px 8px;font-size:var(--op-font-secondary)}
+/* Controls and status paragraphs keep the 16 px normal-text minimum (TC-007-002). */
+.op-app button.op-chip,.op-strategy-bar select,.op-strategy-bar button,#rx-pane header button,#rx-focus .ct-state{font-size:var(--op-font-normal)}
+#station-bar.op-topbar{flex-direction:row}
+@media(max-width:650px){#station-bar #radio-toolbar{flex-wrap:wrap;flex:1 1 100%}#radio-toolbar .op-period{margin-left:0}}
+@media(max-width:650px){#signal .op-signal-heading{position:static;align-self:flex-end;background:transparent;padding:0 0 4px}}
+.op-drawer dl>div{flex-wrap:wrap;gap:4px 12px}.op-drawer dt,.op-drawer dd{min-width:0;max-width:100%;overflow-wrap:anywhere}
+body[data-profile=true] main.op-app{overflow:clip}
+#station-bar.op-topbar,#station-bar #radio-toolbar{flex-wrap:wrap}#station-bar .op-header-actions{flex-wrap:wrap;margin-left:auto}
+#signal .op-signal-heading{position:static;align-self:flex-end;background:transparent;padding:0 0 3px;margin:0}

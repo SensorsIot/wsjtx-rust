@@ -25,7 +25,7 @@ before(async()=>{
   page.on('requestfinished',r=>{if(r.__e)r.__e.end=Math.round(performance.now());});page.on('requestfailed',r=>{if(r.__e)r.__e.end='failed';});
   await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
   // contact.js loads after the first recording/receive snapshots (idle link).
-  await page.locator('#contact-enable').waitFor({state:'attached'});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
 });
 after(async()=>{await browser?.close();});
 
@@ -40,10 +40,15 @@ test('TC-007-003 Rx Frequency pane routing and TC-007-001 selection without tran
   await waitFor(async()=>await rows.count()===8,'eight Band Activity rows',30000);
   const pane=async()=>page.locator('#rx-pane-rows tr').evaluateAll(trs=>trs.map(tr=>[tr.dataset.kind,tr.children[3].textContent,tr.children[4].textContent]));
   // Rx 1500 Hz: exactly 1490.0 and 1510.0 within +/-10 Hz and the row to my call.
-  assert.deepEqual((await pane()).map(r=>r[2]).sort(),['CQ W2BB FN31','CQ W3CC FN31','HB9BLA W1XYZ -10']);
+  await waitFor(async()=>(await pane()).length===5,async()=>`QSO pane ${JSON.stringify(await pane())}`);
+  assert.deepEqual((await pane()).filter(r=>r[0]==='rx').map(r=>r[2]).sort(),['CQ W2BB FN31','CQ W3CC FN31','HB9BLA W1XYZ -10']);
+  // #37 QsoPaneCrowding: other stations within +/-50 Hz (1489.9 and 1510.1) are shown marked.
+  assert.deepEqual((await pane()).filter(r=>r[0]==='crowd').map(r=>r[2]).sort(),['CQ W1AA FN31','CQ W4DD FN31']);
+  assert.deepEqual(await page.locator('#rx-pane-rows tr[data-crowd=true]').evaluateAll(trs=>trs.map(tr=>tr.children[4].textContent).sort()),['CQ W1AA FN31','CQ W2BB FN31','CQ W3CC FN31','CQ W4DD FN31']);
+  assert.equal(await page.locator('#qso-crowd').textContent(),'\u26A0 4 near Rx');
   // Local sorting/clearing: no request.
   const before=requests.length;
-  await page.selectOption('#activity-sort','signal');await page.locator('#rx-pane-erase').click();
+  await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#rx-pane-erase').click();
   assert.equal(await page.locator('#rx-pane-rows tr').count(),0);
   assert.equal(requests.slice(before).filter(r=>r.method!=='GET'||r.path==='/receive/results').length,0,'local presentation sends no request');
   // Selection by Enter on the focused row sends the exact identity.
@@ -67,12 +72,16 @@ test('TC-007-003 Rx Frequency pane routing and TC-007-001 selection without tran
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-007-001 explicit Enable Tx, partner report advances to Tx3, Esc halts first and cancels with a panel open',{timeout:90000},async()=>{
-  await page.getByRole('button',{name:'Enable Tx'}).click();
+test('TC-007-001 Reply starts transmission, partner report advances to Tx3, Esc halts first and cancels with a panel open',{timeout:90000},async()=>{
+  // #37 WstxContact::SetEnableTx: no Enable Tx control; Reply arms the prepared contact.
+  assert.equal(await page.locator('#contact-enable').count(),0);
+  const shown=(await snapshot()).transmit.safety_revision;
+  await page.getByRole('button',{name:'Reply',exact:true}).click();
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed');
-  await page.locator('#contact-enable[aria-pressed=true]').waitFor();
-  // The compact transmit state stays in the station bar (review decision 5).
-  await page.locator('#station-bar #station-tx').filter({hasText:/Tx enabled|TRANSMITTING/}).waitFor();
+  const enable=commands().filter(c=>c.action==='enable_tx');assert.equal(enable.length,1);assert.deepEqual([enable[0].enabled,enable[0].safety_revision],[true,shown]);
+  await page.locator('#rx-focus[data-armed=true]').waitFor();
+  // The compact transmit state stays in the top bar while transmission is on.
+  await page.locator('#station-bar #station-tx').filter({hasText:/Tx on|TRANSMITTING/}).waitFor();
   // One TransmitRequest: pending, or already started when armed inside an own period.
   const armed=await waitFor(async()=>{const v=await snapshot();return (Number.isSafeInteger(v.transmit.pending_sequence)||v.transmit.last_text)&&v;},'one TransmitRequest');assert.ok(armed);
   await publish(evenNow(),[{text:'HB9BLA K1ABC -05',hz:1240,snr:-7}]);
@@ -123,11 +132,12 @@ test('TC-010-008 waterfall pointer actions and numeric frequency inputs',{timeou
   const prevented=await canvas.evaluate(el=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented;});
   assert.equal(prevented,true,'no context menu over the waterfall');
   await new Promise(r=>setTimeout(r,500));
+  // #37 decision 7: a left double-click is two Rx clicks; no decode-at-point request.
   const dbl=performance.now();n=commands().length;await dblAt(700);
-  await waitFor(()=>commands().slice(n).some(x=>x.action==='redecode'),async()=>`redecode after ${JSON.stringify(commands().slice(n).map(x=>[x.action,x.rx_hz,x.tx_hz]))}: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(requests.slice(-12).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())} ${JSON.stringify(await page.evaluate(()=>{const c=document.querySelector('#waterfall').getBoundingClientRect();const e=document.elementFromPoint(c.left+c.width*700/3000,c.top+c.height/2);return [e?.id||e?.className||e?.tagName,c.width,c.height];}))}`);
+  await waitFor(()=>commands().slice(n).some(x=>x.action==='set_frequency'&&x.rx_hz===700),async()=>`redecode after ${JSON.stringify(commands().slice(n).map(x=>[x.action,x.rx_hz,x.tx_hz]))}: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(requests.slice(-12).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())} ${JSON.stringify(await page.evaluate(()=>{const c=document.querySelector('#waterfall').getBoundingClientRect();const e=document.elementFromPoint(c.left+c.width*700/3000,c.top+c.height/2);return [e?.id||e?.className||e?.tagName,c.width,c.height];}))}`);
   const after=commands().slice(n).filter(x=>x.action!=='set_frequency'||x.rx_hz===700);
   assert.ok(after.some(x=>x.action==='set_frequency'&&x.rx_hz===700&&x.tx_hz===null));
-  await page.locator('#contact-result').filter({hasText:'redecode_unavailable'}).waitFor();
+  await new Promise(r=>setTimeout(r,800));assert.equal(commands().slice(n).some(x=>x.action==='redecode'),false,'no re-decode request');
   // Numeric inputs: 199/2951 refused with the domain, 200/2950 accepted.
   for(const [value,ok] of [[199,false],[200,true],[2951,false],[2950,true]]){
     await page.locator('#contact-tx').fill(String(value));await page.locator('#contact-tx').press('Tab');
@@ -144,7 +154,9 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
   const shown=(await label.textContent()).slice(4),now=new Date(),seconds=t=>{const [h,m,s]=t.split(':').map(Number);return h*3600+m*60+s;};
   const delta=Math.abs(seconds(shown)-seconds(now.toISOString().slice(11,19)));assert.ok(delta<=2||delta>=86398,`server UTC ${shown}`);
   assert.match(await page.locator('#radio-toolbar .op-period small').textContent(),/^\d{1,2}\/15/);
-  assert.equal(await page.locator('#radio-toolbar .op-input-meter strong').textContent(),'47 dB');
+  // #37: the Rx level meter is in Settings > Radio > Audio; the top bar shows only a low/high chip.
+  assert.equal(await page.locator('#settings-audio .op-input-meter strong').textContent(),'47 dB');
+  assert.equal(await page.locator('#exception-chips [data-chip=level]').count(),0,'a normal level shows no chip');
   assert.deepEqual(page.errors,[]);
 });
 
@@ -167,7 +179,7 @@ test('TC-007-004 manual DX entry and Log QSO open the review without hiding Halt
 test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
   await page.route('**/contact',route=>route.abort('failed'));
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
-  await page.locator('#contact-enable').waitFor({state:'attached'});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const mark=requests.length;
   await page.keyboard.press('Escape');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt without snapshot');
@@ -178,16 +190,15 @@ test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeo
   assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
   await page.unroute('**/contact');
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
-  await page.locator('#contact-enable').waitFor({state:'attached'});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
 });
 
-// Review decision 6 (OpenRegion): a pointer action outside an open region closes it.
-test('TC-007-002 a pointer action outside an open region returns to operation',{timeout:30000},async()=>{
-  await page.locator('#station-bar [data-region=help]').click();
-  assert.equal(await page.locator('#region-help').isVisible(),true);
-  await page.locator('#workspace-statusbar').click({timeout:5000});
-  await page.locator('#operating-workspace').waitFor({state:'visible'});
-  assert.equal(await page.locator('#region-help').isVisible(),false);
+// Review decision 6 (OpenRegion) / #37 SettingsDrawer: a pointer action outside the drawer closes it.
+test('TC-007-002 a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
+  await page.locator('#open-server-settings').click();
+  assert.equal(await page.locator('#settings-drawer').isVisible(),true);
+  await page.locator('#band-activity > header').click({timeout:5000});
+  await page.locator('#settings-drawer').waitFor({state:'hidden'});
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
 });
 
@@ -208,7 +219,7 @@ test('TC-007-004 Esc halts once before and once after the contact client loads',
   release();
   await waitFor(()=>page.evaluate(()=>!!window.wstxContact),'contact.js loaded');
   await page.unroute('**/contact.js');
-  await page.locator('#contact-enable').waitFor({state:'attached'});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const mark=requests.length;
   await page.keyboard.press('Escape');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt after contact.js');
