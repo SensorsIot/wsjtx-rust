@@ -16,6 +16,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[path = "receive_startup.rs"]
+pub(crate) mod startup;
 #[cfg(test)]
 #[path = "recording_tests.rs"]
 mod tests;
@@ -263,6 +265,8 @@ pub struct Recording {
     pub(crate) transmit: std::sync::OnceLock<Arc<crate::transmit_http::Station>>,
     /// WstxContact engine of this station (#10), started once by the process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
+    /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
+    startup: Mutex<startup::Startup>,
     #[cfg(test)]
     cat_transport: Mutex<Option<CatTransport>>,
     #[cfg(test)]
@@ -636,14 +640,17 @@ impl Recording {
         device: String,
         mode: &'static str,
     ) -> Result<Value> {
-        self.receive_start_selected(
+        let started = self.receive_start_selected(
             profile,
             boot,
             generation,
-            device,
+            device.clone(),
             mode,
             StartGuard::Profile(revision),
-        )
+        )?;
+        let band = self.state.lock().unwrap().operating.nominal.band;
+        self.remember_receive(mode, band, &device);
+        Ok(started)
     }
     fn receive_start_selected(
         self: &Arc<Self>,
@@ -926,6 +933,7 @@ impl Recording {
                 operation.result = "cancelled";
             }
         }
+        self.forget_receive();
         Ok(self.receive_snapshot())
     }
     pub fn receive_results(
@@ -1811,13 +1819,14 @@ impl Recording {
             &self.profile,
             &self.boot,
             generation,
-            device,
+            device.clone(),
             op.requested.mode,
             StartGuard::Selection(op.revision),
         ) {
             self.selection_failed(&op, error, "failed");
             return;
         }
+        self.remember_receive(op.requested.mode, Some(op.requested.band), &device);
         let mut s = self.state.lock().unwrap();
         if Self::selection_current(&s, &op)
             && let Some(o) = s.operating.operation.as_mut()
@@ -2658,6 +2667,7 @@ fn bounded_json<T: serde::de::DeserializeOwned>(path: &Path, cap: u64) -> Result
 impl Recording {
     pub fn open(base: &Path, profile: String, boot: String) -> Arc<Self> {
         let dir = base.join("recordings");
+        let startup = Mutex::new(startup::Startup::load(base, &profile));
         let mut state = State {
             generation: 0,
             recording: None,
@@ -2693,6 +2703,7 @@ impl Recording {
                 cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
                 transmit: std::sync::OnceLock::new(),
                 contact: std::sync::OnceLock::new(),
+                startup,
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
                 #[cfg(test)]
@@ -2757,6 +2768,7 @@ impl Recording {
             cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
             transmit: std::sync::OnceLock::new(),
             contact: std::sync::OnceLock::new(),
+            startup,
             #[cfg(test)]
             cat_transport: Mutex::new(None),
             #[cfg(test)]

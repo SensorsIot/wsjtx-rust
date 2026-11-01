@@ -466,7 +466,11 @@ fn write_document(path: &Path, document: &impl Serialize) -> std::io::Result<()>
 fn atomic_write(directory: &Path, document: &Document) -> std::io::Result<()> {
     atomic_json(directory, "profile.json", document)
 }
-fn atomic_json(directory: &Path, filename: &str, document: &impl Serialize) -> std::io::Result<()> {
+pub(crate) fn atomic_json(
+    directory: &Path,
+    filename: &str,
+    document: &impl Serialize,
+) -> std::io::Result<()> {
     let temporary = directory.join(format!(".{}.tmp", new_uuid()?));
     let result = (|| {
         write_document(&temporary, document)?;

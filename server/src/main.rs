@@ -331,6 +331,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .await;
                 }
             });
+            // #45 CL-045-02: resume the last started receive unless Monitor off at
+            // startup; a band resume waits (bounded) for the CAT lifecycle above.
+            let (device, cat) = {
+                let store = state.store.lock().unwrap();
+                (
+                    store.document.audio.input_device.clone(),
+                    store.document.control.mode == "cat",
+                )
+            };
+            if state
+                .recording
+                .resume_receive(device, cat, recording::startup::CAT_WAIT)
+                .is_err()
+            {
+                eprintln!("receive: startup resume could not start");
+            }
             Some(state)
         }
         None => None,
@@ -384,6 +400,7 @@ fn router(state: App) -> Router {
         .route("/receive/start", post(receive_http::start).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/results", get(receive_http::results))
+        .route("/receive/startup", get(receive_http::startup).post(receive_http::startup_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/selection", get(selection_http::snapshot))
         .route("/receive/select", post(selection_http::select).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio", get(radio_http::snapshot))
