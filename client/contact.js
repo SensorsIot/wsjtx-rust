@@ -10,7 +10,7 @@ block('settings-startup-resume','Startup resume',document.querySelector('#settin
 block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station (MCP). Its state shows beside the strategy element; HALT ends it. Strategies (Highlight/Auto) arrive with the strategy engine.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each logged QSO is saved in this station profile’s contacts.adi (ADIF). Log QSO opens the log review.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
-block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<h4 id="udp-targets-title">UDP targets</h4><p id="udp-targets" class="op-muted">Not available yet (separate change): targets, message selection and accepted commands.</p>');
+block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p id="udp-warning" class="op-warning">Accept commands lets that program select a QSO (like a click) and edit the Tx5 text. It can never key the transmitter; Halt Tx from any program always halts.</p><label>Instance name<input id="udp-instance" maxlength="64" autocomplete="off" disabled></label><h4 id="udp-targets-title">UDP targets</h4><div id="udp-targets" role="list" aria-labelledby="udp-targets-title"></div><p class="op-actions"><button type="button" id="udp-add" disabled>Add target</button><button type="button" id="udp-reload">Reload</button><button type="button" id="udp-save" class="op-primary" disabled>Save UDP settings</button></p><p id="udp-result" class="op-muted" role="status">Read when Settings opens</p><p class="op-muted">Applies on Save; it does not restart receive.</p>');
 block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet.</p>');
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
@@ -206,6 +206,67 @@ for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',
   if(!Number.isInteger(tx)||!Number.isInteger(tune)){$('watchdog-result').textContent='Watchdogs must be whole numbers';return;}
   await send('set_watchdogs',{tx_minutes:tx,tune_seconds:tune},'Watchdogs');$('watchdog-result').textContent=resultText.textContent;
 });
+// #40 WstxUdp settings (CL-040-02): read when the drawer opens (at most every 30 s), on the
+// Logging tab or Reload; Save sends one PUT /udp. A setting: it restarts nothing.
+const UDP_MESSAGES=[['heartbeat','Heartbeat'],['status','Status'],['decode','Decode'],['clear','Clear'],['qso_logged','QSO Logged'],['close','Close'],['logged_adif','Logged ADIF']];
+const UDP_DEFAULT={instance_name:'WSTX-Rust',targets:[{address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:UDP_MESSAGES.map(m=>m[0]),accept_commands:false}]};
+let udpView=null,udpDirty=false,udpRead=-Infinity,udpLoading=null;
+const udpMulticast=address=>{const m=/^(\d+)\./.exec(address.trim());return !!m&&Number(m[1])>=224&&Number(m[1])<=239;};
+const utcTime=ms=>new Date(ms).toISOString().slice(11,19)+' UTC';
+function udpStatusText(s){
+  if(!s)return 'Not saved yet';
+  const parts=[s.active?'Active':'Inactive'];if(s.schema)parts.push(`schema ${s.schema}`);
+  parts.push(s.last_send_utc_ms?`last send ${utcTime(s.last_send_utc_ms)}`:'nothing sent yet');if(s.error)parts.push(`error ${s.error}`);
+  const c=s.last_command;if(c)parts.push(`last command ${c.type} ${c.outcome}${c.code?` (${c.code})`:''} at ${utcTime(c.utc_ms)}`);
+  return parts.join(' · ');
+}
+function udpRow(t,status){
+  const row=document.createElement('fieldset');row.className='udp-target';row.setAttribute('role','listitem');
+  row.innerHTML=`<legend>Target</legend><label>Address:port<input data-f="address" autocomplete="off" spellcheck="false"></label><label class="op-check"><input type="checkbox" data-f="enabled">Enabled</label><label>Multicast TTL<input type="number" data-f="ttl" min="1" max="255" step="1"></label><label>Multicast interface<input data-f="iface" placeholder="default" autocomplete="off" spellcheck="false"></label><fieldset class="udp-messages"><legend>Messages sent</legend>${UDP_MESSAGES.map(([k,l])=>`<label class="op-check"><input type="checkbox" data-m="${k}">${l}</label>`).join('')}</fieldset><label class="op-check"><input type="checkbox" data-f="accept">Accept commands</label><span class="op-muted" data-f="accept-note"></span><button type="button" data-f="remove">Remove target</button><p class="op-muted" data-f="status" role="status"></p>`;
+  const f=k=>row.querySelector(`[data-f=${k}]`);
+  f('address').value=t.address;f('enabled').checked=t.enabled;f('ttl').value=t.multicast_ttl;f('iface').value=t.multicast_interface??'';f('accept').checked=t.accept_commands;
+  for(const box of row.querySelectorAll('[data-m]'))box.checked=t.messages.includes(box.dataset.m);
+  f('status').textContent=udpStatusText(status);
+  const multicast=()=>{const on=udpMulticast(f('address').value);f('accept').disabled=on;if(on)f('accept').checked=false;f('accept-note').textContent=on?'Not for a multicast group: commands come from a host.':'';};
+  f('address').addEventListener('input',multicast);multicast();
+  f('remove').addEventListener('click',()=>{row.remove();udpDirty=true;udpButtons();});
+  return row;
+}
+function udpButtons(){const n=$('udp-targets').children.length;$('udp-add').disabled=!udpView||n>=16;$('udp-save').disabled=!udpView;}
+function udpShow(){
+  const v=udpView;$('udp-instance').disabled=!v;if(!v)return udpButtons();
+  const config=v.configuration??UDP_DEFAULT,status=new Map((v.status??[]).map(s=>[s.address,s]));
+  $('udp-instance').value=config.instance_name;
+  $('udp-targets').replaceChildren(...config.targets.map(t=>udpRow(t,v.configuration?status.get(t.address):null)));
+  $('udp-result').textContent=v.configuration_error?`Saved UDP settings unreadable (${v.configuration_error}); Save replaces them`:`Revision ${v.revision}${v.received?` · ${v.received} received`:''}${v.ignored?` · ${v.ignored} ignored`:''}`;
+  udpDirty=false;udpButtons();
+}
+function loadUdp(force=false){
+  if(udpLoading||udpDirty||(!force&&performance.now()-udpRead<30000))return udpLoading;
+  udpRead=performance.now();
+  udpLoading=stationFetch('/udp',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(async r=>{const v=r.ok?await r.json():null;if(v?.v===1&&!udpDirty){udpView=v;udpShow();}else if(!r.ok)$('udp-result').textContent=`UDP settings unavailable (${r.status})`;}).catch(()=>{$('udp-result').textContent='UDP settings unavailable';}).finally(()=>{udpLoading=null;});
+  return udpLoading;
+}
+function udpConfiguration(){
+  return {instance_name:$('udp-instance').value,targets:[...$('udp-targets').children].map(row=>{const f=k=>row.querySelector(`[data-f=${k}]`);
+    return {address:f('address').value.trim(),enabled:f('enabled').checked,multicast_ttl:Number(f('ttl').value),multicast_interface:f('iface').value.trim()||null,
+      messages:[...row.querySelectorAll('[data-m]')].filter(b=>b.checked).map(b=>b.dataset.m),accept_commands:f('accept').checked};})};
+}
+$('settings-udp').addEventListener('input',event=>{if(event.target.closest('#udp-instance,.udp-target'))udpDirty=true;});
+$('udp-add').addEventListener('click',()=>{const n=$('udp-targets').children.length;if(n>=16)return;$('udp-targets').append(udpRow({...UDP_DEFAULT.targets[0],address:''},null));udpDirty=true;udpButtons();$('udp-targets').lastElementChild.querySelector('[data-f=address]').focus();});
+$('udp-reload').addEventListener('click',()=>{udpDirty=false;loadUdp(true);});
+$('udp-save').addEventListener('click',async()=>{
+  const v=udpView;if(!v)return;$('udp-save').disabled=true;$('udp-result').textContent='Saving';
+  try{
+    const response=await stationFetch('/udp',{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,expected_revision:v.revision,configuration:udpConfiguration()}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1){const e=data?.error;$('udp-result').textContent=`Not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere: Reload to see it':''}`;return;}
+    udpView=data;udpShow();$('udp-result').textContent=`Saved · revision ${data.revision}`;
+  }catch(error){$('udp-result').textContent=`Not saved · ${error.message}`;}
+  finally{udpButtons();}
+});
+new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden)loadUdp();}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
+document.querySelector('#tab-logging')?.addEventListener('click',()=>loadUdp(true));
 let startupView=null,startupLoading=null;
 const resumeText={idle:'Nothing to resume at start',off:'Monitor off at startup',waiting:'Resuming receive',started:'Resumed at start',started_untuned:'Resumed at start on the present dial',skipped:'Resume skipped: receive was already chosen',failed:'Resume failed'};
 function startupShow(){

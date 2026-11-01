@@ -2019,13 +2019,19 @@ package WstxRequirements {
              from GET /receive/startup; toggling it sends exactly one POST /receive/startup
              {v 1, profile_id, boot_id, monitor_off_at_startup} and no receive start, stop or
              selection, a refusal restores the previous value, and Expert shows the resume state;
-             Logging & Reporting holds the UDP targets placeholder and the page requests no /udp.
+             Logging & Reporting shows the UDP configuration read from GET /udp (no /udp request
+             before the drawer opens); editing a target, adding one and Save send exactly one PUT
+             /udp {v 1, profile_id, boot_id, expected_revision, configuration} whose configuration
+             is the edited list, and no receive start, stop or selection; accept_commands is not
+             offered for a multicast address; a refusal shows its code and field and keeps the
+             edits; the accept_commands warning and each target's status are shown.
              Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-16';
             verify 'CL-045-01';
+            verify 'CL-040-02';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -2284,6 +2290,7 @@ package WstxRequirements {
     dependency CL_010_05_verified_by_TC_007_002 from 'CL-010-05' to 'TC-007-002';
     dependency CL_010_16_verified_by_TC_007_009 from 'CL-010-16' to 'TC-007-009';
     dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
+    dependency CL_040_02_verified_by_TC_007_009 from 'CL-040-02' to 'TC-007-009';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
     dependency CL_010_05_verified_by_TC_009_005 from 'CL-010-05' to 'TC-009-005';
     dependency CL_010_07_verified_by_TC_007_002 from 'CL-010-07' to 'TC-007-002';

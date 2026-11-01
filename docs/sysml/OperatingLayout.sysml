@@ -571,9 +571,17 @@ attribute def ActivityOrdering {
              Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
              audio (input, output, input listing, Rx level meter), transmit (Tx watchdog
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
-             Logging & Reporting: the existing log (Logbook page, ADIF), placeholders for
-             the WSJT-X UDP interface (its UDP targets, wired by #40; no /udp request
-             before then) and PSK Reporter (later CRs).
+             Logging & Reporting: the existing log (Logbook page, ADIF), the WSJT-X UDP
+             interface (WstxUdp, CL-040-02): instance name and up to 16 targets, each
+             address:port, enabled, multicast TTL and interface, the outbound message
+             selection and accept_commands (not offered for a multicast address), with each
+             target's status (active, schema, last send, error, last inbound command) and a
+             standing warning that accept_commands lets that program select a QSO and edit
+             Tx5 but never key the transmitter. GET /udp is read when the drawer opens (at
+             most every 30 s, so routine drawer use stays inside the Thin budget), on the
+             Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
+             is a setting that restarts nothing (no restart mark). PSK Reporter remains a
+             placeholder (later CR).
              Expert: raw CAT readback, receive job/generation, timing, the explicit receive
              start/stop, the startup resume state of #45 (resume state and last receive
              choice from GET /receive/startup), selection refresh, connection details,

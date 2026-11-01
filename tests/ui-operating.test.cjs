@@ -324,7 +324,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#rx-pane','#contact-next','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -460,13 +460,50 @@ test('TC-007-009 Monitor off at startup reads and saves the station setting with
   await page.unroute('**/receive/startup');
   await page.locator('#tab-expert').click();await page.locator('#startup-resume').scrollIntoViewIfNeeded();
   assert.match(await page.locator('#startup-resume').textContent(),/^Nothing to resume at start/,'Expert shows the startup resume state');
-  await page.locator('#tab-logging').click();await page.locator('#udp-targets').scrollIntoViewIfNeeded();
-  assert.equal(await inViewport(page,'#udp-targets'),true,'Logging & Reporting holds the UDP targets placeholder');
-  assert.match(await page.locator('#settings-udp').textContent(),/UDP targets/);
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   await page.waitForFunction(()=>!document.querySelector('#monitor-off-startup').disabled);assert.equal(await page.locator('#monitor-off-startup').isChecked(),true,'the saved value reads back');
   assert.equal(posts.length,2,'one save plus the refused one');
-  assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)||/\/udp/.test(r)),[],'no receive mutation and no /udp request');
+  assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)),[],'no receive mutation');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-040-02, CL-010-16; TC-007-009 the UDP interface is a Logging & Reporting setting.
+test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
+  const requests=[],puts=[];
+  page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='PUT'&&p==='/udp')puts.push(JSON.parse(r.postData()));});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});await page.waitForTimeout(500);
+  assert.equal(requests.some(r=>r.endsWith(' /udp')),false,'no /udp request before Settings opens');
+  const initial=await (await fetch(app.origin+'/udp')).json();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
+  assert.ok(requests.filter(r=>r==='GET /udp').length>=1,'read when the drawer opens');
+  assert.equal(await page.locator('#udp-instance').inputValue(),'WSTX-Rust');
+  const first=rows.nth(0);assert.equal(await first.locator('[data-f=address]').inputValue(),'127.0.0.1:2237');
+  assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);assert.equal(await first.locator('[data-f=accept]').isChecked(),false);
+  assert.deepEqual(await first.locator('[data-m]').evaluateAll(b=>b.filter(x=>x.checked).map(x=>x.dataset.m)),['heartbeat','status','decode','clear','qso_logged','close','logged_adif']);
+  assert.match(await first.locator('[data-f=status]').textContent(),/Inactive/,'WSTX_UDP=off opens no socket and the status says so');
+  assert.match(await page.locator('#udp-warning').textContent(),/select a QSO.*Tx5.*never key/s,'the accept_commands warning is shown');
+  assert.doesNotMatch(await page.locator('#tab-logging').textContent(),/⟳/,'a setting, not a restart change');
+  // Edit: no Decode to the first target; add a multicast target, where Accept commands is not offered.
+  await first.locator('[data-m=decode]').uncheck();await first.locator('[data-f=accept]').check();
+  await page.locator('#udp-add').click();const added=rows.nth(1);
+  await added.locator('[data-f=address]').fill('239.255.0.1:2237');assert.equal(await added.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for a multicast group');
+  await added.locator('[data-f=ttl]').fill('3');
+  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
+  const all=['heartbeat','status','decode','clear','qso_logged','close','logged_adif'];
+  const expected={instance_name:'WSTX-Rust',targets:[
+    {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode'),accept_commands:true},
+    {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all,accept_commands:false}]};
+  assert.deepEqual(puts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,expected_revision:initial.revision,configuration:expected}],'exactly one exact PUT');
+  const saved=await (await fetch(app.origin+'/udp')).json();assert.deepEqual(saved.configuration,expected,'the station stored the edited list');assert.equal(saved.revision,initial.revision+1);
+  // A refused address keeps the edits and names the field.
+  await page.locator('#udp-add').click();await rows.nth(2).locator('[data-f=address]').fill('0.0.0.0:1');
+  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Not saved'}).waitFor();
+  assert.match(await page.locator('#udp-result').textContent(),/invalid_request \(targets\[2\]\.address\)/);
+  assert.equal(await rows.count(),3,'the edits are kept');
+  assert.equal(puts.length,2);
+  assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)),[],'no receive mutation');
   assert.deepEqual(errors,[]);
 });
 
