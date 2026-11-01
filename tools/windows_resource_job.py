@@ -61,6 +61,9 @@ CPU_QUANTUM_WALL_SECONDS = 0.050
 QUALIFIED, INCONCLUSIVE = "qualified", "inconclusive"
 # Exit status of a strict (default) run whose matrix stayed inconclusive: a refusal.
 INCONCLUSIVE_REFUSED = 3
+# Exit status of an ordinary-gate run whose matrix stayed inconclusive: the harness
+# reserved NOT RUN code (core/docs/CR-Process.md), neither a pass nor red.
+NOT_RUN = 77
 INPUT_ENV = (
     "WSTX_SAMPLE_DIR", "WSTX_DECODER_CACHE", "WSTX_DECODER_VECTORS",
     "WSTX_DECODER_SYNCHRONIZATION", "WSTX_DECODER_OFFICIAL_FT8",
@@ -834,7 +837,7 @@ def report_outcome(evidence, ordinary_gate, stream=None):
 
     A qualified run is 0. An inconclusive matrix (some configuration's CPU quantum
     still unmeasured after the bounded re-qualification) is reported visibly; the
-    ordinary gate treats it as not run (0), while the default strict mode, used for
+    ordinary gate reports it as not run (exit 77), while the default strict mode, used for
     CL-007-04 evidence in the exclusive window, refuses it.
     """
     stream = stream if stream is not None else sys.stderr
@@ -853,7 +856,7 @@ def report_outcome(evidence, ordinary_gate, stream=None):
         print("decoder resource matrix: INCONCLUSIVE, NOT RUN (50 ms CPU quantum not "
               f"established after {QUALIFICATION_ATTEMPTS} attempts: {configurations}); all "
               "measured budgets met; no CL-007-04 runtime claim from this run", file=stream)
-        return 0
+        return NOT_RUN
     print("decoder resource matrix: INCONCLUSIVE, REFUSED (strict: 50 ms CPU quantum not "
           f"established after {QUALIFICATION_ATTEMPTS} attempts: {configurations})", file=stream)
     return INCONCLUSIVE_REFUSED
@@ -870,7 +873,7 @@ def main(argv=None):
     runner.add_argument("--artifact-receipt", type=Path, required=True)
     runner.add_argument("--ordinary-gate", action="store_true",
                         help="ordinary push gate only: an inconclusive matrix is reported and "
-                             "exits 0 (not run); the default strict mode refuses it")
+                             "exits 77 (not run); the default strict mode refuses it")
     smoke = commands.add_parser("smoke", help="separately authorized fixed parent/descendant fixture")
     smoke.add_argument("--out", type=Path, required=True)
     arguments = parser.parse_args(argv)

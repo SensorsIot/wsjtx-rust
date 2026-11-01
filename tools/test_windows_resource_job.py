@@ -730,7 +730,8 @@ class MatrixQualificationTests(ApiFreeCase):
         evidence = {"case": "matrix",
                     "transcript": self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))}
         ordinary, strict = io.StringIO(), io.StringIO()
-        self.assertEqual(guardian.report_outcome(evidence, True, ordinary), 0)
+        self.assertEqual(guardian.report_outcome(evidence, True, ordinary), guardian.NOT_RUN)
+        self.assertEqual(guardian.NOT_RUN, 77)
         self.assertIn("INCONCLUSIVE, NOT RUN", ordinary.getvalue())
         self.assertIn("ft8 scalar=True long=False workers=4", ordinary.getvalue())
         self.assertEqual(guardian.report_outcome(evidence, False, strict),
@@ -752,7 +753,7 @@ class MatrixQualificationTests(ApiFreeCase):
             self.assertEqual(guardian.main(["run", "--case", "matrix", *receipt]),
                              guardian.INCONCLUSIVE_REFUSED)
             self.assertEqual(guardian.main(["run", "--case", "matrix", "--ordinary-gate",
-                                            *receipt]), 0)
+                                            *receipt]), 77)
         with patch.object(guardian, "run_case",
                           side_effect=AssertionError("must refuse before launch")), \
                 patch.object(sys, "stderr", io.StringIO()):
