@@ -260,9 +260,10 @@ pub async fn save(
             Ok(None) => {}
         }
         let (callsign, locator) = match state.store.lock() {
+            // WstxUdp Location: a session grid replaces the profile's for the log.
             Ok(store) => (
                 store.document.callsign.clone(),
-                store.document.locator.clone(),
+                crate::udp::effective_locator(&state, &store.document.locator).unwrap_or_default(),
             ),
             Err(_) => return error("storage_unavailable", None),
         };
@@ -274,14 +275,19 @@ pub async fn save(
             return error("log_invalid_field", Some(field));
         }
         let id = record.contact_id.clone();
+        let sent = record.clone();
         let outcome = gated(&app, &headers, &state, |gate| {
             state.logbook.save(record, gate)
         });
         let (status, response) = match outcome {
-            Ok(SaveOutcome::Saved) => (
-                StatusCode::CREATED,
-                json!({"v":1,"contact_id":id,"outcome":"saved"}),
-            ),
+            Ok(SaveOutcome::Saved) => {
+                // WstxUdp: QSO Logged and Logged ADIF of the newly stored contact.
+                crate::udp::logged(&state, &sent);
+                (
+                    StatusCode::CREATED,
+                    json!({"v":1,"contact_id":id,"outcome":"saved"}),
+                )
+            }
             Ok(SaveOutcome::AlreadySaved) => (
                 StatusCode::OK,
                 json!({"v":1,"contact_id":id,"outcome":"already_saved"}),

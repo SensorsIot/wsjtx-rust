@@ -69,7 +69,7 @@ fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
     let d = &store.document;
     (
         Some(d.callsign.trim().to_ascii_uppercase()).filter(|c| !c.is_empty()),
-        Some(d.locator.trim().to_ascii_uppercase()).filter(|l| !l.is_empty()),
+        crate::udp::effective_locator(state, &d.locator),
     )
 }
 /// The selected profile's callsign (upper case), as the contact engine uses it.
@@ -85,6 +85,14 @@ pub(crate) struct Facts {
     pub active: bool,
     /// The engine's own transmit period parity.
     pub parity: Parity,
+}
+pub(crate) struct StatusFacts {
+    pub dx_call: Option<String>,
+    pub dx_grid: Option<String>,
+    pub report: i32,
+    pub rx_hz: u32,
+    pub tx_hz: u32,
+    pub next_message: Option<String>,
 }
 pub(crate) fn mode_of(text: &str) -> decoder::Mode {
     if text == "ft4" {
@@ -143,7 +151,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
         standard,
     })
 }
-fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
+pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
     let snapshot = r.radio_actor()?.snapshot().ok()?;
     (snapshot.state == wstx_rust::radio_control::State::Ready && snapshot.facts.frequency.confirmed)
         .then_some(snapshot.facts.frequency.value)
@@ -182,6 +190,21 @@ impl Station {
             parity: e.settings.parity,
         });
         (e.revision, facts, e.settings.auto_seq)
+    }
+    /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
+    /// the contact's next message).
+    pub(crate) fn status_facts(&self) -> StatusFacts {
+        let inner = self.lock();
+        let e = &inner.engine;
+        let c = e.contact.as_ref();
+        StatusFacts {
+            dx_call: c.and_then(|c| c.dx_call.clone()),
+            dx_grid: c.and_then(|c| c.dx_grid.clone()),
+            report: c.map_or(e.settings.report, |c| c.report),
+            rx_hz: e.settings.rx_hz,
+            tx_hz: e.settings.tx_hz,
+            next_message: c.and_then(|c| c.messages[c.next.index()].clone()),
+        }
     }
     /// One ContactCommand body through exactly the browser's validation and execution
     /// (WstxContact::ContactCommand); `granted` is the caller's current CL-022 grant.

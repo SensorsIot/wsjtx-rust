@@ -55,7 +55,7 @@ before(async () => {
   await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
   token = crypto.randomBytes(32).toString('hex');
   const clean = {...process.env}; for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  app = spawn(exe, ['--profile', dir], {env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_TLS_CERT: certPath, WSTX_TLS_KEY: keyPath, WSTX_TOKEN: token}, windowsHide: true});
+  app = spawn(exe, ['--profile', dir], {env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_TLS_CERT: certPath, WSTX_TLS_KEY: keyPath, WSTX_TOKEN: token}, windowsHide: true});
   let output = ''; app.stdout.on('data', b => {output += b;}); app.stderr.on('data', b => {output += b;});
   const deadline = Date.now() + 10000;
   while (!output.includes(`WSTX listening ${origin}`)) {

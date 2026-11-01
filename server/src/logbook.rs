@@ -111,7 +111,6 @@ pub struct Record {
     pub unknown: Vec<Unknown>,
 }
 impl Record {
-    #[cfg(test)]
     pub fn get(&self, name: &str) -> Option<&str> {
         let index = FIELDS.iter().position(|f| *f == name)?;
         self.values[index].as_deref()
@@ -156,6 +155,12 @@ impl Record {
     /// One ADI record line: supported fields, the contact id, then unknown fields
     /// verbatim (name, optional type indicator and value), ended by ` <eor>`.
     pub fn to_adi(&self) -> String {
+        let mut line = self.adi_fields();
+        line.push_str(" <eor>\n");
+        line
+    }
+    /// The ADI fields of `to_adi` without the end-of-record marker.
+    pub fn adi_fields(&self) -> String {
         let mut line = String::new();
         let mut field = |name: &str, kind: Option<&str>, value: &str| {
             if !line.is_empty() {
@@ -181,7 +186,6 @@ impl Record {
         for unknown in &self.unknown {
             field(&unknown.name, unknown.kind.as_deref(), &unknown.value);
         }
-        line.push_str(" <eor>\n");
         line
     }
 }

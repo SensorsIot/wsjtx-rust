@@ -72,8 +72,9 @@ package WstxRequirements {
     }
     requirement 'FR-012' {
         doc /* Integrations
-             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04, contract WstxUdp; reception reporting remains target. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs";
     }
     requirement 'FR-013' {
         doc /* EME
@@ -2846,6 +2847,137 @@ package WstxRequirements {
     dependency CL_012_02_verified_by_TC_020_003 from 'CL-012-02' to 'TC-020-003';
     dependency CL_012_03_verified_by_TC_020_003 from 'CL-012-03' to 'TC-020-003';
     dependency CL_012_04_verified_by_TC_020_003 from 'CL-012-04' to 'TC-020-003';
+
+    // #40 WSJT-X-compatible UDP interface with multiple targets (decisions recorded in
+    // WstxUdp and on issue #40, 2026-11-01); detailed contract in WstxUdp.
+    requirement 'CL-040-01' {
+        doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the configured instance name, and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, Decode for each new live FT8/FT4 decode, Clear when the live job's decodes are discarded, QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed. Details: WstxUdp::UdpWire, OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/logbook_http.rs";
+    }
+    dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
+    requirement 'CL-040-02' {
+        doc /* Any number of targets up to 16, each address:port (unicast, or IPv4 multicast with TTL and interface), enabled, a per-type outbound message selection (default all) and accept_commands (default off), with per-target status (last send, error, last inbound command). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, accept_commands off, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs";
+    }
+    dependency CL_040_02_to_FR_012 from 'CL-040-02' to 'FR-012';
+    dependency CL_040_02_to_FR_001 from 'CL-040-02' to 'FR-001';
+    requirement 'CL-040-03' {
+        doc /* Halt Tx from any source always acts as the HALT button (HaltTransmit), whether or not accept_commands is on. Clear, Reply, Replay, Free Text and Highlight Callsign act only from a target with accept_commands on and only on datagrams whose source is that target. No inbound command keys the transmitter: Reply prepares the QSO like a single click (ContactCommand select_row, no transmit authority) and Free Text sets the Tx5 text of a prepared contact (a standard message, as the browser edit); both are refused while Enable Tx is on, and the Send flag is ignored. A datagram too large for the receive buffer is dropped, counted and never holds back the datagrams behind it. Details: WstxUdp::InboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/network_message.rs";
+    }
+    dependency CL_040_03_to_FR_012 from 'CL-040-03' to 'FR-012';
+    dependency CL_040_03_to_FR_008 from 'CL-040-03' to 'FR-008';
+    requirement 'CL-040-04' {
+        doc /* Decode texts use the WSJT-X form: a standard message with R before a signal report is "R-09" / "R+03", never the decoder's separated "R -09". Details: WstxUdp::OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs";
+    }
+    dependency CL_040_04_to_FR_012 from 'CL-040-04' to 'FR-012';
+    requirement 'CL-040-05' {
+        doc /* Location (11) from a target with accept_commands on and from that target's address, carrying a 4- or 6-character Maidenhead grid (longer text only after a "GRID:" prefix), sets a session-only station grid: it replaces the profile locator for the Status DE grid, the generated messages and the logged my_gridsquare until the station restarts, and is never saved to the profile. An invalid location is refused invalid_grid and changes nothing. Details: WstxUdp D5, InboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/contact_http.rs; server/src/logbook_http.rs";
+    }
+    dependency CL_040_05_to_FR_012 from 'CL-040-05' to 'FR-012';
+    verification 'TC-012-005' {
+        doc /* TC-012-005 — Session location
+             CL-040-05
+             Setup: actual candidate router, UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA); target A accept_commands off and C on, loopback peers; an injected FT8 live job with the row "CQ K1ABC FN42" 1234.6 Hz -12.4 dB at 12:34:30.
+             Steps: (a) pure rule table: "JN47", " jn36ab ", "GRID:JN36AB", "grid: fn42", and "", "XX", "JN4", "JN47A", "JN47AA11", "47.1,8.5", "LOC:JN47AA", "ZZ99"; (b) one step; Location "JN36AB" from A; "XX" from C; "GRID:JN36AB" from C; step; Reply to the CQ row from C; POST /contacts with my_gridsquare JN47AA, then JN36AB; read profile.json; open a new owner.
+             Expected: (a) JN47, JN36AB, JN36AB, FN42, the rest refused; (b) first Status DE grid JN47AA; A not_accepted; XX refused invalid_grid with no Status; GRID:JN36AB applied and one Status with DE grid JN36AB; Tx1 "K1ABC HB9BLA JN36" and Tx6 "CQ HB9BLA JN36"; the JN47AA log record refused 400 log_invalid_field record.my_gridsquare and the JN36AB one 201; profile.json and the store keep JN47AA; the new owner has no session grid; PTT never keyed.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-05';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_040_05_verified_by_TC_012_005 from 'CL-040-05' to 'TC-012-005';
+    requirement 'CL-040-06' {
+        doc /* Outstanding, issue #46: IPv6 multicast targets (ff00::/8) with hop limit and an interface index. Until delivered, an IPv6 multicast address is refused at PUT /udp (WstxUdp D6). */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_040_06_to_FR_012 from 'CL-040-06' to 'FR-012';
+    verification 'TC-012-006' {
+        doc /* TC-012-006 — IPv6 multicast targets (outstanding)
+             CL-040-06
+             Setup: actual candidate router on a disposable profile; a loopback-capable IPv6 interface; a peer joined to the group.
+             Steps: PUT a target [ff02::1]:2237 with hop limit 2 and the interface index; one station step.
+             Expected: the PUT is admitted with the hop limit and interface saved; the joined peer receives Heartbeat and Status.
+             2 — Isolated automated functional tests; Windows development PC, loopback only; not implemented. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-040-06';
+        }
+    }
+    dependency CL_040_06_verified_by_TC_012_006 from 'CL-040-06' to 'TC-012-006';
+    verification 'TC-012-001' {
+        doc /* TC-012-001 — NetworkMessage wire vectors
+             CL-040-01, CL-040-03, CL-040-04
+             Setup: hand-constructed byte vectors in server/tests/vectors/udp/, each written field by field from WSJT-X v3.3.0-beta5 NetworkMessage.hpp (SHA-256 b640a632...) with the construction steps recorded in the file, independent of the encoder.
+             Steps: encode Heartbeat, Status, Decode, Clear, QSO Logged, Close and Logged ADIF from the vector inputs; parse the inbound vectors (Heartbeat with and without maximum schema, Clear with window, Reply, Replay, Halt Tx with and without Auto Tx Only, Free Text, Location, Highlight Callsign with valid and invalid colours, Switch Configuration, Configure, an unknown type, trailing bytes); parse every refused vector (wrong magic, schema 1 and 4, truncated utf8, null id, 4097 bytes).
+             Expected: encoded bytes equal each vector exactly; parsed fields equal the vector's fields; refused vectors are refused; arbitrary bytes and every truncation never panic; the decoder text "K1ABC W9XYZ R -09" renders "K1ABC W9XYZ R-09" and "R +03" renders "R+03", other texts unchanged.
+             2 — Isolated automated tests; Windows development PC, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-01';
+            verify 'CL-040-03';
+            verify 'CL-040-04';
+        }
+        attribute executable : String = "server/tests/udp_vectors.rs; server/src/udp_tests.rs";
+    }
+    dependency CL_040_01_verified_by_TC_012_001 from 'CL-040-01' to 'TC-012-001';
+    dependency CL_040_03_verified_by_TC_012_001 from 'CL-040-03' to 'TC-012-001';
+    dependency CL_040_04_verified_by_TC_012_001 from 'CL-040-04' to 'TC-012-001';
+    verification 'TC-012-002' {
+        doc /* TC-012-002 — Outbound messages to several targets
+             CL-040-01, CL-040-02, CL-040-04
+             Setup: actual candidate router, UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA), an injected FT8 live job, hand-authored codec-packed rows "CQ K1ABC FN42" 1234.6 Hz -12.4 dB and "HB9BLA W9XYZ R-09" (decoder text "HB9BLA W9XYZ R -09") 900.0 Hz -3.0 dB; two loopback UDP peers on ephemeral ports configured as targets by PUT /udp (A all messages, B only decode).
+             Steps: one station step; publish the rows; step; change the operating report; step; start a second live job; step; save a contact through POST /contacts, repeat it with the same and with a new command_id; disable target A by PUT /udp; step.
+             Expected (hand table): A receives Heartbeat (id WSTX-Rust, max schema 3) and Status (mode FT8, DE HB9BLA JN47AA, Tx enabled false), then Decode New true Time = period ms since midnight, snr -12, df 1235, Mode "~", "CQ K1ABC FN42", and snr -3, df 900, "HB9BLA W9XYZ R-09"; a changed Status; Clear after the new job; QSO Logged (DX call, mode FT8, times) then Logged ADIF beginning with the ADIF header and containing <call:5>K1ABC and ending " <EOR>", nothing for the retained receipt or already_saved; Close after disable while B keeps its socket. B receives exactly the two Decode datagrams. GET /udp shows last_send_utc_ms for both and error null.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-01';
+            verify 'CL-040-02';
+            verify 'CL-040-04';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_040_01_verified_by_TC_012_002 from 'CL-040-01' to 'TC-012-002';
+    dependency CL_040_02_verified_by_TC_012_002 from 'CL-040-02' to 'TC-012-002';
+    dependency CL_040_04_verified_by_TC_012_002 from 'CL-040-04' to 'TC-012-002';
+    verification 'TC-012-003' {
+        doc /* TC-012-003 — Inbound commands and transmit safety
+             CL-040-03
+             Setup: as TC-012-002 with target A accept_commands off and target C accept_commands on; the PTT log of the hardware double.
+             Steps: Halt Tx from A, from C and from an unconfigured third socket (to A's socket) while armed by the browser's enable_tx; Reply, Free Text, Replay, Clear and Highlight Callsign from A; the same from a socket other than C's address to C's socket; from C: Reply matching the published CQ row while disarmed, Reply with a different snr, Reply while armed, Free Text before any contact and "TNX 73 GL", Free Text "K1ABC HB9BLA 73" with Send true, Replay, Clear window 0 then Replay and Reply, Highlight Callsign K1ABC and CLEARALL!, Close, Configure; a 5000-byte datagram followed by Halt Tx while armed; a datagram with another id; a Halt Tx with schema 4.
+             Expected: every Halt Tx with this id and schema 2 or 3 disarms (arm_state disarmed, last cause halt, halt count +1) with outcome applied; the schema-4 or foreign-id Halt has no effect; commands from A and from the wrong source have outcome not_accepted and change nothing; C's Reply selects K1ABC (contact replying, Tx1 "K1ABC HB9BLA JN47") with arm_state disarmed; the mismatching Reply is refused no_match; a Reply or Free Text while armed is refused tx_enabled; Free Text without a contact is refused no_contact and a non-standard text invalid_message; Free Text sets Tx5 and leaves arm_state disarmed; Replay sends the retained decodes with New false then Status, to C only; after Clear Replay sends nothing and Reply is refused no_match; highlights list K1ABC then empty; Close and Configure ignored; the 5000-byte datagram is counted ignored and the Halt Tx behind it disarms in the same step; the PTT log stays empty throughout.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-03';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_040_03_verified_by_TC_012_003 from 'CL-040-03' to 'TC-012-003';
+    verification 'TC-012-004' {
+        doc /* TC-012-004 — Target configuration and persistence
+             CL-040-02
+             Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
+             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
+             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null, accept_commands false} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status).
+             2 — Isolated automated functional tests; Windows development PC, loopback only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-02';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_040_02_verified_by_TC_012_004 from 'CL-040-02' to 'TC-012-004';
 
     // #45 Resume receive (Monitor) after a station restart (defaults recorded on issue #45).
     requirement 'CL-045-01' {

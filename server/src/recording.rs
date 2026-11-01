@@ -265,6 +265,8 @@ pub struct Recording {
     pub(crate) transmit: std::sync::OnceLock<Arc<crate::transmit_http::Station>>,
     /// WstxContact engine of this station (#10), started once by the process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
+    /// WstxUdp interface of this station (#40), opened once by the process.
+    pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
     startup: Mutex<startup::Startup>,
     #[cfg(test)]
@@ -2705,6 +2707,7 @@ impl Recording {
                 cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
                 transmit: std::sync::OnceLock::new(),
                 contact: std::sync::OnceLock::new(),
+                udp: std::sync::OnceLock::new(),
                 startup,
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
@@ -2770,6 +2773,7 @@ impl Recording {
             cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
             transmit: std::sync::OnceLock::new(),
             contact: std::sync::OnceLock::new(),
+            udp: std::sync::OnceLock::new(),
             startup,
             #[cfg(test)]
             cat_transport: Mutex::new(None),
