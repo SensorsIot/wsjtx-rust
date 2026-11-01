@@ -386,6 +386,34 @@ impl Store {
             address,
         ))
     }
+    /// Another JSON document of this profile directory (WstxUdp::UdpConfiguration): None
+    /// when absent; larger than `maximum` bytes is an error.
+    pub fn read_document_file(
+        &self,
+        filename: &str,
+        maximum: u64,
+    ) -> std::io::Result<Option<Vec<u8>>> {
+        let file = match File::open(self.directory.join(filename)) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let mut bytes = Vec::new();
+        file.take(maximum + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > maximum {
+            return Err(std::io::Error::other("document too large"));
+        }
+        Ok(Some(bytes))
+    }
+    /// Atomically replaces another JSON document of this profile directory, under the
+    /// profile's own lock (the caller holds this Store).
+    pub fn write_document_file(
+        &mut self,
+        filename: &str,
+        document: &impl Serialize,
+    ) -> std::io::Result<()> {
+        atomic_json(&self.directory, filename, document)
+    }
     pub fn save(&mut self, settings: Settings) -> std::io::Result<()> {
         let mut next = self.document.clone();
         next.revision = next

@@ -44,7 +44,7 @@ async function serverOnce(env, args) {
   const clean = {...process.env};
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
   // WstxTransmit::TransmitClock: isolated tests never ask a public SNTP server.
-  const child = spawn(exe, args, {env: {...clean, WSTX_SNTP_SERVERS: '', ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
+  const child = spawn(exe, args, {env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
   let output = '';
   const origin = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Server readiness timeout: ' + output)); }, 10000);

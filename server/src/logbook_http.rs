@@ -274,14 +274,19 @@ pub async fn save(
             return error("log_invalid_field", Some(field));
         }
         let id = record.contact_id.clone();
+        let sent = record.clone();
         let outcome = gated(&app, &headers, &state, |gate| {
             state.logbook.save(record, gate)
         });
         let (status, response) = match outcome {
-            Ok(SaveOutcome::Saved) => (
-                StatusCode::CREATED,
-                json!({"v":1,"contact_id":id,"outcome":"saved"}),
-            ),
+            Ok(SaveOutcome::Saved) => {
+                // WstxUdp: QSO Logged and Logged ADIF of the newly stored contact.
+                crate::udp::logged(&state, &sent);
+                (
+                    StatusCode::CREATED,
+                    json!({"v":1,"contact_id":id,"outcome":"saved"}),
+                )
+            }
             Ok(SaveOutcome::AlreadySaved) => (
                 StatusCode::OK,
                 json!({"v":1,"contact_id":id,"outcome":"already_saved"}),

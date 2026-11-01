@@ -42,7 +42,7 @@ async function ports(n) {
 }
 function launch(args, env = {}, cwd) {
   const clean = {...process.env}; for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  const child = spawn(exe, args, {cwd, env: {...clean, WSTX_SNTP_SERVERS: '', ...env}, windowsHide: true});
+  const child = spawn(exe, args, {cwd, env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', ...env}, windowsHide: true});
   let output = ''; child.stdout.on('data', b => {output = (output + b).slice(-16384);}); child.stderr.on('data', b => {output = (output + b).slice(-16384);});
   const done = once(child, 'exit');
   return {child, get output() {return output;}, done, async close() {if (child.exitCode === null && child.signalCode === null) {child.kill(); await done;}}};

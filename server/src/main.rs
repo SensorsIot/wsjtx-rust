@@ -44,6 +44,7 @@ mod spectrum;
 mod transmit_http;
 #[cfg(test)]
 mod transmit_http_tests;
+mod udp;
 use axum::{Json, body::Bytes};
 use axum::{
     Router,
@@ -316,6 +317,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .await;
                 }
             });
+            // WstxUdp: the station's UDP interface and its step. WSTX_UDP=off opens no
+            // socket (isolated tests of the executable never reach port 2237).
+            let disabled = env::var("WSTX_UDP").is_ok_and(|v| v == "off");
+            let opened = state.clone();
+            let owner =
+                tokio::task::spawn_blocking(move || udp::Owner::open(&opened, disabled)).await?;
+            let _ = state.recording.udp.set(owner);
+            let interface = state.clone();
+            tokio::spawn(async move {
+                let mut timer = interval(Duration::from_millis(50));
+                timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    timer.tick().await;
+                    let current = interface.clone();
+                    let _ = tokio::task::spawn_blocking(move || udp::station_tick(&current)).await;
+                }
+            });
             // CL-022-03/04: one station-wide timer and at most one tick in flight; it
             // runs whether or not any browser is connected.
             let lifecycle = state.clone();
@@ -406,6 +424,7 @@ fn router(state: App) -> Router {
         .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/automation", get(automation::snapshot))
         .route("/automation/command", post(automation::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))

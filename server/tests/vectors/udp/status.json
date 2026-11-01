@@ -1,0 +1,31 @@
+{
+ "source": "WSJT-X v3.3.0-beta5 Network/NetworkMessage.hpp sha256 b640a632f38b218f97b9c9cf5b5a09b183e1629c613c33d90f39635f9b3fdb3d; MessageClient.cpp sha256 8cfa89debc2b916b39151975437619e7f9b28aefa698f05231fbdf2247cb9f35; constructed field by field by construct.py (Python struct), exact",
+ "exact": true,
+ "direction": "outbound",
+ "hex": "adbccbda000000020000000100000009575354582d527573740000000000d6c09000000003465438000000054b31414243000000032d313200000003465438010001000004d3000005dc00000006484239424c41000000064a4e3437414100000004464e343200000000000000ffffffff0000000f0000000e484239424c412073746174696f6e000000114b3141424320484239424c41204a4e3437",
+ "input": {
+  "kind": "status",
+  "schema": 2,
+  "dial_hz": 14074000,
+  "mode": "FT8",
+  "dx_call": "K1ABC",
+  "report": "-12",
+  "tx_mode": "FT8",
+  "tx_enabled": true,
+  "transmitting": false,
+  "decoding": true,
+  "rx_df": 1235,
+  "tx_df": 1500,
+  "de_call": "HB9BLA",
+  "de_grid": "JN47AA",
+  "dx_grid": "FN42",
+  "tx_watchdog": false,
+  "sub_mode": "",
+  "fast_mode": false,
+  "special_operation": 0,
+  "frequency_tolerance": 4294967295,
+  "tr_period": 15,
+  "configuration_name": "HB9BLA station",
+  "tx_message": "K1ABC HB9BLA JN47"
+ }
+}
