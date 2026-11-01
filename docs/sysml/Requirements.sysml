@@ -116,8 +116,9 @@ package WstxRequirements {
     }
     requirement 'FR-020' {
         doc /* MCP automation
-             Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs: issue #12, CL-012-01..04, contract WstxMcp. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs";
     }
     requirement 'FR-021' {
         doc /* Station server and remote operation
@@ -923,8 +924,8 @@ package WstxRequirements {
     // CL-010-04 partial coverage, open item: ExportAdi built in memory rather than
     // streamed with backpressure. The automatic review offer and TIME_ON/TIME_OFF come
     // from the contact engine (server/src/contact.rs).
-    // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted and MCP does
-    // not yet expose the contact operations. CL-010-11 partial: left double-click
+    // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
+    // the same contact operations through WstxMcp (#12). CL-010-11 partial: left double-click
     // Re-decode is refused redecode_unavailable (no re-decode service exists yet).
     // CL-010-13 partial: worked-before marks are not yet shown in the Rx Frequency pane.
     // CL-010-15 partial: TC-007-005 Thin/Off measurement with the new events and MCP.
@@ -2711,5 +2712,89 @@ package WstxRequirements {
     dependency CL_022_03_verified_by_TC_022_010 from 'CL-022-03' to 'TC-022-010';
     dependency CL_022_04_verified_by_TC_022_010 from 'CL-022-04' to 'TC-022-010';
     dependency CL_022_05_verified_by_TC_022_010 from 'CL-022-05' to 'TC-022-010';
+
+    // #12 MCP access and configured FT4/FT8 automation (decisions recorded in WstxMcp
+    // and on issue #12, 2026-11-01); detailed contract in WstxMcp.
+    requirement 'CL-012-01' {
+        doc /* Serve MCP on the station's own listener at POST /mcp (Streamable HTTP, MCP 2026-07-28 and legacy 2025-11-25/2025-06-18/2025-03-26, stateless, JSON responses only) and map every tool onto exactly one existing versioned station operation dispatched in-process through the station router: no second station state, modem, QSO engine, transmit-authority path, raw CAT/PTT/audio tool or MCP-owned retry. Details: WstxMcp::McpEndpoint, ProtocolEras, ToolCatalog, ToolResult. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/mcp.rs; server/src/main.rs";
+    }
+    dependency CL_012_01_to_FR_020 from 'CL-012-01' to 'FR-020';
+    dependency CL_012_01_to_FR_021 from 'CL-012-01' to 'FR-021';
+    requirement 'CL-012-02' {
+        doc /* An MCP client observes exactly the browser's station views (profile, receive, selection, radio, transmit, contact, automation and decoded result pages) and operates through the same ContactCommand, HaltTransmit and AutomationCommand bodies, receipts, revisions, command_id idempotency and refusal codes as the browser, for FT8 and FT4. Details: WstxMcp::ToolCatalog, ToolResult. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/mcp.rs; server/src/contact_http.rs; server/src/automation.rs";
+    }
+    dependency CL_012_02_to_FR_020 from 'CL-012-02' to 'FR-020';
+    dependency CL_012_02_to_FR_007 from 'CL-012-02' to 'FR-007';
+    requirement 'CL-012-03' {
+        doc /* MCP authorization is explicit: exactly one Authorization: Bearer field carrying a current auth-v1 (CL-022-01) grant transport of this station, checked by the same authority owner per request; cookies sent to /mcp are never read, a plaintext profile has no MCP access, a present Origin must be the station's. Transmit-capable operations need that grant like the browser's. Automation is station-owned, unconfigured and stopped at every boot, starts only on an explicit start with a current grant and acknowledged safety revision, and stops at Halt, explicit stop, lost grant, receive context or mode change, contact change, disarm, no answer or its contact limit, never replaying a transmit action. Details: WstxMcp::McpCredential, OperatingAutomation. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs; server/src/authorization_http.rs";
+    }
+    dependency CL_012_03_to_FR_020 from 'CL-012-03' to 'FR-020';
+    dependency CL_012_03_to_FR_008 from 'CL-012-03' to 'FR-008';
+    requirement 'CL-012-04' {
+        doc /* The exact tool catalog, schemas and result envelope, the AutomationConfiguration (every key required, no default policy), the deterministic CandidateSelection (eligibility, first_seen / strongest_snr / lowest_frequency ranking, call-then-sequence tie) and the run states, counters, receipts and bounds are those of WstxMcp; contact progression and logging remain WstxContact's. Details: WstxMcp::ToolCatalog, AutomationConfiguration, CandidateSelection, OperatingAutomation, AutomationWire. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs";
+    }
+    dependency CL_012_04_to_FR_020 from 'CL-012-04' to 'FR-020';
+    verification 'TC-020-001' {
+        doc /* TC-020-001 — Shared observation
+             CL-012-01, CL-012-02, CL-012-04
+             Setup: (a) actual candidate router on a selected HTTPS profile (HB9BLA, JN47AA) with its auth-v1 owner, the contact engine and the #9 transmit owner on the recording hardware double, an injected FT8 live job and hand-authored codec-packed rows "CQ K1ABC FN42" 1234.6 Hz -12.4 dB and "CQ W1AW FN31" 900.0 Hz -3.0 dB; one enrolled grant; an independent JSON-RPC test client. (b) The compiled executable on a disposable HTTPS profile with a throwaway certificate, the tools/wstx-mcp-credential.cjs helper and a separate browser-style grant.
+             Steps: modern server/discover and tools/list; wstx_read of every view and GET of the same browser route; wstx_results and the same GET /receive/results; legacy initialize, notifications/initialized, tools/list and tools/call; (b) helper enroll and header, then tools/list and wstx_read profile/contact against GET /profile.
+             Expected (WstxMcp tables and the fixture's own identities): supportedVersions exactly [2026-07-28, 2025-11-25, 2025-06-18, 2025-03-26]; tools exactly wstx_read, wstx_results, wstx_contact_command, wstx_transmit_halt, wstx_automation_command in this order and identical in both eras; each view equal to the browser response apart from the per-read monotonic_ms/utc_ms; profile_id/boot_id the fixture's; automation configuration and run null; the two rows with their literal text, frequency, SNR and sequences; legacy protocolVersion 2025-11-25, no Mcp-Session-Id, no resultType; the text content equals structuredContent; no PTT exchange.
+             2 — Isolated automated functional tests; Windows development PC, actual candidate router and executable, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-012-01';
+            verify 'CL-012-02';
+            verify 'CL-012-04';
+        }
+        attribute executable : String = "server/src/mcp_tests.rs; tests/mcp.test.cjs";
+    }
+    dependency CL_012_01_verified_by_TC_020_001 from 'CL-012-01' to 'TC-020-001';
+    dependency CL_012_02_verified_by_TC_020_001 from 'CL-012-02' to 'TC-020-001';
+    dependency CL_012_04_verified_by_TC_020_001 from 'CL-012-04' to 'TC-020-001';
+    verification 'TC-020-002' {
+        doc /* TC-020-002 — Validation and authority
+             CL-012-01, CL-012-02, CL-012-03
+             Setup: as TC-020-001 (a) plus a second HTTPS station with its own grant and a plaintext station; (b) the executable with a browser-style grant.
+             Steps: no Authorization, the browser cookie alone, lower-case scheme, a malformed, unknown or other station's token, two Authorization fields, the plaintext station; a foreign Origin, GET, text/plain, BODY_MAX+1 bytes, invalid JSON, a batch, jsonrpc 1.0, id null or 1.5, array params, legacy version 2024-11-05; modern version 1900-01-01, Mcp-Method and Mcp-Name mismatch, a Base64-sentinel Mcp-Name, resources/list, unknown tool wstx_raw_ptt; tool arguments with an extra key, an unknown view, a query-injecting source_id; ContactCommand with another station's profile_id, a future contact_revision, action key_ptt, another job's row, another boot; automation start unconfigured, configure with max_contacts 0; then a valid MCP enable_tx, its exact retry and a changed body with the same command_id, and an MCP Halt; (b) the browser cookie on /mcp, the same transport as an explicit bearer, a key file of another origin, enroll with a wrong bootstrap token.
+             Expected (independent refusal catalogue): 401 with WWW-Authenticate Bearer realm="wstx" for every credential case and the plaintext station; 403, 405, 415, 413; JSON-RPC -32700, -32600 (each malformed envelope), -32022 with data {supported,requested}, -32020, -32601 with 404, -32602; tool errors status 400 invalid_request with the field (extra, view, source_id) and no station call; station refusals 403 wrong_profile, 409 stale_revision, 400 invalid_request action, 409 row_unavailable, 409 state_conflict boot_id, 409 not_configured, 400 max_contacts; before the valid enable_tx the contact revision, contact, arm state, policy revision and PTT log are unchanged; enable_tx 202 and armed, retry 200 with the same receipt, changed body 409 state_conflict command_id; Halt 202 and disarmed; (b) cookie 401, explicit bearer 200, helper exits nonzero without output, refused enroll writes no key file.
+             2 — Isolated automated functional tests; Windows development PC, actual candidate router and executable with transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-012-01';
+            verify 'CL-012-02';
+            verify 'CL-012-03';
+        }
+        attribute executable : String = "server/src/mcp_tests.rs; tests/mcp.test.cjs; server/src/automation_tests.rs";
+    }
+    dependency CL_012_01_verified_by_TC_020_002 from 'CL-012-01' to 'TC-020-002';
+    dependency CL_012_02_verified_by_TC_020_002 from 'CL-012-02' to 'TC-020-002';
+    dependency CL_012_03_verified_by_TC_020_002 from 'CL-012-03' to 'TC-020-002';
+    verification 'TC-020-003' {
+        doc /* TC-020-003 — Operating automation
+             CL-012-02, CL-012-03, CL-012-04
+             Setup: actual candidate router, contact engine and #9 transmit owner on the recording hardware double with virtual UTC (bench set 1 s after an even FT8 period E), injected FT8 or FT4 live job, hand-authored codec-packed rows, the MCP test client with one grant.
+             Steps: (a) pure CandidateSelection table: rows 0 CQ K1ABC 1500 Hz -12, 1 CQ W1AW 900 Hz -3, 2 CQ DL1XYZ 2100 Hz unknown SNR, 3 HB9BLA K1ABC -05, 4 CQ HB9BLA, 5 CQ W1AW 950 Hz -1, 6 CQ AA1AA 900 Hz -3, under each ranking, min_snr_db -5 and -3, allowed/blocked lists and a worked call; AutomationConfiguration bounds and every malformed key. (b) A row before start; configure strongest_snr / next_candidate / max_contacts 2 and start; publish K1ABC -12, W1AW -3, DL1XYZ unknown at E; partner "HB9BLA W1AW -05" at E+30 s, "HB9BLA W1AW RR73" at E+60 s; run the own period E+15 s to its end; publish W1AW -1 and K1ABC -12; stop; publish again; stop again. (c) A second start and a configure while running; selection, MCP Halt; retry of the original start command_id; start with the old revisions; a start over the left contact, cancel, start, browser Halt while waiting. (d) first_seen with max_unanswered_periods 2: two publications without the partner; restart; a new live job; restart; revoke the grant. (e) FT4: configure modes [ft4], start ft8 and ft4, publish two CQ rows.
+             Expected (hand table): (a) first_seen K1ABC, W1AW, DL1XYZ, AA1AA; strongest_snr AA1AA, W1AW, K1ABC; lowest_frequency AA1AA, W1AW, K1ABC, DL1XYZ; min -5 and -3 W1AW, AA1AA; allowed K1ABC, DL1XYZ; blocked K1ABC, DL1XYZ, AA1AA; worked K1ABC excludes it; null unconfigured, every bound admitted and each malformed value refused with its field. (b) nothing selected before start or from the earlier publication; W1AW selected (candidates 2), replying, Tx1 "W1AW HB9BLA JN47", parity odd, Rx 900, armed; roger_report, signoff with Tx5 "W1AW HB9BLA 73"; after the own period completed, disarmed, last text "W1AW HB9BLA 73", run waiting with completed_contacts 1; K1ABC then selected and armed (W1AW worked); stop 202 stopped, reason stopped, disarmed, no Halt request; no later selection; second stop stale_request. (c) state_conflict run for both; armed then Halt: stopped/halted; retry 200 with the original receipt and no new run; stale_revision expected_run_revision; later rows select nothing and leave W1AW disarmed; state_conflict contact, then a waiting run ended halted by the browser Halt with the contact still cancelled. (d) W1AW selected; no_answer after the second publication, disarmed; context_changed and disarmed after the new job; authority_lost with nothing selected; MCP then 401. (e) not_ready mode for ft8; FT4 W1AW selected, Tx4 rr73, armed.
+             2 — Isolated automated functional tests; Windows development PC, simulated FT4/FT8 traffic and real station services; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-012-02';
+            verify 'CL-012-03';
+            verify 'CL-012-04';
+        }
+        attribute executable : String = "server/src/automation_tests.rs";
+    }
+    dependency CL_012_02_verified_by_TC_020_003 from 'CL-012-02' to 'TC-020-003';
+    dependency CL_012_03_verified_by_TC_020_003 from 'CL-012-03' to 'TC-020-003';
+    dependency CL_012_04_verified_by_TC_020_003 from 'CL-012-04' to 'TC-020-003';
 
 }

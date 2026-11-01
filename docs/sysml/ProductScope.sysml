@@ -11,6 +11,7 @@ package WstxProductScope {
     private import WstxOperatingReceive::*;
     private import WstxTransmit::*;
     private import WstxContact::*;
+    private import WstxMcp::*;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
@@ -250,6 +251,7 @@ package WstxProductScope {
         alias Architecture for WstxArchitecture;
         alias Transmit for WstxTransmit;
         alias Contact for WstxContact;
+        alias Mcp for WstxMcp;
         alias SharedRecord for WstxOfflineDecode::ResultRecord;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';

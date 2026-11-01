@@ -1622,8 +1622,10 @@ package WstxArchitecture {
         part stations[*] : StationProcess;
         ref part mcpClients[*] : McpClient;
         doc /* MCP clients are referenced, not deployed onto this computer by composition.
-             Backend attachments own routing associations only. Client placement and
-             detailed authority remain unresolved before MCP implementation. */
+             Backend attachments own routing associations only. A client reaches one
+             station's McpAdapter over that station's own HTTPS listener (POST /mcp) with
+             its own auth-v1 grant (WstxMcp::McpEndpoint, McpCredential); it may run on
+             any authorized computer. */
         part radioAuthority : RadioAuthority;
 
         part mcpAttachments[*] : McpAttachment;
@@ -1720,7 +1722,7 @@ package WstxArchitecture {
         port recording : RecordingTransfer;
     }
     part def McpAdapter {
-        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. */
+        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcp::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
         port client : ~StationOperations;
         port station : StationOperations;
     }
