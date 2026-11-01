@@ -208,6 +208,9 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   await a.locator('#login').waitFor({state: 'visible'});
   await a.locator('#token').fill(p.env.WSTX_TOKEN); await a.locator('#login button').click(); await connected(a);
   await a.evaluate(() => {window.__twoTabOriginalSocket = socket;});
+  // #37: A's lazy clients (contact, logbook) read once after the first snapshots; let those
+  // reads finish so B's rotation meets an idle tab A, as the counts below assume.
+  await a.waitForFunction(() => !!window.wstxContact, null, {timeout: 30000}); await a.waitForLoadState('networkidle');
   const firstCredential = await credential(a), beforeFiles = await fileHashes();
   const cookieName = `wstx_session_${p.document.profile_id}`;
   const oldCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
