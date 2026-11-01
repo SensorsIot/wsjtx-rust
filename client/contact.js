@@ -1,23 +1,14 @@
 'use strict';
-// CR #10 standard FT8 contact (WstxContact) in the #37 operating screen
 // (WstxOperatingLayout::QsoPane, RxTxStrip, BandActivityView). The server owns the contact,
-// its sequence, next message, transmit requests, watchdogs and times; this browser renders
-// the confirmed GET /contact snapshot, sends POST /contact/command requests and never runs a
-// sequence timer, modem or QSO state machine. The UTC clock, period progress and countdown
-// are interpolated locally from station.tick for display only. recording.js builds the
-// markup; this client binds it.
 (()=>{
 const focus=document.querySelector('#rx-focus');
 if(!focus||document.body.dataset.profile!=='true')return;
 const $=id=>document.getElementById(id);
-// SettingsDrawer sections served by this client: MCP/automation, transmit watchdogs and
-// Logging & Reporting (each appended at the end of its section).
 block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station (MCP). Its state shows beside the strategy element; HALT ends it. Strategies (Highlight/Auto) arrive with the strategy engine.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each logged QSO is saved in this station profile’s contacts.adi (ADIF). Log QSO opens the log review.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet (separate change): targets, message selection and accepted commands.</p>');
 block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet.</p>');
-// RxTxStrip controls and the QsoPane body are built with the contact client (cold-load bytes).
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
@@ -32,9 +23,7 @@ window.wstxConfirm=function(text,okLabel='Continue'){
   return new Promise(resolve=>{confirmDialog.returnValue='';confirmDialog.addEventListener('close',()=>resolve(confirmDialog.returnValue==='ok'),{once:true});confirmDialog.showModal();confirmDialog.querySelector('#op-confirm-ok').focus();});
 }
 main.append(confirmDialog);
-// Strategy element above Band Activity (placeholder until the strategy engine; shows the #12 run).
 document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
-// QsoPane fold-out: Tx1-Tx6, report, period and Auto Seq in place (built with the contact client).
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>DX call, messages Tx1&ndash;Tx6, report and period</summary><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div><p class="ct-more-row"><button type="button" id="rx-pane-erase">Erase dialogue</button></p><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
 <div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label><label>Tx period<select id="contact-parity" disabled><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-cancel" disabled>Cancel contact</button><button type="button" id="contact-discard" hidden>Discard log review</button><span id="contact-watchdog" class="op-muted"></span></div></details>`);
@@ -138,7 +127,6 @@ function render(){
   const review=snap?.review;
   if(review&&!openedReviews.has(review.contact_id)&&review.outcome!=='saved'&&window.wstxLogbook){openedReviews.add(review.contact_id);window.wstxLogbook.openReview(review.record);}
 }
-// Compact transmit state in the top bar, shown only while transmission is on or expired.
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
 document.querySelector('#halt-tx')?.before(stationTxNode);
 // WstxMcp::AutomationIndicator: the run state sits in the strategy element; HALT ends it.
@@ -158,14 +146,11 @@ function stationTx(){
   stationTxNode.hidden=!capable||!(armed||tick?.transmitting||wd?.tx_expired);if(stationTxNode.hidden)return;
   stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_minutes}m`:wd.tx_expired?' · Tx watchdog expired':''}${t.last_text?` · last ${t.last_text}`:''}`;
 }
-// OperatingLayout::OpenRegion: a pointer action outside an open page returns to operation
-// (the top bar excepted); the Settings drawer closes the same way (recording.js).
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
   if(event.target.closest?.('.op-secondary,#station-bar,#signal,#splitter,dialog,button,input,select,textarea,a,label,summary,[tabindex]'))return;
   showRegion('operate');
 },true);
-// ---------------------------------------------------------------- QSO commands
 $('dx-generate').addEventListener('click',()=>enterDx(false));
 for(const id of ['dx-call','dx-grid'])$(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();enterDx(false);}});
 async function enterDx(replace){
@@ -178,8 +163,6 @@ function offerChange(run,call){
   changeTarget?.remove();const button=document.createElement('button');button.type='button';button.id='contact-change';button.textContent=`Change contact to ${call}`;
   button.addEventListener('click',()=>{button.remove();changeTarget=null;run();});resultText.after(button);changeTarget=button;
 }
-// Starting a QSO means transmitting: enable_tx with the safety revision the operator sees,
-// so grant, clock, period and revision checks stay with the station.
 const arm=label=>send('enable_tx',{enabled:true,safety_revision:snap?.transmit.safety_revision??null},label);
 $('qso-cq').addEventListener('click',async()=>{
   const c=snap?.contact;
@@ -190,7 +173,6 @@ $('qso-cq').addEventListener('click',async()=>{
   arm('CQ');
 });
 $('qso-reply').addEventListener('click',()=>arm('Reply'));
-// The QSO-bar HALT is the same priority halt as the top-bar HALT (and follows its availability).
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 async function finalMessage(slot,label){
   const c=snap?.contact;if(!c?.dx_call)return;
@@ -211,7 +193,6 @@ $('contact-parity').addEventListener('change',event=>send('set_parity',{parity:e
 $('contact-auto').addEventListener('change',event=>send('set_auto_seq',{enabled:event.target.checked},'Auto sequence'));
 $('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune},'Tune'));
 $('contact-cancel').addEventListener('click',()=>send('cancel',{},'Cancel contact'));
-// Settings > Radio > Transmit: watchdogs are operative changes and apply at once.
 for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',async()=>{
   const tx=Number($('watchdog-tx').value),tune=Number($('watchdog-tune').value);
   if(!Number.isInteger(tx)||!Number.isInteger(tune)){$('watchdog-result').textContent='Watchdogs must be whole numbers';return;}
@@ -226,7 +207,6 @@ $('contact-log').addEventListener('click',logQso);
 // The offered review is the oldest unsaved one; discarding it shows the next.
 $('contact-discard').addEventListener('click',()=>{const id=snap?.review?.contact_id;if(id)send('discard_review',{contact_id:id},'Discard log review');});
 // WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc and
-// Alt+H halt from recording.js in every state; Esc closes no panel.
 const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select,[contenteditable=true]');
 function nudge(rx,tx,label){const s=snap?.settings;if(!s)return;send('set_frequency',{rx_hz:rx===null?null:Math.max(0,Math.min(3000,s.rx_hz+rx)),tx_hz:tx===null?null:s.tx_hz+tx},label);}
 addEventListener('keydown',event=>{
@@ -244,13 +224,10 @@ addEventListener('keydown',event=>{
   else if(/^[1-6]$/.test(key)&&snap?.contact?.messages?.[Number(key)-1]){event.preventDefault();send('choose_next',{slot:'tx'+key},`Next TX${key}`);}
 },true);
 // ---------------------------------------------------------------- Band Activity selection
-// BandActivityView: click selects (prepares, never transmits), double-click replies,
-// right-click (or the context-menu key) opens Reply / Select / Set Rx here.
 const activity=document.querySelector('#band-activity tbody');
 function rowIdentity(row){
   const context=row.dataset.resultId?.split('/');if(!context||context.length<6)return null;
   const sequence=Number(row.dataset.sequence);if(!Number.isSafeInteger(sequence))return null;
-  // data-result-id is profile/boot/source/job/generation/sequence of the row's own period.
   const [,,source_id,job_id,generation]=context;if(!source_id||!job_id)return null;
   return {source_id,job_id,generation:Number(generation),sequence};
 }
@@ -279,9 +256,7 @@ menu.addEventListener('click',event=>{
 });
 menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
-// ---------------------------------------------------------------- QSO dialogue
 // WstxContact::RoutesToRxFrequencyPane (sent/received dialogue) plus QsoPaneCrowding: other
-// stations within +/-50 Hz of my Rx frequency are shown with a warning sign and counted.
 const pane=$('rx-pane-rows'),paneWrap=$('rx-pane').querySelector('.ct-pane-wrap');let paneSeen=new Set(),paneContext=null,paneUnread=0,paneFollow=true;
 const myCall=()=>(profileData?.settings?.callsign??'').trim().toUpperCase();
 function routes(record){
@@ -323,7 +298,6 @@ function paneUpdate(){
   badge.hidden=!latest;badge.textContent=latest?`⚠ ${latest} near Rx`:'';badge.title=`${latest} other station${latest===1?'':'s'} within 50 Hz of my Rx frequency in the latest period`;
 }
 if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;paneUpdate();}).observe(activity,{childList:true});
-// ---------------------------------------------------------------- Rx/Tx strip and markers
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
 const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];
@@ -342,9 +316,6 @@ $('contact-hold').addEventListener('change',event=>send('set_hold_tx',{enabled:e
 $('strip-tx-from-rx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:null,tx_hz:s.rx_hz},'Tx=Rx');});
 $('strip-rx-from-tx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:s.tx_hz,tx_hz:null},'Rx=Tx');});
 // WstxContact::PointerEffect: click Rx; shift- or right-click Tx; ctrl-click Rx and Tx;
-// right double-click Rx and Tx. A left double-click is two Rx clicks: the full-band decoder
-// always runs, so there is no decode-at-point (#37). Markers move only after confirmation,
-// can be dragged (release sends one request); no pointer action enables Tx.
 const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector('#waterfall-wrap');
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
 rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.dataset.key='rx';txMarker.dataset.key='tx';
@@ -377,7 +348,6 @@ waterfall?.addEventListener('mouseup',event=>{
   if(event.button!==2)return;const hz=pointerHz(event),now=performance.now();
   if(now-lastRight<400){lastRight=0;pointer(hz,hz,'Rx and Tx frequency');}else{lastRight=now;pointer(null,hz,'Tx frequency');}
 });
-// ---------------------------------------------------------------- UTC clock, period, Rx level
 const period=document.querySelector('#radio-toolbar .op-period'),meter=document.querySelector('#settings-audio .op-input-meter');
 function displays(){
   if(!period||!meter)return;
@@ -395,8 +365,6 @@ function displays(){
   meter.querySelector('div').style.setProperty('--ct-level',`${level===null?0:Math.min(100,level/0.9)}%`);
   countdown();
 }
-// QsoPane "Next": progress of the current period and the countdown to the next period of
-// the contact's parity (even = first, odd = second period of each pair).
 function countdown(){
   const bar=$('qso-progress'),text=$('qso-countdown');if(!bar||!text)return;
   if(!tick||!snap){bar.style.width='0%';text.textContent='';return;}
@@ -425,7 +393,6 @@ addEventListener('station-message',event=>{
 });
 render();
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();}
-// ---------------------------------------------------------------- raw transmit test panel (#9, Expert)
 // WstxTransmit::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;
@@ -445,7 +412,6 @@ $('tx-send').addEventListener('click',()=>{
   transmitAction({action:'request',request_sequence:transmitSequence,mode,period_start_utc_ms:start,message_text:document.querySelector('#tx-message').value,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Send');
 });
 $('tx-tune').addEventListener('click',()=>{const on=transmitView?.transmit.tune;transmitAction(on?{action:'tune',enabled:false}:{action:'tune',enabled:true,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Tune');});
-// ---------------------------------------------------------------- operating extras (cold-load: built here)
 document.querySelector('#server-fields-general .op-apply-row').insertAdjacentHTML('beforebegin','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label>');
 document.querySelector('#settings-display h3').insertAdjacentHTML('afterend','<label>Theme<select id="theme-choice"><option value="dark">Dark</option><option value="day">Day</option><option value="night">Night (dim red)</option></select></label><label>Switch<select id="theme-switch"><option value="manual">Manually</option><option value="time">By time</option><option value="sun">By sunrise and sunset at my locator</option></select></label><span id="theme-times"><label>Day from<input id="theme-day-start" type="time" value="07:00"></label><label>Night from<input id="theme-night-start" type="time" value="20:00"></label></span><p id="theme-status" class="op-muted"></p>');
 const maidenhead=grid=>{
@@ -497,15 +463,11 @@ window.wstxChipsShow=function(){
 }
 setInterval(()=>window.wstxChipsShow(),1000);
 window.wstxChipsShow();if(typeof renderResults==='function')renderResults();
-// ---------------------------------------------------------------- browser settings
-// KeyboardShortcuts overview (the halt lines are in recording.js from the start).
 document.querySelector('#help-keys').insertAdjacentHTML('beforeend','<div><dt>CQ / Reply / double-click a decode</dt><dd>Start the QSO: transmission starts with the next period and ends after RR73/73 or HALT</dd></div><div><dt>F2</dt><dd>Settings</dd></div><div><dt>F4</dt><dd>Clear the DX call (cancel the contact)</dd></div><div><dt>Alt+1 &hellip; Alt+6</dt><dd>Next message Tx1&hellip;Tx6</dd></div><div><dt>Alt+M</dt><dd>Start or stop receive</dd></div><div><dt>Alt+T / Alt+Q</dt><dd>Tune / Log QSO</dd></div><div><dt>F11 / F12</dt><dd>Rx &minus;/+ 1 Hz</dd></div><div><dt>Shift+F11 / Shift+F12</dt><dd>Tx &minus;/+ 60 Hz (FT4 90 Hz)</dd></div><div><dt>Ctrl+F11 / Ctrl+F12</dt><dd>Rx and Tx &minus;/+ 1 Hz</dd></div><div><dt>Waterfall click / Shift+click / Ctrl+click</dt><dd>Set Rx / Tx / both; drag the Rx or Tx marker</dd></div><div><dt>Rx/Tx fields: wheel, arrows, &minus;/+</dt><dd>1 Hz; with Shift 10 Hz</dd></div><div><dt>Band Activity: click / double-click / right-click</dt><dd>Select / Reply / menu</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the spectrum and waterfall</dd></div>');
 // WstxOperatingLayout::ThemeChoice: Day / Dark / Night for this browser only, manually, by
-// two local times or by sunrise and sunset at the profile locator. No station request.
 const themeKey='wstx.theme.v1';
 function themeSettings(){let saved=null;try{saved=JSON.parse(localStorage.getItem(themeKey));}catch{}return {theme:['day','dark','night'].includes(saved?.theme)?saved.theme:'dark',mode:['manual','time','sun'].includes(saved?.mode)?saved.mode:'manual',day:/^\d\d:\d\d$/.test(saved?.day)?saved.day:'07:00',night:/^\d\d:\d\d$/.test(saved?.night)?saved.night:'20:00'};}
 function sunTimes(locator,date=new Date()){
-  // NOAA-style approximation, minutes after UTC midnight; null for polar day/night.
   const position=maidenhead(locator);if(!position)return null;const [lat,lon]=position,r=Math.PI/180;
   const day=Math.floor((Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())-Date.UTC(date.getUTCFullYear(),0,0))/864e5);
   const g=2*Math.PI/365*(day-1),eq=229.18*(0.000075+0.001868*Math.cos(g)-0.032077*Math.sin(g)-0.014615*Math.cos(2*g)-0.040849*Math.sin(2*g));
@@ -533,8 +495,6 @@ for(const id of ['theme-choice','theme-switch','theme-day-start','theme-night-st
   try{localStorage.setItem(themeKey,JSON.stringify(value));}catch{}applyTheme();
 });
 setInterval(applyTheme,60000);addEventListener('station-ready',applyTheme);applyTheme();
-// General > Station > Continent: browser-local until the strategy engine needs it at the
-// station; the default derives from the locator (coarse bounding regions).
 function continentOf(locator){
   const p=maidenhead(locator);if(!p)return null;const [lat,lon]=p;
   if(lat<-60)return 'AN';if(lon>=-170&&lon<-30)return lat>12||(lon<-77&&lat>7)?'NA':'SA';
@@ -549,8 +509,6 @@ function showContinent(){
 }
 document.querySelector('#station-continent').addEventListener('change',event=>{try{if(event.target.value)localStorage.setItem(continentKey(),event.target.value);else localStorage.removeItem(continentKey());}catch{}showContinent();});
 addEventListener('station-ready',showContinent);showContinent();
-// SettingsDrawer: restart changes (the saved profile) apply only on Apply and, during a QSO or
-// transmission, only after a confirmation. Runs before app.js's own submit handler.
 let applyConfirmed=false;
 serverForm.addEventListener('submit',async event=>{
   if(applyConfirmed){applyConfirmed=false;return;}

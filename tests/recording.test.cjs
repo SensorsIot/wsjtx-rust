@@ -309,6 +309,8 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const began=performance.now(),coldBefore={...f.proxy.counters};
       pages=await Promise.all([page(f),page({...f,context:second})]);
       for(const p of pages)await p.selectOption('#display-profile','thin'); // Explicit32kbit/s mode; default Detailed has no such promise.
+      // The cold load ends with the contact client, which loads after the first snapshots (#37).
+      for(const p of pages)await p.waitForFunction(()=>!!window.wstxContact,null,{timeout:150000});
       const cold={ms:performance.now()-began,up:f.proxy.counters.up-coldBefore.up,down:f.proxy.counters.down-coldBefore.down};
       await progress('cold',{step:'pages connected'}, {cold});
     });

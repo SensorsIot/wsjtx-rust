@@ -20,7 +20,6 @@ const halt=document.createElement('button');halt.id='halt-tx';halt.className='op
 stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
 const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
 const workspace=document.createElement('div');workspace.id='operating-workspace';
-// ActivityOrdering: the focusable header cell is the sort control.
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
 <section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
@@ -38,8 +37,6 @@ const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the funct
 helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Esc / Alt+H / HALT</dt><dd>Halt Tx now (Esc also cancels the contact). Panels stay open.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
 function block(id,title,parent,html=''){const section=document.createElement('section');section.id=id;section.className='op-section';section.setAttribute('aria-labelledby',id+'-title');section.innerHTML=`<h3 id="${id}-title">${title}</h3>${html}`;parent.append(section);return section;}
-// ---------------------------------------------------------------- Settings drawer
-// WstxOperatingLayout::SettingsDrawer.
 const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');
 const drawerSections=[['general','General'],['radio','Radio &#10227;'],['logging','Logging &amp; Reporting'],['expert','Expert']];
 drawer.innerHTML=`<header><div><span class="op-eyebrow">WSTX / <span id="operating-station">Waiting for station</span></span><h2 id="drawer-title">Settings</h2></div><button type="button" data-region="operate" class="return-operate" aria-label="Close settings">&#10005; Close</button></header><nav class="op-drawer-tabs" aria-label="Settings sections">${drawerSections.map(([key,label],i)=>`<button type="button" id="tab-${key}" data-drawer-tab="${key}" aria-controls="settings-${key}"${i?'':' aria-current="true"'}>${label}</button>`).join('')}</nav><div class="op-drawer-body">${drawerSections.map(([key,label])=>`<section id="settings-${key}" aria-labelledby="settings-${key}-heading" class="op-drawer-section"><h2 id="settings-${key}-heading" class="op-drawer-heading">${label}</h2></section>`).join('')}</div>`;
@@ -61,14 +58,12 @@ const serverForm=document.querySelector('#settings');
 const stationFields=document.createElement('fieldset');stationFields.id='server-fields-general';stationFields.className='op-server-fieldset';stationFields.innerHTML='<legend>Station &#10227;</legend>';
 for(const id of ['display-name','callsign','locator']){const input=document.getElementById(id);input.setAttribute('form','settings');stationFields.append(input.closest('label'));}
 stationFields.insertAdjacentHTML('beforeend','<p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
-// Station fields sit outside the form element; their edits still mark it edited.
 for(const type of ['input','change'])stationFields.addEventListener(type,event=>{if(event.target.form===serverForm&&event.target.id!=='station-continent')serverForm.dispatchEvent(new Event(type));});
 generalSection.append(stationFields);
 block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clock: system UTC. Measured offset unavailable.</p>');
 const displaySettings=block('settings-display','Display',generalSection,'<p class="op-muted">Display settings affect this browser only and apply at once.</p>');
 const browserSettings=block('settings-browsers','Access &amp; grants',generalSection,'<p class="op-muted">This browser holds its own station authorization. Logging out or forgetting the credential needs the station access token to authorize again.</p>');
 browserSettings.append(document.querySelector('#authorization-actions'));
-// Forget credential is the action of its exception: shown beside the chips while offered.
 chips.after(document.querySelector('#forget'));
 const profilePanel=document.querySelector('#profile-panel'),profileMetadata=profilePanel.querySelector('dl');
 for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']],['audio','Audio &#10227;',['audio-input','audio-output']]]){
@@ -104,11 +99,9 @@ const sliders=document.createElement('div');sliders.id='presentation-sliders';sl
 sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
-// WstxOperatingLayout::UnauthorizedView.
 const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
 loginView.innerHTML='<span class="op-eyebrow">WSTX / REMOTE STATION</span><h1>Authorize this browser</h1><p class="op-muted">Enter the station access token. The station is shown once this browser is authorized.</p>';
 loginView.append(login);
-// Confirmations come from the contact client (no QSO, nothing to confirm, before it loads).
 function confirmAction(text,okLabel){return window.wstxConfirm?window.wstxConfirm(text,okLabel):Promise.resolve(true);}
 main.append(stationBar,signal,strip,splitter,controls,drawer,loginView);
 const authorizationView=()=>{const required=!login.hidden;main.dataset.auth=required?'required':'granted';loginView.hidden=!required;};
@@ -137,7 +130,6 @@ function showRegion(name,opener,anchor=null){
 }
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
 document.addEventListener('pointerdown',event=>{if(drawer.hidden||event.target.closest?.('#settings-drawer,#station-bar,#signal,#rxtx-strip,#splitter,dialog'))return;closeDrawer();},true);
-// WstxOperatingLayout::KeyboardShortcuts (Esc/Alt+H halt is handled at the end of this file).
 const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]),textarea,select,[contenteditable=true]');
 addEventListener('keydown',event=>{
   if(event.defaultPrevented)return;
@@ -157,7 +149,6 @@ function restoreDisplayPreference(){
 }
 restoreDisplayPreference();
 let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=2, fallbackText='', detailRequest;
-// The waterfall speed is a per-browser view preference (WstxOperatingLayout::OperatingScreen).
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
 function paletteRGB(t){
@@ -477,7 +468,6 @@ function applyLatestDecode(view,first){
   if(resultView&&view&&view.id<resultView.id)return false;
   if(resultView&&view&&view.id===resultView.id){if(['id','first_sequence','next_sequence','period_start_utc','complete'].some(k=>view[k]!==resultView[k]))throw new Error('Changed decode descriptor');return true;}
   if(resultView===null&&view===null)return true;
-  // BandActivityView: the replaced period stays as history; a new identity clears it.
   if(resultView&&resultRows.length&&live?.job){
     activityHistory.unshift({id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]});
     let total=0;activityHistory=activityHistory.slice(0,20).filter(h=>(total+=h.rows.length)<=2048);
@@ -514,7 +504,6 @@ function receiveShow(){
     document.querySelector('#receive-generation').textContent=`Receive generation ${live.generation} · source ${live.source?.id??'none'} · job ${live.job?.id??'none'}`;
     const c=live.clock;document.querySelector('#clock-detail').textContent=`Clock ${c.basis} · ${c.correlated?`receive periods correlated to UTC anchor ${c.utc_anchor}, uncertainty ${c.uncertainty_ns} ns`:'receive periods not correlated to UTC'} · external accuracy ${c.external_accuracy}`;
     const focus=document.querySelector('#rx-focus .op-contact-identity');
-    // A contact rendered by contact.js keeps its own identity text.
     if(!document.querySelector('#rx-focus').dataset.contact){
       if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Select a decoded station or enter a DX call.';}
       else{focus.querySelector('strong').textContent='No station selected';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
@@ -532,7 +521,6 @@ async function receiveSync(current=socket){
     if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
-      // ExceptionChip receiveRestarted: a new generation not explained by this browser or a selection.
       if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;activityHistory=[];
       if(data.job||live?.job){rows=[];resetLevels();paint();}
@@ -646,8 +634,6 @@ async function receiveResults(){
   }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
   finally{resultPending=false;}
 }
-// Strict /receive/start and /receive/stop, only from an operator action (chip, Expert, Alt+M),
-// never from a timer, reconnect, readiness or snapshot path. Start uses the selection mode.
 async function receiveStart(){
   const active=live?.job&&['running','cancelling'].includes(live.job.state);
   if(!live||active||mutationPending||uncertainMutation||operatingBlocked()||!profileData?.settings.audio.input_device)return;
@@ -741,7 +727,6 @@ function operatingShow(){
   const blocked=!ready||mutationPending||uncertainMutation||operatingBlocked();
   operatingMode.disabled=blocked;operatingBand.disabled=blocked;
   const active=live?.job&&['running','cancelling'].includes(live.job.state),target=operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);
-  // With a pending/unknown selection the receive control cancels it (the former Stop).
   receiveToggleButton.disabled=!receiveToggleAvailable();
   receiveToggleButton.textContent=target?'Cancel band/mode change':active?'Stop receive':'Start receive';
   receiveToggleButton.setAttribute('aria-pressed',String(!!active||!!target));
@@ -811,7 +796,6 @@ async function operatingStop(){
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=target;operatingFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}}
   finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);await receiveSync();receiveShow();}}
 }
-// Band and mode are restart changes (marked): during a QSO or transmission they ask first.
 async function restartAllowed(what){
   const s=window.wstxContact?.snapshot?.(),c=s?.contact,busy=(c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;
   return !busy||await confirmAction(`${what} restarts receive and interrupts the QSO in progress. Continue?`,'Restart receive');
@@ -875,9 +859,7 @@ async function catSync(){
   finally{catPending=false;catShow();if(catAgain){catAgain=false;catSync();}}
 }
 function catModel(endpoint){return typeof endpoint==='string'&&(/^icom7300:\/\//.test(endpoint)||/^COM[0-9]{1,3}$/i.test(endpoint))?'Icom IC-7300 (CI-V)':'unsupported CAT model';}
-// WstxOperatingLayout::ExceptionChip: only while a condition holds; each opens its detail.
 var chipsReady=false,restartedAt=-Infinity;
-// The chips are drawn by contact.js (window.wstxChipsShow) once it has loaded.
 function chipsShow(){if(chipsReady)window.wstxChipsShow?.();}
 addEventListener('station-stale',()=>chipsShow());
 function catShow(){
@@ -969,8 +951,6 @@ addEventListener('keydown',event=>{
   const result=document.querySelector('#transmit-result');
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
 },true);
-// The drawer starts below the top bar, whose height depends on the window width.
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
-// ThemeChoice: a manual theme applies at once; contact.js adds the rest.
 document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
 chipsReady=true;chipsShow();
