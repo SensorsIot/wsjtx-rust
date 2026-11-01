@@ -2808,7 +2808,7 @@ package WstxRequirements {
     }
     dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
     requirement 'CL-040-02' {
-        doc /* Any number of targets up to 16, each address:port (unicast, or IPv4 multicast with TTL and interface), enabled, a per-type outbound message selection (default all) and accept_commands (default off), with per-target status (last send, error, last inbound command). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, accept_commands off, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
+        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all) and accept_commands (default off), with per-target status (last send, error, last inbound command). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, accept_commands off, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs";
     }
@@ -2848,21 +2848,23 @@ package WstxRequirements {
     }
     dependency CL_040_05_verified_by_TC_012_005 from 'CL-040-05' to 'TC-012-005';
     requirement 'CL-040-06' {
-        doc /* Outstanding, issue #46: IPv6 multicast targets (ff00::/8) with hop limit and an interface index. Until delivered, an IPv6 multicast address is refused at PUT /udp (WstxUdp D6). */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Issue #46: an IPv6 multicast group target (ff00::/8) with a hop limit 1..255 (multicast_ttl) and an interface index (multicast_interface as decimal text, required for interface-local and link-local scope, optional above) is admitted by PUT /udp, saved, and receives its selected outbound messages through a socket with IPV6_MULTICAST_HOPS and IPV6_MULTICAST_IF set. Reserved scopes 0 and 15, interface names and accept_commands on are refused; inbound commands from a host to its socket are not accepted, as for IPv4 multicast. Details: WstxUdp D6, UdpTarget, OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs";
     }
     dependency CL_040_06_to_FR_012 from 'CL-040-06' to 'FR-012';
     verification 'TC-012-006' {
-        doc /* TC-012-006 — IPv6 multicast targets (outstanding)
+        doc /* TC-012-006 — IPv6 multicast targets
              CL-040-06
-             Setup: actual candidate router on a disposable profile; a loopback-capable IPv6 interface; a peer joined to the group.
-             Steps: PUT a target [ff02::1]:2237 with hop limit 2 and the interface index; one station step.
-             Expected: the PUT is admitted with the hop limit and interface saved; the joined peer receives Heartbeat and Status.
-             2 — Isolated automated functional tests; Windows development PC, loopback only; not implemented. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Setup: actual candidate router and UDP owner on a disposable profile; a peer socket joined to the transient link-local group ff12::5754:5358 on the Windows loopback pseudo-interface (index 1); a host socket on [::1].
+             Steps: PUT, each alone: scope 0 ff00::1, scope 15 ff0f::1 and ff1f::1, the group without an interface, ff01::1 without an interface, hop limit 0 and 256, accept_commands true, an IPv4 group with interface "1", interfaces "0", "01", "-1", "+1", " 1", "4294967296", "Ethernet", "127.0.0.1", "::1", "" and the number 1; then one PUT of the group at the peer's port with hop limit 2 and interface "1", [ff05::5754:5358]:2237 hop limit 255 interface "1", [ff15::5754:5358]:2238 interface "4000000000", and a disabled [ff08::5754:5358]:2239 without an interface; open a new owner; read the socket options; one station step; Free Text from the host to the group target's socket; step.
+             Expected: each refusal 400 invalid_request with its field (address for the scopes, otherwise the named field) and nothing saved; the PUT admitted with the targets saved as given and unchanged after the reopen; the group socket has hop limit 2, interface 1 and loopback on, the site-local one hop limit 255; the unknown index shows active false, socket_unavailable; the joined peer receives Heartbeat then Status (schema 2, id WSTX-Rust); the Free Text is not_accepted.
+             2 — Isolated automated functional tests; Windows development PC, loopback IPv6 multicast only, nothing leaves the machine. */
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-040-06';
         }
+        attribute executable : String = "server/src/udp_tests.rs";
     }
     dependency CL_040_06_verified_by_TC_012_006 from 'CL-040-06' to 'TC-012-006';
     verification 'TC-012-001' {
@@ -2919,7 +2921,7 @@ package WstxRequirements {
         doc /* TC-012-004 — Target configuration and persistence
              CL-040-02
              Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
-             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
+             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
              Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null, accept_commands false} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status).
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;
