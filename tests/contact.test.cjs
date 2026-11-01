@@ -190,7 +190,7 @@ test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeo
   assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
   await page.unroute('**/contact');
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
-  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000}).catch(async e=>{throw new Error(`contact client not loaded: ${JSON.stringify(await page.evaluate(()=>({scripts:[...document.scripts].map(s=>s.src),snapshot:typeof snapshot!=='undefined'&&!!snapshot,live:typeof live!=='undefined'?String(live):'undef'})))} errors ${JSON.stringify(page.errors)} requests ${JSON.stringify(requests.filter(r=>r.path.startsWith('/contact')).slice(-6).map(r=>[r.method,r.path,r.end]))}`);});
 });
 
 // Review decision 6 (OpenRegion) / #37 SettingsDrawer: a pointer action outside the drawer closes it.

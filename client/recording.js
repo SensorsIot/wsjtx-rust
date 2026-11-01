@@ -82,6 +82,9 @@ block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clo
 const displaySettings=block('settings-display','Display',generalSection,'<label>Theme<select id="theme-choice"><option value="dark">Dark</option><option value="day">Day</option><option value="night">Night (dim red)</option></select></label><label>Switch<select id="theme-switch"><option value="manual">Manually</option><option value="time">By time</option><option value="sun">By sunrise and sunset at my locator</option></select></label><span id="theme-times"><label>Day from<input id="theme-day-start" type="time" value="07:00"></label><label>Night from<input id="theme-night-start" type="time" value="20:00"></label></span><p id="theme-status" class="op-muted"></p><p class="op-muted">Display settings affect this browser only and apply at once.</p>');
 const browserSettings=block('settings-browsers','Access &amp; grants',generalSection,'<p class="op-muted">This browser holds its own station authorization. Logging out or forgetting the credential needs the station access token to authorize again.</p>');
 browserSettings.append(document.querySelector('#authorization-actions'));
+// Forgetting a rejected or invalid credential is the action for that exception; it shows
+// beside the exception chips only while app.js offers it.
+chips.after(document.querySelector('#forget'));
 block('settings-automation','MCP and automation',generalSection,'<p class="op-muted">Automation runs on the station (MCP). Its state shows beside the strategy element; HALT ends it. Strategies (Highlight/Auto) arrive with the strategy engine.</p>');
 // Radio (restart changes on Apply): CAT, audio, transmit.
 const profilePanel=document.querySelector('#profile-panel'),profileMetadata=profilePanel.querySelector('dl');
