@@ -21,6 +21,9 @@ body.insertAdjacentHTML('beforeend',`<div class="ct-dx"><label>DX Call<input id=
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
 <section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Rx Frequency <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button><button type="button" id="rx-pane-erase">Erase</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="Rx Frequency messages"><table aria-label="Rx Frequency messages"><tbody id="rx-pane-rows"></tbody></table></div></section>`);
 const $=id=>document.getElementById(id);
+// WstxOperatingLayout::OperatingScreen (#37): the Rx Frequency pane is its own card beside
+// Band Activity; without that card it stays in the Current QSO card.
+const rxCard=document.querySelector('#rx-frequency');if(rxCard)rxCard.replaceChildren($('rx-pane'));
 const resultText=$('contact-result');
 let snap=null,sending=false,openedReviews=new Set(),tick=null,lastTx=null,changeTarget=null;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,monotonic_ms,profile_id,review,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
@@ -203,7 +206,7 @@ activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[d
 // ---------------------------------------------------------------- Rx Frequency pane
 // WstxContact::RoutesToRxFrequencyPane: within +/-10 Hz of the confirmed Rx offset, the
 // first call equal to my call, or my call followed by the DX call. At most 500 rows.
-const pane=$('rx-pane-rows'),paneWrap=body.querySelector('.ct-pane-wrap');let paneSeen=new Set(),paneContext=null,paneUnread=0,paneFollow=true;
+const pane=$('rx-pane-rows'),paneWrap=$('rx-pane').querySelector('.ct-pane-wrap');let paneSeen=new Set(),paneContext=null,paneUnread=0,paneFollow=true;
 const myCall=()=>(profileData?.settings?.callsign??'').trim().toUpperCase();
 function routes(record){
   const rx=snap?.settings?.rx_hz;const my=myCall(),dx=snap?.contact?.dx_call;
@@ -241,8 +244,9 @@ function paneUpdate(){
 if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;paneUpdate();}).observe(activity,{childList:true});
 // ---------------------------------------------------------------- waterfall pointer actions
 // WstxContact::PointerEffect: click Rx; shift- or right-click Tx; ctrl-click Rx and Tx;
-// left double-click Rx and Re-decode; right double-click Rx and Tx. Markers move only
-// after confirmation; no pointer action enables Tx.
+// right double-click Rx and Tx. A left double-click is two Rx clicks: the full-band decoder
+// always runs, so there is no decode-at-point (#37 decision 7). Markers move only after
+// confirmation; no pointer action enables Tx.
 const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector('#waterfall-wrap');
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
 rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.setAttribute('aria-hidden','true');txMarker.setAttribute('aria-hidden','true');
@@ -256,15 +260,11 @@ function markers(){
   if(room&&s&&Math.abs(s.rx_hz-s.tx_hz)<400){rxMarker.textContent=s.rx_hz===s.tx_hz?`Rx/Tx ${s.rx_hz}`:`Rx ${s.rx_hz} · Tx ${s.tx_hz}`;txMarker.textContent='';}
 }
 const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
-let lastRight=0,lastLeft={at:-Infinity,x:0};
+let lastRight=0;
 function pointer(rx,tx,label){send('set_frequency',{rx_hz:rx,tx_hz:tx},label);}
 waterfall?.addEventListener('contextmenu',event=>event.preventDefault());
 waterfall?.addEventListener('click',event=>{
-  if(event.button!==0)return;const hz=pointerHz(event),now=performance.now();
-  // Left double-click, detected here (the browser click count also counts other
-  // buttons): Rx, then Re-decode.
-  const double=now-lastLeft.at<400&&Math.abs(event.clientX-lastLeft.x)<6;lastLeft=double?{at:-Infinity,x:0}:{at:now,x:event.clientX};
-  if(double){send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency').then(()=>send('redecode',{},'Re-decode'));return;}
+  if(event.button!==0)return;const hz=pointerHz(event);
   if(event.ctrlKey)pointer(hz,hz,'Rx and Tx frequency');else if(event.shiftKey)pointer(null,hz,'Tx frequency');else pointer(hz,null,'Rx frequency');
 });
 waterfall?.addEventListener('mouseup',event=>{
