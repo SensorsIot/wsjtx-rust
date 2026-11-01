@@ -363,6 +363,98 @@ impl<T: Transport> Executor<T> {
         }
         Ok(())
     }
+    /// #44 CL-044-01/03/04 menu exchanges through this single I/O owner. Like `set_ptt`
+    /// it is not an `Operation`: neither the catalogue nor /radio/operation reaches it.
+    /// A write requires the radio to report RX first, an ACK, and an equal readback.
+    pub fn setup(
+        &self,
+        command: super::SetupCommand,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<super::SetupReply> {
+        use super::{SetupCommand, SetupReply, setup};
+        check(deadline, cancel)?;
+        let mut inner = self.inner.try_lock().map_err(|e| match e {
+            TryLockError::WouldBlock => Error::Busy,
+            TryLockError::Poisoned(_) => Error::Unavailable,
+        })?;
+        if self.snapshot()?.state != State::Ready {
+            return Err(Error::Unavailable);
+        }
+        let overall = std::cmp::min(deadline, Instant::now() + Duration::from_secs(3));
+        let Inner {
+            transport,
+            configuration,
+            ..
+        } = &mut *inner;
+        let address = configuration.radio_address;
+        let step = || std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
+        let read = |transport: &mut T, setting: setup::Setting| -> Result<Option<u16>> {
+            let bytes = setup::read_setting_frame(address, setting);
+            exchange_setup(transport, &bytes, step(), cancel, |h| match h {
+                setup::Heard::Setting {
+                    address: a,
+                    setting: s,
+                    data,
+                } if a == address && s == setting => Some(setting.decode(&data).map(Some)),
+                setup::Heard::Ng { address: a } if a == address => Some(Ok(None)),
+                _ => None,
+            })?
+        };
+        let result = (|| match command {
+            SetupCommand::ReadId => {
+                let bytes = setup::ProbeFrame::ReadId(address).bytes();
+                exchange_setup(transport, &bytes, step(), cancel, |h| match h {
+                    setup::Heard::Id { address: a, id } if a == address => Some(id),
+                    _ => None,
+                })
+                .map(SetupReply::Id)
+            }
+            SetupCommand::Read(setting) => read(transport, setting).map(SetupReply::Value),
+            SetupCommand::Write(setting, value) => {
+                setting.encode(value)?;
+                let state = exchange(
+                    transport,
+                    configuration,
+                    &Operation::ReadRxTx,
+                    step(),
+                    cancel,
+                )?;
+                if state != Reply::Transmitting(false) {
+                    return Err(Error::Busy);
+                }
+                let bytes = setup::write_setting_frame(address, setting, value)?;
+                let acknowledged =
+                    exchange_setup(transport, &bytes, step(), cancel, |h| match h {
+                        setup::Heard::Ack { address: a } if a == address => Some(true),
+                        setup::Heard::Ng { address: a } if a == address => Some(false),
+                        _ => None,
+                    })?;
+                if !acknowledged {
+                    return Err(Error::Rejected);
+                }
+                match read(transport, setting) {
+                    Ok(Some(actual)) if actual == value => Ok(SetupReply::Value(Some(actual))),
+                    Ok(Some(_)) => Err(Error::ReadbackMismatch),
+                    Ok(None) | Err(_) => Err(Error::Indeterminate),
+                }
+            }
+        })();
+        if let Err(error) = result
+            && !matches!(
+                error,
+                Error::Rejected | Error::ReadbackMismatch | Error::InvalidRequest | Error::Busy
+            )
+        {
+            self.set_state(State::Closing, Some(error))?;
+            if transport.close().is_err() {
+                self.set_state(State::Closing, Some(Error::FailedClose))?;
+                return Err(Error::FailedClose);
+            }
+            self.set_state(State::Unavailable, Some(error))?;
+        }
+        result
+    }
     pub fn refresh(&self, cancel: Arc<AtomicBool>, deadline: Instant) -> Result<Observation> {
         let mut inner = self.inner.try_lock().map_err(|_| Error::Busy)?;
         if self.snapshot()?.state != State::Ready {
@@ -614,6 +706,38 @@ fn exchange<T: Transport>(
     exchange_bytes(transport, &bytes, deadline, cancel, |frame| {
         codec::reply(configuration, frame, operation)
     })
+}
+/// One menu/ID exchange: frames are classified by `setup::hear`; echo and unrelated
+/// traffic are skipped until `parse` claims a frame.
+fn exchange_setup<T: Transport, R>(
+    transport: &mut T,
+    bytes: &[u8],
+    deadline: Instant,
+    cancel: &AtomicBool,
+    parse: impl Fn(super::setup::Heard) -> Option<R>,
+) -> Result<R> {
+    check(deadline, cancel)?;
+    if transport.write(bytes, deadline, cancel)? != bytes.len() {
+        return Err(Error::PartialWrite);
+    }
+    let mut framer = Framer::default();
+    let mut buffer = [0; codec::MAX_READ];
+    loop {
+        check(deadline, cancel)?;
+        let count = transport.read(&mut buffer, deadline, cancel)?;
+        if count > buffer.len() {
+            return Err(Error::Protocol);
+        }
+        if count == 0 {
+            std::thread::yield_now();
+            continue;
+        }
+        for frame in framer.feed(&buffer[..count])? {
+            if let Some(reply) = parse(super::setup::hear(&frame)) {
+                return Ok(reply);
+            }
+        }
+    }
 }
 fn exchange_bytes<T: Transport>(
     transport: &mut T,

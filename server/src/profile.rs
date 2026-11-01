@@ -27,6 +27,30 @@ pub struct Audio {
     #[serde(deserialize_with = "nullable")]
     pub output_device: Option<String>,
 }
+impl Audio {
+    /// CL-044-05: a saved device is a WASAPI endpoint ID of its flow, or null. Only
+    /// PUT /profile applies it; loading keeps older entries for the startup migration.
+    pub fn validate_endpoints(&self) -> Result<(), &'static str> {
+        use wstx_rust::radio_control::setup::{Flow, endpoint_id};
+        for (field, value, flow) in [
+            (
+                "settings.audio.input_device",
+                &self.input_device,
+                Flow::Capture,
+            ),
+            (
+                "settings.audio.output_device",
+                &self.output_device,
+                Flow::Render,
+            ),
+        ] {
+            if value.as_deref().is_some_and(|v| !endpoint_id(v, flow)) {
+                return Err(field);
+            }
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Control {
@@ -413,6 +437,13 @@ impl Store {
         document: &impl Serialize,
     ) -> std::io::Result<()> {
         atomic_json(&self.directory, filename, document)
+    }
+    /// Removes another document of this profile directory; absent is success.
+    pub fn remove_document_file(&mut self, filename: &str) -> std::io::Result<()> {
+        match fs::remove_file(self.directory.join(filename)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
     }
     pub fn save(&mut self, settings: Settings) -> std::io::Result<()> {
         let mut next = self.document.clone();

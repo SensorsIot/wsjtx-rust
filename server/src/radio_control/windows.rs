@@ -159,15 +159,19 @@ impl Drop for Devices {
         };
     }
 }
-/// Read-only exact COM-name discovery. Never opens a UART or changes its lines.
-pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
+/// One present COM device interface with both port-name sources unresolved.
+struct Interface {
+    modern: Result<Option<String>>,
+    registry: Result<Option<String>>,
+    instance_id: String,
+    interface_path: Vec<u16>,
+}
+/// Read-only enumeration of the present COM interfaces. Never opens a UART or changes its lines.
+fn interfaces() -> Result<Vec<Interface>> {
     use ::windows::Win32::Devices::{
         DeviceAndDriverInstallation::*, Properties::DEVPROP_TYPE_STRING,
         SerialCommunication::DEVPKEY_DeviceInterface_Serial_PortName,
     };
-    if !(1..=256).contains(&port) {
-        return Err(Error::InvalidConfiguration);
-    }
     // GUID_DEVINTERFACE_COMPORT from Microsoft's serial device-interface contract.
     let class = ::windows::core::GUID::from_u128(0x86e0d1e0_8089_11d0_9ce4_08003e301f73);
     // SAFETY: valid class GUID, present interfaces only, no window or device activation.
@@ -182,8 +186,7 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
         }
         .map_err(map)?,
     );
-    let expected = format!("COM{port}");
-    let mut selected = None;
+    let mut found = Vec::new();
     for index in 0..=256 {
         let mut interface = SP_DEVICE_INTERFACE_DATA {
             cbSize: std::mem::size_of::<SP_DEVICE_INTERFACE_DATA>() as u32,
@@ -194,7 +197,7 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
             unsafe { SetupDiEnumDeviceInterfaces(set.0, None, &class, index, &mut interface) }
         {
             if error.code() == HRESULT::from_win32(ERROR_NO_MORE_ITEMS.0) {
-                return selected.ok_or(Error::Unavailable);
+                return Ok(found);
             }
             return Err(map(error));
         }
@@ -253,32 +256,184 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
             Err(error) => Err(map(error)),
         };
         let registry = registry_port_name(set.0, &device);
-        if !exact_port_name(&expected, modern, registry)? {
-            continue;
-        }
-        if selected.is_some() {
-            return Err(Error::ResourceInUse);
-        }
         let mut id = [0u16; 1024];
         // SAFETY: bounded initialized ID buffer and device record obtained from this set.
         unsafe { SetupDiGetDeviceInstanceIdW(set.0, &device, Some(&mut id), None) }.map_err(map)?;
         let end = id.iter().position(|v| *v == 0).ok_or(Error::Limit)?;
         let instance_id = String::from_utf16(&id[..end]).map_err(|_| Error::Protocol)?;
-        if instance_id.is_empty() {
-            return Err(Error::Protocol);
-        }
         // SAFETY: successful detail query provides the UTF-16 path in this owned allocation.
         let path = unsafe {
             std::slice::from_raw_parts((*detail).DevicePath.as_ptr(), (required as usize - 4) / 2)
         };
         let end = path.iter().position(|v| *v == 0).ok_or(Error::Protocol)?;
-        selected = Some(SerialEndpoint {
-            port,
+        found.push(Interface {
+            modern,
+            registry,
             instance_id,
             interface_path: path[..=end].to_vec(),
         });
     }
     Err(Error::Limit)
+}
+/// Read-only exact COM-name discovery. Never opens a UART or changes its lines.
+pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
+    if !(1..=256).contains(&port) {
+        return Err(Error::InvalidConfiguration);
+    }
+    let expected = format!("COM{port}");
+    let mut selected = None;
+    for interface in interfaces()? {
+        if !exact_port_name(&expected, interface.modern, interface.registry)? {
+            continue;
+        }
+        if selected.is_some() {
+            return Err(Error::ResourceInUse);
+        }
+        if interface.instance_id.is_empty() {
+            return Err(Error::Protocol);
+        }
+        selected = Some(SerialEndpoint {
+            port,
+            instance_id: interface.instance_id,
+            interface_path: interface.interface_path,
+        });
+    }
+    selected.ok_or(Error::Unavailable)
+}
+/// #44 CL-044-01: every present COM port with its friendly name and USB topology.
+/// A port whose name cannot be read unambiguously is left out. Opens nothing.
+pub fn enumerate_ports() -> Result<Vec<super::setup::PortInfo>> {
+    let mut ports = Vec::new();
+    for interface in interfaces()? {
+        let name = match (interface.modern, interface.registry) {
+            (Ok(Some(a)), Ok(Some(b))) if !a.eq_ignore_ascii_case(&b) => continue,
+            (Ok(Some(a)), _) | (_, Ok(Some(a))) => a.to_ascii_uppercase(),
+            _ => continue,
+        };
+        let Some(port) = name
+            .strip_prefix("COM")
+            .and_then(|n| n.parse::<u16>().ok())
+            .filter(|n| (1..=256).contains(n) && name == format!("COM{n}"))
+        else {
+            continue;
+        };
+        if interface.instance_id.is_empty() {
+            continue;
+        }
+        let (friendly_name, topology) = device_topology(&interface.instance_id).unwrap_or_default();
+        ports.push(super::setup::PortInfo {
+            port,
+            instance_id: interface.instance_id,
+            friendly_name,
+            topology,
+        });
+    }
+    ports.sort_by_key(|p| p.port);
+    Ok(ports)
+}
+fn node_id(node: u32) -> Option<String> {
+    use ::windows::Win32::Devices::DeviceAndDriverInstallation::*;
+    let mut id = [0u16; 1024];
+    // SAFETY: bounded initialized output buffer; the node handle is a plain value.
+    if unsafe { CM_Get_Device_IDW(node, &mut id, 0) } != CR_SUCCESS {
+        return None;
+    }
+    let end = id.iter().position(|v| *v == 0)?;
+    String::from_utf16(&id[..end]).ok()
+}
+fn node_property(
+    node: u32,
+    key: &::windows::Win32::Foundation::DEVPROPKEY,
+    expected: ::windows::Win32::Devices::Properties::DEVPROPTYPE,
+) -> Option<Vec<u8>> {
+    use ::windows::Win32::Devices::DeviceAndDriverInstallation::*;
+    let mut kind = ::windows::Win32::Devices::Properties::DEVPROPTYPE(0);
+    let mut buffer = vec![0u8; 1024];
+    let mut size = buffer.len() as u32;
+    // SAFETY: read-only property query into a bounded initialized buffer of `size` bytes.
+    let result = unsafe {
+        CM_Get_DevNode_PropertyW(
+            node,
+            key,
+            &mut kind,
+            Some(buffer.as_mut_ptr()),
+            &mut size,
+            0,
+        )
+    };
+    if result != CR_SUCCESS || kind != expected || size as usize > buffer.len() {
+        return None;
+    }
+    buffer.truncate(size as usize);
+    Some(buffer)
+}
+/// #44 CL-044-02: friendly name, container ID and nearest USB device with its parent
+/// hub of a device instance (a COM port or an `SWD\MMDEVAPI\<endpoint id>` node).
+/// Read-only Configuration Manager queries; opens no device.
+pub fn device_topology(instance_id: &str) -> Result<(Option<String>, super::setup::Topology)> {
+    use ::windows::Win32::Devices::{
+        DeviceAndDriverInstallation::*,
+        Properties::{
+            DEVPKEY_Device_ContainerId, DEVPKEY_Device_FriendlyName, DEVPROP_TYPE_GUID,
+            DEVPROP_TYPE_STRING,
+        },
+    };
+    if instance_id.is_empty() || instance_id.len() > 512 || instance_id.contains('\0') {
+        return Err(Error::InvalidRequest);
+    }
+    let wide: Vec<u16> = instance_id.encode_utf16().chain([0]).collect();
+    let mut node = 0u32;
+    // SAFETY: NUL-terminated instance ID; output is a plain node handle.
+    if unsafe { CM_Locate_DevNodeW(&mut node, PCWSTR(wide.as_ptr()), CM_LOCATE_DEVNODE_NORMAL) }
+        != CR_SUCCESS
+    {
+        return Err(Error::Unavailable);
+    }
+    let friendly =
+        node_property(node, &DEVPKEY_Device_FriendlyName, DEVPROP_TYPE_STRING).and_then(|bytes| {
+            let units: Vec<u16> = bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|v| u16::from_le_bytes(*v))
+                .take_while(|v| *v != 0)
+                .collect();
+            String::from_utf16(&units).ok().filter(|s| !s.is_empty())
+        });
+    let container = node_property(node, &DEVPKEY_Device_ContainerId, DEVPROP_TYPE_GUID)
+        .filter(|b| b.len() == 16)
+        .and_then(|b| {
+            let d1 = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            let d2 = u16::from_le_bytes([b[4], b[5]]);
+            let d3 = u16::from_le_bytes([b[6], b[7]]);
+            let tail: String = b[10..].iter().map(|v| format!("{v:02x}")).collect();
+            super::setup::container(&format!(
+                "{{{d1:08x}-{d2:04x}-{d3:04x}-{:02x}{:02x}-{tail}}}",
+                b[8], b[9]
+            ))
+        });
+    let mut topology = super::setup::Topology {
+        container_id: container,
+        ..Default::default()
+    };
+    let mut current = node;
+    for _ in 0..16 {
+        let Some(id) = node_id(current) else { break };
+        let upper = id.to_ascii_uppercase();
+        let mut parent = 0u32;
+        // SAFETY: plain node handles; read-only tree query.
+        let has_parent = unsafe { CM_Get_Parent(&mut parent, current, 0) } == CR_SUCCESS;
+        if upper.starts_with("USB\\") && !upper.contains("&MI_") {
+            topology.usb_device = Some(id);
+            topology.usb_parent = has_parent.then(|| node_id(parent)).flatten();
+            break;
+        }
+        if !has_parent {
+            break;
+        }
+        current = parent;
+    }
+    Ok((friendly, topology))
 }
 pub(crate) fn claim_identity(identity: &str, lock_root: &Path) -> Result<File> {
     if identity.is_empty() || identity.len() > 1024 {
@@ -466,17 +621,7 @@ impl Transport for SerialTransport {
             return Err(Error::FailedClose);
         }
         let handle = self.handle()?;
-        let expected = DCB {
-            DCBlength: std::mem::size_of::<DCB>() as u32,
-            BaudRate: baud,
-            _bitfield: 1,
-            ByteSize: 8,
-            Parity: NOPARITY,
-            StopBits: ONESTOPBIT,
-            XonChar: 0x11,
-            XoffChar: 0x13,
-            ..Default::default()
-        };
+        let expected = line_safe_dcb(baud);
         let timeouts = COMMTIMEOUTS {
             ReadIntervalTimeout: u32::MAX,
             ReadTotalTimeoutConstant: 20,
@@ -495,6 +640,10 @@ impl Transport for SerialTransport {
             SetCommTimeouts(handle, &timeouts).map_err(map)?;
             GetCommState(handle, &mut actual).map_err(map)?;
             GetCommTimeouts(handle, &mut actual_timeouts).map_err(map)?;
+            // #44: the DCB already disables both lines; clearing them again leaves no
+            // driver default asserted before the first byte of a probe or CAT exchange.
+            EscapeCommFunction(handle, CLRDTR).map_err(map)?;
+            EscapeCommFunction(handle, CLRRTS).map_err(map)?;
         }
         if actual.BaudRate != baud
             || actual.ByteSize != 8
@@ -576,6 +725,21 @@ impl Drop for SerialTransport {
         }
     }
 }
+/// 8N1 with only fBinary set: fDtrControl = DTR_CONTROL_DISABLE and fRtsControl =
+/// RTS_CONTROL_DISABLE, so neither line can key a radio whose USB SEND/keying uses it.
+pub(crate) fn line_safe_dcb(baud: u32) -> DCB {
+    DCB {
+        DCBlength: std::mem::size_of::<DCB>() as u32,
+        BaudRate: baud,
+        _bitfield: 1,
+        ByteSize: 8,
+        Parity: NOPARITY,
+        StopBits: ONESTOPBIT,
+        XonChar: 0x11,
+        XoffChar: 0x13,
+        ..Default::default()
+    }
+}
 fn check(deadline: Instant, cancel: &AtomicBool) -> Result<()> {
     if cancel.load(Ordering::Acquire) {
         Err(Error::Cancelled)
@@ -593,5 +757,24 @@ fn map(error: ::windows::core::Error) -> Error {
         Error::ResourceInUse
     } else {
         Error::Unavailable
+    }
+}
+
+#[cfg(test)]
+mod line_tests {
+    // Proves: CL-044-01. DCB bit layout (winbase.h): fDtrControl bits 4-5, fRtsControl
+    // bits 12-13, fOutxCtsFlow 2, fOutxDsrFlow 3; all zero means both lines disabled.
+    #[test]
+    fn opened_ports_hold_dtr_and_rts_disabled() {
+        for baud in [9600, 19200, 38400, 115200] {
+            let dcb = super::line_safe_dcb(baud);
+            assert_eq!(dcb._bitfield & 0x3030, 0, "DTR/RTS control disabled");
+            assert_eq!(
+                dcb._bitfield & 0x000c,
+                0,
+                "no hardware handshake raising lines"
+            );
+            assert_eq!(dcb.BaudRate, baud);
+        }
     }
 }

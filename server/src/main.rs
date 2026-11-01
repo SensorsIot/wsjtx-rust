@@ -29,6 +29,9 @@ mod protocol_tests;
 mod radio_http;
 #[cfg(all(test, not(debug_assertions)))]
 mod radio_http_tests;
+mod radio_setup;
+#[cfg(test)]
+mod radio_setup_tests;
 mod receive;
 mod receive_http;
 #[cfg(test)]
@@ -239,7 +242,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some((store, _)) => {
             let authority_origin = origin.clone();
             let (store, authorization) = tokio::task::spawn_blocking(move || {
-                let mut store = store;
+                let mut store = store; // CL-044-05: migrate friendly-name device entries before any owner reads them.
+                #[cfg(windows)]
+                if radio_setup::needs_migration(&store.document) {
+                    match radio_setup::native_endpoints() {
+                        Ok(endpoints) => {
+                            for line in radio_setup::migrate_devices(&mut store, &endpoints) {
+                                eprintln!("{line}");
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("profile: device migration skipped (audio_unavailable)")
+                        }
+                    }
+                }
+
                 authorization_http::Service::initialize(&mut store, &authority_origin)
                     .map(|authority| (store, authority))
             })
@@ -425,6 +442,9 @@ fn router(state: App) -> Router {
         .route("/radio/connect", post(radio_http::connect).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/disconnect", post(radio_http::disconnect).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/operation", post(radio_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio/detect", post(radio_setup::detect_route).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio/settings/apply", post(radio_setup::apply_route).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio/settings/undo", post(radio_setup::undo_route).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/transmit", get(transmit_http::snapshot))
         .route("/transmit/command", post(transmit_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/transmit/halt", post(transmit_http::halt).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -637,7 +657,15 @@ async fn put_profile(
         }
         if let Err(field) = edit.settings.validate() {
             return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", Some(field));
+        } // CL-044-05: a saved audio device is a WASAPI endpoint ID, never a friendly name.
+        if let Err(field) = edit.settings.audio.validate_endpoints() {
+            return profile_error(
+                StatusCode::BAD_REQUEST,
+                "audio_device_not_endpoint",
+                Some(field),
+            );
         }
+
         if store.document.profile_id != edit.profile_id {
             return profile_error(StatusCode::FORBIDDEN, "wrong_profile", None);
         }

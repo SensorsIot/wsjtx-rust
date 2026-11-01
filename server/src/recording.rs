@@ -267,6 +267,8 @@ pub struct Recording {
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
+    /// #44 radio detection of this station (one at a time).
+    pub(crate) radio_setup: crate::radio_setup::Owner,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
     startup: Mutex<startup::Startup>,
     #[cfg(test)]
@@ -2708,6 +2710,7 @@ impl Recording {
                 transmit: std::sync::OnceLock::new(),
                 contact: std::sync::OnceLock::new(),
                 udp: std::sync::OnceLock::new(),
+                radio_setup: Default::default(),
                 startup,
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
@@ -2774,6 +2777,7 @@ impl Recording {
             transmit: std::sync::OnceLock::new(),
             contact: std::sync::OnceLock::new(),
             udp: std::sync::OnceLock::new(),
+            radio_setup: Default::default(),
             startup,
             #[cfg(test)]
             cat_transport: Mutex::new(None),

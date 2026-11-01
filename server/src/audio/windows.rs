@@ -69,12 +69,19 @@ fn enumerator() -> Result<IMMDeviceEnumerator, SourceError> {
     }
 }
 pub fn enumerate_inputs() -> Result<Vec<InputDevice>, SourceError> {
+    enumerate(eCapture)
+}
+/// #44: active render endpoints (ID and friendly name), as enumerate_inputs for capture.
+pub fn enumerate_outputs() -> Result<Vec<InputDevice>, SourceError> {
+    enumerate(eRender)
+}
+fn enumerate(flow: EDataFlow) -> Result<Vec<InputDevice>, SourceError> {
     let _apartment = Apartment::new()?;
     let enumerator = enumerator()?;
-    // SAFETY: live local interfaces, valid capture/active flags; returned IDs freed once.
+    // SAFETY: live local interfaces, valid flow/active flags; returned IDs freed once.
     unsafe {
         let collection = enumerator
-            .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
+            .EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
             .map_err(|_| SourceError::Unavailable)?;
         let mut result = Vec::new();
         for i in 0..collection

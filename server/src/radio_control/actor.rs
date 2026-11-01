@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! The single CAT I/O owner. An admitted operation holds one lease; there is no backlog.
 use super::{
-    Authority, Configuration, Error, Observation, Request, Result, Snapshot, State,
+    Authority, Configuration, Error, Observation, Request, Result, SetupCommand, SetupReply,
+    Snapshot, State,
     catalogue::Catalogue,
     executor::{Executor, Transport},
 };
@@ -26,6 +27,12 @@ struct PttCommand {
     deadline: Instant,
     response: SyncSender<Result<()>>,
 }
+/// #44 menu exchange under an ordinary lease (lease 1): excluded by any transmit hold.
+struct SetupRequest {
+    command: SetupCommand,
+    deadline: Instant,
+    response: SyncSender<Result<SetupReply>>,
+}
 pub struct Actor {
     commands: SyncSender<Command>,
     snapshot: Arc<Mutex<Snapshot>>,
@@ -33,6 +40,7 @@ pub struct Actor {
     shutdown: Arc<AtomicBool>,
     current_cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     ptt: SyncSender<PttCommand>,
+    setup: SyncSender<SetupRequest>,
     /// PTT keyed or not confirmed released by readback since the last key request.
     keyed: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -112,6 +120,7 @@ impl Actor {
         let current_cancel = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
         let (commands, receive) = mpsc::sync_channel::<Command>(1);
         let (ptt, ptt_receive) = mpsc::sync_channel::<PttCommand>(1);
+        let (setup, setup_receive) = mpsc::sync_channel::<SetupRequest>(1);
         let keyed = Arc::new(AtomicBool::new(false));
         let (shared, busy, stop, current, worker_keyed) = (
             snapshot.clone(),
@@ -181,6 +190,17 @@ impl Actor {
                         let _ = command.response.try_send(result);
                         continue;
                     }
+                    if let Ok(request) = setup_receive.try_recv() {
+                        let _lease = Lease(busy.clone(), None);
+                        let result = if stop.load(Ordering::Acquire) {
+                            Err(Error::Cancelled)
+                        } else {
+                            executor.setup(request.command, request.deadline, &stop)
+                        };
+                        drop(_lease);
+                        let _ = request.response.try_send(result);
+                        continue;
+                    }
                     match receive.recv_timeout(Duration::from_millis(5)) {
                         Ok(command) => {
                             let _lease = Lease(busy.clone(), command.reservation);
@@ -240,6 +260,7 @@ impl Actor {
             shutdown,
             current_cancel,
             ptt,
+            setup,
             keyed,
             thread: Some(worker),
         })
@@ -316,6 +337,41 @@ impl Actor {
             self.release_hold();
         }
         outcome
+    }
+    /// #44 menu exchange (ID read, menu read, menu write with readback) through this
+    /// single I/O owner. It takes the ordinary lease: refused Busy during any operation,
+    /// transition, poll or transmit hold; no queue.
+    pub fn setup(&self, command: SetupCommand, deadline: Instant) -> Result<SetupReply> {
+        if self.shutdown.load(Ordering::Acquire) {
+            return Err(Error::Unavailable);
+        }
+        self.lease
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| Error::Busy)?;
+        let (response, result) = mpsc::sync_channel(1);
+        if let Err(error) = self.setup.try_send(SetupRequest {
+            command,
+            deadline,
+            response,
+        }) {
+            self.lease.store(0, Ordering::Release);
+            return Err(match error {
+                TrySendError::Full(_) => Error::Busy,
+                TrySendError::Disconnected(_) => Error::Unavailable,
+            });
+        }
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match result.recv_timeout(remaining.max(Duration::from_millis(50))) {
+                Ok(value) => return value,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if Instant::now() >= deadline + Duration::from_secs(2) {
+                        return Err(Error::Timeout);
+                    }
+                }
+            }
+        }
     }
     /// True after a key request until a release is confirmed by readback.
     pub fn ptt_indeterminate(&self) -> bool {

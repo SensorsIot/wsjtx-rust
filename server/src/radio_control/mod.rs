@@ -4,6 +4,7 @@ pub mod actor;
 pub mod catalogue;
 pub mod codec;
 pub mod executor;
+pub mod setup;
 #[cfg(windows)]
 #[allow(unsafe_code)]
 pub mod windows;
@@ -136,6 +137,20 @@ impl Configuration {
     pub fn port_name(&self) -> String {
         format!("COM{}", self.port)
     }
+}
+
+/// #44 menu exchanges of the station's CAT owner (`Actor::setup`), never wire operations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupCommand {
+    ReadId,
+    Read(setup::Setting),
+    Write(setup::Setting, u16),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupReply {
+    Id(u8),
+    /// None: the radio refused the read (FA).
+    Value(Option<u16>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

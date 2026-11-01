@@ -19,7 +19,10 @@ const {receive} = require('./peer.cjs');
 let root, browser, tls, retainFixtureRoot = false;
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
-const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: `fixture-input-${i}`, output_device: `fixture-output-${i}`}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
+// Proves: CL-044-05; TC-044-002. Saved audio devices are WASAPI endpoint IDs of their flow (capture 0.0.1, render 0.0.0).
+const captureId = i => `{0.0.1.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`;
+const renderId = i => `{0.0.0.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`;
+const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: captureId(i), output_device: renderId(i)}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
 before(async () => {
   assert.equal(['DEBUG', 'PWDEBUG', 'DEBUG_FILE', 'PLAYWRIGHT_TRACE_DIR', 'NODE_DEBUG', 'NODE_DEBUG_NATIVE', 'NODE_OPTIONS'].some(key => Boolean(process.env[key])), false, 'Credential-sensitive tracing and Node preloads are unsupported before fixture setup');
   assert.ok(await fs.stat(exe), 'compiled candidate is required');
@@ -1532,7 +1535,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
 });
 
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
-  const {profiles} = await fixture(t), beforeBytes = await savedBytes(profiles);
+  const {profiles, apps} = await fixture(t), beforeBytes = await savedBytes(profiles);
   const {pages, context} = await browserWindows(t, profiles);
   await Promise.all(pages.map(connected));
   const boots = new Set();
@@ -1543,7 +1546,7 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   }
   assert.equal(boots.size, 4);
   const page = pages[0];
-  await page.locator('#display-name').fill('Edited station 1'); await page.locator('#audio-input').fill('changed-input-1'); await page.locator('#control-mode').selectOption('cat'); await page.locator('#control-endpoint').fill('fixture-cat-1');
+  await page.locator('#display-name').fill('Edited station 1'); await page.locator('#audio-input').fill(captureId(91)); await page.locator('#control-mode').selectOption('cat'); await page.locator('#control-endpoint').fill('fixture-cat-1');
   await page.locator('#settings-save').click(); await page.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
   const second = await context.newPage(); await second.goto(profiles[0].origin); await connected(second); assert.equal(await second.locator('#display-name').inputValue(), 'Edited station 1'); await second.close();
   for (let i = 1; i < 4; i++) assert.equal((await savedBytes(profiles))[i], beforeBytes[i]);
@@ -1555,6 +1558,8 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
     for (const value of badValues) {const values = settings(1); values[field] = value; await invalid(edit(1, revision, values));}
   }
   for (const bad of [{audio: {input_device: '', output_device: null}}, {audio: {input_device: 'X'.repeat(257), output_device: null}}, {audio: {input_device: 'bad\u0085', output_device: null}}, {control: {mode: 'disabled', endpoint: null, ptt: 'cat'}}, {control: {mode: 'cat', endpoint: null, ptt: 'disabled'}}, {control: {mode: 'native_flex', endpoint: null, ptt: 'disabled'}}]) await invalid(edit(1, revision, {...settings(1), ...bad}));
+  // CL-044-05: a friendly name or an endpoint of the other flow is not saved.
+  for (const audio of [{input_device: 'Microphone (USB Audio CODEC )', output_device: null}, {input_device: null, output_device: 'Speakers (USB Audio CODEC )'}, {input_device: renderId(1), output_device: null}, {input_device: null, output_device: captureId(1)}]) await invalid(edit(1, revision, {...settings(1), audio}), 400, 'audio_device_not_endpoint');
   for (const body of ['{', '[]', {...edit(1, revision), extra: true}, {revision, settings: settings(1)}, {...edit(1, revision), revision: '1'}, JSON.stringify(edit(1, revision)).replace('"revision":1', '"revision":1,"revision":1')]) await invalid(body);
   const missingAudio = edit(1, revision); delete missingAudio.settings.audio.input_device;
   const missingOutput = edit(1, revision); delete missingOutput.settings.audio.output_device;
@@ -1563,15 +1568,15 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   await invalid(edit(1, revision, settings(1), uuid(2)), 403, 'wrong_profile');
   await invalid(edit(1, 0), 409, 'revision_conflict'); await invalid(edit(1, revision), 415, 'unsupported_media_type', {'Content-Type': 'text/plain'});
   await invalid(JSON.stringify(edit(1, revision)).padEnd(8193, ' '), 413, 'request_too_large');
-  const maximum = settings(1); maximum.display_name = 'X'.repeat(64); maximum.callsign = 'A12345678901'; maximum.locator = 'RR99XX99'; maximum.audio = {input_device: 'X'.repeat(256), output_device: null};
+  const maximum = settings(1); maximum.display_name = 'X'.repeat(64); maximum.callsign = 'A12345678901'; maximum.locator = 'RR99XX99'; maximum.audio = {input_device: captureId(99), output_device: null};
   assert.equal((await request(profiles[0].origin, 'PUT', JSON.stringify(edit(1, revision, maximum)).padEnd(8192, ' '))).status, 200); revision++;
-  for (const patch of [{display_name: 'X', callsign: '', locator: '', audio: {input_device: null, output_device: null}}, {callsign: 'A1B', locator: 'JN47'}, {locator: 'JN47AA', audio: {input_device: null, output_device: 'X'.repeat(256)}}, {control: {mode: 'cat', endpoint: 'X'.repeat(256), ptt: 'cat'}}]) {
+  for (const patch of [{display_name: 'X', callsign: '', locator: '', audio: {input_device: null, output_device: null}}, {callsign: 'A1B', locator: 'JN47'}, {locator: 'JN47AA', audio: {input_device: null, output_device: renderId(98)}}, {control: {mode: 'cat', endpoint: 'X'.repeat(256), ptt: 'cat'}}]) {
     assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, {...settings(1), ...patch}))).status, 200); revision++;
   }
   assert.equal((await request(profiles[0].origin, 'DELETE')).status, 405);
   assert.equal((await request(profiles[0].origin, 'GET', undefined, {Origin: 'http://unrelated.invalid'})).status, 403);
   await page.reload(); await connected(page); await page.setViewportSize({width: 360, height: 900});
-  await page.locator('#display-name').fill('X'.repeat(64)); await page.locator('#audio-output').fill('Y'.repeat(256));
+  await page.locator('#display-name').fill('X'.repeat(64)); await page.locator('#audio-output').fill(renderId(97));
   await page.locator('#settings-save').click(); await page.locator('#settings-result').filter({hasText: `Saved revision ${revision + 1}`}).waitFor(); revision++;
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum name and identifiers wrap or remain within inputs');
   await fs.mkdir('test-results', {recursive: true}); await page.screenshot({path: 'test-results/profile-boundary-mobile.png', fullPage: true});
@@ -1587,7 +1592,11 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   assert.equal(await staleWindow.locator('#settings-save').isDisabled(), true); assert.equal(await staleWindow.locator('#display-name').inputValue(), 'Unsaved concurrent edit');
   await staleWindow.locator('#settings-reload').click(); await staleWindow.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor(); assert.equal(await staleWindow.locator('#settings-save').isEnabled(), true); await staleWindow.close();
   const literal = {...settings(1), display_name: '<img src=x onerror=alert(1)>', audio: {input_device: '<script>alert(1)</script>', output_device: null}};
-  assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, literal))).status, 200);
+  // A markup device can no longer be saved (CL-044-05) but still loads from an older profile file.
+  assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, {...literal, audio: settings(1).audio}))).status, 200); revision++;
+  await profiles[0].app.close(); const literalFile = path.join(profiles[0].dir, 'profile.json');
+  await fs.writeFile(literalFile, JSON.stringify({...JSON.parse(await fs.readFile(literalFile, 'utf8')), audio: literal.audio}));
+  profiles[0].app = await start(profiles[0], profiles[0].env); apps.push(profiles[0].app);
   let dialog = false; page.on('dialog', d => {dialog = true; d.dismiss();}); await page.reload(); await connected(page);
   assert.equal(await page.locator('#display-name').inputValue(), literal.display_name); assert.equal(await page.locator('#audio-input').inputValue(), literal.audio.input_device); assert.equal(await page.locator('#profile-name').textContent(), literal.display_name); assert.equal(await page.locator('img').count(), 0); assert.equal(dialog, false);
   await fs.mkdir('test-results', {recursive: true});
@@ -1835,7 +1844,10 @@ test('TC-022-002 review regression: admit the complete worst-case response budge
   await fs.writeFile(file, JSON.stringify(document));
   const admitted = await start({...selected, origin: atBoundary}); apps.push(admitted);
   let result = await request(selected.origin, 'GET', undefined, {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192);
-  result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, maximum), {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192);
+  // CL-044-05: PUT admits only endpoint IDs, so the longest saved device is an ID; the loaded maximum above still fits.
+  result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, maximum), {Origin: atBoundary}); assert.equal(result.status, 400); assert.equal(result.body.error.code, 'audio_device_not_endpoint');
+  const saved = {...maximum, audio: {input_device: captureId(1), output_device: renderId(1)}}, shorter = 2 * (Buffer.byteLength(JSON.stringify('\\'.repeat(256))) - Buffer.byteLength(JSON.stringify(captureId(1))));
+  result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, saved), {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192 - shorter);
   await admitted.close();
   for (const origin of [originFor(1), `http://${'a'.repeat(9000)}:${port}`]) {
     // The initial settings are small; admission must reserve future valid maximums.
