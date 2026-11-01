@@ -462,17 +462,15 @@ impl Recording {
     /// period_start_utc).
     pub(crate) fn latest_publication(&self) -> crate::automation::Publication {
         let s = self.state.lock().unwrap();
-        s.latest_decode
-            .as_ref()
-            .map(|d| {
-                (
-                    d.id,
-                    d.first_sequence,
-                    d.next_sequence,
-                    d.complete,
-                    d.period_start_utc.clone(),
-                )
-            })
+        s.latest_decode.as_ref().map(|d| {
+            (
+                d.id,
+                d.first_sequence,
+                d.next_sequence,
+                d.complete,
+                d.period_start_utc.clone(),
+            )
+        })
     }
     /// Retained result records of the current live job with sequence >= `after` (all
     /// retained ones when `identity` is not the current job).

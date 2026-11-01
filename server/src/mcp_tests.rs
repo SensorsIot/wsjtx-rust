@@ -160,7 +160,12 @@ impl Mcp {
         ];
         let body = json!({"version":1,"grant_id":self.gid});
         let r = self
-            .http("POST", "/authorization/v1/challenge", &h, Some(serde_json::to_vec(&body).unwrap()))
+            .http(
+                "POST",
+                "/authorization/v1/challenge",
+                &h,
+                Some(serde_json::to_vec(&body).unwrap()),
+            )
             .await;
         let nonce = r.json["nonce"].as_str().unwrap().to_owned();
         let signed = self.scope.clone().in_validated_origin(&origin).unwrap();
@@ -173,13 +178,31 @@ impl Mcp {
         );
         let body = json!({"version":1,"grant_id":self.gid,"nonce":nonce,"signature":signature});
         let r = self
-            .http("POST", "/authorization/v1/proof", &h, Some(serde_json::to_vec(&body).unwrap()))
+            .http(
+                "POST",
+                "/authorization/v1/proof",
+                &h,
+                Some(serde_json::to_vec(&body).unwrap()),
+            )
             .await;
         assert_eq!(r.status, StatusCode::NO_CONTENT);
         let cookie = r.headers[header::SET_COOKIE].to_str().unwrap();
-        self.token = cookie.split(';').next().unwrap().split_once('=').unwrap().1.to_owned();
+        self.token = cookie
+            .split(';')
+            .next()
+            .unwrap()
+            .split_once('=')
+            .unwrap()
+            .1
+            .to_owned();
     }
-    async fn grant(&self) -> (authorization::WireScope, ring::signature::EcdsaKeyPair, String) {
+    async fn grant(
+        &self,
+    ) -> (
+        authorization::WireScope,
+        ring::signature::EcdsaKeyPair,
+        String,
+    ) {
         let me = self;
         let origin = self.app.origin.clone();
         let base = |cookie: Option<String>| {

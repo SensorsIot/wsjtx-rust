@@ -679,9 +679,13 @@ impl Owner {
                     return stop(&mut inner, "transmit_stopped", false);
                 }
                 // Only a publication of the partner's period parity can answer.
-                let partner = fresh.as_ref().and_then(|f| f.3.as_deref()).and_then(contact::parse_utc).is_some_and(|ms| {
-                    wstx_rust::transmit::parity(contact_http::mode_of(run.mode), ms) != c.parity
-                });
+                let partner = fresh
+                    .as_ref()
+                    .and_then(|f| f.3.as_deref())
+                    .and_then(contact::parse_utc)
+                    .is_some_and(|ms| {
+                        wstx_rust::transmit::parity(contact_http::mode_of(run.mode), ms) != c.parity
+                    });
                 if partner {
                     let progress = (c.state.to_owned(), c.report_rcvd);
                     if run.progress.as_ref() == Some(&progress) {
@@ -822,7 +826,12 @@ fn disarm(contact: &contact_http::Station, state: &ProfileState) {
 }
 /// The starting transport is still this grant's current, unexpired transport (a
 /// revocation, safety edit, expiry or a newer proof of the grant ends it).
-fn grant_current(state: &ProfileState, access: &authorization::Access, token: &str, now: Instant) -> bool {
+fn grant_current(
+    state: &ProfileState,
+    access: &authorization::Access,
+    token: &str,
+    now: Instant,
+) -> bool {
     state.authorization.lock().ok().is_some_and(|owner| {
         owner.as_ref().is_some_and(|s| {
             s.authority
