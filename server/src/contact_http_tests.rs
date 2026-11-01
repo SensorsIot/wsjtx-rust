@@ -165,7 +165,7 @@ impl Fixture {
     pub(crate) fn tick(&self) {
         contact_http::station_tick(&self.state);
     }
-    async fn call(
+    pub(crate) async fn call(
         &self,
         method: &str,
         path: &str,
@@ -180,7 +180,7 @@ impl Fixture {
         )
         .await
     }
-    async fn raw(
+    pub(crate) async fn raw(
         &self,
         method: &str,
         path: &str,

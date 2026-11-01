@@ -289,9 +289,10 @@ async fn http_auth_current_grant_cookie_positive_duplicates_legacy_and_wrong_pro
 #[path = "logbook_http_tests.rs"]
 mod logbook_http_tests;
 
-const OPERATING_MUTATIONS: [&str; 8] = [
+const OPERATING_MUTATIONS: [&str; 9] = [
     "/receive/start",
     "/receive/stop",
+    "/receive/startup",
     "/receive/select",
     "/radio/connect",
     "/radio/disconnect",
