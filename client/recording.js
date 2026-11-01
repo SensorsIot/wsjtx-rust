@@ -957,7 +957,7 @@ document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localSt
 // their bytes never compete with the cold page, authorization or the first state reads on a
 // 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
 let clientLoader=null;
-addEventListener('station-ready',()=>{
+function clientsLoad(){
   if(clientLoader||document.querySelector('script[src="/logbook.js"]'))return;
   const since=performance.now();
   clientLoader=setInterval(()=>{
@@ -967,5 +967,7 @@ addEventListener('station-ready',()=>{
     const append=()=>load('/logbook.js').then(()=>load('/contact.js'));
     if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
   },250);
-});
+}
+// app.js runs first and may already be connected when this script runs (as for sync above).
+addEventListener('station-ready',clientsLoad);if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')clientsLoad();
 chipsReady=true;chipsShow();
