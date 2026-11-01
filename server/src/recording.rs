@@ -309,6 +309,9 @@ struct LiveState {
     next_sequence: u64,
     search_limited: bool,
     last_overrun: Option<(u64, u64)>,
+    /// Measured capture clock minus the epoch anchor's prediction (100 ns) and its rate
+    /// in ppm, from ClockTracker; it re-anchors the window schedule and UTC/DT (#47).
+    capture_drift: Option<(i128, Option<f64>)>,
     publication_error: Option<&'static str>,
     /// WstxContact::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
     /// full-scale units, sample count, window start) and the last published value.
@@ -352,6 +355,7 @@ impl LiveState {
         self.next_sequence = 0;
         self.search_limited = false;
         self.last_overrun = None;
+        self.capture_drift = None;
         self.publication_error = None;
         self.level = (0.0, 0, None, None);
     }
@@ -363,6 +367,10 @@ pub(crate) trait LiveInput: SampleSource + Send {
     fn start(&mut self) -> std::result::Result<(), source::SourceError>;
     fn request_stop(&mut self);
     fn status(&self) -> audio::AudioStatus;
+    /// Latest (canonical frame, UTC FILETIME) of the capture clock, when measurable.
+    fn clock_utc(&self) -> Option<(u64, u64)> {
+        None
+    }
 }
 #[derive(Clone, Copy)]
 enum StartGuard {
@@ -381,6 +389,9 @@ impl LiveInput for audio::AudioController {
     }
     fn status(&self) -> audio::AudioStatus {
         self.status()
+    }
+    fn clock_utc(&self) -> Option<(u64, u64)> {
+        audio::AudioController::clock_utc(self)
     }
 }
 
@@ -433,7 +444,9 @@ impl Recording {
             "audio":audio,"source":source,"job":job,"clock":{"basis":"system_utc",
             "correlated":timing.is_some_and(|t|t.correlated),"utc_anchor":timing.and_then(|t|t.system_utc_anchor.as_ref()),
             "canonical_anchor_frame":timing.map(|t|t.canonical_anchor_frame),
-            "uncertainty_ns":timing.and_then(|t|t.uncertainty_ns),"external_accuracy":"unknown"}})
+            "uncertainty_ns":timing.and_then(|t|t.uncertainty_ns),"external_accuracy":"unknown",
+            "capture_drift_ms":live.and_then(|l|l.capture_drift).map(|(d,_)|(d as f64/10_000.0).round() as i64),
+            "capture_drift_ppm":live.and_then(|l|l.capture_drift).and_then(|(_,ppm)|ppm).map(|p|(p*10.0).round()/10.0)}})
     }
     /// The latest Rx level while audio runs (WstxContact::OperatorDisplays), else None.
     pub(crate) fn rx_level(&self) -> Option<i32> {
@@ -574,6 +587,7 @@ impl Recording {
             next_sequence: 0,
             search_limited: false,
             last_overrun: None,
+            capture_drift: None,
             publication_error: None,
             level: (0.0, 0, None, Some(47)),
             loss_epochs: 0,
@@ -819,6 +833,7 @@ impl Recording {
                 next_sequence: 0,
                 search_limited: false,
                 last_overrun: None,
+                capture_drift: None,
                 publication_error: None,
                 level: (0.0, 0, None, None),
                 loss_epochs: 0,
@@ -1003,6 +1018,7 @@ impl Recording {
         interval: (u64, u64),
         first: u64,
         complete: bool,
+        late: bool,
     ) -> Result<()> {
         let mut s = self.state.lock().unwrap();
         if context.cancel.load(Ordering::Acquire)
@@ -1020,14 +1036,17 @@ impl Recording {
             let Some((period, nominal, support)) = period_parameters(l.mode) else {
                 return Ok(());
             };
+            let drift = l.capture_drift.map_or(0, |(d, _)| d);
             let (Some(begin), Some(end)) = (
-                source_ticks(timing, interval.0),
-                source_ticks(timing, interval.1),
+                source_ticks(timing, interval.0).map(|t| t + drift),
+                source_ticks(timing, interval.1).map(|t| t + drift),
             ) else {
                 return Ok(());
             };
             let slot = (end - nominal - support).div_euclid(period) * period;
-            if slot + nominal < begin {
+            // A scheduled late window begins after its period's nominal start and republishes
+            // that period's view, now including its late starters.
+            if slot + nominal < begin && !late {
                 return Ok(());
             }
             Some(
@@ -1118,7 +1137,12 @@ impl Recording {
         }
         let mut value =
             serde_json::to_value(decode).map_err(|_| decoder::DecodeError::DecodeLimit)?;
-        let timing = relative_decode_timing(l.timing.as_ref(), l.mode, decode.start_frame);
+        let timing = relative_decode_timing(
+            l.timing.as_ref(),
+            l.mode,
+            decode.start_frame,
+            l.capture_drift.map_or(0, |(d, _)| d),
+        );
         value["period_start_utc"] = json!(timing.as_ref().map(|(period, _)| period));
         value["dt_seconds"] = json!(timing.map(|(_, dt)| dt));
         value
@@ -1940,6 +1964,7 @@ struct LiveWorker {
     reset: bool,
     epoch_seen: bool,
     spectrum: LiveSpectrum,
+    clock: ClockTracker,
 }
 impl LiveWorker {
     fn new(owner: Arc<Recording>, job: Job, input: Box<dyn LiveInput>, mode: &str) -> Self {
@@ -1958,6 +1983,7 @@ impl LiveWorker {
             reset: false,
             epoch_seen: false,
             spectrum: LiveSpectrum::new(),
+            clock: ClockTracker::default(),
         }
     }
     fn current(&self) -> bool {
@@ -2119,7 +2145,8 @@ impl LiveWorker {
         l.timing = Some(timing.clone());
         drop(s);
         let mode = self.mode.unwrap_or(decoder::Mode::Ft8);
-        let schedule = window_schedule(&timing, mode).unwrap_or_default();
+        let schedule = window_schedule(&timing, mode, 0).unwrap_or_default();
+        self.clock = ClockTracker::default();
         self.window = Some(
             receive::WindowBuffer::new(mode, descriptor)
                 .map_err(window_error)?
@@ -2151,6 +2178,7 @@ impl LiveWorker {
                     .transpose()
                     .map_err(window_error)?;
                 let frames = self.spectrum.push(&block)?;
+                let drift = self.track_clock(block.timing.as_deref());
                 let mut s = self.owner.state.lock().unwrap();
                 if !self.current() {
                     return Err("cancelled");
@@ -2170,6 +2198,9 @@ impl LiveWorker {
                     s.latest_decode = None;
                 }
                 let l = s.live.as_mut().ok_or("state_conflict")?;
+                if let Some(drift) = drift {
+                    l.capture_drift = Some(drift);
+                }
                 l.next_frame = next;
                 l.accumulate_level(&block.samples, Instant::now());
                 self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
@@ -2243,6 +2274,22 @@ impl LiveWorker {
             SourcePoll::Pending => Ok(None),
         }
     }
+    /// Measures the capture clock against the epoch anchor and, when the smoothed offset
+    /// moved by more than RESCHEDULE_TICKS, re-anchors the window schedule (#47).
+    fn track_clock(
+        &mut self,
+        timing: Option<&source::SourceTiming>,
+    ) -> Option<(i128, Option<f64>)> {
+        let timing = timing.filter(|t| t.correlated)?;
+        let (frame, utc) = self.input.clock_utc()?;
+        let update = self.clock.observe(timing, frame, utc)?;
+        if let (Some(mode), Some(window)) = (self.mode, self.window.as_mut())
+            && let Some(schedule) = window_schedule(timing, mode, update.0)
+        {
+            window.reschedule(&schedule);
+        }
+        Some(update)
+    }
     fn analyze(&mut self, mut window: receive::AnalysisWindow) -> Result<()> {
         use std::{
             future::Future,
@@ -2267,6 +2314,7 @@ impl LiveWorker {
             let cancelled = || cancel.load(Ordering::Acquire);
             let mut publish = |decoded: &decoder::Decode| owner.publish_decode(&job, decoded);
             let interval = (window.origin, window.origin + window.samples.len() as u64);
+            let late = window.waits;
             let first_sequence = self
                 .owner
                 .state
@@ -2355,7 +2403,7 @@ impl LiveWorker {
             result?;
             if !self.reset {
                 self.owner
-                    .publish_latest_decode(&job, interval, first_sequence, complete)?;
+                    .publish_latest_decode(&job, interval, first_sequence, complete, late)?;
             }
             if self.reset {
                 pending = None;
@@ -2402,13 +2450,14 @@ pub(crate) const LIVE_WINDOWS: [(decoder::Mode, [(i128, i128); 2]); 2] = [
 fn window_schedule(
     timing: &source::SourceTiming,
     mode: decoder::Mode,
+    drift: i128,
 ) -> Option<Vec<(u64, usize, bool)>> {
     let (period, _, _) = period_parameters(match mode {
         decoder::Mode::Ft8 => "ft8",
         decoder::Mode::Ft4 => "ft4",
     })?;
     let windows = LIVE_WINDOWS.iter().find(|(m, _)| *m == mode)?.1;
-    let anchor = source_ticks(timing, timing.canonical_anchor_frame)?;
+    let anchor = source_ticks(timing, timing.canonical_anchor_frame)? + drift;
     let advance = period * 12000 / 10_000_000;
     windows
         .iter()
@@ -2426,6 +2475,47 @@ fn window_schedule(
         })
         .collect()
 }
+/// Smoothed capture-clock offset (100 ns) from the epoch anchor's prediction. Packet times
+/// carry scheduling jitter of milliseconds; a moving average over about a second removes it,
+/// and a jump beyond STEP_TICKS (a system clock step) restarts the average at the new value.
+#[derive(Default)]
+struct ClockTracker {
+    mean: Option<f64>,
+    applied: i128,
+    first: Option<(u64, f64)>,
+}
+/// The schedule follows the measured offset once it moved by more than 50 ms.
+const RESCHEDULE_TICKS: f64 = 500_000.0;
+const STEP_TICKS: f64 = 2_000_000.0;
+impl ClockTracker {
+    /// Feeds one (canonical frame, observed UTC) sample. Returns (offset, ppm) whenever the
+    /// applied offset changes, so the caller re-anchors exactly then.
+    fn observe(
+        &mut self,
+        timing: &source::SourceTiming,
+        frame: u64,
+        utc: u64,
+    ) -> Option<(i128, Option<f64>)> {
+        let offset = (i128::from(utc) - source_ticks(timing, frame)?) as f64;
+        let mean = match self.mean {
+            Some(mean) if (offset - mean).abs() <= STEP_TICKS => mean + (offset - mean) / 50.0,
+            // First sample or a clock step: the rate is measured again from here.
+            _ => {
+                self.first = None;
+                offset
+            }
+        };
+        self.mean = Some(mean);
+        let first = *self.first.get_or_insert((frame, mean));
+        if (mean - self.applied as f64).abs() <= RESCHEDULE_TICKS {
+            return None;
+        }
+        self.applied = mean.round() as i128;
+        let seconds = frame.saturating_sub(first.0) as f64 / 12000.0;
+        let ppm = (seconds >= 60.0).then(|| (mean - first.1) / (seconds * 10.0));
+        Some((self.applied, ppm))
+    }
+}
 fn source_ticks(timing: &source::SourceTiming, frame: u64) -> Option<i128> {
     if !timing.correlated {
         return None;
@@ -2440,8 +2530,9 @@ fn relative_decode_timing(
     timing: Option<&source::SourceTiming>,
     mode: &str,
     frame: u64,
+    drift: i128,
 ) -> Option<(String, f64)> {
-    let observed = source_ticks(timing?, frame)?;
+    let observed = source_ticks(timing?, frame)? + drift;
     let (period, nominal, _) = period_parameters(mode)?;
     let slot = (observed - nominal + period / 2).div_euclid(period) * period;
     Some((

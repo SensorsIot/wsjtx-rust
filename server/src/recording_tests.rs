@@ -44,6 +44,7 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
         next_sequence: 0,
         search_limited: false,
         last_overrun: None,
+        capture_drift: None,
         publication_error: None,
         level: (0.0, 0, None, None),
         loss_epochs: 0,
@@ -206,7 +207,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
         },
     )
     .unwrap();
-    r.publish_latest_decode(&first_job, (0, 224), 0, false)
+    r.publish_latest_decode(&first_job, (0, 224), 0, false, false)
         .unwrap();
     assert_eq!(r.receive_snapshot()["job"]["latest_decode"]["id"], 1);
     // A marked measured gap resets private analysis but keeps source/job/gen.
@@ -223,7 +224,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
         r.receive_snapshot()["job"]["latest_decode"].is_null(),
         "measured gap invalidates previous period view"
     );
-    r.publish_latest_decode(&first_job, (12000, 12224), 1, false)
+    r.publish_latest_decode(&first_job, (12000, 12224), 1, false, false)
         .unwrap();
     assert_eq!(
         r.receive_snapshot()["job"]["latest_decode"]["id"],
@@ -2073,12 +2074,12 @@ fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identi
         let r = fixture.recording();
         let (job, decoded) = live_ring(&r);
         r.publish_decode(&job, &decoded).unwrap();
-        r.publish_latest_decode(&job, (0, 180000), 0, false)
+        r.publish_latest_decode(&job, (0, 180000), 0, false, false)
             .unwrap();
         let before = r.receive_snapshot()["job"]["latest_decode"].clone();
         r.state.lock().unwrap().decode_counter = source::MAX_COUNTER;
         assert_eq!(
-            r.publish_latest_decode(&job, (0, 180000), 0, false),
+            r.publish_latest_decode(&job, (0, 180000), 0, false, false),
             Err("counter_exhausted")
         );
         assert_eq!(
@@ -2370,18 +2371,233 @@ fn live_window_schedule_follows_the_utc_period_grid() {
     // FT8 +13.8 s/+15.7 s are 6.3 s/8.2 s later; FT4 +6.5 s/+7.9 s are 6.5 s/0.4 s later.
     let anchored = timing(Some("2026-11-01T19:23:07.5000000Z"), 1000);
     assert_eq!(
-        window_schedule(&anchored, decoder::Mode::Ft8),
+        window_schedule(&anchored, decoder::Mode::Ft8, 0),
         Some(vec![(76600, 180000, false), (99400, 180000, true)])
     );
     assert_eq!(
-        window_schedule(&anchored, decoder::Mode::Ft4),
+        window_schedule(&anchored, decoder::Mode::Ft4, 0),
         Some(vec![(79000, 90000, false), (5800, 90000, true)])
     );
     // A completion before the anchor wraps into the next period, modulo the advance.
     let late = timing(Some("2026-11-01T19:23:14.0000000Z"), 179000);
     assert_eq!(
-        window_schedule(&late, decoder::Mode::Ft8),
+        window_schedule(&late, decoder::Mode::Ft8, 0),
         Some(vec![(176600, 180000, false), (19400, 180000, true)])
     );
-    assert_eq!(window_schedule(&timing(None, 0), decoder::Mode::Ft8), None);
+    assert_eq!(
+        window_schedule(&timing(None, 0), decoder::Mode::Ft8, 0),
+        None
+    );
+}
+
+/// A live input whose capture clock reports a scripted (canonical frame, UTC) sample.
+struct ClockInput {
+    context: source::SourceContext,
+    clock: Arc<Mutex<Option<(u64, u64)>>>,
+}
+impl SampleSource for ClockInput {
+    fn descriptor(&self) -> Option<Arc<SourceDescriptor>> {
+        Some(self.context.descriptor.clone())
+    }
+    fn acknowledge_epoch(
+        &mut self,
+        _: u64,
+        _: Arc<SourceDescriptor>,
+        _: source::SourceTiming,
+    ) -> std::result::Result<(), source::SourceError> {
+        Err(source::SourceError::InvalidContext)
+    }
+    fn poll(&mut self) -> SourcePoll {
+        SourcePoll::Pending
+    }
+}
+impl LiveInput for ClockInput {
+    fn start(&mut self) -> std::result::Result<(), source::SourceError> {
+        Ok(())
+    }
+    fn request_stop(&mut self) {}
+    fn status(&self) -> audio::AudioStatus {
+        audio::AudioStatus {
+            state: audio::AudioState::Running,
+            error: None,
+            retry_after_ms: None,
+        }
+    }
+    fn clock_utc(&self) -> Option<(u64, u64)> {
+        *self.clock.lock().unwrap()
+    }
+}
+
+/// Runs `seconds` of FT8 live capture through the real window buffer and live worker clock
+/// tracking. The capture clock runs `ppm` slow against UTC, with packet jitter and a +0.4 s
+/// system clock step half way. Returns, per prompt window, the UTC error of its completion
+/// against +13.8 s and whether it holds an ordinary DT 0 frame (UTC +0.5..+13.14 s).
+fn drifting_prompt_windows(track: bool, seconds: u64, ppm: f64) -> (Vec<(f64, bool)>, Value) {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, _) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-11-01T00:00:00.0000000Z", 0);
+    let (context, timing) = {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        let timing = l.timing.as_ref().unwrap().clone();
+        (
+            source::SourceContext {
+                descriptor: l.source.as_ref().unwrap().clone(),
+                timing: Arc::new(timing.clone()),
+            },
+            timing,
+        )
+    };
+    let anchor = filetime_from_utc("2026-11-01T00:00:00.0000000Z").unwrap() as f64;
+    let total = seconds * 12000;
+    // True UTC (100 ns) of canonical frame f.
+    let utc = |f: u64| {
+        let step = if f > total / 2 { 4_000_000.0 } else { 0.0 };
+        anchor + f as f64 * (10_000_000.0 / 12000.0) * (1.0 + ppm * 1e-6) + step
+    };
+    let clock = Arc::new(Mutex::new(None));
+    let input = ClockInput {
+        context: context.clone(),
+        clock: clock.clone(),
+    };
+    let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+    let schedule = window_schedule(&timing, decoder::Mode::Ft8, 0).unwrap();
+    worker.window = Some(
+        receive::WindowBuffer::new(decoder::Mode::Ft8, context.descriptor.clone())
+            .unwrap()
+            .with_schedule(&schedule),
+    );
+    let samples: Arc<[f32]> = Arc::from(vec![0.0; 240]);
+    let period = 150_000_000.0;
+    let mut prompts = vec![];
+    let mut first = 0;
+    while first < total {
+        let block = SampleBlock::live(&context, first, samples.clone(), false).unwrap();
+        let outcome = worker.window.as_mut().unwrap().push(&block).unwrap();
+        // Deterministic packet jitter of up to +-3 ms.
+        let jitter = ((first / 240 * 7919) % 61) as f64 * 1_000.0 - 30_000.0;
+        *clock.lock().unwrap() = Some((first, (utc(first) + jitter) as u64));
+        if track && let Some(drift) = worker.track_clock(Some(&timing)) {
+            r.state.lock().unwrap().live.as_mut().unwrap().capture_drift = Some(drift);
+        }
+        if let Some(window) = outcome.window.filter(|w| !w.waits) {
+            let end = window.origin + window.samples.len() as u64;
+            let completed = utc(end) - anchor;
+            let slot = ((completed - 138_000_000.0) / period).round() * period;
+            let error = (completed - slot - 138_000_000.0) / 10_000_000.0;
+            let holds = utc(window.origin) - anchor <= slot + 5_000_000.0
+                && completed >= slot + 131_400_000.0;
+            prompts.push((error, holds));
+        }
+        first += 240;
+    }
+    (prompts, r.receive_snapshot()["clock"].clone())
+}
+
+// Proves: CL-007-05; TC-004-004. Re-anchoring keeps ordinary frames in the prompt window
+// through more than 1 s of cumulative capture-clock drift and a clock step.
+#[test]
+fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
+    // 2000 ppm slow over 600 s accumulates 1.2 s, plus the 0.4 s step at 300 s.
+    let (tracked, clock) = drifting_prompt_windows(true, 600, 2000.0);
+    assert!(
+        tracked.len() >= 38,
+        "one prompt window per period: {}",
+        tracked.len()
+    );
+    // After the first periods (the tracker's one-second average settles, and a correction
+    // lands at the next due point) every prompt completes within 100 ms of +13.8 s UTC (the
+    // 50 ms re-anchor threshold plus 30 ms of drift per period at this exaggerated rate)
+    // and holds the DT 0 frame, including across the step.
+    for (index, &(error, holds)) in tracked.iter().enumerate().skip(2) {
+        assert!(
+            error.abs() <= 0.1 && holds,
+            "prompt {index}: completion error {error:.3} s, DT 0 frame held {holds}"
+        );
+    }
+    assert!(
+        clock["capture_drift_ms"].as_f64().unwrap() >= 1500.0,
+        "{clock}"
+    );
+    let ppm = clock["capture_drift_ppm"].as_f64().unwrap();
+    assert!((1800.0..2200.0).contains(&ppm), "{clock}");
+    // Negative control: without re-anchoring the same capture completes its prompt window
+    // more than 1 s late, past the +15.0 s deadline for every decode.
+    let (fixed, _) = drifting_prompt_windows(false, 600, 2000.0);
+    let last = fixed.last().unwrap();
+    assert!(last.0 > 1.2, "fixed schedule drifted only {:.3} s", last.0);
+}
+
+// Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) republishes its
+// period's view, so a late starter (DT +1.2 s) is inside the browser's period range.
+#[test]
+fn late_window_republishes_its_period_view_with_late_starters() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, mut decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 400000;
+    // Prompt window of the 12:00:15 period: UTC +13.8 s, 15 s of audio.
+    let period = 180000;
+    decoded.start_frame = period + 6000;
+    r.publish_decode(&job, &decoded).unwrap();
+    r.publish_latest_decode(&job, (period - 14400, period + 165600), 0, true, false)
+        .unwrap();
+    let prompt = r.receive_snapshot()["job"]["latest_decode"].clone();
+    assert_eq!(prompt["period_start_utc"], "2026-10-27T12:00:15.0000000Z");
+    assert_eq!(
+        (
+            prompt["first_sequence"].clone(),
+            prompt["next_sequence"].clone()
+        ),
+        (json!(0), json!(1))
+    );
+    // A DT +1.2 s frame found by the late window, which begins at +0.7 s and ends at +15.7 s.
+    decoded.start_frame = period + 20400;
+    decoded.payload.payload77 = "1".repeat(77);
+    r.publish_decode(&job, &decoded).unwrap();
+    let late = (period + 8400, period + 188400);
+    // The live worker analyses the scheduled late window and publishes through its flag.
+    let context = {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        source::SourceContext {
+            descriptor: l.source.as_ref().unwrap().clone(),
+            timing: Arc::new(l.timing.as_ref().unwrap().clone()),
+        }
+    };
+    let input = ClockInput {
+        context,
+        clock: Arc::new(Mutex::new(None)),
+    };
+    let mut worker = LiveWorker::new(r.clone(), job.clone(), Box::new(input), "ft8");
+    worker
+        .analyze(receive::AnalysisWindow {
+            origin: late.0,
+            samples: vec![0.0; (late.1 - late.0) as usize],
+            waits: true,
+        })
+        .unwrap();
+    let view = r.receive_snapshot()["job"]["latest_decode"].clone();
+    assert_eq!(view["period_start_utc"], "2026-10-27T12:00:15.0000000Z");
+    assert_eq!(view["id"], prompt["id"].as_u64().unwrap() + 1);
+    assert_eq!(
+        (
+            view["first_sequence"].clone(),
+            view["next_sequence"].clone()
+        ),
+        (json!(0), json!(2))
+    );
+    let page = r
+        .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, 1, 1)
+        .unwrap();
+    assert_eq!(
+        page["records"][0]["period_start_utc"],
+        "2026-10-27T12:00:15.0000000Z"
+    );
+    assert!((page["records"][0]["dt_seconds"].as_f64().unwrap() - 1.2).abs() < 1e-6);
+    // The same interval from an ordinary (non-late) window still publishes nothing.
+    r.publish_latest_decode(&job, late, 1, true, false).unwrap();
+    assert_eq!(r.receive_snapshot()["job"]["latest_decode"], view);
 }

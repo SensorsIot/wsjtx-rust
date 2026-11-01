@@ -26,17 +26,27 @@ pub(crate) struct IngestOutcome {
     pub window: Option<AnalysisWindow>,
 }
 
+/// One scheduled window: its source-counter residue modulo the advance, its length, whether
+/// it may wait for the analysis in progress, and its next completion position.
+struct Due {
+    phase: u64,
+    frames: usize,
+    waits: bool,
+    next: u64,
+    /// How far `next` was held after its aligned position (a correction moved it into the
+    /// past); the following completion returns to the residue grid.
+    held: u64,
+}
+
 pub(crate) struct WindowBuffer {
     source: Arc<SourceDescriptor>,
     timing: Option<Arc<SourceTiming>>,
     history: VecDeque<f32>,
     history_first: u64,
     previous_end: Option<u64>,
-    next_due: u64,
     advance: u64,
-    /// Due boundaries as (source-counter residue modulo the advance, window frames,
-    /// waits). The default is the plain counter grid with the whole span.
-    schedule: Vec<(u64, usize, bool)>,
+    /// Due boundaries; the default is the plain counter grid with the whole span.
+    schedule: Vec<Due>,
     span: usize,
     complete_support: usize,
 }
@@ -60,9 +70,14 @@ impl WindowBuffer {
             history,
             history_first: 0,
             previous_end: None,
-            next_due: advance,
             advance,
-            schedule: vec![(0, span, false)],
+            schedule: vec![Due {
+                phase: 0,
+                frames: span,
+                waits: false,
+                next: advance,
+                held: 0,
+            }],
             span,
             complete_support: mode.symbol_frames() * mode.symbol_count(),
         })
@@ -74,28 +89,51 @@ impl WindowBuffer {
     // The audio test targets include this file without the live worker that calls it.
     #[allow(dead_code)]
     pub(crate) fn with_schedule(mut self, schedule: &[(u64, usize, bool)]) -> Self {
-        let mut entries = schedule
-            .iter()
-            .map(|&(phase, frames, waits)| (phase % self.advance, frames.min(self.span), waits))
-            .collect::<Vec<_>>();
-        entries.sort_unstable();
-        entries.dedup_by_key(|entry| entry.0);
-        if !entries.is_empty() {
-            self.schedule = entries;
+        if !schedule.is_empty() {
+            self.schedule = schedule
+                .iter()
+                .map(|&(phase, frames, waits)| Due {
+                    phase: phase % self.advance,
+                    frames: frames.min(self.span),
+                    waits,
+                    next: 0,
+                    held: 0,
+                })
+                .collect();
+            for due in &mut self.schedule {
+                due.next = due_after(due.phase, self.advance, 0);
+            }
         }
         self
     }
 
-    /// The first scheduled due boundary strictly after `position`.
-    fn due_after(&self, position: u64) -> u64 {
-        self.schedule
-            .iter()
-            .map(|&(phase, _, _)| {
-                let behind = (position % self.advance + self.advance - phase) % self.advance;
-                position + (self.advance - behind)
-            })
-            .min()
-            .expect("schedule is never empty")
+    /// Moves the scheduled residues (same entries, same order) by the small corrections of a
+    /// re-anchored clock. Every entry still completes once per advance: a boundary moved
+    /// into the past completes with the next sample, a boundary moved later just waits, so
+    /// no window is dropped or repeated at the adjustment.
+    #[allow(dead_code)]
+    pub(crate) fn reschedule(&mut self, schedule: &[(u64, usize, bool)]) {
+        if schedule.len() != self.schedule.len() {
+            return;
+        }
+        let advance = self.advance as i128;
+        let floor = self.previous_end.map_or(0, |end| end + 1);
+        for (due, &(phase, frames, waits)) in self.schedule.iter_mut().zip(schedule) {
+            let phase = phase % self.advance;
+            // The signed shift in (-advance/2, advance/2].
+            let mut shift = (phase as i128 - due.phase as i128).rem_euclid(advance);
+            if shift > advance / 2 {
+                shift -= advance;
+            }
+            let moved = (due.next as i128 - due.held as i128 + shift).max(0) as u64;
+            *due = Due {
+                phase,
+                frames: frames.min(self.span),
+                waits,
+                next: moved.max(floor),
+                held: floor.saturating_sub(moved),
+            };
+        }
     }
 
     pub(crate) fn push(&mut self, block: &SampleBlock) -> Result<IngestOutcome, WindowError> {
@@ -140,7 +178,10 @@ impl WindowBuffer {
             // Source counters, not callback arrival time, fix the advance grid; its residue is
             // the caller's period phase. The private due boundary may exceed MAX_COUNTER;
             // accepted sample counters never do.
-            self.next_due = self.due_after(block.first_frame);
+            for due in &mut self.schedule {
+                due.next = due_after(due.phase, self.advance, block.first_frame);
+                due.held = 0;
+            }
         }
         if self.timing.is_none() {
             self.timing = Some(timing.clone());
@@ -153,28 +194,29 @@ impl WindowBuffer {
             }
             self.history.push_back(sample);
             let position = block.first_frame + offset as u64 + 1;
-            if position == self.next_due {
-                let residue = position % self.advance;
-                let (frames, waits) = self
-                    .schedule
-                    .iter()
-                    .find(|entry| entry.0 == residue)
-                    .map_or((self.span, false), |entry| (entry.1, entry.2));
-                let frames = frames.min(self.history.len());
-                if frames >= self.complete_support {
-                    let skip = self.history.len() - frames;
-                    let mut samples = Vec::new();
-                    samples
-                        .try_reserve_exact(frames)
-                        .map_err(|_| WindowError::DecodeLimit)?;
-                    samples.extend(self.history.iter().skip(skip).copied());
-                    window = Some(AnalysisWindow {
-                        samples,
-                        origin: self.history_first + skip as u64,
-                        waits,
-                    });
-                }
-                self.next_due = self.due_after(position);
+            // Entries that coincide (after a correction) complete once, as the first one.
+            let mut first = None;
+            for due in self.schedule.iter_mut().filter(|due| due.next == position) {
+                due.next += self.advance - due.held;
+                due.held = 0;
+                first.get_or_insert((due.frames, due.waits));
+            }
+            let Some((frames, waits)) = first else {
+                continue;
+            };
+            let frames = frames.min(self.history.len());
+            if frames >= self.complete_support {
+                let skip = self.history.len() - frames;
+                let mut samples = Vec::new();
+                samples
+                    .try_reserve_exact(frames)
+                    .map_err(|_| WindowError::DecodeLimit)?;
+                samples.extend(self.history.iter().skip(skip).copied());
+                window = Some(AnalysisWindow {
+                    samples,
+                    origin: self.history_first + skip as u64,
+                    waits,
+                });
             }
         }
         self.previous_end = Some(end);
@@ -184,6 +226,12 @@ impl WindowBuffer {
             window,
         })
     }
+}
+
+/// The first boundary with residue `phase` strictly after `position`.
+fn due_after(phase: u64, advance: u64, position: u64) -> u64 {
+    let behind = (position % advance + advance - phase) % advance;
+    position + (advance - behind)
 }
 
 fn same_source(a: &SourceDescriptor, b: &SourceDescriptor) -> bool {

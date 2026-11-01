@@ -234,3 +234,48 @@ fn receive_schedule_completes_windows_at_period_residues() {
     }
     assert_eq!(ends, [90000, 180000]);
 }
+
+// Proves: CL-007-05; TC-004-004. A re-anchored schedule moves completions without dropping
+// or repeating a window, for a forward shift and a backward step.
+#[test]
+fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
+    let schedule = |shift: i64| {
+        let phase = |p: i64| (p + shift).rem_euclid(180000) as u64;
+        [(phase(76600), 180000, false), (phase(99400), 180000, true)]
+    };
+    let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
+        .unwrap()
+        .with_schedule(&schedule(0));
+    let mut ends = vec![];
+    for first in (0..1_200_000).step_by(240) {
+        // +0.5 s just after the 436600 prompt, then a -1 s step just before 639400.
+        if first == 439920 {
+            buffer.reschedule(&schedule(6000));
+        }
+        if first == 636000 {
+            buffer.reschedule(&schedule(-6000));
+        }
+        if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+            ends.push((window.origin + window.samples.len() as u64, window.waits));
+        }
+    }
+    assert_eq!(
+        ends,
+        [
+            (256600, false),
+            (279400, true),
+            (436600, false),
+            (465400, true),  // late window moved +0.5 s
+            (622600, false), // prompt moved +0.5 s
+            // -1 s step at 636000: the late window (due 645400 -> 633400, already past)
+            // completes with the next sample instead of being dropped.
+            (636001, true),
+            (790600, false),
+            (813400, true),
+            (970600, false),
+            (993400, true),
+            (1150600, false),
+            (1173400, true),
+        ]
+    );
+}
