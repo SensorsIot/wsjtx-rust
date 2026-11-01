@@ -259,6 +259,7 @@ test('TC-007-002 operating split, drawer and pages remain accessible at narrow a
 // Proves: CL-010-07, CL-010-08; TC-007-002 link loss and no invented commands.
 test('TC-007-002 pointer resize and stale link preserve read-only authority',{timeout:20000},async t=>{
   const {page,app,errors,sent}=await fixture(t,{width:1440,height:900});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const separator=page.getByRole('separator'),before=Number(await separator.getAttribute('aria-valuenow')),box=await separator.boundingBox();
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+box.height/2-40);await page.mouse.up();
   assert.ok(Number(await separator.getAttribute('aria-valuenow'))<before);

@@ -19,21 +19,14 @@ headerActions.innerHTML='<button type="button" data-region="logbook" id="open-lo
 const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx (Esc, Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
 stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
 const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
-const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
-strip.innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 // ActivityOrdering: the focusable header cell is the sort control.
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
-const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
 <section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span id="qso-crowd" class="op-qso-badge" hidden></span><span class="op-contact-badge">Unavailable</span></header>
 <div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
-<section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Dialogue <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="QSO dialogue and stations near my Rx frequency"><table aria-label="QSO dialogue"><tbody id="rx-pane-rows"></tbody></table></div></section>
-<div class="op-qso-next"><span class="op-eyebrow">NEXT &#9656;</span><strong id="contact-next">None</strong><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div><span id="qso-countdown" class="op-muted"></span><span class="op-eyebrow">LAST</span><strong id="contact-last">None</strong></div>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
-<p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
 </div></section></div>`;
 controls.prepend(workspace);
 const secondaryRoot=document.createElement('div');secondaryRoot.id='workspace-secondary';secondaryRoot.hidden=true;controls.append(secondaryRoot);
@@ -115,12 +108,9 @@ for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))
 const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
 loginView.innerHTML='<span class="op-eyebrow">WSTX / REMOTE STATION</span><h1>Authorize this browser</h1><p class="op-muted">Enter the station access token. The station is shown once this browser is authorized.</p>';
 loginView.append(login);
-const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
-function confirmAction(text,okLabel='Continue'){
-  confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
-  return new Promise(resolve=>{confirmDialog.returnValue='';confirmDialog.addEventListener('close',()=>resolve(confirmDialog.returnValue==='ok'),{once:true});confirmDialog.showModal();confirmDialog.querySelector('#op-confirm-ok').focus();});
-}
-main.append(stationBar,signal,strip,splitter,controls,drawer,loginView,confirmDialog);
+// Confirmations come from the contact client (no QSO, nothing to confirm, before it loads).
+function confirmAction(text,okLabel){return window.wstxConfirm?window.wstxConfirm(text,okLabel):Promise.resolve(true);}
+main.append(stationBar,signal,strip,splitter,controls,drawer,loginView);
 const authorizationView=()=>{const required=!login.hidden;main.dataset.auth=required?'required':'granted';loginView.hidden=!required;};
 new MutationObserver(authorizationView).observe(login,{attributes:true,attributeFilter:['hidden']});authorizationView();
 let currentRegion='operate',returnFocus=null;
