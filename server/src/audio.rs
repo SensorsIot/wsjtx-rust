@@ -262,8 +262,9 @@ pub struct PacketQueue {
     packet_count: AtomicUsize,
     failed: AtomicBool,
     capacity: usize,
-    pub(crate) loss: AtomicBool,
-    loss_event: std::sync::atomic::AtomicU8,
+    /// The first unconsumed loss event, or NO_LOSS_EVENT. One atomic carries both the
+    /// loss and its trigger, so a consumer can never see one without the other.
+    loss: std::sync::atomic::AtomicU8,
     pub(crate) cancelled: AtomicBool,
     events: [AtomicU64; 8],
     native_samples: AtomicU64,
@@ -292,8 +293,7 @@ impl PacketQueue {
             packet_count: AtomicUsize::new(0),
             failed: AtomicBool::new(false),
             capacity: format.rate as usize / 2,
-            loss: AtomicBool::new(false),
-            loss_event: std::sync::atomic::AtomicU8::new(NO_LOSS_EVENT),
+            loss: std::sync::atomic::AtomicU8::new(NO_LOSS_EVENT),
             cancelled: AtomicBool::new(false),
             events: std::array::from_fn(|_| AtomicU64::new(0)),
             native_samples: AtomicU64::new(0),
@@ -309,13 +309,12 @@ impl PacketQueue {
     pub(crate) fn mark_loss(&self, event: CaptureEvent) {
         self.record_event(event);
         // The first unconsumed loss names the epoch trigger; later ones are only counted.
-        let _ = self.loss_event.compare_exchange(
+        let _ = self.loss.compare_exchange(
             NO_LOSS_EVENT,
             event as u8,
             Ordering::AcqRel,
             Ordering::Relaxed,
         );
-        self.loss.store(true, Ordering::Release);
     }
     pub fn diagnostics(&self) -> CaptureDiagnostics {
         let values = self.events.each_ref().map(|v| v.load(Ordering::Relaxed));
@@ -681,8 +680,8 @@ impl LiveSource {
         &mut self,
         packet: &NativePacket,
     ) -> Result<Option<crate::source::EpochProposal>, SourceError> {
-        let loss = self.queue.loss.swap(false, Ordering::AcqRel);
-        let loss_event = self.queue.loss_event.swap(NO_LOSS_EVENT, Ordering::AcqRel);
+        let loss_event = self.queue.loss.swap(NO_LOSS_EVENT, Ordering::AcqRel);
+        let loss = loss_event != NO_LOSS_EVENT;
         let timestamp_error = packet.flags & TIMESTAMP_ERROR != 0;
         let flagged = packet.flags & DATA_DISCONTINUITY != 0;
         let backstep = self.expected.is_some_and(|n| packet.first_frame < n);
@@ -809,7 +808,7 @@ impl SampleSource for LiveSource {
             self.ready.clear();
             return SourcePoll::Failed(error);
         }
-        if self.queue.loss.load(Ordering::Acquire) {
+        if self.queue.loss.load(Ordering::Acquire) != NO_LOSS_EVENT {
             self.ready.clear();
         }
         if let Some(proposal) = self.epochs.pending() {
@@ -938,6 +937,71 @@ impl Lifecycle {
             state: self.state,
             error: self.error,
             retry_after_ms: self.retry_at.map(|at| at.saturating_sub(now_ms)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    use super::*;
+    // Proves: CL-008-02/03; TC-002-001 (#38). Every capture-thread loss event names its own
+    // epoch trigger (pool, contention and clock-step losses have no public injection path).
+    #[test]
+    fn each_loss_event_names_its_epoch_trigger() {
+        let f = NativeFormat {
+            rate: 48000,
+            channels: 1,
+            encoding: Encoding::Float32,
+        };
+        for event in CaptureEvent::ALL {
+            if matches!(
+                event,
+                CaptureEvent::TimestampError
+                    | CaptureEvent::NativeDiscontinuity
+                    | CaptureEvent::FrameBackstep
+            ) {
+                continue; // packet-derived, not queue loss events
+            }
+            let q = PacketQueue::new(f).unwrap();
+            let mut s = LiveSource::new(q.clone(), f).unwrap();
+            assert!(q.push(&[], 480, 0, 0, SILENT));
+            let SourcePoll::EpochChanged(first) = s.poll() else {
+                panic!("initial epoch")
+            };
+            assert_eq!(first.trigger, "capture_start");
+            let descriptor = Arc::new(SourceDescriptor {
+                schema_version: 1,
+                profile_id: "p".into(),
+                boot_id: "b".into(),
+                source_id: "first".into(),
+                rate_hz: CANONICAL_HZ,
+                channel: "mono_real",
+                total_frames: None,
+                utc_anchor: None,
+            });
+            let timing = SourceTiming {
+                source_id: "first".into(),
+                segment: 0,
+                native_rate: 48000,
+                native_anchor_frame: FILTER_DELAY as f64,
+                canonical_anchor_frame: 0,
+                converter_delay_native_frames: FILTER_DELAY as f64,
+                qpc_anchor_100ns: Some(0),
+                system_utc_anchor: None,
+                uncertainty_ns: None,
+                correlated: false,
+                external_accuracy: crate::source::ExternalAccuracy::Unknown,
+            };
+            s.acknowledge_epoch(first.proposal_counter, descriptor, timing)
+                .unwrap();
+            while matches!(s.poll(), SourcePoll::Block(_)) {}
+            q.mark_loss(event);
+            q.mark_loss(CaptureEvent::QueueFull); // a later loss is counted, not the trigger
+            assert!(q.push(&[], 480, 480, 100_000, SILENT));
+            let SourcePoll::EpochChanged(loss) = s.poll() else {
+                panic!("loss epoch")
+            };
+            assert_eq!((loss.reason, loss.trigger), ("capture_loss", event.code()));
         }
     }
 }

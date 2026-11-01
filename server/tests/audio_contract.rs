@@ -668,10 +668,11 @@ fn drain(source: &mut LiveSource, blocks: &mut Vec<SampleBlock>) -> Vec<EpochPro
     }
 }
 
-// Proves: CL-008-02/03; TC-002-003 (#38). The HB9BLA IC-7300 codec packet sequence: WASAPI
+// Proves: CL-008-02/03; TC-002-001/003 (#38). The HB9BLA IC-7300 codec packet sequence: WASAPI
 // flags DATA_DISCONTINUITY on packets whose device position and QPC both continue the
-// previous packet (measured jitter <=0.2 ms). That is a counted engine glitch on a
-// continuous timeline: one source epoch, gap-free canonical frames, no reset.
+// previous packet (measured QPC step jitter up to 0.56 ms, flagged or not). That is a
+// counted engine glitch on a continuous timeline: one source epoch, gap-free canonical
+// frames, no reset.
 #[test]
 fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
     let f = format(48000);
@@ -750,4 +751,67 @@ fn audio_unknown_loss_epochs_name_their_trigger() {
     assert!(q.push(&x, 480, 9600, 2_900_000, DATA_DISCONTINUITY));
     assert!(drain(&mut s, &mut blocks).is_empty());
     assert!(blocks.last().unwrap().discontinuity);
+}
+
+// Proves: CL-008-02/03; TC-002-001 (#38). The 2 ms QPC bound for a contiguous flagged packet:
+// +-0.55 ms (the observed jitter) and exactly 2 ms are kept; 2.1 ms early or late is loss.
+#[test]
+fn audio_contiguous_flag_qpc_tolerance_boundary() {
+    let f = format(48000);
+    let x = bytes(&vec![0.25; 480]);
+    // (QPC step in 100 ns for a nominal 10 ms packet, epoch expected)
+    for (step, epoch) in [
+        (100_000 - 5_500, false),
+        (100_000 + 5_500, false),
+        (100_000 - 20_000, false),
+        (100_000 + 20_000, false),
+        (100_000 - 21_000, true),
+        (100_000 + 21_000, true),
+    ] {
+        let q = PacketQueue::new(f).unwrap();
+        let mut s = LiveSource::new(q.clone(), f).unwrap();
+        let mut blocks = Vec::new();
+        assert!(q.push(&x, 480, 0, 1_000_000, 0));
+        assert_eq!(drain(&mut s, &mut blocks).len(), 1);
+        assert!(q.push(&x, 480, 480, 1_000_000 + step, DATA_DISCONTINUITY));
+        let e = drain(&mut s, &mut blocks);
+        assert_eq!(!e.is_empty(), epoch, "QPC step {step}");
+        if epoch {
+            assert_eq!(
+                (e[0].reason, e[0].trigger),
+                ("capture_loss", "native_discontinuity")
+            );
+        } else {
+            assert!(!blocks.last().unwrap().discontinuity, "QPC step {step}");
+        }
+    }
+}
+
+// Proves: CL-008-02/03; TC-002-001 (#38). A real native FIFO overflow names queue_full.
+#[test]
+fn audio_queue_full_epoch_names_its_trigger() {
+    let f = format(48000);
+    let q = PacketQueue::new(f).unwrap();
+    let mut s = LiveSource::new(q.clone(), f).unwrap();
+    let x = bytes(&vec![0.25; 480]);
+    let mut blocks = Vec::new();
+    assert!(q.push(&x, 480, 0, 1_000_000, 0));
+    drain(&mut s, &mut blocks);
+    // The consumer stalls: 500 ms of packets fill the FIFO, the next one is refused.
+    let mut frame = 480;
+    while q.push(
+        &[],
+        480,
+        frame,
+        1_000_000 + frame * 10_000_000 / 48_000,
+        SILENT,
+    ) {
+        frame += 480;
+    }
+    assert_eq!(q.diagnostics().queue_full, 1);
+    let e = drain(&mut s, &mut blocks);
+    assert_eq!(
+        (e.len(), e[0].reason, e[0].trigger),
+        (1, "capture_loss", "queue_full")
+    );
 }
