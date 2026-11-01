@@ -271,7 +271,10 @@ package WstxOperatingReceive {
             (path == "/receive/selection" or path == "/receive" or path == "/receive/results" or
              path == "/profile" or path == "/radio" or path == "/recording");
         doc /* Exact URI path only; valid /receive/results query remains unchanged.
-             This is the complete six-route allowlist, not prefix matching. */
+             This is the complete six-route allowlist, not prefix matching. The #10
+             contact routes (/contact, /contact/*, /contacts, /contacts/*) and
+             /transmit/halt are deliberately excluded and stay identity-coded
+             (WstxContact::ContactSnapshot); this allowlist is unchanged. */
     }
     calc def UncompressedGetLogicalCap {
         in path : String;
@@ -324,7 +327,7 @@ package WstxOperatingReceive {
              /session, all nonGET including PUTprofile/POSToperations, /ws handshake or
              messages, auth/error/credential/authority responses are excluded. HEAD,
              no-body, existingContent-Encoding andContent-Range preserve original semantics.
-             Static / is excluded. Static /app.js,/authorization.js,/recording.js,
+             Static / is excluded. Static /app.js,/authorization.js,/recording.js,/logbook.js,/contact.js,
              /style.css,/recording.css (public, no secret or reflected input, so no
              BREACH exposure) are gzip only when the pinned algorithm positively selects
              gzip; every other negotiation, including all encodings forbidden, returns
@@ -728,7 +731,10 @@ package WstxOperatingReceive {
         return allowed : Boolean = committedBandKnown or
             (exactReadbackBandUnique and readbackCurrent);
         doc /* S1a: otherwise409select_band_first beforeanydevice/start/stop/revision
-             change. Explicitband selectsitsentry. Noapproximate/defaultbandguess. */
+             change. Explicitband selectsitsentry. Noapproximate/defaultbandguess.
+             #11: a band action resolves its entry in WstxContact::StationOperatingMode
+             (the last started ft4/ft8 live job or admitted selection), so a band change
+             keeps the station's mode; WireSelection mode then follows the commit. */
     }
     attribute def NormalSelectionRequest {
         attribute version : Integer = 1;
@@ -1274,10 +1280,13 @@ required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxe
              remain hard bounds. Failed close quarantines; no timed reopen until
              explicit recovery proves release. Late completions are identity fenced.
              Automatic I/O is read-only queries only, no setters/PTT/audio start or
-             replay. Stop/Halt clears receive/RF tokens and pending resume; background
+             replay, except the WstxTransmit::StartupSafetyRelease (one off-only PTT
+             release with readback per boot, only when TX is observed before the boot
+             ever keyed). Stop/Halt clears receive/RF tokens and pending resume; background
              CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
              zero native open/query/set/PTT. Confirmation itself has no native effect.
-             This target does not claim current source has a reconnect loop. */
+             Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
+             failed-close quarantine lasts until station restart. */
         in scope : WstxProfiles::SelectedRadioAuthorizationScope;
         in commissioning : WstxProfiles::RadioCommissioningRecord;
         out current : AutomaticCatStatus;

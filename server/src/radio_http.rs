@@ -3,7 +3,7 @@ use axum::extract::RawQuery;
 use recording_http::{authorize, parse, syntax};
 use selection_http::{empty, error};
 use serde::Deserialize;
-use wstx_rust::radio_control::{self as cat, Operation, Sideband};
+use wstx_rust::radio_control::{Operation, Sideband};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -130,31 +130,10 @@ pub async fn connect(
     if b.boot_id != r.boot {
         return error("state_conflict");
     }
-    if !b.receive_only_verified {
-        return error("receive_only_unverified");
-    }
-    let store = app.profile.as_ref().unwrap().store.lock().unwrap();
-    if store.document.revision != b.profile_revision {
-        return error("state_conflict");
-    }
-    if store.document.control.mode != "cat" {
-        return error("selection_unavailable");
-    }
-    let config = match store
-        .document
-        .control
-        .endpoint
-        .as_deref()
-        .and_then(|v| cat::Configuration::parse(v).ok())
-    {
-        Some(v) => v,
-        None => return error("radio_unavailable"),
-    };
-    drop(store);
-    match r.radio_connect(config, b.profile_revision) {
-        Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
-        Err(e) => error(e),
-    }
+    // CL-022-03/04: the automatic lifecycle alone opens CAT. This deprecated route
+    // keeps its strict validation and refuses with zero CAT I/O.
+    let _ = (b.profile_revision, b.receive_only_verified);
+    error("automatic_lifecycle")
 }
 pub async fn disconnect(
     State(app): State<App>,
@@ -182,10 +161,8 @@ pub async fn disconnect(
     if b.boot_id != r.boot {
         return error("state_conflict");
     }
-    match r.radio_disconnect(b.connection_generation) {
-        Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
-        Err(e) => error(e),
-    }
+    let _ = (r, b.connection_generation);
+    error("automatic_lifecycle")
 }
 pub async fn execute(
     State(app): State<App>,

@@ -10,13 +10,15 @@ package WstxProductScope {
     private import WstxOperatingLayout::*;
     private import WstxOperatingReceive::*;
     private import WstxTransmit::*;
+    private import WstxContact::*;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
          WstxProfiles configuration/persistence; WstxRecordingReceive recording/display;
          WstxOfflineDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
          capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding;
-         WstxTransmit FT8/FT4 message packing, waveform and transmit period scheduling.
+         WstxTransmit FT8/FT4 message packing, waveform and transmit period scheduling;
+         WstxContact the standard FT8 contact, sequencing, log and operator displays.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is
          not an extra architecture. Declared coverage is not an execution verdict.
@@ -169,7 +171,7 @@ package WstxProductScope {
              acceleration choices require measured workloads, with CPU correctness. */
     }
     attribute def TransmitSafetyPolicy {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;
+        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
         attribute armedOnStartup : Boolean = false;
         attribute haltWaitsForDecode : Boolean = false;
         attribute mcpMayOverrideLossPolicy : Boolean = false;
@@ -179,7 +181,11 @@ package WstxProductScope {
              Obtain common authority, prepare selected audio and radio/PTT, schedule,
              then handle completion/halt/failure. Audio failure leaves control-side
              halt/release usable; control failure never fabricates radio-ready state.
-             Browser timers or optional display congestion cannot hold transmit authority. */
+             Browser timers or optional display congestion cannot hold transmit authority.
+             Settled by #9 slice B (WstxTransmit::TransmitAuthority, TransmitTiming,
+             PttControl): per-boot explicit authority, 250 ms halt, release on device
+             or CAT loss, off-only recovery, no VOX; physical acceptance remains
+             TC-008-002. */
     }
     requirement RemoteDeliveryPolicy {
         doc /* Commands/state/results have priority over discardable visualization.
@@ -243,6 +249,7 @@ package WstxProductScope {
         alias OperatingReceive for WstxOperatingReceive;
         alias Architecture for WstxArchitecture;
         alias Transmit for WstxTransmit;
+        alias Contact for WstxContact;
         alias SharedRecord for WstxOfflineDecode::ResultRecord;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';

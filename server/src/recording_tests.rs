@@ -45,6 +45,7 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
         search_limited: false,
         last_overrun: None,
         publication_error: None,
+        level: (0.0, 0, None, None),
     });
     let decoded = decoder::Decode {
         payload: decoder::unpack(&[0; 77]),
@@ -934,6 +935,7 @@ fn selection_profile_fixture() -> (
             authorization: Mutex::new(None),
             boot: r.boot.clone(),
             recording: r.clone(),
+            logbook: Arc::new(crate::logbook::Logbook::open(&fixture.0)),
         })),
         profile_id: Some(r.profile.clone()),
         token: None,

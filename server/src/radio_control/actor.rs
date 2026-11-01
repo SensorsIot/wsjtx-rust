@@ -20,15 +20,25 @@ struct Command {
     response: SyncSender<Result<Observation>>,
     reservation: Option<Arc<AtomicBool>>,
 }
+/// A transmit-switch exchange of the transmit hold, served before any ordinary command.
+struct PttCommand {
+    on: bool,
+    deadline: Instant,
+    response: SyncSender<Result<()>>,
+}
 pub struct Actor {
     commands: SyncSender<Command>,
     snapshot: Arc<Mutex<Snapshot>>,
     lease: Arc<AtomicU8>,
     shutdown: Arc<AtomicBool>,
     current_cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    ptt: SyncSender<PttCommand>,
+    /// PTT keyed or not confirmed released by readback since the last key request.
+    keyed: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
-// 0 idle,1 ordinary operation,2 reserved transition,3 reserved exchange.
+// 0 idle,1 ordinary operation,2 reserved transition,3 reserved exchange,4 transmit hold.
+const TRANSMIT_HOLD: u8 = 4;
 struct Lease(Arc<AtomicU8>, Option<Arc<AtomicBool>>);
 impl Drop for Lease {
     fn drop(&mut self) {
@@ -101,11 +111,14 @@ impl Actor {
         let shutdown = Arc::new(AtomicBool::new(false));
         let current_cancel = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
         let (commands, receive) = mpsc::sync_channel::<Command>(1);
-        let (shared, busy, stop, current) = (
+        let (ptt, ptt_receive) = mpsc::sync_channel::<PttCommand>(1);
+        let keyed = Arc::new(AtomicBool::new(false));
+        let (shared, busy, stop, current, worker_keyed) = (
             snapshot.clone(),
             lease.clone(),
             shutdown.clone(),
             current_cancel.clone(),
+            keyed.clone(),
         );
         let worker = thread::Builder::new()
             .name("cat-io".into())
@@ -154,7 +167,21 @@ impl Actor {
                 busy.store(0, Ordering::Release);
                 let mut last_poll = Instant::now();
                 while !stop.load(Ordering::Acquire) {
-                    match receive.recv_timeout(Duration::from_millis(20)) {
+                    // Transmit-switch exchanges of the transmit hold come first; while the
+                    // hold is held no ordinary operation or poll can start (lease 4).
+                    if let Ok(command) = ptt_receive.try_recv() {
+                        let result = if stop.load(Ordering::Acquire) {
+                            Err(Error::Cancelled)
+                        } else {
+                            executor.set_ptt(command.on, command.deadline, &AtomicBool::new(false))
+                        };
+                        if !command.on && result.is_ok() {
+                            worker_keyed.store(false, Ordering::Release);
+                        }
+                        let _ = command.response.try_send(result);
+                        continue;
+                    }
+                    match receive.recv_timeout(Duration::from_millis(5)) {
                         Ok(command) => {
                             let _lease = Lease(busy.clone(), command.reservation);
                             if let Ok(mut value) = current.lock() {
@@ -190,6 +217,19 @@ impl Actor {
                         }
                     }
                 }
+                // Closing a connection whose transmit switch may be keyed first sends
+                // exactly one off-only switch with readback (never a key).
+                if worker_keyed.load(Ordering::Acquire)
+                    && executor
+                        .set_ptt(
+                            false,
+                            Instant::now() + Duration::from_millis(250),
+                            &AtomicBool::new(false),
+                        )
+                        .is_ok()
+                {
+                    worker_keyed.store(false, Ordering::Release);
+                }
                 let _ = executor.close();
             })
             .map_err(|_| Error::Unavailable)?;
@@ -199,8 +239,92 @@ impl Actor {
             lease,
             shutdown,
             current_cancel,
+            ptt,
+            keyed,
             thread: Some(worker),
         })
+    }
+    /// WstxTransmit::PttControl. Keys (`on`) or releases the transmit switch with
+    /// readback through this single I/O owner. Keying first takes the transmit hold
+    /// (lease 4), waiting until `deadline` for a running poll or operation to finish;
+    /// the hold excludes every ordinary operation, transition and poll until a release
+    /// is confirmed by readback. Release is admitted with or without the hold. No queue:
+    /// one switch exchange at a time.
+    pub fn ptt(&self, on: bool, deadline: Instant) -> Result<()> {
+        self.ptt_abortable(on, deadline, &AtomicBool::new(false))
+    }
+    /// As `ptt`; while the switch frame is not yet sent, a set `abort` (priority halt)
+    /// ends the wait with Busy and no bytes.
+    pub fn ptt_abortable(&self, on: bool, deadline: Instant, abort: &AtomicBool) -> Result<()> {
+        if on && self.shutdown.load(Ordering::Acquire) {
+            return Err(Error::Unavailable);
+        }
+        if self.lease.load(Ordering::Acquire) != TRANSMIT_HOLD {
+            loop {
+                match self.lease.compare_exchange(
+                    0,
+                    TRANSMIT_HOLD,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => break,
+                    Err(TRANSMIT_HOLD) => break,
+                    Err(_) if Instant::now() >= deadline || abort.load(Ordering::Acquire) => {
+                        return Err(Error::Busy);
+                    }
+                    Err(_) => thread::sleep(Duration::from_millis(1)),
+                }
+            }
+        }
+        if on && abort.load(Ordering::Acquire) {
+            if !self.keyed.load(Ordering::Acquire) {
+                self.release_hold();
+            }
+            return Err(Error::Busy);
+        }
+        if on {
+            self.keyed.store(true, Ordering::Release);
+        }
+        let (response, result) = mpsc::sync_channel(1);
+        if let Err(error) = self.ptt.try_send(PttCommand {
+            on,
+            deadline,
+            response,
+        }) {
+            if !self.keyed.load(Ordering::Acquire) {
+                self.release_hold();
+            }
+            return Err(match error {
+                TrySendError::Full(_) => Error::Busy,
+                TrySendError::Disconnected(_) => Error::Unavailable,
+            });
+        }
+        let outcome = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            // The worker bounds the exchange by the same deadline; allow its reply.
+            match result.recv_timeout(remaining.max(Duration::from_millis(50))) {
+                Ok(value) => break value,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break Err(Error::Unavailable),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if Instant::now() >= deadline + Duration::from_secs(2) {
+                        break Err(Error::Timeout);
+                    }
+                }
+            }
+        };
+        if !on && outcome.is_ok() {
+            self.release_hold();
+        }
+        outcome
+    }
+    /// True after a key request until a release is confirmed by readback.
+    pub fn ptt_indeterminate(&self) -> bool {
+        self.keyed.load(Ordering::Acquire)
+    }
+    fn release_hold(&self) {
+        let _ = self
+            .lease
+            .compare_exchange(TRANSMIT_HOLD, 0, Ordering::AcqRel, Ordering::Acquire);
     }
     pub fn snapshot(&self) -> Result<Snapshot> {
         self.snapshot

@@ -120,7 +120,8 @@ pub async fn start(
         _ => return error("invalid_request"),
     };
     let profile = app.profile.unwrap();
-    match tokio::task::spawn_blocking(move || {
+    let station = profile.clone();
+    let reply = match tokio::task::spawn_blocking(move || {
         r.receive_context(&b.profile_id, &b.boot_id, b.generation)?;
         let store = profile.store.lock().unwrap();
         if store.document.revision != b.profile_revision {
@@ -145,9 +146,16 @@ pub async fn start(
     .await
     {
         Ok(Ok(v)) => (StatusCode::ACCEPTED, Json(v)).into_response(),
-        Ok(Err(e)) => error(e),
-        Err(_) => error("audio_unavailable"),
-    }
+        Ok(Err(e)) => return error(e),
+        Err(_) => return error("audio_unavailable"),
+    };
+    contact_step(station).await;
+    reply
+}
+/// WstxContact::ModeChange: one synchronous station contact step before a receive or
+/// selection mutation is answered, so a mode change is applied to the contact at once.
+pub(crate) async fn contact_step(state: Arc<ProfileState>) {
+    let _ = tokio::task::spawn_blocking(move || crate::contact_http::station_tick(&state)).await;
 }
 pub async fn stop(
     State(app): State<App>,
@@ -169,7 +177,12 @@ pub async fn stop(
         return error("invalid_request");
     }
     match r.receive_stop(&b.profile_id, &b.boot_id, b.generation, &b.job_id) {
-        Ok(v) => (StatusCode::ACCEPTED, Json(v)).into_response(),
+        Ok(v) => {
+            if let Some(state) = app.profile.clone() {
+                contact_step(state).await;
+            }
+            (StatusCode::ACCEPTED, Json(v)).into_response()
+        }
         Err(e) => error(e),
     }
 }

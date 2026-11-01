@@ -12,7 +12,7 @@ const {chromium}=require('playwright');
 const selfsigned=require('selfsigned');
 const WebSocket=require('ws');
 const {receive}=require('./peer.cjs');
-const {server,link,loginPage}=require('./support.cjs');
+const {server,link,loginPage,browserPort}=require('./support.cjs');
 // Selected HTTPS profile: each browser context enrolls its own CL-022-01 key through the
 // real token form, then the cache is cleared so later cold measurements stay uncached.
 async function enroll(context,origin,token){const p=await context.newPage();await loginPage(p,origin,token,120000);const cdp=await context.newCDPSession(p);await cdp.send('Network.clearBrowserCache');await p.close();}
@@ -26,7 +26,7 @@ before(async()=>{
   tls={WSTX_TLS_CERT:path.join(root,'cert.pem'),WSTX_TLS_KEY:path.join(root,'key.pem')};
 });
 after(async()=>{await browser?.close();if(root)await fs.rm(root,{recursive:true,force:true});});
-async function port(){const s=net.createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+const port=()=>browserPort();
 async function closeAll(closers){
   const results=await Promise.allSettled(closers.map(close=>Promise.resolve().then(close)));
   const errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
@@ -185,7 +185,8 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
   await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
   assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
   await p.locator('#open-client-preferences').click();
-  await p.keyboard.press('Escape');await p.locator('#open-recordings').click();
+  // Escape closes no panel (WstxContact::HaltTx D5); the Back control returns.
+  await p.keyboard.press('Escape');await p.locator('.op-secondary:not([hidden]) .return-operate').click();await p.locator('#open-recordings').click();
   assert.equal(await p.locator('#recording-file').evaluate(el=>el.files[0].name),'pending.wav');
   assert.equal(await p.evaluate(()=>uploading&&!uploadId),true,'navigation preserves pending reservation state');
   await p.locator('#recording-cancel').click();release();

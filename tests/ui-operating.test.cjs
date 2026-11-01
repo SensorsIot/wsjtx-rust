@@ -9,12 +9,12 @@ const net=require('node:net');
 const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
-const {server}=require('./support.cjs');
+const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
 async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
-  const listener=net.createServer();listener.listen(0,'127.0.0.1');await once(listener,'listening');const port=listener.address().port;await new Promise(r=>listener.close(r));
+  const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
@@ -172,6 +172,14 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await page.waitForFunction(()=>!uncertainMutation&&!document.querySelector('#receive-start').disabled);
   assert.deepEqual(errors,[]);
 });
+// WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
+// aborts the contact but closes no panel; the region's Back control (keyboard) returns.
+async function returnToOperation(page){
+  const open=await page.locator('.op-secondary:not([hidden])').count();
+  await page.keyboard.press('Escape');
+  if(open)assert.equal(await page.locator('#operating-workspace').isVisible(),false,'Escape closes no panel');
+  if(open){await page.locator('.op-secondary:not([hidden]) .return-operate').focus();await page.keyboard.press('Enter');}
+}
 async function geometry(page){return page.evaluate(()=>{const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};return {bar:box('#station-bar'),signal:box('#signal'),split:box('#splitter'),workspace:box('#controls'),overflow:document.documentElement.scrollWidth>innerWidth};});}
 
 // Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 read-only layout subset.
@@ -181,7 +189,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station').textContent(),'HB9BLA <station>');
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
-  for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
   await page.getByRole('button',{name:'Station connection details',exact:true}).click();
   assert.match(await page.locator('#operating-capabilities').innerText(),/Audio.*unavailable/is);
@@ -221,7 +229,7 @@ test('TC-007-002 operating split and secondary regions remain accessible at narr
       await summary.focus();await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),false);
       await page.keyboard.press('Enter');assert.equal(await summary.evaluate(el=>el.parentElement.open),true);
       assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
-      await page.keyboard.press('Escape');assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+      await returnToOperation(page);assert.equal(await page.locator('#operating-workspace').isVisible(),true);
       assert.equal(await page.locator(opener).evaluate(el=>document.activeElement===el),true);
     }
     assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
@@ -236,7 +244,7 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+box.height/2-40);await page.mouse.up();
   assert.ok(Number(await separator.getAttribute('aria-valuenow'))<before);
   await app.close();await page.locator('#connection[data-state=stale]').waitFor();
-  for(const name of ['Enable Tx','Halt Tx','Log contact'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+  for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
   assert.ok(sent.some(m=>m.type==='station.get'),'recorder observes actual allowed station traffic');
   assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
 });
@@ -275,7 +283,8 @@ test('TC-007-002 agreed workspace has tuning, band strip, Current QSO and Strate
  assert.equal(await page.locator('#audio-enumerate').isEnabled(),true,'read-only input listing is supported');
  assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/0\u20133000 Hz/,'fixed-band label retains correct Unicode text');
- assert.match(await page.locator('#radio-toolbar').innerText(),/Timing unavailable/);
+ // WstxContact::OperatorDisplays (D11): server UTC and period progress replace the former 'Timing unavailable'.
+ await page.locator('#radio-toolbar .op-period small').filter({hasText:/^\d{1,2}\/15/}).waitFor();assert.match(await page.locator('#radio-toolbar .op-period > span').textContent(),/^UTC \d\d:\d\d:\d\d$/);
  assert.match(await page.locator('#strategy-panel').innerText(),/No active definition/);
  assert.equal(await page.locator('tr[data-result-id]').count(),0);
  for(const width of [360,720,1200,1440,1499,1500,1600]){
@@ -293,21 +302,24 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push({method:r.method(),url:r.url()});});
  await page.keyboard.press('F2');assert.equal(await page.locator('#region-server-settings').isVisible(),true);
  await page.locator('#display-name').fill('Unsaved operator edit');
- await page.keyboard.press('Escape');assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+ await returnToOperation(page);assert.equal(await page.locator('#operating-workspace').isVisible(),true);
  await page.locator('#open-recordings').click();
  await page.locator('#recording-file').setInputFiles({name:'selected-but-not-imported.wav',mimeType:'audio/wav',buffer:Buffer.from('not imported')});
- await page.keyboard.press('Escape');
+ await returnToOperation(page);
  for(const name of ['logbook','strategies','client-preferences','help']){
   const button=page.locator(`#station-bar [data-region="${name}"]`);await button.focus();await page.keyboard.press('Enter');
   assert.equal(await page.locator(`#region-${name}`).isVisible(),true);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isDisabled(),true);
-  await page.keyboard.press('Escape');assert.equal(await button.evaluate(el=>document.activeElement===el),true);
+  await returnToOperation(page);assert.equal(await button.evaluate(el=>document.activeElement===el),true);
  }
  await page.locator('#open-server-settings').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
- await page.keyboard.press('Escape');await page.locator('#open-recordings').click();
+ await returnToOperation(page);await page.locator('#open-recordings').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations');
+ // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
+ // shows a receive-only station it sends the idempotent #9 halt, never anything else.
+ assert.deepEqual(mutations.filter(m=>new URL(m.url).pathname!=='/transmit/halt'),[],'navigation does not save/import or issue station mutations');
+ assert.ok(mutations.every(m=>m.method==='POST'),'only the keyboard halt POST');
  assert.deepEqual(errors,[]);
 });
 
@@ -488,4 +500,114 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await page.evaluate(()=>{profileData.profile_id='not-a-valid-uuid';renderResults();});assert.equal(await page.inputValue('#activity-sort'),'dt','invalid profile cannot reset preference');
   await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.equal(await page.inputValue('#activity-sort'),'frequency');assert.equal(await page.inputValue('#activity-direction'),'asc');
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-04, CL-010-13; TC-011-001/TC-011-002 browser subset. Actual server and
+// Chromium: Log QSO review with power/comments, history, ADI import/export controls.
+test('TC-011-001 Log QSO review saves once with power and comment and shows worked-before',{timeout:30000},async t=>{
+ const {page,app,errors}=await fixture(t,{width:1200,height:900});
+ const posts=[];page.on('request',r=>{if(r.method()!=='GET')posts.push(new URL(r.url()).pathname);});
+ await page.waitForFunction(()=>profileData&&window.wstxLogbook);
+ await page.locator('#station-bar [data-region="logbook"]').click();
+ await page.locator('#log-history-status',{hasText:'No contacts saved yet'}).waitFor();
+ assert.deepEqual(posts,[],'opening the log only reads history');
+ const prefill={contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:'FN42',mode:'FT8',submode:null,rst_sent:'-12',rst_rcvd:'-05',qso_date:'20261031',time_on:'123015',qso_date_off:'20261031',time_off:'123200',band:'20m',freq:'14.075500',station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null};
+ await page.evaluate(p=>window.wstxLogbook.openReview(p),prefill);
+ assert.equal(await page.locator('#log-review').isVisible(),true);
+ await page.locator('#log-review-worked',{hasText:'Not worked before'}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true,'the review never hides Halt Tx');
+ await page.getByLabel('Power (W)',{exact:true}).fill('-1');await page.getByRole('button',{name:'Save contact'}).click();
+ await page.locator('#log-review-result',{hasText:'Not saved'}).waitFor();
+ assert.equal(await page.getByLabel('Power (W)',{exact:true}).getAttribute('aria-invalid'),'true','invalid field refused beside the field');
+ assert.match(await page.locator('#log-error-tx_pwr').innerText(),/Invalid value/);
+ await page.getByLabel('Power (W)',{exact:true}).fill('10');await page.getByLabel('Comment',{exact:true}).fill('Tnx QSO 73');
+ await page.getByRole('button',{name:'Save contact'}).click();
+ await page.locator('#log-review-result',{hasText:'Saved to contacts.adi'}).waitFor();
+ await page.getByRole('button',{name:'Save contact'}).click();
+ await page.locator('#log-review-result',{hasText:'already in the log'}).waitFor();
+ await page.locator('#log-history li').first().waitFor();
+ assert.match(await page.locator('#log-history').innerText(),/K1ABC .*10 W .*Tnx QSO 73/);
+ const history=await (await fetch(app.origin+'/contacts')).json();
+ assert.equal(history.total,1,'exactly one record for the contact identity');
+ assert.equal(history.records[0].tx_pwr,'10');assert.equal(history.records[0].comment,'Tnx QSO 73');
+ await page.evaluate(p=>window.wstxLogbook.openReview({...p,contact_id:crypto.randomUUID()}),prefill);
+ await page.locator('#log-review-worked',{hasText:'Worked before on this band and mode'}).waitFor();
+ assert.equal(posts.filter(p=>p==='/contacts').length,3);assert.ok(posts.every(p=>['/contacts','/contact/worked'].includes(p)),posts.join());
+ assert.deepEqual(errors,[]);
+});
+
+test('TC-011-002 ADI import and export controls publish all-or-nothing and download contacts.adi',{timeout:30000},async t=>{
+ const {page,errors}=await fixture(t,{width:1200,height:900});
+ await page.waitForFunction(()=>profileData&&window.wstxLogbook);
+ await page.locator('#station-bar [data-region="logbook"]').click();
+ await page.locator('#log-history-status',{hasText:'No contacts saved yet'}).waitFor();
+ const good='<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <APP_OTHER_X:2>ok <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1231 <band:3>40m <mode:3>FT8 <eor>\n';
+ await page.locator('#log-import-file').setInputFiles({name:'good.adi',mimeType:'text/plain',buffer:Buffer.from(good)});
+ await page.getByRole('button',{name:'Import ADIF'}).click();
+ await page.locator('#log-import-status',{hasText:'Imported'}).waitFor();
+ assert.match(await page.locator('#log-import-status').innerText(),/2 new, 0 duplicate, 0 conflicting/);
+ await page.locator('#log-history-status',{hasText:'2 contacts'}).waitFor();
+ assert.match(await page.locator('#log-history').innerText(),/1 other field kept/);
+ const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
+ await page.locator('#log-import-file').setInputFiles({name:'bad.adi',mimeType:'text/plain',buffer:Buffer.from(bad)});
+ await page.getByRole('button',{name:'Import ADIF'}).click();
+ await page.locator('#log-import-status',{hasText:'Import failed'}).waitFor();
+ assert.match(await page.locator('#log-import-status').innerText(),/no contacts were added .*malformed in record 2/);
+ await page.locator('#log-history-status',{hasText:'2 contacts'}).waitFor();
+ const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Export ADIF'}).click()]);
+ assert.equal(download.suggestedFilename(),'contacts.adi');
+ const text=await fs.readFile(await download.path(),'utf8');
+ assert.match(text,/^ADIF Export\n<adif_ver:5>3\.1\.8\n/);
+ assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <APP_OTHER_X:2>ok <eor>\n/);
+ assert.equal(text.match(/<eor>/g).length,2);
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-13; TC-011-003 browser subset. Actual server log and worked-before query;
+// receive pages and the manual band selection are presentation fixtures, not RF truth.
+test('TC-011-003 Band Activity shows server worked-before status with one bounded query per period',{timeout:30000},async t=>{
+ let state;const queries=[];
+ const period='2026-10-27T12:00:15.0000000Z';
+ const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
+ const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1}));
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  const profile=await(await fetch(app.origin+'/profile')).json();
+  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
+  assert.equal(saved.status,201);
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:3,available_count:3,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
+ }});
+ await page.locator('tr[data-result-id] .log-worked').first().waitFor();
+ const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.querySelector('.log-worked')?.dataset.worked??null,r.querySelector('.log-worked')?.textContent??null]));
+ assert.deepEqual(marks,[['CQ K1ABC FN42','worked_this_band_and_mode',' \u00b7 \u2713 worked'],['CQ W1XYZ FN42','not_worked',' \u00b7 \u2605 new'],['FREE TEXT',null,null]]);
+ await page.selectOption('#activity-direction','desc');await page.waitForTimeout(300);
+ await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForTimeout(500);
+ assert.equal(queries.length,1,'one query per published period');
+ assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
+ assert.equal(await page.locator('.log-worked[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on this band and mode','text label beside colour');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-009-05; TC-006-003. The transmit status line shows the station's SNTP clock
+// state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
+// CAT PTT setting is set in the page only, the server keeps transmit unsupported).
+test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:20000},async t=>{
+  let view;
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
+    view=await (await fetch(app.origin+'/transmit')).json();
+    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
+  }});
+  assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
+  const status=async()=>page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();return document.querySelector('#transmit-status').textContent;});
+  assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
+  view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};
+  assert.match(await status(),/ · clock synchronized \+12 ms ch\.pool\.ntp\.org 34 s ago · halt /);
+  view={...view,clock:'unsynchronized',clock_measurement:{server:'time.windows.com',offset_ms:-2089,round_trip_ms:22,age_ms:5600}};
+  assert.match(await status(),/ · clock unsynchronized -2089 ms time\.windows\.com 6 s ago · halt /);
+  assert.deepEqual(errors,[]);
 });

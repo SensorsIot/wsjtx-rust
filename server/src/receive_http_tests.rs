@@ -203,6 +203,7 @@ async fn live_native_browser_mode(mode: &str) {
             authorization: Mutex::new(None),
             boot,
             recording: recording.clone(),
+            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
         })),
         profile_id: Some(profile_id),
         token: None,

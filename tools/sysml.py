@@ -350,7 +350,8 @@ def architecture_integrity(output: str) -> dict[str, int]:
             ("transmit.encode", "modes.encode"), ("transmit.audio", "audio.transmit"),
             ("transmit.control", "radioControl.transmit"), ("web.recording", "station.upload"),
             ("station.acceptedRecording", "profile.upload"), ("profile.recordedSamples", "audio.recorded"),
-            ("qso.contacts", "profile.contacts"), ("audio.backend", "audioAdapter.host"),
+            ("qso.contacts", "profile.contacts"), ("qso.transmit", "transmit.contacts"),
+            ("audio.backend", "audioAdapter.host"),
             ("radioControl.backend", "authorityRequest"), ("authorizedControl", "catAdapter.authorized"),
             ("authorityRequest", "authority.requests"), ("authority.authorized", "authorizedControl"),
             ("authorityRequest.request.resourceContext", "radioBinding"), ("catAdapter.authorized.request.resourceContext", "radioBinding")],
@@ -380,8 +381,8 @@ def architecture_integrity(output: str) -> dict[str, int]:
     roles(station + ".modes", receive="~ReceiveProcessing", encode="~EncodeProcessing")
     roles(station + ".audio", status="AudioStatus", recorded="~ReceiveSamples", receive="ReceiveSamples", transmit="~AudioExchange", backend="AudioExchange")
     roles(station + ".radioControl", station="~RadioControl", transmit="~RadioControl", backend="RadioControl")
-    roles(station + ".transmit", operations="~StationOperations", encode="EncodeProcessing", audio="AudioExchange", control="RadioControl")
-    roles(station + ".qso", operations="~StationOperations", contacts="ProfileAccess")
+    roles(station + ".transmit", operations="~StationOperations", contacts="~StationOperations", encode="EncodeProcessing", audio="AudioExchange", control="RadioControl")
+    roles(station + ".qso", operations="~StationOperations", contacts="ProfileAccess", transmit="StationOperations")
     roles(station + ".audioAdapter", host="~AudioExchange", radio="AudioExchange")
     roles(station + ".catAdapter", authorized="~RadioControl", radio="RadioControl")
     for path, contract in role_contracts.items():

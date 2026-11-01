@@ -1779,14 +1779,21 @@ package WstxArchitecture {
              WstxProductScope::ProcessingAndHaltOwnership separates priority halt from
              receive completion/cancellation and optional display congestion. */
         port operations : ~StationOperations;
+        port contacts : ~StationOperations;
         port encode : EncodeProcessing;
         port audio : AudioExchange;
         port control : RadioControl;
+        doc /* contacts receives QsoAndLogging's arm/disarm, TransmitRequest and halt
+             requests and returns TransmitOutcome (WstxTransmit #9 slice B consumer
+             contract, target). It is the only RF path of the contact workflow. */
     }
     part def QsoAndLogging {
         doc /* Own exchange/completion/cancel and durable contacts; never bypass transmit authority or another profile storage. Stable completion identity and explicit persisted/unsaved outcome prevent silent duplicate contacts when completion replays. Concrete log schema/compatibility remains a target decision. */
         port operations : ~StationOperations;
         port contacts : ProfileAccess;
+        port transmit : StationOperations;
+        doc /* transmit carries contact transmissions only to TransmitService (WstxContact);
+             no PTT, audio or radio port exists here. */
     }
     part def AudioInterface {
         attribute configuredIntent : WstxRadioIO::DeviceIntent;
@@ -1866,6 +1873,7 @@ package WstxArchitecture {
         connection validatedRecording connect station.acceptedRecording to profile.upload;
         connection recordedInput connect profile.recordedSamples to audio.recorded;
         connection contactStorage connect qso.contacts to profile.contacts;
+        connection contactTransmit connect qso.transmit to transmit.contacts;
         connection selectedAudio connect audio.backend to audioAdapter.host;
         connection authorityRequestDelegation connect radioControl.backend to authorityRequest;
         connection authorizedControlDelegation connect authorizedControl to catAdapter.authorized;
