@@ -457,9 +457,13 @@ attribute def ActivityOrdering {
              period progress; exception chips (ExceptionChip, shown only while the
              condition holds, nothing when all is well; each names its cause, opens its
              detail in the Settings drawer, and receiveStopped offers the explicit receive
-             start); Logbook (full page); Settings (drawer); HALT. A link that is connected
-             shows no chip; the accessible status stays.
-             Waterfall full width with the Rx/Tx strip (RxTxStrip) directly below it.
+             start); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT. A
+             link that is connected shows no chip; the accessible status stays. There is no
+             refresh control: the status refreshes itself (an explicit Refresh status is in
+             Settings > Expert).
+             Waterfall full width with the Rx/Tx strip (RxTxStrip) directly below it; its corner
+             holds Sensitivity and Waterfall speed (operative, immediate; the speed is a
+             per-browser preference).
              Workspace: Band Activity (BandActivityView) on the left with the strategy
              element above it, the QSO pane (QsoPane) on the right; at most 75em wide the
              QSO pane goes below Band Activity, at most 48em everything stacks (a phone
@@ -531,7 +535,7 @@ attribute def ActivityOrdering {
         attribute hasEnableTx : Boolean = false;
         attribute hasNowButtons : Boolean = false;
         doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. Header:
-             partner call, grid, last SNR and distance, DX Call/Grid entry; a badge counts
+             partner call, grid, last SNR and distance; a badge counts
              crowding stations (QsoPaneCrowding). Dialogue: the station's transmitted
              messages (sent) and the rows routed by WstxContact::RoutesToRxFrequencyPane
              (received), newest last; crowding rows marked; a call to my callsign from
@@ -539,8 +543,10 @@ attribute def ActivityOrdering {
              a progress bar and countdown to the next period of the contact's parity.
              Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
              Log QSO keeps the existing OfferLogReview behaviour until direct logging).
-             A fold-out shows Tx1-Tx6 with their Next choice and editable text, Skip Tx1,
-             RRR/RR73, report, Tx period and Auto Seq in place. On a station without
+             Always visible: partner header, dialogue, Next/Last with progress, direct buttons.
+             A fold-out shows the DX Call/Grid entry with Generate, Erase (dialogue), Tx1-Tx6
+             with their Next choice and editable text, Skip Tx1, RRR/RR73, report, Tx period
+             and Auto Seq in place. On a station without
              transmit capability the transmit buttons are disabled with the reason. */
     }
     attribute def SettingsDrawer {

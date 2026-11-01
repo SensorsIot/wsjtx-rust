@@ -32,7 +32,8 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     assert.equal(await page.locator('#receive-toggle').isDisabled(),true);
     assert.equal((await (await fetch(origin+'/receive')).json()).job,null,'a refused browser mutation never activates the input');
     await page.unroute('**/receive/start');
-    await page.getByRole('button',{name:'Refresh status',exact:true}).click();
+    // #37: the explicit Refresh status is in Settings > Expert.
+    await page.locator('#open-server-settings').click();await page.locator('#refresh').click();await page.locator('#settings-drawer .return-operate').click();
     await chip.filter({hasText:'Receive stopped'}).waitFor();
     if(mode==='ft8')await chip.click();
     else{

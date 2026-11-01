@@ -309,7 +309,7 @@ html[data-theme=night] main.op-app{filter:grayscale(1) sepia(1) saturate(6) hue-
 #rx-focus .op-contact-body{gap:5px}
 .op-qso-buttons button{padding:6px 4px}
 @media(max-width:900px){#station-bar.op-topbar{flex-wrap:wrap}.op-chips{order:3;flex:1 1 100%;justify-content:flex-start}}
-#rx-pane header button{padding:2px 8px;font-size:var(--op-font-secondary)}
+#rx-pane header button{padding:2px 8px}
 /* Controls and status paragraphs keep the 16 px normal-text minimum (TC-007-002). */
 .op-app button.op-chip,.op-strategy-bar select,.op-strategy-bar button,#rx-pane header button,#rx-focus .ct-state{font-size:var(--op-font-normal)}
 #station-bar.op-topbar{flex-direction:row}
@@ -322,3 +322,4 @@ body[data-profile=true] main.op-app{overflow:clip}
 .op-app #station-bar #forget{border-radius:999px;padding:4px 10px;font-size:var(--op-font-normal);background:rgba(255,107,95,.14);border:1px solid rgba(255,107,95,.6);color:#ffb0a8}
 /* UnauthorizedView: the token form is offered once the operating page script has built the view. */
 body[data-profile=true] main:not(.op-app) #login{display:none!important}
+#qso-more .ct-dx{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:6px 0}#qso-more .ct-dx label{display:flex;align-items:center;gap:6px;margin:0}#qso-more .ct-dx input{width:9ch;font-family:var(--op-mono);text-transform:uppercase;padding:3px 6px}.ct-more-row{margin:4px 0}

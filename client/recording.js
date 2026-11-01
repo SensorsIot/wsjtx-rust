@@ -28,9 +28,9 @@ const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" dis
 workspace.innerHTML=`<div class="operating-grid op-desk">
 <section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span id="qso-crowd" class="op-qso-badge" hidden></span><span class="op-contact-badge">Unavailable</span></header>
-<div class="op-contact-body"><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div>
+<div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
-<section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Dialogue <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button><button type="button" id="rx-pane-erase">Erase</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="QSO dialogue and stations near my Rx frequency"><table aria-label="QSO dialogue"><tbody id="rx-pane-rows"></tbody></table></div></section>
+<section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Dialogue <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="QSO dialogue and stations near my Rx frequency"><table aria-label="QSO dialogue"><tbody id="rx-pane-rows"></tbody></table></div></section>
 <div class="op-qso-next"><span class="op-eyebrow">NEXT &#9656;</span><strong id="contact-next">None</strong><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div><span id="qso-countdown" class="op-muted"></span><span class="op-eyebrow">LAST</span><strong id="contact-last">None</strong></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
@@ -96,19 +96,19 @@ receivePanel.insertAdjacentHTML('beforeend','<p id="receive-status" role="status
 secondary('receive-details','Receive, CAT and timing',receivePanel,expertSection).open=true;
 secondary('connection-details','Connection details',connectionPanel,expertSection).open=true;
 new MutationObserver(()=>{document.querySelector('#general-apply-result').textContent=document.querySelector('#settings-result').textContent;}).observe(document.querySelector('#settings-result'),{childList:true,characterData:true,subtree:true});
-const operatingRefresh=connectionPanel.querySelector('#refresh');operatingRefresh.className='op-icon-button';operatingRefresh.setAttribute('aria-label','Refresh status');operatingRefresh.title='Refresh status';operatingRefresh.innerHTML='&#8635;';headerActions.insertBefore(operatingRefresh,headerActions.firstChild);
+connectionPanel.querySelector('#refresh').textContent='Refresh status';
 const updateIdentity=()=>{document.querySelector('#operating-station').textContent=profileData?.settings.display_name??'Waiting for station';};
 new MutationObserver(updateIdentity).observe(document.querySelector('#profile-name'),{childList:true,subtree:true,characterData:true});updateIdentity();
 const panel = document.createElement('section'); panel.id = 'recording-controls'; panel.setAttribute('aria-label','Recording controls');
 panel.innerHTML = '<label>Import mono 12 kHz PCM16 WAV (up to 120 seconds)<input id="recording-file" type="file" accept=".wav,audio/wav"></label><button id="recording-import">Import recording</button><button id="recording-replay" disabled>Replay spectrum</button><button id="recording-cancel" disabled>Cancel operation</button><p>One processing worker per station &#183; no speaker playback</p><p id="recording-progress" role="status"></p>';
 const localPreferences=document.createElement('div');localPreferences.id='local-display-preferences';
-localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Waterfall speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
+localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
 secondary('recorded-input','Recordings and replay',panel,expertSection).open=true;
 expertSection.insertAdjacentHTML('afterbegin','<p class="op-muted">Diagnostics that are not needed while operating.</p>');
 const sliders=document.createElement('div');sliders.id='presentation-sliders';sliders.className='op-display-controls';
-sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label>';
+sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
 // WstxOperatingLayout::UnauthorizedView.
@@ -167,6 +167,8 @@ function restoreDisplayPreference(){
 }
 restoreDisplayPreference();
 let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=2, fallbackText='', detailRequest;
+// The waterfall speed is a per-browser view preference (WstxOperatingLayout::OperatingScreen).
+try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
 function paletteRGB(t){
   t=Math.max(0,Math.min(1,t));
@@ -181,7 +183,7 @@ function updateSliders(){
 }
 for(const id of ['display-sensitivity','display-speed'])document.querySelector(`#${id}`).addEventListener('input',event=>{
   const value=Number(event.target.value);if(!Number.isFinite(value))return;
-  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));
+  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else{speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));try{localStorage.setItem('wstx.waterfall-speed.v1',String(speed));}catch{}}
   selectedRow=Math.max(0,Math.min(visibleCount()-1,selectedRow));pointerTime=null;updateSliders();paint();
 });
 
@@ -973,9 +975,9 @@ addEventListener('station-stale',catShow);
 // CAT PTT; the browser renders server-confirmed transmit state and sends explicit
 // requests. It runs no transmit timer: the server plans, keys and halts.
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
-transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p><p id="transmit-result" role="status"></p>';addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='station.tick'&&[15000,7500].includes(m.data?.period_ms)){const ft4=m.data.period_ms===7500;transmitPanel.querySelector('#tx-mode').value=ft4?'ft4':'ft8';transmitPanel.querySelector('#tx-offset').max=ft4?'2916':'2950';}});
+transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><p id="transmit-result" role="status"></p>';
 const transmitDetails=secondary('transmit-details','Transmit test panel',transmitPanel,expertSection);transmitDetails.hidden=true;
-let transmitView=null,transmitSequence=0,transmitTimer=null;
+let transmitView=null,transmitTimer=null;
 const transmitConfigured=()=>profileData?.settings.control.ptt==='cat';
 function transmitBody(extra){return JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...extra});}
 async function transmitPost(path,extra){
@@ -993,7 +995,7 @@ function transmitShow(){
   if(!on||!v){status.textContent='Transmit unavailable';return;}
   const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${Math.round(m.age_ms/1000)} s ago`:'';
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_minutes} min`;
-  document.querySelector('#tx-tune').textContent=t.tune?'Tune off':'Tune';
+  const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
 async function transmitSync(){
   if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return;}
@@ -1002,21 +1004,6 @@ async function transmitSync(){
 }
 function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
 setInterval(transmitPoll,2000);
-async function transmitAction(extra,label){
-  const result=document.querySelector('#transmit-result');
-  try{const reply=await transmitPost('/transmit/command',extra),r=reply.result;result.textContent=`${label}: ${r.kind??(r.accepted?'accepted':'refused')}${r.refusal?' · '+r.refusal:''}${r.failure?' · '+r.failure:''}`;}
-  catch(error){result.textContent=`${label} not sent · ${error.message}`;}
-  transmitSync();
-}
-document.querySelector('#tx-arm').addEventListener('click',()=>{const revision=catStatus?.scope?.safety_revision;if(!revision){document.querySelector('#transmit-result').textContent='Arm needs the current setup revision (CAT status)';return;}transmitAction({action:'arm',safety_revision:revision},'Arm');});
-document.querySelector('#tx-disarm').addEventListener('click',()=>transmitAction({action:'disarm'},'Disarm'));
-document.querySelector('#tx-send').addEventListener('click',()=>{
-  const mode=document.querySelector('#tx-mode').value,period=mode==='ft4'?7500:15000,wanted=document.querySelector('#tx-parity').value==='even'?0:1;
-  let start=Math.floor(Date.now()/period)*period;if(Date.now()-start>=period*0.75-1000||(start/period)%2!==wanted)start+=period;if((start/period)%2!==wanted)start+=period;
-  transmitSequence=Math.max(transmitSequence+1,Date.now());
-  transmitAction({action:'request',request_sequence:transmitSequence,mode,period_start_utc_ms:start,message_text:document.querySelector('#tx-message').value,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Send');
-});
-document.querySelector('#tx-tune').addEventListener('click',()=>{const on=transmitView?.transmit.tune;transmitAction(on?{action:'tune',enabled:false}:{action:'tune',enabled:true,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Tune');});
 // The QSO-bar HALT is the same priority halt as the top-bar HALT.
 document.querySelector('#qso-halt').addEventListener('click',()=>halt.click());
 halt.addEventListener('click',async()=>{

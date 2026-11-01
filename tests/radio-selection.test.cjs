@@ -304,7 +304,7 @@ test('TC-009-005 one status refresh coalesces unchanged receive readiness',{time
   await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForTimeout(200);
   await page.evaluate(()=>{window.__readyReads=[];addEventListener('station-ready',event=>window.__readyReads.push({sameSocket:event.detail===socket,pendingId,profile:profileData.profile_id,boot:profileData.boot_id,revision:profileData.revision}));});
   const reads=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/receive')reads.push({method:request.method(),at:Date.now()});});
-  const prior=await page.locator('#updated').textContent();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=2);await page.waitForTimeout(250);
+  const prior=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=2);await page.waitForTimeout(250);
   const ready=await page.evaluate(()=>window.__readyReads);const evidence={reads,ready};await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/receive-ready.json',JSON.stringify(evidence,null,2));
   assert.equal(ready.length,2,'the actual before/after-profile readiness notifications were observed');assert.deepEqual(ready[0],ready[1],'the readiness context and status identity were unchanged');
   assert.equal(reads.length,1,'unchanged readiness from one status refresh needs one receive snapshot');
@@ -316,8 +316,8 @@ test('TC-009-005 one status refresh coalesces unchanged receive readiness',{time
   assert.equal(new Set([keys.base,keys.profile,keys.boot,keys.revision,keys.status]).size,5,'every independently validated context field changes admission identity');assert.deepEqual(keys.invalid,[null,null,null,null]);assert.equal(keys.staleAdmitted,false);
   let release,entered;const gate=new Promise(resolve=>release=resolve),captured=new Promise(resolve=>entered=resolve);t.after(()=>release());
   let held=false;await page.route('**/receive',async route=>{if(!held){held=true;entered();await gate;}await route.continue();});
-  await page.locator('#refresh').click();await captured;await page.waitForFunction(()=>window.__readyReads.length>=4);
-  const secondUpdate=await page.locator('#updated').textContent();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,secondUpdate);await page.waitForFunction(()=>window.__readyReads.length>=6);await page.waitForTimeout(100);
+  await refreshStatus(page);await captured;await page.waitForFunction(()=>window.__readyReads.length>=4);
+  const secondUpdate=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,secondUpdate);await page.waitForFunction(()=>window.__readyReads.length>=6);await page.waitForTimeout(100);
   assert.equal(reads.length,2,'a changed status while pending queues one follow-up, not another parallel request');release();
   await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,3,'the single legitimate changed-status follow-up executes');
   await page.unroute('**/receive');
@@ -372,6 +372,8 @@ function selectionNetworkSummary(transfers,start,end){
 }
 // WstxContact::ContactWire: POST /contact/worked is a read-only worked-before query, not a
 // station mutation; every other non-GET request still counts.
+// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await refreshStatus(page);if(!open)await page.locator('#settings-drawer .return-operate').click();}
 function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&r.route==='/contact/worked');}
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
@@ -626,7 +628,7 @@ function liveSelectionFixture(){
       for(const [index,page]of pages.entries()){const after=performance.now();if(!await page.locator('#settings-drawer').isVisible())await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',profile);await page.locator('#tab-expert').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
       await sleep(500);const baseline={...proxy.counters},start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
-      const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await page.locator('#refresh').click();await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
+      const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
       const controls=async()=>{const commands=[];for(let n=0;n<steps.length;n++){await waitUntil(start+(n?40000:5000));commands.push(await command(...steps[n]));}return commands;};
       const [,commands]=await Promise.all([status(),controls()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
       assert.ok(seconds>=75,'full predeclared representative window');const traffic={up:(proxy.counters.up-baseline.up)/seconds,down:(proxy.counters.down-baseline.down)/seconds};

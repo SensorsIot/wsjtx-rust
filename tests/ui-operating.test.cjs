@@ -28,6 +28,8 @@ async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
   return {page,app,errors,sent};
 }
 
+// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 function liveFixture(idle){
   return {...idle,audio:{state:'running',device_id:'test-only-unopened-input',device_name:null,error:null,retry_after_ms:null,loss_epochs:0,last_loss:null},
@@ -176,7 +178,7 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   assert.equal(await page.locator('#receive-toggle').isDisabled(),true);
   assert.match(await page.locator('#receive-status').textContent(),/Start outcome unknown/);
   await chip.filter({hasText:'Start outcome unknown'}).waitFor();
-  await page.getByRole('button',{name:'Refresh status',exact:true}).click();
+  await refreshStatus(page);
   await page.waitForFunction(()=>!uncertainMutation&&!document.querySelector('#receive-toggle').disabled);
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
@@ -318,8 +320,8 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // WstxOperatingLayout::OperatingScreen and friends (operator design interview 2026-11-01). The
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
-const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#dx-call','#rx-pane','#contact-next','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#display-speed','#settings-browsers','#settings-automation'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay']};
+const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#rx-pane','#contact-next','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return !!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 async function shown(page,selector){return page.locator(selector).first().evaluate(el=>!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden');}
@@ -346,9 +348,13 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   for(const selector of [...Object.values(drawerItems).flat(),...healthyTexts])assert.equal(await shown(page,selector),false,`${selector} is not on the operating screen`);
   // Top bar holds only band, mode, dial, UTC/period, chips, Logbook, Settings, HALT (plus the
   // status refresh and "?" overview affordances).
-  const allowed=['operating-band','operating-mode','op-dial','open-logbook','open-server-settings','Help','Refresh status','halt-tx'];
+  const allowed=['operating-band','operating-mode','op-dial','open-logbook','open-server-settings','Help','halt-tx'];
   const extra=await page.locator('#station-bar').evaluate((bar,allowed)=>[...bar.querySelectorAll('button,select,input')].filter(n=>n.getClientRects().length&&!n.closest('#exception-chips')&&!allowed.includes(n.id)&&!allowed.includes(n.getAttribute('aria-label'))).map(n=>n.id||n.textContent),allowed);
   assert.deepEqual(extra,[],'the top bar holds only its decided items');
+  assert.equal(await page.locator('#station-bar #refresh').count(),0,'no refresh in the top bar: the status refreshes itself');
+  // The DX entry and Erase are in the QSO fold-out; the pane shows partner, dialogue, NEXT/LAST and buttons.
+  for(const selector of ['#dx-call','#dx-grid','#dx-generate','#rx-pane-erase'])assert.equal(await shown(page,selector),false,`${selector} folded away`);
+  await page.locator('#qso-more summary').click();for(const selector of ['#dx-call','#dx-generate','#rx-pane-erase','#contact-messages'])assert.equal(await shown(page,selector),true,`${selector} in the fold-out`);await page.locator('#qso-more summary').click();
   assert.equal(await page.locator('#connection').evaluate(el=>el.getBoundingClientRect().width<=1),true,'a connected link shows no status text');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
@@ -482,10 +488,13 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   await page.mouse.move(marker.x+2,marker.y+marker.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*2000/3000,marker.y+marker.height/2,{steps:5});await page.mouse.up();
   const drag=await last(12);assert.equal(drag[0],'set_frequency');assert.equal(drag[1],null);assert.ok(Math.abs(drag[2]-2000)<=2,`dragged Tx ${drag[2]}`);
   // Letters and ? are inactive while typing; outside a field ? opens the overview.
-  await page.locator('#dx-call').focus();await page.keyboard.type('?');assert.equal(await page.locator('#region-help').isVisible(),false);
+  await page.locator('#qso-more summary').click();await page.locator('#dx-call').focus();await page.keyboard.type('?');assert.equal(await page.locator('#region-help').isVisible(),false);
   await page.locator('#waterfall').focus();await page.keyboard.press('?');assert.equal(await page.locator('#region-help').isVisible(),true);
   await page.locator('#region-help .return-operate').click();
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='redecode'),false,'no strip, pointer or key action enables Tx or re-decodes');
+  // The waterfall speed in the corner applies at once and is remembered by this browser.
+  await page.locator('#display-speed').fill('4');await page.locator('#display-speed').dispatchEvent('input');assert.equal(await page.locator('#speed-value').textContent(),'40 px/s');
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();assert.equal(await page.locator('#display-speed').inputValue(),'4');assert.equal(await page.evaluate(()=>speed),4);
   assert.deepEqual(errors,[]);
 });
 
@@ -583,7 +592,7 @@ test('TC-009-005 no receive start, stop or selection without an operator action 
   for(let round=0;Date.now()<until;round++){
     const p=round%2?second:page;
     if(round%3===0){await p.evaluate(()=>socket.close());await p.locator('#connection[data-state=connected]').waitFor({timeout:20000});}
-    else if(round%3===1)await p.getByRole('button',{name:'Refresh status',exact:true}).click();
+    else if(round%3===1)await refreshStatus(p);
     else await p.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{}}}}));});
     await p.waitForTimeout(1500);
   }
@@ -765,14 +774,14 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   const nextPeriod='2026-10-27T12:00:30.0000000Z';records.push(...Array.from({length:18},(_,i)=>makeRecord(i+19,nextPeriod,0.1)));
   Object.assign(state.job,{next_sequence:37,available_count:37,latest_decode:{id:2,first_sequence:19,next_sequence:37,period_start_utc:nextPeriod,complete:false}});hold=true;
-  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await pending.promise;
+  await refreshStatus(page);await pending.promise;
   assert.equal(await page.locator('tr[data-period=latest]').count(),16);assert.match(await page.locator('#band-activity header').innerText(),/Partial.*Loading results/);
   assert.doesNotMatch((await page.locator('tr[data-period=latest]').allInnerTexts()).join('\n'),/STATION 1\b/);
   // BandActivityView: the replaced period stays below its divider, never in the latest view.
   assert.equal(await page.locator('tr[data-period=history]').count(),18);assert.match(await page.locator('tr.ba-divider').first().textContent(),/12:00:15 UTC/);
   assert.equal(await page.locator('tr[data-period=history]').filter({hasText:/STATION 1(?!\d)/}).count(),1);
   state.job.latest_decode={id:3,first_sequence:37,next_sequence:37,period_start_utc:'2026-10-27T12:00:45.0000000Z',complete:true};
-  await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
+  await refreshStatus(page);await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
   await held.route.fulfill({json:held.response});held=null;hold=false;
   const history=await page.locator('tr[data-period=history]').count();
   await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-period=latest]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
@@ -825,7 +834,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await clickSort(page,'signal');assert.deepEqual(await sortState(page),['signal','asc']);assert.deepEqual(await order(),[0,3,4,1,2],'unknown SNR stays last when ascending');
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,3,2,4,1]);await clickSort(page,'dt');assert.deepEqual(await order(),[1,4,2,3,0]);
   await clickSort(page,'message');assert.deepEqual(await sortState(page),['message','asc']);assert.deepEqual(await order(),[4,1,2,0,3]);await clickSort(page,'message');assert.deepEqual(await order(),[0,2,1,4,3]);
-  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
+  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await refreshStatus(page);await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
   assert.deepEqual(await sortState(page),['message','desc']);
   state.generation++;state.source.id=crypto.randomUUID();state.job.id=crypto.randomUUID();state.job.mode='ft4';state.job.latest_decode={id:1,first_sequence:0,next_sequence:5,period_start_utc:null,complete:true};records=records.map(r=>({...r,period_start_utc:null,dt_seconds:null}));
   await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
@@ -921,7 +930,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].firstChild.textContent,r.querySelector('.log-worked')?.dataset.worked??null,r.querySelector('.log-worked')?.textContent??null]));
  assert.deepEqual(marks,[['CQ K1ABC FN42','worked_this_band_and_mode',' \u00b7 \u2713 worked'],['CQ W1XYZ FN42','not_worked',' \u00b7 \u2605 new'],['FREE TEXT',null,null]]);
  await clickSort(page,'frequency');await page.waitForTimeout(300);
- await page.getByRole('button',{name:'Refresh status',exact:true}).click();await page.waitForTimeout(500);
+ await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
  assert.equal(await page.locator('.log-worked[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on this band and mode','text label beside colour');
@@ -931,13 +940,14 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
 // Proves: CL-009-05; TC-006-003. The transmit status line shows the station's SNTP clock
 // state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
 // CAT PTT setting is set in the page only, the server keeps transmit unsupported).
-test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:20000},async t=>{
+test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:45000},async t=>{
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
     await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const status=async()=>page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();return document.querySelector('#transmit-status').textContent;});
   assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
   view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};

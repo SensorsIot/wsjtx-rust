@@ -48,7 +48,8 @@ test('TC-007-003 Rx Frequency pane routing and TC-007-001 selection without tran
   assert.equal(await page.locator('#qso-crowd').textContent(),'\u26A0 4 near Rx');
   // Local sorting/clearing: no request.
   const before=requests.length;
-  await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#rx-pane-erase').click();
+  // #37: Erase and the DX entry are in the QSO fold-out.
+  await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#qso-more summary').click();await page.locator('#rx-pane-erase').click();
   assert.equal(await page.locator('#rx-pane-rows tr').count(),0);
   assert.equal(requests.slice(before).filter(r=>r.method!=='GET'||r.path==='/receive/results').length,0,'local presentation sends no request');
   // Selection by Enter on the focused row sends the exact identity.
@@ -161,6 +162,7 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
 });
 
 test('TC-007-004 manual DX entry and Log QSO open the review without hiding Halt Tx',{timeout:30000},async()=>{
+  if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
   await page.locator('#dx-call').fill('dl1abc');await page.locator('#dx-grid').fill('JO62');await page.locator('#dx-grid').press('Enter');
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'DL1ABC'}).waitFor();
   await page.locator('#dx-call').fill('AB1');await page.locator('#dx-call').press('Enter');

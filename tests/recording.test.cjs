@@ -68,6 +68,8 @@ function wav(seconds=1,amplitude=.5,frequency=750){
   for(let n=0;n<count;n++)b.writeInt16LE(Math.max(-32768,Math.min(32767,Math.round(amplitude*32768*Math.sin(2*Math.PI*frequency*n/12000)))),44+n*2);return b;
 }
 async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});if(await p.locator('#open-server-settings').count()){await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();}await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
+// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await refreshStatus(page);if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
 // Proves: CL-003-04, CL-010-07; TC-009-005. Only a current accepted snapshot clears disconnected presentation.
@@ -335,7 +337,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const stillPlaying=await f.snapshot();assert.equal(stillPlaying.generation,playback.generation);assert.ok(stillPlaying.job,'refused selection retains the recording job');assert.equal(stillPlaying.job.id,playback.id);assert.equal(stillPlaying.job.state,'running');
       for(let n=0;n<10;n++){
         const due=start+(n+1)*5500;await sleep(Math.max(0,due-performance.now()));
-        await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
+        await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await refreshStatus(p);await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
       }
       await waitUntil(start+60000);const seconds=(performance.now()-start)/1000;
       assert.ok(seconds>=60,'Thin measurement covers at least60 complete seconds');
@@ -354,7 +356,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const uploadBefore={...f.proxy.counters},uploadStart=performance.now(),uploadStatus=[];
       await progress('connected',{step:'Upload and status measurement started'});
       await pages[0].setInputFiles('#recording-file',{name:'paced.wav',mimeType:'audio/wav',buffer:wav(.5)});await pages[0].locator('#recording-import').click();
-      for(let n=0;n<6;n++){await sleep(700);await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000);uploadStatus.push(ms);}));}
+      for(let n=0;n<6;n++){await sleep(700);await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await refreshStatus(p);await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000);uploadStatus.push(ms);}));}
       await pages[0].locator('#recording-replay:enabled').waitFor({timeout:30000});
       const upload={ms:performance.now()-uploadStart,up:f.proxy.counters.up-uploadBefore.up,down:f.proxy.counters.down-uploadBefore.down,statusMs:uploadStatus};
       await progress('connected',{step:'Upload and status measurement complete'},{upload});
