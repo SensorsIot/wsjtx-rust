@@ -345,7 +345,7 @@ class ArtifactTests(ApiFreeCase):
     def coverage_lines():
         return [*(f"test {name} ... ok\n".encode() for name in guardian.ORDINARY),
                 *(f"test {name} ... ignored, fixed reason\n".encode() for name in guardian.IGNORED),
-                b"test result: ok. 14 passed; 0 failed; 2 ignored; 0 measured; 1 filtered out; "
+                b"test result: ok. 15 passed; 0 failed; 2 ignored; 0 measured; 1 filtered out; "
                 b"finished in 1.00s\n"]
 
     def producer(self, artifact=None, build=True, coverage=None):
@@ -372,10 +372,10 @@ class ArtifactTests(ApiFreeCase):
         self.assertEqual(json.loads(path.read_bytes()), receipt)
         self.assertEqual(receipt["artifact_sha256"], guardian.digest(self.executable))
         self.assertEqual(receipt["ordinary_argv"], list(guardian.ORDINARY_ARGV))
-        self.assertEqual(receipt["coverage"]["summary"], [14, 0, 2, 0, 1])
+        self.assertEqual(receipt["coverage"]["summary"], [15, 0, 2, 0, 1])
         self.assertEqual(set(receipt["coverage"]["outcomes"]),
                          set(guardian.ORDINARY) | set(guardian.IGNORED))
-        self.assertEqual(len(receipt["inventory"]["names"]), 17)
+        self.assertEqual(len(receipt["inventory"]["names"]), 18)
         self.assertEqual(set(receipt["inventory"]["ignored"]), set(guardian.IGNORED))
         self.assertIn("tools/windows_process_metrics.py", receipt["source_pins"])
         self.assertIn("tools/test_windows_process_metrics.py", receipt["source_pins"])
@@ -416,7 +416,7 @@ class ArtifactTests(ApiFreeCase):
         variants = [valid[:-1], valid[1:], [valid[0], *valid],
                     [valid[0].replace(b"ok", b"FAILED"), *valid[1:]],
                     [b"test unreviewed ... ok\n", *valid],
-                    [*valid[:-1], valid[-1].replace(b"14 passed", b"13 passed")],
+                    [*valid[:-1], valid[-1].replace(b"15 passed", b"14 passed")],
                     [*valid[:-1], valid[-1].replace(b"1 filtered", b"2 filtered")]]
         for coverage in variants:
             with self.subTest(coverage=coverage[:1]):
@@ -497,7 +497,7 @@ class ArtifactTests(ApiFreeCase):
             lambda value: value.update(inventory={"names": [], "ignored": []}),
             lambda value: value.update(source_pins={}),
             lambda value: value.update(input_environment={}),
-            lambda value: value.update(coverage={"outcomes": {}, "summary": [14, 0, 2, 0, 1]}),
+            lambda value: value.update(coverage={"outcomes": {}, "summary": [15, 0, 2, 0, 1]}),
             lambda value: value.update(handoff_nonce="not a nonce"),
             lambda value: value.update(stream_sha256="0" * 64),
             lambda value: value.update(artifact_sha256="0" * 64),

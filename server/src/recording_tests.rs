@@ -1861,6 +1861,7 @@ fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_row
         .analyze(receive::AnalysisWindow {
             origin: 0,
             samples: vec![0.0; 360000],
+            waits: false,
         })
         .unwrap();
     let s = r.receive_snapshot();
@@ -1887,6 +1888,7 @@ fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_row
         .analyze(receive::AnalysisWindow {
             origin: 180000,
             samples: vec![0.0; 360000],
+            waits: false,
         })
         .unwrap();
     let s = r.receive_snapshot();
@@ -1987,6 +1989,7 @@ fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
         .analyze(receive::AnalysisWindow {
             origin: 0,
             samples: vec![0.0; 180000],
+            waits: false,
         })
         .unwrap();
     let observed = views.lock().unwrap();
@@ -2007,6 +2010,60 @@ fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
         s["job"]["latest_decode"]["period_start_utc"],
         "2026-10-27T12:00:15.0000000Z"
     );
+}
+// Proves: CL-007-05; TC-004-004. A late window waits for the prompt decode instead of abandoning it.
+#[test]
+fn late_window_waits_for_the_prompt_decode_without_overrun() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    r.publish_decode(&job, &decoded).unwrap();
+    let context = {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        source::SourceContext {
+            descriptor: l.source.as_ref().unwrap().clone(),
+            timing: Arc::new(l.timing.as_ref().unwrap().clone()),
+        }
+    };
+    let block =
+        |first| SampleBlock::live(&context, first, Arc::from(vec![0.0; 240]), false).unwrap();
+    let mut window = receive::WindowBuffer::new(decoder::Mode::Ft8, context.descriptor.clone())
+        .unwrap()
+        .with_schedule(&[(0, 180000, true)]);
+    for first in (180000..359760).step_by(240) {
+        assert!(window.push(&block(first)).unwrap().window.is_none());
+    }
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 359760;
+    let views = Arc::new(Mutex::new(vec![]));
+    let next = block(359760);
+    let input = DecodeBoundaryInput {
+        context,
+        next: Some(next),
+        owner: r.clone(),
+        views: views.clone(),
+        running: true,
+    };
+    let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+    worker.window = Some(window);
+    worker.spectrum.reset(359760);
+    worker
+        .analyze(receive::AnalysisWindow {
+            origin: 0,
+            samples: vec![0.0; 180000],
+            waits: false,
+        })
+        .unwrap();
+    let observed = views.lock().unwrap();
+    assert!(
+        observed.iter().all(|v| v["complete"] == true),
+        "the waiting window must not cut the decode in progress: {observed:?}"
+    );
+    let s = r.receive_snapshot();
+    assert!(s["job"]["last_overrun"].is_null());
+    assert_eq!(s["job"]["latest_decode"]["id"], 2);
+    assert_eq!(s["job"]["latest_decode"]["complete"], true);
 }
 // Proves: CL-010-09; TC-007-006. Real terminal owner path preserves last view, never an invented completion.
 #[test]
@@ -2314,17 +2371,17 @@ fn live_window_schedule_follows_the_utc_period_grid() {
     let anchored = timing(Some("2026-11-01T19:23:07.5000000Z"), 1000);
     assert_eq!(
         window_schedule(&anchored, decoder::Mode::Ft8),
-        Some(vec![(76600, 180000), (99400, 180000)])
+        Some(vec![(76600, 180000, false), (99400, 180000, true)])
     );
     assert_eq!(
         window_schedule(&anchored, decoder::Mode::Ft4),
-        Some(vec![(79000, 90000), (5800, 90000)])
+        Some(vec![(79000, 90000, false), (5800, 90000, true)])
     );
     // A completion before the anchor wraps into the next period, modulo the advance.
     let late = timing(Some("2026-11-01T19:23:14.0000000Z"), 179000);
     assert_eq!(
         window_schedule(&late, decoder::Mode::Ft8),
-        Some(vec![(176600, 180000), (19400, 180000)])
+        Some(vec![(176600, 180000, false), (19400, 180000, true)])
     );
     assert_eq!(window_schedule(&timing(None, 0), decoder::Mode::Ft8), None);
 }

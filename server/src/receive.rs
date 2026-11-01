@@ -14,6 +14,10 @@ pub(crate) enum WindowError {
 pub(crate) struct AnalysisWindow {
     pub samples: Vec<f32>,
     pub origin: u64,
+    /// A scheduled late window that may wait for the analysis in progress instead of
+    /// replacing it. The audio test targets include this file without the live worker.
+    #[allow(dead_code)]
+    pub waits: bool,
 }
 
 pub(crate) struct IngestOutcome {
@@ -30,9 +34,9 @@ pub(crate) struct WindowBuffer {
     previous_end: Option<u64>,
     next_due: u64,
     advance: u64,
-    /// Due boundaries as (source-counter residue modulo the advance, window frames).
-    /// The default is the plain counter grid with the whole span.
-    schedule: Vec<(u64, usize)>,
+    /// Due boundaries as (source-counter residue modulo the advance, window frames,
+    /// waits). The default is the plain counter grid with the whole span.
+    schedule: Vec<(u64, usize, bool)>,
     span: usize,
     complete_support: usize,
 }
@@ -58,7 +62,7 @@ impl WindowBuffer {
             previous_end: None,
             next_due: advance,
             advance,
-            schedule: vec![(0, span)],
+            schedule: vec![(0, span, false)],
             span,
             complete_support: mode.symbol_frames() * mode.symbol_count(),
         })
@@ -69,10 +73,10 @@ impl WindowBuffer {
     /// of the source's period grid. Positions remain source counters.
     // The audio test targets include this file without the live worker that calls it.
     #[allow(dead_code)]
-    pub(crate) fn with_schedule(mut self, schedule: &[(u64, usize)]) -> Self {
+    pub(crate) fn with_schedule(mut self, schedule: &[(u64, usize, bool)]) -> Self {
         let mut entries = schedule
             .iter()
-            .map(|&(phase, frames)| (phase % self.advance, frames.min(self.span)))
+            .map(|&(phase, frames, waits)| (phase % self.advance, frames.min(self.span), waits))
             .collect::<Vec<_>>();
         entries.sort_unstable();
         entries.dedup_by_key(|entry| entry.0);
@@ -86,7 +90,7 @@ impl WindowBuffer {
     fn due_after(&self, position: u64) -> u64 {
         self.schedule
             .iter()
-            .map(|&(phase, _)| {
+            .map(|&(phase, _, _)| {
                 let behind = (position % self.advance + self.advance - phase) % self.advance;
                 position + (self.advance - behind)
             })
@@ -151,12 +155,12 @@ impl WindowBuffer {
             let position = block.first_frame + offset as u64 + 1;
             if position == self.next_due {
                 let residue = position % self.advance;
-                let frames = self
+                let (frames, waits) = self
                     .schedule
                     .iter()
                     .find(|entry| entry.0 == residue)
-                    .map_or(self.span, |entry| entry.1)
-                    .min(self.history.len());
+                    .map_or((self.span, false), |entry| (entry.1, entry.2));
+                let frames = frames.min(self.history.len());
                 if frames >= self.complete_support {
                     let skip = self.history.len() - frames;
                     let mut samples = Vec::new();
@@ -167,6 +171,7 @@ impl WindowBuffer {
                     window = Some(AnalysisWindow {
                         samples,
                         origin: self.history_first + skip as u64,
+                        waits,
                     });
                 }
                 self.next_due = self.due_after(position);

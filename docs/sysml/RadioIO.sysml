@@ -233,7 +233,9 @@ package WstxRadioIO {
              0..3500Hz +-0.1dB, stop>=5500Hz >=60dB, exact rational output count and
              partition invariance2e-5; delay<=20ms/<=1024native support. No second
              conversion or AGC. Known gaps reset FIR/FFT/decoder without invented samples.
-             FT8trailing30s/advance15s, FT4trailing15s/advance7.5s; no queued analyses.
+             FT8trailing30s/advance15s, FT4trailing15s/advance7.5s; no queued analyses,
+             except that with a correlated UTC anchor one scheduled late window waits
+             for the prompt analysis in progress (StationDecode AdvanceDecode, #47).
              Missed boundary drops outstanding future and records latest abandoned
              window support in last_overrun; partials retained, no fabricated audio gap.
              Newest supported window replaces obsolete work, never claims complete history.
@@ -412,7 +414,7 @@ one continuous receive job until stop or failure. Incomplete initial waveform su
 is not a decode. Analyze trailing up-to30 s windows every15 s for FT8 and trailing
 up-to15 s windows every7.5 s for FT4, including initial shorter complete supports.
 Reuse #7 kernels/records, preserving global canonical start_frame across known gaps.
-No queued analysis windows: if processing misses the next boundary, report overrun and
+With a correlated UTC anchor, analysis windows follow the UTC schedule of StationDecode AdvanceDecode (#47), and its one late window per period waits for the prompt analysis in progress. Otherwise no queued analysis windows: if processing misses the next boundary, report overrun and
 the skipped interval, abandon obsolete work and use the latest supported window.
 The reported last_overrun interval is the half-open support of the most recently
 abandoned analysis window. It reports skipped analysis, not missing audio or fabricated

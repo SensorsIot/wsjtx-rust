@@ -2248,6 +2248,9 @@ impl LiveWorker {
             future::Future,
             task::{Context, Poll, Waker},
         };
+        // One late window may wait for the decode in progress (#47); any other arrival
+        // abandons that decode as an overrun.
+        let mut pending: Option<receive::AnalysisWindow> = None;
         loop {
             let mode = self.mode.ok_or("state_conflict")?;
             let mut state = if self.reset {
@@ -2283,6 +2286,7 @@ impl LiveWorker {
             ));
             let mut context = Context::from_waker(Waker::noop());
             let mut replacement = None;
+            let mut skipped = None;
             let result = loop {
                 if !self.current() {
                     break Err("cancelled");
@@ -2317,7 +2321,13 @@ impl LiveWorker {
                 // Drain the real capture queue between cooperative numerical yields.
                 for _ in 0..128 {
                     match self.step() {
+                        Ok(Some(next)) if next.waits && pending.is_none() => {
+                            pending = Some(next);
+                        }
                         Ok(Some(next)) => {
+                            skipped = pending
+                                .take()
+                                .map(|p| (p.origin, p.origin + p.samples.len() as u64));
                             replacement = Some(next);
                             break;
                         }
@@ -2335,7 +2345,7 @@ impl LiveWorker {
                     if replacement.is_some()
                         && let Some(l) = self.owner.state.lock().unwrap().live.as_mut()
                     {
-                        l.last_overrun = Some(interval);
+                        l.last_overrun = Some(skipped.unwrap_or(interval));
                     }
                     break Ok(());
                 }
@@ -2347,7 +2357,10 @@ impl LiveWorker {
                 self.owner
                     .publish_latest_decode(&job, interval, first_sequence, complete)?;
             }
-            if let Some(next) = replacement {
+            if self.reset {
+                pending = None;
+            }
+            if let Some(next) = replacement.or_else(|| pending.take()) {
                 window = next;
             } else {
                 return Ok(());
@@ -2389,7 +2402,7 @@ pub(crate) const LIVE_WINDOWS: [(decoder::Mode, [(i128, i128); 2]); 2] = [
 fn window_schedule(
     timing: &source::SourceTiming,
     mode: decoder::Mode,
-) -> Option<Vec<(u64, usize)>> {
+) -> Option<Vec<(u64, usize, bool)>> {
     let (period, _, _) = period_parameters(match mode {
         decoder::Mode::Ft8 => "ft8",
         decoder::Mode::Ft4 => "ft4",
@@ -2399,13 +2412,16 @@ fn window_schedule(
     let advance = period * 12000 / 10_000_000;
     windows
         .iter()
-        .map(|&(completion, length)| {
+        .enumerate()
+        .map(|(index, &(completion, length))| {
             let after = (completion - anchor).rem_euclid(period);
             let frames = (after * 12000 + 5_000_000) / 10_000_000;
             let residue = (i128::from(timing.canonical_anchor_frame) + frames).rem_euclid(advance);
             Some((
                 u64::try_from(residue).ok()?,
                 usize::try_from(length * 12000 / 10_000_000).ok()?,
+                // The late window waits for its period's prompt decode.
+                index == 1,
             ))
         })
         .collect()

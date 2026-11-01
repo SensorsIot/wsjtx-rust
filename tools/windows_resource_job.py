@@ -48,6 +48,7 @@ ORDINARY = (
     "resource_concurrency_qualification_rejects_serial_work_and_clock_faults",
     "physical_noise_reproduction_has_no_frame", "same_frequency_preserves_two_temporal_frames",
     "physical_wrong_mode_reproduction_has_no_frame_or_search_error",
+    "live_busy_period_publishes_every_decode_promptly",
 )
 ORDINARY_ARGV = (
     "cargo", "test", "--release", "--locked", "--test", "decoder_signal",
@@ -261,7 +262,7 @@ def source_inventory(source):
         names.append(name)
         if "#[ignore" in attributes:
             ignored.append(name)
-    require(len(names) == 17 and len(set(names)) == 17 and
+    require(len(names) == 18 and len(set(names)) == 18 and
             set(names) == set(ORDINARY) | {MATRIX, *IGNORED} and
             set(ignored) == set(IGNORED), "source_inventory_mismatch")
     return {"names": sorted(names), "ignored": sorted(ignored)}
@@ -432,7 +433,7 @@ def load_handoff(receipt_path, root):
     require(re.fullmatch(r"[0-9a-f]{32}", str(receipt.get("handoff_nonce"))) is not None,
             "invalid_handoff_nonce")
     expected = {name: "ok" for name in ORDINARY} | {name: "ignored" for name in IGNORED}
-    require(receipt.get("coverage") == {"outcomes": expected, "summary": [14, 0, 2, 0, 1]},
+    require(receipt.get("coverage") == {"outcomes": expected, "summary": [len(ORDINARY), 0, 2, 0, 1]},
             "handoff_coverage_mismatch")
     stream = Path(receipt.get("stream", ""))
     require(stream.is_file() and stream.resolve().parent == Path(receipt_path).resolve().parent and

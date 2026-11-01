@@ -187,7 +187,7 @@ fn receive_schedule_completes_windows_at_period_residues() {
     for partitions in [&[240usize][..], &[239, 1, 117, 240]] {
         let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
             .unwrap()
-            .with_schedule(&[(99400, 180000), (76600, 180000)]);
+            .with_schedule(&[(99400, 180000, true), (76600, 180000, false)]);
         let mut output = vec![];
         let (mut first, mut partition) = (0u64, 0);
         while first < 480000 {
@@ -205,6 +205,7 @@ fn receive_schedule_completes_windows_at_period_residues() {
         for (end, window) in &output {
             assert_eq!(window.samples.len(), 180000);
             assert_eq!(window.origin, end - 180000);
+            assert_eq!(window.waits, end % 180000 == 99400);
             for (offset, &sample) in window.samples.iter().enumerate().step_by(997) {
                 assert_eq!(sample, ((window.origin + offset as u64) % 97) as f32 / 128.);
             }
@@ -213,7 +214,7 @@ fn receive_schedule_completes_windows_at_period_residues() {
     // A shorter scheduled length and the plain grid without a schedule.
     let mut buffer = WindowBuffer::new(Mode::Ft4, descriptor())
         .unwrap()
-        .with_schedule(&[(5800, 63000)]);
+        .with_schedule(&[(5800, 63000, true)]);
     let mut windows = vec![];
     for first in (0..200000).step_by(240) {
         if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {

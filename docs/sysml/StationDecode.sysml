@@ -712,8 +712,12 @@ package WstxOfflineDecode {
              residues of the advance: FT8 prompt +13.8 s/15 s of audio (DT -1.7..+0.66 s)
              and late +15.7 s/15 s (DT +0.2..+2.56 s); FT4 prompt +6.5 s/7.5 s (DT
              -1.5..+0.96 s) and late +7.9 s/7.5 s (DT -0.1..+2.36 s). Overlapping frames are
-             deduplicated by the modem history. Without a correlated anchor the counter grid
-             (30 s/15 s, 15 s/7.5 s) applies. The modem itself still reads no UTC.
+             deduplicated by the modem history. The late window arriving during the prompt
+             decode waits in one slot until that decode completes; any other window arriving
+             during a decode abandons it as an overrun (last_overrun names the newest skipped
+             support). The residues are derived once per source epoch from its UTC anchor;
+             source-clock drift is not re-anchored within an epoch. Without a correlated
+             anchor the counter grid (30 s/15 s, 15 s/7.5 s) applies. The modem reads no UTC.
              FT8coarseN1920/hop480/half-tone200..3500inclusive/endpoints;FT4N576/hop144
              noisegridseparatefromFt4FrequencyCandidates/Ft4BandLimitAndFineSync.
              FT8BandLimit/FineSynchronization/ObserveMetricFamilies/DecodeMetricFamilies;
