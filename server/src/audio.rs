@@ -56,6 +56,35 @@ pub(crate) enum CaptureEvent {
     NativeDiscontinuity,
     FrameBackstep,
 }
+impl CaptureEvent {
+    const ALL: [Self; 8] = [
+        Self::QueueContention,
+        Self::QueueFull,
+        Self::PoolExhausted,
+        Self::InvalidPacket,
+        Self::ClockStep,
+        Self::TimestampError,
+        Self::NativeDiscontinuity,
+        Self::FrameBackstep,
+    ];
+    /// Bounded trigger code reported with an unknown-loss epoch.
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::QueueContention => "queue_contention",
+            Self::QueueFull => "queue_full",
+            Self::PoolExhausted => "pool_exhausted",
+            Self::InvalidPacket => "invalid_packet",
+            Self::ClockStep => "clock_step",
+            Self::TimestampError => "timestamp_error",
+            Self::NativeDiscontinuity => "native_discontinuity",
+            Self::FrameBackstep => "frame_backstep",
+        }
+    }
+}
+/// A flagged packet whose device position and QPC both continue the previous packet
+/// within this bound is an engine glitch on a continuous timeline, not unknown loss.
+pub const CONTIGUOUS_QPC_TOLERANCE_100NS: u64 = 20_000;
+const NO_LOSS_EVENT: u8 = u8::MAX;
 
 /// Diagnostic event counts only; they do not allocate identities or alter epoch policy.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -234,6 +263,7 @@ pub struct PacketQueue {
     failed: AtomicBool,
     capacity: usize,
     pub(crate) loss: AtomicBool,
+    loss_event: std::sync::atomic::AtomicU8,
     pub(crate) cancelled: AtomicBool,
     events: [AtomicU64; 8],
     native_samples: AtomicU64,
@@ -263,6 +293,7 @@ impl PacketQueue {
             failed: AtomicBool::new(false),
             capacity: format.rate as usize / 2,
             loss: AtomicBool::new(false),
+            loss_event: std::sync::atomic::AtomicU8::new(NO_LOSS_EVENT),
             cancelled: AtomicBool::new(false),
             events: std::array::from_fn(|_| AtomicU64::new(0)),
             native_samples: AtomicU64::new(0),
@@ -277,6 +308,13 @@ impl PacketQueue {
     }
     pub(crate) fn mark_loss(&self, event: CaptureEvent) {
         self.record_event(event);
+        // The first unconsumed loss names the epoch trigger; later ones are only counted.
+        let _ = self.loss_event.compare_exchange(
+            NO_LOSS_EVENT,
+            event as u8,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        );
         self.loss.store(true, Ordering::Release);
     }
     pub fn diagnostics(&self) -> CaptureDiagnostics {
@@ -613,6 +651,7 @@ pub struct LiveSource {
     notify: u64,
     origin: Option<u64>,
     expected: Option<u64>,
+    expected_qpc: Option<u64>,
     ready: VecDeque<(u64, Arc<[f32]>)>,
     discontinuity: bool,
     terminal: Option<SourceError>,
@@ -628,6 +667,7 @@ impl LiveSource {
             notify: 0,
             origin: None,
             expected: None,
+            expected_qpc: None,
             ready: VecDeque::new(),
             discontinuity: true,
             terminal: None,
@@ -642,20 +682,41 @@ impl LiveSource {
         packet: &NativePacket,
     ) -> Result<Option<crate::source::EpochProposal>, SourceError> {
         let loss = self.queue.loss.swap(false, Ordering::AcqRel);
-        if packet.flags & TIMESTAMP_ERROR != 0 {
+        let loss_event = self.queue.loss_event.swap(NO_LOSS_EVENT, Ordering::AcqRel);
+        let timestamp_error = packet.flags & TIMESTAMP_ERROR != 0;
+        let flagged = packet.flags & DATA_DISCONTINUITY != 0;
+        let backstep = self.expected.is_some_and(|n| packet.first_frame < n);
+        if timestamp_error {
             self.queue.record_event(CaptureEvent::TimestampError);
         }
-        if packet.flags & DATA_DISCONTINUITY != 0 {
+        if flagged {
             self.queue.record_event(CaptureEvent::NativeDiscontinuity);
         }
-        if self.expected.is_some_and(|n| packet.first_frame < n) {
+        if backstep {
             self.queue.record_event(CaptureEvent::FrameBackstep);
         }
-        let unknown = loss
-            || packet.flags & TIMESTAMP_ERROR != 0
-            || self.expected.is_some_and(|n| packet.first_frame < n)
-            || (packet.flags & DATA_DISCONTINUITY != 0
-                && self.expected == Some(packet.first_frame));
+        // A flag on a contiguous device position is unknown loss unless the packet QPC
+        // also continues the previous packet: then no interval is missing from the timeline.
+        let timeline_continues = !timestamp_error
+            && self
+                .expected_qpc
+                .is_some_and(|q| packet.qpc_100ns.abs_diff(q) <= CONTIGUOUS_QPC_TOLERANCE_100NS);
+        let unexplained_flag =
+            flagged && self.expected == Some(packet.first_frame) && !timeline_continues;
+        let trigger = if loss {
+            CaptureEvent::ALL
+                .get(usize::from(loss_event))
+                .map_or("capture_loss", |event| event.code())
+        } else if timestamp_error {
+            CaptureEvent::TimestampError.code()
+        } else if backstep {
+            CaptureEvent::FrameBackstep.code()
+        } else if unexplained_flag {
+            CaptureEvent::NativeDiscontinuity.code()
+        } else {
+            "capture_start"
+        };
+        let unknown = loss || timestamp_error || backstep || unexplained_flag;
         let epoch = self.origin.is_none() || unknown;
         if epoch {
             if packet
@@ -695,6 +756,17 @@ impl LiveSource {
                 .push_back((first + (i * LIVE_BLOCK_FRAMES) as u64, Arc::from(chunk)));
         }
         self.expected = Some(end);
+        self.expected_qpc = (!timestamp_error)
+            .then(|| {
+                packet.qpc_100ns.checked_add(
+                    u64::try_from(
+                        u128::from(packet.frames as u64) * 10_000_000
+                            / u128::from(self.format.rate),
+                    )
+                    .ok()?,
+                )
+            })
+            .flatten();
         if epoch {
             return self
                 .epochs
@@ -704,6 +776,7 @@ impl LiveSource {
                     } else {
                         "capture_start"
                     },
+                    trigger,
                     self.format.rate,
                     packet.first_frame,
                     if packet.flags & TIMESTAMP_ERROR == 0 {

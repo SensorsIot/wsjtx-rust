@@ -60,7 +60,10 @@ package WstxRadioIO {
         assert constraint packetBound { frames > 0 and frames <= 8192 and channels >= 1 and channels <= 2 and (rateHz == 44100 or rateHz == 48000) }
         doc /* Raw interleaved little-endian device packet. Byte values0..255. Capture
              pump copies/releases only; float normalization/conversion belongs worker.
-             SILENT is known measured zero; timestamp-error/gap is not silence. */
+             SILENT is known measured zero; timestamp-error/gap is not silence.
+             A discontinuity flag whose deviceFrame and packetQpc100ns both continue the
+             previous packet (QPC within2ms) is a counted engine glitch on a continuous
+             timeline: measured samples, no gap and no epoch. */
     }
     attribute def SourceTiming {
         attribute sourceId : String;
@@ -82,6 +85,7 @@ package WstxRadioIO {
     attribute def EpochProposal {
         attribute proposalCounter : Integer;
         attribute reason : String;
+        attribute trigger : String;
         attribute nativeRate : Integer;
         attribute firstDeviceFrame : Integer;
         attribute packetQpc100ns : Integer[0..1];
@@ -89,7 +93,11 @@ package WstxRadioIO {
         doc /* Identity-free proposal. Receive authority alone allocates new immutable
              descriptor/source/job/generation/timing and acknowledges current counter.
              Until acknowledgement producer returns Pending, exposes no descriptor and
-             emits no block. Stale acknowledgement rejected; no old IDs reused. */
+             emits no block. Stale acknowledgement rejected; no old IDs reused.
+             trigger is a bounded diagnostic code naming the capture condition:
+             capture_start, queue_full, queue_contention, pool_exhausted, invalid_packet,
+             clock_step, timestamp_error, frame_backstep, native_discontinuity or
+             capture_loss (loss whose event was not attributable). */
     }
     action def AcknowledgeEpoch {
         in proposal : EpochProposal;
@@ -309,7 +317,7 @@ Reuse RustFFT6.4.1 and the existing immutable `SampleBlock`; no second FFT provi
 resampler, sample reader, job manager or configuration database. The shared source
 boundary is `SampleSource::descriptor()` plus nonblocking `poll()` returning Pending,
 Block(SampleBlock), EpochChanged(EpochProposal), End or Failed(code). An epoch proposal
-contains only a source-local proposal counter, reason, native rate/first frame/QPC and
+contains only a source-local proposal counter, reason, trigger, native rate/first frame/QPC and
 converter delay; it contains no station/source/job identity. Pending is never EOS; only
 finite files return End. The file adapter keeps its existing reader; the live adapter
 normalizes/converts raw native packets on that same DSP worker. Before any replacement
@@ -379,6 +387,12 @@ they are not inserted as silence. Reset converter, spectrum and decoder windows 
 Unknown loss/timestamp-error, format change or device reopen starts a new source epoch,
 generation and frame origin; old samples/results cannot append. A known SILENT packet
 remains a real measured interval. No decode waveform may bridge a discontinuity.
+A WASAPI DATA_DISCONTINUITY flag is classified by the timeline it reports: with a later
+device position it is a known gap; with a contiguous device position and a packet QPC
+within2 ms of the previous packet's QPC plus its duration it is an engine glitch on a
+continuous timeline, counted and kept as measured samples without gap, reset or epoch;
+with a contiguous position but no consistent QPC it is unknown loss. Every unknown-loss
+epoch names its trigger; the receive owner counts these epochs and logs one line each.
 
 Bracket GetSystemTimePreciseAsFileTime with two QPC reads, use midpoint correlation
 and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC anchor.
@@ -502,8 +516,10 @@ response at most16384 bytes. A missing selected input remains visibly unavailabl
 Enumeration overflow returns device_limit rather than silently dropping entries.
 
 `GET /receive` returns exactly `{v,profile_id,boot_id,generation,audio,source,job,clock}`.
-Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states,
-nullable strings and retry integer0..8000/null. Source is null or
+Audio is `{state,device_id,device_name,error,retry_after_ms,loss_epochs,last_loss}` with the4.5 states,
+nullable strings and retry integer0..8000/null. loss_epochs counts unknown-loss source
+epochs since this live receive started (safe counter, survives the rotations it counts);
+last_loss is null exactly when loss_epochs is0, else the latest epoch trigger code. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
 `{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun,latest_decode}` with UUID id,

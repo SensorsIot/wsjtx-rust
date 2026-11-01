@@ -46,6 +46,8 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
         last_overrun: None,
         publication_error: None,
         level: (0.0, 0, None, None),
+        loss_epochs: 0,
+        last_loss: None,
     });
     let decoded = decoder::Decode {
         payload: decoder::unpack(&[0; 77]),
@@ -268,6 +270,66 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     );
     worker.input.request_stop();
     assert_eq!(worker.input.status().state, audio::AudioState::Closed);
+}
+
+// Proves: CL-008-02/03; TC-002-003 (#38). Through the real queue, converter and live worker:
+// a WASAPI engine glitch on a continuous device/QPC timeline keeps job, generation and
+// spectrum/decode window; a real unknown loss rotates once and GET /receive names it.
+#[test]
+fn live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, _) = live_ring(&r);
+    let (mut input, queue) = crate::receive_http_tests::Input::queued();
+    input.start().unwrap();
+    let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+    worker.epoch_seen = false;
+    let packet = vec![0_u8; 480 * 8];
+    let (mut frame, mut qpc) = (160_980_000_u64, 51_066_719_853_840_u64);
+    let push = |flags: u32, frame: &mut u64, qpc: &mut u64| {
+        assert!(queue.push(&packet, 480, *frame, *qpc, flags));
+        *frame += 480;
+        *qpc += 100_150;
+    };
+    push(audio::DATA_DISCONTINUITY, &mut frame, &mut qpc);
+    for _ in 0..4 {
+        worker.step().unwrap();
+    }
+    let first = worker.job.clone();
+    assert!(first.source_id.is_some());
+    for i in 0..300 {
+        let flags = if i % 50 == 7 {
+            audio::DATA_DISCONTINUITY
+        } else {
+            0
+        };
+        push(flags, &mut frame, &mut qpc);
+        for _ in 0..4 {
+            worker.step().unwrap();
+        }
+    }
+    let view = r.receive_snapshot();
+    assert_eq!(
+        worker.job.id, first.id,
+        "engine glitch must not rotate the job"
+    );
+    assert_eq!(worker.job.generation, first.generation);
+    assert_eq!(view["generation"], first.generation);
+    assert_eq!(view["audio"]["loss_epochs"], 0);
+    assert!(view["audio"]["last_loss"].is_null());
+    assert!(worker.window.is_some());
+    // Own-queue loss (oversized packet) is unknown loss: exactly one rotation, named.
+    assert!(!queue.push(&[], 8193, frame, qpc, audio::SILENT));
+    push(0, &mut frame, &mut qpc);
+    for _ in 0..4 {
+        worker.step().unwrap();
+    }
+    let view = r.receive_snapshot();
+    assert_ne!(worker.job.id, first.id);
+    assert_eq!(view["generation"], first.generation + 1);
+    assert_eq!(view["audio"]["loss_epochs"], 1);
+    assert_eq!(view["audio"]["last_loss"], "invalid_packet");
+    worker.input.request_stop();
 }
 
 // Proves: CL-008-03; TC-009-004 resource release precedes terminal publication.
