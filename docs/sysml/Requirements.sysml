@@ -2987,4 +2987,133 @@ package WstxRequirements {
     dependency CL_045_02_verified_by_TC_045_002 from 'CL-045-02' to 'TC-045-002';
     dependency CL_045_03_verified_by_TC_045_002 from 'CL-045-03' to 'TC-045-002';
 
+    // #44 Automatic radio detection and setup (operator decision 2026-11-01 on issue #44:
+    // IC-7300 settings may be written via CI-V, each read back, old values kept for undo).
+    // IC-7300 1A 05 item numbers: Icom IC-7300 Full Manual, section 19 "Control command",
+    // command table pages 19-4/19-5.
+    requirement 'CL-044-01' {
+        doc /* POST /radio/detect {v 1, profile_id, boot_id} (operating access and Origin as POST /receive/stop, exact keys, empty query) enumerates the present COM ports (port, friendly name, USB VID/PID, device instance) and probes each one read-only, at most one detection at a time (a second is refused busy): the port is opened exclusively under the same per-device ownership claim as the CAT owner, with DTR and RTS disabled before the first byte and kept disabled, at 9600, 19200, 38400 and 115200 baud; at each rate it sends the CI-V broadcast "read transceiver ID" FE FE 00 E0 19 00 FD and, when no reply arrives, the same command addressed to each address of the model table. A reply FE FE E0 <address> 19 00 <id> FD identifies the address, the model and the rate; the station's own echo, collision (FC) frames, other traffic, garbage and timeouts are not replies. Probing never writes any other frame than these ID reads and the menu reads of CL-044-03: never a transmit, frequency, mode or setting command. Model table: 94h IC-7300 (station CAT supported), A4h IC-705, A2h IC-9700, 98h IC-7610 (identified, configured manually); Yaesu, Kenwood and Elecraft text CAT is not probed (listed as manual). A port held by another program or station reports in_use; the port of this station's running CAT owner (CL-022-03/04) is never opened a second time: it is reported from that owner, whose ID and menu reads go through the owner's single I/O lease. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/setup.rs; server/src/radio_control/windows.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/radio_setup.rs; server/src/main.rs";
+    }
+    dependency CL_044_01_to_FR_009 from 'CL-044-01' to 'FR-009';
+    dependency CL_044_01_to_FR_001 from 'CL-044-01' to 'FR-001';
+    dependency CL_044_01_to_FR_008 from 'CL-044-01' to 'FR-008';
+    requirement 'CL-044-02' {
+        doc /* For each identified radio the detection matches the USB audio endpoints to its serial port by the shared USB parent: an active capture or render endpoint matches when its device has the same Windows container ID as the serial device (not the null container), or when the nearest USB device of both has the same parent hub and that parent is not a root hub. Exactly one matching capture and one matching render endpoint are proposed by their WASAPI endpoint IDs with their friendly names for display; none or several leave that side unproposed (state none or ambiguous). The response holds the proposal of the single supported radio found (none or several: proposal null): {port COMn, model, civ_address, baud, control {mode cat, endpoint icom7300://COMn?baud=<rate>&radio=<address>&controller=e0, ptt cat}, audio {input_device, output_device}}. Applying it is the operator's PUT /profile and the existing receive-only confirmation (CL-022-03); detection writes nothing. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/setup.rs; server/src/radio_control/windows.rs; server/src/audio/windows.rs; server/src/radio_setup.rs";
+    }
+    dependency CL_044_02_to_FR_002 from 'CL-044-02' to 'FR-002';
+    dependency CL_044_02_to_FR_001 from 'CL-044-02' to 'FR-001';
+    requirement 'CL-044-03' {
+        doc /* For an identified IC-7300 the detection reads (1A 05, never written while detecting) DATA OFF MOD 0066, DATA MOD 0067, USB MOD level 0065, CI-V transceive 0071, USB SEND 0078, USB keying CW 0079 and USB keying RTTY 0080, and reports each value with guidance: USB SEND, CW and RTTY keying not OFF are blocking (a DTR/RTS line can key the transmitter; this station keys by CI-V 1C 00); DATA MOD other than USB is blocking (MIC/USB is advice); USB MOD level 0 is blocking; CI-V transceive ON is advice; DATA OFF MOD is information. The CI-V baud rate is not readable by CI-V and is reported as the rate the radio answered at. A refused (FA) read is reported unreadable. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/setup.rs; server/src/radio_setup.rs";
+    }
+    dependency CL_044_03_to_FR_009 from 'CL-044-03' to 'FR-009';
+    dependency CL_044_03_to_FR_008 from 'CL-044-03' to 'FR-008';
+    requirement 'CL-044-04' {
+        doc /* "Apply recommended radio settings" is a separate operator action, never part of detection: POST /radio/settings/apply {v 1, profile_id, boot_id, connection_generation} (same access rules) requires this station's CAT owner ready on an IC-7300 (ID read 94h), the transmitter disarmed and the radio reporting RX. It reads the items, plans USB SEND OFF, USB keying CW OFF, USB keying RTTY OFF, DATA MOD USB and CI-V transceive OFF for each item that differs, saves the undo record radio-settings-undo.json in the profile directory {schema_version 1, profile_id, civ_address, items [{item, old, new}]} before the first write (an item already recorded keeps its first old value), then writes each item through the owner's lease and reads it back; a refused write, a mismatching readback or an exchange failure stops the remaining writes and is reported with the items done. POST /radio/settings/undo (same body and rules) writes each recorded old value back in reverse order with readback and removes the record only when all succeeded; without a record it is refused nothing_to_undo. Apply and undo never key the transmitter and never change frequency, mode or the profile. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/setup.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/radio_setup.rs; server/src/profile.rs";
+    }
+    dependency CL_044_04_to_FR_009 from 'CL-044-04' to 'FR-009';
+    dependency CL_044_04_to_FR_008 from 'CL-044-04' to 'FR-008';
+    requirement 'CL-044-05' {
+        doc /* PUT /profile refuses an audio device that is not a WASAPI endpoint ID: settings.audio.input_device must be a capture endpoint ID {0.0.1.00000000}.{GUID} and settings.audio.output_device a render endpoint ID {0.0.0.00000000}.{GUID} (lower- or upper-case hex), else 400 audio_device_not_endpoint with the field; null stays allowed. At station start an existing profile whose device entry is not an endpoint ID is migrated: when exactly one active endpoint of that flow has exactly that friendly name, the entry is replaced by its ID and the profile saved (revision + 1); otherwise it is kept and the startup log names the field and the reason (not_found or ambiguous). Loading a profile never fails because of a device entry. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/profile.rs; server/src/main.rs; server/src/radio_control/setup.rs; server/src/audio/windows.rs";
+    }
+    dependency CL_044_05_to_FR_001 from 'CL-044-05' to 'FR-001';
+    dependency CL_044_05_to_FR_002 from 'CL-044-05' to 'FR-002';
+    dependency CL_044_05_to_FR_016 from 'CL-044-05' to 'FR-016';
+    requirement 'CL-044-06' {
+        doc /* Outstanding until the operating screen of #37 is on master: Settings > Radio "Detect radio" calls POST /radio/detect and shows the proposal (port, model, CI-V address, baud, input and output endpoint names) and the settings check; Apply saves it by PUT /profile, restarts receive (⟳) and leads to the existing receive-only confirmation; "Apply recommended radio settings" and "Undo radio settings" are separate buttons with their own confirmation. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_044_06_to_FR_019 from 'CL-044-06' to 'FR-019';
+    verification 'TC-044-005' {
+        doc /* TC-044-005 — Detect radio panel (outstanding)
+             CL-044-06
+             Setup: actual candidate router and browser on a disposable profile with the detection hardware double.
+             Steps: open Settings > Radio, Detect radio, Apply, confirm; Apply recommended radio settings, confirm.
+             Expected: the proposal fields shown; PUT /profile with the proposed values; receive restarted; the confirmation dialog shown; the settings endpoint called only after its own confirmation.
+             2 — Isolated automated browser test; Windows development PC; not implemented. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-044-06';
+        }
+    }
+    dependency CL_044_06_verified_by_TC_044_005 from 'CL-044-06' to 'TC-044-005';
+    verification 'TC-044-001' {
+        doc /* TC-044-001 — Read-only probe on scripted serial ports
+             CL-044-01, CL-044-03
+             Setup: the probe and the IC-7300 menu reader driven over scripted fake serial transports that record every configure, write and line state, independent hand-written CI-V byte scripts.
+             Steps: (a) IC-7300 at 94h answering the broadcast only at 19200, with echo of every frame; (b) IC-705 answering only the addressed read at A4h at 115200; (c) collision frames FE FE FC FC FC FD and garbage bytes before the reply; (d) a silent port; (e) a port whose reads time out; (f) an unknown ID 99h; (g) the IC-7300 menu read with values 0078=01, 0079=00, 0080=02, 0066=00, 0067=03, 0065 0128, 0071=01, and a FA refusal of 0065; (h) a station whose CAT owner holds COM3 and two other ports.
+             Expected (hand table): (a) IC-7300, 94h, 19200; (b) IC-705, A4h, 115200, manual; (c) identified as (a); (d) and (e) no_reply after all four rates; (f) unknown_model with ID 99h; every written frame is FE FE 00 E0 19 00 FD, FE FE <table address> E0 19 00 FD or FE FE 94 E0 1A 05 00 <item> FD, the lines are disabled before the first write and never raised; (g) values and guidance: usb_send DTR blocking, rtty RTS blocking, data_mod USB ok, level 128 ok, transceive advice, FA unreadable; (h) COM3 is never opened, reported station_cat from the owner, the others probed.
+             2 — Isolated automated tests; Windows development PC, no serial port, radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-01';
+            verify 'CL-044-03';
+        }
+        attribute executable : String = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs";
+    }
+    dependency CL_044_01_verified_by_TC_044_001 from 'CL-044-01' to 'TC-044-001';
+    dependency CL_044_03_verified_by_TC_044_001 from 'CL-044-03' to 'TC-044-001';
+    verification 'TC-044-002' {
+        doc /* TC-044-002 — Audio matching, proposal, validation and migration
+             CL-044-01, CL-044-02, CL-044-05
+             Setup: fake port and endpoint lists with hand-written container IDs and USB parents; the actual router on a disposable profile with an injected detection hardware double.
+             Steps: (a) one IC-7300 port and its CODEC capture and render under the same hub, a webcam microphone elsewhere; (b) two capture endpoints under the hub; (c) same container ID, different parents; (d) only a root-hub parent shared; (e) POST /radio/detect valid, other profile, other boot, extra key, v 2, foreign Origin, a query, a concurrent second detect; (f) PUT /profile with "Speakers (USB Audio CODEC )", a capture ID as output, a render ID as input, valid IDs, null; (g) startup migration with a unique name, a duplicated name, an unknown name and an ID.
+             Expected: (a) proposal COM3 IC-7300 94h 19200, endpoint icom7300://COM3?baud=19200&radio=94&controller=e0, ptt cat, both CODEC endpoint IDs; (b) input ambiguous, output proposed; (c) matched; (d) none; (e) 200 report, 403 wrong_profile, 409 state_conflict, 400 invalid_request, 400 unsupported_version, 403 forbidden_origin, 400, 409 busy; (f) 400 audio_device_not_endpoint with the field for the first three, 200 for the rest; (g) ID saved with revision + 1, the others unchanged with reasons ambiguous, not_found, unchanged.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-01';
+            verify 'CL-044-02';
+            verify 'CL-044-05';
+        }
+        attribute executable : String = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs; tests/profiles.test.cjs";
+    }
+    dependency CL_044_01_verified_by_TC_044_002 from 'CL-044-01' to 'TC-044-002';
+    dependency CL_044_02_verified_by_TC_044_002 from 'CL-044-02' to 'TC-044-002';
+    dependency CL_044_05_verified_by_TC_044_002 from 'CL-044-05' to 'TC-044-002';
+    verification 'TC-044-003' {
+        doc /* TC-044-003 — Apply recommended radio settings and undo
+             CL-044-04
+             Setup: the actual Recording owner and CAT actor on a scripted IC-7300 transport holding menu values 0078=01, 0079=00, 0080=02, 0067=00, 0071=01; the actual router on a disposable profile.
+             Steps: apply; read the undo record; apply again; undo; undo again; apply with the radio reporting TX; apply with the transmitter armed; apply with a radio that answers FA to 0080; apply with a radio whose readback of 0067 stays 00; apply against an IC-705 ID; HTTP refusals as TC-044-002 (e).
+             Expected: writes FE FE 94 E0 1A 05 00 78 00 FD, 00 80 00, 00 67 03, 00 71 00 each acknowledged and read back, never 0079; the record holds {0078 1→0, 0080 2→0, 0067 0→3, 0071 1→0} before the first write; the second apply writes nothing and keeps the record; undo writes 0071=01, 0067=00, 0080=02, 0078=01 in that order and removes the record; the second undo nothing_to_undo; TX and armed refused with no write; FA stops after 0078 with the record kept and the failed item named; mismatch reported readback_mismatch; IC-705 refused unsupported_radio; no 1C 00 01, frequency or mode frame in any case.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-04';
+        }
+        attribute executable : String = "server/src/radio_setup_tests.rs";
+    }
+    dependency CL_044_04_verified_by_TC_044_003 from 'CL-044-04' to 'TC-044-003';
+    verification 'TC-044-004' {
+        doc /* TC-044-004 — Live detection and setup on HB9BLA
+             CL-044-01, CL-044-02, CL-044-03, CL-044-04, CL-044-05
+             Setup: the gated candidate installed on HB9BLA with only the IC-7300 plugged in, its USB Audio CODEC, the operator present.
+             Steps: Detect radio; compare the proposal; apply it with the receive-only confirmation; read the settings check; Apply recommended radio settings; Undo; Apply again; FT8 transmit test on a dummy load or a clear frequency.
+             Expected: proposal COM3, IC-7300, 94h, the station baud, the CODEC capture and render endpoint IDs; CAT ready after apply; the radio never keys during detection; the menu values match the radio's menu; undo restores them; the transmit test produces RF with audio from USB.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-044-01';
+            verify 'CL-044-02';
+            verify 'CL-044-03';
+            verify 'CL-044-04';
+            verify 'CL-044-05';
+        }
+    }
+    dependency CL_044_01_verified_by_TC_044_004 from 'CL-044-01' to 'TC-044-004';
+    dependency CL_044_02_verified_by_TC_044_004 from 'CL-044-02' to 'TC-044-004';
+    dependency CL_044_03_verified_by_TC_044_004 from 'CL-044-03' to 'TC-044-004';
+    dependency CL_044_04_verified_by_TC_044_004 from 'CL-044-04' to 'TC-044-004';
+    dependency CL_044_05_verified_by_TC_044_004 from 'CL-044-05' to 'TC-044-004';
+
 }
