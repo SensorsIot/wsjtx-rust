@@ -2492,7 +2492,26 @@ fn drifting_prompt_windows(track: bool, seconds: u64, ppm: f64) -> (Vec<(f64, bo
         }
         first += 240;
     }
-    (prompts, r.receive_snapshot()["clock"].clone())
+    // The /receive clock object keeps master's exact keys; drift is read on demand.
+    let mut keys = r.receive_snapshot()["clock"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "basis",
+            "canonical_anchor_frame",
+            "correlated",
+            "external_accuracy",
+            "uncertainty_ns",
+            "utc_anchor"
+        ]
+    );
+    (prompts, r.receive_clock())
 }
 
 // Proves: CL-007-05; TC-004-004. Re-anchoring keeps ordinary frames in the prompt window

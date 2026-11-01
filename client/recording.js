@@ -452,7 +452,7 @@ function validLiveSnapshot(s){
     const o=j.last_overrun;
     if(o!==null&&(!source||!shape(o,'end_frame,first_frame')||!counter(o.first_frame)||!counter(o.end_frame)||o.first_frame>=o.end_frame||o.end_frame>source.next_frame))return false;
   }
-  const drift='capture_drift_ms' in c;return shape(c,drift?'basis,canonical_anchor_frame,capture_drift_ms,capture_drift_ppm,correlated,external_accuracy,uncertainty_ns,utc_anchor':'basis,canonical_anchor_frame,correlated,external_accuracy,uncertainty_ns,utc_anchor')&&(!drift||Number.isSafeInteger(c.capture_drift_ms)&&(c.capture_drift_ppm===null||Number.isFinite(c.capture_drift_ppm)))&&c.basis==='system_utc'&&typeof c.correlated==='boolean'&&c.external_accuracy==='unknown'&&(c.canonical_anchor_frame===null||counter(c.canonical_anchor_frame))&&(c.correlated?typeof c.utc_anchor==='string'&&Number.isFinite(Date.parse(c.utc_anchor))&&counter(c.uncertainty_ns)&&c.uncertainty_ns<=2000000:c.utc_anchor===null&&c.uncertainty_ns===null);
+  return shape(c,'basis,canonical_anchor_frame,correlated,external_accuracy,uncertainty_ns,utc_anchor')&&c.basis==='system_utc'&&typeof c.correlated==='boolean'&&c.external_accuracy==='unknown'&&(c.canonical_anchor_frame===null||counter(c.canonical_anchor_frame))&&(c.correlated?typeof c.utc_anchor==='string'&&Number.isFinite(Date.parse(c.utc_anchor))&&counter(c.uncertainty_ns)&&c.uncertainty_ns<=2000000:c.utc_anchor===null&&c.uncertainty_ns===null);
 }
 function receiveShow(){
   if(!resultRows.length)renderResults();

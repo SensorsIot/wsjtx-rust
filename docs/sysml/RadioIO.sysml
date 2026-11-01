@@ -536,12 +536,14 @@ next_sequence-first_sequence (0..2048 retained records), not lifetime publicatio
 last_overrun is null or the latest abandoned analysis half-open
 `{first_frame,end_frame}`, safe counters and end<=capturednext; cleared on newcontext.
 Clock is
-`{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`, plus `{capture_drift_ms,capture_drift_ppm}` once measured:
+`{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
-nonnegative integer uncertainty/null and external_accuracy unknown. capture_drift_ms
-(integer) and capture_drift_ppm (one decimal, null for the first 60 s) are absent until measured: the capture clock's
-offset from the anchor's prediction and its rate (#47, CL-007-05); period UTC and DT
-of later results include that offset. Snapshot<=8192 bytes.
+nonnegative integer uncertainty/null and external_accuracy unknown. Period UTC and DT
+of results include the measured capture-clock offset (#47, CL-007-05), which is read on
+demand, not in this snapshot: GET /receive/clock (same authorization, no query, empty
+body) returns exactly `{v,profile_id,boot_id,capture_drift_ms,capture_drift_ppm}`, the
+offset from the anchor's prediction (integer ms) and its rate (one decimal ppm, null for
+the first 60 s), both null until measured. Snapshot<=8192 bytes.
 
 latest_decode is null until an attempt publishes a view, otherwise exactly
 `{id,first_sequence,next_sequence,period_start_utc,complete}`. id is a positive safe

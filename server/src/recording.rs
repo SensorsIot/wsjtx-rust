@@ -440,17 +440,21 @@ impl Recording {
                 "next_sequence":l.next_sequence,"available_count":l.records.len(),
                 "last_overrun":l.last_overrun.map(|(first,end)|json!({"first_frame":first,"end_frame":end})),"latest_decode":s.latest_decode})));
         let timing = live.and_then(|l| l.timing.as_ref());
-        let mut clock = json!({"basis":"system_utc",
+        json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,
+            "audio":audio,"source":source,"job":job,"clock":{"basis":"system_utc",
             "correlated":timing.is_some_and(|t|t.correlated),"utc_anchor":timing.and_then(|t|t.system_utc_anchor.as_ref()),
             "canonical_anchor_frame":timing.map(|t|t.canonical_anchor_frame),
-            "uncertainty_ns":timing.and_then(|t|t.uncertainty_ns),"external_accuracy":"unknown"});
-        // Present only once measured, so unmeasured snapshots keep their thin-link size.
-        if let Some((drift, ppm)) = live.and_then(|l| l.capture_drift) {
-            clock["capture_drift_ms"] = json!((drift as f64 / 10_000.0).round() as i64);
-            clock["capture_drift_ppm"] = json!(ppm.map(|p| (p * 10.0).round() / 10.0));
-        }
-        json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,
-            "audio":audio,"source":source,"job":job,"clock":clock})
+            "uncertainty_ns":timing.and_then(|t|t.uncertainty_ns),"external_accuracy":"unknown"}})
+    }
+    /// GET /receive/clock (#47): the measured capture-clock offset from the epoch anchor's
+    /// prediction and its rate, read on demand; kept out of the high-frequency /receive
+    /// snapshot so the thin link keeps its budget. Null until measured.
+    pub(crate) fn receive_clock(&self) -> Value {
+        let s = self.state.lock().unwrap();
+        let drift = s.live.as_ref().and_then(|l| l.capture_drift);
+        json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,
+            "capture_drift_ms":drift.map(|(d,_)|(d as f64/10_000.0).round() as i64),
+            "capture_drift_ppm":drift.and_then(|(_,ppm)|ppm).map(|p|(p*10.0).round()/10.0)})
     }
     /// The latest Rx level while audio runs (WstxContact::OperatorDisplays), else None.
     pub(crate) fn rx_level(&self) -> Option<i32> {
