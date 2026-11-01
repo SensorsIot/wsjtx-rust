@@ -458,6 +458,13 @@ impl Recording {
             t.service.with(|c| c.set_station_mode(Some(mode)));
         }
     }
+    /// The latest receive publication (id, first_sequence, next_sequence, complete).
+    pub(crate) fn latest_publication(&self) -> crate::automation::Publication {
+        let s = self.state.lock().unwrap();
+        s.latest_decode
+            .as_ref()
+            .map(|d| (d.id, d.first_sequence, d.next_sequence, d.complete))
+    }
     /// Retained result records of the current live job with sequence >= `after` (all
     /// retained ones when `identity` is not the current job).
     pub(crate) fn live_records_after(

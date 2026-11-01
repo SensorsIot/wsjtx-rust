@@ -3,6 +3,9 @@
 mod auth_tests;
 mod authorization;
 mod authorization_http;
+mod automation;
+#[cfg(test)]
+mod automation_tests;
 mod cat_lifecycle;
 #[cfg(test)]
 mod cat_lifecycle_tests;
@@ -17,6 +20,9 @@ mod http_compression;
 mod http_compression_tests;
 mod logbook;
 mod logbook_http;
+mod mcp;
+#[cfg(test)]
+mod mcp_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
@@ -398,6 +404,9 @@ fn router(state: App) -> Router {
         .route("/contact", get(contact_http::snapshot))
         .route("/contact/command", post(contact_http::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
+        .route("/automation", get(automation::snapshot))
+        .route("/automation/command", post(automation::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
         .layer(axum::middleware::from_fn(|request, next: axum::middleware::Next| async move {

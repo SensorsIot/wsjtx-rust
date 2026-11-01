@@ -31,6 +31,9 @@ pub(crate) struct Station {
     inner: Mutex<Inner>,
     revision: AtomicU64,
     started: Instant,
+    /// WstxMcp::OperatingAutomation of this station (drives this engine only through
+    /// the ContactCommand path).
+    pub(crate) automation: crate::automation::Owner,
     /// Test seam only: stands in for the CL-022 grant a plaintext test router lacks.
     #[cfg(test)]
     pub(crate) grant: std::sync::atomic::AtomicBool,
@@ -68,6 +71,18 @@ fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
         Some(d.callsign.trim().to_ascii_uppercase()).filter(|c| !c.is_empty()),
         Some(d.locator.trim().to_ascii_uppercase()).filter(|l| !l.is_empty()),
     )
+}
+/// The selected profile's callsign (upper case), as the contact engine uses it.
+pub(crate) fn my_call(state: &ProfileState) -> Option<String> {
+    profile_facts(state).0
+}
+/// What automation reads of the current contact.
+pub(crate) struct Facts {
+    pub id: String,
+    pub state: &'static str,
+    pub dx_call: Option<String>,
+    pub report_rcvd: Option<i32>,
+    pub active: bool,
 }
 fn mode_of(text: &str) -> decoder::Mode {
     if text == "ft4" {
@@ -144,12 +159,45 @@ impl Station {
             }),
             revision: AtomicU64::new(0),
             started: Instant::now(),
+            automation: crate::automation::Owner::default(),
             #[cfg(test)]
             grant: std::sync::atomic::AtomicBool::new(false),
         })
     }
     pub(crate) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
+    }
+    /// (contact_revision, current contact, Auto Seq) for WstxMcp::OperatingAutomation.
+    pub(crate) fn facts(&self) -> (u64, Option<Facts>, bool) {
+        let inner = self.lock();
+        let e = &inner.engine;
+        let facts = e.contact.as_ref().map(|c| Facts {
+            id: c.id.clone(),
+            state: c.state.name(),
+            dx_call: c.dx_call.clone(),
+            report_rcvd: c.report_rcvd,
+            active: c.state.active() || c.state == contact::State::Calling,
+        });
+        (e.revision, facts, e.settings.auto_seq)
+    }
+    /// One ContactCommand body through exactly the browser's validation and execution
+    /// (WstxContact::ContactCommand); `granted` is the caller's current CL-022 grant.
+    pub(crate) fn operate(
+        &self,
+        state: &ProfileState,
+        body: Value,
+        granted: bool,
+    ) -> Result<(StatusCode, Value), Refusal> {
+        let (command_id, revision, action) = envelope(&body)?;
+        let parsed = parse_command(&body, &action)?;
+        let r = &state.recording;
+        if body["profile_id"] != r.profile.as_str() {
+            return Err(("wrong_profile", Some("profile_id")));
+        }
+        if body["boot_id"] != r.boot.as_str() {
+            return Err(("state_conflict", Some("boot_id")));
+        }
+        self.execute(state, body, command_id, revision, &action, parsed, granted)
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
@@ -375,7 +423,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         _ => return None,
     })
 }
-type Refusal = (&'static str, Option<&'static str>);
+pub(crate) type Refusal = (&'static str, Option<&'static str>);
 fn boolean(b: &Value, k: &'static str) -> Result<bool, Refusal> {
     b[k].as_bool().ok_or(("invalid_request", Some(k)))
 }
@@ -548,14 +596,9 @@ pub async fn command(
         Ok(v) => v,
         Err(e) => return refusal(e, None),
     };
-    let (command_id, revision, action) = match envelope(&body) {
-        Ok(v) => v,
-        Err((c, f)) => return refusal(c, f),
-    };
-    let parsed = match parse_command(&body, &action) {
-        Ok(c) => c,
-        Err((c, f)) => return refusal(c, f),
-    };
+    if let Err((c, f)) = envelope(&body).and_then(|(_, _, action)| parse_command(&body, &action)) {
+        return refusal(c, f);
+    }
     if body["profile_id"] != r.profile.as_str() {
         return refusal("wrong_profile", Some("profile_id"));
     }
@@ -575,10 +618,7 @@ pub async fn command(
     {
         granted |= station.grant.load(Ordering::Acquire);
     }
-    let outcome = tokio::task::spawn_blocking(move || {
-        station.execute(&state, body, command_id, revision, &action, parsed, granted)
-    })
-    .await;
+    let outcome = tokio::task::spawn_blocking(move || station.operate(&state, body, granted)).await;
     match outcome {
         Ok(Ok((status, reply))) => (status, Json(reply)).into_response(),
         Ok(Err((c, f))) => refusal(c, f),
@@ -698,6 +738,9 @@ impl Station {
 /// The station-wide contact step (main.rs timer, every 50 ms).
 pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
+        // Read before the contact step: the engine then has every record of it.
+        let publication = state.recording.latest_publication();
         s.tick(state);
+        s.automation.tick(s, state, publication);
     }
 }

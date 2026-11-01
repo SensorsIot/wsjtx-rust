@@ -1157,6 +1157,14 @@ impl<H: Hardware + 'static> Service<H> {
     pub fn view(&self) -> View {
         self.with(|c| c.view())
     }
+    /// HaltTransmit requests admitted so far (repeated command_ids excluded); a
+    /// read-only observation that never waits for the core.
+    pub fn halt_requests(&self) -> u64 {
+        self.halt
+            .generation
+            .lock()
+            .map_or_else(|p| p.into_inner().0, |g| g.0)
+    }
     /// HaltTransmit. Returns the receipt halt_state; a repeated command_id returns the
     /// same receipt. Waits at most HALT_BOUND_MS for the confirmed stop.
     pub fn halt(&self, command_id: &str) -> HaltState {

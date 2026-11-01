@@ -19,7 +19,7 @@ pub(crate) struct Bench {
     /// Every PTT exchange with its UTC time.
     pub(crate) keys: Arc<Mutex<Vec<(i64, bool)>>>,
     playing: Arc<Mutex<Option<(i64, usize)>>>,
-    offset: Arc<AtomicI64>,
+    pub(crate) offset: Arc<AtomicI64>,
 }
 impl Hardware for Bench {
     fn now_utc_ms(&self) -> i64 {
