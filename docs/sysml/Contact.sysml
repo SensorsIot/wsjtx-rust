@@ -397,7 +397,9 @@ package WstxContact {
              Starting a QSO means transmitting: the QSO pane CQ button (no transmitting
              contact: a new own CQ; an active contact is cancelled first after a
              confirmation), Reply (the prepared contact), a double-click on a decoded row
-             (SelectDecodedRow, then on) and RR73/73 (choose Tx4 RR73/Tx5, then on) send
+             (SelectDecodedRow, then on) and RR73/73 (choose Tx4 RR73/Tx5, then on; offered
+             only while the contact is in progress, never on a completed or cancelled one,
+             where Enable Tx would start a fresh own CQ) send
              enable_tx {enabled:true} with the shown safety revision, so grant, clock,
              period and safety-revision checks are unchanged. Transmission ends by itself
              on completion (Enable Tx off after a completed Tx4 RR73/Tx5 73, see the

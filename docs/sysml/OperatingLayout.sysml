@@ -457,7 +457,10 @@ attribute def ActivityOrdering {
              period progress; exception chips (ExceptionChip, shown only while the
              condition holds, nothing when all is well; each names its cause, opens its
              detail in the Settings drawer, and receiveStopped offers the explicit receive
-             start); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT. A
+             start); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
+             HALT stays reachable by pointer too: a confirmation popup (the only popup kind)
+             carries its own HALT with the same action and enabled state as the top-bar one,
+             because a modal popup makes the rest of the page inert. A
              link that is connected shows no chip; the accessible status stays. There is no
              refresh control: the status refreshes itself (an explicit Refresh status is in
              Settings > Expert).

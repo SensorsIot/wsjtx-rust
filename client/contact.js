@@ -20,11 +20,13 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<section
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p>
 `);
-const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
+const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
-  return new Promise(resolve=>{confirmDialog.returnValue='';confirmDialog.addEventListener('close',()=>resolve(confirmDialog.returnValue==='ok'),{once:true});confirmDialog.showModal();confirmDialog.querySelector('#op-confirm-ok').focus();});
+  return new Promise(resolve=>{confirmDialog.returnValue='';confirmDialog.querySelector('#op-confirm-halt').disabled=halt.disabled;confirmDialog.addEventListener('close',()=>resolve(confirmDialog.returnValue==='ok'),{once:true});confirmDialog.showModal();confirmDialog.querySelector('#op-confirm-ok').focus();});
 }
+// The modal popup makes the page inert, so it carries HALT itself (same action and state).
+confirmDialog.querySelector('#op-confirm-halt').addEventListener('click',()=>{confirmDialog.close('cancel');halt.click();});
 main.append(confirmDialog);
 document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
@@ -108,7 +110,8 @@ function render(){
   const prepared=!!c?.dx_call&&transmitting(c);
   $('qso-cq').disabled=!capable||(armed&&c?.state==='calling');
   $('qso-reply').disabled=!capable||!prepared||armed;
-  $('qso-rr73').disabled=$('qso-73').disabled=!capable||!c?.dx_call||c.state==='cancelled';
+  // RR73/73 only while the contact is in progress: on a completed one Enable Tx starts a new CQ.
+  $('qso-rr73').disabled=$('qso-73').disabled=!capable||!prepared;
   for(const id of ['qso-cq','qso-reply','qso-rr73','qso-73','contact-tune'])if(capable)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
   $('transmit-unavailable').hidden=capable;
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
@@ -178,7 +181,7 @@ $('qso-cq').addEventListener('click',async()=>{
 $('qso-reply').addEventListener('click',()=>arm('Reply'));
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 async function finalMessage(slot,label){
-  const c=snap?.contact;if(!c?.dx_call)return;
+  const c=snap?.contact;if(!c?.dx_call||!transmitting(c))return;
   if(slot==='tx4'&&c.tx4!=='rr73'){const r=await send('set_tx4',{form:'rr73'},'RR73');if(!r||r.refused)return;}
   const r=await send('choose_next',{slot},label);if(!r||r.refused)return;
   if(snap?.transmit.arm_state!=='armed')arm(label);

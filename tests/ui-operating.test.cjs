@@ -587,6 +587,15 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled]),[['enable_tx',true]],'Reply arms the prepared contact');
   m=commands.length;await page.locator('#qso-rr73').click();for(let i=0;i<60&&commands.length<m+3;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.form??c.slot??c.enabled]),[['set_tx4','rr73'],['choose_next','tx4'],['enable_tx',true]],'RR73: Tx4 as RR73 next, then transmit');
+  m=commands.length;await page.locator('#qso-73').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx5',undefined],['enable_tx',true,7]],'73 on a contact in progress: Tx5 next, then transmit');
+  // #37 review: on a completed contact Enable Tx would start a fresh CQ, so RR73 and 73 are off.
+  contact=partner('completed');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#qso-73').disabled);
+  assert.deepEqual([await page.locator('#qso-rr73').isDisabled(),await page.locator('#qso-73').isDisabled()],[true,true],'RR73 and 73 disabled on a completed contact');
+  m=commands.length;await page.locator('#qso-rr73').click({force:true});await page.locator('#qso-73').click({force:true});
+  await page.locator('#qso-73').evaluate(b=>{b.disabled=false;b.click();b.disabled=true;});await page.waitForTimeout(500);
+  assert.deepEqual(commands.slice(m),[],'a completed contact sends no choose_next or enable_tx');
+  contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-73').disabled);
   m=commands.length;await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
   assert.match(await page.locator('#op-confirm-text').textContent(),/Abandon the QSO with K1ABC/);await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
   assert.equal(commands.length,m,'cancelled CQ sends nothing');

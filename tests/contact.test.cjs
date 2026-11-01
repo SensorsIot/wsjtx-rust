@@ -91,6 +91,16 @@ test('TC-007-001 Reply starts transmission, partner report advances to Tx3, Esc 
   assert.equal(await page.locator('input[name=contact-next][value=tx3]').isChecked(),true);
   assert.notEqual(await page.locator('#contact-next').textContent(),await page.locator('#contact-last').textContent(),'next and last sent are distinct');
   await page.locator('#rx-pane-rows tr').filter({hasText:'HB9BLA K1ABC -05'}).waitFor();
+  // #37 review: the confirmation popup is modal, so it carries HALT; clicking it halts at once.
+  const popupMark=requests.length;
+  await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
+  assert.equal(await page.locator('#op-confirm-halt').isEnabled(),true,'popup HALT enabled like the top-bar HALT');
+  await page.locator('#op-confirm-halt').click();
+  await waitFor(()=>requests.slice(popupMark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt from the confirmation popup');
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='disarmed','disarmed by the popup HALT');
+  assert.equal(await page.locator('#op-confirm[open]').count(),0,'HALT closes the popup');
+  await new Promise(r=>setTimeout(r,300));
+  assert.deepEqual(requests.slice(popupMark).filter(r=>r.method==='POST').map(r=>r.path),['/transmit/halt'],'the popup HALT sends only the halt; the CQ is not sent');
   // A panel is open; Esc in a text field halts (priority route) before cancelling and closes nothing.
   await page.locator('#station-bar [data-region=help]').click();
   assert.equal(await page.locator('#region-help').isVisible(),true);

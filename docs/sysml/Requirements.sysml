@@ -2009,7 +2009,9 @@ package WstxRequirements {
              Tx=Rx/Rx=Tx and Hold Tx send exactly the expected contact requests. Band Activity shows
              history newest first with period dividers, double-click replies (select then
              enable_tx) and the right-click menu acts. QSO pane CQ/Reply/RR73/73 send enable_tx with
-             the shown safety revision. Theme switch changes the theme without a request. Keyboard
+             the shown safety revision; on a completed contact RR73 and 73 are disabled and a forced
+             click sends no enable_tx. With the confirmation popup open during an active QSO its HALT
+             sends the halt request. Theme switch changes the theme without a request. Keyboard
              shortcuts act as KeyboardShortcuts and letters are inactive while typing. An
              unauthorized browser shows only the token form and its status line, then the full
              screen after authorization. Settings > General shows "Monitor off at startup" as read
