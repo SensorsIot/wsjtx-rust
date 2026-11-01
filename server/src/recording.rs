@@ -307,6 +307,10 @@ struct LiveState {
     /// WstxContact::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
     /// full-scale units, sample count, window start) and the last published value.
     level: (f64, u64, Option<Instant>, Option<i32>),
+    /// Unknown-loss epoch rotations of this live receive and the latest trigger code;
+    /// they survive the rotations they count and reset only with a new live start.
+    loss_epochs: u64,
+    last_loss: Option<&'static str>,
 }
 /// rxLevelDb = round(10 log10(mean(s^2))) with s scaled to 32768, clamped to 0..90.
 pub(crate) fn rx_level_db(sum_squares: f64, count: u64) -> i32 {
@@ -407,8 +411,9 @@ impl Recording {
                 audio::AudioState::Unavailable => "unavailable",
             };
             json!({"state":state,"device_id":l.device_id,"device_name":null,
-                "error":l.audio.error.map(audio_error),"retry_after_ms":l.audio.retry_after_ms})
-        }).unwrap_or_else(|| json!({"state":"closed","device_id":null,"device_name":null,"error":null,"retry_after_ms":null}));
+                "error":l.audio.error.map(audio_error),"retry_after_ms":l.audio.retry_after_ms,
+                "loss_epochs":l.loss_epochs,"last_loss":l.last_loss})
+        }).unwrap_or_else(|| json!({"state":"closed","device_id":null,"device_name":null,"error":null,"retry_after_ms":null,"loss_epochs":0,"last_loss":null}));
         let source = live.and_then(|l| l.source.as_ref().map(|source|
             json!({"id":source.source_id,"kind":"live","sample_rate":12000,"channels":1,
                 "next_frame":l.next_frame,"segment":l.timing.as_ref().map(|t|t.segment).unwrap_or(0)})));
@@ -565,6 +570,8 @@ impl Recording {
             last_overrun: None,
             publication_error: None,
             level: (0.0, 0, None, Some(47)),
+            loss_epochs: 0,
+            last_loss: None,
         });
         drop(s);
         self.sync_transmit_mode();
@@ -805,6 +812,8 @@ impl Recording {
                 last_overrun: None,
                 publication_error: None,
                 level: (0.0, 0, None, None),
+                loss_epochs: 0,
+                last_loss: None,
             });
         }
         self.sync_transmit_mode();
@@ -2014,7 +2023,17 @@ impl LiveWorker {
         s.detail_frame = None;
         s.latest_decode = None;
         s.decode_counter = 0;
-        s.live.as_mut().ok_or("state_conflict")?.clear_context();
+        let l = s.live.as_mut().ok_or("state_conflict")?;
+        l.clear_context();
+        // Count rotations only: an initial epoch replaces nothing, whatever its trigger.
+        if self.epoch_seen && p.reason == "capture_loss" {
+            l.loss_epochs = l.loss_epochs.saturating_add(1).min(source::MAX_COUNTER);
+            l.last_loss = Some(p.trigger);
+            eprintln!(
+                "receive: unknown-loss source epoch {} trigger={} native_frame={} job={}",
+                l.loss_epochs, p.trigger, p.first_device_frame, self.job.id
+            );
+        }
         let replacement = if self.epoch_seen {
             let generation = s
                 .generation

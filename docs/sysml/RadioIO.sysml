@@ -60,7 +60,11 @@ package WstxRadioIO {
         assert constraint packetBound { frames > 0 and frames <= 8192 and channels >= 1 and channels <= 2 and (rateHz == 44100 or rateHz == 48000) }
         doc /* Raw interleaved little-endian device packet. Byte values0..255. Capture
              pump copies/releases only; float normalization/conversion belongs worker.
-             SILENT is known measured zero; timestamp-error/gap is not silence. */
+             SILENT is known measured zero; timestamp-error/gap is not silence.
+             A discontinuity flag whose deviceFrame and packetQpc100ns both continue the
+             previous packet (QPC within2ms) is a counted engine glitch on a continuous
+             timeline: measured samples, no gap and no epoch; no interval is missing
+             beyond the at most2 ms QPC deviation this bound admits. */
     }
     attribute def SourceTiming {
         attribute sourceId : String;
@@ -82,6 +86,7 @@ package WstxRadioIO {
     attribute def EpochProposal {
         attribute proposalCounter : Integer;
         attribute reason : String;
+        attribute trigger : String;
         attribute nativeRate : Integer;
         attribute firstDeviceFrame : Integer;
         attribute packetQpc100ns : Integer[0..1];
@@ -89,7 +94,11 @@ package WstxRadioIO {
         doc /* Identity-free proposal. Receive authority alone allocates new immutable
              descriptor/source/job/generation/timing and acknowledges current counter.
              Until acknowledgement producer returns Pending, exposes no descriptor and
-             emits no block. Stale acknowledgement rejected; no old IDs reused. */
+             emits no block. Stale acknowledgement rejected; no old IDs reused.
+             trigger is a bounded diagnostic code naming the capture condition:
+             capture_start, queue_full, queue_contention, pool_exhausted, invalid_packet,
+             clock_step (capture-thread UTC/QPC recheck), timestamp_error, frame_backstep
+             or native_discontinuity; loss flag and trigger are one atomic value. */
     }
     action def AcknowledgeEpoch {
         in proposal : EpochProposal;
@@ -309,7 +318,7 @@ Reuse RustFFT6.4.1 and the existing immutable `SampleBlock`; no second FFT provi
 resampler, sample reader, job manager or configuration database. The shared source
 boundary is `SampleSource::descriptor()` plus nonblocking `poll()` returning Pending,
 Block(SampleBlock), EpochChanged(EpochProposal), End or Failed(code). An epoch proposal
-contains only a source-local proposal counter, reason, native rate/first frame/QPC and
+contains only a source-local proposal counter, reason, trigger, native rate/first frame/QPC and
 converter delay; it contains no station/source/job identity. Pending is never EOS; only
 finite files return End. The file adapter keeps its existing reader; the live adapter
 normalizes/converts raw native packets on that same DSP worker. Before any replacement
@@ -379,6 +388,16 @@ they are not inserted as silence. Reset converter, spectrum and decoder windows 
 Unknown loss/timestamp-error, format change or device reopen starts a new source epoch,
 generation and frame origin; old samples/results cannot append. A known SILENT packet
 remains a real measured interval. No decode waveform may bridge a discontinuity.
+A WASAPI DATA_DISCONTINUITY flag is classified by the timeline it reports: with a later
+device position it is a known gap; with a contiguous device position and a packet QPC
+within2 ms of the previous packet's QPC plus its duration it is an engine glitch on a
+continuous timeline, counted and kept as measured samples without gap, reset or epoch
+(no interval is missing beyond the at most2 ms QPC deviation the bound admits);
+with a contiguous position but no consistent QPC it is unknown loss. Every unknown-loss
+epoch names its trigger; the receive owner counts these epochs and logs one line each.
+A device reopen is not counted as unknown loss: its rotation is announced by audio
+state/error (unavailable, then running) and the reopened stream's first epoch is an
+initial epoch of that stream (normally trigger capture_start), likewise not counted.
 
 Bracket GetSystemTimePreciseAsFileTime with two QPC reads, use midpoint correlation
 and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC anchor.
@@ -480,10 +499,10 @@ at boot sees zero setter bytes. Optional native FlexRadio remains the later #13 
 
 | Test | Promises | Inputs/actions | Expected result/oracle | Level / where it runs |
 |---|---|---|---|---|
-| TC-002-001 — Canonical live audio | CL-008-01, CL-008-02, CL-008-03 | Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently. | Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT. | 2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. |
+| TC-002-001 — Canonical live audio | CL-008-01, CL-008-02, CL-008-03 | Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, DATA_DISCONTINUITY flags on contiguous positions with QPC steps inside and just outside the2 ms bound, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently. | Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. A contiguous flag within2 ms of the QPC timeline keeps one epoch and gap-free frames; beyond2 ms it is unknown loss; every unknown-loss epoch names its trigger. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT. | 2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. |
 | TC-009-001 — Typed radio control | CL-008-01, CL-008-03, CL-008-04, CL-008-06 | Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send. | Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource. | 2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. |
 | TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
-| TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
+| TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; engine glitches keep job/generation; GET /receive audio.loss_epochs counts unknown-loss rotations only and audio.last_loss names the latest trigger (null iff0); no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
 | TC-009-003 — Control without audio | CL-008-05, CL-008-06 | Exercise every supported query and receive setter while audio is closed/unavailable. | Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations. | 2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. |
 | TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
 
@@ -502,8 +521,11 @@ response at most16384 bytes. A missing selected input remains visibly unavailabl
 Enumeration overflow returns device_limit rather than silently dropping entries.
 
 `GET /receive` returns exactly `{v,profile_id,boot_id,generation,audio,source,job,clock}`.
-Audio is `{state,device_id,device_name,error,retry_after_ms}` with the4.5 states,
-nullable strings and retry integer0..8000/null. Source is null or
+Audio is `{state,device_id,device_name,error,retry_after_ms,loss_epochs,last_loss}` with the4.5 states,
+nullable strings and retry integer0..8000/null. loss_epochs counts unknown-loss source
+rotations since this live receive started (safe counter, survives the rotations it counts;
+the initial epoch and device-reopen rotations are not counted);
+last_loss is null exactly when loss_epochs is0, else the latest epoch trigger code. Source is null or
 `{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
 UUID id and nonnegative safe counters. Job is null or
 `{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun,latest_decode}` with UUID id,

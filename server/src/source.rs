@@ -129,6 +129,8 @@ impl SampleBlock {
 pub struct EpochProposal {
     pub proposal_counter: u64,
     pub reason: &'static str,
+    /// The capture condition that caused the proposal (bounded code, diagnostic only).
+    pub trigger: &'static str,
     pub native_rate: u32,
     pub first_device_frame: u64,
     pub packet_qpc_100ns: Option<u64>,
@@ -179,6 +181,7 @@ impl EpochLatch {
     pub fn propose(
         &mut self,
         reason: &'static str,
+        trigger: &'static str,
         native_rate: u32,
         first_device_frame: u64,
         packet_qpc_100ns: Option<u64>,
@@ -202,6 +205,7 @@ impl EpochLatch {
         let proposal = EpochProposal {
             proposal_counter: self.counter,
             reason,
+            trigger,
             native_rate,
             first_device_frame,
             packet_qpc_100ns,

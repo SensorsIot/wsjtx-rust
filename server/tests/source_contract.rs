@@ -37,7 +37,7 @@ fn context(id: &str) -> (Arc<SourceDescriptor>, SourceTiming) {
 fn epoch_requires_current_owner_ack_and_rejects_old_identity() {
     let mut latch = EpochLatch::default();
     let first = latch
-        .propose("opening", 48_000, 1000, Some(123), 255.5)
+        .propose("opening", "capture_start", 48_000, 1000, Some(123), 255.5)
         .unwrap();
     assert!(latch.context().is_none());
     assert_eq!(latch.pending(), Some(&first));
@@ -57,7 +57,14 @@ fn epoch_requires_current_owner_ack_and_rejects_old_identity() {
     assert_eq!(block.samples.as_ref(), &[0.0, 0.5]);
     assert!(!block.end_of_stream);
     let next = latch
-        .propose("timestamp_error", 48_000, 2000, None, 255.5)
+        .propose(
+            "timestamp_error",
+            "timestamp_error",
+            48_000,
+            2000,
+            None,
+            255.5,
+        )
         .unwrap();
     assert!(latch.context().is_none());
     assert_eq!(

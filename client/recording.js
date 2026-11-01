@@ -502,7 +502,7 @@ function validLiveSnapshot(s){
   const uuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
   if(!shape(s,'audio,boot_id,clock,generation,job,profile_id,source,v')||s.v!==1||!uuid(s.profile_id)||!uuid(s.boot_id)||!counter(s.generation))return false;
   const a=s.audio,c=s.clock,j=s.job,source=s.source;
-  if(!shape(a,'device_id,device_name,error,retry_after_ms,state')||!['closed','opening','running','closing','unavailable'].includes(a.state)||![a.device_id,a.device_name,a.error].every(nullableText)||(a.retry_after_ms!==null&&(!counter(a.retry_after_ms)||a.retry_after_ms>8000)))return false;
+  if(!shape(a,'device_id,device_name,error,last_loss,loss_epochs,retry_after_ms,state')||!['closed','opening','running','closing','unavailable'].includes(a.state)||![a.device_id,a.device_name,a.error].every(nullableText)||(a.retry_after_ms!==null&&(!counter(a.retry_after_ms)||a.retry_after_ms>8000))||!counter(a.loss_epochs)||(a.last_loss!==null&&(typeof a.last_loss!=='string'||!/^[a-z_]{1,32}$/.test(a.last_loss)))||(a.loss_epochs===0)!==(a.last_loss===null))return false;
   if(source!==null&&(!shape(source,'channels,id,kind,next_frame,sample_rate,segment')||!uuid(source.id)||source.kind!=='live'||source.sample_rate!==12000||source.channels!==1||!counter(source.next_frame)||!counter(source.segment)))return false;
   if(j!==null){
     if(!shape(j,'available_count,error,first_sequence,id,last_overrun,latest_decode,mode,next_sequence,processed_frames,state')||!uuid(j.id)||!['spectrum','ft4','ft8'].includes(j.mode)||!['running','cancelling','completed','cancelled','failed'].includes(j.state)||!nullableText(j.error)||!['first_sequence','next_sequence','available_count','processed_frames'].every(key=>counter(j[key]))||j.available_count!==j.next_sequence-j.first_sequence||j.available_count>2048||!validLatestDecode(j.latest_decode,j.mode,j.next_sequence))return false;
@@ -515,7 +515,7 @@ function receiveShow(){
   if(!resultRows.length)renderResults();
   const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
   if(live){
-    receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
+    receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.audio.loss_epochs?` · ${live.audio.loss_epochs} audio loss restart${live.audio.loss_epochs===1?'':'s'} (last ${live.audio.last_loss})`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
     capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
