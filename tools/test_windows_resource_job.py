@@ -631,7 +631,7 @@ class CaseTranscriptTests(ApiFreeCase):
         transcript = guardian.CaseTranscript(case)
         transcript.accept("stdout", f"test {guardian.CASES[case]} ... ok\n".encode())
         transcript.accept("stdout", b"test result: ok. 1 passed; 0 failed; 0 ignored; "
-                                    b"0 measured; 16 filtered out; finished in 1.00s\n")
+                                    b"0 measured; 17 filtered out; finished in 1.00s\n")
         for prefix, value in events:
             transcript.accept("stderr", prefix.encode() + b" " + guardian.json_bytes(value))
         return transcript.finish()

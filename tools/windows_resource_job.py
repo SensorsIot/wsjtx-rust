@@ -493,7 +493,7 @@ class CaseTranscript:
     def __init__(self, case):
         require(case in CASES, "unknown_resource_case")
         self.case = case
-        self.coverage = Coverage((CASES[case],), (), 16)
+        self.coverage = Coverage((CASES[case],), (), len(ORDINARY) + len(IGNORED))
         self.configurations, self.configuration_rounds, self.rounds, self.attempts = [], [], {}, {}
         self.matrix_attempts = {}
         self.hosts = 0
