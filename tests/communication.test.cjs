@@ -87,11 +87,14 @@ test('peer helper: heartbeat interleaving preserves response and total deadline'
   assert.equal(fixture.listenerCount('message'), 0);
 });
 
-// Proves: FR-021; CL-003-02, CL-003-03; level 2, Windows PC/CI, isolated local server.
+// Proves: FR-021; CL-003-02, CL-003-03, CL-051-01; TC-051-001; level 2, Windows PC/CI, isolated local server.
 test('TC-021-005: actual-server correlation, negative cases and size boundaries', async t => {
   const app = await server(); t.after(() => app.close());
   const a = await peer(app.origin), b = await peer(app.origin); t.after(() => {a.terminate(); b.terminate();});
-  const expected = id => ({v: 1, type: 'station.status', id, data: {version: '0.1.0', radio: 'unconfigured'}});
+  // #51 ClientBuild oracle: SHA-256 over the client files in route order, first 16 hex digits.
+  const build = require('node:crypto').createHash('sha256').update(Buffer.concat(await Promise.all(['index.html', 'authorization.js', 'app.js', 'recording.js', 'recording.css', 'contact.js', 'logbook.js', 'style.css'].map(f => fs.readFile(path.join(__dirname, '../client', f)))))).digest('hex').slice(0, 16);
+  const expected = id => ({v: 1, type: 'station.status', id, data: {version: '0.1.0', radio: 'unconfigured', build}});
+  assert.match(await (await fetch(app.origin + '/')).text(), new RegExp(`<body data-profile="false" data-build="${build}">`), 'the page carries the build it was served with');
   const [ra, rb] = await Promise.all([request(a, '{"v":1,"type":"station.get","id":12}'), request(b, '{"v":1,"type":"station.get","id":24}')]);
   assert.deepEqual(ra, expected(12)); assert.deepEqual(rb, expected(24));
   for (const [input, code] of [['{', 'invalid_json'], ['[]', 'invalid_request'], ['{"v":2,"type":"station.get","id":1}', 'unsupported_version'], ['{"v":1,"type":"unknown","id":1}', 'unknown_command'], ['{"v":1,"type":"station.get"}', 'invalid_request'], ['{"v":1,"type":"station.get","id":"1"}', 'invalid_request'], ['{"v":1,"type":null,"id":1}', 'invalid_request'], ['{"v":2,"type":null,"id":1}', 'invalid_request'], ['{"v":1,"type":"station.get","id":9007199254740992}', 'invalid_request'], ['{"v":1,"type":"station.get","id":1,"extra":0}', 'invalid_request']]) {

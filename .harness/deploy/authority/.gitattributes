@@ -1,0 +1,3 @@
+# A unified diff keeps its exact bytes (LF, blank context lines are a single space), so it
+# applies to station-update.ps1 as written; the whitespace check does not apply to it.
+*.patch -text -whitespace
