@@ -90,27 +90,44 @@ Release packaging also runs on this PC; start the packaged candidate for the dry
 ### Functional test selection
 
 `paths` lists a group's complete inputs for evidence fingerprints and dirty-input
-checks. `select` lists the files whose edits directly select it. `depends_on` names
-producer groups whose changes can affect this group; these edges select downstream
-regressions and inherit producer inputs, rather than ordering test commands.
+checks. `select` lists the files whose edits directly select it; only `select` decides
+selection (harness#28). No group declares `depends_on`: the harness follows those edges
+transitively, so one server edit fanned out over every browser group. A group instead
+names in its own `select` the files whose behaviour its test cases prove.
 
 | Group | Functional coverage | Direct change owners |
 |---|---|---|
 | `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
-| `protocol` | Status messages, sessions, reconnect and protocol thin-link budget | Server code, shared status client, protocol tests/helpers and runtime dependencies |
-| `profiles` | Saved settings, independent stations, profile lifecycle and pending-status behavior | Profile tests and recording client/layout, which owns the shared controls container |
-| `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Shared recording test file; also affected by profile and fixture producers |
-| `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Shared recording test file; also affected by recording source/job producers |
-| `recording-thin` | Optional display pacing, bounded subscribers and the full 32 kbit/s display/status regression | Shared recording test file; also affected by display rendering |
+| `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
+| `protocol-thin` | Measurement: TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
+| `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests |
+| `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Router, recording owners, recording client, recording test file, fixture tool and recording manifests |
+| `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Router, recording and spectrum owners, recording client, recording test file and manifests |
+| `recording-thin` | Measurement: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Router, recording/spectrum owners, HTTP compression, recording client and test file |
+| `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
+| `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
+| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, recording client, selection test |
+| `radio-selection-thin` | Measurement: the 75 s native/CAT/TLS two-browser Thin and Off workload | As `radio-selection` plus spectrum, audio, decoder and library code, which set the real-time load |
+| `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
 | `sysml-documentation` | Canonical catalog/trace checks, full semantic and architecture validation, model/tool tests | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
-names: `^TC-018-` goes to storage, `^TC-010-002` to thin-link checks, and the complement
-to display. The complement includes future names instead of silently omitting them.
-The unchanged standalone fixture tests have their own group. No test assertion or
-test case is removed by selection.
+names: `^TC-018-` goes to storage, `^TC-010-002` and the TC-010-005 Detailed peer
+cadence to thin-link checks, and the complement to display. The communication test
+file sends `^TC-021-008` and the link simulator check to `protocol-thin`, the complement
+to `protocol`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
+runs in `radio-selection-thin`, the other selection tests in `radio-selection`. Each
+complement includes future names instead of silently omitting them. No test assertion,
+budget or test case is removed by selection.
+
+Measurements run only when the change touches time-critical code (harness#28).
+Timing promises live in measurement groups (`protocol-thin`, `recording-thin`,
+`radio-selection-thin`, `decoder-quality`) selected only by the code that can change
+that timing: the router/websocket and its pacing, HTTP compression, the link simulator,
+the recording/spectrum producers, the receive/audio/decoder pipeline and the clients
+that pace the display. Functional groups do not measure.
 
 The model has an explicit documentation owner. Its edits select full model validation;
 runtime oracles are selected by changed implementation and executable tests. Source
@@ -120,14 +137,18 @@ complete client/server/test source inputs they read. A source edit or deletion i
 old trace evidence and full-model evidence, even when only the fast suite is selected.
 Independent contract comparison still checks that tests prove the changed promises.
 
-Selection is conservative at shared-file boundaries: a recording client edit also
-selects profile regressions because that client moves and sizes the shared controls
-container; server edits select protocol and every downstream browser group. An edit
-to the shared recording test file selects all three recording groups. The selector
-does not infer changed functions from a file or guess dependencies from an agent's
-description. Unmapped inputs select every group that declares them; entirely unknown
-paths and selection-policy changes cause a full fallback. The workflow is a shared
-unmapped input of every group, so workflow edits also select them all.
+A file selects the groups whose test cases prove its promises, not every group whose
+fixture merely loads it. The router `main.rs` (routes, authentication, websocket and
+profile HTTP) selects every browser group. The operating page client files select
+`operating-layout`, the operating-page regression, besides their owning groups. A
+contact engine edit therefore selects `wstx-rust`, `contact-browser` and
+`source-model-traces`; its HTTP surface adds `operating-layout`. An edit to the shared
+recording test file selects all three recording groups. Cargo and Node dependency
+inputs select every group that compiles or runs them. The selector does not infer
+changed functions from a file or guess dependencies from an agent's description.
+Unmapped inputs select every group that declares them; entirely unknown paths and
+selection-policy changes cause a full fallback. The workflow is a shared unmapped
+input of every group, so workflow edits also select them all.
 
 Preview the selected commands and reasons without running checks or recording a pass:
 
