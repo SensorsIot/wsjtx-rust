@@ -37,7 +37,8 @@ rules around it. Agent memory only points here.
 
 - Every repair gets the review step 3 of the CR process sets. After 10 review rounds on
   one change the session stops and asks the operator whether to continue.
-- A reviewer works in a plain copy of the candidate (`git archive <rev> | tar -x`).
+- A reviewer reads the candidate (`git show`, or a plain copy made with `git archive <rev> | tar -x`)
+  and builds or runs nothing; the author runs a reproduction the reviewer writes out.
 
 ## GitHub issues are the memory
 
