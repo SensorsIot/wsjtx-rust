@@ -145,8 +145,8 @@ package WstxOfflineDecode {
         doc /* QEX sections2..5/AppendixA plus published data-only tables define normal
              77-bit FT4/FT8. Current source-field boundaries are pinned independently by
              WstxProductScope::BehaviorBaseline's portable codec manifest and fixed official
-             vectors. This does not adopt permissive malformed-payload aliases, AP/context
-             guessing, SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
+             vectors. This does not adopt permissive malformed-payload aliases, context guessing
+             beyond the CQ a-priori passes of Ft8DecodeMetricFamilies (#56), SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
              Both modes share source families:0.0 free text,0.1 DXpedition,0.3/.4 FieldDay,
              0.5 telemetry,1/2 standard /R or /P,3 RTTY,4 nonstandard,5 extended VHF.
              0.2/.6/.7 and6/7 are unsupported; WSPR packaging0.6 is not an ordinary message.
@@ -524,7 +524,8 @@ package WstxOfflineDecode {
              A/B/C=Ft8MetricDifferenceperbitforsingle/pair/triple. D=A/max8S,zeroifmax0.
              E=largestabsoluteRAW A/B/Cperbit,tiesA/B/C. FormEbeforeanynormalization.
              Normalizeeach174elementfamilyasFt8ChannelPolarity,NOmean subtraction.
-             NoAP/callsign/contact/semanticprior. No currentFT4neighborlikelihoodapplies. */
+             No callsign/contact/semanticprior here; the only a-priori bits are the CQ
+             passes of Ft8DecodeMetricFamilies. No currentFT4neighborlikelihoodapplies. */
     }
     action def Ft8DecodeMetricFamilies {
         in families : PhysicalLlrFamily[5];
@@ -534,7 +535,12 @@ package WstxOfflineDecode {
         doc /* Fiveorderedfamilies, each through Ft8ChannelDecode. Accept a word with
              hard disagreements (nharderrors)<=36 that is not the all-zero codeword (ft8b,
              #56); publishedH+CRCmandatory. Avalidwordfailingacceptance
-             DOESNOTstoplaterfamilies. Firstallgatesacceptedwordwins; no6thfallbackdecode.
+             DOESNOTstoplaterfamilies. Firstacceptedwordwins. Only when all five fail, two
+             a-priori passes (ft8b iaptype 1, CQ ??? ???) decode the single and then the
+             triple family with payload bits 0..28 fixed to the CQ token (c28=2, ipa=0) and
+             bits 74..76 to i3=1, at 1.1 times that family's largest |LLR|, through
+             Ft8ChannelDecode with those bits fixed; same acceptance. No callsign, contact or
+             other a-priori knowledge; no further fallback decode. FT4 has no a-priori pass.
              Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
              Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
     }
@@ -560,6 +566,7 @@ package WstxOfflineDecode {
              Deliberate deviations: tanh by a rational approximant within 1e-4; an OSD word
              with zero disagreements is accepted (decode174_91 requires >0); every word
              must pass H and CRC (WSJT-X checks CRC only).
+             A-priori (fixed) bits keep their channel LLR in BP and are never flipped.
              Cancellation is checked every BP iteration and every OSD flip position. */
     }
     action def Ft8SubtractVerifiedFrame {
@@ -754,7 +761,7 @@ package WstxOfflineDecode {
              FT4BandLimitAndFineSync/ObserveMetricFamilies. Qualifiedcap256,257=>limited.
              FiveFT8orthreeFT4families; each Ft8ChannelDecode (BP<=30 + OSD ndeep2 on
              2 sums, rank91). FT8 hard disagreements<=36; never all-zero; H+CRC mandatory.
-             NoAP/hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
+             FT8 CQ a-priori passes only, no other hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
              <=3passes/32verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
              SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;

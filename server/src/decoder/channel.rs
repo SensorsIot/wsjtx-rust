@@ -154,20 +154,31 @@ impl Channel {
         llr: &[f32; 174],
         cancel: &impl Fn() -> bool,
     ) -> Option<(ChannelWord, usize)> {
+        self.decode_assisted(llr, &[false; 174], cancel)
+    }
+    /// decode174_91 with an a-priori mask (apmask): `fixed` bits keep their channel LLR in
+    /// belief propagation and are never flipped by ordered statistics.
+    pub(super) fn decode_assisted(
+        &self,
+        llr: &[f32; 174],
+        fixed: &[bool; 174],
+        cancel: &impl Fn() -> bool,
+    ) -> Option<(ChannelWord, usize)> {
         if llr.iter().any(|x| !x.is_finite()) || cancel() {
             return None;
         }
-        let (word, sums) = self.beliefs(llr, cancel);
+        let (word, sums) = self.beliefs(llr, fixed, cancel);
         if word.is_some() {
             return word;
         }
-        sums.iter().find_map(|sum| self.osd(sum, cancel))
+        sums.iter().find_map(|sum| self.osd(sum, fixed, cancel))
     }
     /// Sum-product belief propagation (flooding schedule) with WSJT-X's early stop. Returns a
     /// valid word, or the cumulative bit sums of iterations 1..=RECOVERY_SUMS.
     pub(super) fn beliefs(
         &self,
         llr: &[f32; 174],
+        fixed: &[bool; 174],
         cancel: &impl Fn() -> bool,
     ) -> (Option<(ChannelWord, usize)>, Vec<[f32; 174]>) {
         let mut to_bit = vec![0f32; self.bit_edges.len() * 3];
@@ -182,7 +193,11 @@ impl Channel {
                 return (None, vec![]);
             }
             let zn: [f32; 174] = std::array::from_fn(|i| {
-                llr[i] + self.bit_edges[i].iter().map(|&e| to_bit[e]).sum::<f32>()
+                if fixed[i] {
+                    llr[i]
+                } else {
+                    llr[i] + self.bit_edges[i].iter().map(|&e| to_bit[e]).sum::<f32>()
+                }
             });
             for (s, z) in sum.iter_mut().zip(&zn) {
                 *s += z;
@@ -240,6 +255,7 @@ impl Channel {
     pub(super) fn osd(
         &self,
         sum: &[f32; 174],
+        fixed: &[bool; 174],
         cancel: &impl Fn() -> bool,
     ) -> Option<(ChannelWord, usize)> {
         // Most reliable first; ties in reverse index order (reversed ascending sort).
@@ -307,11 +323,15 @@ impl Channel {
             .fold(0u128, |p, r| p ^ parity[r]);
         let base_errors = base ^ received;
         let mut best = (0u128, weight(base_errors));
+        let fixed: [bool; 174] = std::array::from_fn(|i| fixed[order[i]]);
         for first in (0..K).rev() {
             #[cfg(test)]
             super::resource_observer::hit(super::resource_observer::Phase::RecoveryCheck);
             if cancel() {
                 return None;
+            }
+            if fixed[first] {
+                continue;
             }
             let single = base_errors ^ parity[first];
             let single_screened = screen(single);
@@ -323,7 +343,9 @@ impl Channel {
                 }
             }
             for second in (0..first).rev() {
-                if (single_screened ^ screened[second]).count_ones() + 2 <= SCREEN_LIMIT {
+                if !fixed[second]
+                    && (single_screened ^ screened[second]).count_ones() + 2 <= SCREEN_LIMIT
+                {
                     let pair = single ^ parity[second];
                     let distance = d1 + reliability[second] + weight(pair);
                     if distance < best.1 {

@@ -191,7 +191,50 @@ pub(super) async fn observe(
         Mode::Ft8 => ft8(&rows, budget).await?,
         Mode::Ft4 => ft4(&rows, budget).await?,
     };
-    decode_families(pass.plan.mode, families, channel, budget).await
+    let assisted = if pass.plan.mode == Mode::Ft8 && families.len() == 5 {
+        cq_assisted(&families)
+    } else {
+        vec![]
+    };
+    if let Some(word) = decode_families(pass.plan.mode, families, channel, budget).await? {
+        return Ok(Some(word));
+    }
+    decode_assisted_families(assisted, channel, budget).await
+}
+/// ft8b a-priori type 1 (CQ ??? ???) for the 77-bit standard message: payload bits 0..28 are
+/// the CQ token (c28 = 2) with ipa = 0 and bits 74..76 are i3 = 1. They are fixed at 1.1 times
+/// the family's largest |LLR|. WSJT-X uses the single and triple families (passes 6, 7).
+pub(super) fn cq_assisted(families: &[[f32; 174]]) -> Vec<([f32; 174], [bool; 174])> {
+    [0, 2]
+        .into_iter()
+        .map(|family| {
+            let mut llr = families[family];
+            let magnitude = llr.iter().fold(0f32, |m, x| m.max(x.abs())) * 1.1;
+            let mut fixed = [false; 174];
+            let cq = (0..29).map(|bit| (bit, bit == 26));
+            for (bit, one) in cq.chain([(74, false), (75, false), (76, true)]) {
+                llr[bit] = if one { -magnitude } else { magnitude };
+                fixed[bit] = true;
+            }
+            (llr, fixed)
+        })
+        .collect()
+}
+/// The CQ a-priori passes, tried only after every unassisted FT8 family failed.
+async fn decode_assisted_families(
+    families: Vec<([f32; 174], [bool; 174])>,
+    channel: &Channel,
+    budget: &mut CpuBudget<'_>,
+) -> Result<Option<ChannelWord>, DecodeError> {
+    for (llr, fixed) in families {
+        budget.checkpoint().await?;
+        if let Some((word, errors)) = channel.decode_assisted(&llr, &fixed, &|| (budget.cancel)())
+            && accepted(Mode::Ft8, &word, errors)
+        {
+            return Ok(Some(word));
+        }
+    }
+    Ok(None)
 }
 /// The first family whose word passes the acceptance rule wins; a rejected word does not
 /// stop later families.

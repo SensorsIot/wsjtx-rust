@@ -16,7 +16,7 @@ fn resource_phase_fec_stops_at_next_real_check_after_first_iteration() {
     let context = serde_json::json!({"phase":"fec","composition":"real private beliefs; no waveform BP-failure claim",
         "input_sha256":resource_observer::cases()["fec"]["sha256"]});
     let began = std::time::Instant::now();
-    let (word, _) = channel.beliefs(&llr, &|| cancel.load(Ordering::SeqCst));
+    let (word, _) = channel.beliefs(&llr, &[false; 174], &|| cancel.load(Ordering::SeqCst));
     let returned = std::time::Instant::now();
     observed.record_return(
         &context,
@@ -45,7 +45,7 @@ fn resource_phase_fec_stops_at_next_real_check_after_first_iteration() {
     drop(observed);
     let witness = resource_observer::install(Arc::new(AtomicBool::new(false)), None);
     let positive_began = std::time::Instant::now();
-    channel.beliefs(&llr, &|| false);
+    channel.beliefs(&llr, &[false; 174], &|| false);
     eprintln!(
         "RESOURCE_SYNC_CONTROL {}",
         serde_json::json!({"context":context,"positive":true,
@@ -64,7 +64,7 @@ fn resource_phase_recovery_observes_rank_and_cost_before_cancel() {
     let context = serde_json::json!({"phase":"recovery","composition":"real private OSD, not waveform-triggered BP failure",
         "input_sha256":resource_observer::cases()["recovery"]["sha256"]});
     let began = std::time::Instant::now();
-    let outcome = channel.osd(&llr, &|| cancel.load(Ordering::SeqCst));
+    let outcome = channel.osd(&llr, &[false; 174], &|| cancel.load(Ordering::SeqCst));
     let returned = std::time::Instant::now();
     observed.record_return(
         &context,
@@ -79,7 +79,7 @@ fn resource_phase_recovery_observes_rank_and_cost_before_cancel() {
     assert_eq!(report.counts[Phase::RecoveryCheck as usize], 2);
     drop(observed);
     let positive_began = std::time::Instant::now();
-    let (word, errors) = channel.osd(&llr, &|| false).unwrap();
+    let (word, errors) = channel.osd(&llr, &[false; 174], &|| false).unwrap();
     eprintln!(
         "RESOURCE_SYNC_CONTROL {}",
         serde_json::json!({"context":context,"positive":true,

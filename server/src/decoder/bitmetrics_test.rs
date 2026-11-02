@@ -123,11 +123,14 @@ fn physical_sync_boundaries_are_independent_tone_and_bit_barriers() {
 }
 
 fn vector_word() -> Vec<u8> {
+    vector_codeword(0)
+}
+fn vector_codeword(index: usize) -> Vec<u8> {
     let manifest: serde_json::Value = serde_json::from_str(include_str!(
         "../../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
-    manifest["vectors"][0]["codeword174"]
+    manifest["vectors"][index]["codeword174"]
         .as_str()
         .unwrap()
         .bytes()
@@ -206,4 +209,45 @@ fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
             "the all-zero codeword is refused"
         );
     }
+}
+// Proves: FR-003, FR-004, CL-007-03 (#56). ft8b a-priori type 1: a CQ frame whose CQ and i3
+// bits are buried (strongly wrong) decodes once those 32 bits are fixed, and only then.
+#[test]
+fn cq_a_priori_bits_recover_a_buried_cq_word() {
+    let bits = vector_codeword(4); // CQ K1ABC FN42, i3=1
+    let mut cq = vec![0u8; 29];
+    cq[26] = 1;
+    assert_eq!(&bits[..29], cq.as_slice());
+    let mut llr: [f32; 174] = std::array::from_fn(|i| if bits[i] == 0 { 3f32 } else { -3f32 });
+    for bit in (0..29).chain(74..77) {
+        llr[bit] = -llr[bit] * 3.;
+    }
+    for bit in (100..170).step_by(7) {
+        llr[bit] = -llr[bit] * 0.2;
+    }
+    let channel = Channel::new();
+    let never = || false;
+    let families = vec![llr; 5];
+    let plain = complete(decode_families(
+        Mode::Ft8,
+        families.clone(),
+        &channel,
+        &mut CpuBudget::new(&never),
+    ))
+    .unwrap();
+    assert_ne!(plain.map(|w| w.to_vec()), Some(bits.clone()));
+    let assisted = cq_assisted(&families);
+    assert_eq!(assisted.len(), 2);
+    assert!(
+        assisted
+            .iter()
+            .all(|(_, fixed)| fixed.iter().filter(|&&f| f).count() == 32)
+    );
+    let word = complete(decode_assisted_families(
+        assisted,
+        &channel,
+        &mut CpuBudget::new(&never),
+    ))
+    .unwrap();
+    assert_eq!(word.map(|w| w.to_vec()), Some(bits));
 }
