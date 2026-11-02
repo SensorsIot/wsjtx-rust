@@ -1,5 +1,5 @@
 use super::baseband::{BandPlan, BandWindow, PassBand};
-use super::bitmetrics::{self, channel_gates};
+use super::bitmetrics;
 use super::fit::{fit_coefficients, fit_signal};
 use super::history::DecodeState;
 use super::physical_sync;
@@ -218,14 +218,11 @@ impl Decoder {
             let mut verified = 0;
             for c in candidates {
                 budget.checkpoint().await?;
-                let observation =
-                    bitmetrics::observe(&mut physical, c, &self.channel, &mut budget).await?;
-                let Some(word) = observation.word else {
+                let Some(word) =
+                    bitmetrics::observe(&mut physical, c, &self.channel, &mut budget).await?
+                else {
                     continue;
                 };
-                if !channel_gates(&word, &observation.llr) {
-                    continue;
-                }
                 let Some(payload) = self.channel.payload(&word, mode) else {
                     continue;
                 };

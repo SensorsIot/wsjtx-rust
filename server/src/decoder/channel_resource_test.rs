@@ -64,7 +64,7 @@ fn resource_phase_recovery_observes_rank_and_cost_before_cancel() {
     let context = serde_json::json!({"phase":"recovery","composition":"real private OSD, not waveform-triggered BP failure",
         "input_sha256":resource_observer::cases()["recovery"]["sha256"]});
     let began = std::time::Instant::now();
-    let outcome = channel.osd(&llr, &llr, &|| cancel.load(Ordering::SeqCst));
+    let outcome = channel.osd(&llr, &|| cancel.load(Ordering::SeqCst));
     let returned = std::time::Instant::now();
     observed.record_return(
         &context,
@@ -79,13 +79,14 @@ fn resource_phase_recovery_observes_rank_and_cost_before_cancel() {
     assert_eq!(report.counts[Phase::RecoveryCheck as usize], 2);
     drop(observed);
     let positive_began = std::time::Instant::now();
-    let word = channel.osd(&llr, &llr, &|| false).unwrap();
+    let (word, errors) = channel.osd(&llr, &|| false).unwrap();
     eprintln!(
         "RESOURCE_SYNC_CONTROL {}",
         serde_json::json!({"context":context,"positive":true,
         "wall_seconds":positive_began.elapsed().as_secs_f64(),"future_poll":false,"cpu_time_measured":false})
     );
     assert_eq!(word, [0; 174]);
+    assert_eq!(errors, 0);
     assert!(channel.valid(&word));
     assert_eq!(channel.decode(&llr, &|| false), Some(word));
 }

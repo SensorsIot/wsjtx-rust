@@ -122,38 +122,76 @@ fn physical_sync_boundaries_are_independent_tone_and_bit_barriers() {
     assert!(!physical_accepts(Mode::Ft4, &sync_rows(Mode::Ft4, 7, 9)));
 }
 
-// Proves: FR-003, FR-004, CL-007-03.
-#[test]
-fn a_failed_hard_gate_does_not_erase_later_metric_family() {
+fn vector_word() -> Vec<u8> {
     let manifest: serde_json::Value = serde_json::from_str(include_str!(
         "../../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
-    let bits = manifest["vectors"][0]["codeword174"]
+    manifest["vectors"][0]["codeword174"]
         .as_str()
         .unwrap()
         .bytes()
         .map(|b| b - b'0')
-        .collect::<Vec<_>>();
-    let good = std::array::from_fn(|i| if bits[i] == 0 { 8f32 } else { -8f32 });
-    let mut earlier = good;
-    for x in &mut earlier[..25] {
+        .collect()
+}
+/// Channel LLRs of the word with the first `errors` bits weak and of the wrong sign.
+fn weak_errors(bits: &[u8], errors: usize) -> [f32; 174] {
+    let mut llr = std::array::from_fn(|i| if bits[i] == 0 { 8f32 } else { -8f32 });
+    for x in &mut llr[..errors] {
         *x = -x.signum() * 0.001;
     }
+    llr
+}
+// Proves: FR-003, FR-004, CL-007-03.
+#[test]
+fn a_rejected_word_does_not_erase_later_metric_family() {
+    let bits = vector_word();
+    let good = weak_errors(&bits, 0);
+    let earlier = weak_errors(&bits, MAX_HARD_ERRORS + 1);
     let channel = Channel::new();
-    let word = channel
-        .decode(&earlier, &|| false)
-        .expect("fixed weak25-bit errors must be corrected");
+    let (word, errors) = channel
+        .decode_counted(&earlier, &|| false)
+        .expect("fixed weak 37-bit errors must be corrected");
     assert_eq!(word.as_slice(), bits.as_slice());
-    assert!(!channel_gates(&word, &earlier));
-    assert!(channel_gates(&word, &good));
+    assert_eq!(errors, MAX_HARD_ERRORS + 1);
+    assert!(!accepted(&word, errors));
+    assert!(accepted(&word, 0));
     let never = || false;
+    let alone = complete(decode_families(
+        vec![earlier],
+        &channel,
+        &mut CpuBudget::new(&never),
+    ))
+    .unwrap();
+    assert_eq!(alone, None);
     let result = complete(decode_families(
         vec![earlier, good],
         &channel,
         &mut CpuBudget::new(&never),
     ))
     .unwrap();
-    assert_eq!(result.word.unwrap().as_slice(), bits.as_slice());
-    assert_eq!(result.llr, good);
+    assert_eq!(result.unwrap().as_slice(), bits.as_slice());
+}
+// Proves: FR-003, FR-004, CL-007-03 (#56). ft8b accepts a word with up to 36 hard
+// disagreements; the former 24-disagreement gate refused 25..36.
+#[test]
+fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
+    let bits = vector_word();
+    let channel = Channel::new();
+    let never = || false;
+    for errors in [25, 30, MAX_HARD_ERRORS] {
+        let llr = weak_errors(&bits, errors);
+        let word = complete(decode_families(
+            vec![llr],
+            &channel,
+            &mut CpuBudget::new(&never),
+        ))
+        .unwrap();
+        assert_eq!(
+            word.map(|w| w.to_vec()),
+            Some(bits.clone()),
+            "{errors} weak hard errors"
+        );
+    }
+    assert!(!accepted(&[0; 174], 0), "the all-zero codeword is refused");
 }

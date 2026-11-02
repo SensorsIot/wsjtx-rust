@@ -71,17 +71,15 @@ package WstxOfflineDecode {
         attribute candidateCap : Integer = 256;
         attribute rawMaximumBound : Integer = 661758;
         attribute complexTransformBound : Integer = 838992;
-        attribute recoveryInformationRank : Integer = 77;
-        attribute fecIterations : Integer = 50;
-        attribute recoveryTrials : Integer = 137;
+        attribute recoveryInformationRank : Integer = 91;
+        attribute fecIterations : Integer = 30;
+        attribute recoverySums : Integer = 2;
         attribute subtractionPasses : Integer = 3;
         attribute subtractions : Integer = 32;
         attribute minFrequencyHz : Real = 200.0;
         attribute maxFrequencyHz : Real = 3500.0;
         attribute costasThreshold : Real = 2.7;
-        attribute minMeanAbsLlr : Real = 1.0;
-        attribute maxHardDisagreements : Integer = 24;
-        attribute minSumAlpha : Real = 0.8;
+        attribute maxHardDisagreements : Integer = 36;
     }
     attribute def ModeParameters {
         attribute mode : Mode;
@@ -446,10 +444,9 @@ package WstxOfflineDecode {
         attribute totalCostasSymbols : Integer = 21;
         attribute metricFamilies : Integer = 5;
         attribute metricScale : Real = 2.83;
-        attribute channelIterationsPerFamily : Integer = 50;
-        attribute channelTrialsPerFamily : Integer = 137;
-        attribute hardDisagreementMax : Integer = 24;
-        attribute meanAbsLlrMin : Real = 1.0;
+        attribute channelIterationsPerFamily : Integer = 30;
+        attribute recoverySumsPerFamily : Integer = 2;
+        attribute hardDisagreementMax : Integer = 36;
         attribute filterRadius : Integer = 2000;
         attribute filterTaps : Integer = 4001;
     }
@@ -533,12 +530,33 @@ package WstxOfflineDecode {
         out accepted : Boolean;
         out channelWord : Integer[174];
         out payload77 : Integer[77];
-        doc /* Fiveorderedfamilies,each<=50minsumalpha.8and<=137rank77order0/1/2recovery
-             trials/16least-reliablebasisbits. CRCbitsconstrained; publishedH+CRCmandatory.
-             RequiremeanabsLLR>=1/hardCHANNELdisagreements<=24. Avalidwordfailinggates
+        doc /* Fiveorderedfamilies, each through Ft8ChannelDecode. Accept a word with
+             hard disagreements (nharderrors)<=36 that is not the all-zero codeword (ft8b,
+             #56); publishedH+CRCmandatory. Avalidwordfailingacceptance
              DOESNOTstoplaterfamilies. Firstallgatesacceptedwordwins; no6thfallbackdecode.
              Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
              Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
+    }
+    action def Ft8ChannelDecode {
+        in llrZeroPositive : Real[174];
+        out channelWord : Integer[174];
+        out hardDisagreements : Integer;
+        doc /* Adapted WSJT-X decode174_91 (maxosd=2, norder=2) and osd174_91 (Keff=91,
+             ndeep=2), shared by FT8 and FT4 (#56). Sum-product belief propagation, flooding
+             schedule: check message 2*platanh(product of tanh(extrinsic/2)), WSJT-X
+             piecewise-linear platanh saturating at 7; tanh may be a rational approximant
+             within 1e-4. Iterations 0..30; a word whose syndrome and CRC are zero ends it;
+             stop early after iteration>=10 when unsatisfied checks>15 did not decrease for 5
+             iterations. Keep the cumulative bit sums of iterations 1 and 2. On BP failure
+             run ordered statistics on each kept sum in turn: order the 174 bits by
+             decreasing |sum|, Gaussian-eliminate the systematic (174,91) generator (CRC bits
+             free, pivots searched in the next 111 columns), re-encode the hard decisions of
+             the 91 most reliable bits, then try every single (pair) flip of them whose
+             re-encoded first 40 parity bits differ from the hard decisions in at most 9 (8)
+             places; keep the candidate of least reliability-weighted distance. The result
+             must pass H and CRC. hardDisagreements counts bits that disagree with the
+             channel LLR signs (BP word) or with the kept sum's hard decisions (OSD word).
+             Cancellation is checked every BP iteration and every OSD flip position. */
     }
     action def Ft8SubtractVerifiedFrame {
         in source : ModemSampleWindow;
@@ -667,8 +685,8 @@ package WstxOfflineDecode {
              fourbits200..203=pair,204..205=single (zerobased).
              NormalizeFULL206populationasFT8(no meansubtraction),thenextractinclusive
              ranges8..65/74..131/140..197=>174data,scale2.83/negateONCE.
-             Threeorderedfamilies,each50minsumalpha.8/137rank77boundedrecovery,
-             meanabs>=1/hardCHANNELdisagreements<=24/H+CRC. Failedwordcontinues;
+             Threeorderedfamilies, each through Ft8ChannelDecode, same acceptance
+             (hard disagreements<=36, not all-zero, H+CRC). Failedwordcontinues;
              no4thfallback. Sourceunsupported/invalidstatusretained, noAP/semanticprior. */
     }
     action def Ft4SubtractVerifiedFrame {
@@ -729,8 +747,8 @@ package WstxOfflineDecode {
              noisegridseparatefromFt4FrequencyCandidates/Ft4BandLimitAndFineSync.
              FT8BandLimit/FineSynchronization/ObserveMetricFamilies/DecodeMetricFamilies;
              FT4BandLimitAndFineSync/ObserveMetricFamilies. Qualifiedcap256,257=>limited.
-             FiveFT8orthreeFT4families; each<=50minsumalpha.8/<=137rank77recovery among16
-             leastreliablebasisbits,CRCconstrained. Meanabs1/hard24/H+CRCmandatory.
+             FiveFT8orthreeFT4families; each Ft8ChannelDecode (BP<=30 + OSD ndeep2 on
+             2 sums, rank91). Hard disagreements<=36, not all-zero, H+CRC mandatory.
              NoAP/hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
              <=3passes/32verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
@@ -885,7 +903,7 @@ package WstxOfflineDecode {
                  Finitecaserequireszeropublications,no search_limited,neverproductionhelpers.
                  All2286originalcases/thresholds/256cap remain. Verifyrecipe/composer/audiohashes,
                  FT4bandlimitedblocksync/threemetrics andFT8bandlimitedsymbolsync/fivemetrics;
-                 physicalhits/complexenvelopeSIC/rank77/64MiB.
+                 physicalhits/complexenvelopeSIC/rank91/64MiB.
                  No externaldecoder oracle or skipped case pass. */
         }
         dependency phaseLikelihoodCase from phaseLikelihoodAndScale to WstxRequirements::'TC-004-003';

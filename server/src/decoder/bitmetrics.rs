@@ -7,18 +7,11 @@ use super::{
 };
 use rustfft::num_complex::Complex64;
 
-pub(super) struct Observation {
-    pub llr: [f32; 174],
-    pub word: Option<ChannelWord>,
-}
-pub(super) fn channel_gates(word: &ChannelWord, llr: &[f32; 174]) -> bool {
-    llr.iter().map(|x| x.abs()).sum::<f32>() / 174. >= 1.
-        && word
-            .iter()
-            .zip(llr)
-            .filter(|(b, l)| **b != u8::from(**l < 0.))
-            .count()
-            <= 24
+/// ft8b acceptance of a channel word: at most 36 hard disagreements (nharderrors) and not
+/// the all-zero codeword. FT4 uses the same rule.
+pub(super) const MAX_HARD_ERRORS: usize = 36;
+pub(super) fn accepted(word: &ChannelWord, hard_errors: usize) -> bool {
+    hard_errors <= MAX_HARD_ERRORS && word.contains(&1)
 }
 
 pub(super) fn physical_hits(mode: Mode, rows: &[Vec<Complex64>]) -> (usize, usize) {
@@ -187,19 +180,12 @@ pub(super) async fn observe(
     c: Candidate,
     channel: &Channel,
     budget: &mut CpuBudget<'_>,
-) -> Result<Observation, DecodeError> {
-    let last = [0f32; 174];
+) -> Result<Option<ChannelWord>, DecodeError> {
     let Some(rows) = pass.rows(c.start, c.frequency, budget).await? else {
-        return Ok(Observation {
-            llr: last,
-            word: None,
-        });
+        return Ok(None);
     };
     if !physical_accepts(pass.plan.mode, &rows) {
-        return Ok(Observation {
-            llr: last,
-            word: None,
-        });
+        return Ok(None);
     }
     let families = match pass.plan.mode {
         Mode::Ft8 => ft8(&rows, budget).await?,
@@ -207,29 +193,23 @@ pub(super) async fn observe(
     };
     decode_families(families, channel, budget).await
 }
+/// The first family whose word passes the acceptance rule wins; a rejected word does not
+/// stop later families.
 async fn decode_families(
     families: Vec<[f32; 174]>,
     channel: &Channel,
     budget: &mut CpuBudget<'_>,
-) -> Result<Observation, DecodeError> {
-    let mut last = [0f32; 174];
+) -> Result<Option<ChannelWord>, DecodeError> {
     for llr in families {
         budget.checkpoint().await?;
-        last = llr;
-        if let Some(word) = channel.decode(&llr, &|| (budget.cancel)())
-            && channel_gates(&word, &llr)
+        if let Some((word, errors)) = channel.decode_counted(&llr, &|| (budget.cancel)())
+            && accepted(&word, errors)
         {
-            return Ok(Observation {
-                llr,
-                word: Some(word),
-            });
+            return Ok(Some(word));
         }
     }
     budget.checkpoint().await?;
-    Ok(Observation {
-        llr: last,
-        word: None,
-    })
+    Ok(None)
 }
 
 #[cfg(test)]
