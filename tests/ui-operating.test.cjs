@@ -346,6 +346,69 @@ const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'sele
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
+// Proves: CL-011-03; TC-007-008 (#11 live stall 2026-11-02, IW9FRA): with Auto Seq off the
+// QSO pane says so, and the partner's RR73 in roger_report offers 73 as one action.
+test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout:40000},async t=>{
+  const commands=[];let contact=null,settings={auto_seq:false};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,settings})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
+  const iw9fra=['IW9FRA HB9BLA JN37','IW9FRA HB9BLA +10','IW9FRA HB9BLA R+10','IW9FRA HB9BLA RR73','IW9FRA HB9BLA 73','CQ HB9BLA JN37'];
+  const show=async next=>{contact=next;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(s=>window.wstxContact.snapshot().contact?.suggested_slot===s,next.suggested_slot);};
+  await show(partner('roger_report',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx3',tx4:'rr73',messages:iw9fra,suggested_slot:null}));
+  assert.equal(await shown(page,'#qso-autoseq'),true,'Auto Seq off is on the pane');
+  assert.match(await page.locator('#qso-autoseq-text').textContent(),/^Auto Seq off/);
+  assert.match(await page.locator('#contact-state').textContent(),/Auto Seq off/);
+  assert.equal(await shown(page,'#qso-suggest'),false,'nothing offered before their RR73');
+  // Their RR73 was counted: the engine offers Tx5; one click chooses it and arms (Reply).
+  await show({...contact,suggested_slot:'tx5'});
+  assert.equal(await page.locator('#qso-suggest').textContent(),'Send 73 next');
+  assert.equal(await page.locator('#qso-suggest').getAttribute('title'),'Send IW9FRA HB9BLA 73 next');
+  assert.match(await page.locator('#qso-autoseq-text').textContent(),/IW9FRA expects$/);
+  assert.equal(await page.locator('#qso-autoseq').evaluate(el=>getComputedStyle(el).borderLeftStyle),'solid','styled as a warning on the pane');
+  // TC-007-009: still one fixed 1366x768 screen with the line shown.
+  const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
+  assert.deepEqual(metrics,{x:false,y:false});
+  const top=selector=>page.locator(selector).first().evaluate(el=>el.getBoundingClientRect().top);
+  const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
+  // A received partner row in the dialogue (layout only: this fixture runs no live job).
+  await page.evaluate(()=>{const tr=document.createElement('tr');tr.dataset.kind='rx';for(const t of ['13:45:15.0','17','-0.1','1838','◂ HB9BLA IW9FRA RR73']){const td=document.createElement('td');td.textContent=t;tr.append(td);}document.querySelector('#rx-pane-rows').append(tr);});
+  // The line takes the LAST row's place: the dialogue and its row stay visible, the QSO
+  // buttons sit no lower than for the same contact without the line, the line is fully visible.
+  assert.equal(await shown(page,'#rx-pane'),true,'the dialogue stays with Auto Seq off');
+  assert.equal(await shown(page,'#rx-pane-rows tr'),true,'the received row stays visible');
+  assert.equal(await shown(page,'#contact-last'),false,'LAST gives way to the line');
+  const dialogue=()=>page.locator('#rx-pane .ct-pane-wrap').evaluate(el=>el.clientHeight);
+  const dialogueWithLine=await dialogue();
+  await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
+  for(const selector of ['#qso-autoseq','#qso-suggest'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
+  const withLine=await top('#qso-73');
+  settings={auto_seq:true};await show({...contact,suggested_slot:null});await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
+  const withoutLine=await top('#qso-73');
+  assert.ok(withLine<=withoutLine,`QSO buttons pushed down by the line: ${withLine} > ${withoutLine}`);
+  const dialogueWithoutLine=await dialogue();
+  assert.ok(dialogueWithLine>=dialogueWithoutLine,`the line shrinks the dialogue: ${dialogueWithLine} < ${dialogueWithoutLine}`);
+  settings={auto_seq:false};await show({...contact,suggested_slot:'tx5'});await page.waitForFunction(()=>!document.querySelector('#qso-autoseq').hidden);
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.screenshot({path:'test-results/ui-operating/autoseq-off-360x800.png',fullPage:true});
+  await page.setViewportSize({width:1366,height:768});
+  await page.locator('#qso-suggest').click();
+  for(let i=0;i<40&&commands.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.map(c=>[c.action,c.slot??c.enabled]),[['choose_next','tx5'],['enable_tx',true]]);
+  await page.locator('#qso-autoseq-on').click();
+  for(let i=0;i<40&&commands.length<3;i++)await page.waitForTimeout(50);
+  assert.deepEqual([commands[2].action,commands[2].enabled],['set_auto_seq',true]);
+  // Auto Seq on and nothing offered: the line is gone.
+  settings={auto_seq:true};await show({...contact,suggested_slot:null});
+  await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
+  assert.doesNotMatch(await page.locator('#contact-state').textContent(),/Auto Seq off/);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-010-16; TC-007-009 one fixed laptop screen and phone safety.
 test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating items',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});

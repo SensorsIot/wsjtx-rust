@@ -580,6 +580,15 @@ attribute def ActivityOrdering {
              Log QSO logs the contact now, WstxContact::DirectLog (#41), and the pane
              shows the latest log outcome: logged, or not logged with its error).
              Always visible: partner header, dialogue, Next/Last with progress, direct buttons.
+             Auto Seq off (#11): while Auto Seq is off during a contact or CQ, a warning
+             line below the status reads "Auto Seq off" (title: received messages do not
+             advance the QSO) with an "Auto Seq on" button, and the status gets "· Auto
+             Seq off"; when the contact's ContactSnapshot suggested_slot is set, the line
+             adds "<call> expects" and a "Send <exchange> next" button (e.g. "Send 73
+             next", the full message as its title) that chooses that slot and arms
+             (Reply). While shown, the line takes the place of the Last row (the last
+             sent text stays in the top-bar transmit state), so the dialogue stays and
+             the direct buttons sit no lower than without it; it is hidden otherwise.
              A fold-out shows the DX Call/Grid entry with Generate, Erase (dialogue), Tx1-Tx6
              with their Next choice and editable text, Skip Tx1, RRR/RR73, report, Tx period
              and Auto Seq in place. On a station without

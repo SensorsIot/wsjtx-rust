@@ -243,7 +243,9 @@ pub fn transition(state: State, received: Received) -> Option<State> {
         (S::Replying, R::Grid) => S::Report,
         (S::Replying | S::Report, R::SignalReport) => S::RogerReport,
         (S::Replying | S::Report | S::RogerReport, R::RogerReport) => S::Rogers,
-        (S::RogerReport, R::Rogers) => S::Signoff,
+        // A partner who skips RR73 and signs off with 73 after my R+report is
+        // answered with my 73 once, like an RR73 (#11).
+        (S::RogerReport, R::Rogers | R::SeventyThree) => S::Signoff,
         (S::Signoff, R::Rogers) => S::Signoff,
         (S::Rogers, R::SignalReport) => S::RogerReport,
         (S::Rogers, R::SeventyThree) => S::Completed,
@@ -358,6 +360,9 @@ pub struct Contact {
     pub last_counted_end: Option<i64>,
     /// Set at completion when the contact was handed to the log (once per contact).
     pub logged_on_completion: bool,
+    /// With Auto Seq off: the message Auto Seq would send next after the latest counted
+    /// partner message (e.g. Tx5 after their RR73), offered to the operator (#11).
+    pub suggested: Option<Slot>,
 }
 impl Contact {
     /// WstxContact::LogRecord start time (MW set_dateTimeQSO).
@@ -588,6 +593,15 @@ impl Engine {
             .as_ref()
             .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()) && c.mode == mode);
         let active = self.contact.as_ref().is_some_and(|c| c.state.active());
+        // Re-selecting a decoded row of the same partner without a grid (e.g. their
+        // report) keeps the grid already known, as WSJT-X keeps its DX Grid (#11); a
+        // manual entry sets exactly the grid entered.
+        let grid = grid.or_else(|| {
+            self.contact
+                .as_ref()
+                .filter(|_| same && origin == Origin::DecodedRow)
+                .and_then(|c| c.dx_grid.clone())
+        });
         if active && !same && !replace {
             return Err("contact_active");
         }
@@ -627,6 +641,7 @@ impl Engine {
             first_tx3_period: None,
             last_counted_end: None,
             logged_on_completion: false,
+            suggested: None,
         });
         self.settings.report = report;
         Ok(())
@@ -780,6 +795,7 @@ impl Engine {
                     return Err("invalid_message");
                 }
                 c.next = slot;
+                c.suggested = None;
                 // A finished (completed or cancelled) contact is never reopened by a
                 // slot choice; Enable Tx then starts a fresh own-CQ contact.
                 if !matches!(c.state, State::Completed | State::Cancelled) {
@@ -926,6 +942,7 @@ impl Engine {
                         first_tx3_period: None,
                         last_counted_end: None,
                         logged_on_completion: false,
+                        suggested: None,
                     });
                 }
             }
@@ -1112,8 +1129,16 @@ impl Engine {
                             .max(period + period_ms(row.mode)),
                     );
                     if !auto {
+                        // Auto Seq off: nothing changes, but the step Auto Seq would take
+                        // is offered (e.g. Tx5 after an RR73), never silently dropped.
+                        if let Some(next) = transition(c.state, received)
+                            .filter(|s| *s != State::Completed && s.slot() != c.next)
+                        {
+                            c.suggested = Some(next.slot());
+                        }
                         continue;
                     }
+                    c.suggested = None;
                     if let Some(next) = transition(c.state, received) {
                         if next == State::Completed {
                             self.complete(core.as_deref_mut(), now);

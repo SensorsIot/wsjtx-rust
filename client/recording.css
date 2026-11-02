@@ -233,7 +233,8 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-pane tr[data-tome=true] td{background:rgba(255,95,86,.18);color:#ffc2bc}
 .op-qso-next{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 8px;align-items:center;font-size:var(--op-font-secondary)}
 .op-qso-next strong{font-family:var(--op-mono);font-weight:600;color:#e7f3f8;overflow-wrap:anywhere}
-.op-qso-progress{grid-column:1/-1;height:4px;border-radius:2px;background:#203645;overflow:hidden}.op-qso-progress i{display:block;height:100%;width:0;background:var(--op-accent);transition:width .25s linear}
+#qso-autoseq{margin:0;padding:1px 6px;border-left:4px solid var(--op-warn);background:rgba(242,193,78,.12);color:#f2c14e;font-weight:600;font-size:var(--op-font-secondary);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+#qso-autoseq[hidden],.op-qso-next [hidden]{display:none}#qso-autoseq{padding:0 6px;line-height:1.1;grid-column:1/-1}#qso-autoseq button{padding:0 6px;min-height:0;line-height:1.1;font-size:var(--op-font-secondary)}.op-qso-progress{grid-column:1/-1;height:4px;border-radius:2px;background:#203645;overflow:hidden}.op-qso-progress i{display:block;height:100%;width:0;background:var(--op-accent);transition:width .25s linear}
 #rx-focus[data-armed=true] .op-qso-progress i{background:var(--op-error)}
 .op-qso-buttons{display:flex;flex-wrap:wrap;gap:6px}
 .op-qso-buttons button{flex:1 1 4.2rem;padding:8px 6px;font-weight:600}
