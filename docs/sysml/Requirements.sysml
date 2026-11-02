@@ -892,6 +892,14 @@ package WstxRequirements {
     }
     dependency CL_010_09_to_FR_010 from 'CL-010-09' to 'FR-010';
     dependency CL_010_09_to_FR_019 from 'CL-010-09' to 'FR-019';
+    requirement 'CL-010-16' {
+        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, exception chips, Logbook, Settings and HALT; the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "client/recording.js; client/recording.css; client/contact.js; client/logbook.js";
+    }
+    dependency CL_010_16_to_FR_010 from 'CL-010-16' to 'FR-010';
+    dependency CL_010_16_to_FR_019 from 'CL-010-16' to 'FR-019';
+    dependency CL_010_16_to_FR_021 from 'CL-010-16' to 'FR-021';
     requirement 'CL-010-08' {
         doc /* Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -926,8 +934,8 @@ package WstxRequirements {
     // streamed with backpressure. The automatic review offer and TIME_ON/TIME_OFF come
     // from the contact engine (server/src/contact.rs).
     // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
-    // the same contact operations through WstxMcp (#12). CL-010-11 partial: left double-click
-    // Re-decode is refused redecode_unavailable (no re-decode service exists yet).
+    // the same contact operations through WstxMcp (#12). CL-010-11 partial: since #37 the
+    // browser sends no re-decode; the wire redecode stays refused redecode_unavailable.
     // CL-010-13 partial: worked-before marks are not yet shown in the Rx Frequency pane.
     // CL-010-15 partial: TC-007-005 Thin/Off measurement with the new events and MCP.
     requirement 'CL-010-04' {
@@ -958,7 +966,7 @@ package WstxRequirements {
     }
     dependency CL_010_10_to_FR_008 from 'CL-010-10' to 'FR-008';
     requirement 'CL-010-11' {
-        doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (click Rx; shift- or right-click Tx; ctrl-click both; left double-click Rx and re-decode; right double-click both), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
+        doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (click Rx; shift- or right-click Tx; ctrl-click both; left double-click Rx only; right double-click both; dragging the Rx/Tx markers and the Rx/Tx strip fields with 1 Hz/10 Hz steps), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -1082,7 +1090,7 @@ package WstxRequirements {
              CL-010-11
              Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder.
              Steps: at independently computed pixel positions for 200, 1500 and 2950 Hz perform click, shift-click, right-click, ctrl-click, left and right double-click, each with Hold Tx on and off; touch tap; numeric Rx/Tx inputs with 0/3000 Rx and 199/200/2950/2951 Tx.
-             Expected: requested offsets equal the independently computed axis frequency rounded to integer Hz; click Rx only, shift/right Tx only, ctrl and right double-click both, left double-click Rx plus one re-decode request (or its unavailable reason); Tx pointer actions apply with Hold Tx on; markers move only after confirmation; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
+             Expected: requested offsets equal the independently computed axis frequency rounded to integer Hz; click Rx only, shift/right Tx only, ctrl and right double-click both, left double-click Rx only and no re-decode request; Tx pointer actions apply with Hold Tx on; markers move only after confirmation; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1985,6 +1993,48 @@ package WstxRequirements {
         }
         attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs";
     }
+    verification 'TC-007-009' {
+        doc /* #### TC-007-009 — Laptop operating screen (#37)
+
+             Proves CL-010-16. Cost level 2: actual isolated server and headless Chromium on the
+             development PC; no radio, audio device or network service. At 1366x768: no page
+             scroll or horizontal overflow; the top bar holds only the TopBarItem set; no Monitor,
+             Enable Tx, Start/Stop receive or Next receive mode control exists; no status text or
+             chip is shown for a healthy station and each injected exception (stale link, receive
+             stopped, unknown receive outcome, audio unavailable) shows its chip, which opens its
+             detail; the Rx/Tx strip, Band Activity with the strategy element and the QSO pane are
+             visible. At 360x800 the page does not overflow horizontally. The Settings drawer has
+             exactly General, Radio, Logging & Reporting and Expert and every control that left the
+             operating screen is reachable there, with HALT visible and the waterfall running; a
+             restart change during an active contact asks before Apply. Rx/Tx strip steps (1/10 Hz),
+             Tx=Rx/Rx=Tx and Hold Tx send exactly the expected contact requests. Band Activity shows
+             history newest first with period dividers, double-click replies (select then
+             enable_tx) and the right-click menu acts. QSO pane CQ/Reply/RR73/73 send enable_tx with
+             the shown safety revision; on a completed contact RR73 and 73 are disabled and a forced
+             click sends no enable_tx. With the confirmation popup open during an active QSO its HALT
+             sends the halt request. Theme switch changes the theme without a request. Keyboard
+             shortcuts act as KeyboardShortcuts and letters are inactive while typing. An
+             unauthorized browser shows only the token form and its status line, then the full
+             screen after authorization. Settings > General shows "Monitor off at startup" as read
+             from GET /receive/startup; toggling it sends exactly one POST /receive/startup
+             {v 1, profile_id, boot_id, monitor_off_at_startup} and no receive start, stop or
+             selection, a refusal restores the previous value, and Expert shows the resume state;
+             Logging & Reporting shows the UDP configuration read from GET /udp (no /udp request
+             before the drawer opens); editing a target, adding one and Save send exactly one PUT
+             /udp {v 1, profile_id, boot_id, expected_revision, configuration} whose configuration
+             is the edited list, and no receive start, stop or selection; accept_commands is not
+             offered for a multicast address; a refusal shows its code and field and keeps the
+             edits; the accept_commands warning and each target's status are shown.
+             Independent oracles: the design-interview decisions in the
+             model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-010-16';
+            verify 'CL-045-01';
+            verify 'CL-040-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
     verification 'TC-009-005' {
         doc /* #### TC-009-005 — Coherent receive operating controls
 
@@ -1994,14 +2044,17 @@ package WstxRequirements {
              not an execution verdict. TC-009-002 remains the separate authorized cost4 physical
              IC-7300/browser readback check. All existing cases remain required.
 
-             1. From a validated stopped snapshot, Monitor uses the existing Start, then Monitor
-                and Stop each cancel the exact running tuple. Hold native close and inject failed
-                close: Start stays blocked until real release. Next receive mode starts nothing;
-                active mode remains authoritative. Retain partial latest-period rows after Stop,
+             1. From a validated stopped snapshot, the explicit receive start (Expert, or the
+                Receive stopped chip; #37 removed Monitor/Stop from the operating screen) uses
+                the existing Start, and the explicit stop cancels the exact running tuple. Hold native close and inject failed
+                close: Start stays blocked until real release. Start uses the operating FT8/FT4 selection;
+                there is no separate Next receive mode control. Retain partial latest-period rows after Stop,
                 clear on a fresh identity. Unsupported/invalid audio, CAT-disabled, stale snapshot,
                 lost response, pre-intent read and reconnect cases never create a second owner,
-                implicit input selection, automatic restart or mutation retry. Keyboard/360px/200%
-                text retains accessible Monitor/Stop/state and persistent unsupported Halt Tx.
+                implicit input selection, automatic restart or mutation retry; reconnects,
+                status refreshes, readiness events and a second tab send no receive start, stop
+                or selection by themselves (#37 guard). Keyboard/360px/200% text retains
+                accessible receive state and persistent unsupported Halt Tx.
              2. Use the complete4.7.5 table as fixed independent integer truth. Test every admitted
                 preferred band/mode plus missing160m/4m FT4, backend range edges and wrong enum.
                 Expect20m14074000/14080000 and40m7074000/7047500. Cold unknown band/nominal mode
@@ -2235,6 +2288,9 @@ package WstxRequirements {
     dependency CL_008_07_verified_by_TC_009_002 from 'CL-008-07' to 'TC-009-002';
     dependency CL_008_07_verified_by_TC_009_005 from 'CL-008-07' to 'TC-009-005';
     dependency CL_010_05_verified_by_TC_007_002 from 'CL-010-05' to 'TC-007-002';
+    dependency CL_010_16_verified_by_TC_007_009 from 'CL-010-16' to 'TC-007-009';
+    dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
+    dependency CL_040_02_verified_by_TC_007_009 from 'CL-040-02' to 'TC-007-009';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
     dependency CL_010_05_verified_by_TC_009_005 from 'CL-010-05' to 'TC-009-005';
     dependency CL_010_07_verified_by_TC_007_002 from 'CL-010-07' to 'TC-007-002';

@@ -195,7 +195,17 @@ async fn live_native_browser_mode(mode: &str) {
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
     let (store, _) = profile::Store::open(&dir).unwrap();
     let recording = recording::Recording::open(&dir, profile_id.clone(), boot.clone());
-    recording.fixture_input(Box::new(Input::new(fixture)));
+    if mode == "ft8" {
+        recording.fixture_input(Box::new(Input::new(fixture)));
+    } else {
+        // #37: the browser chooses FT4 with the top-bar band and mode selects; the band
+        // selection starts receive (in FT8) first and the mode change restarts it in FT4,
+        // so each of the two receive starts opens its own native fixture input.
+        recording.fixture_inputs(vec![
+            Box::new(Input::new(NativeFt8Fixture::load_mode(mode))),
+            Box::new(Input::new(fixture)),
+        ]);
+    }
     let app = App {
         origin: origin.clone(),
         profile: Some(Arc::new(ProfileState {

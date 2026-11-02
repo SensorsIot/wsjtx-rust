@@ -122,6 +122,8 @@ async function connected(page) {
   const settings=page.locator('#station-settings');
   if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
 }
+// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
 // Proves the CL-022-01 browser proof path against independent cryptographic bytes.
@@ -209,6 +211,9 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   await a.locator('#login').waitFor({state: 'visible'});
   await a.locator('#token').fill(p.env.WSTX_TOKEN); await a.locator('#login button').click(); await connected(a);
   await a.evaluate(() => {window.__twoTabOriginalSocket = socket;});
+  // #37: A's lazy clients (contact, logbook) read once after the first snapshots; let those
+  // reads finish so B's rotation meets an idle tab A, as the counts below assume.
+  await a.waitForFunction(() => !!window.wstxContact, null, {timeout: 30000}); await a.waitForLoadState('networkidle');
   const firstCredential = await credential(a), beforeFiles = await fileHashes();
   const cookieName = `wstx_session_${p.document.profile_id}`;
   const oldCookie = (await context.cookies(p.origin)).find(cookie => cookie.name === cookieName);
@@ -1064,7 +1069,7 @@ test('TC-022-006: simulated reservation upload intent cannot cross authorization
   const page = await context.newPage(); await page.goto(p.origin);
   await page.locator('#login').waitFor({state: 'visible'});
   await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
-  await page.locator('#open-recordings').click();
+  await page.locator('#open-server-settings').click(); await page.locator('#tab-expert').click();
   await page.locator('#recording-import').waitFor({state: 'visible'});
   await page.waitForFunction(() => !document.querySelector('#recording-import').disabled);
   const baseline = await page.evaluate(async () => (await window.stationAuthorization.fetch('/recording')).json());
@@ -1583,7 +1588,7 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   const competing = await Promise.all([request(profiles[0].origin, 'PUT', edit(1, revision)), request(profiles[0].origin, 'PUT', edit(1, revision))]); assert.deepEqual(competing.map(r => r.status).sort(), [200, 409]); revision++;
   await page.reload(); await connected(page); await page.locator('#callsign').fill('bad'); await page.locator('#settings-save').click();
   await page.locator('#settings-result').filter({hasText: 'Invalid callsign'}).waitFor(); assert.equal(await page.locator('#callsign').inputValue(), 'bad');
-  await page.locator('#refresh').click(); await connected(page); assert.equal(await page.locator('#callsign').inputValue(), 'bad', 'refresh preserves unsaved input');
+  await refreshStatus(page); await connected(page); assert.equal(await page.locator('#callsign').inputValue(), 'bad', 'refresh preserves unsaved input');
   await page.locator('#settings-reload').click(); await page.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor();
   const staleWindow = await context.newPage(); await staleWindow.goto(profiles[0].origin); await connected(staleWindow);
   await staleWindow.locator('#display-name').fill('Unsaved concurrent edit');
@@ -1656,7 +1661,7 @@ test('TC-022-003: lifecycle, ownership aliases/copies, ports and unavailable res
   const {pages} = await browserWindows(t, profiles); await Promise.all(pages.map(connected));
   for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
   await profiles[0].app.close(); await pages[0].locator('#connection[data-state="stale"]').waitFor();
-  for (const page of pages.slice(1)) {const old = await page.locator('#updated').textContent(); const start = Date.now(); await page.locator('#refresh').click(); await page.waitForFunction(value => document.querySelector('#updated').textContent !== value, old, {timeout: 2000}); assert.ok(Date.now() - start <= 2000);}
+  for (const page of pages.slice(1)) {const old = await page.locator('#updated').textContent(); const start = Date.now(); await refreshStatus(page); await page.waitForFunction(value => document.querySelector('#updated').textContent !== value, old, {timeout: 2000}); assert.ok(Date.now() - start <= 2000);}
   for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
   profiles[0].app = await start(profiles[0]); apps.push(profiles[0].app); await connected(pages[0]);
   await refusal(['--profile', profiles[0].dir], 'profile_in_use');
@@ -1792,7 +1797,7 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
   });
   try {
     await page.locator('#display-name').fill('One pending save');
-    const previousUpdate = await page.locator('#updated').textContent(); await page.locator('#refresh').click(); await gotGet;
+    const previousUpdate = await page.locator('#updated').textContent(); await refreshStatus(page); await gotGet;
     await page.locator('#settings-save').click(); await gotPut;
     releaseGet(); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
     const stayedDisabled = await page.locator('#settings-save').isDisabled();
@@ -1818,7 +1823,7 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
   });
   try {
     await inverse.locator('#display-name').fill('Acknowledged revision 1');
-    const beforeRefresh = await inverse.locator('#updated').textContent(); await inverse.locator('#refresh').click(); await oldStarted;
+    const beforeRefresh = await inverse.locator('#updated').textContent(); await refreshStatus(inverse); await oldStarted;
     await inverse.locator('#settings-save').click(); await inverse.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
     releaseOld(); await inverse.waitForFunction(old => document.querySelector('#updated').textContent !== old, beforeRefresh);
@@ -1881,7 +1886,7 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   await page.evaluate(() => {window.statusReplies = 0; addEventListener('station-message', e => {if (e.detail.message.type === 'station.status') window.statusReplies++;});});
   async function refreshWithinBound() {
     const previous = await page.locator('#updated').textContent(), replies = await page.evaluate(() => window.statusReplies);
-    await page.locator('#refresh').click();
+    await refreshStatus(page);
     await page.waitForFunction(({previous, replies}) => window.statusReplies > replies && document.querySelector('#updated').textContent !== previous && !document.querySelector('#refresh').disabled, {previous, replies}, {timeout: 2000});
   }
   try {
@@ -1943,7 +1948,7 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   } finally {releaseInitial(); releaseReplacement();}
   await initial.close();
   await page.route('**/profile', route => route.fulfill({status: 503, contentType: 'application/json', body: '{}'}));
-  await page.locator('#refresh').click();
+  await refreshStatus(page);
   await page.locator('#settings-result').filter({hasText: 'Could not load saved settings.'}).waitFor();
   await page.locator('#connection[data-state="stale"]').waitFor();
   const failed = await context.newPage();
