@@ -492,6 +492,91 @@ pub async fn worked(
     .unwrap_or_else(|_| error("storage_unavailable", None))
 }
 
+/// #55 WstxDxcc::CountryFile view: which cty.dat the station uses.
+fn dxcc_view(state: &ProfileState) -> Value {
+    let (table, unreadable) = state.logbook.dxcc();
+    let r = &state.recording;
+    json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
+        "source":if table.uploaded {"uploaded"} else {"bundled"},
+        "version":table.cty.version(),"entities":table.cty.entity_count(),
+        "upload_unreadable":unreadable})
+}
+/// GET /dxcc[?call=X], read-only; with a call (1..13 of A-Z 0-9 /) also its compact
+/// entity (null: none), for the QSO pane.
+pub async fn dxcc(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+) -> Response {
+    let state = match authorize(&app, &headers, false).await {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    let mut view = dxcc_view(&state);
+    if let Some(query) = query {
+        let Some(call) = query
+            .strip_prefix("call=")
+            .filter(|c| (1..=13).contains(&c.len()))
+            .filter(|c| c.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'/'))
+        else {
+            return error("invalid_request", Some("call"));
+        };
+        let (table, _) = state.logbook.dxcc();
+        let me = contact_http::profile_facts(&state)
+            .1
+            .as_deref()
+            .and_then(crate::strategy::maidenhead);
+        view["entity"] = json!(table.lookup(call).map(|r| crate::dxcc::compact(&r, me)));
+    }
+    Json(view).into_response()
+}
+/// PUT /dxcc {v, profile_id, boot_id, text}: text replaces this profile's cty.dat after
+/// it parses; null returns to the bundled file. A refused text changes nothing.
+pub async fn dxcc_put(
+    State(app): State<App>,
+    headers: HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let state = match authorize(&app, &headers, true).await {
+        Ok(s) => s,
+        Err(r) => return *r,
+    };
+    let value = match json_body(&headers, body, DXCC_BODY_MAX) {
+        Ok(v) => v,
+        Err(r) => return *r,
+    };
+    let object = match envelope(&value, &["v", "profile_id", "boot_id", "text"]) {
+        Ok(o) => o.clone(),
+        Err(r) => return *r,
+    };
+    let text = match &object["text"] {
+        Value::Null => None,
+        Value::String(t) if t.len() <= crate::dxcc::FILE_BYTES_MAX => Some(t.clone()),
+        _ => return error("invalid_request", Some("text")),
+    };
+    tokio::task::spawn_blocking(move || {
+        if let Err(r) = context(&state, &object) {
+            return *r;
+        }
+        match gated(&app, &headers, &state, |gate| {
+            state.logbook.replace_dxcc(text.as_deref(), gate)
+        }) {
+            Ok(()) => Json(dxcc_view(&state)).into_response(),
+            Err(logbook::DxccError::Invalid(line)) => (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error":{"code":"invalid_cty","field":"text","line":line}})),
+            )
+                .into_response(),
+            Err(logbook::DxccError::Store(e)) => stored(e),
+        }
+    })
+    .await
+    .unwrap_or_else(|_| error("storage_unavailable", None))
+}
+/// PUT /dxcc body cap: an uploaded file of FILE_BYTES_MAX with JSON escaping of its line
+/// breaks and the envelope.
+pub const DXCC_BODY_MAX: usize = 2 * crate::dxcc::FILE_BYTES_MAX;
+
 /// POST /contacts/imports: 201 new reservation, 200 identical retry.
 pub async fn reserve(
     State(app): State<App>,

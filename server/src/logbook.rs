@@ -603,12 +603,66 @@ struct Inner {
     created: String,
     import: Option<Import>,
     receipts: VecDeque<Receipt>,
+    /// Counts every change of `records` (#55 worked-set cache key).
+    revision: u64,
     #[cfg(test)]
     fault: Option<&'static str>,
 }
+/// (records revision, country table, worked set of that log and table).
+type WorkedCache = (
+    u64,
+    std::sync::Arc<crate::dxcc::Cty>,
+    std::sync::Arc<crate::dxcc::Worked>,
+);
 pub struct Logbook {
     directory: PathBuf,
     inner: Mutex<Inner>,
+    /// #55 the country table of this profile (WSJT-X keeps AD1CCty in WorkedBefore).
+    dxcc: Mutex<DxccState>,
+    /// #55 the worked set of the log for (records revision, country table), rebuilt only
+    /// when either changes: /receive/results reads it on every page.
+    /// The table is held (not its address), so a later table can never match it.
+    worked_set: Mutex<Option<WorkedCache>>,
+}
+struct DxccState {
+    table: crate::dxcc::Table,
+    /// The uploaded cty.dat exists but could not be read or parsed: the bundled
+    /// table is used and the file is left untouched.
+    unreadable: bool,
+}
+/// Why a cty.dat replacement was refused.
+#[derive(Debug)]
+pub enum DxccError {
+    /// The text is no cty.dat (the 1-based line that failed).
+    Invalid(usize),
+    Store(StoreError),
+}
+fn load_dxcc(path: &Path) -> DxccState {
+    let bundled = |unreadable| DxccState {
+        table: crate::dxcc::Table::default(),
+        unreadable,
+    };
+    match fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => bundled(false),
+        read => match read
+            .ok()
+            .and_then(|b| String::from_utf8(b).ok())
+            .and_then(|t| crate::dxcc::Cty::parse(&t).ok())
+        {
+            Some(cty) => DxccState {
+                table: crate::dxcc::Table::uploaded(cty),
+                unreadable: false,
+            },
+            None => bundled(true),
+        },
+    }
+}
+fn gated_io(gate: Gate, action: &mut dyn FnMut() -> std::io::Result<()>) -> Result<(), StoreError> {
+    match gate(action) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) => Err(StoreError::Unavailable),
+        Err(e) => Err(StoreError::Unauthorized(e)),
+    }
 }
 fn utc_timestamp() -> String {
     let seconds = std::time::SystemTime::now()
@@ -697,9 +751,12 @@ impl Logbook {
                 created,
                 import: None,
                 receipts: VecDeque::new(),
+                revision: 0,
                 #[cfg(test)]
                 fault: None,
             }),
+            dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
+            worked_set: Mutex::new(None),
         }
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, StoreError> {
@@ -773,6 +830,7 @@ impl Logbook {
             .map(|(i, r)| (r.contact_id.clone(), i))
             .collect();
         inner.records = next;
+        inner.revision += 1;
         Ok(())
     }
     /// SaveContact: exactly once per contact id. Identical resave is AlreadySaved;
@@ -811,6 +869,7 @@ impl Logbook {
         };
         self.publish(&inner, &next, gate)?;
         inner.records = next;
+        inner.revision += 1;
         Ok(LogOutcome::Replaced)
     }
     pub fn receipt(&self, command_id: &str) -> Result<Option<(Value, u16, Value)>, StoreError> {
@@ -904,6 +963,85 @@ impl Logbook {
                 _ => "not_worked",
             })
             .collect())
+    }
+
+    /// #55 the (call, band) of every logged contact, for the entity worked status.
+    /// #55 WorkedBefore of the stored log against the current country table (cached).
+    pub fn worked_set(&self) -> Result<std::sync::Arc<crate::dxcc::Worked>, StoreError> {
+        let (table, _) = self.dxcc();
+        let (revision, logged) = {
+            let inner = self.lock()?;
+            if let Some((r, t, w)) = &*self.worked_set.lock().unwrap_or_else(|p| p.into_inner())
+                && *r == inner.revision
+                && std::sync::Arc::ptr_eq(t, &table.cty)
+            {
+                return Ok(w.clone());
+            }
+            let logged: Vec<crate::dxcc::Logged> = inner
+                .records
+                .iter()
+                .map(|r| crate::dxcc::Logged {
+                    call: r.values[CALL].clone().unwrap_or_default(),
+                    grid: r.values[GRID].clone(),
+                    band: r.effective_band(),
+                })
+                .collect();
+            (inner.revision, logged)
+        };
+        let worked = std::sync::Arc::new(crate::dxcc::Worked::from_log(&table, &logged));
+        *self.worked_set.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some((revision, table.cty.clone(), worked.clone()));
+        Ok(worked)
+    }
+    /// #55 the country table in use and whether an uploaded file was unreadable.
+    pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
+        let d = self.dxcc.lock().unwrap_or_else(|p| p.into_inner());
+        (d.table.clone(), d.unreadable)
+    }
+    /// #55 replaces the profile's cty.dat with `text` (validated first), or with None
+    /// removes the upload so the bundled table applies. The file is written beside the
+    /// log, flushed and renamed through the gate; the table changes only after that.
+    pub fn replace_dxcc(&self, text: Option<&str>, gate: Gate) -> Result<(), DxccError> {
+        let parsed = text
+            .map(crate::dxcc::Cty::parse)
+            .transpose()
+            .map_err(DxccError::Invalid)?;
+        let mut state = self.dxcc.lock().unwrap_or_else(|p| p.into_inner());
+        let target = self.directory.join(crate::dxcc::FILE_NAME);
+        match text {
+            Some(t) => {
+                let temporary = self.directory.join(format!(
+                    ".cty-{}.tmp",
+                    crate::profile::new_uuid()
+                        .map_err(|_| DxccError::Store(StoreError::Unavailable))?
+                ));
+                let written = (|| {
+                    let mut file = OpenOptions::new()
+                        .create_new(true)
+                        .write(true)
+                        .open(&temporary)?;
+                    file.write_all(t.as_bytes())?;
+                    file.sync_all()
+                })();
+                let result = written
+                    .map_err(|_| StoreError::Unavailable)
+                    .and_then(|()| gated_io(gate, &mut || fs::rename(&temporary, &target)));
+                if result.is_err() {
+                    let _ = fs::remove_file(&temporary);
+                }
+                result
+            }
+            None => gated_io(gate, &mut || match fs::remove_file(&target) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            }),
+        }
+        .map_err(DxccError::Store)?;
+        *state = DxccState {
+            table: parsed.map_or_else(crate::dxcc::Table::default, crate::dxcc::Table::uploaded),
+            unreadable: false,
+        };
+        Ok(())
     }
 
     /// #39 WstxStrategy new_grid: the same query over the 4-character grid square

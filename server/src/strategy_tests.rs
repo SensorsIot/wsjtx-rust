@@ -83,20 +83,24 @@ fn table() -> Vec<Value> {
 // Proves: TC-039-002
 #[test]
 fn tc_039_002_continent_distance_and_directed_cq_rule() {
-    for (grid, continent) in [
-        ("JN47AA", "EU"),
-        ("FN42", "NA"),
-        ("FN31", "NA"),
-        ("KP20", "EU"),
-        ("PM95", "AS"),
-        ("QF56", "OC"),
-        ("GG66", "SA"),
-        ("JJ00", "AF"),
-        ("JB59", "AN"),
+    // #55: the continent of a station is its cty.dat entity's (the continent column of
+    // the cited cty.dat lines), whatever grid it sends.
+    let st = me();
+    for (call, continent) in [
+        ("HB9BLA", "EU"), // Switzerland, line 1118
+        ("K1ABC", "NA"),  // United States, line 1251
+        ("OH1AA", "EU"),  // Finland
+        ("JA1XYZ", "AS"), // Japan, line 1223
+        ("VK2ABC", "OC"), // Australia, line 3977
+        ("PY1AA", "SA"),  // Brazil
+        ("ZS6AA", "AF"),  // South Africa
+        ("CE9AA", "SA"),  // Antarctica: cty.dat files it under SA, line 541
+        ("UA9ABC", "AS"), // Asiatic Russia, line 3384
     ] {
-        assert_eq!(continent_of(grid), Some(continent), "{grid}");
+        assert_eq!(st.dxcc.continent(call), Some(continent), "{call}");
     }
-    assert_eq!(continent_of("ZZ99"), None);
+    assert_eq!(st.dxcc.continent("Q1ABC"), None);
+    assert_eq!(st.dxcc.continent("K1ABC/MM"), None);
     // JN47AA (47.0208, 8.0417) to FN42 (42.5, -71.0): hand haversine, R 6371 km.
     assert_eq!(
         distance_bearing("JN47AA", "FN42").map(|d| d.0),
@@ -163,9 +167,10 @@ fn tc_039_002_rules_rank_grey_and_order() {
         ..s.clone()
     };
     assert_eq!(sorted(&far, &records, &st)[2..], [5, 3, 1]);
-    // Treat 73 as CQ: K1ABC's RR73 counts as calling (no grid: continent unknown).
+    // Treat 73 as CQ: K1ABC's RR73 counts as calling; without a grid its continent is
+    // still known from cty.dat (#55), so it matches rule 1.
     let s73 = strat(vec![vec![cq(), na], vec![cq()]], Sort::Strongest, true);
-    assert_eq!(ranks(&s73, &records, &st)[6], (6, Some(1), false));
+    assert_eq!(ranks(&s73, &records, &st)[6], (6, Some(0), false));
     assert!(
         st.cq_like(&facts(&records[6]).unwrap(), true)
             && !st.cq_like(&facts(&records[7]).unwrap(), true),

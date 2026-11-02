@@ -3172,16 +3172,16 @@ package WstxRequirements {
     // #39 Strategy engine: Highlight and Auto, editor popup, directed-CQ rule (decisions
     // on #37/#39/#42, 2026-11-01); detailed contract in WstxStrategy.
     requirement 'CL-039-01' {
-        doc /* Named strategies are a station setting of the selected profile: strategy.json beside profile.json holds {continent, active, highlight, strategies} with up to 16 strategies, each a name, 1..8 rules in priority order of 0..12 negatable conditions, a sort, Treat 73 as CQ, and the Auto settings (role, switch after, skip after, callers). GET /strategy and PUT /strategy (revision-checked, exact keys) read and save it; my continent for the directed-CQ rule is configurable there (Settings > General) and otherwise derived from the locator. Details: WstxStrategy::StrategyConfiguration, Strategy, Condition, StrategyHttp. */
+        doc /* Named strategies are a station setting of the selected profile: strategy.json beside profile.json holds {continent, active, highlight, strategies} with up to 16 strategies, each a name, 1..8 rules in priority order of 0..12 negatable conditions, a sort, Treat 73 as CQ, and the Auto settings (role, switch after, skip after, callers). GET /strategy and PUT /strategy (revision-checked, exact keys) read and save it; my continent for the directed-CQ rule is configurable there (Settings > General) and otherwise the cty.dat continent of my callsign (#55). Details: WstxStrategy::StrategyConfiguration, Strategy, Condition, StrategyHttp. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
     }
     dependency CL_039_01_to_FR_007 from 'CL-039-01' to 'FR-007';
     dependency CL_039_01_to_FR_016 from 'CL-039-01' to 'FR-016';
     requirement 'CL-039-02' {
-        doc /* One station evaluator gives each decoded standard message a verdict: the first rule whose conditions all hold (message type, new call or grid ever or on this band and mode from the internal log, continent, distance and azimuth from the message grid, SNR, DT, audio frequency, call prefix, CQ target, band; each negatable) and the display order by rank, then strongest, weakest, furthest or newest. POST /strategy/evaluate returns the verdicts of retained live records for the saved strategy or a draft, with the reason when asked; the browser never evaluates a strategy itself. Details: WstxStrategy::Condition, Verdict, ContinentOfGrid, StrategyHttp. */
+        doc /* One station evaluator gives each decoded standard message a verdict: the first rule whose conditions all hold (message type, new call or grid ever or on this band and mode from the internal log, continent of the sender's cty.dat entity, distance and azimuth from the message grid, SNR, DT, audio frequency, call prefix, CQ target, band; each negatable) and the display order by rank, then strongest, weakest, furthest or newest. POST /strategy/evaluate returns the verdicts of retained live records for the saved strategy or a draft, with the reason when asked; the browser never evaluates a strategy itself. Details: WstxStrategy::Condition, Verdict, ContinentOfCall, StrategyHttp. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/logbook.rs; server/src/recording.rs";
+        attribute implementation : String = "server/src/strategy.rs; server/src/logbook.rs; server/src/recording.rs; server/src/dxcc.rs";
     }
     dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
     dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
@@ -3212,7 +3212,7 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39 later slices: DXCC entity, CQ/ITU zone, new DXCC and rarest sort from cty.dat; Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        doc /* Outstanding, issue #39 later slices: DXCC entity, CQ/ITU zone and new-DXCC conditions and the rarest sort (the cty.dat entity itself is delivered by #55, CL-055-01); Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
@@ -3246,9 +3246,9 @@ package WstxRequirements {
     verification 'TC-039-002' {
         doc /* TC-039-002 — Evaluator, continent and directed-CQ tables
              CL-039-02, CL-039-03
-             Setup: hand-authored codec-packed rows for HB9BLA JN47AA (continent EU) on 40m: CQ K1ABC FN42 -12, CQ DL1XYZ JO62 -3, CQ NA W1AW FN31 -5, CQ EU G4ABC IO91 -8, CQ DX OH1AA KP20 -1, CQ DX JA1XYZ PM95 -15, W1AW K1ABC RR73 -6, HB9BLA VK2ABC QF56 -20, CQ TEST N1MM FN31 -2; log facts K1ABC worked on another band, DL1XYZ and JO62 worked here; geography from the square centres computed independently (JN47AA-FN42 5989 km, bearings FN42 296, IO91 311, JO62 28, PM95 38 degrees).
-             Steps: continent of JN47AA FN42 FN31 KP20 PM95 QF56 GG66 JJ00 JB59 ZZ99; DirectedCqRule for EU/NA/DX/TEST/POTA with known and unknown continents; strategy [CQ and continent NA], [CQ] with each sort; Treat 73 as CQ; an empty rule; my continent unknown; each condition kind with its expected matching set and its negation (the complement among the CQs); the reasons.
-             Expected (hand table): EU NA NA EU AS OC SA AF AN and none; ranks 0,1,grey,1,grey,1,none,none,0; strongest order 8,0,1,3,5, weakest 0,8,5,3,1, newest 8,0,5,3,1, furthest ends 5,3,1; with Treat 73 as CQ the RR73 has rank 1 and a call to me is never cq-like; an empty rule leaves only the two greyed rows unmatched; unknown continent greys rows 2,3,4,5; each condition set and complement as written in the test; reasons "no match (rule 1: SNR 0.. dB)" and "CQ NA is not addressed to my continent (EU)"; the callsign guard refuses K1, ABCDE and W1AW/R.
+             Setup: hand-authored codec-packed rows for HB9BLA JN47AA (continent EU) on 40m: CQ K1ABC FN42 -12, CQ DL1XYZ JO62 -3, CQ NA W1AW FN31 -5, CQ EU G4ABC IO91 -8, CQ DX OH1AA KP20 -1, CQ DX JA1XYZ PM95 -15, W1AW K1ABC RR73 -6, HB9BLA VK2ABC QF56 -20, CQ TEST N1MM FN31 -2; log facts K1ABC worked on another band, DL1XYZ and JO62 worked here; continents from the cty.dat entities of the senders, distances from the square centres computed independently (JN47AA-FN42 5989 km, bearings FN42 296, IO91 311, JO62 28, PM95 38 degrees).
+             Steps: continent (cty.dat entity) of HB9BLA K1ABC OH1AA JA1XYZ VK2ABC PY1AA ZS6AA CE9AA UA9ABC Q1ABC K1ABC/MM; DirectedCqRule for EU/NA/DX/TEST/POTA with known and unknown continents; strategy [CQ and continent NA], [CQ] with each sort; Treat 73 as CQ; an empty rule; my continent unknown; each condition kind with its expected matching set and its negation (the complement among the CQs); the reasons.
+             Expected (hand table, continent column of the cited cty.dat lines): EU NA EU AS OC SA AF SA AS, none, none; ranks 0,1,grey,1,grey,1,none,none,0; strongest order 8,0,1,3,5, weakest 0,8,5,3,1, newest 8,0,5,3,1, furthest ends 5,3,1; with Treat 73 as CQ the RR73 of K1ABC (no grid, NA by its entity) has rank 0 and a call to me is never cq-like; an empty rule leaves only the two greyed rows unmatched; unknown continent greys rows 2,3,4,5; each condition set and complement as written in the test; reasons "no match (rule 1: SNR 0.. dB)" and "CQ NA is not addressed to my continent (EU)"; the callsign guard refuses K1, ABCDE and W1AW/R.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3344,6 +3344,97 @@ package WstxRequirements {
     dependency CL_039_04_verified_by_TC_039_007 from 'CL-039-04' to 'TC-039-007';
     dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
     dependency CL_039_06_verified_by_TC_039_007 from 'CL-039-06' to 'TC-039-007';
+    // ---------------------------------------------------------------- #55 DXCC from cty.dat
+    requirement 'CL-055-01' {
+        doc /* The station resolves each call to its DXCC entity from AD1C's cty.dat exactly as WSJT-X does: exact =CALL entries, the longest matching prefix, operating suffixes (/P, /QRP, /M, a digit and the other WSJT-X suffixes), compound calls by their shorter side, /MM and /AM without entity, the KG4 rule, and the zone, position and continent overrides of the matching entry; names are shown in the WSJT-X short form with WAE entities shown as their DXCC. The cty.dat WSJT-X 3.3.0-beta5 ships (VER20250115) is bundled with its source and permission notice. Details: WstxContact::CountryFile, EntityOfCall. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/dxcc.rs";
+    }
+    dependency CL_055_01_to_FR_011 from 'CL-055-01' to 'FR-011';
+    requirement 'CL-055-02' {
+        doc /* Each decoded record of a resolved sender carries its entity (shown name, continent, CQ and ITU zone, entity distance) and the WSJT-X new-* flags that hold against the internal log (new call, grid, DXCC, continent, CQ zone and ITU zone, each ever and on this band), only the true ones, for the #50 row colours. Band Activity's DXCC column shows the shown name; Distance uses the message grid and otherwise the entity distance marked approximate; the QSO pane header shows the partner's country and continent. The strategy's continent condition and the directed-CQ rule use the sender's entity (WstxStrategy::ContinentOfCall). Details: WstxContact::DecodedEntity; WstxOperatingLayout BandActivity. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/dxcc.rs; server/src/receive_http.rs; server/src/strategy.rs; client/recording.js; client/contact.js";
+    }
+    dependency CL_055_02_to_FR_010 from 'CL-055-02' to 'FR-010';
+    dependency CL_055_02_to_FR_019 from 'CL-055-02' to 'FR-019';
+    requirement 'CL-055-03' {
+        doc /* Settings > General shows the cty.dat in use (its date, bundled or uploaded, entity count) and replaces it by a file upload that the station validates first, or returns to the bundled file; there is no automatic download. A refused upload changes nothing; an unreadable stored upload leaves the bundled file in use and is reported. Details: WstxContact::CountryFile, CountryFileHttp. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/main.rs; client/logbook.js";
+    }
+    dependency CL_055_03_to_FR_016 from 'CL-055-03' to 'FR-016';
+    verification 'TC-055-001' {
+        doc /* TC-055-001 — Entity resolution known answers
+             CL-055-01
+             Setup: the bundled cty.dat; a hand-written file with every override kind; malformed files.
+             Steps: effective prefix of WSJT-X's own test_radio_callsign vectors with "", /P, /QRP, /P/QRP; resolve HB9BLA, K1ABC, DL1XYZ, EA8ABC, HB9BLA/P, HB9BLA/QRP, W1AW/4, DL/HB9BLA, HB9BLA/DL, EA8/K1ABC, K1ABC/EA8, HB9BLA/MM, K1ABC/AM, KG4AB, KG4ABC, KG4AB/P, 3D2CR, 3D2CR/P, 3D2AG/P, W1AW/KG4, RA0DAA, RA0ABC, KG4IJS/0, IT9ABC, 4U1VIC, 2M0BDR, GB3LER, FO5ABC, UA3ABC, Q1ABC, a non-ASCII text; parse the override file and each malformed file (also CQ zone 41, ITU zone 91, an empty, a 41-character and a non-ASCII name).
+             Expected (from the cited cty.dat lines and AD1CCty.cpp): Switzerland, U.S.A., Germany, Canary Is. with their zones; compound and suffixed calls by their effective prefix; /MM and /AM none; KG4 5 characters Guantanamo Bay, else U.S.A.; exact entries only for the whole call (3D2CR Conway Reef, 3D2CR/P Fiji, 3D2AG/P Rotuma Is.); zone overrides RA0 19/33, RA0A 18/32, KG4IJS/0 4/7; Sicily, Vienna Intl Ctr and Shetland shown as Italy, Austria, Scotland; the first entry of a duplicate key (GB3LER Scotland); version VER20250115, 346 entities; overrides applied; malformed files refused with their line.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-01';
+        }
+        attribute executable : String = "server/src/dxcc_tests.rs";
+    }
+    dependency CL_055_01_verified_by_TC_055_001 from 'CL-055-01' to 'TC-055-001';
+    verification 'TC-055-002' {
+        doc /* TC-055-002 — Decoded records carry entity and new-* flags
+             CL-055-02
+             Setup: actual router with a selected profile (HB9BLA JN47AA) whose log holds DL1ABC JO62 20m FT8, K1ABC FN42 40m FT8 and W1AW FN31 20m FT4; a live FT8 job with CQ K1ABC FN42, CQ DL2XYZ JO62, CQ JA1XYZ PM95, HB9BLA G4ABC IO91, a free text and CQ W1AW FN31; a hand log for the worked categories.
+             Steps: read /receive/results without a band, then with the selection band 20m; log DL2XYZ on 20m and read again; worked categories from the hand log.
+             Expected: K1ABC dxcc {U.S.A., NA, 5, 8, 7706 km} without flags (no band), then only new_call_band and new_grid_band (the US is worked on 20m); W1AW worked on 20m in FT4 has no flag (band, not mode); DL2XYZ Germany 465 km with only new_call and new_call_band, none after it is logged; JA1XYZ all twelve flags; G4ABC new call, grid, DXCC and ITU zone (EU and CQ 14 worked); free text unchanged; calls compare case-insensitively, grids by square; Sicily counts as its own name.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-02';
+        }
+        attribute executable : String = "server/src/dxcc_tests.rs";
+    }
+    dependency CL_055_02_verified_by_TC_055_002 from 'CL-055-02' to 'TC-055-002';
+    verification 'TC-055-003' {
+        doc /* TC-055-003 — Country file upload
+             CL-055-03
+             Setup: actual isolated router and profile directory; Chromium at 1366x768 on the isolated server.
+             Steps: GET /dxcc; GET /dxcc?call= with DL/HB9BLA, K1ABC/MM and refused queries (empty, encoded slash, other key, 14 characters); PUT a one-entity file; PUT a file with an invalid continent, an empty file, a number and a file over 1 MiB; stale boot; wrong Origin; restart; PUT null; store an unreadable file and restart; revoked HTTPS grant; environment-only mode. In the browser: open Settings > General, upload an invalid then a valid file, then Use bundled file.
+             Expected: bundled VER20250115 346; the upload is the file on disk and resolves HB9BLA to it and survives the restart; refusals 400 invalid_cty line 1 / invalid_request text, 409, 403 without change; null removes the file; an unreadable file stays and is reported with the bundled table; 401 and 404. The page shows "cty.dat 2025-01-15 · bundled with this station · 346 entities", the refusal with its line, "cty.dat 2099-12-31 · uploaded · 1 entities", then bundled again.
+             2 — Isolated automated functional tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-03';
+        }
+        attribute executable : String = "server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_055_03_verified_by_TC_055_003 from 'CL-055-03' to 'TC-055-003';
+    verification 'TC-055-004' {
+        doc /* TC-055-004 — DXCC column, approximate distance and QSO header in the browser
+             CL-055-02
+             Setup: actual candidate router with the contact engine (HB9BLA JN47AA); hand-authored rows published through the test control peer, including HB9BLA W1XYZ -10 without a grid.
+             Steps: wait for the rows; select CQ K1ABC FN42.
+             Expected: W1XYZ row DXCC U.S.A. with title "U.S.A. · NA · CQ zone 5 · ITU zone 8 (cty.dat)" and distance "~7706 km"; DL1ABC Germany; K1ABC's distance from its grid without "~"; the QSO header "K1ABC · FN42 · U.S.A. (NA)".
+             2 — Isolated automated functional tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-02';
+        }
+        attribute executable : String = "tests/contact.test.cjs";
+    }
+    dependency CL_055_02_verified_by_TC_055_004 from 'CL-055-02' to 'TC-055-004';
+    verification 'TC-055-005' {
+        doc /* TC-055-005 — Live DXCC on HB9BLA
+             CL-055-02, CL-055-03
+             Setup: the gated candidate installed on HB9BLA, receive only (no transmission), the operator's contacts.adi.
+             Steps: watch Band Activity for several periods on a busy band; compare rows against the log; open Settings > General.
+             Expected: the DXCC column is filled for decoded calls; new-DXCC flags only for entities absent from the log and on-band flags only for entities not worked on this band; the country file date is shown.
+             3 — Live, read-only on the station; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-055-02';
+            verify 'CL-055-03';
+        }
+    }
+    dependency CL_055_02_verified_by_TC_055_005 from 'CL-055-02' to 'TC-055-005';
+    dependency CL_055_03_verified_by_TC_055_005 from 'CL-055-03' to 'TC-055-005';
 
     // #51 An open page recovers after a station update (chosen defaults: WstxStationProtocol::PageUpdate).
     requirement 'CL-051-01' {

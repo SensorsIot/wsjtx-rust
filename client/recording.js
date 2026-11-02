@@ -621,18 +621,18 @@ function activityRow(record,period,context,mode){
   if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
-  const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null;
-  const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,'\u2014',km===null?'\u2014':`${km} km`];
+  const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
+  const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
     if(index===4)cell.dataset.col='message';
-    if(index===5)cell.title='DXCC needs the cty.dat prefix table, which this station does not provide yet';
+    if(index===5&&dx)cell.title=`${dx.name} \u00b7 ${dx.cont} \u00b7 CQ zone ${dx.cq} \u00b7 ITU zone ${dx.itu} (cty.dat)`;if(index===6&&approx)cell.title='Approximate: from the country position (cty.dat), no grid in the message';
     row.append(cell);
   }
   return row;
 }
 function validRecord(r){
-  return r&&Object.keys(r).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
+  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
     Number.isSafeInteger(r.sequence)&&r.sequence>=0&&Number.isSafeInteger(r.start_frame)&&r.start_frame>=0&&
     ((r.period_start_utc===null&&r.dt_seconds===null)||(validPeriodTime(r.period_start_utc,live.job.mode)&&Number.isFinite(r.dt_seconds)&&r.dt_seconds>=-(live.job.mode==='ft8'?7.5:3.75)&&r.dt_seconds<(live.job.mode==='ft8'?7.5:3.75)))&&
     Number.isFinite(r.frequency_hz)&&r.frequency_hz>=200&&r.frequency_hz<=3500&&
@@ -640,7 +640,7 @@ function validRecord(r){
     typeof r.payload77==='string'&&/^[01]{77}$/.test(r.payload77)&&Number.isInteger(r.i3)&&r.i3>=0&&r.i3<=7&&
     (r.i3===0?Number.isInteger(r.n3)&&r.n3>=0&&r.n3<=7:r.n3===null)&&
     (r.status==='decoded'?typeof r.text==='string'&&/^[\x20-\x7e]{1,80}$/.test(r.text)&&r.fields&&typeof r.fields==='object'&&!Array.isArray(r.fields):['unsupported','invalid_payload'].includes(r.status)&&r.text===null&&r.fields===null);
-}
+}const FLAG_NAMES=['new_call','new_call_band','new_grid','new_grid_band','new_dxcc','new_dxcc_band','new_continent','new_continent_band','new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band'];function validDxcc(d){return !!d&&typeof d==='object'&&!Array.isArray(d)&&Object.keys(d).every(k=>['name','cont','cq','itu','km'].includes(k))&&typeof d.name==='string'&&/^[\x20-\x7e]{1,40}$/.test(d.name)&&['AF','AN','AS','EU','NA','OC','SA'].includes(d.cont)&&Number.isInteger(d.cq)&&d.cq>=0&&d.cq<=40&&Number.isInteger(d.itu)&&d.itu>=0&&d.itu<=90&&(d.km===undefined||(Number.isInteger(d.km)&&d.km>=0&&d.km<=20038));}function validFlags(f){return !!f&&typeof f==='object'&&!Array.isArray(f)&&Object.keys(f).length>0&&Object.entries(f).every(([k,v])=>FLAG_NAMES.includes(k)&&v===true);}
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
   const now=performance.now();if(now-lastResultStart<4000)return;
