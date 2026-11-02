@@ -300,7 +300,6 @@ pub(super) fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_jso
 struct PublicationKey {
     payload: String,
     start: u64,
-    frequency: f64,
     reserved_bytes: usize,
 }
 
@@ -415,6 +414,7 @@ pub struct DecodeState {
     encoded_bytes: usize,
     live_history: bool,
     last_window_origin: Option<u64>,
+    period_start: Option<u64>,
 }
 impl DecodeState {
     /// Finite numerical-test context with lifetime publication limits.
@@ -425,17 +425,28 @@ impl DecodeState {
             encoded_bytes: 0,
             live_history: false,
             last_window_origin: None,
+            // Finite decodes take their windows from frame 0 at a period start.
+            period_start: Some(0),
         }
     }
     /// Continuous receive context. The caller resets it on a job/source/gap/history reset.
     pub fn new_live(mode: Mode) -> Self {
         Self {
             live_history: true,
+            period_start: None,
             ..Self::new(mode)
         }
     }
     pub fn mode(&self) -> Mode {
         self.mode
+    }
+    /// The canonical frame of one UTC period start, which places each window's periods;
+    /// None when the receive clock does not establish it.
+    pub fn set_period_start(&mut self, frame: Option<u64>) {
+        self.period_start = frame;
+    }
+    pub fn period_start(&self) -> Option<u64> {
+        self.period_start
     }
     /// Retained modem keys, not the live application's result-ring count or wire cursor.
     pub fn available_count(&self) -> usize {
@@ -470,14 +481,6 @@ impl DecodeState {
         self.last_window_origin = Some(origin);
         Ok(())
     }
-    pub(super) fn active_frequencies(&self, origin: u64, frames: usize) -> Vec<f64> {
-        let end = origin.saturating_add(frames as u64);
-        self.published
-            .iter()
-            .filter(|key| key.start >= origin && key.start < end)
-            .map(|key| key.frequency)
-            .collect()
-    }
     pub(super) fn publish_if_new(
         &mut self,
         record: &Decode,
@@ -511,7 +514,6 @@ impl DecodeState {
         self.published.push(PublicationKey {
             payload: record.payload.payload77.clone(),
             start: record.start_frame,
-            frequency: record.frequency_hz,
             reserved_bytes: bytes,
         });
         Ok(())

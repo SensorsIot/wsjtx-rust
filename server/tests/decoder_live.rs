@@ -61,7 +61,6 @@ fn continuous_history_outlives_2048_publications_but_finite_utility_does_not() {
             live.publish_if_new(&sample, &mut live_publish).unwrap();
             assert_eq!(live.available_count(), 1);
             assert!(live.encoded_bytes() <= 1024);
-            assert_eq!(live.active_frequencies(origin, 180000), vec![1000.]);
             finite.prepare_window(origin).unwrap();
             let result = finite.publish_if_new(&sample, &mut finite_publish);
             if ordinal < 2048 {
@@ -159,4 +158,15 @@ fn rejected_publications_do_not_consume_history_or_invoke_limit_callbacks() {
         Err(DecodeError::DecodeLimit)
     );
     assert_eq!((state.available_count(), state.encoded_bytes()), (0, 0));
+}
+
+// Proves: CL-007-02.
+#[test]
+fn ft8_snr_period_start_is_frame_zero_for_recordings_and_named_live() {
+    // #52: finite decodes take periods from frame 0; live waits for the receive clock.
+    assert_eq!(DecodeState::new(Mode::Ft8).period_start(), Some(0));
+    let mut live = DecodeState::new_live(Mode::Ft8);
+    assert_eq!(live.period_start(), None);
+    live.set_period_start(Some(14400));
+    assert_eq!(live.period_start(), Some(14400));
 }
