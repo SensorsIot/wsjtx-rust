@@ -18,7 +18,7 @@ const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
 document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Dialogue <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="QSO dialogue and stations near my Rx frequency"><table aria-label="QSO dialogue"><tbody id="rx-pane-rows"></tbody></table></div></section>
-<div class="op-qso-next"><span class="op-eyebrow">NEXT &#9656;</span><strong id="contact-next">None</strong><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div><span id="qso-countdown" class="op-muted"></span><span class="op-eyebrow">LAST</span><strong id="contact-last">None</strong></div>
+<div class="op-qso-next"><span class="op-eyebrow">NEXT &#9656;</span><strong id="contact-next">None</strong><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div><span id="qso-countdown" class="op-muted"></span><span class="op-eyebrow" id="contact-last-label">LAST</span><strong id="contact-last">None</strong><p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 `);
@@ -98,7 +98,7 @@ function render(){
   else if(c){strong.textContent=c.state==='calling'?'Calling CQ':'No contact selected';detail.textContent='Select a decoded station or enter a DX call.';}
   for(const id of ['dx-call','dx-grid','dx-generate','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
   for(const button of document.querySelectorAll('#rxtx-strip [data-strip-step]'))button.disabled=!snap;
-  $('contact-state').textContent=!snap?'Contact state unavailable':c?`${stateText[c.state]??c.state} · next ${c.next_slot.toUpperCase()}${armed?' · transmitting':''}`:'No contact';
+  $('contact-state').textContent=!snap?'Contact state unavailable':c?`${stateText[c.state]??c.state} · next ${c.next_slot.toUpperCase()}${armed?' · transmitting':''}${s&&!s.auto_seq&&transmitting(c)?' · Auto Seq off':''}`:'No contact';
   focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):c?.state==='completed'?'Completed':capable?'Ready':'Receive only';
   focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
@@ -129,12 +129,35 @@ function render(){
   const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?'Tx watchdog expired':armed?`WD:${wd.tx_remaining_minutes}m`:'';
   const problem=t?.refusal?` · refused ${t.refusal}`:'';const halt=t?.halt_state==='pending'?' · halt pending (RF stop not confirmed)':'';
   if(snap)$('contact-state').textContent+=problem+halt;
+  autoSeqShow(c,s);
   markers();
   if(t?.last_text&&t.last_period_utc&&lastTx!==`${t.last_period_utc}/${t.last_text}`){if(lastTx!==null)paneTx(t.last_text,t.last_period_utc);lastTx=`${t.last_period_utc}/${t.last_text}`;}
   stationTx();countdown();
   paneUpdate();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   logShow();
 }
+// #11: Auto Seq off is shown on the QSO pane while a contact or CQ runs, and the step Auto
+// Seq would take after the partner's latest message (suggested_slot, e.g. 73 after their
+// RR73) is offered as one button instead of repeating the previous message silently.
+function autoSeqShow(c,s){
+  const node=$('qso-autoseq'),suggest=$('qso-suggest'),off=!!s&&!s.auto_seq&&transmitting(c);
+  const slot=c?.suggested_slot,message=slot&&transmitting(c)?c.messages?.[slots.indexOf(slot)]:null;
+  node.hidden=!off&&!message;
+  // The line takes the LAST row's place (the last sent text is in the top-bar Tx state).
+  $('contact-last').hidden=$('contact-last-label').hidden=!node.hidden;
+  $('qso-autoseq-text').textContent=off?`Auto Seq off${message?` · ${c.dx_call} expects`:''}`:message?`${c.dx_call} expects`:'';
+  node.title=off?'Auto Seq is off: received messages do not advance the QSO':'';
+  // The exchange word only ("Send 73 next"), so the line stays one row; the title has the text.
+  const word=message?message.split(' ').slice(2).join(' ')||message:'';
+  suggest.hidden=!message;suggest.textContent=message?`Send ${word} next`:'';suggest.title=message?`Send ${message} next`:'';suggest.dataset.slot=slot??'';
+  $('qso-autoseq-on').hidden=!off;
+}
+$('qso-suggest').addEventListener('click',async()=>{
+  const slot=$('qso-suggest').dataset.slot;if(!slot)return;
+  const r=await send('choose_next',{slot},`Next ${slot.toUpperCase()}`);if(!r||r.refused)return;
+  if(snap?.transmit.arm_state!=='armed'&&transmitCapable())arm('Reply');
+});
+$('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
 // WstxContact::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
 const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete'};

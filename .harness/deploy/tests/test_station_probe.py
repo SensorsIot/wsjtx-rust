@@ -12,10 +12,11 @@ COMMIT = "a" * 40
 OTHER = "b" * 40
 
 
-def prelude(pid=4242, exe="", status=200, listeners=1, web_fails=False):
+def prelude(pid=4242, exe="", status=200, listeners=1, web_fails=False, commit=COMMIT):
     rows = ",".join(f"[pscustomobject]@{{OwningProcess={pid + i}}}" for i in range(listeners)) if listeners else ""
+    headers = "@{}" if commit is None else f"@{{'X-Wstx-Source-Commit'={pwsh.ps_quote(commit)}}}"
     web = ("throw [System.Net.WebException]::new('untrusted')" if web_fails
-           else f"[pscustomobject]@{{StatusCode={status}}}")
+           else f"[pscustomobject]@{{StatusCode={status}; Headers={headers}}}")
     return f"""
 function Get-NetTCPConnection {{ param($LocalPort,$State,$ErrorAction) @({rows}) }}
 function Get-CimInstance {{ param($ClassName,$Filter) if ($Filter -eq 'ProcessId={pid}') {{ [pscustomobject]@{{ExecutablePath={pwsh.ps_quote(exe)}}} }} }}
@@ -47,7 +48,20 @@ class ProbeTests(unittest.TestCase):
     def test_pass_when_listener_runs_the_candidate(self):
         rc, out = self.probe(prelude(exe=self.exe))
         self.assertEqual(rc, 0, out)
+        self.assertIn("service: reports commit aaaaaaaaa", out)
         self.assertIn("PROBE PASS aaaaaaaaa PID 4242", out)
+
+    def test_fail_when_the_service_reports_another_commit(self):
+        for reported in (OTHER, "unknown", COMMIT.upper(), f"{COMMIT},{OTHER}"):
+            rc, out = self.probe(prelude(exe=self.exe, commit=reported))
+            self.assertEqual(rc, 1, out)
+            self.assertIn(f"PROBE FAIL service reports commit {reported}, expected {COMMIT}", out)
+
+    def test_build_from_before_33_without_header_keeps_the_digest_identity(self):
+        rc, out = self.probe(prelude(exe=self.exe, commit=None))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("service: reports no commit", out)
+        self.assertIn("PROBE PASS", out)
 
     def test_fail_when_listener_runs_another_version(self):
         other = os.path.join(self.station, OTHER[:9], "wstx-rust.exe")

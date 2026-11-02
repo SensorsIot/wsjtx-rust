@@ -90,27 +90,47 @@ Release packaging also runs on this PC; start the packaged candidate for the dry
 ### Functional test selection
 
 `paths` lists a group's complete inputs for evidence fingerprints and dirty-input
-checks. `select` lists the files whose edits directly select it. `depends_on` names
-producer groups whose changes can affect this group; these edges select downstream
-regressions and inherit producer inputs, rather than ordering test commands.
+checks. `select` lists the files whose edits directly select it; only `select` decides
+selection (harness#28). No group declares `depends_on`: the harness follows those edges
+transitively, so one server edit fanned out over every browser group. A group instead
+names in its own `select` the files whose behaviour its test cases prove.
 
 | Group | Functional coverage | Direct change owners |
 |---|---|---|
 | `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
-| `protocol` | Status messages, sessions, reconnect and protocol thin-link budget | Server code, shared status client, protocol tests/helpers and runtime dependencies |
-| `profiles` | Saved settings, independent stations, profile lifecycle and pending-status behavior | Profile tests and recording client/layout, which owns the shared controls container |
-| `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Shared recording test file; also affected by profile and fixture producers |
-| `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Shared recording test file; also affected by recording source/job producers |
-| `recording-thin` | Optional display pacing, bounded subscribers and the full 32 kbit/s display/status regression | Shared recording test file; also affected by display rendering |
+| `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
+| `protocol-thin` | Measurement: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
+| `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests |
+| `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Router, recording owners, recording client, recording test file, fixture tool and recording manifests |
+| `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Router, recording and spectrum owners, recording client, recording test file and manifests |
+| `recording-thin` | Measurement: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Router, recording/spectrum owners, HTTP compression, recording client and test file |
+| `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
+| `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
+| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
+| `radio-selection-thin` | Measurement: the 75 s native/CAT/TLS two-browser Thin and Off workload | As `radio-selection` plus spectrum, audio, decoder and library code, which set the real-time load |
+| `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
 | `sysml-documentation` | Canonical catalog/trace checks, full semantic and architecture validation, model/tool tests | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
-names: `^TC-018-` goes to storage, `^TC-010-002` to thin-link checks, and the complement
-to display. The complement includes future names instead of silently omitting them.
-The unchanged standalone fixture tests have their own group. No test assertion or
-test case is removed by selection.
+names: `^TC-018-` goes to storage, except its two 250 ms cancellation bounds;
+those, `^TC-010-002` and the TC-010-005 Detailed peer cadence go to thin-link checks,
+and the complement to display. The communication test file sends `^TC-021-007`
+(silence detection and recovery bounds), `^TC-021-008` and the link simulator check
+to `protocol-thin`, the complement to `protocol`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
+runs in `radio-selection-thin`, the other selection tests in `radio-selection`. Each
+complement includes future names instead of silently omitting them. No test assertion,
+budget or test case is removed by selection.
+
+Measurements run only when the change touches time-critical code (harness#28).
+Timing promises live in measurement groups (`protocol-thin`, `recording-thin`,
+`radio-selection-thin`, `decoder-quality`) selected only by the code that can change
+that timing: the router/websocket and its pacing, HTTP compression, the link simulator,
+the recording/spectrum producers, the receive/audio/decoder pipeline and the clients
+that pace the display. Functional groups assert behaviour; a residual liveness deadline
+in a functional case (for example the 2 s status refresh and 10 s recovery bounds of
+the profile tests) is a known follow-up for harness#28, not a measurement promise.
 
 The model has an explicit documentation owner. Its edits select full model validation;
 runtime oracles are selected by changed implementation and executable tests. Source
@@ -120,14 +140,20 @@ complete client/server/test source inputs they read. A source edit or deletion i
 old trace evidence and full-model evidence, even when only the fast suite is selected.
 Independent contract comparison still checks that tests prove the changed promises.
 
-Selection is conservative at shared-file boundaries: a recording client edit also
-selects profile regressions because that client moves and sizes the shared controls
-container; server edits select protocol and every downstream browser group. An edit
-to the shared recording test file selects all three recording groups. The selector
-does not infer changed functions from a file or guess dependencies from an agent's
-description. Unmapped inputs select every group that declares them; entirely unknown
-paths and selection-policy changes cause a full fallback. The workflow is a shared
-unmapped input of every group, so workflow edits also select them all.
+A file selects the groups whose test cases prove its promises, not every group whose
+fixture merely loads it. The router `main.rs` (routes, authentication, websocket and
+profile HTTP) selects every browser group. The operating page client files select
+`operating-layout`, the operating-page regression, besides their owning groups. The
+status client (`app.js`, `index.html`, `authorization.js`) also selects every group
+whose page boots from it, since `station-ready` starts the recording client. A
+contact engine edit therefore selects `wstx-rust`, `contact-browser` and
+`source-model-traces`; its HTTP surface adds `operating-layout`. An edit to the shared
+recording test file selects all three recording groups. Cargo and Node dependency
+inputs select every group that compiles or runs them. The selector does not infer
+changed functions from a file or guess dependencies from an agent's description.
+Unmapped inputs select every group that declares them; entirely unknown paths and
+selection-policy changes cause a full fallback. The workflow is a shared unmapped
+input of every group, so workflow edits also select them all.
 
 Preview the selected commands and reasons without running checks or recording a pass:
 
@@ -212,11 +238,24 @@ only (operator decision 2026-10-30): that artifact is never installed on the sta
 It is read-only. It asks Windows which process listens on TCP 18081, hashes that
 process's executable itself and requires the candidate's commit directory and the digest
 of the package's own `wstx-rust.exe` (recomputed, not read from the manifest), then HTTP
-200 from `https://192.168.0.37:18081/` over TLS that Windows trusts, and last that the
-launcher receipt agrees with what it observed. The service reports only its crate version
-(`0.1.0`), not its commit, so the running image's digest is the version identity; a
-service-reported commit would be a product change (CR). Tests:
+200 from `https://192.168.0.37:18081/` over TLS that Windows trusts. In the same
+response, the station's `x-wstx-source-commit` header must be the candidate's commit (#33,
+CL-033-01). This is the commit the running service itself reports. `make_package.py`
+compiles it in as `WSTX_SOURCE_COMMIT`, and a build without one reports `unknown`, which
+fails. A build from before #33 sends no header, for example a rollback target. The probe
+then says so and keeps the image digest as the identity. Last, it checks that the launcher
+receipt agrees with what it observed. Tests:
 `python -m unittest discover -s .harness/deploy/tests`.
+
+The operator can check the result without any agent, from PC Andreas (the only address
+the firewall admits). This is not a step of each install (operator decision 2026-11-01):
+
+```powershell
+(Invoke-WebRequest -UseBasicParsing https://192.168.0.37:18081/).Headers['x-wstx-source-commit']
+```
+
+It prints the commit the station reports. Compare it with the commit announced on the
+issue.
 
 **When `station-update.ps1` changes** run the refusal drill and record its output on the
 change's issue:
@@ -254,7 +293,7 @@ in place of an OK per install.
 | Credentials outside the agents | Off (today): agents run as the HB9BLA user and can write the version directory, `active.json`, the receipt, the gates record and the package and station-update scripts. Only the task and firewall changes need the operator's elevation. Prepared: the deploy authority below keeps policy, verifier and launcher where only Administrators write and the signing key with the operator. Still not met when on: the launcher and verifier run as HB9BLA, so the agents can alter them while they run (see its limits). | #30 |
 | Approval names the candidate | Off (today): the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. Prepared: an operator-signed approval of one commit, one digest and one destination. | #31 |
 | Verify before writing | Off (today): `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. Prepared: the protected verifier hashes the executable itself against the signed digest before the switch, and the protected launcher again before it starts it. | #32 |
-| Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks independently of the receipt that the process listening on 18081 runs the candidate's bytes and answers over trusted TLS. Not met in full: an agent runs the probe and the rollback after it (the operator can run the same probe), and the service does not report its own commit. | #33 |
+| Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks, independently of the receipt, that the process listening on 18081 runs the candidate's bytes, answers over trusted TLS and reports the candidate's commit itself (`x-wstx-source-commit`). The operator can read that report from PC Andreas without an agent. Not met in full: an agent runs the probe and the rollback after it. On HB9BLA everything except the operator runs with the agents' rights, so a prober the agents cannot alter needs another account (an operator decision, see the deploy authority's limits). | #33 |
 | Show the refusals | `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (below). Not met in full: the drill shows that a consistent rewrite of artifact and records and an older commit on master are accepted (#32, #31), and a mismatched approval exists only with the deploy authority on. | #34 |
 
 No rule is met in full.
