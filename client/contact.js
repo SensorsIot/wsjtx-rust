@@ -606,14 +606,14 @@ window.wstxContact=Object.freeze({load,snapshot:()=>snap});
 const $=id=>document.getElementById(id);
 const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),highlightButton=$('strategy-highlight'),autoButton=$('strategy-auto'),statusNode=$('station-automation');
 if(!nameSelect)return;
-let view=null,viewLoading=null,run=null,autoConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,lastEvaluation=-Infinity;
+let view=null,viewLoading=null,strategyMissing=false,run=null,autoConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,lastEvaluation=-Infinity;
 const config=()=>view?.configuration??null;
 const active=()=>{const c=config();return c?.strategies.find(s=>s.name===c.active)??null;};
 const runActive=()=>!!run&&run.state!=='stopped';
 const strategyRun=()=>runActive()&&run.strategy;
 function loadStrategy(){
   if(viewLoading)return viewLoading;
-  viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();}}).catch(()=>{}).finally(()=>{viewLoading=null;});
+  viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(v?.v===1){if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();}}).catch(()=>{}).finally(()=>{viewLoading=null;});
   return viewLoading;
 }
 async function saveConfiguration(configuration,label){
@@ -844,7 +844,7 @@ $('se-save').addEventListener('click',async()=>{
 });
 // Read once per socket (a status refresh on the same socket reads nothing: Thin link).
 let strategySocket=null;
-addEventListener('station-ready',event=>{if(event.detail===strategySocket&&view)return;strategySocket=event.detail;loadStrategy();});
+addEventListener('station-ready',event=>{if(event.detail===strategySocket&&(view||strategyMissing))return;strategySocket=event.detail;loadStrategy();});
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){strategySocket=socket;loadStrategy();}
 show();
 })();
