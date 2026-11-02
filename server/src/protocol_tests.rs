@@ -223,3 +223,60 @@ fn thin_sends_are_anchored_to_the_previous_deadline() {
     assert_eq!(next, due);
     assert!(next + period - sent >= Duration::from_secs(1));
 }
+
+// Proves: CL-033-01; TC-033-001 the served page reports the station's own source commit.
+#[tokio::test]
+async fn served_page_reports_the_source_commit_of_the_build() {
+    use super::{App, Arc, Instant, Mutex, Semaphore, router};
+    use tower::ServiceExt;
+    let app = App {
+        origin: "http://127.0.0.1:18080".into(),
+        profile: None,
+        profile_id: None,
+        token: None,
+        connections: Arc::new(Semaphore::new(16)),
+        login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
+    };
+    let request = axum::http::Request::builder()
+        .uri("/")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let response = router(app).oneshot(request).await.unwrap();
+    let expected = match option_env!("WSTX_SOURCE_COMMIT") {
+        Some(c)
+            if c.len() == 40
+                && c.bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) =>
+        {
+            c
+        }
+        _ => "unknown",
+    };
+    assert_eq!(
+        response
+            .headers()
+            .get_all("x-wstx-source-commit")
+            .iter()
+            .collect::<Vec<_>>(),
+        [expected],
+        "#33 GET / carries exactly one source-commit header"
+    );
+}
+
+// Proves: CL-033-01; TC-033-001 only a 40-digit lower-case hex commit is reported.
+#[test]
+fn source_commit_reports_only_a_full_lower_case_commit() {
+    use super::source_commit;
+    let commit = "0123456789abcdef0123456789abcdef01234567";
+    assert_eq!(source_commit(Some(commit)), commit);
+    for raw in [
+        None,
+        Some(""),
+        Some("0123456789abcdef"),
+        Some("0123456789ABCDEF0123456789ABCDEF01234567"),
+        Some("0123456789abcdef0123456789abcdef0123456\n"),
+        Some("0123456789abcdef0123456789abcdef012345678"),
+    ] {
+        assert_eq!(source_commit(raw), "unknown", "{raw:?}");
+    }
+}
