@@ -539,7 +539,8 @@ Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
 nonnegative integer uncertainty/null and external_accuracy unknown. Period UTC and DT
-of results include the measured capture-clock offset (#47, CL-007-05), which is read on
+of results include the station clock correction (#43, CL-043-03; 0 unless the clock
+source follows the air) and the measured capture-clock offset (#47, CL-007-05), which is read on
 demand, not in this snapshot: GET /receive/clock (same authorization, no query, empty
 body) returns exactly `{v,profile_id,boot_id,capture_drift_ms,capture_drift_ppm}`, the
 offset from the anchor's prediction (integer ms) and its rate (one decimal ppm, null for

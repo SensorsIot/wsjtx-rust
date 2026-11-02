@@ -9,6 +9,7 @@ mod automation_tests;
 mod cat_lifecycle;
 #[cfg(test)]
 mod cat_lifecycle_tests;
+mod clock_http;
 mod contact;
 mod contact_http;
 #[cfg(test)]
@@ -286,7 +287,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wstx_rust::transmit::clock::INTERVAL,
             )
             .map_err(|_| error("resource_unavailable", ""))?;
-            let transmit = transmit_http::Station::start(clock)
+            // #43: the profile's clock source (clock.json) combines SNTP with the clock
+            // from the air into the station clock of receive and transmit.
+            let clock_base = selected.clone().ok_or("profile directory absent")?;
+            let clock_profile = recording.profile.clone();
+            let clock = tokio::task::spawn_blocking(move || {
+                clock_http::Clock::load(&clock_base, &clock_profile, clock)
+            })
+            .await?;
+            let _ = recording.clock.set(clock.clone());
+            let transmit = transmit_http::Station::start(clock.station.clone())
                 .map_err(|_| error("resource_unavailable", ""))?;
             // Process exit and panics stop output and release a keyed CI-V switch once.
             let guard = transmit.clone();
@@ -438,6 +448,7 @@ fn router(state: App) -> Router {
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/results", get(receive_http::results))
         .route("/receive/clock", get(receive_http::clock))
+        .route("/clock", get(clock_http::snapshot).post(clock_http::update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/startup", get(receive_http::startup).post(receive_http::startup_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/diagnostics", get(receive_http::diagnostics).post(receive_http::diagnostics_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/selection", get(selection_http::snapshot))

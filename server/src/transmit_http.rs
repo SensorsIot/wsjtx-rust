@@ -8,7 +8,8 @@ use selection_http::{empty, error};
 use std::collections::VecDeque;
 use wstx_rust::radio_control::actor::Actor;
 use wstx_rust::transmit::ClockState;
-use wstx_rust::transmit::clock::{Measurement, Monitor};
+use wstx_rust::transmit::air::StationClock;
+use wstx_rust::transmit::clock::Measurement;
 use wstx_rust::transmit::service::{
     self as tx, AudioError, AudioPoll, Capability, Context, HaltState, Hardware, Outcome, Program,
     PttError, Service, View,
@@ -32,7 +33,7 @@ pub(crate) struct StationHardware {
     slot: Arc<Mutex<Option<Stopper>>>,
     abort: Arc<std::sync::atomic::AtomicBool>,
     origin: Instant,
-    clock: Arc<Monitor>,
+    clock: Arc<StationClock>,
 }
 impl Hardware for StationHardware {
     fn attach_abort(&mut self, abort: Arc<std::sync::atomic::AtomicBool>) {
@@ -42,17 +43,21 @@ impl Hardware for StationHardware {
         self.origin.elapsed().as_millis() as i64
     }
     fn now_utc_ms(&self) -> i64 {
+        // #43: station UTC is the system clock plus the clock-from-the-air correction
+        // (0 on the NTP basis); the system clock itself is never set.
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0)
+            + self.clock.correction_ms()
     }
     fn clock(&self) -> ClockState {
-        // WstxTransmit::TransmitClock: only reads the latest SNTP measurement.
+        // WstxTransmit::TransmitClock and AirClock: only reads the latest SNTP
+        // measurement and air estimate, combined by the profile's clock source.
         self.clock.state()
     }
     fn clock_measurement(&self) -> Option<Measurement> {
-        self.clock.latest()
+        self.clock.ntp().latest()
     }
     fn context(&self) -> Context {
         let i = self.inputs.lock().unwrap_or_else(|p| p.into_inner());
@@ -167,13 +172,16 @@ impl Hardware for StationHardware {
 
 pub(crate) struct Station {
     inputs: Arc<Mutex<Inputs>>,
+    /// The station clock (#43); None for injected test hardware.
+    clock: Option<Arc<StationClock>>,
     slot: Arc<Mutex<Option<Stopper>>>,
     pub(crate) service: Service<Box<dyn Hardware>>,
     receipts: Mutex<VecDeque<(String, Value, Value)>>,
 }
 impl Station {
-    /// `clock` is the process's SNTP clock monitor (tests pass one that never measures).
-    pub(crate) fn start(clock: Arc<Monitor>) -> std::io::Result<Arc<Self>> {
+    /// `clock` is the process's station clock (tests pass one whose SNTP monitor never
+    /// measures).
+    pub(crate) fn start(clock: Arc<StationClock>) -> std::io::Result<Arc<Self>> {
         let inputs = Arc::new(Mutex::new(Inputs::default()));
         let slot = Arc::new(Mutex::new(None));
         let hardware = StationHardware {
@@ -183,10 +191,11 @@ impl Station {
             slot: slot.clone(),
             abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             origin: Instant::now(),
-            clock,
+            clock: clock.clone(),
         };
         Ok(Arc::new(Self {
             inputs,
+            clock: Some(clock),
             slot,
             service: Service::start(Box::new(hardware) as Box<dyn Hardware>)?,
             receipts: Mutex::new(VecDeque::new()),
@@ -197,6 +206,7 @@ impl Station {
     pub(crate) fn start_with(hardware: Box<dyn Hardware>) -> std::io::Result<Arc<Self>> {
         Ok(Arc::new(Self {
             inputs: Arc::new(Mutex::new(Inputs::default())),
+            clock: None,
             slot: Arc::new(Mutex::new(None)),
             service: Service::start(hardware)?,
             receipts: Mutex::new(VecDeque::new()),
@@ -226,6 +236,10 @@ impl Station {
         actor: Option<Arc<Actor>>,
     ) {
         let c = &document.control;
+        if let Some(clock) = &self.clock {
+            // #43: the station's own decodes never count for the clock from the air.
+            clock.set_own_call(&document.callsign);
+        }
         let mut i = self.inputs.lock().unwrap_or_else(|p| p.into_inner());
         i.configured = c.mode == "cat" && c.ptt == "cat" && document.audio.output_device.is_some();
         i.output_device = document.audio.output_device.clone();
@@ -281,6 +295,8 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
             "halt_state":halt,"refusal":v.refusal.map(name)},
         "ptt":name(v.ptt),"transmitting":v.transmitting,"clock":name(v.clock),
         "clock_measurement":v.clock_measurement.as_ref().map(measurement),
+        "clock_source":r.clock.get().map_or("ntp",|c|c.station.source().name()),
+        "clock_warning":r.clock.get().is_some_and(|c|c.station.view().warning).then_some("ntp_air_disagree"),
         "watchdog":{"tx_minutes":v.tx_minutes,"tx_remaining_minutes":v.tx_remaining_minutes,"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})

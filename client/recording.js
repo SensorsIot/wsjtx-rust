@@ -1028,7 +1028,7 @@ function transmitShow(){
   if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
   const v=transmitView,status=document.querySelector('#transmit-status');
   const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement;
-  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${Math.round(m0.age_ms/1000)} s ago`:' · no SNTP measurement'}`;
+  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC${{air:' corrected from the air',both:', NTP with air fallback'}[v.clock_source]??''}, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${Math.round(m0.age_ms/1000)} s ago`:' · no SNTP measurement'}`;
   chipsShow();
   if(!on||!v){status.textContent='Transmit unavailable';return;}
   const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${Math.round(m.age_ms/1000)} s ago`:'';
