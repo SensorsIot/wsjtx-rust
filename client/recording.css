@@ -150,13 +150,6 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-tx{display:flex;flex-wrap:wrap;gap:.35rem;align-items:baseline;overflow-wrap:anywhere}
 .ct-tx span{font-size:var(--op-font-secondary);letter-spacing:.05em;color:#8caabb}
 
-.ct-pane{margin-top:.6rem}
-.ct-pane header{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;justify-content:space-between}
-.ct-pane h4{margin:0}
-.ct-pane-wrap{max-height:12rem;overflow:auto}
-.ct-pane table{width:100%;border-collapse:collapse;font-family:ui-monospace,Consolas,monospace}
-.ct-pane td{padding:.15rem .3rem;overflow-wrap:anywhere}
-.ct-pane tr[data-kind=tx] td{color:#ffb0a0;font-weight:600}
 #waterfall-wrap{position:relative}
 .ct-marker{position:absolute;top:0;bottom:0;width:0;margin-left:-1px;border-left:3px solid;pointer-events:none;z-index:1;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .ct-rx{border-color:#30d050;color:#30d050}
@@ -220,21 +213,25 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-qso-head h3{margin:0;font-size:var(--op-font-secondary);color:#7e9bad;letter-spacing:.08em;text-transform:uppercase}
 #rx-focus .op-contact-identity strong{display:block;font:600 1.25rem/1.3 var(--op-mono);color:#e7f3f8;overflow-wrap:anywhere}
 #rx-focus .op-contact-identity div>span{font-size:var(--op-font-secondary);color:#8ba4b6;overflow-wrap:anywhere}
-.op-qso-badge{border-radius:999px;padding:3px 9px;background:rgba(242,193,78,.14);border:1px solid rgba(242,193,78,.55);color:#f6d78a;font-size:var(--op-font-secondary);white-space:nowrap}
-#rx-focus .op-contact-body{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;min-height:0;flex:1;overflow:auto}
+/* #37 compact QSO pane: its content height (about half the earlier pane), top of its column. */
+#rx-focus{align-self:start;max-height:100%}
+#rx-focus .op-contact-body{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;min-height:0;flex:0 1 auto;overflow:auto}
+#rx-focus .op-contact-body [hidden]{display:none}
+#rx-focus .ct-line,#rx-focus .ct-others li{margin:0;font:var(--op-font-normal)/1.3 var(--op-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+#rx-focus .ct-line{color:#d6e4ec}
+#rx-focus .ct-others{margin:0;padding:0;list-style:none;display:grid;gap:2px}
+#rx-focus .ct-others:empty{display:none}
+#rx-focus .ct-others li{cursor:pointer;padding:0 4px;border-radius:4px;color:#d6e4ec}
+#rx-focus .ct-others li[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
+#rx-focus .ct-others li:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
 #rx-focus .ct-dx{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
 #rx-focus .ct-dx label{display:flex;flex-direction:column;gap:2px;margin:0;font-size:var(--op-font-secondary)}
 #rx-focus .ct-dx input{width:9ch;font-family:var(--op-mono);text-transform:uppercase;padding:5px 7px}
 #rx-focus .ct-state{margin:0;font-size:var(--op-font-secondary);color:#9fb8c9}
-#rx-pane.ct-pane{margin:0;display:flex;flex-direction:column;min-height:7rem;flex:1;border:1px solid #223848;border-radius:8px;background:#0c1922}
-#rx-pane header{padding:4px 8px}#rx-pane h4{font-size:var(--op-font-secondary);color:#7e9bad}
-#rx-pane .ct-pane-wrap{max-height:none;flex:1;min-height:0}
-#rx-pane tr[data-kind=rx] td{color:#d6e4ec}#rx-pane tr[data-kind=crowd] td{color:#e7c983}#rx-pane tr[data-crowd=true] td:first-child{color:#f2c14e}
-#rx-pane tr[data-tome=true] td{background:rgba(255,95,86,.18);color:#ffc2bc}
 .op-qso-next{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 8px;align-items:center;font-size:var(--op-font-secondary)}
 .op-qso-next strong{font-family:var(--op-mono);font-weight:600;color:#e7f3f8;overflow-wrap:anywhere}
 #qso-autoseq{margin:0;padding:1px 6px;border-left:4px solid var(--op-warn);background:rgba(242,193,78,.12);color:#f2c14e;font-weight:600;font-size:var(--op-font-secondary);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
-#qso-autoseq[hidden],.op-qso-next [hidden]{display:none}#qso-autoseq{padding:0 6px;line-height:1.1;grid-column:1/-1}#qso-autoseq button{padding:0 6px;min-height:0;line-height:1.1;font-size:var(--op-font-secondary)}.op-qso-progress{grid-column:1/-1;height:4px;border-radius:2px;background:#203645;overflow:hidden}.op-qso-progress i{display:block;height:100%;width:0;background:var(--op-accent);transition:width .25s linear}
+#qso-autoseq[hidden],.op-qso-next[hidden]{display:none}#qso-autoseq{padding:0 6px;line-height:1.1}#qso-autoseq button{padding:0 6px;min-height:0;line-height:1.1;font-size:var(--op-font-secondary)}.op-qso-progress{grid-column:1/-1;height:4px;border-radius:2px;background:#203645;overflow:hidden}.op-qso-progress i{display:block;height:100%;width:0;background:var(--op-accent);transition:width .25s linear}
 #rx-focus[data-armed=true] .op-qso-progress i{background:var(--op-error)}
 .op-qso-buttons{display:flex;flex-wrap:wrap;gap:6px}
 .op-qso-buttons button{flex:1 1 4.2rem;padding:8px 6px;font-weight:600}
@@ -301,13 +298,11 @@ html[data-theme=night] main.op-app{filter:grayscale(1) sepia(1) saturate(6) hue-
 #rx-focus .ct-dx label{flex-direction:row;align-items:center;gap:6px}
 #rx-focus .ct-dx input{padding:3px 6px}
 #rx-focus #dx-generate{padding:4px 10px}
-#rx-pane.ct-pane{min-height:3.5rem}
 #rx-focus .op-contact-body{gap:5px}
 .op-qso-buttons button{padding:6px 4px}
 @media(max-width:900px){#station-bar.op-topbar{flex-wrap:wrap}.op-chips{order:3;flex:1 1 100%;justify-content:flex-start}}
-#rx-pane header button{padding:2px 8px}
 /* Controls and status paragraphs keep the 16 px normal-text minimum (TC-007-002). */
-.op-app button.op-chip,.op-strategy-bar select,.op-strategy-bar button,#rx-pane header button,#rx-focus .ct-state{font-size:var(--op-font-normal)}
+.op-app button.op-chip,.op-strategy-bar select,.op-strategy-bar button,#rx-focus .ct-state{font-size:var(--op-font-normal)}
 #station-bar.op-topbar{flex-direction:row}
 @media(max-width:650px){#station-bar #radio-toolbar{flex-wrap:wrap;flex:1 1 100%}#radio-toolbar .op-period{margin-left:0}}
 @media(max-width:650px){#signal .op-signal-heading{position:static;align-self:flex-end;background:transparent;padding:0 0 4px}}
@@ -353,3 +348,13 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #band-activity[data-hl-on~=new_continent] tr[data-hl~=new_continent] td{background:var(--hl-new_continent)}
 #band-activity[data-hl-on~=mycall] tr[data-hl~=mycall] td{background:var(--hl-mycall)}
 .op-swatch{display:inline-block;width:1.4em;height:.9em;margin:0 .4em;border:1px solid #567;vertical-align:middle}.op-swatch[data-hl-swatch=cq]{background:var(--hl-cq)}.op-swatch[data-hl-swatch=lotw]{background:var(--hl-lotw)}.op-swatch[data-hl-swatch=new_call_band]{background:var(--hl-new_call_band)}.op-swatch[data-hl-swatch=new_call]{background:var(--hl-new_call)}.op-swatch[data-hl-swatch=new_grid_band]{background:var(--hl-new_grid_band)}.op-swatch[data-hl-swatch=new_grid]{background:var(--hl-new_grid)}.op-swatch[data-hl-swatch=new_dxcc_band]{background:var(--hl-new_dxcc_band)}.op-swatch[data-hl-swatch=new_dxcc]{background:var(--hl-new_dxcc)}.op-swatch[data-hl-swatch=new_itu_zone_band]{background:var(--hl-new_itu_zone_band)}.op-swatch[data-hl-swatch=new_itu_zone]{background:var(--hl-new_itu_zone)}.op-swatch[data-hl-swatch=new_cq_zone_band]{background:var(--hl-new_cq_zone_band)}.op-swatch[data-hl-swatch=new_cq_zone]{background:var(--hl-new_cq_zone)}.op-swatch[data-hl-swatch=new_continent_band]{background:var(--hl-new_continent_band)}.op-swatch[data-hl-swatch=new_continent]{background:var(--hl-new_continent)}.op-swatch[data-hl-swatch=mycall]{background:var(--hl-mycall)}
+/* #37 compact QSO pane: one header line, tight lines, one row of buttons. */
+#rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 10px}
+#rx-focus .op-contact-identity strong{display:inline}
+#rx-focus .op-contact-body{gap:3px;padding:6px 12px 8px}
+#rx-focus .ct-others li{user-select:none}
+#rx-focus .op-qso-buttons{gap:4px}
+#rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
+#controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}
+/* The Log QSO reason stays the button's description without taking a line. */
+#rx-focus #contact-unavailable{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

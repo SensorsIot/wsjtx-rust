@@ -511,7 +511,9 @@ impl Station {
                 "state":c.state.name(),"next_slot":c.next.name(),"tx4":c.tx4.name(),"messages":c.messages,
                 "start_utc":c.start_utc_ms().map(contact::utc_text),"end_utc":c.last_counted_end.map(contact::utc_text),
                 "saved":state.logbook.saved(&c.id),
-                "suggested_slot":c.suggested.filter(|_| c.state.active()).map(Slot::name)})
+                "suggested_slot":c.suggested.filter(|_| c.state.active()).map(Slot::name),
+                "last_rcvd":c.last_rcvd.as_ref().map(|h| json!({"text":h.text,"snr":h.snr,
+                    "period_utc_ms":h.period_ms,"count":h.count}))})
         });
         let log = inner.log.as_ref().map(|l| {
             json!({"contact_id":l.contact_id,"call":l.call,"outcome":if l.saved {"saved"} else {"unsaved"},"error":l.error})

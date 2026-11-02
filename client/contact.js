@@ -17,8 +17,10 @@ block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-lo
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<label class="op-check"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
-document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<section id="rx-pane" class="ct-pane" aria-labelledby="rx-pane-heading"><header><h4 id="rx-pane-heading">Dialogue <span id="rx-pane-unread"></span></h4><button type="button" id="rx-pane-resume" hidden>Resume following</button></header><div class="ct-pane-wrap" tabindex="0" aria-label="QSO dialogue and stations near my Rx frequency"><table aria-label="QSO dialogue"><tbody id="rx-pane-rows"></tbody></table></div></section>
-<div class="op-qso-next"><span class="op-eyebrow">NEXT &#9656;</span><strong id="contact-next">None</strong><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div><span id="qso-countdown" class="op-muted"></span><span class="op-eyebrow" id="contact-last-label">LAST</span><strong id="contact-last">None</strong><p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p></div>
+document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="qso-heard" class="ct-line" hidden></p>
+<ul id="qso-others" class="ct-others" aria-label="Other stations (double-click or Enter answers)"></ul>
+<p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p>
+<div id="qso-next" class="op-qso-next" hidden><span class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 `);
@@ -32,12 +34,12 @@ confirmDialog.querySelector('#op-confirm-halt').addEventListener('click',()=>{co
 main.append(confirmDialog);
 document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="Choose a strategy first">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="Choose a strategy first">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
-focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>DX call, messages Tx1&ndash;Tx6, report and period</summary><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div><p class="ct-more-row"><button type="button" id="rx-pane-erase">Erase dialogue</button></p><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
+focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>DX call, messages Tx1&ndash;Tx6, report and period</summary><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
 <div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label><label>Tx period<select id="contact-parity" disabled><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></details>`);
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
 const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
-let snap=null,sending=false,tick=null,lastTx=null,changeTarget=null,lastLog=null;
+let snap=null,sending=false,tick=null,changeTarget=null,lastLog=null,loggedTimer=null,wasRunning=false;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
@@ -83,23 +85,29 @@ addEventListener('keyboard-halt',event=>{
   if(event.detail?.escape&&c&&!['idle','cancelled','completed'].includes(c.state))send('cancel',{},'Cancel contact');else load();
 });
 // ---------------------------------------------------------------- render
-const stateText={idle:'Idle',calling:'Calling CQ',replying:'Replying',report:'Sending report',roger_report:'Sending R+report',rogers:'Sending acknowledgement',signoff:'Signing off',completed:'Completed',cancelled:'Cancelled'};
 const transmitting=c=>!!c&&!['idle','completed','cancelled'].includes(c.state);
+// #37 QsoPane: a running QSO is a contact with a partner in replying..signoff; a completed,
+// logged or cancelled contact is gone from the pane.
+const running=c=>!!c?.dx_call&&['replying','report','roger_report','rogers','signoff'].includes(c.state);
+const snrText=snr=>typeof snr==='number'?`${snr>0?'+':snr<0?'\u2212':''}${Math.abs(Math.round(snr))} dB`:'';
 function setValue(input,value){if(document.activeElement!==input)input.value=value??'';}
 function render(){
   const c=snap?.contact,t=snap?.transmit,s=snap?.settings,capable=transmitCapable(),armed=t?.arm_state==='armed';
-  focus.dataset.contact=c?.dx_call?'true':'';
+  const qso=running(c);
+  focus.dataset.contact=qso?'true':'';
+  // Nothing of a finished contact stays: an accepted command's result goes with it.
+  if(wasRunning&&!qso&&/: accepted$/.test(resultText.textContent))resultText.textContent='';
+  wasRunning=qso;
   const strong=identity.querySelector('strong'),detail=identity.querySelector('div > span');
-  if(c?.dx_call){
+  if(qso){
     const km=c.dx_grid&&typeof distanceKm==='function'?distanceKm(profileData?.settings?.locator,c.dx_grid):null;
     strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}`;
-    detail.textContent=`Report sent ${c.report_sent} · received ${c.report_rcvd??'none'}${km!==null?` · ${km} km`:''}${c.saved?' · logged':''}`;
+    detail.textContent=`${km!==null?`${km} km · `:''}sent ${c.report_sent??'none'} · rcvd ${c.report_rcvd??'none'}`;
   }
-  else if(c){strong.textContent=c.state==='calling'?'Calling CQ':'No contact selected';detail.textContent='Select a decoded station or enter a DX call.';}
+  else if(c){strong.textContent=c.state==='calling'?'Calling CQ':'No contact selected';detail.textContent=c.state==='calling'?'':'Select a decoded station or enter a DX call.';}
   for(const id of ['dx-call','dx-grid','dx-generate','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
   for(const button of document.querySelectorAll('#rxtx-strip [data-strip-step]'))button.disabled=!snap;
-  $('contact-state').textContent=!snap?'Contact state unavailable':c?`${stateText[c.state]??c.state} · next ${c.next_slot.toUpperCase()}${armed?' · transmitting':''}${s&&!s.auto_seq&&transmitting(c)?' · Auto Seq off':''}`:'No contact';
-  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):c?.state==='completed'?'Completed':capable?'Ready':'Receive only';
+  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):capable?'Ready':'Receive only';
   focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
     const row=body.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
@@ -122,18 +130,23 @@ function render(){
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
   const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
-  const log=$('contact-log');log.disabled=!c?.dx_call;$('contact-unavailable').hidden=!!c?.dx_call;
-  if(c?.dx_call)log.removeAttribute('aria-describedby');else log.setAttribute('aria-describedby','contact-unavailable');
+  // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
+  const log=$('contact-log');log.disabled=!qso;$('contact-unavailable').hidden=qso;
+  if(qso)log.removeAttribute('aria-describedby');else log.setAttribute('aria-describedby','contact-unavailable');
+  // NEXT only while Enable Tx is on for a CQ or a running QSO.
+  $('qso-next').hidden=!(armed&&(qso||c?.state==='calling'));
   $('contact-next').textContent=c?(c.messages[slots.indexOf(c.next_slot)]??'None'):'None';
-  $('contact-last').textContent=t?.last_text?`${t.last_text}${t.last_period_utc?' · '+new Date(t.last_period_utc).toISOString().slice(11,19)+' UTC':''}`:'None';
+  // The partner's latest message to me, with SNR and the repeat count (ContactSnapshot last_rcvd).
+  const h=qso?c.last_rcvd:null,heard=$('qso-heard');heard.hidden=!h;
+  heard.textContent=h?`\u25C2 ${h.text}  ${snrText(h.snr)}${h.count>1?` \u00D7${h.count}`:''}`.trimEnd():'';
   const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?'Tx watchdog expired':armed?`WD:${wd.tx_remaining_minutes}m`:'';
-  const problem=t?.refusal?` · refused ${t.refusal}`:'';const halt=t?.halt_state==='pending'?' · halt pending (RF stop not confirmed)':'';
-  if(snap)$('contact-state').textContent+=problem+halt;
+  // The status line is for exceptions only: unknown state, a refusal, a pending halt.
+  const problems=!snap?['Contact state unavailable']:[t?.refusal?`Refused ${t.refusal}`:'',t?.halt_state==='pending'?'Halt pending (RF stop not confirmed)':''].filter(Boolean);
+  $('contact-state').textContent=problems.join(' · ');$('contact-state').hidden=!problems.length;
   autoSeqShow(c,s);
   markers();
-  if(t?.last_text&&t.last_period_utc&&lastTx!==`${t.last_period_utc}/${t.last_text}`){if(lastTx!==null)paneTx(t.last_text,t.last_period_utc);lastTx=`${t.last_period_utc}/${t.last_text}`;}
   stationTx();countdown();
-  paneUpdate();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
+  othersShow();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   logShow();
 }
 // #11: Auto Seq off is shown on the QSO pane while a contact or CQ runs, and the step Auto
@@ -143,8 +156,6 @@ function autoSeqShow(c,s){
   const node=$('qso-autoseq'),suggest=$('qso-suggest'),off=!!s&&!s.auto_seq&&transmitting(c);
   const slot=c?.suggested_slot,message=slot&&transmitting(c)?c.messages?.[slots.indexOf(slot)]:null;
   node.hidden=!off&&!message;
-  // The line takes the LAST row's place (the last sent text is in the top-bar Tx state).
-  $('contact-last').hidden=$('contact-last-label').hidden=!node.hidden;
   $('qso-autoseq-text').textContent=off?`Auto Seq off${message?` · ${c.dx_call} expects`:''}`:message?`${c.dx_call} expects`:'';
   node.title=off?'Auto Seq is off: received messages do not advance the QSO':'';
   // The exchange word only ("Send 73 next"), so the line stays one row; the title has the text.
@@ -161,11 +172,15 @@ $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:tr
 // WstxContact::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
 const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete'};
+const LOGGED_NOTICE_MS=8000;
 function logShow(){
   const l=snap?.log,node=$('contact-logged');
-  node.textContent=!l?'':l.outcome==='saved'?`Logged ${l.call} · contacts.adi`:`Not logged ${l.call} · ${logReasons[l.error]??l.error??'saving'}`;
-  const key=l&&`${l.contact_id}/${l.outcome}`;
-  if(key&&key!==lastLog&&l.outcome==='saved'&&lastLog!==null&&main.dataset.region==='logbook')window.wstxLogbook?.loadHistory(null);
+  const key=l&&`${l.contact_id}/${l.outcome}`,fresh=!!key&&key!==lastLog&&lastLog!==null;
+  if(l&&l.outcome!=='saved'){clearTimeout(loggedTimer);loggedTimer=null;node.textContent=`Not logged ${l.call} · ${logReasons[l.error]??l.error??'saving'}`;}
+  else if(fresh){node.textContent=`\u2713 Logged ${l.call}`;clearTimeout(loggedTimer);loggedTimer=setTimeout(()=>{loggedTimer=null;node.textContent='';node.hidden=true;},LOGGED_NOTICE_MS);}
+  else if(!loggedTimer)node.textContent='';
+  node.hidden=!node.textContent;
+  if(fresh&&l.outcome==='saved'&&main.dataset.region==='logbook')window.wstxLogbook?.loadHistory(null);
   if(key)lastLog=key;else if(lastLog===null&&snap)lastLog='';
 }
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
@@ -402,48 +417,48 @@ menu.addEventListener('click',event=>{
 });
 menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
-// WstxContact::RoutesToRxFrequencyPane (sent/received dialogue) plus QsoPaneCrowding: other
-const pane=$('rx-pane-rows'),paneWrap=$('rx-pane').querySelector('.ct-pane-wrap');let paneSeen=new Set(),paneContext=null,paneUnread=0,paneFollow=true;
+// WstxOperatingLayout::QsoPane Others (#37): at most two lines, newest first, from the latest
+// two published periods. While a QSO runs: other stations within ±50 Hz of my Rx frequency
+// (QsoPaneCrowding) and stations calling me, marked ⚠; double-click switches the contact to
+// that station and replies. Otherwise the same rows are plain candidates; double-click answers.
 const myCall=()=>(profileData?.settings?.callsign??'').trim().toUpperCase();
-function routes(record){
-  const rx=snap?.settings?.rx_hz;const my=myCall(),dx=snap?.contact?.dx_call;
-  const f=record.fields,to=f?.type==='standard'&&f.to?.kind==='call'?f.to.text:null;
-  if(typeof rx==='number'&&record.frequency_hz>=rx-10&&record.frequency_hz<=rx+10)return true;
-  if(my&&to===my)return true;
-  return !!(my&&dx&&typeof record.text==='string'&&record.text.split(' ').some((w,i,a)=>w===my&&a[i+1]===dx));
+const othersList=$('qso-others');
+function recentRows(){
+  if(typeof resultRows==='undefined'||!live?.job)return [];
+  const context=liveIdentity(live),len=live.job.mode==='ft4'?7500:15000,latest=Date.parse(resultView?.period_start_utc??'');
+  const rows=resultRows.map(record=>({record,context}));
+  const previous=activityHistory[0];
+  if(previous&&previous.context===context&&Number.isFinite(latest)&&latest-Date.parse(previous.period??'')<=len)rows.push(...previous.rows.map(record=>({record,context})));
+  return rows;
 }
-function crowding(record){const rx=snap?.settings?.rx_hz,dx=snap?.contact?.dx_call;return typeof rx==='number'&&record.fields?.from?.text!==dx&&record.frequency_hz>=rx-50&&record.frequency_hz<=rx+50;}
-function paneAppend(cells,kind,flags={}){
-  const tr=document.createElement('tr');tr.dataset.kind=kind;if(flags.crowd)tr.dataset.crowd='true';if(flags.tome)tr.dataset.tome='true';
-  for(const text of cells){const td=document.createElement('td');td.textContent=text;tr.append(td);}
-  if(flags.crowd)tr.firstElementChild.prepend('⚠ ');
-  pane.append(tr);while(pane.children.length>500)pane.firstElementChild.remove();
-  if(paneFollow)paneWrap.scrollTop=paneWrap.scrollHeight;else{paneUnread++;showUnread();}
+function othersShow(){
+  const rx=snap?.settings?.rx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:null,my=myCall();
+  const lines=typeof rx!=='number'?[]:recentRows().filter(({record})=>{
+    if(record.status!=='decoded')return false;
+    const from=record.fields?.from?.text,to=record.fields?.to?.kind==='call'?record.fields.to.text:null;
+    if(dx&&from===dx)return false;
+    return (record.frequency_hz>=rx-50&&record.frequency_hz<=rx+50)||(!!my&&to===my);
+  }).sort((a,b)=>(b.record.period_start_utc??'').localeCompare(a.record.period_start_utc??'')||b.record.sequence-a.record.sequence).slice(0,2);
+  const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}`)]);
+  if(othersList.dataset.key===key)return;othersList.dataset.key=key;
+  othersList.replaceChildren(...lines.map(({record,context})=>{
+    const li=document.createElement('li');li.tabIndex=0;li.dataset.kind=qso?'warn':'candidate';
+    li.dataset.row=JSON.stringify(rowOf(context,record.sequence));
+    li.textContent=`${qso?'⚠':'◂'} ${record.text}  ${snrText(record.snr_db)}`.trimEnd();
+    li.title=qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station';
+    return li;
+  }));
 }
-function paneTx(text,utc){paneAppend([new Date(utc).toISOString().slice(11,19),'Tx','','',`▸ ${text}`],'tx');}
-function showUnread(){$('rx-pane-unread').textContent=paneUnread?`· ${paneUnread} new`:'';$('rx-pane-resume').hidden=paneFollow;}
-paneWrap.addEventListener('scroll',()=>{const atEnd=paneWrap.scrollTop+paneWrap.clientHeight>=paneWrap.scrollHeight-4;if(atEnd!==paneFollow){paneFollow=atEnd;if(atEnd)paneUnread=0;showUnread();}});
-$('rx-pane-resume').addEventListener('click',()=>{paneFollow=true;paneUnread=0;paneWrap.scrollTop=paneWrap.scrollHeight;showUnread();});
-function paneClear(){pane.replaceChildren();paneSeen=new Set();paneUnread=0;paneFollow=true;showUnread();}
-$('rx-pane-erase').addEventListener('click',paneClear);
-function paneUpdate(){
-  // Routing needs the confirmed Rx offset: rows wait until the snapshot is known.
-  if(!snap||typeof resultRows==='undefined'||!live?.job)return;
-  const context=`${profileData?.profile_id}/${live.job.mode}/${operatingState?.selection?.band??''}`;
-  if(context!==paneContext){paneClear();paneContext=context;}
-  const ordered=[...resultRows].sort((a,b)=>a.sequence-b.sequence),my=myCall(),dx=snap.contact?.dx_call;
-  for(const record of ordered){
-    const key=`${liveIdentity(live)}/${record.sequence}`;if(paneSeen.has(key))continue;paneSeen.add(key);
-    if(record.status!=='decoded')continue;
-    const routed=routes(record),crowd=crowding(record);if(!routed&&!crowd)continue;
-    const to=record.fields?.to?.kind==='call'?record.fields.to.text:null,tome=!!my&&to===my&&record.fields?.from?.text!==dx;
-    paneAppend([periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(0),record.dt_seconds===null?'—':record.dt_seconds.toFixed(1),record.frequency_hz.toFixed(0),record.fields?.from?.text===dx&&dx?`◂ ${record.text}`:record.text],routed?'rx':'crowd',{crowd,tome});
-    if(dx&&record.fields?.from?.text===dx)body.querySelector('#contact-state').title=record.text;
-  }
-  const latest=resultRows.filter(r=>r.status==='decoded'&&crowding(r)).length,badge=$('qso-crowd');
-  badge.hidden=!latest;badge.textContent=latest?`⚠ ${latest} near Rx`:'';badge.title=`${latest} other station${latest===1?'':'s'} within 50 Hz of my Rx frequency in the latest period`;
+function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.split('/');return {source_id,job_id,generation:Number(generation),sequence};}
+async function answerOther(li){
+  const row=JSON.parse(li.dataset.row),qso=li.dataset.kind==='warn';
+  const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.textContent);return;}
+  if(reply&&!reply.refused&&transmitCapable())arm('Reply');
 }
-if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;paneUpdate();}).observe(activity,{childList:true});
+othersList.addEventListener('dblclick',event=>{const li=event.target.closest('li[data-row]');if(li)answerOther(li);});
+othersList.addEventListener('keydown',event=>{const li=event.target.closest('li[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});
+if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;othersShow();}).observe(activity,{childList:true});
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
 const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];

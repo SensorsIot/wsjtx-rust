@@ -1217,7 +1217,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     assert!(drain(&a).is_empty(), "already stored: nothing sent again");
     f.state.store.lock().unwrap().document.locator = "JN47AA".into();
 
-    // W1AW: Log QSO before completion stores it now; completion replaces it in place.
+    // W1AW: Log QSO before completion stores it now and closes the contact (#37).
     f.bench.frozen.store(P1101 + 80_000, Ordering::SeqCst);
     enter(&f, "W1AW", None);
     operate(&f, "open_log", json!({}), false);
@@ -1234,21 +1234,22 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
         "logged now with the times so far"
     );
     assert_eq!(kinds(&drain(&a)), [5, 12]);
+    assert_eq!(
+        f.contact().facts().1.unwrap().state,
+        "completed",
+        "Log QSO closed the contact"
+    );
+    // The partner's later messages neither advance nor log the closed contact again.
     partner(&f, P1101 + 90_000, "HB9BLA W1AW R-05");
     partner(&f, P1101 + 120_000, "HB9BLA W1AW 73");
-    let replaced = stored(&f);
-    assert_eq!(replaced.len(), 2, "one record per contact identity");
-    assert_eq!(replaced[1]["contact_id"], early[1]["contact_id"]);
     assert_eq!(
-        (
-            replaced[1]["time_off"].as_str(),
-            replaced[1]["rst_rcvd"].as_str()
-        ),
-        (Some("123645"), Some("-05"))
+        stored(&f),
+        early,
+        "one record per contact identity, kept as logged"
     );
     assert!(
         drain(&a).is_empty(),
-        "the replacement stays internal: each contact reaches the targets once"
+        "each contact reaches the targets once"
     );
 
     // Storage failure at completion: unsaved and visible, retried only after the backoff.

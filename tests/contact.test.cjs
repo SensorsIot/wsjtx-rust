@@ -30,27 +30,23 @@ before(async()=>{
 after(async()=>{await browser?.close();});
 
 const evenNow=()=>Math.floor(Date.now()/30000)*30000;
-test('TC-007-003 Rx Frequency pane routing and TC-007-001 selection without transmit',{timeout:90000},async()=>{
+test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',{timeout:90000},async()=>{
   const period=evenNow();
   await publish(period,[
-    {text:'CQ K1ABC FN42',hz:1234.6,snr:-12.4},{text:'CQ W1AA FN31',hz:1489.9,snr:-1},{text:'CQ W2BB FN31',hz:1490.0,snr:-2},
-    {text:'CQ W3CC FN31',hz:1510.0,snr:-3},{text:'CQ W4DD FN31',hz:1510.1,snr:-4},{text:'HB9BLA W1XYZ -10',hz:400,snr:-10},
-    {text:'HB9BL K1ABC -01',hz:2600,snr:-9},{text:'CQ DL1ABC JO62',hz:800,snr:-3}]);
+    {text:'CQ K1ABC FN42',hz:1234.6,snr:-12.4},{text:'CQ W1AA FN31',hz:1449.9,snr:-1},{text:'CQ W2BB FN31',hz:1450.0,snr:-2},
+    {text:'CQ W3CC FN31',hz:1489.9,snr:-3},{text:'CQ W4DD FN31',hz:1510.1,snr:-4},{text:'CQ W5EE FN31',hz:1550.0,snr:4.6},
+    {text:'HB9BLA W1XYZ -10',hz:400,snr:-10},{text:'HB9BL K1ABC -01',hz:2600,snr:-9},{text:'CQ DL1ABC JO62',hz:800,snr:-3}]);
   const rows=page.locator('#band-activity tbody tr[data-sequence]');
-  await waitFor(async()=>await rows.count()===8,'eight Band Activity rows',30000);
-  const pane=async()=>page.locator('#rx-pane-rows tr').evaluateAll(trs=>trs.map(tr=>[tr.dataset.kind,tr.children[3].textContent,tr.children[4].textContent]));
-  // Rx 1500 Hz: exactly 1490.0 and 1510.0 within +/-10 Hz and the row to my call.
-  await waitFor(async()=>(await pane()).length===5,async()=>`QSO pane ${JSON.stringify(await pane())}`);
-  assert.deepEqual((await pane()).filter(r=>r[0]==='rx').map(r=>r[2]).sort(),['CQ W2BB FN31','CQ W3CC FN31','HB9BLA W1XYZ -10']);
-  // #37 QsoPaneCrowding: other stations within +/-50 Hz (1489.9 and 1510.1) are shown marked.
-  assert.deepEqual((await pane()).filter(r=>r[0]==='crowd').map(r=>r[2]).sort(),['CQ W1AA FN31','CQ W4DD FN31']);
-  assert.deepEqual(await page.locator('#rx-pane-rows tr[data-crowd=true]').evaluateAll(trs=>trs.map(tr=>tr.children[4].textContent).sort()),['CQ W1AA FN31','CQ W2BB FN31','CQ W3CC FN31','CQ W4DD FN31']);
-  assert.equal(await page.locator('#qso-crowd').textContent(),'\u26A0 4 near Rx');
-  // Local sorting/clearing: no request.
+  await waitFor(async()=>await rows.count()===9,'nine Band Activity rows',30000);
+  // #37 QsoPane, no contact: Rx 1500 Hz; the candidates within +/-50 Hz (1450.0..1550.0) and the
+  // row to my call, plain, newest two first, message and SNR only; never 1449.9 Hz or HB9BL.
+  const others=async()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
+  await waitFor(async()=>(await others()).length===2,async()=>`QSO pane ${JSON.stringify(await others())}`);
+  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212);
+  assert.deepEqual(await others(),[['candidate',`${recv} HB9BLA W1XYZ -10  ${minus}10 dB`],['candidate',`${recv} CQ W5EE FN31  +5 dB`]]);
+  // Local sorting: no request. The DX entry is in the QSO fold-out.
   const before=requests.length;
-  // #37: Erase and the DX entry are in the QSO fold-out.
-  await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#qso-more summary').click();await page.locator('#rx-pane-erase').click();
-  assert.equal(await page.locator('#rx-pane-rows tr').count(),0);
+  await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#qso-more summary').click();
   assert.equal(requests.slice(before).filter(r=>r.method!=='GET'||r.path==='/receive/results').length,0,'local presentation sends no request');
   // Selection by Enter on the focused row sends the exact identity.
   const k1abc=rows.filter({hasText:'CQ K1ABC FN42'});
@@ -89,8 +85,8 @@ test('TC-007-001 Reply starts transmission, partner report advances to Tx3, Esc 
   await waitFor(async()=>(await snapshot()).contact.state==='roger_report','roger_report',15000);
   await page.locator('#contact-next').filter({hasText:'K1ABC HB9BLA R-12'}).waitFor();
   assert.equal(await page.locator('input[name=contact-next][value=tx3]').isChecked(),true);
-  assert.notEqual(await page.locator('#contact-next').textContent(),await page.locator('#contact-last').textContent(),'next and last sent are distinct');
-  await page.locator('#rx-pane-rows tr').filter({hasText:'HB9BLA K1ABC -05'}).waitFor();
+  // #37: the partner's report is the pane's last partner message, with its SNR.
+  await page.locator('#qso-heard').filter({hasText:`HB9BLA K1ABC -05  ${String.fromCharCode(0x2212)}7 dB`}).waitFor();
   // #37 review: the confirmation popup is modal, so it carries HALT; clicking it halts at once.
   const popupMark=requests.length;
   await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();

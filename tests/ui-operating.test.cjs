@@ -330,7 +330,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // WstxOperatingLayout::OperatingScreen and friends (operator design interview 2026-11-01). The
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
-const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#rx-pane','#contact-next','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
+const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
 const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
@@ -361,7 +361,6 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   await show(partner('roger_report',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx3',tx4:'rr73',messages:iw9fra,suggested_slot:null}));
   assert.equal(await shown(page,'#qso-autoseq'),true,'Auto Seq off is on the pane');
   assert.match(await page.locator('#qso-autoseq-text').textContent(),/^Auto Seq off/);
-  assert.match(await page.locator('#contact-state').textContent(),/Auto Seq off/);
   assert.equal(await shown(page,'#qso-suggest'),false,'nothing offered before their RR73');
   // Their RR73 was counted: the engine offers Tx5; one click chooses it and arms (Reply).
   await show({...contact,suggested_slot:'tx5'});
@@ -372,25 +371,13 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   // TC-007-009: still one fixed 1366x768 screen with the line shown.
   const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
   assert.deepEqual(metrics,{x:false,y:false});
-  const top=selector=>page.locator(selector).first().evaluate(el=>el.getBoundingClientRect().top);
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
-  // A received partner row in the dialogue (layout only: this fixture runs no live job).
-  await page.evaluate(()=>{const tr=document.createElement('tr');tr.dataset.kind='rx';for(const t of ['13:45:15.0','17','-0.1','1838','◂ HB9BLA IW9FRA RR73']){const td=document.createElement('td');td.textContent=t;tr.append(td);}document.querySelector('#rx-pane-rows').append(tr);});
-  // The line takes the LAST row's place: the dialogue and its row stay visible, the QSO
-  // buttons sit no lower than for the same contact without the line, the line is fully visible.
-  assert.equal(await shown(page,'#rx-pane'),true,'the dialogue stays with Auto Seq off');
-  assert.equal(await shown(page,'#rx-pane-rows tr'),true,'the received row stays visible');
-  assert.equal(await shown(page,'#contact-last'),false,'LAST gives way to the line');
-  const dialogue=()=>page.locator('#rx-pane .ct-pane-wrap').evaluate(el=>el.clientHeight);
-  const dialogueWithLine=await dialogue();
+  // #37 compact pane: the line sits in the pane with the last partner message and the
+  // buttons, all fully visible on the 1366x768 screen; there is no dialogue or LAST row.
+  assert.equal(await page.locator('#rx-pane,#contact-last').count(),0);
   await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
-  for(const selector of ['#qso-autoseq','#qso-suggest'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
-  const withLine=await top('#qso-73');
+  for(const selector of ['#qso-autoseq','#qso-suggest','#qso-73','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
   settings={auto_seq:true};await show({...contact,suggested_slot:null});await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
-  const withoutLine=await top('#qso-73');
-  assert.ok(withLine<=withoutLine,`QSO buttons pushed down by the line: ${withLine} > ${withoutLine}`);
-  const dialogueWithoutLine=await dialogue();
-  assert.ok(dialogueWithLine>=dialogueWithoutLine,`the line shrinks the dialogue: ${dialogueWithLine} < ${dialogueWithoutLine}`);
   settings={auto_seq:false};await show({...contact,suggested_slot:'tx5'});await page.waitForFunction(()=>!document.querySelector('#qso-autoseq').hidden);
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
@@ -406,6 +393,106 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   settings={auto_seq:true};await show({...contact,suggested_slot:null});
   await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
   assert.doesNotMatch(await page.locator('#contact-state').textContent(),/Auto Seq off/);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-16, CL-010-06; TC-007-009 the compact QSO pane (#37, operator decisions
+// 2026-11-02, items 1-10): the running QSO only, message and SNR per line, at most two
+// Others lines (⚠ while a QSO runs, plain candidates when idle), NEXT only while armed,
+// "✓ Logged <call>" for a few seconds, nothing of a finished contact, about half the height.
+test('TC-007-009 the compact QSO pane shows only the running QSO and clears when it ends',{timeout:60000},async t=>{
+  let state,contact=null,transmit={},log=null,records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
+  const standard=(from,to)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
+  const record=(sequence,text,hz,snr)=>{const [to,from]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:period};};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    // Rx is 1500 Hz: 1449.9 Hz is outside +/-50 Hz; the partner IW9FRA at 1505 Hz is never an Other.
+    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA IW9FRA RR73',1505,17),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA DL1ABC JO31',400,-8)];
+    Object.assign(state.job,{first_sequence:0,next_sequence:5,available_count:5,latest_decode:{id:1,first_sequence:0,next_sequence:5,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit,log})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  const others=()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
+  const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
+  const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
+  // Removed: dialogue history, LAST row and crowding badge.
+  for(const selector of ['#rx-pane','#rx-pane-rows','#contact-last','#qso-crowd','#rx-pane-erase'])assert.equal(await page.locator(selector).count(),0,`${selector} is gone`);
+
+  // Item 7, idle: the stations on my Rx frequency (and a station calling me) are plain
+  // candidates, at most two, newest first, message and SNR only (no time, DT or Hz).
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
+  assert.deepEqual(await others(),[['candidate','◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','◂ CQ YO3GNF KN34  +12 dB']]);
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
+  for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
+  assert.equal(await page.locator('#contact-log').isDisabled(),true,'no Log QSO without a running QSO');
+  // Double-click answers: select (no replace), then enable_tx.
+  let m=commands.length;await page.locator('#qso-others li').nth(1).dblclick();await waitCommands(m+2);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,false],['enable_tx',true,undefined]]);
+
+  // Items 1-4 and 10, a running QSO with Enable Tx on: header, the last partner message with
+  // SNR and xN, the Others marked ⚠ (a station near Rx and one calling me, not the partner),
+  // NEXT with its countdown.
+  const iw9fra=['IW9FRA HB9BLA JN47','IW9FRA HB9BLA +10','IW9FRA HB9BLA R+10','IW9FRA HB9BLA RR73','IW9FRA HB9BLA 73','CQ HB9BLA JN47'];
+  const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3}});
+  await show(running,{arm_state:'armed'});
+  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn');
+  // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
+  const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
+  assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`${km} km · sent +10 · rcvd +10`);
+  assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
+  assert.deepEqual(await others(),[['warn','⚠ HB9BLA DL1ABC JO31  −8 dB'],['warn','⚠ CQ YO3GNF KN34  +12 dB']]);
+  assert.equal(await shown(page,'#qso-next'),true,'NEXT while armed');
+  assert.deepEqual([await page.locator('#qso-next .op-eyebrow').textContent(),await page.locator('#contact-next').textContent()],['▸ next:','IW9FRA HB9BLA 73']);
+  assert.equal(await shown(page,'#contact-state'),false,'no status line without an exception');
+  assert.equal(await page.locator('#contact-log').isEnabled(),true);
+  // Item 8: one fixed 1366x768 screen; the pane fits its content (nothing clipped) and
+  // takes about half the workspace height the earlier pane filled.
+  const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
+  assert.deepEqual(metrics,{x:false,y:false});
+  const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
+  for(const selector of ['#qso-heard','#qso-others li:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
+  const heights=await page.evaluate(()=>({pane:document.querySelector('#rx-focus').getBoundingClientRect().height,activity:document.querySelector('#band-activity').getBoundingClientRect().height}));
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1366x768.png'});
+  // The earlier pane needed about 380 px for this contact (at ad2f48bda it filled the 297 px
+  // workspace and still clipped the buttons, the result line and the fold-out).
+  assert.ok(heights.pane<=250&&heights.pane<heights.activity-40,`compact pane ${heights.pane} px of ${heights.activity} px`);
+  // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
+  m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',4,true],['enable_tx',true,undefined]]);
+  // Not armed: no NEXT.
+  await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
+  // Auto Seq off (#11) stays visible in the compact pane.
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#rx-focus').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-360x800.png'});
+  await page.setViewportSize({width:1366,height:768});
+
+  // Items 5, 6 and 9: completed by Log QSO, the contact is gone: "✓ Logged IW9FRA", no
+  // NEXT, no partner lines, Others back to plain candidates; the notice goes after a few seconds.
+  const done={...running,state:'completed',next_slot:'tx6',saved:true};
+  await show(done,{arm_state:'disarmed'},{contact_id:running.id,call:'IW9FRA',outcome:'saved',error:null});
+  await page.locator('#contact-logged').filter({hasText:'✓ Logged IW9FRA'}).waitFor();
+  assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
+  for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
+  assert.deepEqual((await others()).map(o=>o[0]),['candidate','candidate']);
+  assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-logged-1366x768.png'});
+  await page.waitForFunction(()=>document.querySelector('#contact-logged').textContent==='',null,{timeout:12000});
+  assert.equal(await shown(page,'#contact-logged'),false,'the notice goes');
+  // A cancelled contact is gone at once, without a notice.
+  await show(running,{arm_state:'armed'});await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden);
+  await show({...running,state:'cancelled',dx_call:null,dx_grid:null},{arm_state:'disarmed'},{contact_id:running.id,call:'IW9FRA',outcome:'saved',error:null});
+  await page.waitForFunction(()=>document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-next').hidden);
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
+  assert.equal(await page.locator('#contact-logged').textContent(),'','an earlier save is not shown again');
   assert.deepEqual(errors,[]);
 });
 
@@ -426,9 +513,9 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   const extra=await page.locator('#station-bar').evaluate((bar,allowed)=>[...bar.querySelectorAll('button,select,input')].filter(n=>n.getClientRects().length&&!n.closest('#exception-chips')&&!allowed.includes(n.id)&&!allowed.includes(n.getAttribute('aria-label'))).map(n=>n.id||n.textContent),allowed);
   assert.deepEqual(extra,[],'the top bar holds only its decided items');
   assert.equal(await page.locator('#station-bar #refresh').count(),0,'no refresh in the top bar: the status refreshes itself');
-  // The DX entry and Erase are in the QSO fold-out; the pane shows partner, dialogue, NEXT/LAST and buttons.
-  for(const selector of ['#dx-call','#dx-grid','#dx-generate','#rx-pane-erase'])assert.equal(await shown(page,selector),false,`${selector} folded away`);
-  await page.locator('#qso-more summary').click();for(const selector of ['#dx-call','#dx-generate','#rx-pane-erase','#contact-messages'])assert.equal(await shown(page,selector),true,`${selector} in the fold-out`);await page.locator('#qso-more summary').click();
+  // The DX entry is in the QSO fold-out; the compact pane (#37) has no dialogue to erase.
+  for(const selector of ['#dx-call','#dx-grid','#dx-generate'])assert.equal(await shown(page,selector),false,`${selector} folded away`);
+  await page.locator('#qso-more summary').click();for(const selector of ['#dx-call','#dx-generate','#contact-messages'])assert.equal(await shown(page,selector),true,`${selector} in the fold-out`);await page.locator('#qso-more summary').click();
   assert.equal(await page.locator('#connection').evaluate(el=>el.getBoundingClientRect().width<=1),true,'a connected link shows no status text');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
@@ -726,9 +813,9 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // Independent great-circle distance between the JN47AA and FN42 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
-  // QSO pane: W1XYZ at 1480 Hz is within +/-50 Hz of Rx 1500: marked and counted.
-  await page.locator('#qso-crowd').filter({hasText:'1 near Rx'}).waitFor();
-  assert.equal(await page.locator('#rx-pane-rows tr[data-crowd=true]').filter({hasText:'CQ W1XYZ FN42'}).count(),1);
+  // QSO pane (#37): with no contact, W1XYZ at 1480 Hz (within +/-50 Hz of Rx 1500) is a plain candidate.
+  await page.locator('#qso-others li[data-kind=candidate]').filter({hasText:'CQ W1XYZ FN42'}).waitFor();
+  assert.deepEqual(await page.locator('#qso-others li').allTextContents(),['◂ CQ W1XYZ FN42  −10 dB']);
   // A new period keeps the previous one below a divider, newest first.
   records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
   Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:2,first_sequence:2,next_sequence:3,period_start_utc:period[1],complete:true}});
@@ -1123,9 +1210,10 @@ test('TC-011-001 completed QSOs log without a review and the open Logbook lists 
  }});
  await page.waitForFunction(()=>profileData&&window.wstxLogbook&&window.wstxContact?.snapshot(),null,{timeout:25000});
  const profile=await (await fetch(app.origin+'/profile')).json();
+ // #37: Log QSO is offered while the QSO runs; it logs and closes it (the station completes it).
  const contact=partner('completed',{report_rcvd:'-05'});
- snapshot={contact,log:null};await page.evaluate(()=>window.wstxContact.load());
- await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='completed');
+ snapshot={contact:{...contact,state:'rogers',next_slot:'tx4'},log:null};await page.evaluate(()=>window.wstxContact.load());
+ await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='rogers');
  assert.equal(await page.locator('#operating-workspace').isVisible(),true,'no review page opens at completion');
  assert.equal(await page.locator('#log-review, #log-review-form, [id^=log-field-]').count(),0,'the review form is retired');
  assert.equal(await page.locator('#contact-discard').count(),0);
@@ -1145,7 +1233,7 @@ test('TC-011-001 completed QSOs log without a review and the open Logbook lists 
  snapshot={contact:{...contact,saved:true},log:{contact_id:contact.id,call:'K1ABC',outcome:'saved',error:null}};await page.evaluate(()=>window.wstxContact.load());
  await page.locator('#log-history li',{hasText:'K1ABC'}).waitFor({timeout:5000});
  assert.match(await page.locator('#log-history-status').innerText(),/1 contact/);
- assert.match(await page.locator('#contact-logged').textContent(),/^Logged K1ABC \u00b7 contacts\.adi$/);
+ assert.equal(await page.locator('#contact-logged').textContent(),'\u2713 Logged K1ABC');
  assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true,'the Logbook page never hides Halt Tx');
  assert.ok(posts.every(p=>p==='/contact/command'),'the browser never saves a contact: '+posts.join());
  assert.deepEqual(errors,[]);
