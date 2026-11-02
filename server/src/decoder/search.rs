@@ -1,8 +1,9 @@
 use super::baseband::{BandPlan, BandWindow, PassBand};
 use super::bitmetrics::{self, channel_gates};
-use super::fit::{fit_coefficients, fit_signal};
+use super::fit::fit_coefficients;
 use super::history::DecodeState;
 use super::physical_sync;
+use super::snr::Ft8Snr;
 use super::subtraction::Subtractor;
 use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
@@ -192,11 +193,12 @@ impl Decoder {
         for _pass in 0..3 {
             let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
             let mut physical = plan.current_pass(&samples, &mut budget).await?;
+            let mut contrast = None;
             let candidates = if mode == Mode::Ft4 {
                 let mut candidates = vec![];
-                for frequency in
-                    super::coarse_ft4::candidates(&samples, self.scalar, &mut budget).await?
-                {
+                let coarse =
+                    super::coarse_ft4::contrast(&samples, self.scalar, &mut budget).await?;
+                for frequency in coarse.candidates() {
                     candidates.extend(
                         super::physical_ft4::qualify(
                             &mut physical,
@@ -207,13 +209,14 @@ impl Decoder {
                         .await?,
                     );
                 }
+                contrast = Some(coarse);
                 candidates
             } else {
                 spectrum
                     .candidates(samples.len(), &mut physical, &mut budget)
                     .await?
             };
-            let accepted = state.active_frequencies(origin, samples.len());
+            let mut ft8_snr = Ft8Snr::new(self.scalar);
             let mut pending = vec![];
             let mut verified = 0;
             for c in candidates {
@@ -256,19 +259,21 @@ impl Decoder {
                 if !physical_sync::supports(&mut physical, fitted, &mut budget).await? {
                     continue;
                 }
-                let wave = quadratures(mode, &tones, fitted.frequency)
-                    .ok_or(DecodeError::InvalidSamples)?;
-                let fit = fit_signal(&samples, fitted.start, &wave);
-                let variance =
-                    spectrum.noise_variance(fitted.start, frame, fitted.frequency, &accepted);
-                let snr = fit
-                    .and_then(|(a, b, _)| {
-                        variance
-                            .filter(|&v| v / 6000. > 1e-20)
-                            .map(|v| 10. * (((a * a + b * b) / 2.) / (v * 2500. / 6000.)).log10())
-                    })
-                    .filter(|x| x.is_finite())
-                    .map(|x| x.clamp(-60., 60.));
+                let snr = match &contrast {
+                    Some(contrast) => contrast.snr_db(fitted.frequency),
+                    None => {
+                        ft8_snr
+                            .snr_db(
+                                &samples,
+                                super::snr::period_of(origin, fitted.start, state.period_start()),
+                                fitted.start,
+                                fitted.frequency,
+                                &tones,
+                                &mut budget,
+                            )
+                            .await?
+                    }
+                };
                 window_seen.push((payload.payload77.clone(), absolute));
                 verified += 1;
                 let record = Decode {

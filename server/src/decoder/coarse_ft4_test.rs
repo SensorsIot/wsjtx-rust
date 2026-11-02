@@ -118,3 +118,26 @@ fn fifteen_bin_flat_maximum_retains_its_carrier_coverage() {
     }
     assert!(actual.iter().any(|p| (p.0 - 1000.).abs() < 1e-10));
 }
+// Proves: CL-007-02.
+#[test]
+fn ft4_snr_follows_the_candidate_contrast_scale() {
+    // ft4_decode (#52): 10*log10(contrast-1)-14.8 dB, floor -21, whole dB. 1000 Hz + 31.25 Hz
+    // is bin 198; an isolated peak 1+10^0.48 is exactly -10 dB.
+    let mut ratio = vec![1.; N / 2 + 1];
+    ratio[198] = 1. + 10f64.powf(0.48);
+    assert_eq!(Contrast(ratio.clone()).snr_db(1000.), Some(-10.));
+    // The higher neighbour 199 is the peak: (2, 3, 1) -> delta -1/6, peak 3+1/24,
+    // 10*log10(2.0417)-14.8 = -11.70 -> -12.
+    ratio[198] = 2.;
+    ratio[199] = 3.;
+    assert_eq!(Contrast(ratio).snr_db(1000.), Some(-12.));
+    let mut weak = vec![1.; N / 2 + 1];
+    assert_eq!(Contrast(weak.clone()).snr_db(1000.), Some(-21.));
+    weak[198] = 1.001;
+    assert_eq!(Contrast(weak).snr_db(1000.), Some(-21.));
+    assert_eq!(Contrast(vec![]).snr_db(1000.), None);
+    // The wire ceiling: 10*log10(1e8)-14.8 = 65.2 dB is reported as 60.
+    let mut strong = vec![1.; N / 2 + 1];
+    strong[198] = 1e8;
+    assert_eq!(Contrast(strong).snr_db(1000.), Some(60.));
+}

@@ -1811,6 +1811,7 @@ package WstxRequirements {
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets.
+             SNR (#52): every decoded observation of the pinned modern FT4 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -21.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1829,6 +1830,7 @@ package WstxRequirements {
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets.
+             SNR (#52): every decoded observation of the pinned official FT8 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -25.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {

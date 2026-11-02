@@ -168,7 +168,7 @@ fn independent_waveforms_decode() {
         );
     }
 }
-// Proves: FR-003, FR-004, CL-007-04.
+// Proves: FR-003, FR-004, CL-007-02, CL-007-04.
 #[test]
 fn quality_corpus() {
     let root = prepared("quality");
@@ -218,6 +218,13 @@ fn quality_corpus() {
             {
                 panic!("FALSE PUBLICATION {id}: {d:?}");
             }
+            // #52: whole dB on the WSJT-X scale, never below its floor.
+            let floor = if mode == Mode::Ft8 { -25. } else { -21. };
+            assert!(
+                d.snr_db
+                    .is_none_or(|snr| snr.fract() == 0. && (floor..=60.).contains(&snr)),
+                "SNR scale {id}: {d:?}"
+            );
         }
         assert!(
             actual.len() <= expected.len(),
@@ -594,7 +601,7 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
     assert_eq!(checked, 14);
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
+// Proves: FR-003, FR-004, CL-007-02, CL-007-04.
 #[test]
 fn official_modern_recording_baselines() {
     let cases: Value = serde_json::from_str(include_str!(
@@ -606,6 +613,7 @@ fn official_modern_recording_baselines() {
     );
     let decoder = Decoder::new();
     let mut failures = vec![];
+    let mut snr_failures = vec![];
     for case in cases["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap();
         let mode = if case["mode"] == "ft4" {
@@ -655,6 +663,24 @@ fn official_modern_recording_baselines() {
                 })
             })
             .count();
+        // #52: the pinned reference jt9 report is the SNR oracle of each matched observation.
+        for r in observations {
+            let Some(d) = decoded.iter().find(|d| {
+                d.payload
+                    .text
+                    .as_ref()
+                    .is_some_and(|t| canonical(t) == canonical(r["text"].as_str().unwrap()))
+                    && (d.frequency_hz - r["frequency_hz"].as_f64().unwrap()).abs() <= 5.
+            }) else {
+                continue;
+            };
+            let expected = r["snr_db"].as_f64().unwrap();
+            if d.snr_db
+                .is_none_or(|snr| snr.fract() != 0. || (snr - expected).abs() > 1.)
+            {
+                snr_failures.push((id, r["text"].clone(), expected, d.snr_db));
+            }
+        }
         let missing = observations
             .iter()
             .filter(|r| {
@@ -677,6 +703,10 @@ fn official_modern_recording_baselines() {
     assert!(
         failures.is_empty(),
         "baseline thresholds not reached: {failures:?}"
+    );
+    assert!(
+        snr_failures.is_empty(),
+        "SNR not within 1 dB of the reference: {snr_failures:?}"
     );
 }
 
