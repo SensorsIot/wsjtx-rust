@@ -7,8 +7,9 @@
 # commit directory and digest with the expected candidate (with -Manifest: the digest of the
 # package's own wstx-rust.exe, recomputed here, not the manifest's field). It then requires
 # HTTP 200 over TLS verified by Windows from the station URL, and finally that the launcher
-# receipt agrees with what it observed. The service reports only its crate version, not its
-# commit, so the running image's digest is the version identity.
+# receipt agrees with what it observed. The same response's x-wstx-source-commit header is
+# the commit the service itself reports (#33); it must equal the candidate. A build from
+# before #33 sends no header; then the running image's digest stays the version identity.
 # Exit 0: PROBE PASS. Exit 1: PROBE FAIL <reason> (run station-update.ps1 -Rollback).
 # Exit 2: the probe could not run (bad arguments).
 param([string]$Manifest, [string]$Commit, [string]$ArtifactSha256,
@@ -53,6 +54,14 @@ try {
   try { $page = Invoke-WebRequest -UseBasicParsing -Uri "$Url/" -TimeoutSec 10 } catch { Fail "health: $Url/ did not answer over trusted TLS ($($_.Exception.GetType().Name))" }
   if ([int]$page.StatusCode -ne 200) { Fail "health: $Url/ answered $($page.StatusCode)" }
   Write-Output "health: $Url/ 200 over trusted TLS"
+  $reported = @($page.Headers['x-wstx-source-commit'] | Where-Object { $null -ne $_ })
+  if (-not $reported.Count) {
+    Write-Output 'service: reports no commit (a build from before #33); the image digest is the identity'
+  } elseif ($reported.Count -ne 1 -or [string]$reported[0] -cne $Commit) {
+    Fail "service reports commit $(($reported | ForEach-Object { [string]$_ }) -join ','), expected $Commit"
+  } else {
+    Write-Output "service: reports commit $($Commit.Substring(0,9))"
+  }
 
   $receiptPath = Join-Path $Station 'station-running.json'
   if (-not (Test-Path -LiteralPath $receiptPath)) { Fail 'launcher receipt missing' }

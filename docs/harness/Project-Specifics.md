@@ -212,11 +212,24 @@ only (operator decision 2026-10-30): that artifact is never installed on the sta
 It is read-only. It asks Windows which process listens on TCP 18081, hashes that
 process's executable itself and requires the candidate's commit directory and the digest
 of the package's own `wstx-rust.exe` (recomputed, not read from the manifest), then HTTP
-200 from `https://192.168.0.37:18081/` over TLS that Windows trusts, and last that the
-launcher receipt agrees with what it observed. The service reports only its crate version
-(`0.1.0`), not its commit, so the running image's digest is the version identity; a
-service-reported commit would be a product change (CR). Tests:
+200 from `https://192.168.0.37:18081/` over TLS that Windows trusts. In the same
+response, the station's `x-wstx-source-commit` header must be the candidate's commit (#33,
+CL-033-01). This is the commit the running service itself reports. `make_package.py`
+compiles it in as `WSTX_SOURCE_COMMIT`, and a build without one reports `unknown`, which
+fails. A build from before #33 sends no header, for example a rollback target. The probe
+then says so and keeps the image digest as the identity. Last, it checks that the launcher
+receipt agrees with what it observed. Tests:
 `python -m unittest discover -s .harness/deploy/tests`.
+
+The operator can check the result without any agent, from PC Andreas (the only address
+the firewall admits). This is not a step of each install (operator decision 2026-11-01):
+
+```powershell
+(Invoke-WebRequest -UseBasicParsing https://192.168.0.37:18081/).Headers['x-wstx-source-commit']
+```
+
+It prints the commit the station reports. Compare it with the commit announced on the
+issue.
 
 **When `station-update.ps1` changes** run the refusal drill and record its output on the
 change's issue:
@@ -254,7 +267,7 @@ in place of an OK per install.
 | Credentials outside the agents | Off (today): agents run as the HB9BLA user and can write the version directory, `active.json`, the receipt, the gates record and the package and station-update scripts. Only the task and firewall changes need the operator's elevation. Prepared: the deploy authority below keeps policy, verifier and launcher where only Administrators write and the signing key with the operator. Still not met when on: the launcher and verifier run as HB9BLA, so the agents can alter them while they run (see its limits). | #30 |
 | Approval names the candidate | Off (today): the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. Prepared: an operator-signed approval of one commit, one digest and one destination. | #31 |
 | Verify before writing | Off (today): `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. Prepared: the protected verifier hashes the executable itself against the signed digest before the switch, and the protected launcher again before it starts it. | #32 |
-| Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks independently of the receipt that the process listening on 18081 runs the candidate's bytes and answers over trusted TLS. Not met in full: an agent runs the probe and the rollback after it (the operator can run the same probe), and the service does not report its own commit. | #33 |
+| Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks, independently of the receipt, that the process listening on 18081 runs the candidate's bytes, answers over trusted TLS and reports the candidate's commit itself (`x-wstx-source-commit`). The operator can read that report from PC Andreas without an agent. Not met in full: an agent runs the probe and the rollback after it. On HB9BLA everything except the operator runs with the agents' rights, so a prober the agents cannot alter needs another account (an operator decision, see the deploy authority's limits). | #33 |
 | Show the refusals | `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (below). Not met in full: the drill shows that a consistent rewrite of artifact and records and an older commit on master are accepted (#32, #31), and a mismatched approval exists only with the deploy authority on. | #34 |
 
 No rule is met in full.
