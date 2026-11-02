@@ -543,8 +543,9 @@ attribute def ActivityOrdering {
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
              an explicit unavailable mark without one. Distance is the great-circle
-             distance from the profile locator to a grid carried in the message; without
-             a grid the entity distance marked approximate ("~n km"); unavailable
+             distance from the profile locator to a grid carried in the message (RR73 is
+             the roger, never a grid; a grid from another row or the log is not used);
+             without a grid the entity distance marked approximate ("~n km"); unavailable
              otherwise. The QSO pane header shows the partner's shown name and continent
              first on its detail line under the call and grid (GET /dxcc?call=, once per DX call), and the
              entity distance marked approximate when the contact has no grid. Colours (#50, BandActivityColours) are the WSJT-X

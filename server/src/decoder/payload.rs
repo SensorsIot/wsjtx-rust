@@ -287,7 +287,13 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
             let (s, exchange) = match raw {
                 0..=32399 => {
                     let s = grid(raw, false)?;
-                    (s.clone(), Exchange::Grid(s))
+                    // Some programs send RR73 as the grid square RR73 (32373), not as the
+                    // roger 32403; like WSJT-X (grid_regexp excludes RR73) it is the roger.
+                    if s == "RR73" {
+                        (s.clone(), Exchange::Roger(s))
+                    } else {
+                        (s.clone(), Exchange::Grid(s))
+                    }
                 }
                 32401 => (String::new(), Exchange::Blank(())),
                 32402..=32404 => {

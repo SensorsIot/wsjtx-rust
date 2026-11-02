@@ -225,7 +225,9 @@ package WstxOfflineDecode {
              nonstandard{type,full_call,hashed_call,hash_second,cq,roger};
              vhf{type,to,from,ack,report,serial,grid}. Semantic StandardExchange
              serial/state union members map to exact wire{kind,value}, not extra keys.
-             Nonstandard CQ ignores hash for presentation while preserving raw bits/hash.
+             A standard exchange packed as the grid square RR73 (32373, as some programs
+             send RR73) is the roger {kind roger, value RR73}, never a grid (#55; WSJT-X
+             grid_regexp excludes RR73); the text is unchanged. Nonstandard CQ ignores hash for presentation while preserving raw bits/hash.
              i3/n3 disambiguates source family. WstxRadioIO owns live lifecycle/page/error/
              cancellation/retention. No production file-decode route, test-source/raw-path
              command or browser offline-decode action is implied by numerical fixtures. */

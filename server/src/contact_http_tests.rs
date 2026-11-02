@@ -86,8 +86,18 @@ impl Hardware for Bench {
 
 /// A decoded result record of `text` with the real 77-bit codec (no decoder run).
 pub(crate) fn record(text: &str, hz: f64, snr: Option<f64>) -> Value {
-    let packed = wstx_rust::transmit::pack(text).unwrap();
-    let mut v = serde_json::to_value(decoder::unpack(&packed.bits)).unwrap();
+    record_exchange(text, hz, snr, None)
+}
+/// `record` with the 15 exchange bits (59..74) of a type 1/2 message replaced by `raw`, as
+/// another program may pack them (e.g. RR73 as the grid square 32373 instead of 32403).
+pub(crate) fn record_exchange(text: &str, hz: f64, snr: Option<f64>, raw: Option<u64>) -> Value {
+    let mut bits = wstx_rust::transmit::pack(text).unwrap().bits;
+    if let Some(raw) = raw {
+        for (i, bit) in bits[59..74].iter_mut().enumerate() {
+            *bit = ((raw >> (14 - i)) & 1) as u8;
+        }
+    }
+    let mut v = serde_json::to_value(decoder::unpack(&bits)).unwrap();
     v["start_frame"] = json!(0);
     v["frequency_hz"] = json!(hz);
     v["snr_db"] = json!(snr);
@@ -997,10 +1007,11 @@ async fn contact_browser_operating_flow() {
                         .unwrap()
                         .iter()
                         .map(|r| {
-                            record(
+                            record_exchange(
                                 r["text"].as_str().unwrap(),
                                 r["hz"].as_f64().unwrap(),
                                 r["snr"].as_f64(),
+                                r["exchange_raw"].as_u64(),
                             )
                         })
                         .collect();
