@@ -192,7 +192,7 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
 }
 
 /// Bench UTC set to 1 s after an even FT8 period E (a partner period); own periods are odd.
-fn at_even(f: &Mcp) -> i64 {
+pub(crate) fn at_even(f: &Mcp) -> i64 {
     let e = (now_ms().div_euclid(30_000) + 4) * 30_000;
     f.bench.offset.store(e + 1000 - now_ms(), Ordering::SeqCst);
     e
@@ -205,7 +205,7 @@ fn next_even(f: &Mcp) -> i64 {
         .fetch_add(e + 1000 - f.bench.now_utc_ms(), Ordering::SeqCst);
     e
 }
-fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
+pub(crate) fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
     let records = list
         .iter()
         .map(|(t, hz, snr)| record(t, *hz, *snr))
@@ -216,6 +216,11 @@ fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
     f.tick();
 }
 async fn automation(f: &Mcp, action: &str, extra: Value) -> Value {
+    // #39: an MCP run arms only within the Tx watchdog time of the operator's last
+    // browser action; these MCP cases start with the operator present.
+    if action == "start" {
+        f.operator_present().await;
+    }
     let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"action":action});
     b.as_object_mut()
         .unwrap()
@@ -253,7 +258,7 @@ async fn cancel(f: &Mcp) {
         .await;
     assert_eq!(v["status"], 202, "{v}");
 }
-async fn run_state(f: &Mcp) -> (String, Value) {
+pub(crate) async fn run_state(f: &Mcp) -> (String, Value) {
     let r = f.read("automation").await["run"].clone();
     (
         r["state"].as_str().unwrap_or("").to_owned(),
@@ -261,7 +266,7 @@ async fn run_state(f: &Mcp) -> (String, Value) {
     )
 }
 /// One own (odd) transmission of the pending request in period `own`, run to completion.
-async fn transmit_own_period(f: &Mcp, own: i64) {
+pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
     f.bench
         .offset

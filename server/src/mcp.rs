@@ -49,6 +49,11 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
     authorization::decode::<32>(token).ok()?;
     Some(token.to_owned())
 }
+/// Marks a station request dispatched in-process for an MCP tool call (a request
+/// extension, which no network client can set). It is never an operator action for the
+/// Tx watchdog (#39, WstxStrategy::WatchdogFromOperator).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Dispatched;
 /// The station credential the in-process dispatch presents: exactly the validated grant
 /// transport, under the station's own cookie name, and nothing from the MCP request.
 fn station_headers(app: &App, token: &str) -> HeaderMap {
@@ -242,9 +247,10 @@ async fn call_tool(
         503,
         json!({"error":{"code":"storage_unavailable","field":null}}),
     );
-    let Ok(request) = request else {
+    let Ok(mut request) = request else {
         return unavailable;
     };
+    request.extensions_mut().insert(Dispatched);
     let Ok(response) = crate::router(app.clone()).oneshot(request).await;
     let status = response.status().as_u16();
     match axum::body::to_bytes(response.into_body(), STATION_BYTES_MAX).await {

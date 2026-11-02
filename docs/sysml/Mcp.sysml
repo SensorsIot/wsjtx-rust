@@ -39,7 +39,19 @@ package WstxMcp {
             longer than the starting request's grant transport (its 8 h deadline, a newer
             proof of the grant, revocation or a safety edit stop it authority_lost) and no
             longer than max_run_minutes (default 120, 1..480; stop time_limit). A running
-            automation is shown read-only in the browser station bar (AutomationIndicator). */
+            automation is shown read-only in the browser station bar (AutomationIndicator).
+         D8 Strategy runs (#39, WstxStrategy::AutoStrategyRun): an optional configuration
+            key strategy true lets the station's active strategy choose and order
+            candidates (Auto Call), call CQ and answer callers (Auto CQ) or alternate; such
+            a run skips an unanswered station instead of stopping no_answer. For every run
+            (D6 included) the Tx watchdog counts from the last human action in the browser
+            and is never reset or extended by the run's commands, by an MCP request
+            (including starting or restarting a run) or by a UDP command
+            (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
+            rule, recorded on #39/#12, 2026-11-02, amending D5/D7); an MCP Enable Tx or
+            run arm is refused tx_watchdog when that time is spent, until a browser
+            action; set_watchdogs through MCP is refused operator_required (only the
+            browser sets the watchdog); a watchdog disarm stops tx_watchdog. */
 
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";
@@ -130,13 +142,15 @@ package WstxMcp {
         attribute maxUnansweredPeriods : Integer;
         attribute completionAction : CompletionAction;
         attribute maxRunMinutes : Integer = 120;
+        attribute strategy : Boolean = false;
         assert constraint runLimit { maxRunMinutes >= 1 and maxRunMinutes <= 480 }
         assert constraint contactLimit { maxContacts >= 1 and maxContacts <= 100 }
         assert constraint answerLimit { maxUnansweredPeriods >= 1 and maxUnansweredPeriods <= 20 }
         doc /* Wire keys exactly modes, ranking, min_snr_db, allowed_calls, blocked_calls,
              max_contacts, max_unanswered_periods, completion_action, all required, and
-             max_run_minutes, optional (absent: 120; D7); null is the unconfigured state;
-             the snapshot always shows max_run_minutes. modes: nonempty unique subset of
+             max_run_minutes, optional (absent: 120; D7), and strategy, optional boolean
+             (absent: false; D8); null is the unconfigured state; the snapshot always shows
+             max_run_minutes and strategy. modes: nonempty unique subset of
              ft8, ft4. min_snr_db null or integer -50..49. Calls: unique, 3..13 of A-Z,
              0-9, /, at most 16 per list, never in both. No default selection policy is
              filled in. */
@@ -154,12 +168,12 @@ package WstxMcp {
              Exact published values; no tolerance or epsilon. The first candidate is
              chosen, once per publication. */
     }
-    enum def RunState { enum waiting; enum contact_active; enum stopped; }
+    enum def RunState { enum waiting; enum calling_cq; enum contact_active; enum stopped; }
     enum def StopReason {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
         enum context_changed; enum transmit_refused; enum provider_error;
-        enum time_limit;
+        enum time_limit; enum tx_watchdog; enum strategy_missing;
     }
     attribute def OperatingAutomation {
         attribute runState : RunState;
@@ -195,7 +209,11 @@ package WstxMcp {
              (the opposite of the contact's own; unknown period: not counted) without a
              change of (state, report_rcvd) since the selection or the last change counts
              unanswered, at max_unanswered_periods stop no_answer.
-             Stopped runs stay visible until the next start. */
+             Stopped runs stay visible until the next start. A run with strategy true
+             follows WstxStrategy::AutoStrategyRun instead of CandidateSelection and the
+             no_answer stop (calling_cq is its own CQ); a disarm by the Tx watchdog stops
+             tx_watchdog for every run; a refused enable_tx with code tx_watchdog stops
+             tx_watchdog. Run commands are automatic: they never reset the Tx watchdog. */
     }
     attribute def AutomationIndicator {
         doc /* Browser station bar, read-only, beside the transmit state: while a run is
@@ -214,7 +232,7 @@ package WstxMcp {
              policy_revision, run_revision, configuration (null or the configuration),
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
-             last_decision})}; existing auth and Origin rules of GET routes.
+             last_decision, role (null, call or cq), tries, skipped (calls))}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};
              start {expected_policy_revision, expected_run_revision, mode ft8|ft4,
@@ -227,7 +245,8 @@ package WstxMcp {
              policy_revision + 1. start: stale_revision on either revision, state_conflict
              run, not_configured, not_ready mode (configuration), not_ready receive,
              not_ready mode (live job or operating mode), not_ready auto_seq,
-             state_conflict contact, transmit_unavailable (no grant transport, no transmit
+             state_conflict contact, not_configured strategy (strategy true without an
+             active strategy), transmit_unavailable (no grant transport, no transmit
              owner or no current safety revision), stale_revision safety_revision; then
              run_revision + 1 and a new run id. stop: a current
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,

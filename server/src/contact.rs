@@ -384,6 +384,9 @@ pub struct Ctx {
     /// A current CL-022 grant of the requesting browser (transmit authority).
     pub granted: bool,
     pub mode: Option<Mode>,
+    /// #39: the command comes from station automation (WstxMcp::OperatingAutomation),
+    /// not from an operator: it never resets the Tx watchdog.
+    pub automatic: bool,
 }
 impl Ctx {
     fn grid4(&self) -> Option<String> {
@@ -747,7 +750,7 @@ impl Engine {
                         // only Tx6 is selected.
                         c.next = Slot::Tx6;
                         self.pending = None;
-                        if let Some(core) = core {
+                        if let Some(core) = core.filter(|_| !ctx.automatic) {
                             core.activity();
                         }
                         return Ok(());
@@ -844,6 +847,11 @@ impl Engine {
                 tx_minutes,
                 tune_seconds,
             } => {
+                // #39: only the operator in the browser may change the watchdogs; an MCP,
+                // UDP or automation source could otherwise lengthen a spent watchdog.
+                if ctx.automatic {
+                    return Err("operator_required");
+                }
                 if !(1..=99).contains(&tx_minutes) || !(1..=300).contains(&tune_seconds) {
                     return Err("out_of_range");
                 }
@@ -880,7 +888,17 @@ impl Engine {
                 } else {
                     None
                 };
-                core.arm(revision).map_err(|r| match r {
+                // #39: automation arms only within the watchdog time of the last
+                // operator action and never restarts the watchdog.
+                if ctx.automatic && core.watchdog_spent() {
+                    return Err("tx_watchdog");
+                }
+                let armed = if ctx.automatic {
+                    core.arm_automatic(revision)
+                } else {
+                    core.arm(revision)
+                };
+                armed.map_err(|r| match r {
                     TransmitRefusal::NotAuthorized => "stale_revision",
                     other => refusal_code(other),
                 })?;
@@ -932,8 +950,9 @@ impl Engine {
                 self.to_log.push((LogKind::LogQso, c.clone()));
             }
         }
-        // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog).
-        if let Some(core) = core {
+        // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog);
+        // automation is not operating activity (#39).
+        if let Some(core) = core.filter(|_| !ctx.automatic) {
             core.activity();
         }
         Ok(())

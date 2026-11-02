@@ -562,8 +562,9 @@ fn contact_command(state: &ProfileState, action: &str, extra: Value) -> Result<(
     if let (Some(o), Some(e)) = (body.as_object_mut(), extra.as_object()) {
         o.extend(e.clone());
     }
+    // #39: a UDP command is never an operator action for the Tx watchdog.
     contact
-        .operate(state, body, false)
+        .operate_as(state, body, false, true)
         .map(|_| ())
         .map_err(|(code, _)| code)
 }

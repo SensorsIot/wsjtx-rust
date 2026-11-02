@@ -2878,7 +2878,7 @@ package WstxRequirements {
     verification 'TC-020-003' {
         doc /* TC-020-003 — Operating automation
              CL-012-02, CL-012-03, CL-012-04
-             Setup: actual candidate router, contact engine and #9 transmit owner on the recording hardware double with virtual UTC (bench set 1 s after an even FT8 period E), injected FT8 or FT4 live job, hand-authored codec-packed rows, the MCP test client with one grant.
+             Setup: actual candidate router, contact engine and #9 transmit owner on the recording hardware double with virtual UTC (bench set 1 s after an even FT8 period E), injected FT8 or FT4 live job, hand-authored codec-packed rows, the MCP test client with one grant; each run start follows a browser action of the operator (#39: MCP requests never start the Tx watchdog).
              Steps: (a) pure CandidateSelection table: rows 0 CQ K1ABC 1500 Hz -12, 1 CQ W1AW 900 Hz -3, 2 CQ DL1XYZ 2100 Hz unknown SNR, 3 HB9BLA K1ABC -05, 4 CQ HB9BLA, 5 CQ W1AW 950 Hz -1, 6 CQ AA1AA 900 Hz -3, under each ranking, min_snr_db -5 and -3, allowed/blocked lists and a worked call; AutomationConfiguration bounds and every malformed key. (b) A row before start; configure strongest_snr / next_candidate / max_contacts 2 and start; publish K1ABC -12, W1AW -3, DL1XYZ unknown at E; partner "HB9BLA W1AW -05" at E+30 s, "HB9BLA W1AW RR73" at E+60 s; run the own period E+15 s to its end; publish W1AW -1 and K1ABC -12; stop; publish again; stop again. (c) A second start and a configure while running; selection, MCP Halt; retry of the original start command_id; start with the old revisions; a start over the left contact, cancel, start, browser Halt while waiting. (d) first_seen with max_unanswered_periods 2: two publications without the partner; restart; a new live job; restart; revoke the grant. (e) FT4: configure modes [ft4], start ft8 and ft4, publish two CQ rows. (f) max_contacts 1 with next_candidate, one completed contact; then completion_action stop, another completed contact, a later CQ. (g) A Halt injected between select_row and enable_tx. (h) max_run_minutes 1 with the step clock 59 s and 61 s ahead; max_run_minutes 480, start, a newer proof of the same grant, a CQ; start, clock 8 h - 60 s and 8 h + 1 s ahead. (i) While waiting: the operator's Enable Tx (CQ), then a CQ row; the operator's manual contact W1AW, then a CQ row of W1AW; while in the run's contact: operator cancel, operator Enable Tx off, operator replacement by DL1ABC. (j) start with safety_revision 4 while 3 is current; select_row refused with the profile callsign removed; enable_tx refused after transmit became unsupported.
              Expected (hand table): (a) first_seen K1ABC, W1AW, DL1XYZ, AA1AA; strongest_snr AA1AA, W1AW, K1ABC; lowest_frequency AA1AA, W1AW, K1ABC, DL1XYZ; min -5 and -3 W1AW, AA1AA; allowed K1ABC, DL1XYZ; blocked K1ABC, DL1XYZ, AA1AA; worked K1ABC excludes it; null unconfigured, every bound admitted and each malformed value refused with its field. (b) nothing selected before start or from the earlier publication; W1AW selected (candidates 2), replying, Tx1 "W1AW HB9BLA JN47", parity odd, Rx 900, armed; roger_report, signoff with Tx5 "W1AW HB9BLA 73"; after the own period completed, disarmed, last text "W1AW HB9BLA 73", run waiting with completed_contacts 1; K1ABC then selected and armed (W1AW worked); stop 202 stopped, reason stopped, disarmed, no Halt request; no later selection; second stop stale_request. (c) state_conflict run for both; armed then Halt: stopped/halted; retry 200 with the original receipt and no new run; stale_revision expected_run_revision; later rows select nothing and leave W1AW disarmed; state_conflict contact, then a waiting run ended halted by the browser Halt with the contact still cancelled. (d) W1AW selected; no_answer after the second publication, disarmed; context_changed and disarmed after the new job; authority_lost with nothing selected; MCP then 401. (e) not_ready mode for ft8; FT4 W1AW selected, Tx4 rr73, armed. (d) also: own (odd) period publications are not counted (unanswered 0 then 1 after the first even one, no_answer after the second even one). (f) limit_reached with completed_contacts 1; completed, no later selection, disarmed. (g) stopped halted, disarmed, HaltTransmit count + 2, PTT never keyed, no later arming. (h) waiting at 59 s, time_limit at 61 s; authority_lost with nothing selected after the newer proof; waiting at 8 h - 60 s, authority_lost at 8 h + 1 s. (i) contact_changed with the operator's CQ still calling and armed and not taken over by the later row; contact_changed with the manual_entry contact kept; contact_changed after cancel; transmit_stopped without a HaltTransmit; contact_changed with DL1ABC disarmed. (j) 409 stale_revision safety_revision; provider_error with no contact; transmit_refused with the selected contact cancelled (no partner left), disarmed, PTT never used.
              2 — Isolated automated functional tests; Windows development PC, simulated FT4/FT8 traffic and real station services; no RF. */
@@ -3083,5 +3083,181 @@ package WstxRequirements {
     dependency CL_045_01_verified_by_TC_045_002 from 'CL-045-01' to 'TC-045-002';
     dependency CL_045_02_verified_by_TC_045_002 from 'CL-045-02' to 'TC-045-002';
     dependency CL_045_03_verified_by_TC_045_002 from 'CL-045-03' to 'TC-045-002';
+
+    // #39 Strategy engine: Highlight and Auto, editor popup, directed-CQ rule (decisions
+    // on #37/#39/#42, 2026-11-01); detailed contract in WstxStrategy.
+    requirement 'CL-039-01' {
+        doc /* Named strategies are a station setting of the selected profile: strategy.json beside profile.json holds {continent, active, highlight, strategies} with up to 16 strategies, each a name, 1..8 rules in priority order of 0..12 negatable conditions, a sort, Treat 73 as CQ, and the Auto settings (role, switch after, skip after, callers). GET /strategy and PUT /strategy (revision-checked, exact keys) read and save it; my continent for the directed-CQ rule is configurable there (Settings > General) and otherwise derived from the locator. Details: WstxStrategy::StrategyConfiguration, Strategy, Condition, StrategyHttp. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
+    }
+    dependency CL_039_01_to_FR_007 from 'CL-039-01' to 'FR-007';
+    dependency CL_039_01_to_FR_016 from 'CL-039-01' to 'FR-016';
+    requirement 'CL-039-02' {
+        doc /* One station evaluator gives each decoded standard message a verdict: the first rule whose conditions all hold (message type, new call or grid ever or on this band and mode from the internal log, continent, distance and azimuth from the message grid, SNR, DT, audio frequency, call prefix, CQ target, band; each negatable) and the display order by rank, then strongest, weakest, furthest or newest. POST /strategy/evaluate returns the verdicts of retained live records for the saved strategy or a draft, with the reason when asked; the browser never evaluates a strategy itself. Details: WstxStrategy::Condition, Verdict, ContinentOfGrid, StrategyHttp. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/logbook.rs; server/src/recording.rs";
+    }
+    dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
+    dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
+    requirement 'CL-039-03' {
+        doc /* Hard rule before every strategy: a directed CQ not addressed to my continent ("CQ <continent>" of another continent; "CQ DX" from my own or an unknown continent) is shown greyed, never matches and is never answered by Auto. Other CQ targets (TEST, POTA, a country such as CQ JA, a number) are answered by Auto only when the matched rule asks for that target with a non-negated CQ-target condition; Highlight leaves them to the rules. Details: WstxStrategy::DirectedCqRule, AutoStrategyRun. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; client/contact.js";
+    }
+    dependency CL_039_03_to_FR_007 from 'CL-039-03' to 'FR-007';
+    requirement 'CL-039-04' {
+        doc /* The strategy element above Band Activity offers the strategy name, the editor and Highlight | Auto. Highlight colours matching decodes with their rule, sorts them to the top of their period and greys directed CQs not for me, from the station's verdicts. The editor is a popup with its own HALT that keeps receive running, previews the unsaved draft against the latest period with the reason per decode, and applies on Save at once; choosing or saving never restarts receive. Details: WstxStrategy::HighlightView, StrategyEditor; WstxOperatingLayout::OperatingScreen. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_039_04_to_FR_010 from 'CL-039-04' to 'FR-010';
+    dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
+    requirement 'CL-039-05' {
+        doc /* Auto answers only strategy matches through the existing station automation and contact engine (no second engine): Auto Call answers the best matching CQ (with Treat 73 as CQ also a station that just ended a QSO, keeping my Tx frequency), Auto CQ calls CQ and answers the best caller (not after its RR73/73), Alternate switches between them after N consecutive tries without a contact; a station unanswered after N calls is skipped for the run; calls must pass the callsign guard. Auto never runs without the active strategy, asks once per page session, shows its state in the button, cannot switch the strategy while it runs, and stops by HALT/Esc, a second click, a manual contact change, the Tx watchdog or the existing automation stops. No QSO or time limit is offered. Details: WstxStrategy::AutoStrategyRun, SaneCall; WstxMcp::OperatingAutomation. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
+    }
+    dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
+    dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
+    requirement 'CL-039-06' {
+        doc /* The Tx watchdog counts from the last operator action and is never paused or reset by automation. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser); commands of an automation run, MCP requests (including starting or restarting a run) and UDP commands never reset or extend it; their Enable Tx keeps counting from the last browser action and is refused tx_watchdog when that time is spent, until a human acts in the browser; only the browser may change the watchdog setting (set_watchdogs from MCP, UDP or automation is refused operator_required); a changed message text of a contact they armed does not reset it. HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/udp.rs";
+    }
+    dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
+    requirement 'CL-039-07' {
+        doc /* Outstanding, issue #39 later slices: DXCC entity, CQ/ITU zone, new DXCC and rarest sort from cty.dat; Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
+    verification 'TC-039-008' {
+        doc /* TC-039-008 — Later strategy slices (outstanding)
+             CL-039-07
+             Setup: actual candidate router with a pinned cty.dat fixture and hand-authored rows.
+             Steps: evaluate DXCC, zone and new-DXCC conditions and the rarest sort; Alert, ignore lists, Pounce and auto-QRM stop scenarios.
+             Expected: defined when the slice is prepared; until then these conditions are refused at PUT /strategy.
+             2 — Isolated automated functional tests; Windows development PC; not implemented. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-039-07';
+        }
+    }
+    dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    verification 'TC-039-001' {
+        doc /* TC-039-001 — Strategy configuration is exact
+             CL-039-01
+             Setup: hand-written configuration JSON with one strategy "NA first" (two rules), the parser only.
+             Steps: parse the valid configuration and serialize it; parse variants each with one refused value: continent XX, active not listed, highlight 1, a padded or empty name, no rules, sort rarest, skip_after 0, switch_after 21, auto_role pounce, a non-boolean flag, condition kind dxcc, message value any, a duplicated or empty continent list, two names equal ignoring case, snr min > max, a range with both bounds null, an extra condition key, 17 strategies; an azimuth range 300..60.
+             Expected: the valid one round-trips to the same JSON with role alternate; each refusal names exactly its field path (e.g. strategies[0].rules[0].conditions[1].values[1]); the wrapping azimuth range is accepted.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-01';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_039_01_verified_by_TC_039_001 from 'CL-039-01' to 'TC-039-001';
+    verification 'TC-039-002' {
+        doc /* TC-039-002 — Evaluator, continent and directed-CQ tables
+             CL-039-02, CL-039-03
+             Setup: hand-authored codec-packed rows for HB9BLA JN47AA (continent EU) on 40m: CQ K1ABC FN42 -12, CQ DL1XYZ JO62 -3, CQ NA W1AW FN31 -5, CQ EU G4ABC IO91 -8, CQ DX OH1AA KP20 -1, CQ DX JA1XYZ PM95 -15, W1AW K1ABC RR73 -6, HB9BLA VK2ABC QF56 -20, CQ TEST N1MM FN31 -2; log facts K1ABC worked on another band, DL1XYZ and JO62 worked here; geography from the square centres computed independently (JN47AA-FN42 5989 km, bearings FN42 296, IO91 311, JO62 28, PM95 38 degrees).
+             Steps: continent of JN47AA FN42 FN31 KP20 PM95 QF56 GG66 JJ00 JB59 ZZ99; DirectedCqRule for EU/NA/DX/TEST/POTA with known and unknown continents; strategy [CQ and continent NA], [CQ] with each sort; Treat 73 as CQ; an empty rule; my continent unknown; each condition kind with its expected matching set and its negation (the complement among the CQs); the reasons.
+             Expected (hand table): EU NA NA EU AS OC SA AF AN and none; ranks 0,1,grey,1,grey,1,none,none,0; strongest order 8,0,1,3,5, weakest 0,8,5,3,1, newest 8,0,5,3,1, furthest ends 5,3,1; with Treat 73 as CQ the RR73 has rank 1 and a call to me is never cq-like; an empty rule leaves only the two greyed rows unmatched; unknown continent greys rows 2,3,4,5; each condition set and complement as written in the test; reasons "no match (rule 1: SNR 0.. dB)" and "CQ NA is not addressed to my continent (EU)"; the callsign guard refuses K1, ABCDE and W1AW/R.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-02';
+            verify 'CL-039-03';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_039_02_verified_by_TC_039_002 from 'CL-039-02' to 'TC-039-002';
+    dependency CL_039_03_verified_by_TC_039_002 from 'CL-039-03' to 'TC-039-002';
+    verification 'TC-039-003' {
+        doc /* TC-039-003 — Strategy store, routes and evaluation
+             CL-039-01, CL-039-02, CL-039-03
+             Setup: actual station router on a disposable selected HTTPS profile (HB9BLA, JN47AA) with one grant, the browser cookie and Origin; injected FT8 live job with rows CQ K1ABC FN42, CQ NA W1AW FN31, HB9BLA G4ABC IO91, CQ DL1XYZ JO62.
+             Steps: GET /strategy; PUT a configuration; read strategy.json; open a new owner; PUT with a stale revision, another profile, another boot, v 2, an extra key, a foreign Origin; GET without credentials; PUT continent AS; evaluate the saved strategy, a draft with explain, another job id, a 2049-record range.
+             Expected: default {null,null,false,[]} revision 0 with my_continent EU; revision 1 and the file {schema_version 1, profile_id, revision 1, configuration}; the new owner reads it; 409 stale_revision, 403 wrong_profile, 409 state_conflict boot_id, 400 unsupported_version, 400 invalid_request, 403, 401; my_continent AS; verdicts [{0,rank 0},{3,rank 1},{1,grey}] in display order; the draft lists all four with the call to me first ("matches rule 1"); 409 stale_request; 400 next_sequence; no PTT exchange.
+             2 — Isolated automated functional tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-01';
+            verify 'CL-039-02';
+            verify 'CL-039-03';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_039_01_verified_by_TC_039_003 from 'CL-039-01' to 'TC-039-003';
+    dependency CL_039_02_verified_by_TC_039_003 from 'CL-039-02' to 'TC-039-003';
+    dependency CL_039_03_verified_by_TC_039_003 from 'CL-039-03' to 'TC-039-003';
+    verification 'TC-039-004' {
+        doc /* TC-039-004 — Auto strategy runs
+             CL-039-03, CL-039-05
+             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); Auto started from the browser path (cookie grant) with the strategy "NA first" (rule 1 CQ from NA, rule 2 any CQ, Treat 73 as CQ, skip after 2, switch after 2).
+             Steps: (a) start without a strategy; save the strategy as role call; start; PUT a configuration without active; publish CQ NA W1AW (strongest), CQ JA JA1XYZ, CQ 290 N1MM, CQ DL1XYZ, CQ K1ABC; two empty partner periods; publish CQ K1ABC and W1AW DL1XYZ RR73 at 1700 Hz; browser HALT. (b) role alternate: publish only CQ NA W1AW, then an empty period; tick; publish HB9BLA OH1AA RR73 and HB9BLA K1ABC FN42; R-05; 73; tick twice; two empty partner periods.
+             Expected: (a) not_configured strategy; 409 state_conflict active; K1ABC selected and armed (replying, role call, 2 candidates; W1AW, JA1XYZ and N1MM never); after two unanswered periods disarmed, waiting, skipped [K1ABC], no stop reason; DL1XYZ selected (Tx1 "DL1XYZ HB9BLA JN47", armed) with Rx 1700 and Tx unchanged; HALT stops halted. (b) after two tries an own CQ "CQ HB9BLA JN47" armed (calling_cq, role cq); K1ABC answered (report, armed), never OH1AA; rogers, completed; calling again with 1 completed contact; after two empty partner periods waiting in role call, disarmed. No PTT exchange in either case.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-03';
+            verify 'CL-039-05';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_039_03_verified_by_TC_039_004 from 'CL-039-03' to 'TC-039-004';
+    dependency CL_039_05_verified_by_TC_039_004 from 'CL-039-05' to 'TC-039-004';
+    verification 'TC-039-005' {
+        doc /* TC-039-005 — The Tx watchdog is never reset by automation
+             CL-039-06
+             Setup: as TC-039-004 with the Tx watchdog set to 1 minute and role cq; for the unit case the #9 Core on the hardware double.
+             Steps: start Auto at E+1 s; transmit the own CQ at E+15 s; publish a caller; transmit the report at E+45 s; move UTC to E+62 s; cancel and start Auto again. Second case, role call: start, let 61 s pass without a candidate, publish a matching CQ. Third case (MCP and browser): an MCP Enable Tx before any browser action; a browser action (watchdog 1 min), an MCP run start at 40 s and a CQ at 61 s; a browser action, MCP set_frequency at 20, 40 and 55 s, an MCP Enable Tx at 61 s, MCP set_watchdogs 99 min, an MCP Enable Tx; a browser action, MCP Enable Tx and off, browser actions at 0 and 50 s, checks at 61 and 111 s. Fourth case (UDP): a browser-path action (watchdog 1 min), a UDP Reply and Free Text from an accepting target at 50 s, check at 61 s. Unit: arm automatically before any operator action is recorded; mark activity, set the watchdog to 2 min, wait 90 s, arm automatically, wait 31 s; disarm and arm as operator.
+             Expected: the CQ and the report (new texts) never restart it: at E+62 s the transmitter is disarmed by the watchdog mid-QSO, the run stops tx_watchdog, tx_expired true and last cause tx_watchdog; the new start (an operator action) arms again. Second case: no arm, the run stops tx_watchdog, no contact is left selected, no PTT. Third case: refused tx_watchdog; the MCP run stops tx_watchdog unarmed; still within the minute at 55 s, spent and refused tx_watchdog at 61 s, set_watchdogs refused operator_required and the next Enable Tx still refused tx_watchdog; accepted after the browser action, not spent at 61 s (11 s after the last browser action), spent at 111 s. Fourth case: both applied, spent at 61 s. Unit: watchdog_spent before any action; remaining 1 minute after the automatic arm (counted from the mark), spent after 121 s; an operator arm restarts it at 2 minutes.
+             2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-06';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; server/src/udp_tests.rs";
+    }
+    dependency CL_039_06_verified_by_TC_039_005 from 'CL-039-06' to 'TC-039-005';
+    verification 'TC-039-006' {
+        doc /* TC-039-006 — Strategy element, Highlight, editor popup and Auto in the browser
+             CL-039-01, CL-039-04, CL-039-05
+             Setup: actual isolated server and Chromium at 1366x768 (and 360x740 for the popup); routed fixtures: an FT8 live job with CQ K1ABC FN42, CQ NA W1AW FN31, CQ DL1XYZ JO62, a strategy view (revision 4, "DX first", Highlight off), station verdicts [2 rank 0, 0 rank 1, 1 grey] (with reasons when explain), an automation owner recording commands, the contact snapshot (safety revision 7, watchdog 6 min). A second case uses the real station store.
+             Steps: wait; click Highlight; open the editor; read the preview; resize to 360 px; change the sort to weakest; tick "not" on the first condition; Save; Close; click Auto, Cancel; click Auto, Start Auto; announce automation.state; click Auto again. Second case: choose continent AS in Settings > General.
+             Expected: no evaluation request while Highlight is off; one PUT {expected_revision 4, highlight true}; one evaluation {the live identity, 0..3, strategy null, explain false}; rows DL1XYZ (rule 1), K1ABC (rule 2), W1AW greyed; the popup HALT has the top-bar state; preview rows "#1 CQ DL1XYZ JO62 matches rule 1", "#2 ...", "— CQ NA W1AW FN31 CQ NA is not addressed to my continent (EU)" from a draft evaluation with explain; no horizontal overflow at 360 px; an edit re-runs the preview; Save sends exactly the edited strategy at expected_revision 5; the confirmation names the strategy, role and watchdog; Cancel sends nothing; Start sends configure {strategy true, the maxima} then start {policy 1, run 0, ft8, safety 7}; the button shows "Auto · waiting" pressed and the name is locked; the second click sends stop with the run id; no enable_tx from the browser. Second case: PUT saved continent AS (my_continent AS) and no browser storage key.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-01';
+            verify 'CL-039-04';
+            verify 'CL-039-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_01_verified_by_TC_039_006 from 'CL-039-01' to 'TC-039-006';
+    dependency CL_039_04_verified_by_TC_039_006 from 'CL-039-04' to 'TC-039-006';
+    dependency CL_039_05_verified_by_TC_039_006 from 'CL-039-05' to 'TC-039-006';
+    verification 'TC-039-007' {
+        doc /* TC-039-007 — Live Highlight and Auto on HB9BLA
+             CL-039-03, CL-039-04, CL-039-05, CL-039-06
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 5 minutes (at most 10 CQ periods, the operator's limit of 10 unanswered calls).
+             Steps: create a strategy (rule 1 CQ and not continent EU, rule 2 CQ; Treat 73 as CQ) and turn Highlight on; then Auto in role cq; then role call.
+             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after at most 10 CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
+             5 — Live with RF on the station, operator consent; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-039-03';
+            verify 'CL-039-04';
+            verify 'CL-039-05';
+            verify 'CL-039-06';
+        }
+    }
+    dependency CL_039_03_verified_by_TC_039_007 from 'CL-039-03' to 'TC-039-007';
+    dependency CL_039_04_verified_by_TC_039_007 from 'CL-039-04' to 'TC-039-007';
+    dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
+    dependency CL_039_06_verified_by_TC_039_007 from 'CL-039-06' to 'TC-039-007';
 
 }

@@ -438,9 +438,16 @@ package WstxContact {
              0 = disabled is not offered; a safety bound always applies. It counts only
              while Enable Tx is on (counter 0 when off) in whole minutes and resets on
              operator activity: any accepted operating request of this station from
-             the browser or MCP (select, entry, message/slot choice, frequency, report,
+             the browser (select, entry, message/slot choice, frequency, report,
              Enable Tx, Auto Seq, Log), and the start of a transmission whose text
-             differs from the previous one (MW ~8139). Mouse movement the server cannot
+             differs from the previous one (MW ~8139). DIFFERENT (#39,
+             WstxStrategy::WatchdogFromOperator): only a human action in the browser is
+             operator activity; automation, MCP requests (including a run start) and UDP
+             commands never reset or extend the watchdog, their Enable Tx counts from the
+             last browser action and is refused tx_watchdog when that time is spent, and
+             a changed text of a contact armed by them does not reset it; only the
+             browser may set the watchdogs (set_watchdogs from another source is refused
+             operator_required). Mouse movement the server cannot
              observe is not activity. At expiry the server sends #9's halt (the
              transmission stops, as MW ~7690/7763), turns Enable Tx off, keeps the
              contact state, and shows "Tx watchdog expired" until the next Enable Tx.
@@ -756,6 +763,7 @@ package WstxContact {
         enum out_of_range; enum profile_incomplete; enum transmit_unavailable;
         enum redecode_unavailable; enum log_invalid_field; enum log_conflict;
         enum import_failed; enum storage_unavailable; enum snapshot_limit;
+        enum tx_watchdog; enum operator_required;
     }
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;

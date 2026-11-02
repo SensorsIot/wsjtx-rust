@@ -41,6 +41,7 @@ mod selection_http;
 mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
 mod spectrum;
+mod strategy;
 mod transmit_http;
 #[cfg(test)]
 mod transmit_http_tests;
@@ -442,6 +443,8 @@ fn router(state: App) -> Router {
         .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/automation", get(automation::snapshot))
         .route("/automation/command", post(automation::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/strategy", get(strategy::snapshot).put(strategy::put).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
+        .route("/strategy/evaluate", post(strategy::evaluate_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))

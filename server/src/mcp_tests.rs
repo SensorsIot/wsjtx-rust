@@ -313,6 +313,18 @@ impl Mcp {
             .extend(extra.as_object().unwrap().clone());
         b
     }
+    /// A human action in the browser (cookie and Origin): the operator action the Tx
+    /// watchdog counts from (#39). MCP requests never are one.
+    pub(crate) async fn operator_present(&self) {
+        let c = self.browser("GET", "/contact", None).await.json;
+        let body = self.command(
+            c["contact_revision"].as_u64().unwrap(),
+            "set_watchdogs",
+            json!({"tx_minutes":c["settings"]["tx_minutes"],"tune_seconds":c["settings"]["tune_seconds"]}),
+        );
+        let r = self.browser("POST", "/contact/command", Some(body)).await;
+        assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    }
     pub(crate) fn tick(&self) {
         contact_http::station_tick(&self.state);
     }
@@ -846,7 +858,12 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
     assert_eq!(after["transmit"]["arm_state"], "disarmed");
     assert_eq!(f.read("automation").await["policy_revision"], 0);
     assert_eq!(f.keys(), 0);
-    // A valid MCP Enable Tx uses this credential's grant (CL-022), once per command_id.
+    // A valid MCP Enable Tx uses this credential's grant (CL-022), once per command_id,
+    // within the Tx watchdog time of the operator's last browser action (#39).
+    f.operator_present().await;
+    let revision = f.read("contact").await["contact_revision"]
+        .as_u64()
+        .unwrap();
     let enable = f.command(
         revision,
         "enable_tx",

@@ -288,6 +288,12 @@ pub struct Core<H: Hardware> {
     tx_minutes: u32,
     tune_seconds: u32,
     watchdog_from: Option<i64>,
+    /// #39: UTC ms of the last operator action (operator arm, accepted operator activity
+    /// or an automation start). Automation never moves it.
+    operator_mark: Option<i64>,
+    /// #39: armed by automation; the watchdog then counts from `operator_mark` and a
+    /// changed message text does not reset it.
+    automatic: bool,
     tx_expired: bool,
     ever_keyed: bool,
     startup_release: StartupRelease,
@@ -371,6 +377,8 @@ impl<H: Hardware> Core<H> {
             tx_minutes: 6,
             tune_seconds: 90,
             watchdog_from: None,
+            operator_mark: None,
+            automatic: false,
             tx_expired: false,
             ever_keyed: false,
             startup_release: StartupRelease::Pending,
@@ -477,8 +485,28 @@ impl<H: Hardware> Core<H> {
         self.armed_revision = Some(safety_revision);
         self.refusal = None;
         self.tx_expired = false;
-        self.watchdog_from = Some(self.hardware.now_utc_ms());
+        let now = self.hardware.now_utc_ms();
+        self.watchdog_from = Some(now);
+        self.operator_mark = Some(now);
+        self.automatic = false;
         Ok(())
+    }
+    /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation. The
+    /// Tx watchdog keeps counting from the last operator action; it is never reset here.
+    pub fn arm_automatic(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
+        let mark = self.operator_mark;
+        self.arm(safety_revision)?;
+        self.operator_mark = mark;
+        self.watchdog_from = mark;
+        self.automatic = true;
+        Ok(())
+    }
+    /// True when no operator action is recorded or the Tx watchdog has run out since it:
+    /// automation may then not arm.
+    pub fn watchdog_spent(&self) -> bool {
+        let now = self.hardware.now_utc_ms();
+        self.operator_mark
+            .is_none_or(|m| now - m >= i64::from(self.tx_minutes) * 60_000)
     }
     /// Operator or contact disarm; no new request is sent.
     pub fn disarm(&mut self, cause: DisarmCause) {
@@ -486,9 +514,12 @@ impl<H: Hardware> Core<H> {
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
     /// Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog).
+    /// It is also the operator mark automation counts from (#39).
     pub fn activity(&mut self) {
+        let now = self.hardware.now_utc_ms();
+        self.operator_mark = Some(now);
         if self.arm == ArmState::Armed {
-            self.watchdog_from = Some(self.hardware.now_utc_ms());
+            self.watchdog_from = Some(now);
         }
     }
     pub fn set_watchdogs(
@@ -889,7 +920,10 @@ impl<H: Hardware> Core<H> {
                 self.fail_current(failure, DisarmCause::DeviceLost);
                 return;
             }
-            if self.last_text.as_deref() != Some(text.as_str()) && self.arm == ArmState::Armed {
+            if self.last_text.as_deref() != Some(text.as_str())
+                && self.arm == ArmState::Armed
+                && !self.automatic
+            {
                 self.watchdog_from = Some(now);
             }
             self.last_text = Some(text);
