@@ -399,6 +399,9 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
   // (Windows access denied) is named in the status and its exception chip.
   const held=await page.evaluate(()=>{catStatus={...catStatus,error:'port_in_use'};catShow();return document.querySelector('#cat-status').textContent;});
   assert.match(held,/^CAT unavailable · COM250 in use by another program · automatic retry in [0-8] s$/);
+  // The URL endpoint form names its port, not digits inside the icom7300 scheme.
+  const url=await page.evaluate(()=>{const c=profileData.settings.control,old=c.endpoint;c.endpoint='icom7300://COM3?baud=9600&radio=94&controller=E0';catShow();const text=document.querySelector('#cat-status').textContent;c.endpoint=old;catShow();return text;});
+  assert.match(url,/^CAT unavailable · COM3 in use by another program · automatic retry in [0-8] s$/);
   const s=(await request('/receive/selection')).body;assert.ok(s.radio.connection_generation>=1,'the station attempted automatically');
   assert.equal(s.radio.observations.frequency.confirmed,false);
   assert.equal(await page.locator('#op-dial').getAttribute('data-fresh'),'false');
@@ -443,7 +446,7 @@ function cadenceSource(bytes){
   // (autocrlf CRLF or LF). Pin the LF-normalized text, the same as git's content (#8).
   const source=Buffer.from(bytes).toString('utf8').replace(/\r\n/g,'\n');
   const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
-  assert.equal(sha256,'dec0da622a851126645c439d15e24dece753075f1bb89fde87d0d54c33f0fcbb','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'7599bb3a4cdc54a687526db1b0846e03d3d1150af806c2d8ad5883ad63bbe2ac','review caller/acceptance mapping when recording.js changes');
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   const mapping={sha256,valid,fetchLine:797,timerLine:872},lines=source.split('\n');

@@ -2664,7 +2664,8 @@ package WstxRequirements {
              labelled stale/unconfirmed unless the WS is connected and its fact is
              confirmed in ready. The lifecycle reports a serial open refused because
              the port is held (Windows access denied or sharing violation, or another
-             station's ownership lock) as error port_in_use, and the browser names it
+             station's ownership lock; also the rare ambiguous case of two serial
+             interfaces with the same port name) as error port_in_use, and the browser names it
              '<port> in use by another program' (for example 'COM3 in use by another
              program'); other unavailable causes keep radio_unavailable. Still target:
              Thin/Off accounted-traffic companion

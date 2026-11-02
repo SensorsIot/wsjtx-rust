@@ -907,7 +907,7 @@ addEventListener('station-stale',()=>chipsShow());
 function catShow(){
   const status=document.querySelector('#cat-status');if(!status)return;
   const connected=connection.dataset.state==='connected',v=connected?catStatus:null,confirm=document.querySelector('#cat-confirm');
-  const port=String(profileData?.settings.control.endpoint??'').match(/COM[0-9]{1,3}/i)?.[0].toUpperCase(),reason=v?.error==='port_in_use'?` · ${port??'serial port'} in use by another program`:v?.error?` · ${v.error}`:'';
+  const port=String(profileData?.settings.control.endpoint??'').match(/\bCOM[0-9]{1,3}\b/i)?.[0].toUpperCase(),reason=v?.error==='port_in_use'?` · ${port??'serial port'} in use by another program`:v?.error?` · ${v.error}`:'';
   const texts={disabled:'CAT disabled',unauthorized:'CAT waiting for station authorization',commissioningRequired:'CAT waiting · receive-only setup not confirmed',
     waitingForDevice:`CAT waiting for radio${reason}`,connecting:`CAT connecting${reason}`,ready:'CAT ready · fresh readback',
     retryWaiting:`CAT unavailable${reason} · automatic retry in ${Math.ceil((v?.retry_after_ms??0)/1000)} s`,closing:`CAT closing${reason}`,

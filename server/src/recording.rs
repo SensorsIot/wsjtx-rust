@@ -1483,6 +1483,7 @@ impl Recording {
         }
         self.refresh_radio_cache();
         if observed == Observed::Ready
+            && action == Action::None
             && let Gate::Eligible { key, .. } = gate
         {
             self.adopt_readback_selection(key.profile_revision);
