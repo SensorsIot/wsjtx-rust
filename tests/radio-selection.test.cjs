@@ -100,6 +100,45 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   await t.test('accepted socket closure or replacement during segment refused',()=>{const sockets=coldSockets();sockets[2].closed=80;assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/remains live/);sockets.push({index:3,opened:81,closed:null});assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/new socket/);});
   await t.test('new measured socket refused despite otherwise valid context',()=>{const sockets=coldSockets();sockets.push({index:3,opened:80,closed:null});assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/new socket/);});
   await t.test('wrong baseline socket index or time refused',()=>{for(const change of [{index:0},{index:3},{at:25},{at:121},{end:null}])assert.throws(()=>cadenceSocketSegment(coldSockets(),{...socketBaseline(),...change}));const sockets=coldSockets();sockets[2].index=1;assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/identity/);});
+  // #8 gate flake mode (b): catSync's automatic CAT status read (POST, no operator action)
+  // landed after the acceptance baseline and was counted as a station mutation (1 !== 0).
+  const expectedIdentity={profile_id:'profile-A',boot_id:'boot-A',profile_revision:3};
+  const qualified=(transfers,withAction=true)=>{
+    const event={action:false,epoch:0,connected:true,sameSocket:true,acceptedSequence:20,...expectedIdentity};
+    const events=[{...event,at:1000},...(withAction?[{...event,at:2000,action:true,epoch:1}]:[]),{...event,at:9000,epoch:withAction?1:0}];
+    return {acceptance:{socketBaseline:{index:0,count:1,at:40,end:120},expected:expectedIdentity,events},sockets:[{index:0,opened:10,closed:null}],profileBodies:[],transfers};
+  };
+  const select={method:'POST',route:'/receive/select',wallStarted:2001},catStatusRead={method:'POST',route:'/authorization/v1/status',wallStarted:1500};
+  await t.test('automatic CAT status read after baseline is not a station mutation',()=>{
+    cadenceQualification(qualified([select]));
+    cadenceQualification(qualified([catStatusRead,select]));
+    cadenceQualification(qualified([catStatusRead],false));
+  });
+  await t.test('real unaccounted mutations still refused beside a CAT status read',()=>{
+    assert.throws(()=>cadenceQualification(qualified([catStatusRead,select,{...select,wallStarted:3000}])),/exactly one/);
+    assert.throws(()=>cadenceQualification(qualified([catStatusRead,{method:'POST',route:'/receive/start',wallStarted:1500}],false)),/exactly one/);
+    assert.throws(()=>cadenceQualification(qualified([{method:'POST',route:'/receive/start',wallStarted:1500}])),/unaccounted/);
+    assert.throws(()=>cadenceQualification(qualified([{method:'PUT',route:'/profile',wallStarted:1500}],false)),/exactly one/);
+    assert.throws(()=>cadenceQualification(qualified([select],false)),/exactly one/);
+  });
+  // #8 gate flake mode (a): a Cold-load selection read hit the page's own 10 s timeout
+  // (net::ERR_ABORTED) before the baseline and failed the join, though the page superseded it.
+  await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
+    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
+    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:797},{url:origin+'/recording.js',lineNumber:872}]}};
+    const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
+    const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
+    const seen=(abort={})=>{
+      const a={route:'/receive/selection',method:'GET',started:1000,ended:11000,wallStarted:1000,wallEnded:null,failure:'net::ERR_ABORTED',initiator,...abort};
+      const ok={route:'/receive/selection',method:'GET',started:a.ended+200,ended:a.ended+800,wallStarted:a.ended+200,wallEnded:a.ended+800,initiator};
+      return {transfers:[a,ok],reads:[{started:a.started,ended:a.ended,body:null,failed:true},{started:ok.started,ended:ok.ended,body:snapshot,status:200}],acceptance:{socketBaseline:{at:20000},events:[{at:90000}]}};
+    };
+    assert.equal(cadenceJoin(seen(),origin,mapping).length,2);
+    assert.throws(()=>cadenceJoin(seen({started:15000,ended:25000,wallStarted:15000}),origin,mapping),/ERR_ABORTED/,'abort ending inside the qualified segment');
+    assert.throws(()=>cadenceJoin(seen({ended:1300}),origin,mapping),/ERR_ABORTED/,'abort before the page timeout is not the page superseding its read');
+    assert.throws(()=>cadenceJoin(seen({failure:'net::ERR_CONNECTION_RESET'}),origin,mapping),/ERR_CONNECTION_RESET/);
+    const last=seen();last.transfers.pop();last.reads.pop();assert.throws(()=>cadenceJoin(last,origin,mapping),/followed by a new read/);
+  });
 });
 
 test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
@@ -374,12 +413,26 @@ function selectionNetworkSummary(transfers,start,end){
 // station mutation; every other non-GET request still counts.
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
-function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&r.route==='/contact/worked');}
+// Reads the client sends as POST are not station mutations: /contact/worked looks up worked
+// status, and /authorization/v1/status (catSync, sent on a CAT identity/state change, never by an
+// operator action) only reads the CAT condition and receive state (authorization_http.rs
+// Operation::Status). Every other non-GET request, including /receive/select, still counts (#8).
+const readOnlyPosts=['/contact/worked','/authorization/v1/status'];
+function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&readOnlyPosts.includes(r.route));}
+// A Cold-load selection read the page itself abandoned: its frozen AbortSignal.timeout(10000)
+// fired (CDP lifetime >= 9500 ms, net::ERR_ABORTED) and the read ended before the accepted
+// baseline, so the page's next read superseded it and nothing it carried reaches the qualified
+// segment. Any other failure, any abort ending inside the segment, or an abort with no later read
+// still fails the join (#8).
+function supersededColdRead(transfer,read,baseline){
+  return transfer.failure==='net::ERR_ABORTED'&&read?.failed===true&&!read.body&&transfer.ended!==null&&Number.isFinite(baseline?.at)&&transfer.ended<baseline.at&&transfer.ended-transfer.started>=9500;
+}
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
   const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
   assert.equal(sha256,'46ff5ccab4ebac419663aa3383ab0bb9795331d10390c7e37e69210dd2cc460d','review caller/acceptance mapping when recording.js changes');
   const source=bytes.toString('utf8');
+  assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   return {sha256,valid,fetchLine:797,timerLine:872};
 }
@@ -477,9 +530,11 @@ function cadenceJoin(seen,origin,mapping){
     assert.ok(index===0||transfer.started>network[index-1].started,'unambiguous CDP admission order');
     assert.ok(index===0||read.started>seen.reads[index-1].started,'unambiguous page admission order');
     assert.ok(Math.abs(transfer.started-read.started)<1000,'ordered page/CDP admission agrees');
-    assert.equal(transfer.failure,undefined);
+    const superseded=transfer.failure!==undefined&&supersededColdRead(transfer,read,seen.acceptance?.socketBaseline);
+    if(superseded)assert.ok(index<network.length-1,'a superseded Cold read is followed by a new read');
+    else assert.equal(transfer.failure,undefined);
     if(read.body){assert.equal(read.status,200);assert.ok(mapping.valid(read.body),'actual selection body passes frozen browser schema');assert.ok(Buffer.byteLength(JSON.stringify(read.body))<=3072);}
-    else assert.equal(index,network.length-1,'only final in-flight/observer response may be incomplete');
+    else if(!superseded)assert.equal(index,network.length-1,'only final in-flight/observer response may be incomplete');
     const previous=network[index-1];if(previous)assert.ok(previous.ended!==null&&previous.ended<=transfer.started,'no transport overlap');
     const priorBody=seen.reads[index-1]?.body;
     if(priorBody&&read.body&&priorBody.boot_id===read.body.boot_id)assert.ok(read.body.snapshot_sequence>=priorBody.snapshot_sequence,'fail closed on a snapshot the browser would reject as old');
