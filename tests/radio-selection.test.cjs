@@ -76,6 +76,12 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
+  await t.test('frozen source pin is line-ending neutral but still content-exact',async()=>{
+    const lf=Buffer.from((await fs.readFile(path.join(__dirname,'../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),'utf8');
+    const crlf=Buffer.from(lf.toString('utf8').replace(/\n/g,'\r\n'),'utf8');
+    assert.notDeepEqual(lf,crlf);assert.equal(cadenceSource(crlf).sha256,cadenceSource(lf).sha256);
+    assert.throws(()=>cadenceSource(Buffer.concat([lf,Buffer.from('\n')])),/review caller/,'any content change still breaks the pin');
+  });
   await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js')));
     const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
@@ -429,12 +435,18 @@ function supersededColdRead(transfer,read,baseline){
 }
 // Freeze the actual served caller and acceptance guards, not just a function name.
 function cadenceSource(bytes){
-  const sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
-  assert.equal(sha256,'46ff5ccab4ebac419663aa3383ab0bb9795331d10390c7e37e69210dd2cc460d','review caller/acceptance mapping when recording.js changes');
-  const source=bytes.toString('utf8');
+  // The station serves working-tree bytes, whose line endings depend on the checkout
+  // (autocrlf CRLF or LF). Pin the LF-normalized text, the same as git's content (#8).
+  const source=Buffer.from(bytes).toString('utf8').replace(/\r\n/g,'\n');
+  const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
+  assert.equal(sha256,'b108c1bf356598e78a876269b9cbff605df96d6674612e9290bd9772139ab0a0','review caller/acceptance mapping when recording.js changes');
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  return {sha256,valid,fetchLine:797,timerLine:872};
+  const mapping={sha256,valid,fetchLine:797,timerLine:872},lines=source.split('\n');
+  // CDP line numbers are 0-based: they must still name the selection fetch and the timer caller.
+  assert.ok(lines[mapping.fetchLine].includes("stationFetch('/receive/selection'"),'fetchLine names the selection read');
+  assert.ok(lines[mapping.timerLine].includes('operatingSync(false)')&&lines[mapping.timerLine-3].startsWith('setInterval('),'timerLine names the automatic timer caller');
+  return mapping;
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
