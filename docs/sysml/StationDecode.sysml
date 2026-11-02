@@ -761,10 +761,23 @@ package WstxOfflineDecode {
         in block : ModemSampleWindow;
         out record : ResultRecord;
         doc /* Start canonicalframe nearest first ramp/sync. Frequency lowesttoneaudioHz.
-             LSsignalsteadyP=(a²+b²)/2,envelopeinsidefit. Noise poolednonoverlapping
-             symbolperiodograms,PSD2absDFT²/(12000*N),excludeDC/acceptedbands+-2spacings.
-             Median/ln2 over>=128eligiblebins/>=8windows, SNR2500=10log10(P/(PSD*2500)).
-             Insufficient/nonfinite/relative2x2det<=1e-12/PSD<=1e-20=>null; elseclamp+-60.
+             SNR on the WSJT-X 2500 Hz scale (#52), whole dB (round half away from zero).
+             FT8 = ft8b xsnr2 as WSJT-X first reports it, from its early period buffer: the
+             frame's period starts at the UTC period start when the receive clock
+             establishes it (finite decodes: frame 0 + k*180000), else 0.5 s before the
+             frame on a 0.5 s window grid; only that period's first 41*3456 frames are
+             seen, later ones as zero. One baseline per period and pass serves its frames.
+             xsig = sum over the 79 symbols of |1920-frame DFT at the decoded tone|^2/60
+             (ft8_downsample's 32-point power); xbase = 1e-4 * the sync8 baseline at bin
+             round(f/3.125 Hz): sum of the 92 Nuttall 3840-frame power spectra stepped 1920
+             (window scaled to sum 12.8), in dB, quartic fit to the 10th-percentile lower
+             envelope of 10 segments over 200..4000 Hz, +0.65 dB. SNR = 10log10(a)-27 with
+             a = xsig/xbase/3e6-1 when > 0.1, else 0.001; floor -25.
+             FT4 = ft4_decode: the pass's getcandidates4 contrast c (15-bin mean of the
+             average spectrum over its ft4_baseline) at the largest of the 3 bins nearest
+             decoded frequency+31.25 Hz, parabola-interpolated when a local maximum;
+             10log10(c-1)-14.8, -21 when c <= 1, floor -21.
+             No baseline or nonfinite => null; ceiling +60.
              Error<=240frames/1HzFT8,144frames/3HzFT4,<=3dBisolatedAWGN>=-15/-10.
              Known-codeword fit3fixedgrids:df1=6000/waveformFrames; stage1time+-N/4stepN/16,
              freq+-spacing/2stepdf1 includingoffgridendpoints; stage2time+-N/16stepmax(1,floor(N/128)),
@@ -780,9 +793,9 @@ package WstxOfflineDecode {
              aliased), and scores only the 6/3/2 best-ranked points of stages 1/2/3 with
              the full-rate Gram above; the result is the full-rate maximum among them under
              the same tie rule. Without a candidate band every grid point is scored.
-             finalamplitude/SNR/subtractionallsamples. No whole-frame phase rejection,
+             finalamplitude/subtractionallsamples. No whole-frame phase rejection,
              ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
-             No UTC/dBFS/noiseless/crowded reference-SNR inference. */
+             No dBFS/noiseless/crowded reference-SNR inference. */
     }
     action def PublishResults {
         in job : DecodeJob;

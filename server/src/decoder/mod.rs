@@ -12,6 +12,7 @@ mod physical_sync;
 #[cfg(test)]
 mod resource_observer;
 mod search;
+mod snr;
 mod subtraction;
 mod synchronization;
 mod waveform;
