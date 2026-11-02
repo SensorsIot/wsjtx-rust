@@ -2087,7 +2087,7 @@ impl LiveWorker {
         }
         s.frame = None;
         s.detail_frame = None;
-            s.detail_recent.clear();
+        s.detail_recent.clear();
         s.latest_decode = None;
         s.decode_counter = 0;
         let l = s.live.as_mut().ok_or("state_conflict")?;
@@ -2170,7 +2170,7 @@ impl LiveWorker {
         s.job = Some(self.job.clone());
         s.frame = None;
         s.detail_frame = None;
-            s.detail_recent.clear();
+        s.detail_recent.clear();
         let l = s.live.as_mut().ok_or("state_conflict")?;
         l.source = Some(descriptor.clone());
         l.timing = Some(timing.clone());
@@ -2293,7 +2293,7 @@ impl LiveWorker {
                 }
                 s.frame = None;
                 s.detail_frame = None;
-            s.detail_recent.clear();
+                s.detail_recent.clear();
                 s.latest_decode = None;
                 s.decode_counter = 0;
                 if let Some(l) = s.live.as_mut() {
@@ -3071,7 +3071,7 @@ impl Recording {
         s.generation += 1;
         s.frame = None;
         s.detail_frame = None;
-            s.detail_recent.clear();
+        s.detail_recent.clear();
         s.live = None;
         Ok(s.generation)
     }
@@ -3385,7 +3385,7 @@ impl Recording {
         let value = json!({"v":1,"id":id,"generation":j.generation,"state":j.state});
         s.frame = None;
         s.detail_frame = None;
-            s.detail_recent.clear();
+        s.detail_recent.clear();
         Ok(value)
     }
     fn run(&self, job: Job, meta: Metadata) {

@@ -270,10 +270,10 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
 });
 
 
-// Proves: CL-010-05, CL-010-07, CL-010-08, CL-010-16; TC-007-002 agreed design and authority-preserving regions.
+// Proves: CL-010-05, CL-010-07, CL-010-08, CL-010-16, CL-050-01; TC-007-002, TC-050-001 agreed design and authority-preserving regions.
 test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:1200});
- assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),210,'sufficiently tall desktop starts with the specified compact signal height');
+ assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),330,'#54: a sufficiently tall desktop starts with the taller signal height (about 2 FT8 periods at 10 px/s)');
  await page.setViewportSize({width:1200,height:800});
  const shortSignal=await page.locator('#signal').evaluate(signal=>({height:signal.getBoundingClientRect().height,minimum:Number(document.querySelector('#splitter').getAttribute('aria-valuemin')),maximum:Number(document.querySelector('#splitter').getAttribute('aria-valuemax')),current:Number(document.querySelector('#splitter').getAttribute('aria-valuenow'))}));
  assert.ok(shortSignal.height>=160,'short viewport preserves the signal minimum');
@@ -282,6 +282,8 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  assert.equal(await page.getByRole('separator').getAttribute('tabindex'),'0','short viewport retains keyboard resizing');
  // The strategy element and the chips come with the contact client (loaded after the first snapshots).
  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+ assert.match(await page.locator('#help-keys').textContent(),/Waterfall click \/ double-click\s*Set Tx \/ Rx and Tx/,'#50 help names the pointer mapping');
+ assert.doesNotMatch(await page.locator('#help-keys').textContent(),/Shift\+click|Ctrl\+click/);
  for(const id of ['radio-toolbar','rxtx-strip','strategy-element','band-activity','rx-focus'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the operating screen`);
  for(const id of ['band-strip','strategy-panel','workspace-statusbar','rx-frequency'])assert.equal(await page.locator('#'+id).count(),0,`${id} is not on the operating screen`);
  const composition=await page.evaluate(()=>{
@@ -307,8 +309,10 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).isDisabled(),true,`${id} needs a strategy`);
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
- // WstxContact::OperatorDisplays (D11): server UTC and period progress replace the former 'Timing unavailable'.
- await page.locator('#radio-toolbar .op-period small').filter({hasText:/^\d{1,2}\/15/}).waitFor();assert.match(await page.locator('#radio-toolbar .op-period > span').textContent(),/^UTC \d\d:\d\d:\d\d$/);
+ // WstxContact::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
+ await page.locator('#radio-toolbar .op-period > span').filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
+ assert.deepEqual(await page.locator('#radio-toolbar .op-period').evaluate(p=>[p.children.length,!!p.querySelector('.op-period-track,small')]),[1,false],'no period bar in the top bar');
+ assert.equal(await page.locator('#rx-focus .op-qso-progress #qso-progress').count(),1,'the period bar stays in the QSO pane');
  // Without an audio input the only exception is that one, named as such.
  await page.locator('#exception-chips [data-chip=receive]').filter({hasText:'No audio input'}).waitFor();
  assert.equal(await page.locator('#exception-chips button').count(),1);
@@ -609,7 +613,7 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-010-01, CL-010-09; TC-007-009 QSO pane, Band Activity history and menu.
+// Proves: CL-010-16, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
 test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
   const standard=(from,to='CQ')=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
@@ -639,6 +643,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   const order=await page.locator('#band-activity tbody tr').evaluateAll(rows=>rows.map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.children[4].textContent));
   assert.deepEqual(order,['HB9BLA K1ABC -05','|FT8 period 12:00:00 UTC','CQ K1ABC FN42','CQ W1XYZ FN42']);
   assert.equal(await page.locator('tr[data-period=latest]').getAttribute('class'),'ba-tome','a call to my callsign is highlighted');
+  assert.equal(await page.locator('tr[data-period=latest] td').first().evaluate(td=>getComputedStyle(td).backgroundColor),'rgba(255, 102, 102, 0.32)','#50: WSJT-X My call colour');
 
   // Right-click menu: Select prepares, Set Rx sets only Rx; neither transmits.
   const k1abc=page.locator('tr[data-period=history]').filter({hasText:'CQ K1ABC FN42'});
@@ -1077,7 +1082,7 @@ test('TC-011-002 ADI import and export controls publish all-or-nothing and downl
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-13; TC-011-003 browser subset. Actual server log and worked-before query;
+// Proves: CL-010-13; TC-011-003, TC-050-002 browser subset. Actual server log and worked-before query;
 // receive pages and the manual band selection are presentation fixtures, not RF truth.
 test('TC-011-003 Band Activity shows server worked-before status with one bounded query per period',{timeout:30000},async t=>{
  let state;const queries=[];
@@ -1096,14 +1101,22 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:3,available_count:3,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
- await page.locator('tr[data-result-id] .log-worked').first().waitFor();
- const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].firstChild.textContent,r.querySelector('.log-worked')?.dataset.worked??null,r.querySelector('.log-worked')?.textContent??null]));
- assert.deepEqual(marks,[['CQ K1ABC FN42','worked_this_band_and_mode',' \u00b7 \u2713 worked'],['CQ W1XYZ FN42','not_worked',' \u00b7 \u2605 new'],['FREE TEXT',null,null]]);
+ await page.locator('tr[data-result-id][data-worked]').first().waitFor();
+ // #50: no text marks; worked-before feeds the WSJT-X "New call" slots, which are off by default (WSJT-X).
+ const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
+ const [cq,newCall,none]=['rgba(102, 255, 102, 0.24)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
+ assert.deepEqual(await rowsNow(),[['CQ K1ABC FN42','worked_this_band_and_mode','cq',cq],['CQ W1XYZ FN42','not_worked','cq new_call',cq],['FREE TEXT',null,null,none]],'CQ green; worked before has no colour');
+ await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#settings-drawer .return-operate').click();
+ assert.deepEqual((await rowsNow()).map(r=>r[3]),[cq,newCall,none],'an enabled New call outranks CQ');
+ assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,true,'the choice is per browser');
+ // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC over CQ.
+ const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['cq new_dxcc','cq new_dxcc new_continent','cq new_dxcc new_continent mycall','new_grid','cq new_itu_zone'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
+ assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,cq],'WSJT-X priority; New grid and ITU zone are off by default');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
- assert.equal(await page.locator('.log-worked[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on this band and mode','text label beside colour');
+ assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode] td[data-col=message]').getAttribute('title'),'Worked before on this band and mode','the status stays readable as a tooltip');
  assert.deepEqual(errors,[]);
 });
 
@@ -1312,5 +1325,65 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   await page.evaluate(()=>{window.wstxConfirm('Test dialog');});
   state.build='0011223344556677';state.navigations=0;await page.evaluate(()=>socket.close());
   await notice.filter({hasText:'Station updated'}).waitFor({timeout:20000});assert.equal(state.navigations,0,'an open dialog holds the reload');
+  assert.deepEqual(errors,[]);
+});
+
+// #54: live frames for the current routed live job, injected as the station would announce them.
+async function liveFrames(page,frames){
+  await page.evaluate(frames=>{for(const {sequence,levels,thin} of frames){
+    const data={boot_id:live.boot_id,source_id:live.source.id,job_id:live.job.id,generation:live.generation,sequence,first_frame:sequence*(thin?12000:2400),end_frame:(sequence+1)*(thin?12000:2400)};
+    if(thin)data.levels=levels;else data.levels_b64=btoa(String.fromCharCode(...levels));
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:thin?'spectrum.frame':'spectrum.detail.frame',data}}}));}},frames);
+}
+// Waterfall RGB at a native bin centre on the newest row (independent column/row mapping of TC-010-005).
+async function cell(page,bin){
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  return page.evaluate(bin=>{const c=document.querySelector('#waterfall'),x=Math.floor((bin+.5)*c.width/1024);return [...c.getContext('2d').getImageData(x,0,1,1).data.slice(0,3)];},bin);
+}
+async function liveDisplayFixture(t){
+  let receiving;
+  const f=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
+    await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving)receiving=liveFixture(json);await route.fulfill({json:receiving});});
+    await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(receiving)}));
+  }});
+  await f.page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  return {...f,newJob:async()=>{receiving={...receiving,job:{...receiving.job,id:crypto.randomUUID()}};await f.page.evaluate(()=>receiveSync());await f.page.waitForFunction(id=>live.job.id===id,receiving.job.id);}};
+}
+// Proves: CL-054-02; TC-054-002 a fixed level mapping with Zero/Gain sliders, Flatten and the spectrum line option.
+test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten and the spectrum line option',{timeout:60000},async t=>{
+  const {page,errors,newJob}=await liveDisplayFixture(t);
+  // Independent palette anchors (CL-006-03): t=0.1 -> (0,0,57), t=0.9 -> (255,105,0), t=0.3 -> (0,60,185), t=0.5 -> (0,220,240).
+  const noise=40,carrier=80,levels=Array.from({length:1024},(_,k)=>k>=498&&k<=502?carrier:noise);
+  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.round(document.querySelector('#signal').getBoundingClientRect().height)]),['0','50','1','10 px/s',true,330],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px');
+  await liveFrames(page,[{sequence:0,levels},{sequence:1,levels}]);
+  assert.deepEqual([await cell(page,100),await cell(page,500)],[[0,0,57],[255,105,0]],'noise -80 dBFS and a -40 dBFS carrier on the fixed -85..-35 dBFS scale');
+  assert.match(await page.locator('#level-legend').textContent(),/WF -85 to -35 dBFS/);
+  for(const [id,value] of [['#display-sensitivity','10']]){await page.locator(id).fill(value);await page.locator(id).dispatchEvent('input');}
+  assert.deepEqual(await cell(page,100),[0,60,185],'Sensitivity +10 dB moves the scale to -95 dBFS');
+  await page.locator('#display-range').fill('30');await page.locator('#display-range').dispatchEvent('input');
+  assert.deepEqual([await cell(page,100),await page.locator('#range-value').textContent()],[[0,220,240],'30 dB'],'Range 30 dB narrows the span');
+  // No automatic level: more rows and a new job keep the mapping.
+  await liveFrames(page,[{sequence:2,levels:levels.map(q=>q+10)}]);assert.deepEqual(await cell(page,100),[255,192,0],'a louder row is louder, not re-levelled (t=0.833)');
+  await newJob();await liveFrames(page,[{sequence:0,levels}]);assert.deepEqual(await cell(page,100),[0,220,240],'a new job keeps the levels');
+  await page.reload();await page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  assert.deepEqual(await page.evaluate(()=>[sensitivity,displayRange]),[10,30],'per-browser settings survive a reload');
+  // Flatten: a 30 dB passband slope is evened out across frequency; the native readout is unchanged.
+  const slope=Array.from({length:1024},(_,k)=>30+Math.floor(30*k/1024));
+  await liveFrames(page,[{sequence:0,levels:slope}]);
+  const [low,high]=[await cell(page,40),await cell(page,980)];assert.notDeepEqual(low,high);
+  await page.locator('#open-server-settings').click();await page.locator('#display-flatten').check();await page.locator('#display-spectrum').check();await page.locator('#settings-drawer .return-operate').click();
+  assert.deepEqual(await cell(page,40),await cell(page,980),'flattened: the same colour at both band edges');
+  assert.equal(await page.evaluate(()=>rows.at(-1).levels[980]),58,'the native level stays');
+  assert.equal(await page.locator('#spectrum').isVisible(),true,'the spectrum line on request');
+  assert.deepEqual(await page.evaluate(()=>['wstx.waterfall-zero.v1','wstx.waterfall-range.v1','wstx.waterfall-flatten.v1','wstx.spectrum-line.v1'].map(k=>localStorage.getItem(k))),['10','30','on','on']);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-054-01; TC-054-001 browser part: only real gaps are grey.
+test('TC-054-001 a live Thin row the station paced out is held; only a longer run is a gap',{timeout:60000},async t=>{
+  const {page,errors}=await liveDisplayFixture(t);
+  await chooseDisplay(page,'thin');
+  const row=q=>Array.from({length:128},()=>q);
+  await liveFrames(page,[{sequence:0,levels:row(10),thin:true},{sequence:2,levels:row(20),thin:true},{sequence:3,levels:row(30),thin:true},{sequence:7,levels:row(40),thin:true}]);
+  assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,null],[5,null],[6,null],[7,40]]);
   assert.deepEqual(errors,[]);
 });

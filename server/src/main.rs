@@ -901,7 +901,10 @@ fn arm_detail(
 }
 /// #54: the oldest retained Detailed row after the one this socket sent last (rows of
 /// another job all count as new), and whether more rows wait behind it.
-fn next_detail(recent: &VecDeque<Value>, seen: &Option<(Value, Value)>) -> Option<(Value, bool)> {
+fn detail_after(
+    recent: &std::collections::VecDeque<Value>,
+    seen: &Option<(Value, Value)>,
+) -> Option<(Value, bool)> {
     let mut pending = recent.iter().filter(|f| match seen {
         Some((job, sequence)) if f["data"]["job_id"] == *job => {
             f["data"]["sequence"].as_u64() > sequence.as_u64()
@@ -964,7 +967,7 @@ async fn connection(
     display.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut detail_tick = interval(Duration::from_millis(200));
     detail_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut next_detail = arm_detail(&mut detail_tick, tokio::time::Instant::now());
+    let mut next_detail = arm_detail(&mut detail_tick, tokio::time::Instant::now(), false);
     let mut display_profile = "off";
     let mut seen = None;
     let mut last_display = Instant::now() - Duration::from_secs(1);
@@ -1090,7 +1093,7 @@ async fn connection(
                 let live=recording.as_ref().is_some_and(|r|r.state.lock().unwrap().job.as_ref().is_some_and(|j|j.kind=="live"));
                 if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(if live {2}else{1}) {continue;}
                 if display_profile=="detail" && tokio::time::Instant::now()<next_detail {detail_tick.reset_at(next_detail);continue;}
-                let (frame,behind) = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {next_detail(&s.detail_recent,&seen)} else {s.frame.clone().map(|f|(f,false))}}).map_or((None,false),|(f,b)|(Some(f),b));
+                let (frame,behind) = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {detail_after(&s.detail_recent,&seen)} else {s.frame.clone().map(|f|(f,false))}}).map_or((None,false),|(f,b)|(Some(f),b));
                 if let Some(frame) = frame {
                     let identity = (frame["data"]["job_id"].clone(),frame["data"]["sequence"].clone());
                     if seen.as_ref() != Some(&identity) {

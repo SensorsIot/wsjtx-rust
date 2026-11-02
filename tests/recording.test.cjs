@@ -413,6 +413,7 @@ test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obso
   await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
   await p.getByRole('separator').focus();await p.keyboard.press('End');
   const observation=await p.evaluate(async s=>{
+    speed=2;
     const make=sequence=>({v:1,type:'spectrum.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*12000,end_frame:Math.min((sequence+1)*12000,s.recording.frames),levels:Array(128).fill(20)}});
     const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
     for(const field of ['boot_id','source_id','job_id','generation']){const m=make(0);m.data[field]=field==='generation'?s.generation-1:'00000000-0000-4000-8000-000000000000';deliver(m);}
@@ -457,7 +458,7 @@ test('TC-010-005 detailed native wire, fixed span, projection, palette and top-e
     const result=await p.evaluate(async s=>{
       const values=Array.from({length:1024},(_,k)=>k%2?120:0), bytes=String.fromCharCode(...values);
       const frame=sequence=>({v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*2400,end_frame:Math.min((sequence+1)*2400,s.recording.frames),levels_b64:btoa(bytes)}});
-      rows=[];displayBlack=-120;displayRange=80;autoBlack=false;
+      rows=[];displayBlack=-120;displayRange=80;speed=2;
       const deliver=message=>dispatchEvent(new CustomEvent('station-message',{detail:{message,current:socket}}));
       deliver(frame(0));deliver(frame(2));await new Promise(requestAnimationFrame);
       const c=document.querySelector('#waterfall'),ctx=c.getContext('2d'),h=Math.floor(.2*20*c.height/c.getBoundingClientRect().height),pix=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
@@ -481,6 +482,8 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   const context=await browser.newContext({deviceScaleFactor:2});t.after(()=>context.close());
   const mobile=await page({...f,context},{width:360,height:640});
   for(const p of [desktop,mobile])assert.equal(await p.inputValue('#display-profile'),'detail');
+  // #54: the spectrum line is off by default; this geometry case shows it.
+  for(const p of [desktop,mobile])await p.evaluate(()=>{const box=document.querySelector('#display-spectrum');box.checked=true;box.dispatchEvent(new Event('change'));});
   await desktop.locator('#recording-replay').click();
   for(const p of [desktop,mobile])await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>=45,{timeout:15000});
   await fs.mkdir('test-results',{recursive:true});
@@ -490,14 +493,12 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   for(const p of [desktop,mobile]){
     assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     for(const key of ['Home','End']){await p.getByRole('separator').focus();await p.keyboard.press(key);await p.waitForTimeout(30);const g=await p.evaluate(()=>{const a=document.querySelector('#spectrum').getBoundingClientRect(),b=waterfall.getBoundingClientRect();return {ratio:b.height-5*a.height,pixels:waterfall.height,expected:Math.round(b.height*devicePixelRatio)};});assert.ok(Math.abs(g.ratio)<=2,JSON.stringify(g));assert.equal(g.pixels,g.expected);}
-    const before=await p.evaluate(()=>({black:displayBlack,range:displayRange,auto:autoBlack,frozen:estimateFrozen,copy:[...rows.at(-1).levels]}));
-    assert.equal(before.auto,true);assert.equal(before.frozen,true);assert.equal(before.range,30);
-    await p.locator('#display-black').fill('-90');await p.locator('#display-black').dispatchEvent('change');
-    assert.equal(await p.isChecked('#display-auto'),false);
-    await p.locator('#display-range').fill('50');await p.locator('#display-range').dispatchEvent('change');
-    assert.equal(await p.inputValue('#display-range'),'50');
-    await p.evaluate(()=>{const original=rows.at(-1);window.originalLevelCheck=original.levels;estimateFrozen=false;autoBlack=true;displayBlack=-120;estimate({levels:new Uint8Array(1024)});window.silenceWait=!estimateFrozen;estimate({levels:new Uint8Array(1024).fill(40)});});
-    assert.deepEqual(await p.evaluate(()=>[window.silenceWait,displayBlack,estimateFrozen]),[true,-83,true]);
+    // #54: a fixed reference after real rows (no noise estimate), Range as a slider.
+    const before=await p.evaluate(()=>({black:displayBlack,range:displayRange,copy:[...rows.at(-1).levels]}));
+    assert.deepEqual([before.black,before.range],[-85,50]);
+    await p.locator('#display-range').fill('30');await p.locator('#display-range').dispatchEvent('input');
+    assert.deepEqual(await p.evaluate(()=>[displayBlack,displayRange,document.querySelector('#range-value').textContent]),[-85,30,'30 dB']);
+    await p.locator('#display-range').fill('50');await p.locator('#display-range').dispatchEvent('input');
     await p.locator('#waterfall').focus();await p.keyboard.press('ArrowRight');assert.match(await p.locator('#bin-readout').innerText(),/Native bin 1/);
     await p.evaluate(()=>{document.body.style.zoom='200%';dispatchEvent(new Event('resize'));});
     await p.waitForTimeout(40);assert.equal(await p.locator('#waterfall').getAttribute('data-span'),'0,3000');
@@ -556,7 +557,7 @@ test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom
   for(let n=0;n<80&&(await p.locator('#waterfall').boundingBox()).height>560;n++)await p.keyboard.press('ArrowUp');
   assert.ok((await p.locator('#waterfall').boundingBox()).height>=240,'fixture observes all three row positions before testing exit');
   const result=await p.evaluate(async s=>{
-    profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;
+    profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;speed=2;
     const frame=sequence=>{const detail=profileSelect.value==='detail',interval=detail?2400:12000,levels=new Uint8Array(detail?1024:128).fill(sequence===0?120:0);return {v:1,type:detail?'spectrum.detail.frame':'spectrum.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*interval,end_frame:(sequence+1)*interval,...(detail?{levels_b64:btoa(String.fromCharCode(...levels))}:{levels:[...levels]})}};};
     const send=sequence=>dispatchEvent(new CustomEvent('station-message',{detail:{message:frame(sequence),current:socket}}));
     const draw=async()=>{paint();await new Promise(requestAnimationFrame);};
@@ -593,7 +594,9 @@ test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom
 test('TC-010-006 complete canvas, speed projection, gaps and geometry',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
   const result=await p.evaluate(async s=>{
-    profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;
+    // #54: this geometry case shows the optional spectrum line (1:5 with the waterfall).
+    {const box=document.querySelector('#display-spectrum');box.checked=true;box.dispatchEvent(new Event('change'));}
+    profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;speed=2;
     const send=(sequence,q)=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*2400,end_frame:(sequence+1)*2400,levels_b64:btoa(String.fromCharCode(...new Uint8Array(1024).fill(q)))}}}}));
     send(0,120);send(1,0);await new Promise(requestAnimationFrame);
     const c=waterfall,ctx=c.getContext('2d'),pixel=y=>[...ctx.getImageData(0,y,1,1).data];
@@ -642,16 +645,17 @@ test('TC-010-006 live sensitivity and speed sliders preserve original data and r
   const f=await fixture(t),p=await page(f);
   assert.equal(await p.locator('#display-sensitivity[type=range]').count(),1);assert.equal(await p.locator('#display-speed[type=range]').count(),1);
   const observations=await p.evaluate(async()=>{
-    rows=[{sequence:0,first_frame:0,end_frame:2400,levels:new Uint8Array(1024).fill(40)}];displayBlack=-83;displayRange=30;autoBlack=true;estimateFrozen=true;
+    rows=[{sequence:0,first_frame:0,end_frame:2400,levels:new Uint8Array(1024).fill(40)}];
     const original=[...rows[0].levels],curve=()=>[...document.querySelector('#spectrum').getContext('2d').getImageData(0,0,document.querySelector('#spectrum').width,document.querySelector('#spectrum').height).data];
     paint();await new Promise(requestAnimationFrame);const beforeCurve=curve();
     const results=[];
-    for(const g of [-30,0,10,30]){const input=document.querySelector('#display-sensitivity');input.value=g;input.dispatchEvent(new Event('input'));await new Promise(requestAnimationFrame);results.push({g,E:effectiveBlack(),auto:autoBlack,frozen:estimateFrozen,label:document.querySelector('#sensitivity-value').textContent,unchanged:rows[0].levels.every((q,k)=>q===original[k]),curve:curve().every((q,k)=>q===beforeCurve[k])});}
+    for(const g of [-30,0,10,30]){const input=document.querySelector('#display-sensitivity');input.value=g;input.dispatchEvent(new Event('input'));await new Promise(requestAnimationFrame);results.push({g,E:effectiveBlack(),label:document.querySelector('#sensitivity-value').textContent,unchanged:rows[0].levels.every((q,k)=>q===original[k])});}
     document.querySelector('#display-speed').value=8;document.querySelector('#display-speed').dispatchEvent(new Event('input'));resetLevels();
-    return {results,persist:[sensitivity,speed],reset:[displayBlack,displayRange,autoBlack],speedLabel:document.querySelector('#speed-value').textContent};
+    return {results,persist:[sensitivity,speed],reset:[displayBlack,displayRange],speedLabel:document.querySelector('#speed-value').textContent};
   });
-  for(const o of observations.results){assert.equal(o.E,Math.max(-120,Math.min(-30,-83-o.g)));assert.ok(o.auto&&o.frozen&&o.unchanged&&o.curve);assert.match(o.label,/dB/);}
-  assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-120,30,true]);assert.equal(observations.speedLabel,'80 px/s');
+  // #54: E=clamp(-85-g,-120,-R) with the default Range 50; a reset of the view keeps the levels.
+  for(const o of observations.results){assert.equal(o.E,Math.max(-120,Math.min(-50,-85-o.g)));assert.ok(o.unchanged);assert.match(o.label,/dB/);}
+  assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-85,50]);assert.equal(observations.speedLabel,'80 px/s');
   await p.selectOption('#display-profile','thin');assert.equal(await p.inputValue('#display-sensitivity'),'30');assert.equal(await p.inputValue('#display-speed'),'8');
   await p.locator('#display-sensitivity').focus();await p.keyboard.press('Home');assert.equal(await p.inputValue('#display-sensitivity'),'-30');await p.keyboard.press('End');assert.equal(await p.inputValue('#display-sensitivity'),'30');
 });

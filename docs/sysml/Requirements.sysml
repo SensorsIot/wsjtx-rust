@@ -984,7 +984,7 @@ package WstxRequirements {
     }
     dependency CL_010_10_to_FR_008 from 'CL-010-10' to 'FR-008';
     requirement 'CL-010-11' {
-        doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (click Rx; shift- or right-click Tx; ctrl-click both; left double-click Rx only; right double-click both; dragging the Rx/Tx markers and the Rx/Tx strip fields with 1 Hz/10 Hz steps), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
+        doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (#50: click Tx; double-click Rx and Tx; dragging the 3 px Rx/Tx lines and the Rx/Tx strip fields with 1 Hz/10 Hz steps), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -1107,8 +1107,8 @@ package WstxRequirements {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
              CL-010-11
              Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder.
-             Steps: at independently computed pixel positions for 200, 1500 and 2950 Hz perform click, shift-click, right-click, ctrl-click, left and right double-click, each with Hold Tx on and off; touch tap; numeric Rx/Tx inputs with 0/3000 Rx and 199/200/2950/2951 Tx.
-             Expected: requested offsets equal the independently computed axis frequency rounded to integer Hz; click Rx only, shift/right Tx only, ctrl and right double-click both, left double-click Rx only and no re-decode request; Tx pointer actions apply with Hold Tx on; markers move only after confirmation; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
+             Steps: at independently computed pixel positions for 700, 1000, 1500 and 2950 Hz perform click, double-click, shift-click with Hold Tx on and right-click; numeric Rx/Tx inputs with 199/200/2950/2951 Tx.
+             Expected (#50): requested offsets equal the independently computed axis frequency rounded to integer Hz; click Tx only; a double-click exactly one request for Rx and Tx and no re-decode request; shift-click as click and with Hold Tx on; right-click nothing; the markers are 3 px lines (Rx rgb(48,208,80), Tx rgb(255,64,64)) without text at the confirmed values; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -3329,5 +3329,109 @@ package WstxRequirements {
     }
     dependency CL_051_01_verified_by_TC_051_003 from 'CL-051-01' to 'TC-051-003';
     dependency CL_051_02_verified_by_TC_051_003 from 'CL-051-02' to 'TC-051-003';
+
+    // #50 Operating screen operator feedback and #54 continuous WSJT-X-like waterfall (one CR, 2026-11-02).
+    requirement 'CL-050-01' {
+        doc /* The top bar shows UTC without a period bar; the period progress is the QSO pane's NEXT bar. The waterfall Rx and Tx markers are 3 px green and red lines without text labels, draggable. A waterfall click sets Tx (sent after 250 ms), a double-click sets Rx and Tx with one request; modifiers do not change the effect and a right-click sets nothing (WstxContact::PointerEffect). The help overview states this mapping. A double-click on a decoded Band Activity row selects the station and starts the reply, as Reply. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
+    }
+    dependency CL_050_01_to_FR_007 from 'CL-050-01' to 'FR-007';
+    dependency CL_050_01_to_FR_019 from 'CL-050-01' to 'FR-019';
+    requirement 'CL-050-02' {
+        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks: My call and CQ from the message, New call / New call on band from the station's worked-before status, the DXCC, continent, zone and grid slots from record flags when a station supplies them; worked before has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/logbook.js; client/recording.css";
+    }
+    dependency CL_050_02_to_FR_019 from 'CL-050-02' to 'FR-019';
+    requirement 'CL-054-01' {
+        doc /* A Detailed waterfall subscriber receives every Detailed row of the current job in order after a processing stall: the station retains the last 25 rows and sends each peer the oldest row it has not sent, 200 ms apart, 170 ms apart while rows wait (WstxRecordingReceive::TransferDisplay). The browser draws a gap row only for a real gap; a live Thin row paced out between two sent rows is drawn with the next row. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/recording.rs; server/src/main.rs; client/recording.js";
+    }
+    dependency CL_054_01_to_FR_019 from 'CL-054-01' to 'FR-019';
+    dependency CL_054_01_to_FR_021 from 'CL-054-01' to 'FR-021';
+    requirement 'CL-054-02' {
+        doc /* The waterfall colour follows a fixed dBFS mapping (WstxRecordingReceive::DisplayLevels): reference -85 dBFS, Sensitivity as WSJT-X Zero, a Range slider as WSJT-X Gain (default 50 dB), no automatic level and no reset on a new job, source or profile; optional Flatten across frequency. The spectrum line is a Settings option (default off) with a [E,0] dBFS scale that never clips; the default signal height is 330 px and the default speed 10 px/s, about two FT8 periods. All are per-browser settings that apply at once. Cells keep one native bin per column range, nearest-neighbour, without smoothing. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/recording.css";
+    }
+    dependency CL_054_02_to_FR_019 from 'CL-054-02' to 'FR-019';
+    verification 'TC-050-001' {
+        doc /* TC-050-001 — Waterfall pointer, lines, top bar and double-click to call
+             CL-050-01
+             Setup: actual release candidate with the contact engine (contact_http_tests::contact_browser_operating_flow) and Chromium; the operating screen fixture of ui-operating with routed Band Activity rows.
+             Steps: as TC-010-008; read the top bar and the QSO pane; double-click a CQ row and a row to my call.
+             Expected: TC-010-008's #50 expectations; the top bar holds UTC only (one child, no period bar) and the QSO pane keeps #qso-progress; a row double-click sends select_row then enable_tx with the shown safety revision, one each; the help names "Waterfall click / double-click: Set Tx / Rx and Tx".
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-01';
+        }
+        attribute executable : String = "tests/contact.test.cjs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_01_verified_by_TC_050_001 from 'CL-050-01' to 'TC-050-001';
+    verification 'TC-050-002' {
+        doc /* TC-050-002 — WSJT-X Band Activity colours
+             CL-050-02
+             Setup: actual candidate server with a logged K1ABC on 20m FT8; routed live job with CQ K1ABC, CQ W1XYZ and a free-text row; Chromium.
+             Steps: wait for the worked-before query; read row backgrounds; enable New call in Settings; append synthetic rows with slot sets for the #55 flags.
+             Expected: no text marks; CQ rows rgba(102,255,102,0.24) with New call off (WSJT-X default); W1XYZ (not worked) rgba(0,255,255,0.24) once enabled, K1ABC (worked) stays CQ; the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
+             2 — Isolated automated functional tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_02_verified_by_TC_050_002 from 'CL-050-02' to 'TC-050-002';
+    verification 'TC-054-001' {
+        doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
+             CL-054-01
+             Setup: the station's detail_after/arm_detail functions with a hand-written ring; the browser page with injected live frames.
+             Steps: five rows 11..15 retained after the socket sent row 10; a new job's rows; a caught-up socket; inject live Thin frames 0, 2, 3 and 7.
+             Expected: rows 11..15 sent once in order, "behind" true until the last; a new job starts at its oldest row; nothing resent; catch-up spacing 170 ms, steady 200 ms; Thin row 1 drawn with row 2's levels, rows 4..6 grey gaps.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-054-01';
+        }
+        attribute executable : String = "server/src/protocol_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_054_01_verified_by_TC_054_001 from 'CL-054-01' to 'TC-054-001';
+    verification 'TC-054-002' {
+        doc /* TC-054-002 — Fixed level mapping, Zero/Gain sliders, Flatten and the spectrum line option
+             CL-054-02
+             Setup: actual candidate and Chromium at 1366x768; injected Detailed rows with known levels (noise q=40, a -40 dBFS carrier, a passband slope).
+             Steps: read cells; move Sensitivity to +10 and Range to 30; reload; start a new job; turn Flatten and Show spectrum line on.
+             Expected: E=-85 and span 50 by default (q=40 -> t=0.1, -40 dBFS -> t=0.9 by the palette anchors); g=+10 gives E=-95, R=30 the span 30; values survive a reload and a new job (no auto level, no reset); Flatten evens the slope across frequency within one palette step while the native readout is unchanged; the spectrum canvas is hidden by default and shown on request; signal height 330 px, speed 10 px/s.
+             2 — Isolated automated functional tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-054-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_054_02_verified_by_TC_054_002 from 'CL-054-02' to 'TC-054-002';
+    verification 'TC-054-003' {
+        doc /* TC-054-003 — Live waterfall on HB9BLA
+             CL-054-01, CL-054-02, CL-050-01, CL-050-02
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 receive, the operator's page.
+             Steps: watch 5 min of receive; compare with WSJT-X 3.3 on the same audio where available.
+             Expected: no grey seams during continuous receive; FT8 signals show start and end; strong signals distinguishable; the operator confirms the colours and the pointer mapping.
+             3 — Live, read-only on the station; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-054-01';
+            verify 'CL-054-02';
+            verify 'CL-050-01';
+            verify 'CL-050-02';
+        }
+    }
+    dependency CL_054_01_verified_by_TC_054_003 from 'CL-054-01' to 'TC-054-003';
+    dependency CL_054_02_verified_by_TC_054_003 from 'CL-054-02' to 'TC-054-003';
+    dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
+    dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
 
 }

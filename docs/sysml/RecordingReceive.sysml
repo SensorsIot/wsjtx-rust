@@ -70,24 +70,27 @@ package WstxRecordingReceive {
         attribute statusDisplayMs : Integer = 2000;
     }
     attribute def DisplayLevels {
-        attribute blackDbfs : Integer = -120;
-        attribute rangeDb : Integer = 30;
-        attribute autoBlack : Boolean = true;
-        attribute estimateFrozen : Boolean = false;
+        attribute blackDbfs : Integer = -85;
+        attribute rangeDb : Integer = 50;
         attribute sensitivityDb : Integer = 0;
-        attribute speedMultiplier : Real = 2;
+        attribute speedMultiplier : Real = 1;
+        attribute flatten : Boolean = false;
+        attribute spectrumLine : Boolean = false;
         assert constraint localSliders { sensitivityDb >= -30 and sensitivityDb <= 30 and speedMultiplier >= 0.5 and speedMultiplier <= 8 }
-        assert constraint displayRange { rangeDb >= 10 and rangeDb <= 80 and blackDbfs >= -120 and blackDbfs <= -rangeDb }
-        doc /* Browser-local per job/profile state, no station-service mutation.
-             Reset on job/source/profile: B=-120,R=30,Auto=true,frozen=false;
-             preserve sensitivityDb/speedMultiplier until new page load. Effective
-             waterfall black=clamp(B-sensitivityDb,-120,-R), curve retains baseB.
-             Speed sets10*speedMultiplier CSSpx/source-second; fixed source intervals
-             move down independent of history length, clip at bottom; unobserved
-             pixels dark/no-measurement. Freeze without accepted rows; no source/network change.
-             First lower-median q>0 row sets clamp(q-123,-120,-R), freezes.
-             Median0/gap waits; manual B/R disables Auto. Re-enable uses latest
-             qualifying retained row or waits. Original calibrated levels unchanged.
+        assert constraint displayRange { rangeDb >= 10 and rangeDb <= 80 and blackDbfs == -85 }
+        doc /* #54 (CL-054-02), as WSJT-X's Wide Graph: a fixed dBFS-to-colour mapping; no level
+             follows the signal over time and nothing resets it on a new job, source or profile.
+             B is the fixed reference -85 dBFS. Sensitivity g (WSJT-X Zero, -30..+30, default 0)
+             moves the scale: effective black E=clamp(B-g,-120,-R). Range R (WSJT-X Gain, a slider
+             10..80 dB, default 50) is the span [E,E+R]. Speed sets 10*speedMultiplier CSS px per
+             source second (default 1: about two FT8 periods in the default height); fixed source
+             intervals move down independent of history length, clip at bottom; unobserved pixels
+             dark/no-measurement. Sensitivity, Range, Speed, Flatten and the spectrum line are
+             per-browser settings that apply at once and persist in browser storage. Flatten
+             (default off, WSJT-X flat4 equivalent) subtracts per row the lower envelope across
+             frequency (20th percentile of 32 blocks, linearly interpolated) and adds back its
+             median: it evens out the passband shape, never a level change over time; the readout
+             keeps the original native levels. Original calibrated levels unchanged.
              Rounding, exact RGB palette, ruler/readout/geometry and all actions
              remain normative in PresentStation/CalculateSpectrum source contract. */
     }
@@ -634,7 +637,10 @@ package WstxRecordingReceive {
              clamping it to the oldest measured row. Left/Right still steps native frequency bins.
              Speed or geometry changes recompute visible rows/readouts without mutating native data.
 
-                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. Allocate the remaining plot
+                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. #54: the spectrum line is shown
+             only with the per-browser option Show spectrum line (default off); hidden, the waterfall
+             takes its height. Shown, its vertical scale is [E,0] dBFS, so no level clips at the top.
+             The default signal height is 330 CSS px (splitter), at most 560. Allocate the remaining plot
              budget after headings/rulers/legend approximately1:5 to spectrum:waterfall, using explicit
              zero flex bases and min-height0 so intrinsic canvas bitmap heights cannot feed back into
              layout. Each backing bitmap is round(its actual CSS box * DPR), minimum1, and each
@@ -653,32 +659,15 @@ package WstxRecordingReceive {
 
              **Display levels and palette.** The display is a local presentation of calibrated
              levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
-             and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
-             and Auto black controls in the station page, plus labeled keyboard-operable Sensitivity
-             and Speed range sliders. Sliders repaint on every input event with an adjacent current
-             numeric output; no server persistence/new WS commands. Sensitivity g is integer-30..+30
-             dB, default0. Speed is the fixed source-time scroll scale defined above. Both slider
-             values persist through source/job/profile-display changes and resize within this page;
-             only a new page load resets defaults. Existing Black/Range/Auto reset behavior remains.
-             Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
-             until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
-             nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
-             down to -R if necessary. The spectrum curve continues to use base[B,B+R] for its vertical scale. Sensitivity
-             changes waterfall colors only: effective black E=clamp(B-g,-120,-R), with waterfall
-             mapping span exactly[E,E+R]. Its color legend shows both effective ends in dBFS,
-             Sensitivity output shows the signed dB offset, and the curve scale title identifies its
-             base range. Neither curve data/scale nor original q-120 bin readouts are changed by
-             Sensitivity. Clipping affects presentation only; the native values remain available.
-
-             Auto black defaults on after each new source/job or display profile change, resetting
-             R=30 and B=-120, without resetting Sensitivity or Speed. Sort a valid row's Bins quantized values and take the lower median
-             qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
-             floor); continue waiting instead of locking a false noise floor. On the first accepted
-             row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
-             manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
-             turns Auto off. Moving Sensitivity leaves Auto enabled/frozen state unchanged: it is
-             an offset applied after base noise estimation, not a new noise estimate. Turning Auto on clears its frozen estimate and derives it from the latest
-             qualifying retained row, or waits for the next one if none exists. Repaint all retained
+             and future decoding (#54, CL-054-02). The waterfall corner holds labelled keyboard-operable
+             Sensitivity (WSJT-X Zero), Range (WSJT-X Gain) and Speed range sliders, each with an
+             adjacent numeric output, repainting on every input event; Settings > General > Display
+             holds Flatten and Show spectrum line. DisplayLevels gives the values and the fixed
+             mapping: there is no Black level input, no Auto black and no noise estimate, and a new
+             source, job or display profile changes no level. Sensitivity and Range change
+             waterfall colours only; the legend shows both effective ends in dBFS. Inputs are rounded
+             with floor(value+0.5) and clamped; nonfinite values leave settings unchanged. Clipping
+             affects presentation only; the native values remain available. Repaint all retained
              rows when presentation controls change; samples/wire data never change or restart.
 
              For an original quantized level q, t=clamp(((q-120)-E)/R,0,1). Map t to this project's
@@ -686,12 +675,12 @@ package WstxRecordingReceive {
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
              .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
              Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
-             is RGB(0,0,12); gaps are RGB(96,96,96). This continuous level-to-color
+             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; a live Thin row paced out between two sent rows is drawn with the next row, not as a gap). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
              outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
              channel interpolation/rounding, ending in the same saturated red; it displays the
-             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. No flattening, palette editor, gain normalization or new framework.
+             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. Flatten is the optional per-row passband equalisation of DisplayLevels; no palette editor, gain normalization over time or new framework.
 
              Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
              bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)
@@ -788,8 +777,13 @@ package WstxRecordingReceive {
 These application-payload and WebSocket exclusions do not prohibit the bounded
 HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
 
-             One replaceable pending display event per peer, of its selected profile, and <=1 Thin
-             or <=5 Detailed sends per second; no replay of old
+             One replaceable pending Thin event per peer and <=1 Thin send per second. #54 (CL-054-01):
+             the station retains the last 25 Detailed rows (5 s) of the current job, and each
+             Detailed peer receives every retained row after the last one it was sent, oldest
+             first: 200 ms apart, 170 ms apart while rows wait (at most 5.9 sends per second,
+             within 10 KiB/s), so a processing stall delays rows instead of dropping them; a peer
+             further behind than the retained window has a real gap. A new subscription starts at
+             the newest row; no replay of old
              frames after reconnect or off. Ready status replies and heartbeats take precedence;
              optional display output never waits in the connection loop and is skipped when send
              readiness/control headroom is unavailable. Its guard enforces event payload <=2048 and
@@ -871,7 +865,10 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              clamping it to the oldest measured row. Left/Right still steps native frequency bins.
              Speed or geometry changes recompute visible rows/readouts without mutating native data.
 
-                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. Allocate the remaining plot
+                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. #54: the spectrum line is shown
+             only with the per-browser option Show spectrum line (default off); hidden, the waterfall
+             takes its height. Shown, its vertical scale is [E,0] dBFS, so no level clips at the top.
+             The default signal height is 330 CSS px (splitter), at most 560. Allocate the remaining plot
              budget after headings/rulers/legend approximately1:5 to spectrum:waterfall, using explicit
              zero flex bases and min-height0 so intrinsic canvas bitmap heights cannot feed back into
              layout. Each backing bitmap is round(its actual CSS box * DPR), minimum1, and each
@@ -890,32 +887,15 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
 
              **Display levels and palette.** The display is a local presentation of calibrated
              levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
-             and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
-             and Auto black controls in the station page, plus labeled keyboard-operable Sensitivity
-             and Speed range sliders. Sliders repaint on every input event with an adjacent current
-             numeric output; no server persistence/new WS commands. Sensitivity g is integer-30..+30
-             dB, default0. Speed is the fixed source-time scroll scale defined above. Both slider
-             values persist through source/job/profile-display changes and resize within this page;
-             only a new page load resets defaults. Existing Black/Range/Auto reset behavior remains.
-             Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
-             until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
-             nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
-             down to -R if necessary. The spectrum curve continues to use base[B,B+R] for its vertical scale. Sensitivity
-             changes waterfall colors only: effective black E=clamp(B-g,-120,-R), with waterfall
-             mapping span exactly[E,E+R]. Its color legend shows both effective ends in dBFS,
-             Sensitivity output shows the signed dB offset, and the curve scale title identifies its
-             base range. Neither curve data/scale nor original q-120 bin readouts are changed by
-             Sensitivity. Clipping affects presentation only; the native values remain available.
-
-             Auto black defaults on after each new source/job or display profile change, resetting
-             R=30 and B=-120, without resetting Sensitivity or Speed. Sort a valid row's Bins quantized values and take the lower median
-             qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
-             floor); continue waiting instead of locking a false noise floor. On the first accepted
-             row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
-             manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
-             turns Auto off. Moving Sensitivity leaves Auto enabled/frozen state unchanged: it is
-             an offset applied after base noise estimation, not a new noise estimate. Turning Auto on clears its frozen estimate and derives it from the latest
-             qualifying retained row, or waits for the next one if none exists. Repaint all retained
+             and future decoding (#54, CL-054-02). The waterfall corner holds labelled keyboard-operable
+             Sensitivity (WSJT-X Zero), Range (WSJT-X Gain) and Speed range sliders, each with an
+             adjacent numeric output, repainting on every input event; Settings > General > Display
+             holds Flatten and Show spectrum line. DisplayLevels gives the values and the fixed
+             mapping: there is no Black level input, no Auto black and no noise estimate, and a new
+             source, job or display profile changes no level. Sensitivity and Range change
+             waterfall colours only; the legend shows both effective ends in dBFS. Inputs are rounded
+             with floor(value+0.5) and clamped; nonfinite values leave settings unchanged. Clipping
+             affects presentation only; the native values remain available. Repaint all retained
              rows when presentation controls change; samples/wire data never change or restart.
 
              For an original quantized level q, t=clamp(((q-120)-E)/R,0,1). Map t to this project's
@@ -923,12 +903,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
              .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
              Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
-             is RGB(0,0,12); gaps are RGB(96,96,96). This continuous level-to-color
+             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; a live Thin row paced out between two sent rows is drawn with the next row, not as a gap). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
              outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
              channel interpolation/rounding, ending in the same saturated red; it displays the
-             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. No flattening, palette editor, gain normalization or new framework.
+             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. Flatten is the optional per-row passband equalisation of DisplayLevels; no palette editor, gain normalization over time or new framework.
 
              Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
              bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)

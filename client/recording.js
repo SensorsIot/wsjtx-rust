@@ -164,8 +164,9 @@ function restoreDisplayPreference(){
   profileSelect.value=['detail','thin','off'].includes(saved)?saved:defaultDisplayProfile();
 }
 restoreDisplayPreference();
-// #54 WstxRecordingReceive::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal over time.
-const displayBlack=-85;let displayRange=50, flatten=false, spectrumLine=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
+// #54 WstxRecordingReceive::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
+// over time. displayBlack is the fixed -85 dBFS reference; nothing in this page changes it.
+let displayBlack=-85, displayRange=50, flatten=false, spectrumLine=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
 try{const zero=localStorage.getItem('wstx.waterfall-zero.v1'),range=localStorage.getItem('wstx.waterfall-range.v1'),z=Number(zero),r=Number(range);if(zero!==null&&Number.isInteger(z)&&z>=-30&&z<=30)sensitivity=z;if(range!==null&&Number.isInteger(r)&&r>=10&&r<=80)displayRange=r;flatten=localStorage.getItem('wstx.waterfall-flatten.v1')==='on';spectrumLine=localStorage.getItem('wstx.spectrum-line.v1')==='on';}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];

@@ -1,5 +1,5 @@
 use super::reply;
-use serde_json::json;
+use serde_json::{Value, json};
 
 // Proves: CL-006-03/04; TC-010-002 controlled transport readiness, independent of OS socket buffering.
 #[test]
@@ -142,7 +142,7 @@ async fn detailed_late_tick_rearms_from_actual_acceptance() {
     tick.tick().await;
     tokio::time::advance(Duration::from_millis(999)).await;
     tick.tick().await;
-    let next = super::arm_detail(&mut tick, tokio::time::Instant::now());
+    let next = super::arm_detail(&mut tick, tokio::time::Instant::now(), false);
     assert_eq!(next - origin, Duration::from_millis(1199));
     // An old Skip grid would tick again at1000ms, only1ms after the delayed tick.
     tokio::time::advance(Duration::from_millis(1)).await;
@@ -153,4 +153,44 @@ async fn detailed_late_tick_rearms_from_actual_acceptance() {
     );
     tick.tick().await;
     assert!(tokio::time::Instant::now() - origin >= Duration::from_millis(1199));
+}
+
+// Proves: CL-054-01; TC-054-001 every retained Detailed row is sent once, in order, after a stall.
+#[tokio::test(start_paused = true)]
+async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
+    use std::time::Duration;
+    let row = |job: &str, sequence: u64| json!({"data":{"job_id":job,"sequence":sequence}});
+    // Five rows arrived at once after a stall; the socket last sent row 10 of job a.
+    let recent: std::collections::VecDeque<Value> = (11..=15).map(|n| row("a", n)).collect();
+    let mut seen = Some((json!("a"), json!(10)));
+    let mut sent = Vec::new();
+    while let Some((frame, behind)) = super::detail_after(&recent, &seen) {
+        sent.push((frame["data"]["sequence"].as_u64().unwrap(), behind));
+        seen = Some((
+            frame["data"]["job_id"].clone(),
+            frame["data"]["sequence"].clone(),
+        ));
+    }
+    assert_eq!(
+        sent,
+        vec![(11, true), (12, true), (13, true), (14, true), (15, false)]
+    );
+    // A new job's rows are all new; nothing is resent once caught up.
+    let other: std::collections::VecDeque<Value> = (0..2).map(|n| row("b", n)).collect();
+    assert_eq!(
+        super::detail_after(&other, &seen).map(|(f, b)| (f["data"]["sequence"].clone(), b)),
+        Some((json!(0), true))
+    );
+    assert!(super::detail_after(&recent, &Some((json!("a"), json!(15)))).is_none());
+    // Catch-up spacing is 170 ms (at most 5.9 rows/s), the steady spacing 200 ms.
+    let mut tick = tokio::time::interval(Duration::from_millis(200));
+    let now = tokio::time::Instant::now();
+    assert_eq!(
+        super::arm_detail(&mut tick, now, true) - now,
+        Duration::from_millis(170)
+    );
+    assert_eq!(
+        super::arm_detail(&mut tick, now, false) - now,
+        Duration::from_millis(200)
+    );
 }
