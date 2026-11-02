@@ -154,10 +154,15 @@ fn a_rejected_word_does_not_erase_later_metric_family() {
         .expect("fixed weak 37-bit errors must be corrected");
     assert_eq!(word.as_slice(), bits.as_slice());
     assert_eq!(errors, MAX_HARD_ERRORS + 1);
-    assert!(!accepted(&word, errors));
-    assert!(accepted(&word, 0));
+    assert!(!accepted(Mode::Ft8, &word, errors));
+    assert!(accepted(Mode::Ft8, &word, 0));
+    assert!(
+        accepted(Mode::Ft4, &word, errors),
+        "ft4_decode has no hard-error cap"
+    );
     let never = || false;
     let alone = complete(decode_families(
+        Mode::Ft8,
         vec![earlier],
         &channel,
         &mut CpuBudget::new(&never),
@@ -165,6 +170,7 @@ fn a_rejected_word_does_not_erase_later_metric_family() {
     .unwrap();
     assert_eq!(alone, None);
     let result = complete(decode_families(
+        Mode::Ft8,
         vec![earlier, good],
         &channel,
         &mut CpuBudget::new(&never),
@@ -182,6 +188,7 @@ fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
     for errors in [25, 30, MAX_HARD_ERRORS] {
         let llr = weak_errors(&bits, errors);
         let word = complete(decode_families(
+            Mode::Ft8,
             vec![llr],
             &channel,
             &mut CpuBudget::new(&never),
@@ -193,5 +200,10 @@ fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
             "{errors} weak hard errors"
         );
     }
-    assert!(!accepted(&[0; 174], 0), "the all-zero codeword is refused");
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        assert!(
+            !accepted(mode, &[0; 174], 0),
+            "the all-zero codeword is refused"
+        );
+    }
 }

@@ -259,8 +259,8 @@ impl Channel {
             let rows = columns[id] & !(1 << id);
             let (low, high) = (rows as u64, (rows >> 64) as u64);
             let (word, shift) = (id / 64, id % 64);
-            // Earlier pivot columns are unit vectors without bit id. Branch-free halves.
-            for column in &mut columns[id..] {
+            // Whole-row XOR over every column, as WSJT-X does; branch-free halves.
+            for column in &mut columns {
                 let halves = [*column as u64, (*column >> 64) as u64];
                 let mask = 0u64.wrapping_sub(halves[word] >> shift & 1);
                 *column =

@@ -80,6 +80,7 @@ package WstxOfflineDecode {
         attribute maxFrequencyHz : Real = 3500.0;
         attribute costasThreshold : Real = 2.7;
         attribute maxHardDisagreements : Integer = 36;
+        doc /* maxHardDisagreements applies to FT8 only (ft8b); FT4 (ft4_decode) has none. */
     }
     attribute def ModeParameters {
         attribute mode : Mode;
@@ -544,18 +545,21 @@ package WstxOfflineDecode {
         doc /* Adapted WSJT-X decode174_91 (maxosd=2, norder=2) and osd174_91 (Keff=91,
              ndeep=2), shared by FT8 and FT4 (#56). Sum-product belief propagation, flooding
              schedule: check message 2*platanh(product of tanh(extrinsic/2)), WSJT-X
-             piecewise-linear platanh saturating at 7; tanh may be a rational approximant
-             within 1e-4. Iterations 0..30; a word whose syndrome and CRC are zero ends it;
+             piecewise-linear platanh saturating at 7. Iterations 0..30; a word whose syndrome and CRC are zero ends it;
              stop early after iteration>=10 when unsatisfied checks>15 did not decrease for 5
              iterations. Keep the cumulative bit sums of iterations 1 and 2. On BP failure
              run ordered statistics on each kept sum in turn: order the 174 bits by
-             decreasing |sum|, Gaussian-eliminate the systematic (174,91) generator (CRC bits
-             free, pivots searched in the next 111 columns), re-encode the hard decisions of
+             decreasing |sum| (ties in reverse index order), Gaussian-eliminate the systematic
+             (174,91) generator with whole-row operations (CRC bits free; the pivot of
+             position id is searched in positions id..110, i.e. within the first k+20), re-encode the hard decisions of
              the 91 most reliable bits, then try every single (pair) flip of them whose
              re-encoded first 40 parity bits differ from the hard decisions in at most 9 (8)
              places; keep the candidate of least reliability-weighted distance. The result
              must pass H and CRC. hardDisagreements counts bits that disagree with the
              channel LLR signs (BP word) or with the kept sum's hard decisions (OSD word).
+             Deliberate deviations: tanh by a rational approximant within 1e-4; an OSD word
+             with zero disagreements is accepted (decode174_91 requires >0); every word
+             must pass H and CRC (WSJT-X checks CRC only).
              Cancellation is checked every BP iteration and every OSD flip position. */
     }
     action def Ft8SubtractVerifiedFrame {
@@ -685,8 +689,9 @@ package WstxOfflineDecode {
              fourbits200..203=pair,204..205=single (zerobased).
              NormalizeFULL206populationasFT8(no meansubtraction),thenextractinclusive
              ranges8..65/74..131/140..197=>174data,scale2.83/negateONCE.
-             Threeorderedfamilies, each through Ft8ChannelDecode, same acceptance
-             (hard disagreements<=36, not all-zero, H+CRC). Failedwordcontinues;
+             Threeorderedfamilies, each through Ft8ChannelDecode; accept any word that is
+             not the all-zero codeword (ft4_decode has no hard-disagreement cap), H+CRC.
+             Failedwordcontinues;
              no4thfallback. Sourceunsupported/invalidstatusretained, noAP/semanticprior. */
     }
     action def Ft4SubtractVerifiedFrame {
@@ -748,7 +753,7 @@ package WstxOfflineDecode {
              FT8BandLimit/FineSynchronization/ObserveMetricFamilies/DecodeMetricFamilies;
              FT4BandLimitAndFineSync/ObserveMetricFamilies. Qualifiedcap256,257=>limited.
              FiveFT8orthreeFT4families; each Ft8ChannelDecode (BP<=30 + OSD ndeep2 on
-             2 sums, rank91). Hard disagreements<=36, not all-zero, H+CRC mandatory.
+             2 sums, rank91). FT8 hard disagreements<=36; never all-zero; H+CRC mandatory.
              NoAP/hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
              <=3passes/32verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.

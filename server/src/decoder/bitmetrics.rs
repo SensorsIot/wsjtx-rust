@@ -7,11 +7,11 @@ use super::{
 };
 use rustfft::num_complex::Complex64;
 
-/// ft8b acceptance of a channel word: at most 36 hard disagreements (nharderrors) and not
-/// the all-zero codeword. FT4 uses the same rule.
+/// Acceptance of a channel word: never the all-zero codeword; FT8 (ft8b) at most 36 hard
+/// disagreements (nharderrors); FT4 (ft4_decode) any count.
 pub(super) const MAX_HARD_ERRORS: usize = 36;
-pub(super) fn accepted(word: &ChannelWord, hard_errors: usize) -> bool {
-    hard_errors <= MAX_HARD_ERRORS && word.contains(&1)
+pub(super) fn accepted(mode: Mode, word: &ChannelWord, hard_errors: usize) -> bool {
+    word.contains(&1) && (mode == Mode::Ft4 || hard_errors <= MAX_HARD_ERRORS)
 }
 
 pub(super) fn physical_hits(mode: Mode, rows: &[Vec<Complex64>]) -> (usize, usize) {
@@ -191,11 +191,12 @@ pub(super) async fn observe(
         Mode::Ft8 => ft8(&rows, budget).await?,
         Mode::Ft4 => ft4(&rows, budget).await?,
     };
-    decode_families(families, channel, budget).await
+    decode_families(pass.plan.mode, families, channel, budget).await
 }
 /// The first family whose word passes the acceptance rule wins; a rejected word does not
 /// stop later families.
 async fn decode_families(
+    mode: Mode,
     families: Vec<[f32; 174]>,
     channel: &Channel,
     budget: &mut CpuBudget<'_>,
@@ -203,7 +204,7 @@ async fn decode_families(
     for llr in families {
         budget.checkpoint().await?;
         if let Some((word, errors)) = channel.decode_counted(&llr, &|| (budget.cancel)())
-            && accepted(&word, errors)
+            && accepted(mode, &word, errors)
         {
             return Ok(Some(word));
         }
