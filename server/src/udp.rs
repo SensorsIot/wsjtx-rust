@@ -569,7 +569,7 @@ fn contact_command(state: &ProfileState, action: &str, extra: Value) -> Result<(
     }
     // #39: a UDP command is never an operator action for the Tx watchdog.
     contact
-        .operate_as(state, body, false, true)
+        .operate_as(state, body, false, authorization::Principal::Udp)
         .map(|_| ())
         .map_err(|(code, _)| code)
 }

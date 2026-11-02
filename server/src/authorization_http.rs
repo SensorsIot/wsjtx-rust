@@ -17,6 +17,21 @@ pub(crate) struct Service {
     pub(crate) authority: Authority,
     bootstraps: Vec<Bootstrap>,
     attempts: AttemptBudget,
+    /// Refused MCP client tokens (#58): 10 per 60 s, then 429; valid tokens never wait.
+    mcp_failures: AttemptBudget,
+    /// The most recent MCP token uses (#58 audit), newest last; the file keeps them all.
+    mcp_audit: std::collections::VecDeque<Value>,
+}
+/// Recent MCP token uses shown in Settings.
+const MCP_AUDIT_RECENT: usize = 32;
+/// The durable audit log of MCP token uses (JSON lines) in the profile directory; at this
+/// size it moves to `mcp-audit.1.log` (one older file kept).
+pub(crate) const MCP_AUDIT_FILE: &str = "mcp-audit.log";
+const MCP_AUDIT_ROTATE_BYTES: u64 = 1 << 20;
+pub(crate) fn utc_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 impl Service {
@@ -37,6 +52,8 @@ impl Service {
             authority: Authority::load(store, scope)?,
             bootstraps: Vec::new(),
             attempts: AttemptBudget::new(),
+            mcp_failures: AttemptBudget::new(),
+            mcp_audit: std::collections::VecDeque::new(),
         }))
     }
     fn bootstrap(&mut self, origin: &str, now: Instant) -> Result<String, Error> {
@@ -195,6 +212,83 @@ pub(crate) fn configuration_access(
         Err(Error::Unauthorized)
     }
 }
+/// Why POST /mcp refused a bearer (#58).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum McpRefusal {
+    /// Not an MCP client token (the station access token or a browser grant transport,
+    /// as configured before #58): refused with the hint to create an MCP client token.
+    NotMcpToken,
+    /// An unknown or revoked MCP client token.
+    Unknown,
+    RateLimited,
+    Unavailable,
+}
+/// The validated caller of one MCP request.
+pub(crate) struct McpCaller {
+    /// The internal MCP-principal station transport for the in-process dispatch.
+    pub(crate) transport: String,
+    pub(crate) client_id: String,
+    pub(crate) name: String,
+}
+/// Validates an MCP client token under the one store -> authorization lock order.
+pub(crate) fn mcp_access(app: &App, bearer: &str) -> Result<McpCaller, McpRefusal> {
+    let state = app.profile.as_ref().ok_or(McpRefusal::Unknown)?;
+    let mut store = state.store.lock().map_err(|_| McpRefusal::Unavailable)?;
+    let mut owner = state
+        .authorization
+        .lock()
+        .map_err(|_| McpRefusal::Unavailable)?;
+    // A plaintext profile has no grant authority and therefore no MCP access.
+    let service = owner.as_mut().ok_or(McpRefusal::Unknown)?;
+    let now = Instant::now();
+    let refused = |service: &mut Service, refusal| {
+        if service.mcp_failures.admit(now).is_err() {
+            McpRefusal::RateLimited
+        } else {
+            refusal
+        }
+    };
+    if !bearer.starts_with(auth::MCP_TOKEN_PREFIX) {
+        return Err(refused(service, McpRefusal::NotMcpToken));
+    }
+    let (transport, client) = match service.authority.mcp_transport(bearer, &app.origin, now) {
+        Ok(found) => found,
+        Err(Error::Unauthorized | Error::Invalid) => {
+            return Err(refused(service, McpRefusal::Unknown));
+        }
+        Err(_) => return Err(McpRefusal::Unavailable),
+    };
+    service
+        .authority
+        .mcp_used(&mut store, &client.id, utc_ms())
+        .map_err(|_| McpRefusal::Unavailable)?;
+    Ok(McpCaller {
+        transport,
+        client_id: client.id,
+        name: client.name,
+    })
+}
+/// One audit entry per MCP token use: client, name, action, outcome status and time.
+pub(crate) fn mcp_audit(app: &App, caller: &McpCaller, action: &str, status: u16) {
+    let Some(state) = app.profile.as_ref() else {
+        return;
+    };
+    let entry = json!({"utc_ms":utc_ms(),"client_id":caller.client_id,"name":caller.name,
+        "action":action,"status":status});
+    let Ok(mut store) = state.store.lock() else {
+        return;
+    };
+    let _ = store.append_log_line(MCP_AUDIT_FILE, &entry.to_string(), MCP_AUDIT_ROTATE_BYTES);
+    let Ok(mut owner) = state.authorization.lock() else {
+        return;
+    };
+    if let Some(service) = owner.as_mut() {
+        if service.mcp_audit.len() == MCP_AUDIT_RECENT {
+            service.mcp_audit.pop_front();
+        }
+        service.mcp_audit.push_back(entry);
+    }
+}
 pub(crate) async fn bootstrap_session_async(
     headers: &HeaderMap,
     app: &App,
@@ -322,6 +416,18 @@ struct RevokeRequest {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct McpCreateRequest {
+    version: u8,
+    name: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpRevokeRequest {
+    version: u8,
+    client_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CommissionRequest {
     version: u8,
     operation_id: String,
@@ -339,6 +445,8 @@ enum Operation {
     Receipt,
     Revoke,
     Commission,
+    McpCreate,
+    McpRevoke,
 }
 
 async fn finish_operation(job: tokio::task::JoinHandle<Result<Response, Error>>) -> Response {
@@ -402,6 +510,74 @@ handler!(status, Status);
 handler!(reconcile_receipt, Receipt);
 handler!(revoke, Revoke);
 handler!(commission, Commission);
+/// GET /authorization/v1/mcp-clients: the MCP clients and their recent use (read-only).
+pub(crate) async fn mcp_clients(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+) -> Response {
+    if (headers.contains_key(header::ORIGIN) && !strict_origin(&headers, &app))
+        || !app.origin.starts_with("https://")
+    {
+        return failure(StatusCode::FORBIDDEN, "forbidden_origin");
+    }
+    if query.is_some() {
+        return mapped(Error::Invalid);
+    }
+    finish_operation(tokio::task::spawn_blocking(move || {
+        let state = app.profile.as_ref().ok_or(Error::Unauthorized)?;
+        let owner = state
+            .authorization
+            .lock()
+            .map_err(|_| Error::PersistenceFailed)?;
+        let service = owner.as_ref().ok_or(Error::Unauthorized)?;
+        browser_access(service, &headers, &app, Instant::now())?;
+        mcp_listing(service)
+    }))
+    .await
+}
+handler!(mcp_create, McpCreate);
+handler!(mcp_revoke, McpRevoke);
+
+/// The caller's current browser grant access. An MCP-principal transport is never one:
+/// the auth-v1 operations and MCP client management belong to the browser (#58).
+fn browser_access(
+    service: &Service,
+    headers: &HeaderMap,
+    app: &App,
+    now: Instant,
+) -> Result<Access, Error> {
+    let handle = cookie(headers, &cookie_name(app))?;
+    let access = service.authority.access(&handle, &app.origin, now)?;
+    if !access.principal.is_operator() {
+        return Err(Error::Unauthorized);
+    }
+    Ok(access)
+}
+fn mcp_listing(service: &Service) -> Result<Response, Error> {
+    let clients: Vec<Value> = service
+        .authority
+        .mcp_clients()
+        .iter()
+        .map(|c| {
+            json!({"client_id":c.id,"name":c.name,"created_utc_ms":c.created_utc_ms,
+                "last_used_utc_ms":c.last_used_utc_ms})
+        })
+        .collect();
+    let recent: Vec<&Value> = service.mcp_audit.iter().rev().collect();
+    let bytes = serde_json::to_vec(
+        &json!({"version":1,"max_clients":auth::MCP_CAP,"clients":clients,"recent":recent}),
+    )
+    .map_err(|_| Error::Invalid)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
 
 fn operate(
     operation: Operation,
@@ -547,8 +723,7 @@ fn operate(
             if r.version != 1 {
                 return Err(Error::Invalid);
             }
-            let handle = cookie(&headers, &cookie_name(&app))?;
-            let access = service.authority.access(&handle, &app.origin, now)?;
+            let access = browser_access(service, &headers, &app, now)?;
             let gate = cat_gate(&store, Some(service));
             let commissioned =
                 service.authority.automatic_cat(&store.document.control) == Some(true);
@@ -579,8 +754,7 @@ fn operate(
                 return Err(Error::Invalid);
             }
             let scope = r.scope.in_validated_origin(&app.origin)?;
-            let handle = cookie(&headers, &cookie_name(&app))?;
-            let access = service.authority.access(&handle, &app.origin, now)?;
+            let access = browser_access(service, &headers, &app, now)?;
             if scope != access.scope {
                 return Err(Error::Conflict);
             }
@@ -609,8 +783,7 @@ fn operate(
                 return Err(Error::Invalid);
             }
             let scope = r.scope.in_validated_origin(&app.origin)?;
-            let handle = cookie(&headers, &cookie_name(&app))?;
-            let access = service.authority.access(&handle, &app.origin, now)?;
+            let access = browser_access(service, &headers, &app, now)?;
             if access.scope != scope {
                 return Err(Error::Conflict);
             }
@@ -619,6 +792,36 @@ fn operate(
                 &access,
                 &r.operation_id,
             )?))
+        }
+        Operation::McpCreate => {
+            let r: McpCreateRequest = auth::parse_request(&body)?;
+            if r.version != 1 {
+                return Err(Error::Invalid);
+            }
+            browser_access(service, &headers, &app, now)?;
+            let (client, token) =
+                service
+                    .authority
+                    .create_mcp_client(&mut store, &r.name, utc_ms())?;
+            // The token is in this response only; the station keeps its SHA-256.
+            let mut response = bounded(json!({"version":1,"client_id":client.id,
+                "name":client.name,"created_utc_ms":client.created_utc_ms,"token":token}))?;
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                "no-store".parse().map_err(|_| Error::Invalid)?,
+            );
+            Ok(response)
+        }
+        Operation::McpRevoke => {
+            let r: McpRevokeRequest = auth::parse_request(&body)?;
+            if r.version != 1 || !profile::valid_uuid(&r.client_id) {
+                return Err(Error::Invalid);
+            }
+            browser_access(service, &headers, &app, now)?;
+            service
+                .authority
+                .revoke_mcp_client(&mut store, &r.client_id)?;
+            mcp_listing(service)
         }
     }
 }

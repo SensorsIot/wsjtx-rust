@@ -18,11 +18,17 @@ package WstxMcp {
             stateless with JSON responses; no SSE, sessions, subscriptions, sampling,
             elicitation, resources or prompts. 2025-03-26 is not offered: it requires
             JSON-RPC batches, which this endpoint refuses (review finding 6).
-         D3 Authorization: the auth-v1 grant model of CL-022-01 unchanged. An MCP client
-            enrolls its own P-256 key with the bootstrap token like a browser and proves
-            it for a grant transport, presented as Authorization: Bearer. No new credential
-            store, OAuth server or MCP-only permission; the grant cap, revocation and
-            safety-revision rules apply as they do to browsers.
+         D3 Authorization (operator decision on #58, 2026-11-02, replacing the #12 choice
+            of an auth-v1 grant per MCP client): an MCP client holds an MCP client token of
+            its own (McpCredential, WstxProfiles::McpClientCredential), created and revoked
+            by the browser in Settings > General > Access & grants; it is separate from the
+            station access token (WSTX_TOKEN) and from every browser grant. POST /mcp
+            accepts only such a token; browser routes refuse it; it is never exchanged for
+            a browser cookie or grant. The station attaches the principal of every request
+            at the auth boundary from its credential (WstxProfiles::RequestPrincipal), so
+            whichever route a request takes, MCP is never counted as the browser operator.
+            No OAuth server or MCP-only permission; the safety-revision and transmit grant
+            rules apply to its in-process requests as they do to browsers.
          D4 Surface: five tools, each exactly one existing station route; no receive
             start/stop, radio, profile edit or log save tool in this CR (the browser keeps
             them); reads cover every operating view.
@@ -35,9 +41,10 @@ package WstxMcp {
             publication; three explicit rankings; no worked-before filter, directed CQ,
             CQ calling or attempt counter in this CR (max_unanswered_periods and
             max_contacts bound a run; the Tx watchdog stays in force unchanged).
-         D7 Run lifetime (supervisor decision on the #12 review, 2026-11-01): a run lives no
-            longer than the starting request's grant transport (its 8 h deadline, a newer
-            proof of the grant, revocation or a safety edit stop it authority_lost) and no
+         D7 Run lifetime (supervisor decision on the #12 review, 2026-11-01; #58): a run lives
+            no longer than the starting request's transport (its 8 h deadline, a newer proof
+            of that browser grant, revocation of that grant or MCP client, or a safety edit
+            stop it authority_lost; a browser proof never ends an MCP client's run) and no
             longer than max_run_minutes (default 120, 1..480; stop time_limit). A running
             automation is shown read-only in the browser station bar (AutomationIndicator).
          D8 Strategy runs (#39, WstxStrategy::AutoStrategyRun): an optional configuration
@@ -88,17 +95,35 @@ package WstxMcp {
              station idempotency: the JSON-RPC id is correlation only. */
     }
     attribute def McpCredential {
-        doc /* Exactly one Authorization field "Bearer " plus a 43-character base64url
-             256-bit token; the token must be a current auth-v1 grant transport of this
-             station (WstxRequirements::'CL-022-01'), validated per request by the same
-             authority owner and lock as GET /profile. Cookies on /mcp are never read; a
-             plaintext profile (no grant authority) has no MCP access. The in-process
-             station dispatch presents only that validated token as the station session
-             credential, with the station Origin. Expiry (8 h transport), revocation or a
-             safety edit makes MCP refuse 401 until the client proves its key again.
-             The operator helper tools/wstx-mcp-credential.cjs (Node, no dependency)
-             enrolls a key with WSTX_MCP_BOOTSTRAP_TOKEN into WSTX_MCP_KEY and, as the
-             Claude Code headersHelper, prints {"Authorization":"Bearer <transport>"}. */
+        attribute tokenPrefix : String = "wstx_mcp_";
+        attribute refusedAttemptsPerMinute : Integer = 10;
+        attribute auditFile : String = "mcp-audit.log";
+        attribute auditRecentShown : Integer = 32;
+        doc /* (#58) Exactly one Authorization field "Bearer " plus an MCP client token of
+             this station (WstxProfiles::McpClientCredential): "wstx_mcp_" and 43 base64url
+             characters (256 random bits), validated per request by the station's authority
+             owner under the profile store -> authorization lock order by a constant-time
+             comparison of its SHA-256 with the stored digests. Cookies on /mcp are never
+             read; a plaintext profile (no grant authority) has no MCP access.
+             Refusals: 401 with WWW-Authenticate Bearer realm="wstx" and JSON-RPC -32001
+             "unauthorized"; a bearer without the prefix (the station access token or a
+             browser grant transport, as configured before #58) carries data {reason
+             "mcp_token_required", hint naming Settings > General > Access & grants > MCP
+             clients}, no silent fallback; an unknown or revoked MCP token data {reason
+             "mcp_token_invalid"}. More than refusedAttemptsPerMinute refused bearers in 60 s
+             are 429 rate_limited; a valid token never waits.
+             The in-process station dispatch presents an internal MCP-principal transport of
+             that client (never sent to any client, reused until its 8 h deadline; revocation
+             or a safety edit ends it at once) as the station session credential, with the
+             station Origin; every station route reads principal mcp from it, and a
+             boundary guard in front of every route refuses 401 a session credential of
+             principal mcp on any route that no tool dispatches to (POST /transmit/command,
+             PUT /profile, logbook, WS, settings, receive and radio control).
+             Audit: every authenticated MCP request appends one JSON line {utc_ms,
+             client_id, name, action (method, tool and its view or command action), status
+             (the station status of a tools/call, else the HTTP status)} to auditFile in the
+             profile directory (moved to mcp-audit.1.log at 1 MiB, one older file kept) and
+             to the last auditRecentShown entries shown in Settings; no token is logged. */
     }
     enum def ToolName {
         enum wstx_read;

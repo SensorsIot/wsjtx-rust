@@ -591,13 +591,17 @@ async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm(
         ("stopped".into(), json!("context_changed"))
     );
     assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
-    // Revoking the starting grant ends the run at the next step; the MCP credential is gone.
+    // Revoking the starting MCP client in Settings ends the run at the next step and the
+    // MCP credential is gone (#58: revocation is immediate).
     cancel(&f).await;
     let a = f.read("automation").await;
     let s = automation(&f, "start", json!({"expected_policy_revision":a["policy_revision"],"expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":3})).await;
     assert_eq!(s["status"], 202, "{s}");
-    let r = f.browser("POST", "/authorization/v1/revoke", Some(json!({"version":1,"operation_id":profile::new_uuid().unwrap(),"scope":f.scope,"all_for_radio":false}))).await;
-    assert_eq!(r.json["outcome"], "committed", "{}", r.json);
+    let clients = f
+        .browser("GET", "/authorization/v1/mcp-clients", None)
+        .await;
+    let id = clients.json["clients"][0]["client_id"].as_str().unwrap();
+    assert_eq!(f.revoke_mcp_client(id).await.status, StatusCode::OK);
     publish(&f, e + 120_000, &[("CQ G4ABC IO91", 1000.0, Some(0.0))]);
     let snapshot = f
         .state
@@ -793,7 +797,7 @@ async fn tc_020_003_a_halt_racing_the_arming_halts_and_never_keys() {
 async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
     let mut f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
+    at_even(&f);
     let mut cfg = config_json();
     cfg["max_run_minutes"] = json!(1);
     run(&f, cfg.clone(), "ft8").await;
@@ -804,21 +808,17 @@ async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
     f.tick();
     assert_eq!(run_state(&f).await, ("stopped".into(), json!("time_limit")));
     skew(&f, Duration::ZERO);
-    // A newer proof of the grant replaces the starting transport: the run ends.
+    // A newer proof of the browser's grant is another credential (#58): the MCP
+    // client's run keeps its own transport and waits on; the client's revocation ends
+    // it (TC-020-003 d).
     cfg["max_run_minutes"] = json!(480);
     reconfigure(&f, cfg).await;
-    start_again(&f).await;
+    let started = start_again(&f).await;
     f.renew().await;
-    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
-    assert_eq!(
-        run_state(&f).await,
-        ("stopped".into(), json!("authority_lost"))
-    );
-    assert_eq!(
-        f.read("contact").await["contact"],
-        Value::Null,
-        "nothing selected"
-    );
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "waiting");
+    let stop = automation(&f, "stop", json!({"run_id":started["result"]["run_id"]})).await;
+    assert_eq!(stop["status"], 202, "{stop}");
     // The starting transport's 8 h deadline ends a waiting run (checked before duration).
     start_again(&f).await;
     skew(&f, Duration::from_secs(8 * 3600 - 60));

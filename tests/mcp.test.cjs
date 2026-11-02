@@ -1,9 +1,9 @@
 'use strict';
 // Cost 2: the compiled candidate executable on a disposable selected HTTPS profile (TLS
-// with a throwaway certificate, no radio, audio or RF), the operator credential helper
-// tools/wstx-mcp-credential.cjs and an independent MCP client writing literal JSON-RPC.
-// Expected values: the fixture profile document and the WstxMcp tool catalog table.
-// Proves: CL-012-01, CL-012-02; TC-020-001, TC-020-002.
+// with a throwaway certificate, no radio, audio or RF), a browser-style grant that creates
+// an MCP client token in Settings (#58) and an independent MCP client writing literal
+// JSON-RPC. Expected values: the fixture profile document and the WstxMcp tool catalog table.
+// Proves: CL-012-01, CL-012-02, CL-012-03; TC-020-001, TC-020-002, TC-020-004.
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -11,12 +11,11 @@ const path = require('node:path');
 const os = require('node:os');
 const https = require('node:https');
 const crypto = require('node:crypto');
-const {spawn, execFile} = require('node:child_process');
+const {spawn} = require('node:child_process');
 const {once} = require('node:events');
 const selfsigned = require('selfsigned');
 const {grant, browserPort} = require('./support.cjs');
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
-const helper = path.resolve(__dirname, '..', 'tools', 'wstx-mcp-credential.cjs');
 let root, app, origin, ca, token, certPath, document;
 
 function send(route, method, body, headers = {}) {
@@ -29,10 +28,10 @@ function send(route, method, body, headers = {}) {
     request.on('error', reject); if (data !== undefined) request.write(data); request.end();
   });
 }
-function credential(command, env) {
-  return new Promise(resolve => execFile(process.execPath, [helper, command], {env: {...process.env, NODE_EXTRA_CA_CERTS: certPath, ...env}, windowsHide: true},
-    (error, stdout, stderr) => resolve({code: error ? error.code : 0, stdout, stderr})));
-}
+const browserGrant = () => grant(origin, token, (route, method, body, h) => send(route, method, body, {Origin: origin, ...h}));
+// Settings > General > Access & grants > MCP clients, as the browser does it.
+const settings = (cookie, action, body) => action ? send('/authorization/v1/mcp-clients/' + action, 'POST', {version: 1, ...body}, {Origin: origin, Cookie: cookie})
+  : send('/authorization/v1/mcp-clients', 'GET', undefined, {Cookie: cookie});
 const meta = {'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': {name: 'wstx-node-test', version: '1'}, 'io.modelcontextprotocol/clientCapabilities': {}};
 function modern(bearer, method, params = {}) {
   const headers = {Authorization: bearer, Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method};
@@ -68,20 +67,17 @@ after(async () => {
   if (root) await fs.rm(root, {recursive: true, force: true});
 });
 
-test('TC-020-001 an MCP client with its own auth-v1 grant observes the browser state of the actual executable', {timeout: 60000}, async () => {
-  const keyFile = path.join(root, 'mcp-key.json');
-  const enrolled = await credential('enroll', {WSTX_MCP_ORIGIN: origin, WSTX_MCP_KEY: keyFile, WSTX_MCP_BOOTSTRAP_TOKEN: token});
-  assert.equal(enrolled.code, 0, enrolled.stderr); assert.equal(enrolled.stdout, 'enrolled\n');
-  assert.equal((await fs.readFile(keyFile, 'utf8')).includes(token), false, 'the bootstrap token is never stored');
-  const issued = await credential('header', {WSTX_MCP_ORIGIN: origin, WSTX_MCP_KEY: keyFile});
-  assert.equal(issued.code, 0, issued.stderr);
-  const headers = JSON.parse(issued.stdout); assert.deepEqual(Object.keys(headers), ['Authorization']);
-  assert.match(headers.Authorization, /^Bearer [A-Za-z0-9_-]{43}$/);
+test('TC-020-001 an MCP client with its own MCP client token observes the browser state of the actual executable', {timeout: 60000}, async () => {
+  const browser = await browserGrant();
+  const created = await settings(browser.cookie, 'create', {name: 'Claude Code'});
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  assert.match(created.body.token, /^wstx_mcp_[A-Za-z0-9_-]{43}$/);
+  assert.equal(created.headers['cache-control'], 'no-store');
+  const headers = {Authorization: 'Bearer ' + created.body.token};
   const list = await modern(headers.Authorization, 'tools/list');
   assert.equal(list.status, 200, JSON.stringify(list.body));
   assert.deepEqual(list.body.result.tools.map(t => t.name), ['wstx_read', 'wstx_results', 'wstx_contact_command', 'wstx_transmit_halt', 'wstx_automation_command']);
-  // A browser (its own grant) and the MCP client read the same profile representation.
-  const browser = await grant(origin, token, (route, method, body, h) => send(route, method, body, {Origin: origin, ...h}));
+  // The browser (its own grant) and the MCP client read the same profile representation.
   const page = await send('/profile', 'GET', undefined, {Cookie: browser.cookie});
   assert.equal(page.status, 200);
   const read = await modern(headers.Authorization, 'tools/call', {name: 'wstx_read', arguments: {view: 'profile'}});
@@ -97,18 +93,40 @@ test('TC-020-001 an MCP client with its own auth-v1 grant observes the browser s
   assert.equal(init.body.result.protocolVersion, '2025-11-25');
 });
 
-test('TC-020-002 the browser cookie, a foreign key file and a refused grant never authorize MCP', {timeout: 60000}, async () => {
-  const browser = await grant(origin, token, (route, method, body, h) => send(route, method, body, {Origin: origin, ...h}));
+test('TC-020-002 TC-020-004 browser credentials never authorize MCP, an MCP token never opens a browser route and revocation is immediate', {timeout: 60000}, async () => {
+  const browser = await browserGrant();
   const cookieOnly = await send('/mcp', 'POST', {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {_meta: meta}},
     {Cookie: browser.cookie, 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/list'});
   assert.equal(cookieOnly.status, 401); assert.equal(cookieOnly.headers['www-authenticate'], 'Bearer realm="wstx"');
-  const bearerFromCookie = await modern('Bearer ' + browser.cookie.split('=')[1], 'tools/list');
-  assert.equal(bearerFromCookie.status, 200, 'the same grant transport is valid only when presented explicitly as a bearer');
-  const keyFile = path.join(root, 'foreign-key.json');
-  await fs.writeFile(keyFile, JSON.stringify({version: 1, origin: 'https://other.example:1', grant_id: 'x', private_key: 'x'}));
-  const foreign = await credential('header', {WSTX_MCP_ORIGIN: origin, WSTX_MCP_KEY: keyFile});
-  assert.notEqual(foreign.code, 0); assert.equal(foreign.stdout, '');
-  const badToken = await credential('enroll', {WSTX_MCP_ORIGIN: origin, WSTX_MCP_KEY: path.join(root, 'never.json'), WSTX_MCP_BOOTSTRAP_TOKEN: 'wrong'});
-  assert.notEqual(badToken.code, 0); assert.match(badToken.stderr, /bootstrap refused \(401\)/);
-  await assert.rejects(fs.stat(path.join(root, 'never.json')), 'no key file after a refused enrollment');
+  // Configurations from before #58 (the grant transport or the station access token as
+  // the bearer) are refused with the hint to the MCP client token.
+  for (const legacy of [browser.cookie.split('=')[1], token]) {
+    const refused = await modern('Bearer ' + legacy, 'tools/list');
+    assert.equal(refused.status, 401);
+    assert.equal(refused.body.error.data.reason, 'mcp_token_required');
+    assert.match(refused.body.error.data.hint, /Settings > General > Access & grants > MCP clients/);
+  }
+  const created = await settings(browser.cookie, 'create', {name: 'agent'});
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  const mcpToken = created.body.token, bearer = 'Bearer ' + mcpToken;
+  assert.equal((await modern(bearer, 'tools/list')).status, 200);
+  // The MCP token on a browser route, as the session cookie or a bearer: refused.
+  const cookieName = browser.cookie.split('=')[0];
+  for (const h of [{Cookie: `${cookieName}=${mcpToken}`}, {Authorization: bearer}]) {
+    assert.equal((await send('/contact', 'GET', undefined, {Origin: origin, ...h})).status, 401);
+    assert.equal((await send('/authorization/v1/mcp-clients', 'GET', undefined, {Origin: origin, ...h})).status, 401);
+  }
+  const session = await send('/session', 'POST', mcpToken, {Origin: origin});
+  assert.equal(session.status, 401); assert.equal(session.headers['set-cookie'], undefined, 'no browser session for an MCP token');
+  // Listed by name; the token is never shown again; the use is audited.
+  const listed = await settings(browser.cookie, '', {});
+  const mine = listed.body.clients.find(c => c.client_id === created.body.client_id);
+  assert.equal(mine.name, 'agent'); assert.equal(typeof mine.last_used_utc_ms, 'number');
+  assert.equal(JSON.stringify(listed.body).includes(mcpToken.slice(9)), false);
+  assert.equal(listed.body.recent[0].name, 'agent'); assert.equal(listed.body.recent[0].action, 'tools/list');
+  // Revoked in Settings: refused at the next request.
+  const revoked = await settings(browser.cookie, 'revoke', {client_id: created.body.client_id});
+  assert.equal(revoked.status, 200);
+  const after = await modern(bearer, 'tools/list');
+  assert.equal(after.status, 401); assert.equal(after.body.error.data.reason, 'mcp_token_invalid');
 });

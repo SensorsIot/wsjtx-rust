@@ -581,7 +581,6 @@
   - client/
   - tests/mcp.test.cjs
   - tests/support.cjs
-  - tools/wstx-mcp-credential.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -595,7 +594,6 @@
   - server/src/authorization_http.rs
   - client/authorization.js
   - tests/mcp.test.cjs
-  - tools/wstx-mcp-credential.cjs
   - tests/support.cjs
   - Cargo.toml
   - Cargo.lock
@@ -603,4 +601,4 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
-  needs: Pinned Rust and Node 24 (npm ci for selfsigned). Windows PC; the compiled candidate on a disposable selected HTTPS profile with a throwaway certificate, the MCP credential helper and an independent JSON-RPC client. No transceiver, audio device, PTT or network service.
+  needs: Pinned Rust and Node 24 (npm ci for selfsigned). Windows PC; the compiled candidate on a disposable selected HTTPS profile with a throwaway certificate, a browser-style grant that creates an MCP client token and an independent JSON-RPC client. No transceiver, audio device, PTT or network service.

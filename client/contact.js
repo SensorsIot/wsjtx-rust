@@ -336,6 +336,54 @@ $('udp-save').addEventListener('click',async()=>{
 });
 new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden){loadUdp();loadDiagnostics();}}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
 document.querySelector('#tab-logging')?.addEventListener('click',()=>loadUdp(true));
+// #58 MCP clients (Settings > General > Access & grants): an MCP client uses a token of
+// its own, never this browser's credential; the token is shown once, the station keeps
+// only its hash. Loaded when the drawer opens, never on the operating path.
+$('settings-browsers').insertAdjacentHTML('beforeend','<h4 id="mcp-clients-title">MCP clients</h4><p class="op-muted">An MCP client (an AI agent or script) uses its own token, never this browser\'s authorization. Its requests never count as your action for the Tx watchdog.</p><ul id="mcp-clients" aria-labelledby="mcp-clients-title"></ul><label>Client name<input id="mcp-name" maxlength="32" autocomplete="off" placeholder="e.g. Claude Code"></label><button type="button" id="mcp-create">Create token</button><div id="mcp-token" hidden><p class="op-warning">Copy this token now: it is shown only once. Configure it in the MCP client as Authorization: Bearer &lt;token&gt;.</p><code id="mcp-token-value"></code> <button type="button" id="mcp-token-copy">Copy</button> <button type="button" id="mcp-token-done">Done</button></div><p id="mcp-result" class="op-muted" role="status"></p><details id="mcp-recent-box"><summary>Recent MCP use</summary><ol id="mcp-recent"></ol></details>');
+// The page CSP admits no style attribute; CSSOM wraps the 52-character token at 360 px.
+Object.assign($('mcp-token-value').style,{display:'block',wordBreak:'break-all',userSelect:'all'});
+let mcpLoading=null;
+const mcpTime=ms=>ms==null?'never':new Date(ms).toISOString().slice(0,16).replace('T',' ')+' UTC';
+const mcpPost=(path,body)=>stationFetch('/authorization/v1/mcp-clients'+path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:1,...body}),signal:AbortSignal.timeout(10000)});
+const mcpRead=()=>stationFetch('/authorization/v1/mcp-clients',{cache:'no-store',signal:AbortSignal.timeout(10000)});
+function mcpShow(v){
+  const list=$('mcp-clients');list.replaceChildren();
+  for(const c of v.clients){
+    const item=document.createElement('li'),text=document.createElement('span'),revoke=document.createElement('button');
+    text.textContent=`${c.name} · created ${mcpTime(c.created_utc_ms)} · last used ${mcpTime(c.last_used_utc_ms)} `;
+    revoke.type='button';revoke.textContent='Revoke';revoke.setAttribute('aria-label',`Revoke MCP client ${c.name}`);
+    revoke.addEventListener('click',async()=>{
+      if(!await window.wstxConfirm(`Revoke MCP client "${c.name}"? Its token stops working at once.`,'Revoke'))return;
+      revoke.disabled=true;mcpAnswer(await mcpPost('/revoke',{client_id:c.client_id}).catch(()=>null),'Revoked');
+    });
+    item.append(text,revoke);list.append(item);
+  }
+  if(!v.clients.length)list.innerHTML='<li class="op-muted">No MCP clients</li>';
+  $('mcp-create').disabled=v.clients.length>=v.max_clients;
+  $('mcp-recent').replaceChildren(...v.recent.map(e=>{const li=document.createElement('li');li.textContent=`${mcpTime(e.utc_ms)} · ${e.name} · ${e.action} · ${e.status}`;return li;}));
+}
+async function mcpAnswer(response,done){
+  const data=await response?.json().catch(()=>null);
+  if(!response?.ok||data?.version!==1){$('mcp-result').textContent=`MCP clients unavailable (${data?.error?.code??response?.status??'no answer'})`;return;}
+  mcpShow(data);$('mcp-result').textContent=done;
+}
+function loadMcp(){
+  if(!mcpLoading)mcpLoading=mcpRead().then(r=>mcpAnswer(r,'')).catch(()=>{$('mcp-result').textContent='MCP clients unavailable';}).finally(()=>{mcpLoading=null;});
+  return mcpLoading;
+}
+$('mcp-create').addEventListener('click',async()=>{
+  const name=$('mcp-name').value.trim();if(!name){$('mcp-result').textContent='Name the MCP client first';$('mcp-name').focus();return;}
+  $('mcp-create').disabled=true;
+  try{
+    const response=await mcpPost('/create',{name}),data=await response.json().catch(()=>null);
+    if(!response.ok||!data?.token){$('mcp-result').textContent=`Not created · ${data?.error?.code??response.status}`;return;}
+    $('mcp-name').value='';$('mcp-token-value').textContent=data.token;$('mcp-token').hidden=false;$('mcp-result').textContent=`Created ${data.name}`;
+  }catch(error){$('mcp-result').textContent=`Not created · ${error.message}`;}
+  finally{$('mcp-create').disabled=false;loadMcp();}
+});
+$('mcp-token-copy').addEventListener('click',()=>navigator.clipboard?.writeText($('mcp-token-value').textContent).then(()=>{$('mcp-result').textContent='Token copied';},()=>{$('mcp-result').textContent='Copy failed: select the token and copy it';}));
+$('mcp-token-done').addEventListener('click',()=>{$('mcp-token-value').textContent='';$('mcp-token').hidden=true;});
+new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden)loadMcp();else $('mcp-token-done').click();}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
 // #43 CL-043-01: the clock source, saved at once. The clock view is read on demand when the
 // drawer opens (at most every 10 s) or on the General tab, never polled on the thin link.
 $('settings-clock').insertAdjacentHTML('beforeend','<label>Clock source<select id="clock-source" disabled><option value="ntp">NTP (default)</option><option value="air">From the air</option><option value="both">Both: NTP, air as fallback</option></select></label><p id="clock-air" class="op-muted" role="status">Clock from the air unknown</p><p id="clock-result" class="op-muted" role="status"></p>');

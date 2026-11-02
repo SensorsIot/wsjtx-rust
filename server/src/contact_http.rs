@@ -242,18 +242,19 @@ impl Station {
         body: Value,
         granted: bool,
     ) -> Result<(StatusCode, Value), Refusal> {
-        self.operate_as(state, body, granted, false)
+        self.operate_as(state, body, granted, authorization::Principal::Browser)
     }
-    /// The ContactCommand path; `automatic` is every source that is not a human action in
-    /// the browser (automation, MCP, UDP): it never resets the Tx watchdog and arms only
-    /// within the watchdog time of the last browser action (#39).
+    /// The ContactCommand path with the request's principal (#58). Every principal that
+    /// is not the browser (automation, MCP, UDP) is automatic: it never resets the Tx
+    /// watchdog and arms only within the watchdog time of the last browser action (#39).
     pub(crate) fn operate_as(
         &self,
         state: &ProfileState,
         body: Value,
         granted: bool,
-        automatic: bool,
+        principal: authorization::Principal,
     ) -> Result<(StatusCode, Value), Refusal> {
+        let automatic = !principal.is_operator();
         let (command_id, revision, action) = envelope(&body)?;
         let parsed = parse_command(&body, &action)?;
         let r = &state.recording;
@@ -793,7 +794,6 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
 
 pub async fn command(
     State(app): State<App>,
-    mcp: Option<axum::Extension<crate::mcp::Dispatched>>,
     headers: HeaderMap,
     RawQuery(query): RawQuery,
     body: Result<Bytes, BytesRejection>,
@@ -818,12 +818,17 @@ pub async fn command(
     if body["boot_id"] != r.boot.as_str() {
         return refusal("state_conflict", Some("boot_id"));
     }
-    // Transmit authority needs a current CL-022 grant (selected HTTPS profile).
+    // Transmit authority needs a current CL-022 grant (selected HTTPS profile). The
+    // principal comes from the credential (#58): an MCP client's transport is never the
+    // browser, whichever route carried it; an unreadable one is never an operator.
+    let access = authorization_http::operating_access_async(&headers, &app).await;
     #[allow(unused_mut)]
-    let mut granted = matches!(
-        authorization_http::operating_access_async(&headers, &app).await,
-        Ok(Some(_))
-    );
+    let mut granted = matches!(access, Ok(Some(_)));
+    let principal = match &access {
+        Ok(Some(a)) => a.principal,
+        Ok(None) => authorization::Principal::Browser,
+        Err(_) => authorization::Principal::Automation,
+    };
     let (Ok(station), Some(state)) = (station_of(&r), app.profile.clone()) else {
         return refusal("not_found", None);
     };
@@ -833,9 +838,8 @@ pub async fn command(
     }
     // #39: only a human action in the browser is an operator action for the Tx
     // watchdog; an MCP tool call runs like automation (no reset, arms only within it).
-    let automatic = mcp.is_some();
     let outcome =
-        tokio::task::spawn_blocking(move || station.operate_as(&state, body, granted, automatic))
+        tokio::task::spawn_blocking(move || station.operate_as(&state, body, granted, principal))
             .await;
     match outcome {
         Ok(Ok((status, reply))) => (status, Json(reply)).into_response(),

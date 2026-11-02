@@ -440,6 +440,9 @@ fn router(state: App) -> Router {
         .route("/authorization/v1/receipt", post(authorization_http::reconcile_receipt))
         .route("/authorization/v1/revoke", post(authorization_http::revoke))
         .route("/authorization/v1/commission", post(authorization_http::commission))
+        .route("/authorization/v1/mcp-clients", get(authorization_http::mcp_clients))
+        .route("/authorization/v1/mcp-clients/create", post(authorization_http::mcp_create))
+        .route("/authorization/v1/mcp-clients/revoke", post(authorization_http::mcp_revoke))
         .route("/profile", get(get_profile).put(put_profile))
         .route("/recording", get(recording_http::snapshot))
         .route("/audio/devices", get(receive_http::devices))
@@ -483,6 +486,7 @@ fn router(state: App) -> Router {
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), mcp::principal_guard))
         .layer(axum::middleware::from_fn(|request, next: axum::middleware::Next| async move {
             let mut response = next.run(request).await;
             let headers = response.headers_mut();
