@@ -47,12 +47,14 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.deepEqual(await dxcc('HB9BLA W1XYZ -10'),['U.S.A.','U.S.A. \u00b7 NA \u00b7 CQ zone 5 \u00b7 ITU zone 8 (cty.dat)','~7706 km']);
   assert.equal((await dxcc('CQ DL1ABC JO62'))[0],'Germany');
   assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
-  // #37 QsoPane, no contact: Rx 1500 Hz; the candidates within +/-50 Hz (1450.0..1550.0) and the
-  // row to my call, plain, newest two first, message and SNR only; never 1449.9 Hz or HB9BL.
+  // #37 QsoPane, no contact (operator 2026-11-02): only the stations calling my call, on any
+  // frequency, with their period start and SNR; never the CQs near Rx or HB9BL.
+  // Proves: CL-050-05; TC-050-005 (Others).
   const others=async()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
-  await waitFor(async()=>(await others()).length===2,async()=>`QSO pane ${JSON.stringify(await others())}`);
-  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212);
-  assert.deepEqual(await others(),[['candidate',`${recv} HB9BLA W1XYZ -10  ${minus}10 dB`],['candidate',`${recv} CQ W5EE FN31  +5 dB`]]);
+  await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
+  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212),hms=new Date(period).toISOString().slice(11,19);
+  assert.deepEqual(await others(),[['candidate',`${hms} ${recv} HB9BLA W1XYZ -10  ${minus}10 dB`]]);
+  assert.equal(await page.locator('#qso-others-none').isVisible(),false);
   // Local sorting: no request. The DX entry is in the QSO fold-out.
   const before=requests.length;
   await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#qso-more summary').click();
