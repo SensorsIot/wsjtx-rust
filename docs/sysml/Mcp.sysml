@@ -115,7 +115,10 @@ package WstxMcp {
              The in-process station dispatch presents an internal MCP-principal transport of
              that client (never sent to any client, reused until its 8 h deadline; revocation
              or a safety edit ends it at once) as the station session credential, with the
-             station Origin; every station route reads principal mcp from it.
+             station Origin; every station route reads principal mcp from it, and a
+             boundary guard in front of every route refuses 401 a session credential of
+             principal mcp on any route that no tool dispatches to (POST /transmit/command,
+             PUT /profile, logbook, WS, settings, receive and radio control).
              Audit: every authenticated MCP request appends one JSON line {utc_ms,
              client_id, name, action (method, tool and its view or command action), status
              (the station status of a tools/call, else the HTTP status)} to auditFile in the

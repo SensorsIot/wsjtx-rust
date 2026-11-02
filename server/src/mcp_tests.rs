@@ -1303,6 +1303,19 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
     // The MCP-principal transport may not change the watchdog on the browser route.
     let r = direct("set_watchdogs", json!({"tx_minutes":99,"tune_seconds":90})).await;
     assert_eq!(r.json["error"]["code"], "operator_required", "{}", r.json);
+    // Every route no MCP tool dispatches to refuses the MCP principal at the boundary:
+    // the transmit watchdog setting, the profile, the logbook and the WebSocket.
+    let tx = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "action":"set_watchdogs","tx_minutes":99,"tune_seconds":90});
+    for (method, uri, body) in [
+        ("POST", "/transmit/command", Some(tx)),
+        ("PUT", "/profile", Some(json!({}))),
+        ("GET", "/contacts", None),
+        ("GET", "/ws", None),
+    ] {
+        let r = with_cookie(&f, method, uri, &internal, body).await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED, "{method} {uri}");
+    }
     // The MCP token itself never reaches /contact/command (refused before any effect).
     let revision = f.browser("GET", "/contact", None).await.json["contact_revision"]
         .as_u64()

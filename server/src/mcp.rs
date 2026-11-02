@@ -130,6 +130,37 @@ const VIEWS: [(&str, &str); 7] = [
     ("contact", "/contact"),
     ("automation", "/automation"),
 ];
+/// The station routes an MCP tool call dispatches to (WstxMcp::ToolCatalog).
+fn tool_route(method: &Method, path: &str) -> bool {
+    match *method {
+        Method::GET => path == "/receive/results" || VIEWS.iter().any(|(_, p)| *p == path),
+        Method::POST => matches!(
+            path,
+            "/contact/command" | "/transmit/halt" | "/automation/command"
+        ),
+        _ => false,
+    }
+}
+/// #58 boundary guard for every station route: a request whose session credential is an
+/// MCP-principal transport is refused 401 on every route that no MCP tool dispatches to
+/// (POST /transmit/command, PUT /profile, logbook, WS, settings, receive and radio
+/// control ...), so the principal never depends on that handle staying in-process.
+pub(crate) async fn principal_guard(
+    State(app): State<App>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if app.profile.is_some()
+        && request.headers().contains_key(header::COOKIE)
+        && !tool_route(request.method(), request.uri().path())
+        && let Ok(Some(access)) =
+            authorization_http::operating_access_async(request.headers(), &app).await
+        && !access.principal.is_operator()
+    {
+        return authorization_http::mapped(authorization::Error::Unauthorized);
+    }
+    next.run(request).await
+}
 /// WstxMcp::ToolCatalog, in this fixed order.
 pub fn tools() -> Value {
     let output = json!({"type":"object","properties":{"v":{"const":1},"tool":{"type":"string"},

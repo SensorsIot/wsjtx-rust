@@ -452,6 +452,7 @@ fn router(state: App) -> Router {
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), mcp::principal_guard))
         .layer(axum::middleware::from_fn(|request, next: axum::middleware::Next| async move {
             let mut response = next.run(request).await;
             let headers = response.headers_mut();
