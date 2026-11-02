@@ -470,8 +470,24 @@ fn startup_error(code: &str, path: &std::path::Path) -> String {
         .collect();
     format!("{code}: selected profile {path}")
 }
-async fn index(State(app): State<App>) -> Html<String> {
-    Html(include_str!("../../client/index.html").replace(
+// #33: the running station reports the commit its release build was made from, so a
+// post-install probe can ask the service itself instead of trusting the install receipt.
+fn source_commit(raw: Option<&'static str>) -> &'static str {
+    match raw {
+        Some(commit)
+            if commit.len() == 40
+                && commit
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) =>
+        {
+            commit
+        }
+        _ => "unknown",
+    }
+}
+async fn index(State(app): State<App>) -> impl IntoResponse {
+    let commit = source_commit(option_env!("WSTX_SOURCE_COMMIT"));
+    ([("x-wstx-source-commit", commit)], Html(include_str!("../../client/index.html").replace(
         "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script></head>" } else { "</head>" }
     ).replace(
         "<script src=\"/app.js\" defer></script>",
@@ -483,7 +499,7 @@ async fn index(State(app): State<App>) -> Html<String> {
             app.profile.is_some(),
             client_build()
         ),
-    ))
+    )))
 }
 fn cookie_name(app: &App) -> String {
     app.profile_id

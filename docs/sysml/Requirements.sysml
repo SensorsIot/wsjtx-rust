@@ -3412,6 +3412,28 @@ package WstxRequirements {
     dependency CL_051_01_verified_by_TC_051_003 from 'CL-051-01' to 'TC-051-003';
     dependency CL_051_02_verified_by_TC_051_003 from 'CL-051-02' to 'TC-051-003';
 
+    // #33 The station reports its own source commit, for the independent post-install probe.
+    requirement 'CL-033-01' {
+        doc /* Every response to GET / carries exactly one header x-wstx-source-commit: the 40 lower-case hex digits of the source commit the executable was built from (compile-time WSTX_SOURCE_COMMIT), or unknown when the build had none or a value of any other form. It needs no authentication; station.status and the served page body are unchanged. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/main.rs";
+    }
+    dependency CL_033_01_to_FR_021 from 'CL-033-01' to 'FR-021';
+    verification 'TC-033-001' {
+        doc /* TC-033-001 — The served page reports the build's source commit
+             CL-033-01
+             Setup: the router of the test build with no selected profile; the source-commit validation called directly.
+             Steps: GET / through the router; validate a 40-digit lower-case commit, none, an empty, a short, an upper-case, a CR/LF-terminated and a 41-digit value.
+             Expected: exactly one x-wstx-source-commit header, equal to the test build's own WSTX_SOURCE_COMMIT when it is 40 lower-case hex and unknown otherwise; the valid commit is reported unchanged and every other value as unknown.
+             2 — Isolated automated functional tests; Windows development PC, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-033-01';
+        }
+        attribute executable : String = "server/src/protocol_tests.rs";
+    }
+    dependency CL_033_01_verified_by_TC_033_001 from 'CL-033-01' to 'TC-033-001';
+
     // #50 Operating screen operator feedback and #54 continuous WSJT-X-like waterfall (one CR, 2026-11-02).
     requirement 'CL-050-01' {
         doc /* The top bar shows UTC without a period bar; the period progress is the QSO pane's NEXT bar. The waterfall Rx and Tx markers are 3 px green and red lines without text labels, draggable. A waterfall click sets Tx (sent after 250 ms), a double-click sets Rx and Tx with one request; modifiers do not change the effect and a right-click sets nothing (WstxContact::PointerEffect). The help overview states this mapping. A double-click on a decoded Band Activity row selects the station and starts the reply, as Reply. */
