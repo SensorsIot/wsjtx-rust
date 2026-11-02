@@ -815,3 +815,39 @@ fn audio_queue_full_epoch_names_its_trigger() {
         (1, "capture_loss", "queue_full")
     );
 }
+
+// Proves: CL-052-01; TC-052-001. #52: silent packets (zero-filled by the source) and
+// accepted engine glitches are marked on the canonical timeline, so a window can count
+// them; a new epoch forgets them.
+#[test]
+fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
+    let f = format(48000);
+    let q = PacketQueue::new(f).unwrap();
+    let mut s = LiveSource::new(q.clone(), f).unwrap();
+    let x = bytes(&signal(48000, 1000.0, 480));
+    let mut blocks = Vec::new();
+    let (mut frame, mut qpc) = (480_000u64, 1_000_000u64);
+    for i in 0..100u64 {
+        // Packet 0 opens the epoch; 10 and 11 are silent; 40 and 70 are glitches.
+        let flags = match i {
+            0 | 40 | 70 => DATA_DISCONTINUITY,
+            10 | 11 => SILENT,
+            _ => 0,
+        };
+        let data = if flags == SILENT { &[][..] } else { &x[..] };
+        assert!(q.push(data, 480, frame, qpc, flags));
+        drain(&mut s, &mut blocks);
+        frame += 480;
+        qpc += 100_000;
+    }
+    // 480 native frames at 48 kHz are 120 canonical frames; packet k starts at 120*k.
+    assert_eq!(s.marked_frames(0, 12000), (240, 240));
+    assert_eq!(s.marked_frames(1200, 1440), (240, 0));
+    assert_eq!(s.marked_frames(1260, 4860), (180, 60));
+    assert_eq!(s.marked_frames(1440, 4800), (0, 0));
+    assert_eq!(s.capture_diagnostics().native_discontinuity, 3);
+    // A timestamp error is unknown loss and starts a new epoch: its marks are gone.
+    assert!(q.push(&x, 480, frame, qpc, TIMESTAMP_ERROR));
+    drain(&mut s, &mut blocks);
+    assert_eq!(s.marked_frames(0, u64::MAX), (0, 0));
+}

@@ -592,7 +592,9 @@ attribute def ActivityOrdering {
              placeholder (later CR).
              Expert: raw CAT readback, receive job/generation, timing, the explicit receive
              start/stop, the startup resume state of #45 (resume state and last receive
-             choice from GET /receive/startup), selection refresh, connection details,
+             choice from GET /receive/startup), the decode window diagnostics of #52 (Save
+             FT8 decode windows and the latest window's counters, CL-052-01), selection
+             refresh, connection details,
              recordings/replay and the
              raw transmit test panel (WstxTransmit, #9).
              Operative changes (display, theme, watchdogs) apply immediately and never

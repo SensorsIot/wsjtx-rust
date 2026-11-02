@@ -7,6 +7,8 @@ const $=id=>document.getElementById(id);
 // #45 CL-045-01: a plain setting, saved on change; it acts at the next station start.
 block('settings-startup','Receive at startup',document.querySelector('#settings-general'),'<label class="op-check"><input type="checkbox" id="monitor-off-startup" disabled>Monitor off at startup</label><p id="startup-result" class="op-muted" role="status"></p><p class="op-muted">Saved at once; it takes effect at the next station start and does not restart receive.</p>');
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
+// #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
+block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
 block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT and Esc end it. The Tx watchdog counts from your last action and is never reset by automation.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
@@ -277,7 +279,7 @@ $('udp-save').addEventListener('click',async()=>{
   }catch(error){$('udp-result').textContent=`Not saved · ${error.message}`;}
   finally{udpButtons();}
 });
-new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden)loadUdp();}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
+new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden){loadUdp();loadDiagnostics();}}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
 document.querySelector('#tab-logging')?.addEventListener('click',()=>loadUdp(true));
 let startupView=null,startupLoading=null;
 const resumeText={idle:'Nothing to resume at start',off:'Monitor off at startup',waiting:'Resuming receive',started:'Resumed at start',started_untuned:'Resumed at start on the present dial',skipped:'Resume skipped: receive was already chosen',failed:'Resume failed'};
@@ -300,6 +302,28 @@ $('monitor-off-startup').addEventListener('change',async event=>{
     startupView=data;$('startup-result').textContent='Saved';
   }catch(error){$('startup-result').textContent=`Not saved · ${error.message}`;}
   startupShow();
+});
+let diagnosticsView=null,diagnosticsRead=-Infinity;
+function diagnosticsShow(){
+  const v=diagnosticsView,box=$('window-dump');box.disabled=!v;if(!v)return;box.checked=v.window_dump;
+  const w=v.windows.at(-1),fill=w?.zero_filled_frames??'unknown',glitch=w?.glitch_frames??'unknown';
+  $('window-diagnostics').textContent=w?`Last window ${w.period_start_utc??w.origin}: ${w.zero_samples} zero samples (longest run ${w.longest_zero_run}, early buffer ${w.early_buffer_zero_samples??'unknown'}), zero-filled ${fill}, glitch ${glitch}${v.window_dump?` · ${v.dumped_windows} saved`:''}${v.dump_error?` · ${v.dump_error}`:''}${v.storage_error?` · ${v.storage_error}`:''}`:`No window analysed yet${v.storage_error?` · ${v.storage_error}`:''}`;
+}
+function loadDiagnostics(force=false){
+  if(!force&&performance.now()-diagnosticsRead<30000)return;
+  diagnosticsRead=performance.now();
+  return stationFetch('/receive/diagnostics',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){diagnosticsView=v;diagnosticsShow();}}).catch(()=>{});
+}
+$('window-diagnostics-refresh').addEventListener('click',()=>loadDiagnostics(true));
+$('window-dump').addEventListener('change',async event=>{
+  const box=event.target,v=diagnosticsView;if(!v)return;box.disabled=true;$('window-diagnostics').textContent='Saving';
+  try{
+    const response=await stationFetch('/receive/diagnostics',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,window_dump:box.checked}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1)throw new Error(data?.error?.code||'request_failed');
+    diagnosticsView=data;
+  }catch(error){diagnosticsShow();$('window-diagnostics').textContent=`Not saved · ${error.message}`;return;}
+  diagnosticsShow();
 });
 // Log QSO: log the current contact now, without a form (DirectLog).
 async function logQso(){if(snap?.contact?.dx_call)await send('open_log',{},'Log QSO');}

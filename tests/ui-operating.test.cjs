@@ -470,6 +470,34 @@ test('TC-007-009 Monitor off at startup reads and saves the station setting with
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-052-01; TC-052-001 the FT8 window dump is an Expert setting, off by default and read on demand.
+test('TC-052-001 Save FT8 decode windows reads and saves the station setting in Settings > Expert',{timeout:60000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
+  const requests=[],posts=[];
+  page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/receive/diagnostics')posts.push(JSON.parse(r.postData()));});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  assert.deepEqual(requests.filter(r=>r.endsWith('/receive/diagnostics')),[],'not read before Settings opens');
+  const initial=await (await fetch(app.origin+'/receive/diagnostics')).json();
+  assert.equal(initial.window_dump,false,'off by default');
+  await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
+  const box=page.locator('#window-dump');await page.locator('#window-dump:enabled').waitFor();
+  await box.scrollIntoViewIfNeeded();assert.equal(await inViewport(page,'#window-dump'),true,'the setting is in Settings > Expert');
+  assert.equal(await page.locator('#settings-expert #window-dump').count(),1);
+  assert.equal(await box.isChecked(),false,'shows the station value');
+  assert.match(await page.locator('#window-diagnostics').textContent(),/^No window analysed yet/);
+  await box.check();await page.waitForFunction(()=>!document.querySelector('#window-dump').disabled);
+  assert.deepEqual(posts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,window_dump:true}],'exactly one exact-key save');
+  assert.equal((await (await fetch(app.origin+'/receive/diagnostics')).json()).window_dump,true,'the station stored it');
+  await page.route('**/receive/diagnostics',route=>route.request().method()==='POST'?route.fulfill({status:409,json:{error:{code:'state_conflict'}}}):route.continue());
+  await box.uncheck();await page.locator('#window-diagnostics').filter({hasText:'Not saved'}).waitFor();
+  assert.match(await page.locator('#window-diagnostics').textContent(),/state_conflict/);
+  assert.equal(await box.isChecked(),true,'a refusal restores the stored value');
+  await page.unroute('**/receive/diagnostics');
+  assert.equal(posts.length,2,'one save plus the refused one');
+  assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)),[],'no receive mutation');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-040-02, CL-010-16; TC-007-009 the UDP interface is a Logging & Reporting setting.
 test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});

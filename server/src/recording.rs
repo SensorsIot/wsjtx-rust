@@ -16,6 +16,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[path = "receive_diagnostics.rs"]
+pub(crate) mod diagnostics;
 #[path = "receive_startup.rs"]
 pub(crate) mod startup;
 #[cfg(test)]
@@ -269,6 +271,10 @@ pub struct Recording {
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
     startup: Mutex<startup::Startup>,
+    /// #52 per-window receive diagnostics and the dump setting (receive-diagnostics.json).
+    diagnostics: Mutex<diagnostics::Diagnostics>,
+    /// A failed background window dump, reported in the diagnostics view.
+    diagnostics_error: Arc<AtomicBool>,
     #[cfg(test)]
     cat_transport: Mutex<Option<CatTransport>>,
     #[cfg(test)]
@@ -371,6 +377,14 @@ pub(crate) trait LiveInput: SampleSource + Send {
     fn clock_utc(&self) -> Option<(u64, u64)> {
         None
     }
+    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)`, when known.
+    fn marked_frames(&self, _from: u64, _to: u64) -> Option<(u64, u64)> {
+        None
+    }
+    /// The capture's cumulative loss and glitch counters, when known.
+    fn capture_diagnostics(&self) -> Option<audio::CaptureDiagnostics> {
+        None
+    }
 }
 #[derive(Clone, Copy)]
 enum StartGuard {
@@ -392,6 +406,12 @@ impl LiveInput for audio::AudioController {
     }
     fn clock_utc(&self) -> Option<(u64, u64)> {
         audio::AudioController::clock_utc(self)
+    }
+    fn marked_frames(&self, from: u64, to: u64) -> Option<(u64, u64)> {
+        audio::AudioController::marked_frames(self, from, to)
+    }
+    fn capture_diagnostics(&self) -> Option<audio::CaptureDiagnostics> {
+        audio::AudioController::capture_diagnostics(self)
     }
 }
 
@@ -2341,7 +2361,7 @@ impl LiveWorker {
             let mut publish = |decoded: &decoder::Decode| owner.publish_decode(&job, decoded);
             let interval = (window.origin, window.origin + window.samples.len() as u64);
             let late = window.waits;
-            let (first_sequence, period_start) = self
+            let (first_sequence, period_start, period_utc, drift_ms) = self
                 .owner
                 .state
                 .lock()
@@ -2352,11 +2372,19 @@ impl LiveWorker {
                     let middle = window.origin + window.samples.len() as u64 / 2;
                     let drift = l.capture_drift.map_or(0, |(d, _)| d);
                     let start = period_start_frame(l.timing.as_ref(), l.mode, middle, drift);
-                    (l.next_sequence, start)
+                    let utc = start.and_then(|frame| {
+                        relative_decode_timing(l.timing.as_ref(), l.mode, frame, drift)
+                            .map(|(utc, _)| utc)
+                    });
+                    let drift_ms = l
+                        .capture_drift
+                        .map(|(d, _)| (d as f64 / 10_000.0).round() as i64);
+                    (l.next_sequence, start, utc, drift_ms)
                 })
                 .ok_or("state_conflict")?;
             // FT8 SNR measures from the UTC period start, as WSJT-X does (#52).
             state.set_period_start(period_start);
+            self.note_window(&window, mode, period_start, period_utc, drift_ms);
             let mut complete = false;
             let mut future = Box::pin(decoder.decode_window_into_async(
                 window.samples,
@@ -2558,6 +2586,40 @@ fn source_ticks(timing: &source::SourceTiming, frame: u64) -> Option<i128> {
         anchor
             + (i128::from(frame) - i128::from(timing.canonical_anchor_frame)) * 10_000_000 / 12000,
     )
+}
+impl LiveWorker {
+    /// #52: the window's zero-sample and capture counters, and its dump when enabled.
+    fn note_window(
+        &self,
+        window: &receive::AnalysisWindow,
+        mode: decoder::Mode,
+        period_start: Option<u64>,
+        period_utc: Option<String>,
+        drift_ms: Option<i64>,
+    ) {
+        let end = window.origin + window.samples.len() as u64;
+        let (zeros, longest, early) =
+            diagnostics::zero_counts(&window.samples, window.origin, period_start);
+        let marked = self.input.marked_frames(window.origin, end);
+        let capture = self.input.capture_diagnostics().map(|c| {
+            json!({"queue_contention":c.queue_contention,"queue_full":c.queue_full,
+                "pool_exhausted":c.pool_exhausted,"invalid_packet":c.invalid_packet,
+                "clock_step":c.clock_step,"timestamp_error":c.timestamp_error,
+                "native_discontinuity":c.native_discontinuity,"frame_backstep":c.frame_backstep})
+        });
+        let record = json!({"mode":if mode == decoder::Mode::Ft8 { "ft8" } else { "ft4" },
+            "origin":window.origin,"frames":window.samples.len(),"late":window.waits,
+            "period_start_frame":period_start,"period_start_utc":period_utc,
+            "window_offset_ms":period_start.map(|p| (i128::from(window.origin) - i128::from(p)) * 1000 / 12000),
+            "zero_samples":zeros,"longest_zero_run":longest,"early_buffer_zero_samples":early,
+            "zero_filled_frames":marked.map(|m| m.0),"glitch_frames":marked.map(|m| m.1),
+            "capture":capture,"capture_drift_ms":drift_ms,"dump":null});
+        self.owner.note_window(
+            record,
+            &window.samples,
+            mode == decoder::Mode::Ft8 && !window.waits,
+        );
+    }
 }
 /// The canonical frame where the UTC period containing `frame` began.
 fn period_start_frame(
@@ -2874,6 +2936,7 @@ impl Recording {
     pub fn open(base: &Path, profile: String, boot: String) -> Arc<Self> {
         let dir = base.join("recordings");
         let startup = Mutex::new(startup::Startup::load(base, &profile));
+        let diagnostics = Mutex::new(diagnostics::Diagnostics::load(base, &profile));
         let mut state = State {
             generation: 0,
             recording: None,
@@ -2911,6 +2974,8 @@ impl Recording {
                 contact: std::sync::OnceLock::new(),
                 udp: std::sync::OnceLock::new(),
                 startup,
+                diagnostics,
+                diagnostics_error: Arc::new(AtomicBool::new(false)),
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
                 #[cfg(test)]
@@ -2977,6 +3042,8 @@ impl Recording {
             contact: std::sync::OnceLock::new(),
             udp: std::sync::OnceLock::new(),
             startup,
+            diagnostics,
+            diagnostics_error: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             cat_transport: Mutex::new(None),
             #[cfg(test)]

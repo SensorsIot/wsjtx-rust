@@ -23,6 +23,14 @@ struct StartupEdit {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct DiagnosticsEdit {
+    v: u64,
+    profile_id: String,
+    boot_id: String,
+    window_dump: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Stop {
     v: u64,
     profile_id: String,
@@ -117,6 +125,56 @@ pub async fn startup_update(
     }
     match tokio::task::spawn_blocking(move || {
         r.set_monitor_off(&b.profile_id, &b.boot_id, b.monitor_off_at_startup)
+    })
+    .await
+    {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => error(e),
+        Err(_) => error("storage_unavailable"),
+    }
+}
+/// #52 CL-052-01: the latest windows' sample and capture counters and the dump setting.
+pub async fn diagnostics(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, false).await {
+        Ok(r) => r,
+        Err(e) => return error(e),
+    };
+    if query.is_some() {
+        return error("invalid_request");
+    }
+    if let Err(e) = empty(body) {
+        return error(e);
+    }
+    Json(r.diagnostics_view()).into_response()
+}
+/// #52 CL-052-01: turns the FT8 prompt-window dump on or off; it acts from the next window.
+pub async fn diagnostics_update(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, true).await {
+        Ok(r) => r,
+        Err(e) => return error(e),
+    };
+    if query.is_some() {
+        return error("invalid_request");
+    }
+    let b: DiagnosticsEdit = match parse(&headers, body) {
+        Ok(b) => b,
+        Err(e) => return error(e),
+    };
+    if let Err(e) = syntax(b.v, &b.profile_id, &b.boot_id, 0) {
+        return error(e);
+    }
+    match tokio::task::spawn_blocking(move || {
+        r.set_window_dump(&b.profile_id, &b.boot_id, b.window_dump)
     })
     .await
     {
