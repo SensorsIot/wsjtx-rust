@@ -786,8 +786,10 @@ package WstxRequirements {
              choose_next clears it, 73 is sent in period 9 and the contact completes;
              (j) the "Auto Seq off" line (warning style) and status suffix, then "Send 73
              next" (title "Send IW9FRA HB9BLA 73 next") sending choose_next tx5 and
-             enable_tx; at 1366x768 no page scroll, the line fully visible and the QSO
-             buttons no lower than for the same contact without the line; no horizontal
+             enable_tx; at 1366x768 no page scroll, the line fully visible in the Last
+             row's place (Last hidden), the dialogue with a received row still shown and
+             not shorter, and the QSO buttons no lower than for the same contact without
+             the line; no horizontal
              overflow at 360 px; Auto Seq on sending set_auto_seq true; the line hidden
              with Auto Seq on and nothing offered. (j) runs in headless Chromium against
              the actual server binary with a stubbed contact snapshot. A manual entry of

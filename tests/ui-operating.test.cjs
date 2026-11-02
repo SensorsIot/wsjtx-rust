@@ -369,21 +369,29 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   assert.equal(await page.locator('#qso-suggest').getAttribute('title'),'Send IW9FRA HB9BLA 73 next');
   assert.match(await page.locator('#qso-autoseq-text').textContent(),/IW9FRA expects$/);
   assert.equal(await page.locator('#qso-autoseq').evaluate(el=>getComputedStyle(el).borderLeftStyle),'solid','styled as a warning on the pane');
-  // TC-007-009: still one fixed 1366x768 screen with the line shown; the QSO buttons stay in view.
-  await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
+  // TC-007-009: still one fixed 1366x768 screen with the line shown.
   const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
   assert.deepEqual(metrics,{x:false,y:false});
-  // The line takes the place of the (empty) dialogue box: the QSO buttons sit no lower than
-  // for the same contact without it, and the line itself is fully visible.
   const top=selector=>page.locator(selector).first().evaluate(el=>el.getBoundingClientRect().top);
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
+  // A received partner row in the dialogue (layout only: this fixture runs no live job).
+  await page.evaluate(()=>{const tr=document.createElement('tr');tr.dataset.kind='rx';for(const t of ['13:45:15.0','17','-0.1','1838','◂ HB9BLA IW9FRA RR73']){const td=document.createElement('td');td.textContent=t;tr.append(td);}document.querySelector('#rx-pane-rows').append(tr);});
+  // The line takes the LAST row's place: the dialogue and its row stay visible, the QSO
+  // buttons sit no lower than for the same contact without the line, the line is fully visible.
+  assert.equal(await shown(page,'#rx-pane'),true,'the dialogue stays with Auto Seq off');
+  assert.equal(await shown(page,'#rx-pane-rows tr'),true,'the received row stays visible');
+  assert.equal(await shown(page,'#contact-last'),false,'LAST gives way to the line');
+  const dialogue=()=>page.locator('#rx-pane .ct-pane-wrap').evaluate(el=>el.clientHeight);
+  const dialogueWithLine=await dialogue();
+  await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
   for(const selector of ['#qso-autoseq','#qso-suggest'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
   const withLine=await top('#qso-73');
   settings={auto_seq:true};await show({...contact,suggested_slot:null});await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
   const withoutLine=await top('#qso-73');
   assert.ok(withLine<=withoutLine,`QSO buttons pushed down by the line: ${withLine} > ${withoutLine}`);
+  const dialogueWithoutLine=await dialogue();
+  assert.ok(dialogueWithLine>=dialogueWithoutLine,`the line shrinks the dialogue: ${dialogueWithLine} < ${dialogueWithoutLine}`);
   settings={auto_seq:false};await show({...contact,suggested_slot:'tx5'});await page.waitForFunction(()=>!document.querySelector('#qso-autoseq').hidden);
-  await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
   await page.screenshot({path:'test-results/ui-operating/autoseq-off-360x800.png',fullPage:true});

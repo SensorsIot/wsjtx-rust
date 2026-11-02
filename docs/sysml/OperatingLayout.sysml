@@ -586,8 +586,9 @@ attribute def ActivityOrdering {
              Seq off"; when the contact's ContactSnapshot suggested_slot is set, the line
              adds "<call> expects" and a "Send <exchange> next" button (e.g. "Send 73
              next", the full message as its title) that chooses that slot and arms
-             (Reply). While shown, the line takes the place of the dialogue box, so the
-             direct buttons sit no lower than without it; it is hidden otherwise.
+             (Reply). While shown, the line takes the place of the Last row (the last
+             sent text stays in the top-bar transmit state), so the dialogue stays and
+             the direct buttons sit no lower than without it; it is hidden otherwise.
              A fold-out shows the DX Call/Grid entry with Generate, Erase (dialogue), Tx1-Tx6
              with their Next choice and editable text, Skip Tx1, RRR/RR73, report, Tx period
              and Auto Seq in place. On a station without
