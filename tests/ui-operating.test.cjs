@@ -924,6 +924,43 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-057-03; TC-057-004 (#37/#57). Band Activity keeps only the latest even and odd
+// periods: after three consecutive periods only periods 2 and 3 are shown, the newest on top
+// below no divider and the other below one; a same-parity successor (a skipped period) drops
+// the older one; result reads never page below the current view.
+test('TC-057-004 three consecutive periods leave only the latest even and odd period',{timeout:45000},async t=>{
+  let state,records=[];const cursors=[];
+  const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z','2026-10-27T12:01:00.0000000Z'];
+  const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`PERIOD FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
+  const publish=(id,period,count)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    publish(1,periods[0],3);
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));cursors.push([cursor,state.job.latest_decode.first_sequence]);
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3);
+  publish(2,periods[1],2);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&resultView.id===2);
+  assert.deepEqual(await shown(),['latest:3','latest:4','|FT8 period 12:00:00 UTC','history:0','history:1','history:2']);
+  publish(3,periods[2],2);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&resultView.id===3);
+  assert.deepEqual(await shown(),['latest:5','latest:6','|FT8 period 12:00:15 UTC','history:3','history:4'],'only periods 2 and 3 after the third period');
+  assert.equal(await page.locator('tr.ba-divider').count(),1,'never more than two periods');
+  // 12:01:00 follows 12:00:30 with a skipped period: same parity, so the older one disappears.
+  publish(4,periods[3],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView.id===4&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  assert.deepEqual(await shown(),['latest:7']);
+  assert.deepEqual(cursors.filter(([cursor,first])=>cursor<first),[],'no result read below the current view');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
 test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];

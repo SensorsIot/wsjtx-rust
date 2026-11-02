@@ -505,10 +505,10 @@ function applyLatestDecode(view,first){
     return true;
   }
   if(resultView===null&&view===null)return true;
-  if(resultView&&resultRows.length&&live?.job){
-    activityHistory.unshift({id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]});
-    let total=0;activityHistory=activityHistory.slice(0,20).filter(h=>(total+=h.rows.length)<=2048);
-  }
+  // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
+  const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
+  const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
+  activityHistory=other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;

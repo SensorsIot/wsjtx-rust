@@ -532,14 +532,15 @@ attribute def ActivityOrdering {
         attribute newestFirst : Boolean = true;
         attribute periodDividers : Boolean = true;
         attribute columns : Integer = 7;
-        attribute retainedPeriods : Integer = 20;
+        attribute retainedPeriods : Integer = 2;
         attribute maximumRows : Integer = 2048;
         doc /* CL-010-09/CL-010-16. Columns UTC, dB, DT, Freq, Message, DXCC, Distance.
              The latest published period (LatestBandActivity rules unchanged) is shown
-             first; earlier periods of the same live receive identity follow below a
-             divider with their period UTC, newest first, at most retainedPeriods periods
-             and maximumRows rows; a new receive identity (band/mode change, restart)
-             clears the history. Within a period the ActivityOrdering applies (column
+             first; only the latest even and the latest odd T/R period are shown (#37/#57,
+             CL-057-03): the period it replaced follows below a divider with its period UTC
+             when it has the other parity, and no older period is kept, paged or fetched; a
+             same-parity successor (a skipped period) or an uncorrelated period leaves only
+             the latest; a new receive identity (band/mode change, restart) clears it. Within a period the ActivityOrdering applies (column
              header click). DXCC needs the cty.dat prefix table, which the station does not
              yet provide: the column shows an explicit unavailable mark. Distance is the
              great-circle distance from the profile locator to a grid carried in the

@@ -3123,6 +3123,27 @@ package WstxRequirements {
         }
     }
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
+    requirement 'CL-057-03' {
+        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by the chosen column (ActivityOrdering); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/contact.js";
+    }
+    dependency CL_057_03_to_FR_010 from 'CL-057-03' to 'FR-010';
+    dependency CL_057_03_to_FR_019 from 'CL-057-03' to 'FR-019';
+    verification 'TC-057-004' {
+        doc /* TC-057-004 — Only the latest even and odd periods in Band Activity
+             CL-057-03
+             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
+             Steps: publish three consecutive periods 12:00:00, 12:00:15 and 12:00:30 UTC (3, 2 and 2 records), then 12:01:00 (one record, a skipped period); record every results read with the view current at that moment.
+             Expected (independent: the scripted periods): after the second period, its rows on top and the 12:00:00 rows below one divider; after the third, only the 12:00:30 rows on top and the 12:00:15 rows below one divider (never more than two periods, the older same-parity period gone); after 12:01:00 only its row, no divider; no results read below the current view's first sequence; no page error.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: #37 items 1-2 on HB9BLA (FT8 and FT4). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-057-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_057_03_verified_by_TC_057_004 from 'CL-057-03' to 'TC-057-004';
 
     // #39 Strategy engine: Highlight and Auto, editor popup, directed-CQ rule (decisions
     // on #37/#39/#42, 2026-11-01); detailed contract in WstxStrategy.
