@@ -233,7 +233,9 @@ package WstxRadioIO {
              0..3500Hz +-0.1dB, stop>=5500Hz >=60dB, exact rational output count and
              partition invariance2e-5; delay<=20ms/<=1024native support. No second
              conversion or AGC. Known gaps reset FIR/FFT/decoder without invented samples.
-             FT8trailing30s/advance15s, FT4trailing15s/advance7.5s; no queued analyses.
+             FT8trailing30s/advance15s, FT4trailing15s/advance7.5s; no queued analyses,
+             except that with a correlated UTC anchor one scheduled late window waits
+             for the prompt analysis in progress (StationDecode AdvanceDecode, #47).
              Missed boundary drops outstanding future and records latest abandoned
              window support in last_overrun; partials retained, no fabricated audio gap.
              Newest supported window replaces obsolete work, never claims complete history.
@@ -412,7 +414,7 @@ one continuous receive job until stop or failure. Incomplete initial waveform su
 is not a decode. Analyze trailing up-to30 s windows every15 s for FT8 and trailing
 up-to15 s windows every7.5 s for FT4, including initial shorter complete supports.
 Reuse #7 kernels/records, preserving global canonical start_frame across known gaps.
-No queued analysis windows: if processing misses the next boundary, report overrun and
+With a correlated UTC anchor, analysis windows follow the UTC schedule of StationDecode AdvanceDecode (#47), and its one late window per period waits for the prompt analysis in progress. Otherwise no queued analysis windows: if processing misses the next boundary, report overrun and
 the skipped interval, abandon obsolete work and use the latest supported window.
 The reported last_overrun interval is the half-open support of the most recently
 abandoned analysis window. It reports skipped analysis, not missing audio or fabricated
@@ -536,11 +538,19 @@ last_overrun is null or the latest abandoned analysis half-open
 Clock is
 `{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
 basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
-nonnegative integer uncertainty/null and external_accuracy unknown. Snapshot<=8192 bytes.
+nonnegative integer uncertainty/null and external_accuracy unknown. Period UTC and DT
+of results include the measured capture-clock offset (#47, CL-007-05), which is read on
+demand, not in this snapshot: GET /receive/clock (same authorization, no query, empty
+body) returns exactly `{v,profile_id,boot_id,capture_drift_ms,capture_drift_ppm}`, the
+offset from the anchor's prediction (integer ms) and its rate (one decimal ppm, null for
+the first 60 s), both null until measured. Snapshot<=8192 bytes.
 
 latest_decode is null until an attempt publishes a view, otherwise exactly
 `{id,first_sequence,next_sequence,period_start_utc,complete}`. id is a positive safe
-integer increasing per publication within the source/job epoch. Sequence bounds are
+integer increasing per publication within the source/job epoch, except that a later
+window of the same correlated period with the same first_sequence (the #47 late window)
+extends that view under the same id: unchanged it publishes nothing, grown it only raises
+next_sequence (complete once any of its windows completed). Sequence bounds are
 nonnegative safe integers, first_sequence<=next_sequence<=the publication-end counter
 frozen with this descriptor. Correlated period_start_utc is the selected mode's UTC
 period start string; bounds enclose retained records matching that period, or both

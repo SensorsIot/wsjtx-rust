@@ -575,8 +575,11 @@ attribute def ActivityOrdering {
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
              Logging & Reporting: the existing log (Logbook page, ADIF), the WSJT-X UDP
              interface (WstxUdp, CL-040-02): instance name and up to 16 targets, each
-             address:port, enabled, multicast TTL and interface, the outbound message
-             selection and accept_commands (not offered for a multicast address), with each
+             address:port, enabled, multicast TTL (the hop limit of an IPv6 group) and
+             interface (an interface index for an IPv6 group, with a hint that an
+             interface- or link-local group needs one; WstxUdp D6), the outbound message
+             selection and accept_commands (not offered for an IPv4 or IPv6 multicast
+             address), with each
              target's status (active, schema, last send, error, last inbound command) and a
              standing warning that accept_commands lets that program select a QSO and edit
              Tx5 but never key the transmitter. GET /udp is read when the drawer opens (at

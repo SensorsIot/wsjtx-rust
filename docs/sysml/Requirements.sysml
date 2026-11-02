@@ -320,6 +320,14 @@ package WstxRequirements {
     dependency CL_007_04_to_FR_004 from 'CL-007-04' to 'FR-004';
     dependency CL_007_04_to_FR_019 from 'CL-007-04' to 'FR-019';
     dependency CL_007_04_to_FR_021 from 'CL-007-04' to 'FR-021';
+    requirement 'CL-007-05' {
+        doc /* Live decode latency (#47). With a correlated UTC source clock, on the reference PC HB9BLA under normal station load (receive, waterfall, one browser, UDP enabled), for any session length: live FT8 MUST publish every decode of a frame with DT -1.6 s to +0.56 s by its period start + 15.0 s, and live FT4 every decode with DT -1.4 s to +0.86 s by period start + 7.5 s. Every frame with DT -1.6 s to +2.4 s (FT8) or -1.4 s to +2.2 s (FT4) MUST be published, the later ones from a late window early in the next period, which waits for the prompt decode instead of cutting it short, and extends its period's view with them under the same view id (nothing new publishes nothing), so clients keep their rows and cursor. The receive owner MUST measure the capture clock against UTC continuously (each timestamped packet's canonical frame against its QPC/system-time UTC, averaged over about 1 s, a jump above 0.2 s restarting the average) and re-anchor the window schedule, period UTC and DT whenever the measured offset moved by more than 50 ms, without dropping, repeating or reordering a window for a correction of any size; the measured offset and rate are read on demand from GET /receive/clock (capture_drift_ms, capture_drift_ppm), never added to the high-frequency GET /receive snapshot, whose clock object and thin-link size stay unchanged. (At zero offset the prompt windows hold FT8 DT -1.7..+0.66 s and FT4 -1.5..+0.96 s, prompt plus late windows FT8 -1.7..+2.56 s and FT4 -1.5..+2.36 s; the ranges above keep 0.1 s for the re-anchoring residual: the 50 ms threshold and drift within one period.) No per-period decode count cap applies; the only search bound is the existing 256 qualified-candidate limit with explicit SearchLimited. Without a correlated UTC clock the source-counter window grid of AdvanceDecode applies and no latency is promised. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/search.rs; server/src/decoder/subtraction.rs";
+    }
+    dependency CL_007_05_to_FR_003 from 'CL-007-05' to 'FR-003';
+    dependency CL_007_05_to_FR_004 from 'CL-007-05' to 'FR-004';
+    dependency CL_007_05_to_FR_021 from 'CL-007-05' to 'FR-021';
     requirement 'CL-008-01' {
         doc /* Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -1844,6 +1852,21 @@ package WstxRequirements {
         }
         attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release";
     }
+    verification 'TC-004-004' {
+        doc /* TC-004-004 — Live decode latency on a recorded busy period (#47)
+             FR-003, FR-004, FR-021; CL-007-04, CL-007-05
+             Cost 2 (release, decoder-quality suite, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. Cost 1: the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length and wait flag; a late window arriving during the prompt decode waits for it, with no overrun and a complete prompt result. Cost 1 (drift, #47 re-review): through the live worker's clock tracking and the real window buffer, a capture clock 2000 ppm slow over 600 s plus a +0.4 s system clock step (1.6 s in all) keeps every prompt window within 0.1 s of +13.8 s UTC and holding a DT 0 frame, while the same capture without re-anchoring completes more than 1.2 s late; GET /receive/clock reports the offset and rate while the /receive clock object keeps its exact keys; the on-demand read has the operating-read authorization and refuses a query. Cost 1: a re-anchored schedule moves completions for a forward shift and a backward step without dropping or repeating a window, and UTC steps of +2 s, -2 s and +8 s taken just before a prompt completion still complete every period's prompt and late window exactly once, in order (coinciding completions one after the other, no shift by a period). Cost 1: the FT8 late window at its real geometry (UTC +0.7..+15.7 s), analysed by the live worker, leaves latest_decode and the whole snapshot unchanged when it adds nothing, and with a DT +1.2 s late starter keeps the view id and only grows next_sequence. Cost 2 (browser): a correlated period view extended in place (same id, period and first_sequence; next_sequence grown, complete false to true) adds the late row from the existing cursor, without clearing rows, moving the period to history or an error state, while any other same-id change stays a descriptor error. Cost 1: band-ranked known-word refinement agrees with the exhaustive full-rate grid search on a crowded synthetic frame within 32 frames and 0.02 Hz and returns a full-rate score.
+             Cost 5 acceptance: live on HB9BLA, 10 consecutive FT8 periods publish their last decode by +15.0 s and FT4 by +7.5 s, with decode parity against jt9 on the same captured periods unchanged or better; the run records the receive session age and GET /receive/clock. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-007-04';
+            verify 'CL-007-05';
+            verify 'FR-003';
+            verify 'FR-004';
+            verify 'FR-021';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs::live_busy_period_publishes_every_decode_promptly; server/tests/receive_integration.rs::receive_schedule_completes_windows_at_period_residues; server/src/recording_tests.rs::live_window_schedule_follows_the_utc_period_grid; server/src/recording_tests.rs::late_window_waits_for_the_prompt_decode_without_overrun; server/src/recording_tests.rs::drifting_capture_clock_keeps_prompt_windows_on_the_utc_period; server/src/recording_tests.rs::late_window_republishes_its_period_view_with_late_starters; server/tests/receive_integration.rs::receive_reschedule_moves_completions_without_dropping_or_repeating; server/tests/receive_integration.rs::receive_clock_steps_keep_each_period_window_once_and_in_order; server/src/auth_tests.rs::plaintext_profile_operating_routes_and_ws_require_runtime_token; tests/ui-operating.test.cjs; server/src/decoder/search_test.rs::ranked_refinement_matches_exhaustive_grid_search";
+    }
     verification 'TC-018-001' {
         doc /* TC-018-001
              CL-006-01, CL-006-02
@@ -2025,7 +2048,11 @@ package WstxRequirements {
              /udp {v 1, profile_id, boot_id, expected_revision, configuration} whose configuration
              is the edited list, and no receive start, stop or selection; accept_commands is not
              offered for a multicast address; a refusal shows its code and field and keeps the
-             edits; the accept_commands warning and each target's status are shown.
+             edits; the accept_commands warning and each target's status are shown. An IPv6
+             group target [ff12::5754:5358]:2237 (#46, CL-040-06) is not offered
+             accept_commands, shows the hop-limit/interface-index hint naming the link-local
+             need, and saves with the TTL field as hop limit 2 and interface "1"; the same group
+             without an interface is refused with targets[0].multicast_interface.
              Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -2268,6 +2295,8 @@ package WstxRequirements {
     dependency CL_007_04_verified_by_TC_004_001 from 'CL-007-04' to 'TC-004-001';
     dependency CL_007_04_verified_by_TC_004_002 from 'CL-007-04' to 'TC-004-002';
     dependency CL_007_04_verified_by_TC_004_003 from 'CL-007-04' to 'TC-004-003';
+    dependency CL_007_04_verified_by_TC_004_004 from 'CL-007-04' to 'TC-004-004';
+    dependency CL_007_05_verified_by_TC_004_004 from 'CL-007-05' to 'TC-004-004';
     dependency CL_008_01_verified_by_TC_002_001 from 'CL-008-01' to 'TC-002-001';
     dependency CL_008_01_verified_by_TC_009_001 from 'CL-008-01' to 'TC-009-001';
     dependency CL_008_02_verified_by_TC_002_001 from 'CL-008-02' to 'TC-002-001';
@@ -2865,7 +2894,7 @@ package WstxRequirements {
     }
     dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
     requirement 'CL-040-02' {
-        doc /* Any number of targets up to 16, each address:port (unicast, or IPv4 multicast with TTL and interface), enabled, a per-type outbound message selection (default all) and accept_commands (default off), with per-target status (last send, error, last inbound command). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, accept_commands off, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
+        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all) and accept_commands (default off), with per-target status (last send, error, last inbound command). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, accept_commands off, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs";
     }
@@ -2905,21 +2934,23 @@ package WstxRequirements {
     }
     dependency CL_040_05_verified_by_TC_012_005 from 'CL-040-05' to 'TC-012-005';
     requirement 'CL-040-06' {
-        doc /* Outstanding, issue #46: IPv6 multicast targets (ff00::/8) with hop limit and an interface index. Until delivered, an IPv6 multicast address is refused at PUT /udp (WstxUdp D6). */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Issue #46: an IPv6 multicast group target (ff00::/8) with a hop limit 1..255 (multicast_ttl) and an interface index (multicast_interface as decimal text, required for interface-local and link-local scope, optional above) is admitted by PUT /udp, saved, and receives its selected outbound messages through a socket with IPV6_MULTICAST_HOPS and IPV6_MULTICAST_IF set. Reserved scopes 0 and 15, interface names and accept_commands on are refused; inbound commands from a host to its socket are not accepted, as for IPv4 multicast. Details: WstxUdp D6, UdpTarget, OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs";
     }
     dependency CL_040_06_to_FR_012 from 'CL-040-06' to 'FR-012';
     verification 'TC-012-006' {
-        doc /* TC-012-006 — IPv6 multicast targets (outstanding)
+        doc /* TC-012-006 — IPv6 multicast targets
              CL-040-06
-             Setup: actual candidate router on a disposable profile; a loopback-capable IPv6 interface; a peer joined to the group.
-             Steps: PUT a target [ff02::1]:2237 with hop limit 2 and the interface index; one station step.
-             Expected: the PUT is admitted with the hop limit and interface saved; the joined peer receives Heartbeat and Status.
-             2 — Isolated automated functional tests; Windows development PC, loopback only; not implemented. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Setup: actual candidate router and UDP owner on a disposable profile; a peer socket joined to the transient link-local group ff12::5754:5358 on the Windows loopback pseudo-interface (index 1); a host socket on [::1].
+             Steps: PUT, each alone: scope 0 ff00::1, scope 15 ff0f::1 and ff1f::1, the group without an interface, ff01::1 without an interface, hop limit 0 and 256, accept_commands true, an IPv4 group with interface "1", interfaces "0", "01", "-1", "+1", " 1", "4294967296", "Ethernet", "127.0.0.1", "::1", "" and the number 1; then one PUT of the group at the peer's port with hop limit 2 and interface "1", [ff05::5754:5358]:2237 hop limit 255 interface "1", [ff15::5754:5358]:2238 interface "4000000000", and a disabled [ff08::5754:5358]:2239 without an interface; open a new owner; PUT the list plus a disabled [::1]:2240 with interface "127.0.0.1", then with "1"; read the socket options; one station step; Free Text from the host to the group target's socket; step.
+             Expected: each refusal 400 invalid_request with its field (address for the scopes, otherwise the named field) and nothing saved; the PUT admitted with the targets saved as given and unchanged after the reopen; the IPv6 unicast target with "127.0.0.1" admitted and with "1" refused targets[4].multicast_interface; the group socket has hop limit 2, interface 1 and loopback on, the site-local one hop limit 255; the unknown index shows active false, socket_unavailable; the joined peer receives Heartbeat then Status (schema 2, id WSTX-Rust); the Free Text is not_accepted.
+             2 — Isolated automated functional tests; Windows development PC, loopback IPv6 multicast only, nothing leaves the machine. */
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-040-06';
         }
+        attribute executable : String = "server/src/udp_tests.rs";
     }
     dependency CL_040_06_verified_by_TC_012_006 from 'CL-040-06' to 'TC-012-006';
     verification 'TC-012-001' {
@@ -2976,7 +3007,7 @@ package WstxRequirements {
         doc /* TC-012-004 — Target configuration and persistence
              CL-040-02
              Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
-             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
+             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
              Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null, accept_commands false} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status).
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;

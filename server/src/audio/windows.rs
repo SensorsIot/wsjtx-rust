@@ -256,6 +256,12 @@ pub struct AudioController {
     failure_reported: bool,
 }
 impl AudioController {
+    /// The capture clock's latest (canonical frame, UTC FILETIME) through the current
+    /// QPC/system-time correlation, for drift measurement against the epoch anchor.
+    pub fn clock_utc(&self) -> Option<(u64, u64)> {
+        let (frame, qpc) = self.live.as_ref()?.clock_sample()?;
+        Some((frame, system_clock()?.utc_at(qpc)?))
+    }
     pub fn new(endpoint_id: String) -> Result<Self, SourceError> {
         if endpoint_id.is_empty() || endpoint_id.len() > 2048 || endpoint_id.contains('\0') {
             return Err(SourceError::Unavailable);

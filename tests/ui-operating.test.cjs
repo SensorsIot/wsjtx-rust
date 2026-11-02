@@ -507,6 +507,39 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-040-02, CL-040-06, CL-010-16; TC-007-009 the UDP editor takes an IPv6 multicast group (#46).
+test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
+  const puts=[];
+  page.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/udp')puts.push(JSON.parse(r.postData()));});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  const initial=await (await fetch(app.origin+'/udp')).json();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
+  const row=rows.nth(0);
+  await row.locator('[data-f=accept]').check();
+  await row.locator('[data-f=address]').fill('[ff12::5754:5358]:2237');
+  assert.equal(await row.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for an IPv6 group');
+  assert.equal(await row.locator('[data-f=accept]').isChecked(),false);
+  assert.match(await row.locator('[data-f=iface-note]').textContent(),/hop limit.*index.*link-local group needs one/s);
+  assert.equal(await row.locator('[data-f=iface]').getAttribute('placeholder'),'interface index');
+  // Without an interface the station refuses the link-local group and names the field.
+  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Not saved'}).waitFor();
+  assert.match(await page.locator('#udp-result').textContent(),/invalid_request \(targets\[0\]\.multicast_interface\)/);
+  await row.locator('[data-f=ttl]').fill('2');await row.locator('[data-f=iface]').fill('1');
+  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
+  const target={address:'[ff12::5754:5358]:2237',enabled:true,multicast_ttl:2,multicast_interface:'1',
+    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif'],accept_commands:false};
+  assert.equal(puts.length,2);
+  assert.deepEqual(puts[1].configuration,{instance_name:'WSTX-Rust',targets:[target]},'the TTL field is the hop limit, the interface its index');
+  const saved=await (await fetch(app.origin+'/udp')).json();
+  assert.deepEqual(saved.configuration.targets,[target]);assert.equal(saved.revision,initial.revision+1);
+  // A wider-scope group drops the link-local hint.
+  await row.locator('[data-f=address]').fill('[ff05::5754:5358]:2237');
+  assert.doesNotMatch(await row.locator('[data-f=iface-note]').textContent(),/needs one/);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-010-16; TC-007-009 restart changes ask first during a QSO.
 test('TC-007-009 band, mode and Apply ask before restarting receive during a QSO',{timeout:40000},async t=>{
   let contact=null;const selects=[],puts=[];
@@ -874,6 +907,43 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-period=latest]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
   assert.equal(await page.locator('tr[data-period=history]').count(),history,'an obsolete page cannot add to the history either');
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
+test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
+  let state,records,requested=[];
+  const period='2026-10-27T12:00:15.0000000Z';
+  const makeRecord=(sequence,dt)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12.3,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`LATE FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:dt});
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    records=[makeRecord(0,0.1),makeRecord(1,0.2)];
+    Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:false}});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));requested.push(cursor);
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2);
+  const before=requested.length;
+  // The late window of the same period: same id, period and first_sequence, one more record
+  // (DT +1.2 s), and the view completes.
+  records.push(makeRecord(2,1.2));
+  Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
+  await refreshStatus(page);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3,null,{timeout:15000});
+  assert.equal(await page.locator('tr[data-period=latest]').filter({hasText:'LATE FIXTURE 2'}).count(),1);
+  assert.equal(await page.locator('tr[data-period=history]').count(),0,'an extended view is not a replaced period');
+  assert.ok(requested.slice(before).every(cursor=>cursor>=2),`only the new record is fetched: ${requested.slice(before)}`);
+  assert.doesNotMatch(await page.locator('#receive-status').innerText(),/unavailable|Changed decode descriptor/i);
+  assert.doesNotMatch(await page.locator('#band-activity header').innerText(),/Partial/);
+  // A same-id change of anything else stays an error.
+  state.job.latest_decode={id:1,first_sequence:1,next_sequence:3,period_start_utc:period,complete:true};
+  await refreshStatus(page);
+  await page.waitForFunction(()=>/Changed decode descriptor/.test(document.querySelector('#receive-status').textContent),null,{timeout:15000});
+  assert.deepEqual(errors,[]);
 });
 
 // Proves: CL-010-09; TC-007-006. Period identity can be learned from results, not only snapshots.

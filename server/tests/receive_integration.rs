@@ -178,3 +178,186 @@ fn receive_input_limits_and_initial_discontinuity_are_explicit() {
     reset.discontinuity = true;
     assert!(buffer.push(&reset).unwrap().reset_decoder);
 }
+
+// Proves: FR-003, CL-007-05; TC-004-004. Scheduled residues fix completion and length.
+#[test]
+fn receive_schedule_completes_windows_at_period_residues() {
+    // FT8 prompt/late residues for a UTC anchor 7.5 s into a period at frame 1000:
+    // +13.8 s and +15.7 s lie 75600 and 98400 frames after the anchor.
+    for partitions in [&[240usize][..], &[239, 1, 117, 240]] {
+        let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
+            .unwrap()
+            .with_schedule(&[(99400, 180000, true), (76600, 180000, false)]);
+        let mut output = vec![];
+        let (mut first, mut partition) = (0u64, 0);
+        while first < 480000 {
+            let count = (partitions[partition % partitions.len()] as u64).min(480000 - first);
+            if let Some(window) = buffer.push(&block(first, count as usize)).unwrap().window {
+                output.push((window.origin + window.samples.len() as u64, window));
+            }
+            first += count;
+            partition += 1;
+        }
+        // 76600 and 99400 lack complete support; 256600 and 279400 hold the last 15 s, and
+        // the next prompt window follows one advance later.
+        let ends = output.iter().map(|(end, _)| *end).collect::<Vec<_>>();
+        assert_eq!(ends, [256600, 279400, 436600, 459400]);
+        for (end, window) in &output {
+            assert_eq!(window.samples.len(), 180000);
+            assert_eq!(window.origin, end - 180000);
+            assert_eq!(window.waits, end % 180000 == 99400);
+            for (offset, &sample) in window.samples.iter().enumerate().step_by(997) {
+                assert_eq!(sample, ((window.origin + offset as u64) % 97) as f32 / 128.);
+            }
+        }
+    }
+    // A shorter scheduled length and the plain grid without a schedule.
+    let mut buffer = WindowBuffer::new(Mode::Ft4, descriptor())
+        .unwrap()
+        .with_schedule(&[(5800, 63000, true)]);
+    let mut windows = vec![];
+    for first in (0..200000).step_by(240) {
+        if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+            windows.push((window.origin, window.samples.len()));
+        }
+    }
+    assert_eq!(windows, [(95800 - 63000, 63000), (185800 - 63000, 63000)]);
+    let plain = WindowBuffer::new(Mode::Ft4, descriptor())
+        .unwrap()
+        .with_schedule(&[]);
+    let mut buffer = plain;
+    let mut ends = vec![];
+    for first in (0..200000).step_by(240) {
+        if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+            ends.push(window.origin + window.samples.len() as u64);
+        }
+    }
+    assert_eq!(ends, [90000, 180000]);
+}
+
+// Proves: CL-007-05; TC-004-004. A re-anchored schedule moves completions without dropping
+// or repeating a window, for a forward shift and a backward step.
+#[test]
+fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
+    let schedule = |shift: i64| {
+        let phase = |p: i64| (p + shift).rem_euclid(180000) as u64;
+        [(phase(76600), 180000, false), (phase(99400), 180000, true)]
+    };
+    let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
+        .unwrap()
+        .with_schedule(&schedule(0));
+    let mut ends = vec![];
+    for first in (0..1_200_000).step_by(240) {
+        // +0.5 s just after the 436600 prompt, then a -1 s step just before 639400.
+        if first == 439920 {
+            buffer.reschedule(&schedule(6000), 6000);
+        }
+        if first == 636000 {
+            buffer.reschedule(&schedule(-6000), -12000);
+        }
+        if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+            ends.push((window.origin + window.samples.len() as u64, window.waits));
+        }
+    }
+    assert_eq!(
+        ends,
+        [
+            (256600, false),
+            (279400, true),
+            (436600, false),
+            (465400, true),  // late window moved +0.5 s
+            (622600, false), // prompt moved +0.5 s
+            // -1 s step at 636000: the late window (due 645400 -> 633400, already past)
+            // completes with the next sample instead of being dropped.
+            (636001, true),
+            (790600, false),
+            (813400, true),
+            (970600, false),
+            (993400, true),
+            (1150600, false),
+            (1173400, true),
+        ]
+    );
+}
+
+// Proves: CL-007-05; TC-004-004. UTC steps of +2 s, -2 s and +8 s taken 0.06 s before a
+// prompt completion: every period's prompt and late window complete exactly once, in order.
+#[test]
+fn receive_clock_steps_keep_each_period_window_once_and_in_order() {
+    let schedule = [(76600, 180000, false), (99400, 180000, true)];
+    // (UTC step in seconds, completions after the step as (end, late)).
+    let cases: [(i64, &[(u64, bool)]); 3] = [
+        // +2 s: the prompt (436600) and late (459400) completions both moved into the past;
+        // they complete now, one after the other, then return to the moved grid.
+        (
+            2,
+            &[
+                (435841, false),
+                (436081, true),
+                (592600, false),
+                (615400, true),
+                (772600, false),
+                (795400, true),
+            ],
+        ),
+        // -2 s: both completions move 2 s later.
+        (
+            -2,
+            &[
+                (460600, false),
+                (483400, true),
+                (640600, false),
+                (663400, true),
+                (820600, false),
+                (843400, true),
+            ],
+        ),
+        // +8 s, more than half a period: the same period's windows complete now, not a
+        // period later.
+        (
+            8,
+            &[
+                (435841, false),
+                (436081, true),
+                (520600, false),
+                (543400, true),
+                (700600, false),
+                (723400, true),
+                (880600, false),
+                (903400, true),
+            ],
+        ),
+    ];
+    for (step, after) in cases {
+        let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor())
+            .unwrap()
+            .with_schedule(&schedule);
+        let mut ends = vec![];
+        for first in (0..920_000).step_by(240) {
+            if first == 435840 {
+                // A UTC step forward makes every completion that many seconds earlier.
+                let shift = -step * 12000;
+                let moved = schedule.map(|(phase, frames, waits)| {
+                    (
+                        (phase as i64 + shift).rem_euclid(180000) as u64,
+                        frames,
+                        waits,
+                    )
+                });
+                buffer.reschedule(&moved, shift);
+            }
+            if let Some(window) = buffer.push(&block(first, 240)).unwrap().window {
+                assert_eq!(window.samples.len(), 180000);
+                ends.push((window.origin + window.samples.len() as u64, window.waits));
+            }
+        }
+        let mut expected = vec![(256600, false), (279400, true)];
+        expected.extend_from_slice(after);
+        assert_eq!(ends, expected, "UTC step {step:+} s");
+        // Exactly one prompt and one late window per period, alternating.
+        assert!(
+            ends.chunks(2)
+                .all(|pair| matches!(pair, [(_, false), (_, true)]))
+        );
+    }
+}

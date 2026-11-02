@@ -467,7 +467,17 @@ function validLatestDecode(view,mode,end){
 }
 function applyLatestDecode(view,first){
   if(resultView&&view&&view.id<resultView.id)return false;
-  if(resultView&&view&&view.id===resultView.id){if(['id','first_sequence','next_sequence','period_start_utc','complete'].some(k=>view[k]!==resultView[k]))throw new Error('Changed decode descriptor');return true;}
+  if(resultView&&view&&view.id===resultView.id){
+    // #47: a later window of the same correlated period extends its view in place (same id,
+    // period and first_sequence): next_sequence only grows and complete only turns true. Keep
+    // the rows and cursor; an older snapshot/page of that view is a prefix. Anything else is an error.
+    const same=view.period_start_utc!==null&&view.period_start_utc===resultView.period_start_utc&&view.first_sequence===resultView.first_sequence;
+    if(!same&&['first_sequence','next_sequence','period_start_utc','complete'].some(k=>view[k]!==resultView[k]))throw new Error('Changed decode descriptor');
+    const grown=view.next_sequence>=resultView.next_sequence&&(view.complete||!resultView.complete),prefix=view.next_sequence<=resultView.next_sequence&&(resultView.complete||!view.complete);
+    if(!grown&&!prefix)throw new Error('Changed decode descriptor');
+    if(grown){resultView=view;renderResults();}
+    return true;
+  }
   if(resultView===null&&view===null)return true;
   if(resultView&&resultRows.length&&live?.job){
     activityHistory.unshift({id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]});
