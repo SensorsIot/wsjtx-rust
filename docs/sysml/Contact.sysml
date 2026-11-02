@@ -801,8 +801,21 @@ package WstxContact {
              observation in the status stream, advanced locally between observations
              for display only; marked stale with the link; never a scheduling input.
              Tx progress (MW ~8388): #50, one period bar only, the QSO pane's NEXT bar
-             (its width the elapsed part of the period, FT4-NOTE 7.5) with the countdown or
-             "Transmitting" while #9 reports an active transmission; the top bar shows UTC only. Rx level meter (widgets/
+             (its width the elapsed part of the period, FT4-NOTE 7.5) with the countdown or,
+             while #9 reports an active transmission, "▶ TX now" with the seconds left
+             (#37, QsoPane NEXT); the top bar shows UTC only.
+             The bar is red in a period of my Tx parity while Enable Tx is on and whenever
+             transmitting is true, green otherwise (WstxOperatingLayout::QsoPane NEXT).
+             StationPeriodClock (#50, operator 2026-11-02): the UTC clock, the bar and the
+             countdown run on the station's UTC (the transmit owner's now_utc_ms, system
+             clock plus the #43 correction, the clock the transmitter keys on), never on the
+             browser's wall clock: each station observation (station.tick utc_ms and the
+             ContactSnapshot utc_ms) gives offset = utc_ms - browser monotonic time at its
+             receipt; the shown station time is the browser monotonic time plus the
+             largest offset received in the last 20 s (a late delivery only lowers an
+             offset). The bar is redrawn at least every 100 ms with no animated width
+             change, so it restarts at 0 at each period start within 100 ms plus the
+             link's one-way delay. Rx level meter (widgets/
              signalmeter.cpp, meterwidget.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
              the canonical receive samples scaled to 16-bit full scale (32768), over the
              last status interval, at most one value per second on the status link;
@@ -985,7 +998,7 @@ package WstxContact {
              settings exactly {auto_seq,call_first,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd} (report_sent the
+             tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd,dialogue} (report_sent the
              report of the last transmitted Tx2/Tx3 rendered, null until one is sent;
              suggested_slot null or the slot AutoSequence would select after the latest
              counted partner message while Auto Seq is off, e.g. tx5 after their RR73 in
@@ -995,7 +1008,15 @@ package WstxContact {
              message to my call that the engine counted, or the selected row when it was
              addressed to me, with its rounded SNR or null, its period start (Unix ms) and
              how many consecutive counted messages had that identical text; null for a new
-             contact; the QSO pane's last partner message, #37)
+             contact; the QSO pane's last partner message, #37; dialogue (#37, operator
+             2026-11-02) an array of at most 16 entries exactly {dir:"rx"|"tx",text,snr,
+             period_utc_ms,count}, oldest first: "rx" each partner message the engine
+             counted for this contact (as last_rcvd, including the selected row addressed
+             to me) with its rounded SNR or null, "tx" each transmission of this contact
+             whose audio started (the text as sent, snr null); a message equal in dir and
+             text to the newest entry increments that entry's count instead (its
+             period_utc_ms stays the first period); beyond 16 the oldest entry is dropped;
+             empty for a new contact and cleared by CancelContact)
              with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
              when contacts.adi holds the contact's record; log (DirectLog) null until a

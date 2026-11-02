@@ -793,7 +793,7 @@ package WstxRequirements {
              (j) the "Auto Seq off" line (warning style), then "Send 73
              next" (title "Send IW9FRA HB9BLA 73 next") sending choose_next tx5 and
              enable_tx; at 1366x768 no page scroll and, in the compact QSO pane (#37, no
-             dialogue or Last row), the line, the 73 and Log QSO buttons fully visible; no horizontal
+             Last row), the line, the 73 and Log QSO buttons fully visible; no horizontal
              overflow at 360 px; Auto Seq on sending set_auto_seq true; the line hidden
              with Auto Seq on and nothing offered. (j) runs in headless Chromium against
              the actual server binary with a stubbed contact snapshot. A manual entry of
@@ -2104,7 +2104,7 @@ package WstxRequirements {
              <message>" while armed, and the buttons, all inside the pane (not clipped), the
              pane content at most 250 px high (the earlier pane needed about 380 px for the
              same contact), and side by side the pane card ends level with Band Activity (no
-             empty band under it, item 8); there is no dialogue, LAST row or
+             empty band under it, item 8); there is no LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
              then enable_tx. Idle, a station on my Rx frequency is a plain line "◂ <message>
              <SNR>" whose double-click sends select_row then enable_tx. When the contact is
@@ -4087,6 +4087,70 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_tests.rs; tests/contact.test.cjs";
     }
     dependency CL_050_04_verified_by_TC_050_004 from 'CL-050-04' to 'TC-050-004';
+    // #50/#37 CR 2 (operator 2026-11-02): period bar, QSO pane lines, QSO dialogue.
+    requirement 'CL-050-03' {
+        doc /* The QSO pane's period bar shows the elapsed part of the current period (15 s FT8, 7.5 s FT4) on the station's clock, the UTC the transmitter keys on including the #43 correction, never the browser's wall clock: the browser takes the largest offset of the station's utc_ms over its own monotonic time among the observations of the last 20 s and redraws at least every 100 ms without animation. The bar is red in a period of my Tx parity while Enable Tx is on and whenever the station reports transmitting, green in every other period. Details: WstxContact::OperatorDisplays StationPeriodClock, WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_050_03_to_FR_008 from 'CL-050-03' to 'FR-008';
+    dependency CL_050_03_to_FR_019 from 'CL-050-03' to 'FR-019';
+    requirement 'CL-050-05' {
+        doc /* (#37) While an own CQ runs the QSO pane header reads "Calling CQ" with the Tx period; the message line reads "▶ TX now: <message>" with the seconds left while the station reports transmitting and "▸ next: <message> · Tx in <n> s" otherwise; the Others, below the QSO dialogue, list only stations calling my call, with time and SNR: during a QSO those other than the partner within +/-50 Hz of my Rx or Tx offset (⚠, a double-click switches the contact with Enable Tx kept), otherwise every caller on any frequency as soon as decoded; an empty list is one muted line "nobody calling" ("nobody else calling" during a QSO). Details: WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_050_05_to_FR_007 from 'CL-050-05' to 'FR-007';
+    dependency CL_050_05_to_FR_019 from 'CL-050-05' to 'FR-019';
+    requirement 'CL-050-06' {
+        doc /* (#37) The contact snapshot carries the QSO dialogue of the current contact, at most 16 entries: each partner message the engine counted (with SNR) and each of our transmissions of that contact as sent, with its period start and a repeat count; the QSO pane shows it while the QSO runs, oldest first and newest at the bottom, scrolling inside the card without growing the page, and drops it with the QSO. Details: WstxContact::ContactSnapshot dialogue, WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_050_06_to_FR_007 from 'CL-050-06' to 'FR-007';
+    dependency CL_050_06_to_FR_019 from 'CL-050-06' to 'FR-019';
+    verification 'TC-050-003' {
+        doc /* TC-050-003 — Period bar colour and station clock
+             CL-050-03
+             Setup: actual candidate server and Chromium; the operating screen with a routed ContactSnapshot (Enable Tx on, own CQ, parity even) whose utc_ms is the browser's time plus a station offset; station.tick events dispatched to the page.
+             Steps: read #qso-progress width and colour in an even and an odd station period, and with transmitting true in the odd period; screenshots at 1366x768 and 360 px of a receive (green) and a transmit (red) period.
+             Expected: the width is (station time mod period)/period within 4 percentage points, not the browser-clock phase; the even period (my Tx parity) and a transmitting period rgb(255, 64, 64), the odd receive period rgb(48, 208, 80); no width transition.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_03_verified_by_TC_050_003 from 'CL-050-03' to 'TC-050-003';
+    verification 'TC-050-005' {
+        doc /* TC-050-005 — QSO pane while calling CQ and transmitting (#37)
+             CL-050-05
+             Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
+             Steps: read the header after a receive refresh, the message line with transmitting false and true and the Others with no qualifying row, then with callers of my call at 1678 and 2144 Hz and a CQ near Rx; during a running QSO (Rx and Tx 1500 Hz) rows to my call at 1530 Hz, 1600 Hz and from the partner, and a station near Rx calling another; screenshots of calling CQ, TX now and between periods.
+             Expected: header "Calling CQ" with "Tx even (1st)"; "▸ next:" "CQ HB9BLA JN47" with "Tx in n s" while not transmitting, "▶ TX now:" "CQ HB9BLA JN47" with "n s left" while transmitting; "nobody calling" for an empty list; while calling CQ both callers "HH:MM:SS ◂ …" and not the CQ; during the QSO only the 1530 Hz caller as "HH:MM:SS ⚠ …", "nobody else calling" without it, and its double-click sends select_row replace true then enable_tx.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_05_verified_by_TC_050_005 from 'CL-050-05' to 'TC-050-005';
+    verification 'TC-050-006' {
+        doc /* TC-050-006 — QSO dialogue in the contact snapshot and the pane (#37)
+             CL-050-06
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); the snapshot shape bound (contact_http_tests); the operating screen with a routed ContactSnapshot in Chromium.
+             Steps: (a) engine: replay a QSO with K1ABC (select their CQ, Tx1 twice, their report, Tx3, their RR73, 73) and read the dialogue after each step; cancel a second contact; push 20 distinct entries; (b) the maximum snapshot shape with 16 maximal entries; (c) browser: a running QSO with a 10-entry dialogue at 1366x768 and 360 px, then the completed contact.
+             Expected: (a) entries in order tx "K1ABC HB9BLA JN47" count 2, rx "HB9BLA K1ABC -05" with SNR, tx "K1ABC HB9BLA R-12", rx "HB9BLA K1ABC RR73", tx "K1ABC HB9BLA 73", periods the period starts; a new contact starts empty, cancel empties it, at most 16 entries (the oldest dropped); (b) at most 4096 bytes; (c) lines "HH:MM:SS ▸ …" and "HH:MM:SS ◂ …  −5 dB" oldest first, the newest line visible, no page scroll, gone once completed.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-06';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_06_verified_by_TC_050_006 from 'CL-050-06' to 'TC-050-006';
     verification 'TC-010-010' {
         doc /* TC-010-010 — Call 1st answers the first caller of my CQ
              CL-010-17
