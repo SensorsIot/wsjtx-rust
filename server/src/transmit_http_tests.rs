@@ -27,6 +27,12 @@ fn gate(revision: u64) -> Gate {
         configuration: cat::Configuration::parse(ENDPOINT).unwrap(),
     }
 }
+/// The station clock of a profile on the default NTP source.
+pub(crate) fn ntp_clock(
+    ntp: Arc<wstx_rust::transmit::clock::Monitor>,
+) -> Arc<wstx_rust::transmit::air::StationClock> {
+    wstx_rust::transmit::air::StationClock::new(ntp, wstx_rust::transmit::air::Source::Ntp)
+}
 fn ptt_setters(writes: &[Vec<u8>]) -> usize {
     writes
         .iter()
@@ -44,7 +50,8 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
         recording::Recording::open(&directory, id.clone(), profile::new_uuid().unwrap());
     let peer = attach_peer(&recording, Device::Present);
     let station =
-        transmit_http::Station::start(wstx_rust::transmit::clock::Monitor::new()).unwrap();
+        transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
+            .unwrap();
     let _ = recording.transmit.set(station.clone());
     // Receive-only commissioning (PTT disabled) is not transmit capability.
     let receive_only = document(&id, "disabled", Some("fixture-output"));
@@ -148,7 +155,7 @@ async fn app_with(
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
     let _ = recording
         .transmit
-        .set(transmit_http::Station::start(clock).unwrap());
+        .set(transmit_http::Station::start(ntp_clock(clock)).unwrap());
     let origin = "http://127.0.0.1:18001".to_string();
     let app = App {
         origin: origin.clone(),
@@ -211,6 +218,8 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "boot_id",
             "clock",
             "clock_measurement",
+            "clock_source",
+            "clock_warning",
             "outcomes",
             "profile_id",
             "ptt",
@@ -238,6 +247,11 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
     // No SNTP measurement yet: the clock is unknown, not synchronized.
     assert_eq!(view["clock"], "unknown");
     assert_eq!(view["clock_measurement"], Value::Null);
+    // #43: the default clock source, no NTP/air warning.
+    assert_eq!(
+        (&view["clock_source"], &view["clock_warning"]),
+        (&json!("ntp"), &Value::Null)
+    );
     assert_eq!(view["transmit"]["arm_state"], "disarmed");
     assert_eq!(view["transmit"]["last_disarm_cause"], "startup");
     assert_eq!(view["transmit"]["capability"], "unsupported");
@@ -408,7 +422,8 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     let peer = attach_peer(&recording, Device::Present);
     peer.lock().unwrap().transmitting = true;
     let station =
-        transmit_http::Station::start(wstx_rust::transmit::clock::Monitor::new()).unwrap();
+        transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
+            .unwrap();
     let _ = recording.transmit.set(station.clone());
     // Even a receive-only profile gets the release: it only ever turns RF off.
     let doc = document(&id, "disabled", None);

@@ -421,6 +421,8 @@ attribute def ActivityOrdering {
         enum linkStale; enum catLost; enum catSetupUnconfirmed; enum audioUnavailable;
         enum audioLevelLow; enum audioLevelHigh; enum clockOff; enum receiveStopped;
         enum receiveRestarted; enum receiveOutcomeUnknown;
+        // #43 CL-043-03: transmit refused while the air clock is unknown; NTP/air disagree.
+        enum clockUnknown; enum clockDisagree;
     }
     enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
     enum def ChangeKind { enum operative; enum restart; }
@@ -562,8 +564,11 @@ attribute def ActivityOrdering {
              reachable), opened by the top-bar Settings button or F2, closed by its close
              control or a pointer action outside it. Exactly four sections
              (SettingsSection):
-             General: station (display name, callsign, locator, continent), clock/NTP
-             state, display (theme Day/Dark/Night and its switch, waterfall display
+             General: station (display name, callsign, locator, continent), clock
+             (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
+             Both with the air estimate, read with GET /clock when the drawer opens,
+             saved on change with POST /clock, a plain setting without restart mark),
+             display (theme Day/Dark/Night and its switch, waterfall display
              preferences), access and grants (log out, forget credential), MCP/automation,
              and "Monitor off at startup" (#45 CL-045-01: read with GET /receive/startup,
              saved on change with POST /receive/startup; it acts at the next station start

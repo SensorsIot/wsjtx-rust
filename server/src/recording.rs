@@ -16,6 +16,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use wstx_rust::transmit::air;
 #[path = "receive_startup.rs"]
 pub(crate) mod startup;
 #[cfg(test)]
@@ -267,6 +268,8 @@ pub struct Recording {
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
+    /// The station clock and its saved source (#43), started once by the process.
+    pub(crate) clock: std::sync::OnceLock<Arc<crate::clock_http::Clock>>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
     startup: Mutex<startup::Startup>,
     #[cfg(test)]
@@ -312,6 +315,9 @@ struct LiveState {
     /// Measured capture clock minus the epoch anchor's prediction (100 ns) and its rate
     /// in ppm, from ClockTracker; it re-anchors the window schedule and UTC/DT (#47).
     capture_drift: Option<(i128, Option<f64>)>,
+    /// The station clock correction (#43 clock from the air, 100 ns) the live worker
+    /// applied with the drift: windows, period and DT refer to system UTC plus both.
+    clock_correction: i128,
     publication_error: Option<&'static str>,
     /// WstxContact::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
     /// full-scale units, sample count, window start) and the last published value.
@@ -456,6 +462,12 @@ impl Recording {
             "capture_drift_ms":drift.map(|(d,_)|(d as f64/10_000.0).round() as i64),
             "capture_drift_ppm":drift.and_then(|(_,ppm)|ppm).map(|p|(p*10.0).round()/10.0)})
     }
+    /// The station clock correction (#43) in 100 ns: 0 without a station clock.
+    pub(crate) fn clock_correction(&self) -> i128 {
+        self.clock
+            .get()
+            .map_or(0, |c| i128::from(c.station.correction_ms()) * 10_000)
+    }
     /// The latest Rx level while audio runs (WstxContact::OperatorDisplays), else None.
     pub(crate) fn rx_level(&self) -> Option<i32> {
         let s = self.state.lock().unwrap();
@@ -596,6 +608,7 @@ impl Recording {
             search_limited: false,
             last_overrun: None,
             capture_drift: None,
+            clock_correction: 0,
             publication_error: None,
             level: (0.0, 0, None, Some(47)),
             loss_epochs: 0,
@@ -842,6 +855,7 @@ impl Recording {
                 search_limited: false,
                 last_overrun: None,
                 capture_drift: None,
+                clock_correction: 0,
                 publication_error: None,
                 level: (0.0, 0, None, None),
                 loss_epochs: 0,
@@ -1044,7 +1058,7 @@ impl Recording {
             let Some((period, nominal, support)) = period_parameters(l.mode) else {
                 return Ok(());
             };
-            let drift = l.capture_drift.map_or(0, |(d, _)| d);
+            let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
             let (Some(begin), Some(end)) = (
                 source_ticks(timing, interval.0).map(|t| t + drift),
                 source_ticks(timing, interval.1).map(|t| t + drift),
@@ -1156,12 +1170,24 @@ impl Recording {
         }
         let mut value =
             serde_json::to_value(decode).map_err(|_| decoder::DecodeError::DecodeLimit)?;
+        let drift = l.capture_drift.map_or(0, |(d, _)| d);
         let timing = relative_decode_timing(
             l.timing.as_ref(),
             l.mode,
             decode.start_frame,
-            l.capture_drift.map_or(0, |(d, _)| d),
+            drift + l.clock_correction,
         );
+        // #43: the air estimate takes DT against the uncorrected system clock, so the
+        // correction it leads to never feeds back into it.
+        if let (Some(clock), Some(from), Some((_, raw))) = (
+            self.clock.get(),
+            decode.payload.fields.as_ref().and_then(air::sender),
+            relative_decode_timing(l.timing.as_ref(), l.mode, decode.start_frame, drift),
+        ) {
+            clock
+                .station
+                .observe(from, (raw * 1000.0).round() as i64, decode.snr_db);
+        }
         value["period_start_utc"] = json!(timing.as_ref().map(|(period, _)| period));
         value["dt_seconds"] = json!(timing.map(|(_, dt)| dt));
         value
@@ -1984,6 +2010,8 @@ struct LiveWorker {
     epoch_seen: bool,
     spectrum: LiveSpectrum,
     clock: ClockTracker,
+    /// The station clock correction (100 ns) included in the window schedule (#43).
+    air: i128,
 }
 impl LiveWorker {
     fn new(owner: Arc<Recording>, job: Job, input: Box<dyn LiveInput>, mode: &str) -> Self {
@@ -2003,6 +2031,7 @@ impl LiveWorker {
             epoch_seen: false,
             spectrum: LiveSpectrum::new(),
             clock: ClockTracker::default(),
+            air: 0,
         }
     }
     fn current(&self) -> bool {
@@ -2164,7 +2193,8 @@ impl LiveWorker {
         l.timing = Some(timing.clone());
         drop(s);
         let mode = self.mode.unwrap_or(decoder::Mode::Ft8);
-        let schedule = window_schedule(&timing, mode, 0).unwrap_or_default();
+        self.air = self.owner.clock_correction();
+        let schedule = window_schedule(&timing, mode, self.air).unwrap_or_default();
         self.clock = ClockTracker::default();
         self.window = Some(
             receive::WindowBuffer::new(mode, descriptor)
@@ -2220,6 +2250,7 @@ impl LiveWorker {
                 if let Some(drift) = drift {
                     l.capture_drift = Some(drift);
                 }
+                l.clock_correction = self.air;
                 l.next_frame = next;
                 l.accumulate_level(&block.samples, Instant::now());
                 self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
@@ -2294,23 +2325,30 @@ impl LiveWorker {
         }
     }
     /// Measures the capture clock against the epoch anchor and, when the smoothed offset
-    /// moved by more than RESCHEDULE_TICKS, re-anchors the window schedule (#47).
+    /// moved by more than RESCHEDULE_TICKS (#47) or the station clock correction changed
+    /// (#43), re-anchors the window schedule on their sum. Returns the drift update.
     fn track_clock(
         &mut self,
         timing: Option<&source::SourceTiming>,
     ) -> Option<(i128, Option<f64>)> {
         let timing = timing.filter(|t| t.correlated)?;
-        let (frame, utc) = self.input.clock_utc()?;
-        let before = self.clock.applied;
-        let update = self.clock.observe(timing, frame, utc)?;
-        if let (Some(mode), Some(window)) = (self.mode, self.window.as_mut())
-            && let Some(schedule) = window_schedule(timing, mode, update.0)
+        let before = self.clock.applied + self.air;
+        let update = self
+            .input
+            .clock_utc()
+            .and_then(|(frame, utc)| self.clock.observe(timing, frame, utc));
+        self.air = self.owner.clock_correction();
+        let after = self.clock.applied + self.air;
+        if after != before
+            && let (Some(mode), Some(window)) = (self.mode, self.window.as_mut())
+            && let Some(schedule) = window_schedule(timing, mode, after)
         {
-            // A larger measured offset (capture clock behind UTC) completes windows earlier.
-            let shift = -((update.0 - before) * 12000 / 10_000_000);
+            // A larger offset (capture clock or system clock behind UTC) completes windows
+            // earlier.
+            let shift = -((after - before) * 12000 / 10_000_000);
             window.reschedule(&schedule, i64::try_from(shift).unwrap_or(0));
         }
-        Some(update)
+        update
     }
     fn analyze(&mut self, mut window: receive::AnalysisWindow) -> Result<()> {
         use std::{
@@ -2426,6 +2464,10 @@ impl LiveWorker {
             if !self.reset {
                 self.owner
                     .publish_latest_decode(&job, interval, first_sequence, complete, late)?;
+                // #43: one completed decode window re-estimates the clock from the air.
+                if let Some(clock) = self.owner.clock.get() {
+                    clock.station.period_done();
+                }
             }
             if self.reset {
                 pending = None;
@@ -2836,7 +2878,7 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     io(f.write_all(&bytes))?;
     io(f.sync_all())
 }
-fn bounded_json<T: serde::de::DeserializeOwned>(path: &Path, cap: u64) -> Result<T> {
+pub(crate) fn bounded_json<T: serde::de::DeserializeOwned>(path: &Path, cap: u64) -> Result<T> {
     let mut bytes = Vec::new();
     io(File::open(path))?
         .take(cap + 1)
@@ -2887,6 +2929,7 @@ impl Recording {
                 transmit: std::sync::OnceLock::new(),
                 contact: std::sync::OnceLock::new(),
                 udp: std::sync::OnceLock::new(),
+                clock: std::sync::OnceLock::new(),
                 startup,
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
@@ -2953,6 +2996,7 @@ impl Recording {
             transmit: std::sync::OnceLock::new(),
             contact: std::sync::OnceLock::new(),
             udp: std::sync::OnceLock::new(),
+            clock: std::sync::OnceLock::new(),
             startup,
             #[cfg(test)]
             cat_transport: Mutex::new(None),

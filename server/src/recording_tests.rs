@@ -45,6 +45,7 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
         search_limited: false,
         last_overrun: None,
         capture_drift: None,
+        clock_correction: 0,
         publication_error: None,
         level: (0.0, 0, None, None),
         loss_epochs: 0,
@@ -2546,6 +2547,131 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
     let (fixed, _) = drifting_prompt_windows(false, 600, 2000.0);
     let last = fixed.last().unwrap();
     assert!(last.0 > 1.2, "fixed schedule drifted only {:.3} s", last.0);
+}
+
+// Proves: CL-043-03, CL-007-05; TC-043-002. The clock from the air shifts the UTC reference
+// of live windows, periods and DT on top of the measured capture drift: with the system
+// clock 2 s ahead, prompt windows complete at +13.8 s of corrected UTC through 300 ppm of
+// drift, none is lost or repeated, and the estimator is fed DT against the uncorrected
+// system clock whatever correction is applied (no feedback loop).
+#[test]
+fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate() {
+    use wstx_rust::transmit::air::Source;
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let clock = crate::clock_http::Clock::load(
+        &fixture.0,
+        &r.profile,
+        wstx_rust::transmit::clock::Monitor::new(),
+    );
+    clock.station.set_source(Source::Air);
+    let _ = r.clock.set(clock.clone());
+    let (job, mut decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-11-01T00:00:00.0000000Z", 0);
+    let (context, timing) = {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        let timing = l.timing.as_ref().unwrap().clone();
+        (
+            source::SourceContext {
+                descriptor: l.source.as_ref().unwrap().clone(),
+                timing: Arc::new(timing.clone()),
+            },
+            timing,
+        )
+    };
+    let anchor = filetime_from_utc("2026-11-01T00:00:00.0000000Z").unwrap() as f64;
+    // 301 s: the last period's prompt completes 2 s later, at +300.8 s of system time.
+    let total = 301 * 12000;
+    // System UTC (100 ns) of canonical frame f: the capture clock runs 300 ppm slow.
+    let system = |f: u64| anchor + f as f64 * (10_000_000.0 / 12000.0) * (1.0 + 300e-6);
+    let input_clock = Arc::new(Mutex::new(None));
+    let input = ClockInput {
+        context: context.clone(),
+        clock: input_clock.clone(),
+    };
+    let mut worker = LiveWorker::new(r.clone(), job.clone(), Box::new(input), "ft8");
+    worker.window = Some(
+        receive::WindowBuffer::new(decoder::Mode::Ft8, context.descriptor.clone())
+            .unwrap()
+            .with_schedule(&window_schedule(&timing, decoder::Mode::Ft8, 0).unwrap()),
+    );
+    let samples: Arc<[f32]> = Arc::from(vec![0.0; 240]);
+    let mut prompts = vec![];
+    let mut correction = 0.0;
+    let mut first = 0;
+    while first < total {
+        if first == 150 * 12000 {
+            // Twelve stations heard 2 s late against the system clock: two windows apply
+            // the -2000 ms correction under the 1000 ms rate limit.
+            clock.station.with_air(|a| {
+                for k in 0..2 {
+                    for i in 0..12 {
+                        a.observe(k, k, &format!("K{i}ABC"), "HB9BLA", 2000, Some(-6.0));
+                    }
+                    a.period_done(k, k);
+                }
+            });
+            assert_eq!(r.clock_correction(), -20_000_000);
+            correction = -20_000_000.0;
+        }
+        let block = SampleBlock::live(&context, first, samples.clone(), false).unwrap();
+        let outcome = worker.window.as_mut().unwrap().push(&block).unwrap();
+        *input_clock.lock().unwrap() = Some((first, system(first) as u64));
+        if let Some(drift) = worker.track_clock(Some(&timing)) {
+            r.state.lock().unwrap().live.as_mut().unwrap().capture_drift = Some(drift);
+        }
+        if let Some(window) = outcome.window.filter(|w| !w.waits) {
+            // Error of the completion against +13.8 s of corrected UTC.
+            let completed =
+                system(window.origin + window.samples.len() as u64) + correction - anchor;
+            let slot = ((completed - 138_000_000.0) / 150_000_000.0).round() * 150_000_000.0;
+            prompts.push((first, (completed - slot - 138_000_000.0) / 10_000_000.0));
+        }
+        first += 240;
+    }
+    assert_eq!(
+        prompts.len(),
+        20,
+        "one prompt window per period, none lost or repeated"
+    );
+    for (index, &(at, error)) in prompts.iter().enumerate().skip(1) {
+        assert!(
+            error.abs() <= 0.1,
+            "prompt {index} at frame {at}: completion error {error:.3} s"
+        );
+    }
+    // Period and DT carry drift plus correction; the estimator gets the raw DT only.
+    // Frame 204000 is 17.0 s after the anchor; with 0.5 s drift that is system 17.5 s:
+    // raw DT +2.0 s in the 00:00:15 period, corrected 00:00:15 DT 0.0.
+    decoded.payload = decoder::unpack(&wstx_rust::transmit::pack("CQ K1ABC FN42").unwrap().bits);
+    decoded.snr_db = Some(-7.0);
+    decoded.start_frame = 204_000;
+    clock.station.with_air(|a| *a = Default::default());
+    for (applied, period, dt) in [
+        (-20_000_000, "2026-11-01T00:00:15.0000000Z", 0.0),
+        (0, "2026-11-01T00:00:15.0000000Z", 2.0),
+    ] {
+        {
+            let mut s = r.state.lock().unwrap();
+            let l = s.live.as_mut().unwrap();
+            l.capture_drift = Some((5_000_000, None));
+            l.clock_correction = applied;
+            l.next_frame = 400_000;
+        }
+        r.publish_decode(&job, &decoded).unwrap();
+        let s = r.state.lock().unwrap();
+        let (record, _) = s.live.as_ref().unwrap().records.back().unwrap();
+        assert_eq!(record["period_start_utc"], period);
+        assert!(
+            (record["dt_seconds"].as_f64().unwrap() - dt).abs() < 1e-6,
+            "{record}"
+        );
+    }
+    assert_eq!(
+        clock.station.with_air(|a| a.observed()),
+        [("K1ABC".to_string(), 2000), ("K1ABC".to_string(), 2000)]
+    );
 }
 
 // Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) extends its period's
