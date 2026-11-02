@@ -542,7 +542,7 @@ async function tickAndRead(page,offset,transmitting){
     dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:utc,period_ms:15000,transmitting,rx_level_db:null}}}}));
     const bar=document.querySelector('#qso-progress'),cs=getComputedStyle(bar);
     return {utc,width:parseFloat(bar.style.width),colour:cs.backgroundColor,transition:cs.transitionDuration,
-      label:document.querySelector('#qso-next-label').textContent,next:document.querySelector('#contact-next').textContent,countdown:document.querySelector('#qso-countdown').textContent};
+      label:document.querySelector('#qso-next .op-eyebrow').textContent,next:document.querySelector('#contact-next').textContent,countdown:document.querySelector('#qso-countdown').textContent};
   },[offset,transmitting]);
 }
 // An own CQ (contact calling) with Enable Tx on, Tx parity even (my periods: even index).
@@ -560,8 +560,9 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:ownCq(),transmit:{arm_state:'armed'},settings:{parity:'even'}})}));
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
-  // A station clock ahead of the browser: 5 s into an even (my Tx) period 30..60 s ahead.
-  const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+5000,offset=even-now;
+  // A station clock ahead of the browser, in an even (my Tx) period 30..60 s ahead, half a
+  // period out of phase with the browser's clock.
+  const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+((now%15000)+7500)%15000,offset=even-now;
   let r=await tickAndRead(page,offset,false);
   const phase=u=>100*(((u%15000)+15000)%15000)/15000;
   assert.ok(Math.abs(r.width-phase(r.utc))<=4,`width ${r.width} vs station phase ${phase(r.utc)}`);
