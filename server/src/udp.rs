@@ -52,10 +52,35 @@ const LOGGED_ADIF_BIT: u8 = 64;
 pub(crate) struct Target {
     pub address: SocketAddr,
     pub enabled: bool,
+    /// multicast_ttl: the IPv4 TTL or the IPv6 hop limit of a multicast target.
     pub ttl: u32,
-    pub interface: Option<Ipv4Addr>,
+    pub interface: Option<Interface>,
     pub messages: u8,
     pub accept: bool,
+}
+/// multicast_interface: an IPv4 address for an IPv4 target, an interface index for an
+/// IPv6 target (WstxUdp D6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Interface {
+    V4(Ipv4Addr),
+    Index(u32),
+}
+impl Interface {
+    fn text(&self) -> String {
+        match self {
+            Interface::V4(ip) => ip.to_string(),
+            Interface::Index(i) => i.to_string(),
+        }
+    }
+}
+/// An IPv6 interface index: decimal digits without sign or leading zero, 1..=u32::MAX.
+fn interface_index(s: &str) -> Option<u32> {
+    let digits = !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) && !s.starts_with('0');
+    digits.then(|| s.parse().ok()).flatten()
+}
+/// The scope of an IPv6 multicast group (RFC 4291 2.7): its fourth nibble.
+fn multicast_scope(ip: &Ipv6Addr) -> u16 {
+    ip.segments()[0] & 0x000f
 }
 impl Target {
     fn json(&self) -> Value {
@@ -66,11 +91,11 @@ impl Target {
             .map(|(_, m)| *m)
             .collect();
         json!({"address":self.address.to_string(),"enabled":self.enabled,"multicast_ttl":self.ttl,
-            "multicast_interface":self.interface.map(|i|i.to_string()),"messages":messages,
+            "multicast_interface":self.interface.map(|i|i.text()),"messages":messages,
             "accept_commands":self.accept})
     }
     /// The socket settings: a change reopens the socket.
-    fn socket_key(&self) -> (SocketAddr, bool, u32, Option<Ipv4Addr>) {
+    fn socket_key(&self) -> (SocketAddr, bool, u32, Option<Interface>) {
         (self.address, self.enabled, self.ttl, self.interface)
     }
 }
@@ -128,9 +153,12 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
         .as_str()
         .and_then(|a| a.parse().ok())
         .ok_or_else(|| f("address"))?;
+    // An IPv6 multicast group of reserved scope 0 or 15 has no defined reach.
     let refused = match address.ip() {
         IpAddr::V4(ip) => ip.is_unspecified() || ip.is_broadcast(),
-        IpAddr::V6(ip) => ip.is_unspecified() || ip.is_multicast(),
+        IpAddr::V6(ip) => {
+            ip.is_unspecified() || (ip.is_multicast() && matches!(multicast_scope(&ip), 0 | 15))
+        }
     };
     if refused || address.port() == 0 {
         return Err(f("address"));
@@ -140,14 +168,27 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
         .as_u64()
         .filter(|t| (1..=255).contains(t))
         .ok_or_else(|| f("multicast_ttl"))? as u32;
-    let interface = match &v["multicast_interface"] {
-        Value::Null => None,
-        Value::String(s) => Some(
+    // An IPv6 group names an interface index; every other address keeps the IPv4 form
+    // (a unicast target ignores it), so a saved udp.json of #40 still loads.
+    let interface = match (&v["multicast_interface"], address.ip()) {
+        (Value::Null, _) => None,
+        (Value::String(s), IpAddr::V6(ip)) if ip.is_multicast() => Some(Interface::Index(
+            interface_index(s).ok_or_else(|| f("multicast_interface"))?,
+        )),
+        (Value::String(s), _) => Some(Interface::V4(
             s.parse::<Ipv4Addr>()
                 .map_err(|_| f("multicast_interface"))?,
-        ),
+        )),
         _ => return Err(f("multicast_interface")),
     };
+    // An interface-local or link-local group exists only on one interface: name it.
+    if let IpAddr::V6(ip) = address.ip()
+        && ip.is_multicast()
+        && matches!(multicast_scope(&ip), 1 | 2)
+        && interface.is_none()
+    {
+        return Err(f("multicast_interface"));
+    }
     let mut messages = 0u8;
     for m in v["messages"].as_array().ok_or_else(|| f("messages"))? {
         let bit = m
@@ -288,14 +329,22 @@ fn open_socket(t: &Target) -> Option<UdpSocket> {
         Some(socket2::Protocol::UDP),
     )
     .ok()?;
-    if let IpAddr::V4(group) = t.address.ip()
-        && group.is_multicast()
-    {
-        socket.set_multicast_ttl_v4(t.ttl).ok()?;
-        socket.set_multicast_loop_v4(true).ok()?;
-        if let Some(interface) = t.interface {
-            socket.set_multicast_if_v4(&interface).ok()?;
+    match t.address.ip() {
+        IpAddr::V4(group) if group.is_multicast() => {
+            socket.set_multicast_ttl_v4(t.ttl).ok()?;
+            socket.set_multicast_loop_v4(true).ok()?;
+            if let Some(Interface::V4(interface)) = t.interface {
+                socket.set_multicast_if_v4(&interface).ok()?;
+            }
         }
+        IpAddr::V6(group) if group.is_multicast() => {
+            socket.set_multicast_hops_v6(t.ttl).ok()?;
+            socket.set_multicast_loop_v6(true).ok()?;
+            if let Some(Interface::Index(index)) = t.interface {
+                socket.set_multicast_if_v6(index).ok()?;
+            }
+        }
+        _ => {}
     }
     socket.bind(&bind.into()).ok()?;
     socket.set_nonblocking(true).ok()?;

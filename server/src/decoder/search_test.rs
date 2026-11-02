@@ -1046,6 +1046,8 @@ fn refinement_rejects_unrelated_carrier_sampling_alias() {
                     deadline: Instant::now(),
                     resume: false,
                 };
+                let plan = BandPlan::new(mode, samples.len(), false).unwrap();
+                let mut pass = complete(plan.current_pass(&samples, &mut budget)).unwrap();
                 let result = complete(refine_known(
                     &samples,
                     mode,
@@ -1057,6 +1059,7 @@ fn refinement_rejects_unrelated_carrier_sampling_alias() {
                     },
                     &|| false,
                     &mut budget,
+                    &mut pass,
                 ))
                 .unwrap();
                 assert_eq!(result.start, 0);
@@ -1120,6 +1123,94 @@ fn full_rate_metric_distinguishes_conjugate_modulated_interferer() {
                     .sum::<f64>();
                 assert!(actual / energy < 0.001 && aliased / strided_energy > 0.999);
             }
+        }
+    }
+}
+
+// Proves: CL-007-04, CL-007-05; TC-004-004. Pruned grid scoring keeps the exhaustive result.
+#[test]
+fn ranked_refinement_matches_exhaustive_grid_search() {
+    let channel = Channel::new();
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        let frames = if mode == Mode::Ft8 { 180000 } else { 90000 };
+        let word = |seed: u8| {
+            let bits = std::array::from_fn(|i| ((i as u8).wrapping_mul(seed) >> 3) & 1);
+            channel.tones(&channel.encode(&bits, mode), mode)
+        };
+        // A crowded frame: the target, an overlapping stronger station one tone away,
+        // an unrelated carrier and deterministic noise.
+        let (target, other) = (word(37), word(91));
+        let (start, carrier) = (3000usize, 1234.567);
+        let spacing = mode.spacing();
+        let a = quadratures(mode, &target, carrier).unwrap();
+        let b = quadratures(mode, &other, carrier + spacing * 1.37).unwrap();
+        let mut state = 12345u64;
+        let samples = (0..frames)
+            .map(|k: usize| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let noise = ((state >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.4;
+                let t = (k + 1) as f64 / 12000.;
+                let mut x = noise + 0.3 * (2. * PI * 1900. * t).cos();
+                if let Some(w) = k.checked_sub(start).and_then(|i| a.get(i)) {
+                    x += 0.2 * w[0] as f64;
+                }
+                if let Some(w) = k.checked_sub(start + 700).and_then(|i| b.get(i)) {
+                    x += 0.35 * w[0] as f64;
+                }
+                x as f32
+            })
+            .collect::<Vec<_>>();
+        let never = || false;
+        let mut budget = CpuBudget::new(&never);
+        let plan = BandPlan::new(mode, samples.len(), false).unwrap();
+        let mut pass = complete(plan.current_pass(&samples, &mut budget)).unwrap();
+        let n = mode.symbol_frames();
+        for (dt, df) in [(n as isize / 9, 0.21), (-(n as isize) / 7, -0.37)] {
+            let c = Candidate {
+                start: (start as isize + dt) as usize,
+                frequency: carrier + df * spacing / 6.25,
+                score: 0.,
+            };
+            let ranked = complete(refine_known(
+                &samples,
+                mode,
+                &target,
+                c,
+                &never,
+                &mut budget,
+                &mut pass,
+            ))
+            .unwrap();
+            let exhaustive = complete(refine_exhaustive(
+                &samples,
+                mode,
+                &target,
+                c,
+                &never,
+                &mut budget,
+            ))
+            .unwrap();
+            let wave = quadratures(mode, &target, 0.).unwrap();
+            let full = coherent(
+                &samples,
+                ranked.start,
+                &wave,
+                &[(n / 2, wave.len() - n / 2)],
+                ranked.frequency,
+                1,
+            );
+            assert_eq!(ranked.score, full, "{mode:?}: returned score is full rate");
+            assert!(
+                ranked.start.abs_diff(exhaustive.start) <= 32
+                    && (ranked.frequency - exhaustive.frequency).abs() <= 0.02
+                    && ranked.score >= 0.999 * exhaustive.score,
+                "{mode:?} {dt}/{df}: ranked {ranked:?} exhaustive {exhaustive:?}"
+            );
+            assert!(
+                ranked.start.abs_diff(start) <= 240 && (ranked.frequency - carrier).abs() <= 1.
+            );
         }
     }
 }

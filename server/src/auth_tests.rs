@@ -453,7 +453,7 @@ async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_forei
     }
 }
 
-// Proves: CL-022-01; TC-022-006. A plaintext selected profile has no grant service
+// Proves: CL-022-01, CL-007-05; TC-022-006, TC-004-004. A plaintext selected profile has no grant service
 // and keeps the runtime-token contract for operating HTTP routes and WS.
 #[tokio::test]
 async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
@@ -487,6 +487,51 @@ async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
     };
     assert_eq!(read(Some(&good)).await.status, StatusCode::OK);
     assert_eq!(read(None).await.status, StatusCode::UNAUTHORIZED);
+    // #47: the on-demand capture-clock read follows the same operating-read rules.
+    let get = axum::http::Method::GET;
+    let reply = f
+        .request(
+            get.clone(),
+            "/receive/clock",
+            Vec::new(),
+            f.headers(Some(&good)),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let mut keys = reply
+        .json()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "boot_id",
+            "capture_drift_ms",
+            "capture_drift_ppm",
+            "profile_id",
+            "v"
+        ]
+    );
+    assert!(reply.json()["capture_drift_ms"].is_null());
+    for cookie in [None, Some(wrong.as_str())] {
+        let refused = f
+            .request(get.clone(), "/receive/clock", Vec::new(), f.headers(cookie))
+            .await;
+        assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
+    }
+    let query = f
+        .request(
+            get,
+            "/receive/clock?x=1",
+            Vec::new(),
+            f.headers(Some(&good)),
+        )
+        .await;
+    assert_eq!(query.status, StatusCode::BAD_REQUEST);
     assert!(
         ws_status(f.app().clone(), Some(good.clone()))
             .await

@@ -171,18 +171,24 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-007-004 manual DX entry and Log QSO open the review without hiding Halt Tx',{timeout:30000},async()=>{
+// #41 DirectLog: Log QSO logs at once on the actual server, without a review form.
+test('TC-007-004 manual DX entry and Log QSO log the contact at once without hiding Halt Tx',{timeout:30000},async()=>{
   if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
   await page.locator('#dx-call').fill('dl1abc');await page.locator('#dx-grid').fill('JO62');await page.locator('#dx-grid').press('Enter');
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'DL1ABC'}).waitFor();
   await page.locator('#dx-call').fill('AB1');await page.locator('#dx-call').press('Enter');
   await page.locator('#contact-result').filter({hasText:'invalid_call'}).waitFor();
   await page.getByRole('button',{name:'Log QSO'}).click();
-  await page.locator('#log-review').waitFor();
-  assert.equal(await page.locator('#log-field-call').inputValue(),'DL1ABC');
-  assert.equal(await page.locator('#log-field-gridsquare').inputValue(),'JO62');
+  await page.locator('#contact-logged',{hasText:'Logged DL1ABC'}).waitFor();
+  const log=await (await fetch(origin+'/contacts')).json();
+  const id=(await snapshot()).contact.id;
+  const records=log.records.filter(r=>r.contact_id===id);
+  assert.equal(records.length,1,'exactly one record for the contact');
+  assert.deepEqual([records[0].call,records[0].gridsquare,records[0].mode,records[0].station_callsign],['DL1ABC','JO62','FT8','HB9BLA']);
+  assert.equal(await page.locator('#log-review').count(),0,'no review form');
+  assert.equal(await page.locator('#operating-workspace').isVisible(),true,'the operating screen stays');
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
-  assert.equal(mutations().some(r=>r.path==='/contacts'),false,'no auto-log: review only');
+  assert.equal(mutations().some(r=>r.path==='/contacts'),false,'the server logs; the browser never saves');
   assert.deepEqual(page.errors,[]);
 });
 
@@ -207,7 +213,6 @@ test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeo
 
 // Review decision 6 (OpenRegion) / #37 SettingsDrawer: a pointer action outside the drawer closes it.
 test('TC-007-002 a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
-  // An unsaved log review from the earlier test may have opened the Logbook page.
   if(await page.locator('#region-logbook').isVisible())await page.locator('#region-logbook .return-operate').click();
   await page.locator('#operating-workspace').waitFor({state:'visible'});
   await page.locator('#open-server-settings').click();

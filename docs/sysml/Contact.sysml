@@ -140,7 +140,6 @@ package WstxContact {
         attribute autoSequence : Boolean;
         attribute startUtc : String[0..1];
         attribute endUtc : String[0..1];
-        attribute offeredForLog : Boolean;
         attribute saved : Boolean;
         doc /* Server-owned. contactId is a fresh lowercase UUID v4 created when a
              partner is prepared (row selection or manual entry) and kept through
@@ -206,7 +205,7 @@ package WstxContact {
              unkeyed request of the old mode remains) and cancels the contact as
              CancelContact (calling -> idle; replying..signoff -> cancelled, DX call and
              Tx1-Tx5 cleared, Tx6 next). A completed contact keeps its fields and its
-             unsaved log review with its own mode; idle and cancelled contacts are
+             log record keeps its own mode (DirectLog); idle and cancelled contacts are
              unchanged. The Tx offset is clamped into the new mode's domain (an FT8
              2917..2950 Hz offset becomes 2916 Hz in FT4). Enable Tx afterwards starts a
              fresh own CQ in the new mode. DIFFERENT from WSJT-X, which keeps the DX
@@ -247,7 +246,7 @@ package WstxContact {
              (state replying), or tx2 (state report) when Tx1 is skipped. Row
              addressed to me: grid -> tx2/report; report -> tx3/rogerReport;
              R+report -> tx4/rogers; RRR or RR73 -> tx5/signoff; 73 -> tx5/signoff
-             (offered for log once tx5 is sent). Responding to a station that answered
+             (logged once tx5 is sent, DirectLog). Responding to a station that answered
              my CQ is this case; CQ response mode (automatic choice of the responder)
              is #12 (D6), so a reply to my CQ always needs this explicit selection. */
     }
@@ -268,14 +267,15 @@ package WstxContact {
     }
     action def ChangeContact {
         doc /* Explicit server-accepted replacement of an active partner: the old
-             contact is cancelled (or kept for review when already completed and
-             unsaved) before the new one is prepared; Enable Tx is turned off. */
+             contact is cancelled before the new one is prepared; Enable Tx is turned
+             off. A completed contact is not active and is already logged (DirectLog),
+             so a new partner simply replaces it (#41: no held unsaved contact). */
     }
     action def CancelContact {
         doc /* Abort the current contact: disarm (Enable Tx off), clear DX call/grid and
              Tx1-Tx5, select Tx6 (MW abortQSO ~9637). A transmission in progress
-             continues unless Halt is also requested. A completed, unsaved contact
-             stays available in the log review until saved or explicitly discarded. */
+             continues unless Halt is also requested. A completed contact keeps its
+             fields (only Tx6 is selected), so Log QSO can still re-log it (DirectLog). */
     }
 
     // ---------------------------------------------------------------- sequencing
@@ -360,8 +360,8 @@ package WstxContact {
              Completion: transmittedSignoff is TransmitService's confirmed completed
              transmission of a Tx4 RR73 or Tx5 73 of this contact (MW message_is_73
              ~492, m_sentFirst73). On completion Enable Tx turns off (CFG
-             disable_TX_on_73 default true ~3746) and the contact is offered for log
-             once. Receiving 73 while in rogers (after Tx4 RRR) completes without
+             disable_TX_on_73 default true ~3746) and the contact is logged once
+             (DirectLog, #41). Receiving 73 while in rogers (after Tx4 RRR) completes without
              sending more (DMR ~601-616). DIFFERENT: WSJT-X then leaves Enable Tx on
              with Tx6 selected; here Enable Tx turns off because Auto Seq never
              starts another contact (#10).
@@ -550,14 +550,16 @@ package WstxContact {
              ADIF band enumeration (e.g. 20m), absent when the dial is not confirmed;
              FREQ in MHz with six decimals = confirmed dial + Tx offset (LQ ~384,
              mainwindow_slots.cpp ~545), absent when unconfirmed; STATION_CALLSIGN and
-             MY_GRIDSQUARE from the profile; TX_PWR watts (operator entry, decimal >0,
-             optional, D10); COMMENT single line, printable ASCII without '<' and '>', at
-             most 1024 characters (optional, D10); a COMMENT containing '<' or '>' is
-             refused beside the field (DIFFERENT from WSJT-X to_adi_text stripping them:
-             a reviewed record is never altered); APP_WSTXRUST_CONTACT_ID = contactId.
-             Name, operator, propagation, satellite and contest exchange fields are not
-             adopted (D10). Retain checkboxes: power and comments may be retained for
-             the next review within the station session.
+             MY_GRIDSQUARE the WstxUdp Location session grid when one is set, else the
+             profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
+             line, printable ASCII without '<' and '>', at most 1024 characters
+             (optional, D10); a COMMENT containing '<' or '>' is refused (DIFFERENT from
+             WSJT-X to_adi_text stripping them: a supplied record is never altered).
+             DirectLog writes neither TX_PWR nor COMMENT (no power or comment entry
+             since #41 retired the review); SaveContact and ImportAdi may carry them.
+             APP_WSTXRUST_CONTACT_ID = contactId. Name, operator, propagation, satellite
+             and contest exchange fields are not adopted (D10; WSJT-X writes OPERATOR
+             only with a configured operator call, which this product does not have).
              Start time (MW set_dateTimeQSO ~8944): the UTC start of the period of this
              contact's first transmitted Tx2, or one period before its first
              transmitted Tx3; otherwise the start of its first transmitted message's
@@ -566,28 +568,47 @@ package WstxContact {
              the browser never substitutes its clock. */
     }
     enum def LogOutcome { enum saved; enum alreadySaved; enum invalidField; enum conflict; enum storageFailed; }
-    action def OfferLogReview {
-        doc /* D10. Automatic: once per contactId when it completes (AutoSequence
-             completed), the in-page review opens prefilled (WSJT-X prompt on the first
-             sent 73/RR73, MW guiUpdate ~8056; auto-accept without review is not
-             adopted, matching WSJT-X's default AutoLog ContestingOnly behaviour, CFG
-             ~3731-3734, LQ initLogQSO ~359-369). Manual Log QSO (button, Alt+Q, HT):
-             available whenever a contact has a DX call, in any state, using the same
-             contactId and the times observed so far. The operator may correct call,
-             grid, reports, times, power and comments; invalid fields are refused beside
-             the field. The review never hides Halt Tx. Offers queue per contactId,
-             oldest first, at most 8 unsaved: a completed or manually offered contact
-             stays offered until saved or discarded (discard_review), even after
-             CancelContact or ChangeContact; a later contact's offer waits behind it
-             (the same contactId replaces its own offer); a full queue refuses Log QSO
-             with state_conflict and leaves the completed contact available for a later
-             Log QSO; while such a completed, unqueued, unsaved contact exists, preparing
-             another contact (select_row, enter_dx) or starting a CQ is refused with
-             state_conflict, so it is never dropped. ContactSnapshot review is the oldest
-             unsaved offer. */
+    action def DirectLog {
+        doc /* #41 (operator design interview on #37, 2026-11-01: no log review queue;
+             each completed QSO goes straight to the internal ADIF log, as WSJT-X, and
+             to the external programs). Retires the #10 OfferLogReview queue, its
+             discard_review action and the browser review form.
+             Automatic: once per contactId when it completes (AutoSequence completed:
+             after a confirmed transmitted Tx4 RR73 or Tx5 73 with the partner's report
+             received, or a received 73 in rogers), which is when WSJT-X prompts to log
+             (MW guiUpdate ~8056). The server builds the LogRecord at completion: CALL,
+             GRIDSQUARE when known, MODE/SUBMODE by ContactMode, RST_SENT/RST_RCVD,
+             QSO_DATE/TIME_ON and QSO_DATE_OFF/TIME_OFF by the LogRecord time rules, BAND
+             and FREQ from the dial confirmed at completion plus the Tx offset (absent when
+             unconfirmed), STATION_CALLSIGN and MY_GRIDSQUARE; it is stored without any
+             browser, whether or not one is connected. Manual Log QSO (button, Alt+Q,
+             open_log): available whenever a contact has a DX call, in any state; logs
+             that contact now the same way with the times observed so far, without a
+             form. One record per contactId: logging a contactId already stored with
+             identical fields adds nothing (alreadySaved); with different fields (Log QSO
+             before completion, then completion) the contact's record is replaced in
+             place (replaced), keeping its index. Log QSO of a contact already logged at
+             its completion (stored or pending) changes nothing: the record keeps the
+             dial, Tx offset and location of completion. A second contact with the same
+             station is a new contactId and a new record (WSJT-X LogBook::add appends
+             without a dupe check). Only the first store of a contactId (saved) is sent
+             to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
+             reaches the external programs once; a replacement stays internal. They are
+             sent by the station step, never from inside a command, so a UDP Reply or
+             FreeText that reaches ContactCommand cannot re-enter the UDP owner. Idempotence: a retried command_id has no second
+             effect, a repeated completion logs once, and a restart starts no contact,
+             so it logs nothing again; stored records survive in contacts.adi.
+             Storage failure: the record stays pending in the station process, at most 64
+             (a 65th drops the oldest pending record with error log_queue_full), retried
+             at most every 5 s; pending records do not survive a restart. A record that
+             fails the LogRecord domains (for example no profile callsign) is not stored
+             (error log_invalid_field). ContactSnapshot log shows the latest attempt.
+             Publication runs under the station's authorization lock without a request
+             grant: it follows a contact that granted operating requests drove.
+             Logged records are not edited here (ContactHistory stays read-only). */
     }
     action def SaveContact {
-        in reviewed : LogRecord;
+        in supplied : LogRecord;
         out outcome : LogOutcome;
         doc /* Exactly once per contactId per profile. Storage: the selected profile
              directory's file contacts.adi (ADIF 3.1.8 ADI with header), written as a
@@ -595,12 +616,12 @@ package WstxContact {
              as WstxProfiles::SaveSelectedProfile; saved is acknowledged only after the
              replace succeeds. A repeated save of the same contactId with identical
              fields returns alreadySaved and adds nothing; different fields after a
-             save return conflict (history is read-only in this slice). Failure leaves
-             the review visibly unsaved with retry under the same contactId. A new
-             contact with a call already in the log is a separate contact (no dupe
-             refusal; WSJT-X LogBook::add appends without a dupe check) and the review
-             shows its worked-before status. Restart recovers completed unsaved
-             contacts of the current boot only as unsaved; nothing is auto-saved. */
+             save return conflict (history is read-only). Failure leaves the request
+             visibly unsaved with retry under the same contactId. A new contact with a
+             call already in the log is a separate contact (no dupe refusal; WSJT-X
+             LogBook::add appends without a dupe check). Since #41 no browser control
+             sends it: completed contacts are stored by DirectLog; POST /contacts stays
+             the explicit save of a supplied record. */
     }
 
     // ---------------------------------------------------------------- worked before
@@ -721,8 +742,9 @@ package WstxContact {
         in limit : Integer;
         doc /* GET /contacts?cursor=&limit= returns exactly
              {v:1,profile_id,total,cursor,next,more,records}; records are the stored
-             records in append (storage) order with index cursor..; storage is
-             append-only in this slice so indexes are stable. limit 1..10 (default 10),
+             records in append (storage) order with index cursor..; records are only
+             appended, and a DirectLog replacement keeps its record's index, so indexes
+             are stable. limit 1..10 (default 10),
              cursor 0..total (total returns an empty page), page at most 16384 encoded
              bytes. Each record is exactly {index,contact_id,call,gridsquare,mode,
              submode,rst_sent,rst_rcvd,qso_date,time_on,qso_date_off,time_off,band,freq,
@@ -746,7 +768,9 @@ package WstxContact {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
         enum set_parity; enum set_auto_seq; enum set_watchdogs; enum enable_tx; enum tune;
-        enum redecode; enum open_log; enum discard_review;
+        enum redecode; enum open_log;
+        doc /* discard_review is retired (#41, no log review queue) and refused
+             invalid_request with field action. */
     }
     item def ContactCommand :> WstxArchitecture::StationRequest {
         attribute v : Integer = 1;
@@ -770,8 +794,8 @@ package WstxContact {
              the snapshot transmit view; for enabled true a value different from the
              station's current revision is stale_revision with field safety_revision);
              tune {enabled}; redecode {} (last completed interval of the current live
-             job; no browser control sends it since #37); open_log {} (manual Log QSO);
-             discard_review {contact_id}.
+             job; no browser control sends it since #37); open_log {} (manual Log QSO:
+             DirectLog of the current contact now).
              replace true is the explicit ChangeContact; false with an active contact is
              contact_active. command_id is a caller UUID: the server retains the last 16
              command receipts per boot; an identical body with a retained command_id
@@ -805,7 +829,7 @@ package WstxContact {
         attribute snapshot_sequence : Integer;
         doc /* GET /contact returns 200 exactly
              {v:1,profile_id,boot_id,contact_revision,snapshot_sequence,monotonic_ms,
-             utc_ms,transmit,settings,contact,review,watchdog}, at most 4096 encoded
+             utc_ms,transmit,settings,contact,log,watchdog}, at most 4096 encoded
              bytes (503 snapshot_limit otherwise, never truncated). transmit is #9's read
              view exactly {capability:"unsupported"|"unavailable"|"available",
              arm_state,last_disarm_cause,tune,pending_sequence,last_text,
@@ -814,12 +838,15 @@ package WstxContact {
              settings exactly {auto_seq,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,offered_for_log,saved} (report_sent the
+             tx4,messages,start_utc,end_utc,saved} (report_sent the
              report of the last transmitted Tx2/Tx3 rendered, null until one is sent)
              with messages an array
-             of six strings or nulls (Tx1..Tx6, each at most 37 characters); review null
-             or exactly {contact_id,record,outcome,error} with record the LogRecord keys
-             and outcome pending|saved|unsaved; watchdog exactly {tx_remaining_minutes,
+             of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
+             when contacts.adi holds the contact's record; log (DirectLog) null until a
+             contact of this boot was logged, else exactly {contact_id,call,outcome,error}
+             of the latest attempt: outcome saved (stored, replaced or already stored)
+             with error null, or unsaved with error storage_unavailable (pending, retried),
+             log_queue_full or log_invalid_field (not retried); watchdog exactly {tx_remaining_minutes,
              tx_expired,tune_remaining_seconds}. contact_revision advances on every
              accepted command and every server-side sequence/transmit/watchdog change;
              snapshot_sequence also on clock-free material changes. No content coding:
@@ -865,7 +892,7 @@ package WstxContact {
              exactly {v,profile_id,boot_id,command_id,record}, body at most 8192 bytes so
              that a 1024-character comment fits with worst-case JSON escaping;
              201 {v:1,contact_id,outcome:"saved"}, 200 alreadySaved, 409 log_conflict,
-             400 log_invalid_field with field, 503 storage_unavailable leaving the review
+             400 log_invalid_field with field, 503 storage_unavailable leaving the record
              unsaved); GET /contacts (ContactHistory); GET /contacts/export.adi
              (ExportAdi); POST /contacts/imports {v,profile_id,boot_id,import_id,
              total_bytes,sha256} 201/200 reserve; PUT /contacts/imports/{id} chunks;
@@ -886,4 +913,5 @@ package WstxContact {
     dependency contactPromise from AutoSequence to WstxRequirements::'FR-007';
     dependency transmitPromise from TxWatchdog to WstxRequirements::'FR-008';
     dependency logPromise from LogRecord to WstxRequirements::'FR-011';
+    dependency directLogClause from DirectLog to WstxRequirements::'CL-010-04';
 }
