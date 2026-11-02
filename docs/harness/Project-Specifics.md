@@ -224,13 +224,105 @@ in place of an OK per install.
 
 | Rule | State today | Issue |
 |---|---|---|
-| Credentials outside the agents | Agents run as the HB9BLA user and can write the version directory, receipt, gates record and package scripts. Only the task and firewall changes need the operator's elevation. | #30 |
-| Approval names the candidate | The manifest names commit, executable SHA-256 and destination, but the agents write it, and the elevation is not bound to it. | #31 |
-| Verify before writing | `apply.ps1` refuses a changed artifact, package, gates record, receipt, process, task or firewall state before writing, but checks against an agent-written manifest beside the artifact. | #32 |
+| Credentials outside the agents | Off (today): agents run as the HB9BLA user and can write the version directory, `active.json`, the receipt, the gates record and the package and station-update scripts. Only the task and firewall changes need the operator's elevation. Prepared: the deploy authority below keeps policy, verifier and launcher where only Administrators write and the signing key with the operator. Still not met when on: the launcher and verifier run as HB9BLA, so the agents can alter them while they run (see its limits). | #30 |
+| Approval names the candidate | Off (today): the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. Prepared: an operator-signed approval of one commit, one digest and one destination. | #31 |
+| Verify before writing | Off (today): `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. Prepared: the protected verifier hashes the executable itself against the signed digest before the switch, and the protected launcher again before it starts it. | #32 |
 | Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks independently of the receipt that the process listening on 18081 runs the candidate's bytes and answers over trusted TLS. Not met in full: an agent runs the probe and the rollback after it (the operator can run the same probe), and the service does not report its own commit. | #33 |
 | Show the refusals | Firewall-enum and profile-lock refusals were observed in past dry runs. Tampered artifact, stale or unapproved commit, mismatched approval and wrong destination were not each shown. | #34 |
 
 No rule is met in full.
+
+### Deploy authority (prepared, switched off)
+
+`.harness/deploy/authority/` holds an operator approval for each install (#30, #31, #32).
+It is **off**: nothing in the install path calls it, the task runs `station\launcher.ps1`,
+and agents install with `station-update.ps1` as above. Only the operator switches it on,
+because from then on every install needs the operator's signature.
+
+When on, the operator approves a package by signing
+`{schema, commit, artifact_sha256, destination, requested_utc}` with an OpenSSH key the
+agents never see (on PC Andreas or a hardware key; `ssh-keygen -Y sign`, namespace
+`wstx-station-approval`). The root `C:\ProgramData\WstxRust\deploy-authority` is owned by
+Administrators and only readable by HB9BLA. It holds `policy.json` (destination and signer),
+`allowed_signers` (the operator's public key), `revoked.txt` (digests no longer allowed),
+`verify-approval.ps1`, `protected-launcher.ps1` and `authority-lib.ps1`. Both entry
+scripts refuse to run from anywhere else or when the root, an ancestor, PowerShell or
+`ssh-keygen` can be changed by an account other than SYSTEM, Administrators or
+TrustedInstaller. They load modules only from `$PSHOME` and run `ssh-keygen` with an empty
+environment. They hash the executable themselves with the file pinned against change and
+refuse unless the signed approval names exactly that commit, that digest and the policy's
+destination and the digest is not revoked. `verify-approval.ps1` runs inside
+`station-update.ps1` before anything is staged. `protected-launcher.ps1`, which the
+scheduled task then runs instead of `station\launcher.ps1`, checks again and starts
+nothing unapproved; `station-update.ps1` then sees the version not become ready and
+switches back.
+
+**To switch it on** (operator, once):
+
+1. Create the signing key on your own machine, e.g. `ssh-keygen -t ed25519 -f %USERPROFILE%\.ssh\wstx_operator`
+   (with a passphrase), and copy only `wstx_operator.pub` to HB9BLA.
+2. Approve the running version first, so the switch cannot stop the station. The agent runs
+   `.harness\deploy\authority\request-approval.ps1 -Manifest <its package>\manifest.json`. You
+   check the commit, digest and gate record it prints, then sign
+   `ssh-keygen -Y sign -f wstx_operator -n wstx-station-approval <commit>.approval.json`.
+   The agent copies `<commit>.approval.json` and `.sig` to
+   `%LOCALAPPDATA%\WstxRust\station\approvals\`.
+3. As HB9BLA, unelevated, try it:
+   `powershell -NoProfile -ExecutionPolicy Bypass -File .harness\deploy\authority\enable-authority.ps1 -OperatorPublicKey <path>\wstx_operator.pub -DryRun`.
+   The real run has Administrator rights, so nothing the agents can write may take part:
+   not the checkout, not git, not HB9BLA's environment (an elevated shell of HB9BLA still
+   reads `HKCU\Environment`, which can load a DLL into it). In an elevated
+   `powershell -NoProfile` of a **separate administrator account**:
+
+   ```powershell
+   & {
+     $ErrorActionPreference = 'Stop'
+     # A fresh, unpredictable folder created with its final permissions in one step, so
+     # no agent can create it first or drop a file into it before it is locked.
+     $sid = (New-Object Security.Principal.NTAccount('HB9BLA')).Translate([Security.Principal.SecurityIdentifier]).Value
+     $s = New-Object Security.AccessControl.DirectorySecurity
+     $s.SetSecurityDescriptorSddlForm("O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;$sid)")
+     $d = "C:\ProgramData\WstxRust-install-$([guid]::NewGuid())"
+     $null = [IO.Directory]::CreateDirectory($d, $s)
+     if (@(Get-ChildItem -Force $d).Count) { throw "$d is not empty" }
+     Copy-Item D:\Github\wsjtx-rust\.harness\deploy\authority\* $d
+     Get-FileHash $d\* | Format-Table Hash, Path   # must equal the digests in the review record
+     if ((Read-Host 'Digests equal the review record? (yes)') -ne 'yes') { throw 'stopped' }
+     powershell -NoProfile -ExecutionPolicy Bypass -File $d\enable-authority.ps1 -OperatorPublicKey <path>\wstx_operator.pub
+     $d   # keep: disable-authority.ps1 runs from this folder
+   }
+   ```
+
+   It refuses as HB9BLA, from an unprotected folder, when the task is not the
+   `setup-once.ps1` launcher, when the root existed unprotected or when the running version
+   is not approved. It prints the digests of the files it installs, points the task at the
+   protected launcher and does not restart the station.
+4. Apply `.harness/deploy/authority/station-update-authority.patch` to
+   `station-update.ps1` (it accepts the protected launcher in `Assert-Setup` and calls
+   the verifier after the package checks). Without the patch, `station-update.ps1` refuses every install and rollback with
+   "setup-once.ps1 has not been run".
+
+From then on each install is: `make_package.py`, `request-approval.ps1`, your signature,
+copy to `approvals\`, `station-update.ps1`, `station-probe.ps1`. To revoke an approved
+build, add its digest to `revoked.txt` (elevated). **To switch it off**:
+`$d\disable-authority.ps1`, run the same way as the enable (separate administrator account,
+protected copy), points the task back at `station\launcher.ps1`; then reverse the patch.
+
+**Limits when on.** The approval has no expiry and no one-time nonce: the protected side
+has no state the agents cannot write. An approved build stays startable (after a reboot
+or a rollback) until its digest is revoked. Replay for another commit, digest or
+destination is refused. **The checks still run with the agents' rights:** the task's
+principal stays HB9BLA (LeastPrivilege), so `protected-launcher.ps1` runs as the agents'
+own account. They can alter it while it runs, for example with a profiler DLL from
+`HKCU\Environment` or by writing to the memory of a process they own. They can also start
+any program themselves, and the firewall rule has no program condition. When on, the
+authority makes the approval tamper-evident and stops an unapproved build in the ordinary
+path; it is not a boundary against agents that act deliberately. A real boundary needs the
+task (and the verifier) under another account whose environment and processes the agents
+cannot reach, which is an operator decision. `station-probe.ps1` detects a listener that
+is not the expected image. The required checks
+(the push gate) still run with the agents' rights. The operator's signature covers the
+gate record shown at signing, but no protected configuration re-runs those checks.
 
 **Platform limits.** `execution_mode: local`: the hooks and the push gate run on the
 client with the agents' own rights. The repository has no branch protection and no
