@@ -286,8 +286,18 @@ package WstxTransmit {
         attribute keyLeadMs : Integer = 0;
         attribute playbackScale : Real = 0.5;
         attribute sampleRateHz : Integer = 48000;
-        attribute releaseMarginMs : Integer = 500;
+        attribute releaseMarginMs : Integer = 1000;
+        attribute releaseBoundFt8Ms : Integer = 14500;
+        attribute releaseBoundFt4Ms : Integer = 7000;
         attribute renderStallMs : Integer = 500;
+        attribute renderBufferMs : Integer = 100;
+        attribute silencePrefillMs : Integer = 20;
+        // FT8 audio ends at period + 500 + 12640 ms, FT4 at period + 300 + 5040 ms.
+        assert constraint releaseInsidePeriod {
+            500 + 12640 + releaseMarginMs <= releaseBoundFt8Ms and
+            300 + 5040 + releaseMarginMs <= releaseBoundFt4Ms and
+            renderBufferMs < releaseMarginMs
+        }
         doc /* Keying: the output device is opened first, then PTT is keyed at the period
              start (keyLeadMs after it; for an admitted late start at once), so the
              audio delay of Ft8Schedule/Ft4Schedule (500/300 ms) separates the confirmed
@@ -296,9 +306,18 @@ package WstxTransmit {
              from the sample PlanTransmitStart gives for that instant (late start skips,
              never replays). PTT is released with readback after the device reports the
              last sample played, and at the latest at the device-independent release
-             deadline audio start + remaining waveform duration + releaseMarginMs
-             whatever the device reports (audioStalled); disarm never unbounds a keyed
-             transmission. haltMs: from HaltTransmit receipt, audio output stops
+             deadline audio start + remaining waveform duration + releaseMarginMs, never
+             later than period start + releaseBoundFt8Ms (FT8) or releaseBoundFt4Ms
+             (FT4), whatever the device reports. Every owner step asks the device first,
+             also at or after the deadline: a device that reports every sample played
+             completes normally (released, still armed, the contact continues) however
+             late that step runs; a device that has not reported the end by the
+             deadline (it stopped consuming, or never reports) is released at the
+             deadline and fails audioStalled (disarm deviceLost). releaseMarginMs covers
+             the render drain (renderBufferMs) and render or owner scheduling delays
+             under load with headroom (#49: a 500 ms margin with a 20 ms render buffer
+             failed a healthy FT8 transmission under build load). Disarm never unbounds
+             a keyed transmission. haltMs: from HaltTransmit receipt, audio output stops
              without waiting for the owner lock and PTT is released and read back
              within 250 ms while CAT answers; a release exchange that fails or times
              out (pttExchangeMs per exchange, RadioIO 1 s) leaves PttState
@@ -378,9 +397,13 @@ package WstxTransmit {
              channel); otherwise audioUnavailable before PTT is keyed. The device opens
              streaming silence before keying, plays one program (waveform from its
              planned sample or the Tune tone), and stops and closes within 250 ms from
-             any thread. Drain: after the program's last frame nothing more is written,
-             so the device padding drains and the end is reported only when every
-             program frame was consumed. Render watchdog: while playing, no device
+             any thread. Buffer: the shared-mode buffer is requested at renderBufferMs;
+             without a program at most silencePrefillMs of silence is queued, so the
+             first program sample is not delayed behind a full buffer; a program fills
+             the whole buffer, so a render thread delayed by load does not underrun the
+             device and stretch the transmission. Drain: after the program's last frame
+             nothing more is written, so the device padding drains and the end is
+             reported only when every program frame was consumed. Render watchdog: while playing, no device
              consumption for renderStallMs, or an ended render thread, is
              audioDeviceLost. A render error or invalidated device during audio is
              audioDeviceLost: PTT is released and the station disarms. Capture never
