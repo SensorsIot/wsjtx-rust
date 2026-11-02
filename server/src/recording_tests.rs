@@ -2548,6 +2548,37 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
     assert!(last.0 > 1.2, "fixed schedule drifted only {:.3} s", last.0);
 }
 
+// Proves: CL-057-01; TC-057-001 (#57). Both a new period view and the late window's growth
+// of that view signal the Detailed WebSocket peers' publication watch.
+#[test]
+fn new_and_grown_views_signal_the_publication_watch() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, mut decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 400000;
+    let mut watch = r.publication.subscribe();
+    let period = 180000;
+    decoded.start_frame = period + 6000;
+    r.publish_decode(&job, &decoded).unwrap();
+    r.publish_latest_decode(&job, (period - 14400, period + 165600), 0, true, false)
+        .unwrap();
+    assert!(watch.has_changed().unwrap(), "a new view signals");
+    watch.borrow_and_update();
+    let id = r.receive_snapshot()["job"]["latest_decode"]["id"].clone();
+    decoded.start_frame = period + 20400;
+    decoded.payload.payload77 = "1".repeat(77);
+    r.publish_decode(&job, &decoded).unwrap();
+    r.publish_latest_decode(&job, (period + 8400, period + 188400), 1, true, true)
+        .unwrap();
+    let view = r.receive_snapshot()["job"]["latest_decode"].clone();
+    assert_eq!(
+        (view["id"].clone(), view["next_sequence"].clone()),
+        (id, json!(2))
+    );
+    assert!(watch.has_changed().unwrap(), "a grown view signals");
+}
+
 // Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) extends its period's
 // view under the same id: nothing new publishes nothing, a late starter (DT +1.2 s) only grows
 // next_sequence, so the browser keeps its rows and cursor.

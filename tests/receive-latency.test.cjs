@@ -8,7 +8,7 @@ const {chromium}=require('playwright');
 const origin=process.env.WSTX_LATENCY_ORIGIN;
 
 // Proves: CL-057-01; TC-057-001 (#57) browser-side timeline of the Detailed Band Activity.
-test('TC-057-001 busy live period painted in Band Activity (Detailed) timeline',{timeout:150000},async()=>{
+test('TC-057-001 busy live period painted in Band Activity (Detailed) timeline',{timeout:200000},async()=>{
   assert.ok(origin,'run through the Rust live busy-period test');
   const browser=await chromium.launch();
   try{
@@ -32,8 +32,20 @@ test('TC-057-001 busy live period painted in Band Activity (Detailed) timeline',
     // Two busy periods 30 s apart, each rows of at least 25 stations; then the late window.
     const busy=first=>document.querySelectorAll('#band-activity tbody tr[data-period=latest]').length>=25&&resultView.id!==first;
     await page.waitForFunction(busy,null,{timeout:60000});
-    await page.waitForFunction(busy,await page.evaluate(()=>resultView.id),{timeout:60000});
-    await page.waitForTimeout(4000);
+    const second=await page.evaluate(()=>resultView.id);await page.waitForFunction(busy,second,{timeout:60000});
+    // A failing results read falls back to at most once per 4 s, even with records pending,
+    // and the next success resumes Detailed delivery (third busy period, 30 s later).
+    const shown=await page.evaluate(()=>resultView.id),failed=[];
+    await page.route('**/receive/results?*',route=>{failed.push(Date.now());route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({v:1,error:{code:'unavailable',message:'Test outage'}})});});
+    await page.waitForFunction(ids=>resultView&&!ids.includes(resultView.id)&&resultView.next_sequence>resultView.first_sequence,[second,shown],{timeout:60000});
+    await page.waitForTimeout(9000);
+    await page.unroute('**/receive/results?*');const restored=Date.now();
+    await page.waitForFunction(busy,shown,{timeout:10000});const recovered=Date.now()-restored;
+    assert.ok(failed.length>=2,`failing reads ${failed.length}`);
+    for(let i=1;i<failed.length;i++)assert.ok(failed[i]-failed[i-1]>=3950,`failed reads ${failed[i]-failed[i-1]} ms apart`);
+    assert.ok(recovered<=5000,`rows ${recovered} ms after the reads recovered`);
+    process.stdout.write(`WSTX_LATENCY_FAILURE reads=${failed.length} gaps=${failed.slice(1).map((t,i)=>t-failed[i]).join(',')} recovered=${recovered}ms
+`);
     const activity=await page.evaluate(()=>window.__activity);
     assert.deepEqual(errors,[]);
     process.stdout.write(`WSTX_LATENCY_BROWSER ${JSON.stringify({activity,frames,requests})}\n`);

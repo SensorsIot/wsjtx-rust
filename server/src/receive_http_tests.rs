@@ -267,7 +267,7 @@ async fn live_native_browser_mode(mode: &str) {
 
 /// The hash-pinned busy recording websdr_test7.wav (27 decodes) as real-time native
 /// capture whose QPC clock is the system clock: it fills the first UTC FT8 period at least
-/// 2 s after Start and again the period 30 s later, with silence around both (#57).
+/// 2 s after Start and again the periods 30 s and 60 s later, with silence around them (#57).
 #[cfg(all(windows, not(debug_assertions)))]
 struct BusyPeriodInput {
     queue: Arc<audio::PacketQueue>,
@@ -367,8 +367,9 @@ impl SampleSource for BusyPeriodInput {
         let mut bytes = Vec::with_capacity(count * 8);
         for n in self.pushed..self.pushed + count as u64 {
             let at = i128::from(n) - offset;
-            let at = if at >= 30 * 48000 {
-                at - 30 * 48000
+            // Three busy periods, 30 s apart.
+            let at = if (0..90 * 48000).contains(&at) {
+                at % (30 * 48000)
             } else {
                 at
             };
@@ -536,6 +537,12 @@ async fn live_native_busy_period_rows_promptly() {
         "{stdout}\n{}",
         String::from_utf8_lossy(&outcome.stderr)
     );
+    if let Some(line) = stdout
+        .lines()
+        .find(|l| l.starts_with("WSTX_LATENCY_FAILURE "))
+    {
+        println!("{line}");
+    }
     let browser: Value = serde_json::from_str(
         stdout
             .lines()
