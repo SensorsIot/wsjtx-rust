@@ -1264,12 +1264,16 @@ test('TC-051-001 an open page reloads after the station restarts with another cl
 });
 // Proves: CL-051-02, CL-051-03; TC-051-002 an update held by a QSO, a rejected snapshot and the reload chip.
 test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot shows an error chip instead of a frozen screen',{timeout:60000},async t=>{
-  let contact=partner('calling'),reject=false;
+  let contact=partner('calling'),reject=false,receiving;const bad={selection:false,results:false};
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
-    await p.route('**/receive',async route=>{const response=await route.fetch(),json=await response.json();await route.fulfill({json:reject?{...json,dxcc:null}:json});});
+    // A live FT8 job (no audio is opened) so result pages and waterfall frames apply.
+    await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving||receiving.boot_id!==json.boot_id)receiving=liveFixture(json);await route.fulfill({json:reject?{...receiving,dxcc:null}:receiving});});
+    await p.route('**/receive/results?*',route=>route.fulfill({json:bad.results?{...emptyResults(receiving),dxcc:null}:emptyResults(receiving)}));
+    await p.route('**/receive/selection',async route=>{const json=await (await route.fetch()).json();await route.fulfill({json:bad.selection?{...json,dxcc:null}:json});});
   }});
+  await page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='calling');
   // A receive snapshot of an unknown shape: visible error chip with the reload action.
   reject=true;await page.evaluate(()=>receiveSync());
@@ -1277,6 +1281,16 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   await notice.filter({hasText:'Station data not understood (receive) · reload'}).waitFor();
   assert.equal(await notice.getAttribute('data-severity'),'error');assert.equal(await notice.locator('xpath=..').getAttribute('id'),'station-bar');
   reject=false;await page.evaluate(()=>receiveSync());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
+  // A result page and an operating selection snapshot of an unknown shape are named the same way.
+  for(const [kind,read] of [['selection','operatingSync(true)'],['results','(lastResultStart=-Infinity,receiveResults())']]){
+    bad[kind]=true;await page.evaluate(read);await notice.filter({hasText:`(${kind})`}).waitFor();
+    bad[kind]=false;await page.evaluate(read);await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
+  }
+  // A waterfall frame of an unknown shape for the current job.
+  await page.evaluate(()=>{const ctx={boot_id:live.boot_id,generation:live.generation,job_id:live.job.id,source_id:live.source.id};
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:profileSelect.value==='detail'?'spectrum.detail.frame':'spectrum.frame',data:{...ctx,sequence:0,first_frame:0,end_frame:1,dxcc:null}}}}));});
+  await notice.filter({hasText:'(waterfall)'}).waitFor();
+  await page.evaluate(()=>stationData('waterfall',true));
   // A malformed contact snapshot (an unknown key) is named too and clears with a valid one.
   await page.route('**/contact',route=>route.fulfill({json:{...contactSnapshot({profile_id:'x',boot_id:'y'}),extra:1}}));
   await page.evaluate(()=>window.wstxContact.load());await notice.filter({hasText:'(contact)'}).waitFor();

@@ -384,9 +384,9 @@ addEventListener('station-message',event => {
   if(snapshot?.job?.kind==='live'&&!currentLive)return;
   const context=currentLive?{boot_id:live.boot_id,generation:live.generation,job:{...live.job,source_id:live.source.id}}:snapshot;
   if(!f||!context||!['running','completed'].includes(context.job?.state)||f.boot_id!==context.boot_id||f.generation!==context.generation||f.job_id!==context.job?.id||f.source_id!==context.job?.source_id)return;
-  if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1)return;
+  if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1){stationData('waterfall',false);return;}
   const keys=['boot_id','source_id','job_id','generation','sequence','first_frame','end_frame',detail?'levels_b64':'levels'].sort().join(',');
-  if(Object.keys(f).sort().join(',')!==keys||!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
+  if(Object.keys(f).sort().join(',')!==keys){stationData('waterfall',false);return;}if(!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
   if(currentLive ? f.end_frame!==f.first_frame+interval : (!snapshot.recording||f.first_frame>=snapshot.recording.frames||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording.frames)))return;
   let values=f.levels;
   if(detail){
@@ -396,7 +396,7 @@ addEventListener('station-message',event => {
   if((!detail&&!Array.isArray(values))||values.length!==B||!values.every(q=>Number.isInteger(q)&&q>=0&&q<=120))return;
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
   for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:null});
-  const row={...f,levels:Uint8Array.from(values)};rows.push(row);rows=rows.slice(-cap);estimate(row);paint();
+  const row={...f,levels:Uint8Array.from(values)};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);estimate(row);paint();
 
   if(currentLive){live.job.processed_frames=Math.max(live.job.processed_frames,f.end_frame);live.source.next_frame=Math.max(live.source.next_frame,f.end_frame);}
   else snapshot.job.processed_frames=f.end_frame;

@@ -3253,7 +3253,7 @@ package WstxRequirements {
     dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
     dependency CL_039_06_verified_by_TC_039_007 from 'CL-039-06' to 'TC-039-007';
 
-    // #51 An open page recovers after a station update (defaults recorded on issue #51).
+    // #51 An open page recovers after a station update (chosen defaults: WstxStationProtocol::PageUpdate).
     requirement 'CL-051-01' {
         doc /* The station identifies the browser client it serves with WstxStationProtocol::ClientBuild: the first 16 lower-case hex digits of the SHA-256 over its served client files in route order. The served page carries it as body data-build and every station.status reply carries it as data.build (data exactly {version, radio, build}). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -3267,7 +3267,7 @@ package WstxRequirements {
     }
     dependency CL_051_02_to_FR_021 from 'CL-051-02' to 'FR-021';
     requirement 'CL-051-03' {
-        doc /* A receive snapshot, result page, operating selection snapshot or contact snapshot that the page rejects by its validation is never silent: the top bar shows the error chip "Station data not understood (<which>) · reload", whose click reloads the page; a later valid snapshot of that kind clears it. */
+        doc /* A receive snapshot, result page, operating selection snapshot, contact snapshot or waterfall frame of an unknown shape that the page rejects by its validation is never silent: the top bar shows the error chip "Station data not understood (<which>) · reload", whose click reloads the page; a later valid snapshot of that kind clears it. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js";
     }
@@ -3292,8 +3292,8 @@ package WstxRequirements {
         doc /* TC-051-002 — A held update and a rejected snapshot show the reload chip
              CL-051-02, CL-051-03
              Setup: actual candidate server and Chromium at 1366x768; routed contact snapshot with a contact calling CQ; the receive snapshot routed through, optionally with an unknown key dxcc; the proxy of TC-051-001.
-             Steps: read receive with the unknown key, then without; route a contact snapshot with an unknown key, then a valid one; restart the station with build fedcba9876543210 while calling CQ; wait 1.5 s; click the chip; open a confirmation popup and reconnect to a status with another build.
-             Expected: the error chip "Station data not understood (receive) · reload" in the top bar, hidden again after the valid read; the same with (contact); while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
+             Steps: read receive with the unknown key, then without; the same for a result page, the operating selection snapshot and a contact snapshot; announce a spectrum.detail.frame of the current job with an unknown key; restart the station with build fedcba9876543210 while calling CQ; wait 1.5 s; click the chip; open a confirmation popup and reconnect to a status with another build.
+             Expected: the error chip "Station data not understood (receive) · reload" in the top bar, hidden again after the valid read; the same with (results), (selection) and (contact); (waterfall) for the frame; while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

@@ -131,9 +131,15 @@ package WstxStationProtocol {
              reloads. A held page keeps working with its old client.
              A station snapshot the page rejects by its exact validation (the receive
              snapshot, a result page, the operating selection snapshot, the contact
-             snapshot) shows the ExceptionChip stationDataRejected "Station data not
+             snapshot, a waterfall frame of an unknown shape) shows the ExceptionChip stationDataRejected "Station data not
              understood (<which>) · reload" with the same reload action; a later valid
-             snapshot of that kind clears it. Neither chip opens the Settings drawer. */
+             snapshot of that kind clears it. Neither chip opens the Settings drawer.
+             Chosen defaults (#51 implementation, the issue left them open): the build is
+             compared on every station.status, that is on each connect and reconnect and
+             on Refresh; a held update stays a chip until the operator clicks it, with no
+             later automatic reload; unsaved Settings edits hold the reload like a popup.
+             CAT status (WstxRadioIO) keeps its own CAT chip and is not part of this chip;
+             a page of another build reloads before any of its snapshots matter. */
     }
     item def StatusReply {
         attribute v : Integer = 1;
