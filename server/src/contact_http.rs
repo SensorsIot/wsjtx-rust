@@ -510,7 +510,8 @@ impl Station {
                 "report_sent":c.report_sent.map(contact::render_report),"report_rcvd":c.report_rcvd.map(contact::render_report),
                 "state":c.state.name(),"next_slot":c.next.name(),"tx4":c.tx4.name(),"messages":c.messages,
                 "start_utc":c.start_utc_ms().map(contact::utc_text),"end_utc":c.last_counted_end.map(contact::utc_text),
-                "saved":state.logbook.saved(&c.id)})
+                "saved":state.logbook.saved(&c.id),
+                "suggested_slot":c.suggested.filter(|_| c.state.active()).map(Slot::name)})
         });
         let log = inner.log.as_ref().map(|l| {
             json!({"contact_id":l.contact_id,"call":l.call,"outcome":if l.saved {"saved"} else {"unsaved"},"error":l.error})

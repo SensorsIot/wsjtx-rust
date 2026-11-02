@@ -227,7 +227,9 @@ package WstxContact {
              generation/sequence tuple of a live result row with a concrete standard
              'from' call (WstxOfflineDecode::StandardFields). Effects, after server
              acknowledgement only (DMR handleDecodeSelection ~320-360, D-adopted):
-             dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any;
+             dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any
+             (a row without a grid of the same partner and mode keeps the known dxGrid,
+             as WSJT-X's DX Grid, #11; EnterDxStation sets exactly the grid entered);
              report from the row SNR (ReportRange); rxOffsetHz = row frequency rounded
              to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
@@ -318,6 +320,7 @@ package WstxContact {
         transition rogerReportFromReport first report if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogerReport then rogers;
         transition rogerReportRepeat first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogerReport then rogers;
         transition rogersToSignoff first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
+        transition seventyThreeInRogerReport first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::seventyThree then signoff;
         transition rogersRepeat first signoff if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
         transition reportBackFromRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::signalReport then rogerReport;
         transition seventyThreeInRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::seventyThree then completed;
@@ -354,7 +357,18 @@ package WstxContact {
              watchdog (TxWatchdog) bounds unattended repetition. A repeated earlier
              partner message maps back as WSJT-X does: a signalReport in rogers returns
              to rogerReport (resend Tx3); R+report in rogerReport/rogers keeps rogers
-             (resend Tx4); rogers in signoff resends Tx5. Messages not in the table
+             (resend Tx4); rogers in signoff resends Tx5. A 73 in rogerReport (the
+             partner skipped RR73 after my R+report) moves to signoff: my 73 is sent once
+             and the contact completes on it (#11 supervisor default). A rogers or 73
+             counted while my Tx3 is already pending for the next period replaces that
+             request with Tx5 until its audio starts; after the audio start the Tx3 of
+             that period is sent and Tx5 follows in my next period (TransmitSubmission).
+             With Auto Seq off a counted partner message changes no state (it still
+             updates the received report and TIME_OFF); the step Auto Seq would take is
+             offered as ContactSnapshot suggested_slot and the QSO pane shows the Auto
+             Seq state and that offer, so a signed-off partner is never silently
+             answered with a repeat (#11 live stall 2026-11-02).
+             Messages not in the table
              (grid in report.., 73 in signoff, anything after completed/cancelled)
              change nothing.
              Completion: transmittedSignoff is TransmitService's confirmed completed
@@ -840,8 +854,12 @@ package WstxContact {
              settings exactly {auto_seq,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,saved} (report_sent the
-             report of the last transmitted Tx2/Tx3 rendered, null until one is sent)
+             tx4,messages,start_utc,end_utc,saved,suggested_slot} (report_sent the
+             report of the last transmitted Tx2/Tx3 rendered, null until one is sent;
+             suggested_slot null or the slot AutoSequence would select after the latest
+             counted partner message while Auto Seq is off, e.g. tx5 after their RR73 in
+             rogerReport; the state and next slot do not change, the QSO pane offers it,
+             and choose_next clears it; null outside replying..signoff, #11)
              with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
              when contacts.adi holds the contact's record; log (DirectLog) null until a

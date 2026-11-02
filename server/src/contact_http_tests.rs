@@ -373,7 +373,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
-            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false},
+            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5"},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
         "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
@@ -636,7 +636,8 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "messages",
             "start_utc",
             "end_utc",
-            "saved"
+            "saved",
+            "suggested_slot"
         ])
     );
     assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
@@ -891,6 +892,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         first_tx3_period: Some(P + 22_500),
         last_counted_end: Some(P + 45_000),
         logged_on_completion: true,
+        suggested: None,
     };
     let record = contact_http::Station::record_of(
         &c,
@@ -1305,4 +1307,137 @@ async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_con
         ),
         (Some("replying"), Some("K1ABC"), Some("rr73"))
     );
+}
+
+// Proves: CL-011-03; TC-007-008. #11 live stall (IW9FRA, 2026-11-02 13:44-13:46 UTC):
+// the published FT4 records of the partner (even 7.5 s periods, Δf 1838 Hz, the real
+// codec's fields and period_start_utc form) reach the engine through the station step
+// and move the contact Tx1 -> Tx3 -> Tx5 exactly as WSJT-X auto-sequence does.
+#[tokio::test]
+async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73() {
+    let f = fixture("http://127.0.0.1:18016", false);
+    let r = &f.state.recording;
+    let (source, job, generation) = r.fixture_live_job("ft4");
+    // An even FT4 period well in the past (a multiple of 15 s).
+    let p0 = now_ms().div_euclid(15_000) * 15_000 - 120_000;
+    let cq = r.fixture_publish_period(
+        &period_text(p0),
+        vec![record("CQ IW9FRA JM68", 1838.0, Some(10.0))],
+    )[0];
+    f.tick();
+    let row = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":cq});
+    let (s, v) = f
+        .send("select_row", json!({"row":row,"replace":false}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let state = |snap: &Value| {
+        (
+            snap["contact"]["state"].as_str().map(String::from),
+            snap["contact"]["next_slot"].as_str().map(String::from),
+        )
+    };
+    let expect = |a: &str, b: &str| (Some(a.to_string()), Some(b.to_string()));
+    assert_eq!(state(&f.snapshot().await), expect("replying", "tx1"));
+    assert_eq!(f.snapshot().await["settings"]["parity"], "odd");
+    for (n, text, snr, after) in [
+        (2, "HB9BLA IW9FRA +10", 10.0, ("roger_report", "tx3")),
+        (4, "HB9BLA IW9FRA +10", 15.0, ("roger_report", "tx3")),
+        (6, "HB9BLA IW9FRA RR73", 17.0, ("signoff", "tx5")),
+        (8, "HB9BLA IW9FRA RR73", 9.0, ("signoff", "tx5")),
+    ] {
+        r.fixture_publish_period(
+            &period_text(p0 + n * 7_500),
+            vec![record(text, 1838.0, Some(snr))],
+        );
+        f.tick();
+        let snap = f.snapshot().await;
+        assert_eq!(state(&snap), expect(after.0, after.1), "after {text} ({n})");
+    }
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["report_rcvd"], "+10");
+    assert_eq!(snap["contact"]["messages"][4], "IW9FRA HB9BLA 73");
+}
+
+// Proves: CL-011-03; TC-007-008. The same IW9FRA replay on a transmit-capable station
+// through the actual station step, router and #9 owner on a virtual UTC: each partner
+// record is published 7.0 s after its period start (live +6.7..7.3 s), just before my
+// odd period; Hold Tx keeps my Tx at 2439 Hz. Expected: Tx1, R+10, R+10, 73, completed,
+// logged once (contacts.adi) with Enable Tx off.
+#[tokio::test]
+async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
+    let f = fixture("http://127.0.0.1:18017", true);
+    f.contact().grant.store(true, Ordering::SeqCst);
+    let r = &f.state.recording;
+    let service = &r.transmit.get().unwrap().service;
+    let (source, job, generation) = r.fixture_live_job("ft4");
+    let p0 = now_ms().div_euclid(15_000) * 15_000 + 60_000;
+    let at = |t: i64| {
+        f.bench.frozen.store(t, Ordering::SeqCst);
+        service.with(|c| c.tick());
+        f.tick();
+    };
+    at(p0 + 7_000);
+    let cq = r.fixture_publish_period(
+        &period_text(p0),
+        vec![record("CQ IW9FRA JM68", 1838.0, Some(10.0))],
+    )[0];
+    f.tick();
+    for (action, extra) in [
+        ("set_hold_tx", json!({"enabled":true})),
+        ("set_frequency", json!({"rx_hz":null,"tx_hz":2439})),
+        (
+            "select_row",
+            json!({"row":{"source_id":source,"job_id":job,"generation":generation,"sequence":cq},"replace":false}),
+        ),
+        ("enable_tx", json!({"enabled":true,"safety_revision":3})),
+    ] {
+        let (s, v) = f.send(action, extra).await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{action}: {v}");
+    }
+    let mut sent: Vec<(i64, String)> = Vec::new();
+    let partner = [
+        (2, "HB9BLA IW9FRA +10", 10.0),
+        (4, "HB9BLA IW9FRA +10", 15.0),
+        (6, "HB9BLA IW9FRA RR73", 17.0),
+        (8, "HB9BLA IW9FRA RR73", 9.0),
+        (10, "HB9BLA IW9FRA RR73", 16.0),
+    ];
+    let mut t = p0 + 7_000;
+    while t < p0 + 13 * 7_500 {
+        t += 50;
+        if let Some((_, text, snr)) = partner.iter().find(|(n, ..)| p0 + n * 7_500 + 7_000 == t) {
+            let n = (t - 7_000 - p0) / 7_500;
+            r.fixture_publish_period(
+                &period_text(p0 + n * 7_500),
+                vec![record(text, 1838.0, Some(*snr))],
+            );
+        }
+        at(t);
+        let v = service.view();
+        if let (Some(p), Some(text)) = (v.last_period_utc_ms, v.last_text.clone())
+            && sent.last().is_none_or(|(q, x)| *q != p || *x != text)
+        {
+            sent.push((p, text));
+        }
+    }
+    let sent: Vec<_> = sent
+        .into_iter()
+        .map(|(p, text)| ((p - p0) / 7_500, text))
+        .collect();
+    let expected: Vec<(i64, String)> = [
+        (1, "IW9FRA HB9BLA JN47"),
+        (3, "IW9FRA HB9BLA R+10"),
+        (5, "IW9FRA HB9BLA R+10"),
+        (7, "IW9FRA HB9BLA 73"),
+    ]
+    .iter()
+    .map(|(n, t)| (*n, t.to_string()))
+    .collect();
+    assert_eq!(sent, expected);
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["state"], "completed", "{snap}");
+    assert_eq!(snap["transmit"]["arm_state"], "disarmed");
+    assert_eq!(snap["contact"]["saved"], true, "{snap}");
+    let log = f.state.logbook.history(&f.id, 0, 10).unwrap();
+    assert_eq!(log["records"].as_array().unwrap().len(), 1, "{log}");
 }
