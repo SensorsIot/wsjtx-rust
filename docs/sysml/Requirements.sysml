@@ -553,7 +553,11 @@ package WstxRequirements {
              duplicate sequence; replacement before and after audio start; halt
              mid-audio on the virtual clock, through the owner thread and through the
              real actor; audio device loss, CAT loss, key timeout, output open failure,
-             safety revision change; restart; Tx watchdog expiry and Tune limit;
+             safety revision change; an end report 300/900 ms late and one seen only
+             by an owner step after the deadline; a device that stops consuming half
+             way (FT8, late FT8, FT4); the render fill decisions against a modelled
+             10 ms engine with and without 40 ms render delays (#49); restart; Tx
+             watchdog expiry and Tune limit;
              lifecycle polling with the transmit owner present; malformed and extra-key
              wire bodies, wrong Origin, stale boot, retained command_id.
              Oracles: no PTT or audio call/byte while disarmed or unauthorized or
@@ -561,7 +565,12 @@ package WstxRequirements {
              1C 00 00 with 1C 00 readback; open before key at the period start, audio at
              period start + 500 ms with skip 0, late skip (t-500 ms)*48; replaced and
              audioStarted outcomes in order; halt releases within 250 ms and disarms;
-             every failure stops audio, attempts release and disarms with its cause; an
+             every failure stops audio, attempts release and disarms with its cause; a
+             late end report inside the bound completes, stays armed and the next
+             request plays; a device that never reports the end is released at audio
+             end + 1000 ms (FT8 P+14140 <= P+14500, FT4 P+6340 <= P+7000) as
+             audioStalled, disarmed deviceLost; the 100 ms buffer starts the program
+             within 30 ms and reports the end within 100 ms without underrun; an
              unconfirmed release is indeterminate and recovered off-only; restart is
              disarmed (startup) with nothing pending; watchdog expiry at the configured
              minute; no poll during the transmit hold; one off-only release on close of
@@ -1802,6 +1811,7 @@ package WstxRequirements {
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets.
+             SNR (#52): every decoded observation of the pinned modern FT4 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -21.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1820,6 +1830,7 @@ package WstxRequirements {
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets.
+             SNR (#52): every decoded observation of the pinned official FT8 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -25.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {

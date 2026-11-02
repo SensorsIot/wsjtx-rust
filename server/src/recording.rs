@@ -2347,15 +2347,22 @@ impl LiveWorker {
             let mut publish = |decoded: &decoder::Decode| owner.publish_decode(&job, decoded);
             let interval = (window.origin, window.origin + window.samples.len() as u64);
             let late = window.waits;
-            let first_sequence = self
+            let (first_sequence, period_start) = self
                 .owner
                 .state
                 .lock()
                 .unwrap()
                 .live
                 .as_ref()
-                .map(|l| l.next_sequence)
+                .map(|l| {
+                    let middle = window.origin + window.samples.len() as u64 / 2;
+                    let drift = l.capture_drift.map_or(0, |(d, _)| d);
+                    let start = period_start_frame(l.timing.as_ref(), l.mode, middle, drift);
+                    (l.next_sequence, start)
+                })
                 .ok_or("state_conflict")?;
+            // FT8 SNR measures from the UTC period start, as WSJT-X does (#52).
+            state.set_period_start(period_start);
             let mut complete = false;
             let mut future = Box::pin(decoder.decode_window_into_async(
                 window.samples,
@@ -2557,6 +2564,18 @@ fn source_ticks(timing: &source::SourceTiming, frame: u64) -> Option<i128> {
         anchor
             + (i128::from(frame) - i128::from(timing.canonical_anchor_frame)) * 10_000_000 / 12000,
     )
+}
+/// The canonical frame where the UTC period containing `frame` began.
+fn period_start_frame(
+    timing: Option<&source::SourceTiming>,
+    mode: &str,
+    frame: u64,
+    drift: i128,
+) -> Option<u64> {
+    let observed = source_ticks(timing?, frame)? + drift;
+    let (period, _, _) = period_parameters(mode)?;
+    let into = observed.rem_euclid(period) * 12000 / 10_000_000;
+    u64::try_from(i128::from(frame) - into).ok()
 }
 fn relative_decode_timing(
     timing: Option<&source::SourceTiming>,

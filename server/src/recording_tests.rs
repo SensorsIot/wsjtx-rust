@@ -2390,6 +2390,51 @@ fn live_window_schedule_follows_the_utc_period_grid() {
     );
 }
 
+// Proves: CL-007-02. Hand-calculated FT8 period starts for the SNR measurement (#52).
+#[test]
+fn ft8_snr_period_start_follows_the_utc_period_grid() {
+    let timing = |anchor: Option<&str>| source::SourceTiming {
+        source_id: "s".into(),
+        segment: 0,
+        native_rate: 48000,
+        native_anchor_frame: 0.0,
+        canonical_anchor_frame: 100000,
+        converter_delay_native_frames: 0.0,
+        qpc_anchor_100ns: Some(0),
+        system_utc_anchor: anchor.map(Into::into),
+        uncertainty_ns: Some(500),
+        correlated: anchor.is_some(),
+        external_accuracy: source::ExternalAccuracy::Unknown,
+    };
+    // Frame 100000 is 7.5 s into the 19:23:00 period, which began at frame 10000.
+    let anchored = timing(Some("2026-11-01T19:23:07.5000000Z"));
+    assert_eq!(
+        period_start_frame(Some(&anchored), "ft8", 100000, 0),
+        Some(10000)
+    );
+    assert_eq!(
+        period_start_frame(Some(&anchored), "ft8", 172000, 0),
+        Some(10000)
+    );
+    // 15.5 s: the 19:23:15 period began at frame 190000.
+    assert_eq!(
+        period_start_frame(Some(&anchored), "ft8", 196000, 0),
+        Some(190000)
+    );
+    // A measured capture offset of +0.5 s moves the period start 6000 frames earlier.
+    assert_eq!(
+        period_start_frame(Some(&anchored), "ft8", 100000, 5_000_000),
+        Some(4000)
+    );
+    // Before frame 0, and without a correlated clock: unknown.
+    assert_eq!(period_start_frame(Some(&anchored), "ft8", 5000, 0), None);
+    assert_eq!(
+        period_start_frame(Some(&timing(None)), "ft8", 100000, 0),
+        None
+    );
+    assert_eq!(period_start_frame(None, "ft8", 100000, 0), None);
+}
+
 /// A live input whose capture clock reports a scripted (canonical frame, UTC) sample.
 struct ClockInput {
     context: source::SourceContext,
