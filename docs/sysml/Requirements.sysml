@@ -3590,18 +3590,43 @@ package WstxRequirements {
         attribute executable : String = "server/src/receive_http_tests.rs; tests/receive-latency.test.cjs";
     }
     dependency CL_057_01_verified_by_TC_057_001 from 'CL-057-01' to 'TC-057-001';
+    requirement 'CL-057-02' {
+        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement and physical check; at most eight at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR measurement (with its per-period baseline), publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time, bounding their memory. The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/decoder/parallel.rs; server/src/decoder/search.rs; server/src/decoder/synchronization.rs; server/src/decoder/baseband.rs; server/src/audio/windows.rs; server/src/playback/windows.rs";
+    }
+    dependency CL_057_02_to_FR_003 from 'CL-057-02' to 'FR-003';
+    dependency CL_057_02_to_FR_004 from 'CL-057-02' to 'FR-004';
+    verification 'TC-057-002' {
+        doc /* TC-057-002 — Parallel decode: identical result, wall time by thread count
+             CL-057-02, CL-057-01
+             Setup: release build; the hash-pinned busy recording websdr_test7.wav as the UTC-aligned FT8 prompt window (as TC-004-004); for the end-to-end case the TC-057-001 live path and Detailed browser.
+             Steps: decode the window three times each on 1, 4 and 12 threads; order-preserving map of 200 items on 1, 2, 4 and 8 threads with one slow item, and with cancellation from inside the work; the TC-057-001 run with the default thread count.
+             Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), every row of the better period is painted at most 0.5 s after its prompt window completes at +13.8 s.
+             2 — Isolated automated functional tests; Windows PC, no radio (decoder-quality, wstx-rust and live-station-browser suites). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-057-02';
+            verify 'CL-057-01';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs; server/src/decoder/parallel.rs; server/src/receive_http_tests.rs";
+    }
+    dependency CL_057_02_verified_by_TC_057_002 from 'CL-057-02' to 'TC-057-002';
+    dependency CL_057_01_verified_by_TC_057_002 from 'CL-057-01' to 'TC-057-002';
     verification 'TC-057-003' {
         doc /* TC-057-003 — Live decode display on HB9BLA
-             CL-057-01
+             CL-057-01, CL-057-02
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 receiving a busy FT8 band, one browser on the LAN on the Detailed profile; no transmission.
-             Steps: watch Band Activity over 10 consecutive FT8 periods.
-             Expected: no "Loading results" visible in normal operation; each period's rows appear at about +14.0 to +14.5 s of the period.
+             Steps: watch Band Activity over 10 consecutive FT8 periods; read GET /receive audio over the same periods.
+             Expected: no "Loading results" visible in normal operation; each period's rows appear at about +14.0 to +14.5 s of the period; under that decode load no audio_stalled loss (#49): loss_epochs unchanged.
              4 — Live on the station, receive only; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-057-01';
+            verify 'CL-057-02';
         }
     }
+    dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
     requirement 'CL-057-03' {
         doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by the chosen column (ActivityOrdering); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. */

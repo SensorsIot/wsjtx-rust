@@ -1532,11 +1532,13 @@ fn resource_finite_child() {
         assert_eq!(samples.len(), 1_440_000);
     }
     let cold = Instant::now();
+    // The CL-007-04 budgets are per CPU worker: one decode thread each (CL-057-02).
     let decoder = if config["scalar"] == true {
         Decoder::with_scalar_transform()
     } else {
         Decoder::new()
-    };
+    }
+    .with_threads(1);
     let (expected, cold_poll) = resource_decode(&decoder, &samples, mode);
     let cold_seconds = cold.elapsed().as_secs_f64();
     eprintln!(
@@ -2128,12 +2130,9 @@ fn physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
     );
 }
 
-// Proves: CL-007-04, CL-007-05; TC-004-004. A busy recorded period presented as the
-// UTC-aligned FT8 prompt window (15 s of audio completing at period start + 13.8 s)
-// publishes every decode within the 1.0 s modem share of the 1.2 s budget to +15.0 s.
-#[test]
-fn live_busy_period_publishes_every_decode_promptly() {
-    use std::task::{Context, Waker};
+/// The hash-pinned busy recording websdr_test7.wav (27 decodes) as the UTC-aligned FT8
+/// prompt window [-1.2 s, +13.8 s) of the period that starts with the recording.
+fn busy_prompt_window() -> Vec<f32> {
     let manifest: Value =
         serde_json::from_str(include_str!("../../fixtures/decoder/manifest.json")).unwrap();
     let entry = manifest["files"]
@@ -2155,9 +2154,17 @@ fn live_busy_period_publishes_every_decode_promptly() {
     assert!(check.status.success(), "busy recording hash changed");
     let recording = wav(&file);
     assert_eq!(recording.len(), 180000);
-    // Prompt window [-1.2 s, +13.8 s) of the period that starts with the recording.
     let mut window = vec![0f32; 14400];
     window.extend_from_slice(&recording[..165600]);
+    window
+}
+// Proves: CL-007-04, CL-007-05; TC-004-004. A busy recorded period presented as the
+// UTC-aligned FT8 prompt window (15 s of audio completing at period start + 13.8 s)
+// publishes every decode within the 1.0 s modem share of the 1.2 s budget to +15.0 s.
+#[test]
+fn live_busy_period_publishes_every_decode_promptly() {
+    use std::task::{Context, Waker};
+    let window = busy_prompt_window();
     let decoder = Decoder::new();
     let mut fastest = f64::INFINITY;
     let mut counts = vec![];
@@ -2198,4 +2205,67 @@ fn live_busy_period_publishes_every_decode_promptly() {
         fastest <= 1.0,
         "last decode {fastest:.3}s after window completion exceeds the 1.0 s modem budget"
     );
+}
+
+// Proves: CL-057-02; TC-057-002 (#57). The busy period decodes to exactly the same records in
+// the same order (payload, frame, frequency and SNR bit for bit) on 1, 4 and 12 threads, and
+// the wall time drops with the thread count (reported, best of three).
+#[test]
+fn busy_period_decode_is_identical_and_faster_on_more_threads() {
+    let window = busy_prompt_window();
+    let decode = |threads: usize| {
+        let decoder = Decoder::new().with_threads(threads);
+        let mut best = f64::INFINITY;
+        let mut records = vec![];
+        for _ in 0..3 {
+            let mut state = DecodeState::new_live(Mode::Ft8);
+            let mut published = vec![];
+            let began = Instant::now();
+            {
+                let mut publish = |d: &Decode| {
+                    published.push((
+                        d.payload.payload77.clone(),
+                        d.start_frame,
+                        d.frequency_hz.to_bits(),
+                        d.snr_db.map(f64::to_bits),
+                    ));
+                    Ok(())
+                };
+                let mut future = std::pin::pin!(decoder.decode_window_into_async(
+                    window.clone(),
+                    1_800_000 - 14400,
+                    &mut state,
+                    &|| false,
+                    &mut publish,
+                ));
+                let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+                let result = loop {
+                    if let std::task::Poll::Ready(result) = future.as_mut().poll(&mut cx) {
+                        break result;
+                    }
+                };
+                result.unwrap();
+            }
+            best = best.min(began.elapsed().as_secs_f64());
+            records = published;
+        }
+        (best, records)
+    };
+    let (single, expected) = decode(1);
+    assert!(
+        expected.len() >= 25,
+        "busy period decodes {}",
+        expected.len()
+    );
+    for threads in [4, 12] {
+        let (seconds, records) = decode(threads);
+        eprintln!(
+            "PARALLEL_DECODE threads=1 {single:.3}s threads={threads} {seconds:.3}s speedup {:.2}",
+            single / seconds
+        );
+        assert_eq!(
+            records, expected,
+            "{threads} threads change the decode set or order"
+        );
+    }
 }

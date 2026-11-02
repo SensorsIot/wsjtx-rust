@@ -94,7 +94,7 @@ impl BandPlan {
         budget.checkpoint().await?;
         Ok(PassBand {
             plan: self,
-            spectrum,
+            spectrum: Arc::new(spectrum),
             scratch,
             frames: samples.len(),
             last: None,
@@ -109,13 +109,27 @@ pub(super) struct BandWindow {
 }
 pub(super) struct PassBand<'a> {
     pub plan: &'a BandPlan,
-    spectrum: Vec<Complex64>,
+    /// Immutable after the forward transform; forks of this pass share it (#57).
+    spectrum: Arc<Vec<Complex64>>,
     scratch: Vec<Complex64>,
     pub frames: usize,
     /// The last band of this immutable pass transform, keyed by its exact carrier.
     last: Option<(u64, Option<BandWindow>)>,
 }
-impl PassBand<'_> {
+impl<'a> PassBand<'a> {
+    /// A view of the same pass transform for another worker: shared spectrum, its own band
+    /// scratch and cache. Its bands are identical to this pass's.
+    pub fn fork(&self) -> PassBand<'a> {
+        let len = (self.plan.inverse.get_inplace_scratch_len())
+            .max(self.plan.symbol.get_inplace_scratch_len());
+        PassBand {
+            plan: self.plan,
+            spectrum: self.spectrum.clone(),
+            scratch: vec![Complex64::new(0., 0.); len],
+            frames: self.frames,
+            last: None,
+        }
+    }
     pub async fn window(
         &mut self,
         carrier: f64,

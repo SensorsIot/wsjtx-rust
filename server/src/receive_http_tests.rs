@@ -410,9 +410,10 @@ impl recording::LiveInput for BusyPeriodInput {
     }
 }
 
-// Proves: CL-057-01; TC-057-001 (#57). A busy FT8 period through the actual live source,
-// window schedule, modem, publication, WebSocket, results API and Detailed browser: every
-// row of the published period view is painted within 0.3 s of its publication.
+// Proves: CL-057-01, CL-057-02; TC-057-001, TC-057-002 (#57). Busy FT8 periods through the
+// actual live source, window schedule, modem, publication, WebSocket, results API and
+// Detailed browser: every row of a published period view is painted within 0.3 s of its
+// publication, and within 0.5 s of the prompt window's completion at +13.8 s (best of two).
 #[cfg(all(windows, not(debug_assertions)))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_busy_period_rows_promptly() {
@@ -645,6 +646,14 @@ async fn live_native_busy_period_rows_promptly() {
         completion_latencies.push(painted - completed);
     }
     println!("COMPLETION all rows painted {completion_latencies:?} ms after window completion");
+    let best = completion_latencies
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        best <= 500.0,
+        "rows painted {best:.0} ms after the window completed at best (budget 500 ms)"
+    );
 }
 
 #[cfg(all(windows, not(debug_assertions)))]

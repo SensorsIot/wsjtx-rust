@@ -6,6 +6,7 @@ mod channel;
 mod coarse_ft4;
 mod fit;
 mod history;
+mod parallel;
 mod payload;
 mod physical_ft4;
 mod physical_sync;

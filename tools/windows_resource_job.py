@@ -49,6 +49,7 @@ ORDINARY = (
     "physical_noise_reproduction_has_no_frame", "same_frequency_preserves_two_temporal_frames",
     "physical_wrong_mode_reproduction_has_no_frame_or_search_error",
     "live_busy_period_publishes_every_decode_promptly",
+    "busy_period_decode_is_identical_and_faster_on_more_threads",
 )
 ORDINARY_ARGV = (
     "cargo", "test", "--release", "--locked", "--test", "decoder_signal",
@@ -262,7 +263,7 @@ def source_inventory(source):
         names.append(name)
         if "#[ignore" in attributes:
             ignored.append(name)
-    require(len(names) == 18 and len(set(names)) == 18 and
+    require(len(names) == 19 and len(set(names)) == 19 and
             set(names) == set(ORDINARY) | {MATRIX, *IGNORED} and
             set(ignored) == set(IGNORED), "source_inventory_mismatch")
     return {"names": sorted(names), "ignored": sorted(ignored)}

@@ -74,6 +74,7 @@ impl Output {
         let thread = thread::Builder::new()
             .name("transmit-output".into())
             .spawn(move || {
+                raise_thread_priority();
                 let result = render(&id, &worker, &opened_tx);
                 if let Ok(mut state) = worker.state.lock() {
                     *state = match result {
@@ -309,4 +310,12 @@ pub fn install_exit_guard(guard: Box<dyn Fn() + Send + Sync>) -> bool {
     unsafe {
         ::windows::Win32::System::Console::SetConsoleCtrlHandler(Some(console_exit), true).is_ok()
     }
+}
+
+/// Keeps this real-time audio thread ahead of the parallel decode workers, which use all
+/// but one logical CPU at normal priority (#57 CL-057-02; #49 render stalls under load).
+fn raise_thread_priority() {
+    // SAFETY: GetCurrentThread returns this thread's pseudo-handle, which needs no close;
+    // SetThreadPriority changes only this thread's scheduling. A failure keeps the default.
+    let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
 }
