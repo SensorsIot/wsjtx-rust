@@ -540,7 +540,8 @@ attribute def ActivityOrdering {
              CL-057-03): the period it replaced follows below a divider with its period UTC
              when it has the other parity, and no older period is kept, paged or fetched; a
              same-parity successor (a skipped period) or an uncorrelated period leaves only
-             the latest; a new receive identity (band/mode change, restart) clears it. Within a period the ActivityOrdering applies (column
+             the latest; a new receive identity (band/mode change, restart) clears it.
+             After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC needs the cty.dat prefix table, which the station does not
              yet provide: the column shows an explicit unavailable mark. Distance is the
              great-circle distance from the profile locator to a grid carried in the
