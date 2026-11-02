@@ -374,9 +374,13 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         (status, code(&v).0),
         (StatusCode::FORBIDDEN, "forbidden_origin")
     );
-    // The maximum shape (six 37-character messages, 13-character calls, a log outcome)
-    // fits; one byte over the cap is refused, never truncated.
+    // The maximum shape (six 37-character messages, 13-character calls, a log outcome,
+    // 16 maximal dialogue entries, #37) fits; one byte over the cap is refused, never
+    // truncated.
     let long = "A".repeat(37);
+    let entry =
+        json!({"dir":"tx","text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX});
+    let dialogue = vec![entry; crate::contact::DIALOGUE_MAX];
     let max = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"contact_revision":MAX_SAFE_TEST,"snapshot_sequence":MAX_SAFE_TEST,
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
@@ -385,7 +389,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
             "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",
-            "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX}},
+            "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX},
+            "dialogue":dialogue},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
         "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
@@ -650,8 +655,14 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "end_utc",
             "saved",
             "suggested_slot",
-            "last_rcvd"
+            "last_rcvd",
+            "dialogue"
         ])
+    );
+    assert_eq!(
+        c["dialogue"],
+        json!([]),
+        "a new contact has no dialogue (#37)"
     );
     assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
     assert_eq!(
@@ -907,6 +918,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         logged_on_completion: true,
         suggested: None,
         last_rcvd: None,
+        dialogue: Default::default(),
     };
     let record = contact_http::Station::record_of(
         &c,
@@ -1469,4 +1481,19 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     assert_eq!(snap["contact"]["saved"], true, "{snap}");
     let log = f.state.logbook.history(&f.id, 0, 10).unwrap();
     assert_eq!(log["records"].as_array().unwrap().len(), 1, "{log}");
+    // Proves: CL-050-06; TC-050-006 (#37): the snapshot's QSO dialogue, as exchanged.
+    let p = |n: i64| p0 + n * 7_500;
+    assert_eq!(
+        snap["contact"]["dialogue"],
+        json!([
+            {"dir":"tx","text":"IW9FRA HB9BLA JN47","snr":null,"period_utc_ms":p(1),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":10,"period_utc_ms":p(2),"count":1},
+            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(3),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":15,"period_utc_ms":p(4),"count":1},
+            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(5),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA RR73","snr":17,"period_utc_ms":p(6),"count":1},
+            {"dir":"tx","text":"IW9FRA HB9BLA 73","snr":null,"period_utc_ms":p(7),"count":1}
+        ]),
+        "{snap}"
+    );
 }

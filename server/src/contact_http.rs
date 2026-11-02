@@ -514,7 +514,9 @@ impl Station {
                 "saved":state.logbook.saved(&c.id),
                 "suggested_slot":c.suggested.filter(|_| c.state.active()).map(Slot::name),
                 "last_rcvd":c.last_rcvd.as_ref().map(|h| json!({"text":h.text,"snr":h.snr,
-                    "period_utc_ms":h.period_ms,"count":h.count}))})
+                    "period_utc_ms":h.period_ms,"count":h.count})),
+                "dialogue":c.dialogue.iter().map(|d| json!({"dir":if d.tx {"tx"} else {"rx"},"text":d.text,
+                    "snr":d.snr,"period_utc_ms":d.period_ms,"count":d.count})).collect::<Vec<_>>()})
         });
         let log = inner.log.as_ref().map(|l| {
             json!({"contact_id":l.contact_id,"call":l.call,"outcome":if l.saved {"saved"} else {"unsaved"},"error":l.error})

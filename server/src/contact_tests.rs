@@ -1932,3 +1932,80 @@ fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_perio
     assert!(s.armed());
     assert_eq!(s.sent_in(period(3)).as_deref(), Some("DL1ABC HB9BLA JN47"));
 }
+
+// Proves: CL-050-06; TC-050-006 (a). #37 QSO dialogue: counted partner messages and this
+// contact's transmissions as sent, oldest first, repeats counted, bounded; a new contact
+// starts empty and a cancel empties it.
+#[test]
+fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert!(
+        s.engine.contact.as_ref().unwrap().dialogue.is_empty(),
+        "a CQ row is not addressed to me"
+    );
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(4) + 14 * SECOND);
+    let report = s.row(period(4), "HB9BLA K1ABC -05", 1500.0, Some(-5.0));
+    s.deliver(&[report]);
+    s.run(period(6) + 14 * SECOND);
+    let rr73 = s.row(period(6), "HB9BLA K1ABC RR73", 1500.0, Some(-6.0));
+    s.deliver(&[rr73]);
+    s.run(period(7) + 14 * SECOND);
+    assert_eq!(s.state().0, State::Completed);
+    let d: Vec<_> = s
+        .engine
+        .contact
+        .as_ref()
+        .unwrap()
+        .dialogue
+        .iter()
+        .map(|e| (e.tx, e.text.clone(), e.snr, e.period_ms, e.count))
+        .collect();
+    let e = |tx: bool, t: &str, snr: Option<i32>, p: i64, n: u32| (tx, t.to_owned(), snr, p, n);
+    assert_eq!(
+        d,
+        vec![
+            e(true, "K1ABC HB9BLA JN47", None, period(1), 2),
+            e(false, "HB9BLA K1ABC -05", Some(-5), period(4), 1),
+            e(true, "K1ABC HB9BLA R-12", None, period(5), 1),
+            e(false, "HB9BLA K1ABC RR73", Some(-6), period(6), 1),
+            e(true, "K1ABC HB9BLA 73", None, period(7), 1),
+        ]
+    );
+    // A new contact starts empty; its selected row to me is its first entry.
+    let call = s.row(period(8), "HB9BLA W1AW FN31", 700.0, Some(1.0));
+    s.command(Command::SelectRow {
+        row: call,
+        replace: false,
+    })
+    .unwrap();
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.dialogue.len(), 1);
+    assert_eq!(c.dialogue[0].text, "HB9BLA W1AW FN31");
+    // Bounded: the oldest entries are dropped beyond DIALOGUE_MAX (Auto Seq off, so the
+    // reports are counted without changing the state).
+    s.command(Command::SetAutoSeq(false)).unwrap();
+    for i in 0..20 {
+        let r = s.row(
+            period(8 + 2 * i),
+            &format!("HB9BLA W1AW -{:02}", i + 1),
+            700.0,
+            None,
+        );
+        s.deliver(&[r]);
+    }
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.dialogue.len(), DIALOGUE_MAX);
+    assert_eq!(c.dialogue.back().unwrap().text, "HB9BLA W1AW -20");
+    s.command(Command::Cancel).unwrap();
+    assert!(
+        s.engine.contact.as_ref().unwrap().dialogue.is_empty(),
+        "cancel empties it"
+    );
+}

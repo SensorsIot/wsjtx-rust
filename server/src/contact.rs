@@ -369,6 +369,22 @@ pub struct Contact {
     pub suggested: Option<Slot>,
     /// The latest partner message to my call (#37 QSO pane), with its repeat count.
     pub last_rcvd: Option<Heard>,
+    /// The QSO dialogue (#37, ContactSnapshot dialogue): counted partner messages and
+    /// this contact's started transmissions, oldest first, at most DIALOGUE_MAX.
+    pub dialogue: VecDeque<Exchanged>,
+}
+/// At most this many dialogue entries are kept (the oldest is dropped).
+pub const DIALOGUE_MAX: usize = 16;
+/// One QSO dialogue entry: received from the partner (rx) or transmitted (tx).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Exchanged {
+    pub tx: bool,
+    pub text: String,
+    pub snr: Option<i32>,
+    /// The first period of this entry (Unix ms).
+    pub period_ms: i64,
+    /// Consecutive equal messages (same direction and text) merged into this entry.
+    pub count: u32,
 }
 /// A partner message to my call as the QSO pane shows it (#37).
 #[derive(Clone, Debug, PartialEq)]
@@ -380,7 +396,28 @@ pub struct Heard {
     pub count: u32,
 }
 impl Contact {
+    fn exchanged(&mut self, tx: bool, text: &str, snr: Option<i32>, period_ms: i64) {
+        if let Some(last) = self.dialogue.back_mut()
+            && last.tx == tx
+            && last.text == text
+        {
+            last.count = last.count.saturating_add(1);
+            return;
+        }
+        if self.dialogue.len() == DIALOGUE_MAX {
+            self.dialogue.pop_front();
+        }
+        self.dialogue.push_back(Exchanged {
+            tx,
+            text: text.to_owned(),
+            snr,
+            period_ms,
+            count: 1,
+        });
+    }
     fn heard(&mut self, row: &Row, period_ms: i64) {
+        let snr = row.snr_db.map(|s| s.round() as i32);
+        self.exchanged(false, &row.text, snr, period_ms);
         let count = match &self.last_rcvd {
             Some(h) if h.text == row.text => h.count.saturating_add(1),
             _ => 1,
@@ -572,6 +609,7 @@ impl Engine {
         };
         c.dx_call = None;
         c.dx_grid = None;
+        c.dialogue.clear();
         for message in &mut c.messages[..5] {
             *message = None;
         }
@@ -674,6 +712,7 @@ impl Engine {
             logged_on_completion: false,
             suggested: None,
             last_rcvd: None,
+            dialogue: VecDeque::new(),
         });
         self.settings.report = report;
         Ok(())
@@ -810,6 +849,7 @@ impl Engine {
                     };
                     c.dx_call = None;
                     c.dx_grid = None;
+                    c.dialogue.clear();
                     for i in 0..5 {
                         c.messages[i] = None;
                     }
@@ -979,6 +1019,7 @@ impl Engine {
                         logged_on_completion: false,
                         suggested: None,
                         last_rcvd: None,
+                        dialogue: VecDeque::new(),
                     });
                 }
             }
@@ -1063,6 +1104,7 @@ impl Engine {
                     OutcomeKind::Started => {
                         self.last_started_period = Some(submitted.period);
                         if mine && let Some(c) = self.contact.as_mut() {
+                            c.exchanged(true, &submitted.text, None, submitted.period);
                             c.first_tx_period.get_or_insert(submitted.period);
                             if submitted.slot == Slot::Tx2 {
                                 c.first_tx2_period.get_or_insert(submitted.period);
