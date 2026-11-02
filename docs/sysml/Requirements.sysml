@@ -3085,21 +3085,23 @@ package WstxRequirements {
     dependency CL_044_05_to_FR_002 from 'CL-044-05' to 'FR-002';
     dependency CL_044_05_to_FR_016 from 'CL-044-05' to 'FR-016';
     requirement 'CL-044-06' {
-        doc /* Outstanding until the operating screen of #37 is on master: Settings > Radio "Detect radio" first asks the operator to confirm that USB SEND and USB keying are OFF (or the radio is on a dummy load) and that other USB serial boards may be disturbed, calls POST /radio/detect with keying_inhibit_confirmed true and shows the proposal (port, model, CI-V address, baud, input and output endpoint names) and the settings check; Apply saves it by PUT /profile, restarts receive (⟳) and leads to the existing receive-only confirmation; "Apply recommended radio settings" and "Undo radio settings" are separate buttons with their own confirmation. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Settings > Radio "Detect radio" (operating screen of #37): the Detect radio button is enabled only after the operator ticks the confirmation that USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load, and that opening a port can pulse DTR/RTS also on other CP210x boards; one press sends one POST /radio/detect {v 1, profile_id, boot_id, keying_inhibit_confirmed true} and clears the tick. Nothing is fetched without a press (no polling). The panel shows each port's state and radio, the proposal (port, model, CI-V address, baud, control endpoint, input and output endpoint friendly names with their IDs, or "not matched") and the settings items with value, severity and guidance. "Use this setup" only fills the Radio section (control mode, endpoint, PTT, audio input and output IDs); the operator saves it with Apply ⟳, which restarts receive as any Radio change, and then gives the existing receive-only confirmation (CL-022-03). "Apply recommended radio settings" and "Undo radio settings" are enabled only while CAT is ready with a known connection generation and the transmitter is neither armed nor tuning, each asks its own confirmation and sends one POST /radio/settings/apply or /undo {v 1, profile_id, boot_id, connection_generation}, then shows the written items or the refusal. All server text is shown as text. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js";
     }
     dependency CL_044_06_to_FR_019 from 'CL-044-06' to 'FR-019';
     verification 'TC-044-005' {
-        doc /* TC-044-005 — Detect radio panel (outstanding)
+        doc /* TC-044-005 — Detect radio panel
              CL-044-06
-             Setup: actual candidate router and browser on a disposable profile with the detection hardware double.
-             Steps: open Settings > Radio, Detect radio, Apply, confirm; Apply recommended radio settings, confirm.
-             Expected: the proposal fields shown; PUT /profile with the proposed values; receive restarted; the confirmation dialog shown; the settings endpoint called only after its own confirmation.
-             2 — Isolated automated browser test; Windows development PC; not implemented. */
-        attribute automation : AutomationState = AutomationState::planned;
+             Setup: actual candidate server on a disposable plaintext profile (CAT not authorized, so no CAT owner opens anything) and Chromium; /radio/detect and /radio/settings/* answered by route fixtures with a hand-written IC-7300 proposal on COM250, so no serial port is probed.
+             Steps: open Settings > Radio; wait 1.5 s; try Detect radio without the tick; tick and press it; Use this setup; check Apply/Undo with CAT not ready; with CAT ready and the station's connection generation, Apply recommended radio settings, cancel, again with Continue, Undo with Continue; Apply ⟳; GET /profile; 360 px width.
+             Expected: no /radio request before the press; the button disabled without the tick; exactly one detect body {v 1, profile_id, boot_id, keying_inhibit_confirmed true}; port, model, 94h, 19200, endpoint, both friendly names and endpoint IDs and the 0078 DTR blocking item shown; the tick cleared; the five Radio fields filled with no PUT; Apply/Undo disabled until CAT ready; the cancelled apply sends nothing, then exactly apply and undo with {v 1, profile_id, boot_id, connection_generation} of that generation; the saved profile holds the proposed control and the two endpoint IDs; no horizontal scroll at 360 px; no page error.
+             2 — Isolated automated browser test; Windows development PC, no radio, serial port or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-044-06';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_044_06_verified_by_TC_044_005 from 'CL-044-06' to 'TC-044-005';
     verification 'TC-044-001' {
