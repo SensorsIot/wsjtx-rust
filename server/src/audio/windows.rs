@@ -262,6 +262,13 @@ impl AudioController {
         let (frame, qpc) = self.live.as_ref()?.clock_sample()?;
         Some((frame, system_clock()?.utc_at(qpc)?))
     }
+    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)` (#52).
+    pub fn marked_frames(&self, from: u64, to: u64) -> Option<(u64, u64)> {
+        Some(self.live.as_ref()?.marked_frames(from, to))
+    }
+    pub fn capture_diagnostics(&self) -> Option<super::CaptureDiagnostics> {
+        Some(self.live.as_ref()?.capture_diagnostics())
+    }
     pub fn new(endpoint_id: String) -> Result<Self, SourceError> {
         if endpoint_id.is_empty() || endpoint_id.len() > 2048 || endpoint_id.contains('\0') {
             return Err(SourceError::Unavailable);
