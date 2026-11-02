@@ -318,6 +318,7 @@ package WstxContact {
         transition rogerReportFromReport first report if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogerReport then rogers;
         transition rogerReportRepeat first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogerReport then rogers;
         transition rogersToSignoff first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
+        transition seventyThreeInRogerReport first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::seventyThree then signoff;
         transition rogersRepeat first signoff if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
         transition reportBackFromRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::signalReport then rogerReport;
         transition seventyThreeInRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::seventyThree then completed;
@@ -354,7 +355,13 @@ package WstxContact {
              watchdog (TxWatchdog) bounds unattended repetition. A repeated earlier
              partner message maps back as WSJT-X does: a signalReport in rogers returns
              to rogerReport (resend Tx3); R+report in rogerReport/rogers keeps rogers
-             (resend Tx4); rogers in signoff resends Tx5. Messages not in the table
+             (resend Tx4); rogers in signoff resends Tx5. A 73 in rogerReport (the
+             partner skipped RR73 after my R+report) moves to signoff: my 73 is sent once
+             and the contact completes on it (#11 supervisor default). A rogers or 73
+             counted while my Tx3 is already pending for the next period replaces that
+             request with Tx5 until its audio starts; after the audio start the Tx3 of
+             that period is sent and Tx5 follows in my next period (TransmitSubmission).
+             Messages not in the table
              (grid in report.., 73 in signoff, anything after completed/cancelled)
              change nothing.
              Completion: transmittedSignoff is TransmitService's confirmed completed

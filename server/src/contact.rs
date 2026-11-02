@@ -243,7 +243,9 @@ pub fn transition(state: State, received: Received) -> Option<State> {
         (S::Replying, R::Grid) => S::Report,
         (S::Replying | S::Report, R::SignalReport) => S::RogerReport,
         (S::Replying | S::Report | S::RogerReport, R::RogerReport) => S::Rogers,
-        (S::RogerReport, R::Rogers) => S::Signoff,
+        // A partner who skips RR73 and signs off with 73 after my R+report is
+        // answered with my 73 once, like an RR73 (#11).
+        (S::RogerReport, R::Rogers | R::SeventyThree) => S::Signoff,
         (S::Signoff, R::Rogers) => S::Signoff,
         (S::Rogers, R::SignalReport) => S::RogerReport,
         (S::Rogers, R::SeventyThree) => S::Completed,
@@ -588,6 +590,14 @@ impl Engine {
             .as_ref()
             .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()) && c.mode == mode);
         let active = self.contact.as_ref().is_some_and(|c| c.state.active());
+        // Re-selecting the same partner (a row without a grid, e.g. their report)
+        // keeps the grid already known, as WSJT-X keeps its DX Grid (#11).
+        let grid = grid.or_else(|| {
+            self.contact
+                .as_ref()
+                .filter(|_| same)
+                .and_then(|c| c.dx_grid.clone())
+        });
         if active && !same && !replace {
             return Err("contact_active");
         }

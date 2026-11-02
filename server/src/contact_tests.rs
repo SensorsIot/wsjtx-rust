@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+﻿#![forbid(unsafe_code)]
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10, CL-010-12; TC-007-001, TC-008-001, TC-011-001.
 // (#41 DirectLog: the contacts the engine hands to the log.)
 // The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
@@ -1394,4 +1394,154 @@ fn the_owner_never_keys_a_request_of_another_station_mode_without_a_contact_step
         (OutcomeKind::Refused, Some(TransmitRefusal::StaleRequest))
     );
     assert_eq!(s.core.view().arm_state, ArmState::Disarmed);
+}
+
+// ---------------------------------------------------------------- #11 live RR73 stall
+// Proves: CL-011-03; TC-007-008. Replay of the 2026-11-02 13:44-13:46 UTC FT4 contact
+// with IW9FRA (partner in the even 7.5 s periods at 1838 Hz, Hold Tx on with my Tx at
+// 2439 Hz): after my R+10 the partner's RR73 must move me to Tx5, send 73 once,
+// complete and log once (WSJT-X auto-sequence). Rows reach the engine `decode_ms`
+// after the partner's period start, as the live receive path publishes them.
+struct Replay {
+    decode_ms: i64,
+    /// The operator also double-clicks the partner's first report row (Reply).
+    reselect: bool,
+    /// The partner's final message (RR73, RRR or 73).
+    last: &'static str,
+}
+fn replay(mode: Mode, r: &Replay) -> Station {
+    let mut s = station();
+    s.mode = mode;
+    let len = period_ms(mode);
+    let dx = |s: &mut Station, n: i64, text: &str, snr: f64| {
+        s.row(P0 + n * len, text, 1838.0, Some(snr))
+    };
+    s.command(Command::SetHoldTx(true)).unwrap();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(2439),
+    })
+    .unwrap();
+    s.fake.0.now.store(P0 + r.decode_ms, Ordering::SeqCst);
+    let cq = dx(&mut s, 0, "CQ IW9FRA JM68", 10.0);
+    s.deliver(std::slice::from_ref(&cq));
+    // The operator double-clicks IW9FRA's row: select, then Enable Tx (Reply).
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    let last = format!("HB9BLA IW9FRA {}", r.last);
+    let partner = [
+        (2, "HB9BLA IW9FRA +10".to_string(), 10.0),
+        (4, "HB9BLA IW9FRA +10".to_string(), 15.0),
+        (6, last.clone(), 17.0),
+        (8, last.clone(), 9.0),
+        (10, last, 16.0),
+    ];
+    for (n, text, snr) in partner {
+        s.run(P0 + n * len + r.decode_ms);
+        let row = dx(&mut s, n, &text, snr);
+        s.deliver(std::slice::from_ref(&row));
+        if r.reselect && n == 2 {
+            s.run(P0 + n * len + r.decode_ms + 400);
+            s.command(Command::SelectRow {
+                row,
+                replace: false,
+            })
+            .unwrap();
+            s.command(Command::EnableTx(true, Some(7))).unwrap();
+        }
+    }
+    s.run(P0 + 13 * len);
+    s
+}
+fn assert_replay(mode: Mode, r: &Replay, expected: &[(i64, &str)]) {
+    let mut s = replay(mode, r);
+    let len = period_ms(mode);
+    let sent: Vec<_> = s
+        .sent
+        .iter()
+        .map(|(p, t)| ((p - P0) / len, t.clone()))
+        .collect();
+    let expected: Vec<_> = expected.iter().map(|(n, t)| (*n, t.to_string())).collect();
+    let label = format!(
+        "{mode:?} decode +{} ms reselect {} {}",
+        r.decode_ms, r.reselect, r.last
+    );
+    assert_eq!(sent, expected, "{label}");
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6), "{label}");
+    assert!(!s.armed(), "{label}");
+    let (kind, c) = one_entry(&mut s);
+    assert_eq!(kind, LogKind::Completion, "{label}");
+    assert!(s.engine.take_logs().is_empty(), "logged once: {label}");
+    let f = c.log_fields(s.now()).unwrap();
+    assert_eq!(
+        (f.call.as_str(), f.grid.as_deref(), f.mode),
+        ("IW9FRA", Some("JM68"), mode),
+        "{label}"
+    );
+    assert_eq!(
+        (f.rst_sent.as_deref(), f.rst_rcvd.as_deref()),
+        (Some("+10"), Some("+10")),
+        "{label}"
+    );
+}
+#[test]
+fn ft4_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
+    // RR73 counted just before my next period (+6.7..7.3 s): 73 replaces the pending
+    // Tx3 of that period.
+    let at_once = [
+        (1, "IW9FRA HB9BLA JN47"),
+        (3, "IW9FRA HB9BLA R+10"),
+        (5, "IW9FRA HB9BLA R+10"),
+        (7, "IW9FRA HB9BLA 73"),
+    ];
+    for decode_ms in [6_700, 7_000, 7_300] {
+        for reselect in [false, true] {
+            for last in ["RR73", "73"] {
+                let r = Replay {
+                    decode_ms,
+                    reselect,
+                    last,
+                };
+                assert_replay(Mode::Ft4, &r, &at_once);
+            }
+        }
+    }
+    // Every partner message counted after the audio of my next transmission started:
+    // that period still sends the previous message, the new one follows a period later.
+    let late = [
+        (1, "IW9FRA HB9BLA JN47"),
+        (3, "IW9FRA HB9BLA JN47"),
+        (5, "IW9FRA HB9BLA R+10"),
+        (7, "IW9FRA HB9BLA R+10"),
+        (9, "IW9FRA HB9BLA 73"),
+    ];
+    let r = Replay {
+        decode_ms: 8_200,
+        reselect: false,
+        last: "RR73",
+    };
+    assert_replay(Mode::Ft4, &r, &late);
+}
+#[test]
+fn ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
+    let at_once = [
+        (1, "IW9FRA HB9BLA JN47"),
+        (3, "IW9FRA HB9BLA R+10"),
+        (5, "IW9FRA HB9BLA R+10"),
+        (7, "IW9FRA HB9BLA 73"),
+    ];
+    for decode_ms in [13_500, 14_700] {
+        for last in ["RR73", "RRR", "73"] {
+            let r = Replay {
+                decode_ms,
+                reselect: decode_ms == 14_700,
+                last,
+            };
+            assert_replay(Mode::Ft8, &r, &at_once);
+        }
+    }
 }
