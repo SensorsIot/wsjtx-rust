@@ -17,12 +17,12 @@ use std::{
     time::{Duration, Instant},
 };
 pub(super) struct CpuBudget<'a> {
-    pub(super) cancel: &'a dyn Fn() -> bool,
+    pub(super) cancel: &'a (dyn Fn() -> bool + Sync),
     deadline: Instant,
     resume: bool,
 }
 impl<'a> CpuBudget<'a> {
-    pub(super) fn new(cancel: &'a dyn Fn() -> bool) -> Self {
+    pub(super) fn new(cancel: &'a (dyn Fn() -> bool + Sync)) -> Self {
         Self {
             cancel,
             deadline: Instant::now() + Duration::from_millis(10),
@@ -78,10 +78,13 @@ struct Subtraction {
     frequency: f64,
     tones: Vec<u8>,
 }
-/// Pure modem instance: no source, device, job, thread, network or transmit authority.
+/// Pure modem instance: no source, device, job, network or transmit authority. Its worker
+/// threads are scoped to one decode stage and end with it.
 pub struct Decoder {
     channel: Channel,
     scalar: bool,
+    /// Threads of the parallel decode stages, this one included (#57 CL-057-02).
+    threads: usize,
 }
 impl Default for Decoder {
     fn default() -> Self {
@@ -93,6 +96,15 @@ impl Decoder {
         Self {
             channel: Channel::new(),
             scalar: false,
+            threads: super::parallel::default_threads(),
+        }
+    }
+    /// The same decoder on exactly `threads` threads (at least one); the decode set and
+    /// order do not depend on it.
+    pub fn with_threads(self, threads: usize) -> Self {
+        Self {
+            threads: threads.max(1),
+            ..self
         }
     }
     pub fn with_scalar_transform() -> Self {
@@ -106,7 +118,7 @@ impl Decoder {
         &self,
         samples: &[f32],
         mode: Mode,
-        cancel: &impl Fn() -> bool,
+        cancel: &(impl Fn() -> bool + Sync),
     ) -> Result<Vec<Decode>, DecodeError> {
         complete(self.decode_async(samples, mode, cancel))
     }
@@ -114,7 +126,7 @@ impl Decoder {
         &self,
         samples: &[f32],
         mode: Mode,
-        cancel: &impl Fn() -> bool,
+        cancel: &(impl Fn() -> bool + Sync),
     ) -> Result<Vec<Decode>, DecodeError> {
         let mut output = vec![];
         self.decode_into_async(samples, mode, cancel, &mut |record| {
@@ -129,7 +141,7 @@ impl Decoder {
         &self,
         samples: &[f32],
         mode: Mode,
-        cancel: &impl Fn() -> bool,
+        cancel: &(impl Fn() -> bool + Sync),
         publish: &mut impl FnMut(&Decode) -> Result<(), DecodeError>,
     ) -> Result<(), DecodeError> {
         if samples.iter().any(|x| !x.is_finite()) {
@@ -163,7 +175,7 @@ impl Decoder {
         mut samples: Vec<f32>,
         origin: u64,
         state: &mut DecodeState,
-        cancel: &impl Fn() -> bool,
+        cancel: &(impl Fn() -> bool + Sync),
         publish: &mut impl FnMut(&Decode) -> Result<(), DecodeError>,
     ) -> Result<(), DecodeError> {
         if samples.len() > 360000 {
@@ -213,50 +225,48 @@ impl Decoder {
                 candidates
             } else {
                 spectrum
-                    .candidates(samples.len(), &mut physical, &mut budget)
+                    .candidates(samples.len(), &physical, self.threads, &mut budget)
                     .await?
             };
+            // Every candidate's verification is independent of the others; only the duplicate
+            // checks depend on this window's earlier records. Candidates are therefore
+            // verified in parallel and replayed here in order, each step and error taken
+            // exactly where the single-threaded loop takes it (#57 CL-057-02).
+            // Each verification holds one 1.2 MB known-word waveform while it refines, so at
+            // most eight run at once (about 20 MB); more threads gain little here.
+            let stop = || cancel();
+            let verifications = super::parallel::map(
+                self.threads.min(8),
+                &candidates,
+                &mut budget,
+                || physical.fork(),
+                |&c, pass, budget| complete(self.verify(&samples, c, &stop, pass, budget)),
+            )
+            .await?;
+            // The SNR keeps its per-period baseline cache, so it is measured in this replay,
+            // after the duplicate and physical checks, exactly as the serial loop did.
             let mut ft8_snr = Ft8Snr::new(self.scalar);
             let mut pending = vec![];
             let mut verified = 0;
-            for c in candidates {
+            for (c, verification) in candidates.iter().zip(verifications) {
                 budget.checkpoint().await?;
-                let observation =
-                    bitmetrics::observe(&mut physical, c, &self.channel, &mut budget).await?;
-                let Some(word) = observation.word else {
+                let Some((payload, tones, fitted)) = verification? else {
                     continue;
                 };
-                if !channel_gates(&word, &observation.llr) {
-                    continue;
-                }
-                let Some(payload) = self.channel.payload(&word, mode) else {
-                    continue;
-                };
-                let payload = unpack(&payload);
                 let absolute = origin + c.start as u64;
                 if window_seen.iter().any(|(bits, start)| {
                     *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
                 }) {
                     continue;
                 }
-                let tones = self.channel.tones(&word, mode);
-                let fitted = refine_known(
-                    &samples,
-                    mode,
-                    &tones,
-                    c,
-                    cancel,
-                    &mut budget,
-                    &mut physical,
-                )
-                .await?;
+                let (fitted, supported) = fitted?;
                 let absolute = origin + fitted.start as u64;
                 if window_seen.iter().any(|(bits, start)| {
                     *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
                 }) {
                     continue;
                 }
-                if !physical_sync::supports(&mut physical, fitted, &mut budget).await? {
+                if !supported? {
                     continue;
                 }
                 let snr = match &contrast {
@@ -293,14 +303,25 @@ impl Decoder {
             }
             // Discard the immutable current-pass transform before modifying its residual.
             drop(physical);
-            for subtraction in pending {
-                budget.checkpoint().await?;
-                let wave = quadratures(mode, &subtraction.tones, subtraction.frequency)
-                    .ok_or(DecodeError::InvalidSamples)?;
-                subtractor
-                    .subtract(&mut samples, subtraction.start, &wave, &mut budget)
-                    .await?;
-                subtractions += 1;
+            // The residual is updated in order; only the waveforms are built in parallel,
+            // at most four at a time (about 2.4 MB each while built) to bound their memory.
+            for chunk in pending.chunks(self.threads.min(4)) {
+                let waves = super::parallel::map(
+                    self.threads,
+                    chunk,
+                    &mut budget,
+                    || (),
+                    |s, _, _| quadratures(mode, &s.tones, s.frequency),
+                )
+                .await?;
+                for (subtraction, wave) in chunk.iter().zip(waves) {
+                    budget.checkpoint().await?;
+                    let wave = wave.ok_or(DecodeError::InvalidSamples)?;
+                    subtractor
+                        .subtract(&mut samples, subtraction.start, &wave, &mut budget)
+                        .await?;
+                    subtractions += 1;
+                }
             }
             if verified == 0 || subtractions >= 32 {
                 break;
@@ -309,7 +330,51 @@ impl Decoder {
         budget.checkpoint().await?;
         Ok(())
     }
+    /// One candidate's verification, everything that does not depend on the window's
+    /// earlier records. The refined frame and its physical check are computed even where
+    /// the caller's duplicate checks will skip them; the caller surfaces their errors only
+    /// where its loop reaches them.
+    async fn verify(
+        &self,
+        samples: &[f32],
+        c: Candidate,
+        cancel: &(impl Fn() -> bool + Sync),
+        physical: &mut PassBand<'_>,
+        budget: &mut CpuBudget<'_>,
+    ) -> Verification {
+        let mode = physical.plan.mode;
+        let observation = bitmetrics::observe(physical, c, &self.channel, budget).await?;
+        let Some(word) = observation.word else {
+            return Ok(None);
+        };
+        if !channel_gates(&word, &observation.llr) {
+            return Ok(None);
+        }
+        let Some(payload) = self.channel.payload(&word, mode) else {
+            return Ok(None);
+        };
+        let payload = unpack(&payload);
+        let tones = self.channel.tones(&word, mode);
+        let fitted = async {
+            let fitted = refine_known(samples, mode, &tones, c, cancel, budget, physical).await?;
+            let supported = physical_sync::supports(physical, fitted, budget).await;
+            Ok((fitted, supported))
+        }
+        .await;
+        Ok(Some((payload, tones, fitted)))
+    }
 }
+
+/// [`Decoder::verify`] staged as the in-order replay consumes it: the payload and tones,
+/// then the refined frame, then whether its physical check supports it.
+type Verification = Result<
+    Option<(
+        Payload,
+        Vec<u8>,
+        Result<(Candidate, Result<bool, DecodeError>), DecodeError>,
+    )>,
+    DecodeError,
+>;
 
 fn coherent(
     samples: &[f32],

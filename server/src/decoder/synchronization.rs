@@ -219,7 +219,8 @@ impl Spectrum {
     pub async fn candidates(
         &self,
         length: usize,
-        physical: &mut PassBand<'_>,
+        physical: &PassBand<'_>,
+        threads: usize,
         budget: &mut CpuBudget<'_>,
     ) -> Result<Vec<Candidate>, DecodeError> {
         let n = self.mode.symbol_frames();
@@ -283,7 +284,9 @@ impl Spectrum {
             }
         }
         let mut blocked = vec![false; starts * nf];
-        let mut out = vec![];
+        // Blocking depends only on the peak order, never on qualification, so the peaks are
+        // qualified in parallel and kept in that order (#57 CL-057-02).
+        let mut raws = vec![];
         while let Some(peak) = heap.pop() {
             budget.checkpoint().await?;
             let (r, f) = (peak.row, peak.frequency_index);
@@ -300,7 +303,19 @@ impl Spectrum {
                 frequency: self.frequencies[f],
                 score: peak.score,
             };
-            let Some(candidate) = physical_sync::qualify(physical, raw, budget).await? else {
+            raws.push(raw);
+        }
+        let qualified = super::parallel::map(
+            threads,
+            &raws,
+            budget,
+            || physical.fork(),
+            |&raw, pass, budget| super::search::complete(physical_sync::qualify(pass, raw, budget)),
+        )
+        .await?;
+        let mut out = vec![];
+        for candidate in qualified {
+            let Some(candidate) = candidate? else {
                 continue;
             };
             if out.len() == 256 {

@@ -163,6 +163,7 @@ impl CaptureHandle {
         let thread = thread::Builder::new()
             .name("radio-capture".into())
             .spawn(move || {
+                raise_thread_priority();
                 let result = capture(&id, started_tx, thread_cancel, thread_wake, &done_tx);
                 let _ = done_tx.try_send(result);
             })
@@ -665,4 +666,12 @@ impl AudioController {
         )?;
         Ok(controller)
     }
+}
+
+/// Keeps this real-time audio thread ahead of the parallel decode workers, which use all
+/// but one logical CPU at normal priority (#57 CL-057-02; #49 render stalls under load).
+fn raise_thread_priority() {
+    // SAFETY: GetCurrentThread returns this thread's pseudo-handle, which needs no close;
+    // SetThreadPriority changes only this thread's scheduling. A failure keeps the default.
+    let _ = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
 }

@@ -737,7 +737,7 @@ package WstxOfflineDecode {
              SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;
              onecurrentmode/windowplan/scratchcache andcurrentpassFFT,droponepochreset;
              no globalmutablecommonblocks; residualchangeinvalidatesFFT.
-             SharedRustFFT6.4.1planned/scalar/oneworker/noqueue/source/cancelquanta<=50ms,
+             SharedRustFFT6.4.1planned/scalar/oneworker(itsparallelstagethreads:CL-057-02)/noqueue/source/cancelquanta<=50ms,
              serviceconversion/spectrum betweenquanta,release<=250ms. Allplans/grids/scratch
              within64MiB. Onepurewaveformowner7/futurereuse9,noTXauthority.
              Displayfixed0..3000Hzindependentofdecode200..3500; no sharedmodem/displayFFTplan.
@@ -879,7 +879,7 @@ package WstxOfflineDecode {
                  zeropublishedframes. Unsupported/invalidonlyinjectedvalidCRCframes, nopanic.
                  Repeatpayloadmultiset,time<=1frame,freq<=.2HzFT8/.5HzFT4. Cancelallphases,
                  stale/restart/busy/limits/strictHTTP/realbrowser/twopeer32kbitlink<=2sstatus.
-                 OneCPUworker:15sFT8<=5s,7.5sFT4<=3s,120s<=40s,cold+<=2s; tenruns+warmup,
+                 OneCPUworker(onedecodethread;defaultthreadcount:CL-057-02):15sFT8<=5s,7.5sFT4<=3s,120s<=40s,cold+<=2s; tenruns+warmup,
                  actualreferencePC HB9BLA(AMDRyzen9 3900X,32GB,Windows11)
                  OS/build/power/hash/workload/min/median/p95/max/memory;
                  fourprofiles<=2xruntime,64MiBworker/96MiBprocessdelta,<=250msrelease.
