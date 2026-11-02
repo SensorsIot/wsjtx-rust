@@ -876,6 +876,43 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
+test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
+  let state,records,requested=[];
+  const period='2026-10-27T12:00:15.0000000Z';
+  const makeRecord=(sequence,dt)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12.3,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`LATE FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:dt});
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    records=[makeRecord(0,0.1),makeRecord(1,0.2)];
+    Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:false}});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));requested.push(cursor);
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2);
+  const before=requested.length;
+  // The late window of the same period: same id, period and first_sequence, one more record
+  // (DT +1.2 s), and the view completes.
+  records.push(makeRecord(2,1.2));
+  Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
+  await refreshStatus(page);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3,null,{timeout:15000});
+  assert.equal(await page.locator('tr[data-period=latest]').filter({hasText:'LATE FIXTURE 2'}).count(),1);
+  assert.equal(await page.locator('tr[data-period=history]').count(),0,'an extended view is not a replaced period');
+  assert.ok(requested.slice(before).every(cursor=>cursor>=2),`only the new record is fetched: ${requested.slice(before)}`);
+  assert.doesNotMatch(await page.locator('#receive-status').innerText(),/unavailable|Changed decode descriptor/i);
+  assert.doesNotMatch(await page.locator('#band-activity header').innerText(),/Partial/);
+  // A same-id change of anything else stays an error.
+  state.job.latest_decode={id:1,first_sequence:1,next_sequence:3,period_start_utc:period,complete:true};
+  await refreshStatus(page);
+  await page.waitForFunction(()=>/Changed decode descriptor/.test(document.querySelector('#receive-status').textContent),null,{timeout:15000});
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-010-09; TC-007-006. Period identity can be learned from results, not only snapshots.
 test('TC-007-006 a page-announced period refetches its prefix instead of skipping it',{timeout:35000},async t=>{
   const oldPeriod='2026-10-27T12:00:00.0000000Z',newPeriod='2026-10-27T12:00:15.0000000Z';let state,announced=false;
