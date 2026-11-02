@@ -15,6 +15,7 @@ mod contact_http;
 mod contact_http_tests;
 #[cfg(test)]
 mod contact_tests;
+mod dxcc;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
@@ -442,6 +443,7 @@ fn router(state: App) -> Router {
         .route("/contact", get(contact_http::snapshot))
         .route("/contact/command", post(contact_http::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
+        .route("/dxcc", get(logbook_http::dxcc).put(logbook_http::dxcc_put).layer(axum::extract::DefaultBodyLimit::max(logbook_http::DXCC_BODY_MAX)))
         .route("/automation", get(automation::snapshot))
         .route("/automation/command", post(automation::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/strategy", get(strategy::snapshot).put(strategy::put).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))

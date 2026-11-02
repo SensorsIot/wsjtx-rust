@@ -5,6 +5,7 @@
 // test-only control peer; expected values below are the independent TC tables.
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-06, CL-010-11, CL-010-14; TC-007-001,
 // TC-007-003, TC-007-004, TC-010-008, TC-010-009; CL-050-01, TC-050-001.
+// Proves: CL-055-02; TC-055-004 (DXCC column, approximate distance, QSO header).
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
@@ -38,6 +39,14 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
     {text:'HB9BLA W1XYZ -10',hz:400,snr:-10},{text:'HB9BL K1ABC -01',hz:2600,snr:-9},{text:'CQ DL1ABC JO62',hz:800,snr:-3}]);
   const rows=page.locator('#band-activity tbody tr[data-sequence]');
   await waitFor(async()=>await rows.count()===9,'nine Band Activity rows',30000);
+  // #55 TC-055-004: the DXCC column from the station's cty.dat entity (United States
+  // 37.60 N 91.87 W, Germany; cty.dat lines 1251/669) and, without a grid in the
+  // message, the distance from the country position, marked approximate (~): JN47AA to
+  // 37.60 N 91.87 W is 7706 km by hand haversine.
+  const dxcc=text=>rows.filter({hasText:text}).first().evaluate(tr=>[tr.children[5].textContent,tr.children[5].title,tr.children[6].textContent]);
+  assert.deepEqual(await dxcc('HB9BLA W1XYZ -10'),['U.S.A.','U.S.A. \u00b7 NA \u00b7 CQ zone 5 \u00b7 ITU zone 8 (cty.dat)','~7706 km']);
+  assert.equal((await dxcc('CQ DL1ABC JO62'))[0],'Germany');
+  assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
   // #37 QsoPane, no contact: Rx 1500 Hz; the candidates within +/-50 Hz (1450.0..1550.0) and the
   // row to my call, plain, newest two first, message and SNR only; never 1449.9 Hz or HB9BL.
   const others=async()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
@@ -57,6 +66,10 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.equal(select.row.source_id,live.source.id);assert.equal(select.row.job_id,live.job.id);assert.equal(select.row.generation,live.generation);
   assert.equal(String(select.row.sequence),await k1abc.getAttribute('data-sequence'));
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
+  // #55 TC-055-004: the QSO pane header names the partner's country and continent, first on
+  // its detail line; the header line stays call and grid.
+  await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:/^U\.S\.A\. \(NA\) \u00b7 \d+ km \u00b7 sent /}).waitFor();
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'K1ABC · FN42');
   const texts=await page.locator('#contact-messages .ct-text').evaluateAll(inputs=>inputs.map(i=>i.value));
   assert.deepEqual(texts,['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47']);
   assert.equal(await page.locator('input[name=contact-next][value=tx1]').isChecked(),true);

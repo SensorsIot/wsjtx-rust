@@ -386,7 +386,22 @@ pub async fn results(
         Ok(v) if v["error"]["code"] == "cursor_expired" => {
             (StatusCode::GONE, Json(v)).into_response()
         }
-        Ok(v) => Json(v).into_response(),
+        Ok(mut v) => {
+            // #55 DecodedEntity: the entity and new-* flags of each decoded sender.
+            if let Some(state) = app.profile.clone() {
+                let annotated = tokio::task::spawn_blocking(move || {
+                    if let Some(records) = v["records"].as_array_mut() {
+                        crate::dxcc::annotate(&state, records);
+                    }
+                    v
+                });
+                match annotated.await {
+                    Ok(annotated) => v = annotated,
+                    Err(_) => return error("storage_unavailable"),
+                }
+            }
+            Json(v).into_response()
+        }
         Err(e) => error(e),
     }
 }

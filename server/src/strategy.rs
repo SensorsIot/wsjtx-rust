@@ -23,7 +23,7 @@ pub const LIST_MAX: usize = 32;
 pub const EVALUATE_MAX: u64 = 2048;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
-pub const CONTINENTS: [&str; 7] = ["AF", "AN", "AS", "EU", "NA", "OC", "SA"];
+pub use crate::dxcc::CONTINENTS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Message {
@@ -464,31 +464,12 @@ pub(crate) fn maidenhead(grid: &str) -> Option<(f64, f64)> {
         };
     Some((lat, lon))
 }
-/// WstxStrategy::ContinentOfGrid: the coarse continent of a locator (the same rectangles
-/// as the browser's Settings > General derivation; no cty.dat in this slice).
-pub(crate) fn continent_of(grid: &str) -> Option<&'static str> {
-    let (lat, lon) = maidenhead(grid)?;
-    Some(if lat < -60.0 {
-        "AN"
-    } else if (-170.0..-30.0).contains(&lon) {
-        if lat > 12.0 || (lon < -77.0 && lat > 7.0) {
-            "NA"
-        } else {
-            "SA"
-        }
-    } else if (-30.0..60.0).contains(&lon) && lat >= 35.0 {
-        if lon > 40.0 && lat < 42.0 { "AS" } else { "EU" }
-    } else if (-30.0..52.0).contains(&lon) && lat < 37.0 {
-        if lon > 33.0 && lat > 12.0 { "AS" } else { "AF" }
-    } else if (lat >= -11.0 && lon >= 60.0) || lat >= 35.0 {
-        "AS"
-    } else {
-        "OC"
-    })
-}
 /// Great-circle distance in whole km (R 6371 km) and initial bearing in degrees.
 pub(crate) fn distance_bearing(from: &str, to: &str) -> Option<(f64, f64)> {
-    let (a, b) = (maidenhead(from)?, maidenhead(to)?);
+    Some(great_circle(maidenhead(from)?, maidenhead(to)?))
+}
+/// Whole km and degrees between two (lat, lon) points.
+pub(crate) fn great_circle(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     let r = std::f64::consts::PI / 180.0;
     let (la1, la2, dl) = (a.0 * r, b.0 * r, (b.1 - a.1) * r);
     let h = ((la2 - la1) / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dl / 2.0).sin().powi(2);
@@ -496,7 +477,7 @@ pub(crate) fn distance_bearing(from: &str, to: &str) -> Option<(f64, f64)> {
     let y = dl.sin() * la2.cos();
     let x = la1.cos() * la2.sin() - la1.sin() * la2.cos() * dl.cos();
     let az = (y.atan2(x) / r + 360.0) % 360.0;
-    Some((km, az.round()))
+    (km, az.round())
 }
 
 // ------------------------------------------------------------------ evaluation
@@ -541,8 +522,9 @@ pub(crate) fn facts(record: &Value) -> Option<Facts> {
         hz: record["frequency_hz"].as_f64().unwrap_or(0.0),
     })
 }
-/// Station facts of one evaluation: my call, grid and continent, the band, and the
-/// worked status of the calls and grids in question (from the internal log).
+/// Station facts of one evaluation: my call, grid and continent, the band, the country
+/// table (#55) and the worked status of the calls and grids in question (from the
+/// internal log).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Station {
     pub my_call: String,
@@ -552,6 +534,7 @@ pub(crate) struct Station {
     /// call -> (worked ever, worked on this band and mode)
     pub calls: HashMap<String, (bool, bool)>,
     pub grids: HashMap<String, (bool, bool)>,
+    pub dxcc: crate::dxcc::Table,
 }
 /// WstxStrategy::DirectedCqRule: is a CQ with this target addressed to my station?
 /// A continent target only to that continent; DX only from another, known continent
@@ -600,10 +583,9 @@ impl Station {
                     .unwrap_or_default();
                 if *s == Scope::Ever { !ever } else { !band }
             }),
-            Cond::Continent(l) => f
-                .grid
-                .as_deref()
-                .and_then(continent_of)
+            Cond::Continent(l) => self
+                .dxcc
+                .continent(&f.from)
                 .is_some_and(|c| l.iter().any(|x| x == c)),
             Cond::Distance(r) => within(r, geo.map(|g| g.0), false),
             Cond::Azimuth(r) => within(r, geo.map(|g| g.1), true),
@@ -628,7 +610,7 @@ impl Station {
             !addressed_to_me(
                 t,
                 self.my_continent.as_deref(),
-                f.grid.as_deref().and_then(continent_of),
+                self.dxcc.continent(&f.from),
             )
         })
     }
@@ -745,22 +727,29 @@ pub(crate) fn sane_call(call: &str) -> bool {
         && call.bytes().any(|b| b.is_ascii_uppercase())
         && !call.ends_with("/R")
 }
-/// The station's continent: the configured one, else derived from the locator.
-pub(crate) fn my_continent(config: &Config, locator: Option<&str>) -> Option<String> {
+/// The station's continent: the configured one, else the cty.dat continent of my call.
+pub(crate) fn my_continent(
+    config: &Config,
+    call: Option<&str>,
+    dxcc: &crate::dxcc::Table,
+) -> Option<String> {
     config
         .continent
         .clone()
-        .or_else(|| locator.and_then(continent_of).map(str::to_owned))
+        .or_else(|| call.and_then(|c| dxcc.continent(c)).map(str::to_owned))
 }
 /// Builds the evaluation facts for these records from the profile, the station band and
 /// the internal log.
+/// The station band: the CAT dial band, else the operating selection band.
+pub(crate) fn station_band(r: &recording::Recording) -> Option<&'static str> {
+    contact_http::confirmed_dial(r)
+        .and_then(logbook::band_of_hz)
+        .or(r.operating_band())
+}
 pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) -> Station {
     let r = &state.recording;
     let (call, locator) = contact_http::profile_facts(state);
-    let band = contact_http::confirmed_dial(r)
-        .and_then(logbook::band_of_hz)
-        .or(r.operating_band())
-        .map(str::to_owned);
+    let band = station_band(r).map(str::to_owned);
     let mode = r.operating_mode().to_ascii_uppercase();
     let facts: Vec<Facts> = records.iter().filter_map(facts).collect();
     let mut calls: Vec<String> = facts.iter().map(|f| f.from.clone()).collect();
@@ -780,9 +769,10 @@ pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) 
             .map(|(k, w)| (k, (w != "not_worked", w == "worked_this_band_and_mode")))
             .collect::<HashMap<_, _>>()
     };
+    let (dxcc, _) = state.logbook.dxcc();
     Station {
+        my_continent: my_continent(config, call.as_deref(), &dxcc),
         my_call: call.unwrap_or_default(),
-        my_continent: my_continent(config, locator.as_deref()),
         my_grid: locator,
         band,
         calls: status(
@@ -796,6 +786,7 @@ pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) 
                 .worked_grids(&grids, &b, &mode)
                 .unwrap_or_default(),
         ),
+        dxcc,
     }
 }
 
@@ -855,16 +846,17 @@ impl Owner {
     /// StrategySnapshot.
     pub(crate) fn snapshot(&self, state: &ProfileState) -> Value {
         let r = &state.recording;
-        let (_, locator) = contact_http::profile_facts(state);
+        let (call, _) = contact_http::profile_facts(state);
+        let (dxcc, _) = state.logbook.dxcc();
         let inner = self.lock(state);
         let mine = inner
             .config
             .as_ref()
-            .and_then(|c| my_continent(c, locator.as_deref()));
+            .and_then(|c| my_continent(c, call.as_deref(), &dxcc));
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
             "configuration":inner.config.as_ref().map(Config::json),
             "configuration_error":inner.error,"my_continent":mine,
-            "derived_continent":locator.as_deref().and_then(continent_of)})
+            "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c))})
     }
     /// PUT /strategy after the route checks. `running` names the strategy an active
     /// Auto run uses: it cannot be removed or switched while the run lasts.
