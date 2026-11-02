@@ -636,9 +636,9 @@ function show(){
   const on=!!c?.highlight&&!!active();
   highlightButton.disabled=!active();highlightButton.setAttribute('aria-pressed',String(on));highlightButton.title=active()?'Colour matching decodes and sort them to the top':'Choose a strategy first';
   const capable=window.wstxContact?.snapshot()?.transmit?.capability==='available';
-  autoButton.disabled=runActive()?false:!active()||!capable;
+  autoButton.disabled=runActive()?!strategyRun():!active()||!capable;
   autoButton.setAttribute('aria-pressed',String(strategyRun()));
-  autoButton.title=runActive()?'Stop Auto':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
+  autoButton.title=strategyRun()?'Stop Auto':runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
   showContinent();
   autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):'waiting'}`:'Auto';
   decorate();
@@ -711,7 +711,7 @@ async function automationCommand(action,extra){
 }
 async function readAutomation(){const r=await stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error(`automation ${r.status}`);return r.json();}
 autoButton.addEventListener('click',async()=>{
-  if(runActive()){try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Auto stop refused · ${error.message}`;}return;}
+  if(runActive()){if(!strategyRun())return;try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Auto stop refused · ${error.message}`;}return;}
   const s=active(),c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
   if(!s||!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Auto needs a strategy and FT8/FT4 receive';return;}
   // First use in this page session asks once; HALT and Esc stop Auto at any time.
