@@ -2901,7 +2901,7 @@ package WstxRequirements {
     // #40 WSJT-X-compatible UDP interface with multiple targets (decisions recorded in
     // WstxUdp and on issue #40, 2026-11-01); detailed contract in WstxUdp.
     requirement 'CL-040-01' {
-        doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the configured instance name, and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, Decode for each new live FT8/FT4 decode, Clear when the live job's decodes are discarded, QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed. Details: WstxUdp::UdpWire, OutboundRules. */
+        doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the configured instance name, and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, on each live decoder window and with each Heartbeat pulse (CL-040-07), Decode for each new live FT8/FT4 decode, Clear when the live job's decodes are discarded, QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed. Details: WstxUdp::UdpWire, OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/logbook_http.rs";
     }
@@ -2966,6 +2966,26 @@ package WstxRequirements {
         attribute executable : String = "server/src/udp_tests.rs";
     }
     dependency CL_040_06_verified_by_TC_012_006 from 'CL-040-06' to 'TC-012-006';
+    requirement 'CL-040-07' {
+        doc /* Issue #40 live acceptance (GridTracker, 2026-11-02): Status is sent as WSJT-X sends it, so a tool that waits for a Status sees the station within one T/R period. Its decoding field is true while the live decoder processes an analysis window and false once that decode returns (completed, abandoned, failed or cancelled); every toggle sends a Status, and a window that begins and ends between two station steps still sends one, so at least one Status goes out per decoded window and therefore per T/R period (WSJT-X v3.3.0-beta5 widgets/mainwindow.cpp MainWindow::beginDecode and endDecode call updateDecodeControls, which calls statusUpdate; MessageClient::status_update sends unconditionally). In addition, the Status is resent unchanged at each pulse, together with the Heartbeat every 15 s (MessageClient heartbeat_timer_, NetworkMessage::pulse), also to a target that selects status without heartbeat, so a tool started later learns the state within 15 s; the resend is this station's choice, WSJT-X has none. A target that does not select status receives none of these. Details: WstxUdp::OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/recording.rs";
+    }
+    dependency CL_040_07_to_FR_012 from 'CL-040-07' to 'FR-012';
+    verification 'TC-012-007' {
+        doc /* TC-012-007 — Status cadence with decoder windows and the pulse
+             CL-040-07
+             Setup: (a) actual candidate UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA); loopback peers A (all messages), B (status only) and C (heartbeat and decode); (b) the actual live worker on the recording fixture with zero-sample FT8 windows and a capture poll that records the decoder activity while the decode in progress drives it.
+             Steps: (a) step; step; twice: begin a window decode through the recording's decoder signal, step, step, end it, step; begin and end one window, step, step; back-date the stored pulse instant by 14 s, step; by 15 s, step; step. (b) analyze one window with a waiting late window, and with a replacing window (overrun).
+             Expected (hand table): (a) activation A Heartbeat then Status decoding 0, B Status, C Heartbeat only; then nothing; each window begin one Status decoding 1 to A and B, no repeat while it decodes, its end one Status decoding 0; the window begun and ended between steps one Status decoding 0 to A and B; nothing at 14 s; at 15 s A Heartbeat then a Status byte-identical to the last one sent, B the Status, C the Heartbeat only; then nothing; C never receives a Status. (b) before: (false, 0); polled values all decoding true, first (true, 1), then (true, 2); after: (false, 2), in both cases.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only, deterministic time (no sleep for the pulse), no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-07';
+        }
+        attribute executable : String = "server/src/udp_tests.rs; server/src/recording_tests.rs";
+    }
+    dependency CL_040_07_verified_by_TC_012_007 from 'CL-040-07' to 'TC-012-007';
     verification 'TC-012-001' {
         doc /* TC-012-001 — NetworkMessage wire vectors
              CL-040-01, CL-040-03, CL-040-04

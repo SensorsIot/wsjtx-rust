@@ -190,6 +190,9 @@ test('TC-021-008: stalled reader cannot block another client', {timeout: 35000},
   const app = await server(); t.after(() => app.close());
   const slow = await peer(app.origin, {autoPong: false}), healthy = await peer(app.origin);
   t.after(() => {slow.terminate(); healthy.terminate();});
+  // Listen from the start: when the client's own pending writes fail against the closed
+  // server socket (a reset), 'close' is emitted during the stall, before the resume.
+  const closed = once(slow, 'close');
   slow._socket.pause();
   const text = '{"v":1,"type":"station.get","id":1}';
   for (let i = 0; i < 100000; i++) slow.send(text);
@@ -200,7 +203,7 @@ test('TC-021-008: stalled reader cannot block another client', {timeout: 35000},
   // five-second heartbeat tick. The OS write buffer may absorb the burst, so this
   // proves bounded liveness disconnection, not that the two-second send timeout ran.
   await sleep(22000);
-  const closed = once(slow, 'close'); slow._socket.resume();
+  slow._socket.resume();
   await Promise.race([closed, sleep(5000, undefined, {ref: false}).then(() => {throw new Error('Unresponsive reader was not disconnected after the liveness deadline');})]);
   assert.equal((await request(healthy, text)).type, 'station.status');
 });

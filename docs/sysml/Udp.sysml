@@ -2,7 +2,7 @@ package WstxUdp {
     private import ScalarValues::*;
     doc /* Canonical contract of the WSJT-X-compatible UDP interface with multiple targets
          (issue #40, CL-040-01..05 in WstxRequirements; IPv6 multicast issue #46,
-         CL-040-06; verification TC-012-001..006).
+         CL-040-06; Status cadence CL-040-07; verification TC-012-001..007).
          Nothing here is an execution result.
 
          Normative reference: WSJT-X v3.3.0-beta5 source Network/NetworkMessage.hpp
@@ -132,12 +132,21 @@ package WstxUdp {
              selected. The station step runs every 50 ms whether or not a browser is
              connected.
              Heartbeat (0): id, maximum schema 3, version (the station version), revision
-             "" at activation and every heartbeatSeconds.
-             Status (1) at activation, whenever its encoded content changes and after a
-             Replay: dial frequency (confirmed CAT dial Hz, else 0), mode and Tx mode FT8 or
+             "" at each pulse: at activation and every heartbeatSeconds after the previous
+             one (MessageClient heartbeat_timer_, NetworkMessage::pulse).
+             Status (1) (CL-040-07) at activation, whenever its encoded content changes, once
+             for each live decoder window begun since the last Status (also when that window
+             began and ended between two station steps), at each pulse even when unchanged
+             (also to a target that selects status but not heartbeat), and after a Replay.
+             WSJT-X sends Status from MainWindow::statusUpdate, which beginDecode and
+             endDecode reach through updateDecodeControls, so its decoding field toggles at
+             least once per T/R period; the resend at each pulse is this station's choice
+             (issue #40 live acceptance, 2026-11-02) so a tool started later learns the
+             state within heartbeatSeconds. Fields: dial frequency (confirmed CAT dial Hz, else 0), mode and Tx mode FT8 or
              FT4 (station operating mode), DX call, report (the contact's report, else the
-             station's, as "-09"), Tx enabled (armed), transmitting, decoding (the latest
-             receive publication is incomplete), Rx DF and Tx DF (Hz), DE call and DE grid
+             station's, as "-09"), Tx enabled (armed), transmitting, decoding (the live
+             decoder is processing an analysis window: true from the start of a window's
+             decode until it returns, completed, abandoned, failed or cancelled), Rx DF and Tx DF (Hz), DE call and DE grid
              (profile), DX grid, Tx watchdog (expired), sub-mode "", fast mode false,
              special operation 0, frequency tolerance 4294967295, T/R period 15 (FT8) or 7
              (FT4), configuration name (profile display name), Tx message (the contact's
@@ -242,4 +251,5 @@ package WstxUdp {
     dependency httpClause from UdpHttp to WstxRequirements::'CL-040-02';
     dependency inboundClause from InboundRules to WstxRequirements::'CL-040-03';
     dependency textClause from OutboundRules to WstxRequirements::'CL-040-04';
+    dependency statusCadenceClause from OutboundRules to WstxRequirements::'CL-040-07';
 }
