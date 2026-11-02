@@ -766,8 +766,28 @@ package WstxRequirements {
              same time; (f) the FT8 contact tests of TC-007-001 unchanged; (g) an armed
              FT8 request pending, the station mode set to FT4 in the #9 owner only, the
              owner run across the period start without any contact step, then a new FT8
-             request.
-             Expected (independent hand-written values): (a) Tx4 text
+             request; (h) #11 IW9FRA replay (live 2026-11-02 13:44-13:46 UTC): select
+             "CQ IW9FRA JM68" (+10 dB, 1838 Hz, even period P0), Hold Tx at 2439 Hz,
+             Enable Tx, partner rows "+10", "+10", then three "RR73" (or "73") in the
+             partner's periods, counted +6.7, +7.0, +7.3 s and +8.2 s after their period
+             start, with and without the operator re-selecting the first "+10" row; the
+             same in FT8 with RR73, RRR and 73; the same FT4 sequence through the station
+             step and router on a virtual UTC (records published +7.0 s); (i) the same
+             FT4 sequence with Auto Seq off, Tx3 chosen by the operator, then the offered
+             Tx5 chosen; (j) the QSO pane (stubbed snapshot) with Auto Seq off in
+             roger_report, without and with suggested_slot tx5.
+             Expected (independent hand-written values): (h) transmissions Tx1
+             "IW9FRA HB9BLA JN47" in my period 1, "R+10" in 3 and 5, "73" in 7, then
+             completed with Enable Tx off and one completion log (IW9FRA, JM68, sent and
+             received +10); counted after my audio start (+8.2 s) each message goes out one
+             of my periods later (Tx1 1 and 3, R+10 5 and 7, 73 9); a re-selection keeps
+             grid JM68; (i) every counted message keeps the state, TIME_OFF follows each
+             counted RR73, suggested_slot tx3 after the report and tx5 after each RR73,
+             choose_next clears it, 73 is sent in period 9 and the contact completes;
+             (j) the "Auto Seq off" line and status suffix, then "Send IW9FRA HB9BLA 73
+             next" sending choose_next tx5 and enable_tx, Turn Auto Seq on sending
+             set_auto_seq true, the line hidden with Auto Seq on and nothing offered.
+             Expected for (a)-(g) (independent hand-written values): (a) Tx4 text
              "K1ABC HB9BLA RR73", transmissions only in odd FT4 periods P0+7.5 s,
              P0+22.5 s, P0+37.5 s with audio 300 ms after the period start and 241920
              samples at 48 kHz, states replying -> rogerReport -> signoff -> completed
@@ -791,7 +811,7 @@ package WstxRequirements {
             verify 'CL-011-03';
             verify 'CL-011-04';
         }
-        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs";
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_011_02_verified_by_TC_006_002 from 'CL-011-02' to 'TC-006-002';
     dependency CL_011_03_verified_by_TC_007_008 from 'CL-011-03' to 'TC-007-008';
