@@ -365,8 +365,29 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   assert.equal(await shown(page,'#qso-suggest'),false,'nothing offered before their RR73');
   // Their RR73 was counted: the engine offers Tx5; one click chooses it and arms (Reply).
   await show({...contact,suggested_slot:'tx5'});
-  assert.equal(await page.locator('#qso-suggest').textContent(),'Send IW9FRA HB9BLA 73 next');
+  assert.equal(await page.locator('#qso-suggest').textContent(),'Send 73 next');
+  assert.equal(await page.locator('#qso-suggest').getAttribute('title'),'Send IW9FRA HB9BLA 73 next');
   assert.match(await page.locator('#qso-autoseq-text').textContent(),/IW9FRA expects$/);
+  assert.equal(await page.locator('#qso-autoseq').evaluate(el=>getComputedStyle(el).borderLeftStyle),'solid','styled as a warning on the pane');
+  // TC-007-009: still one fixed 1366x768 screen with the line shown; the QSO buttons stay in view.
+  await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
+  const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
+  assert.deepEqual(metrics,{x:false,y:false});
+  // The line takes the place of the (empty) dialogue box: the QSO buttons sit no lower than
+  // for the same contact without it, and the line itself is fully visible.
+  const top=selector=>page.locator(selector).first().evaluate(el=>el.getBoundingClientRect().top);
+  const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
+  for(const selector of ['#qso-autoseq','#qso-suggest'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
+  const withLine=await top('#qso-73');
+  settings={auto_seq:true};await show({...contact,suggested_slot:null});await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
+  const withoutLine=await top('#qso-73');
+  assert.ok(withLine<=withoutLine,`QSO buttons pushed down by the line: ${withLine} > ${withoutLine}`);
+  settings={auto_seq:false};await show({...contact,suggested_slot:'tx5'});await page.waitForFunction(()=>!document.querySelector('#qso-autoseq').hidden);
+  await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.screenshot({path:'test-results/ui-operating/autoseq-off-360x800.png',fullPage:true});
+  await page.setViewportSize({width:1366,height:768});
   await page.locator('#qso-suggest').click();
   for(let i=0;i<40&&commands.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.map(c=>[c.action,c.slot??c.enabled]),[['choose_next','tx5'],['enable_tx',true]]);

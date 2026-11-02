@@ -1526,6 +1526,22 @@ fn ft4_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
     };
     assert_replay(Mode::Ft4, &r, &late);
 }
+// #11 review: only a decoded row of the same partner keeps the known grid; a manual
+// entry sets exactly the grid entered (none clears it).
+#[test]
+fn a_manual_entry_of_the_same_partner_sets_exactly_the_grid_entered() {
+    let mut s = station();
+    for (grid, expected) in [(Some("JM68"), Some("JM68")), (None, None)] {
+        s.command(Command::EnterDx {
+            call: "IW9FRA".into(),
+            grid: grid.map(String::from),
+            replace: false,
+        })
+        .unwrap();
+        let c = s.engine.contact.as_ref().unwrap();
+        assert_eq!(c.dx_grid.as_deref(), expected, "entered {grid:?}");
+    }
+}
 // The live 13:44-13:46 record with Auto Seq off: the partner's +10 and RR73s are
 // counted (report and TIME_OFF) but change nothing, so Tx3 repeats as observed; the
 // engine offers Tx5 instead of dropping the RR73, and choosing it sends 73 once.

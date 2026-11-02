@@ -227,7 +227,9 @@ package WstxContact {
              generation/sequence tuple of a live result row with a concrete standard
              'from' call (WstxOfflineDecode::StandardFields). Effects, after server
              acknowledgement only (DMR handleDecodeSelection ~320-360, D-adopted):
-             dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any;
+             dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any
+             (a row without a grid of the same partner and mode keeps the known dxGrid,
+             as WSJT-X's DX Grid, #11; EnterDxStation sets exactly the grid entered);
              report from the row SNR (ReportRange); rxOffsetHz = row frequency rounded
              to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);

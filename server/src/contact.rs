@@ -593,12 +593,13 @@ impl Engine {
             .as_ref()
             .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()) && c.mode == mode);
         let active = self.contact.as_ref().is_some_and(|c| c.state.active());
-        // Re-selecting the same partner (a row without a grid, e.g. their report)
-        // keeps the grid already known, as WSJT-X keeps its DX Grid (#11).
+        // Re-selecting a decoded row of the same partner without a grid (e.g. their
+        // report) keeps the grid already known, as WSJT-X keeps its DX Grid (#11); a
+        // manual entry sets exactly the grid entered.
         let grid = grid.or_else(|| {
             self.contact
                 .as_ref()
-                .filter(|_| same)
+                .filter(|_| same && origin == Origin::DecodedRow)
                 .and_then(|c| c.dx_grid.clone())
         });
         if active && !same && !replace {
