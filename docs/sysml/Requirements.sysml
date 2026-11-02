@@ -2096,8 +2096,9 @@ package WstxRequirements {
              Others lines "⚠ <message>  <SNR>" newest first (a station within +/-50 Hz of Rx
              and a station calling me, not the partner, no time/DT/frequency), NEXT "▸ next:
              <message>" while armed, and the buttons, all inside the pane (not clipped), the
-             pane at most 250 px high (the earlier pane needed about 380 px for the same
-             contact) and shorter than Band Activity; there is no dialogue, LAST row or
+             pane content at most 250 px high (the earlier pane needed about 380 px for the
+             same contact), and side by side the pane card ends level with Band Activity (no
+             empty band under it, item 8); there is no dialogue, LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
              then enable_tx. Idle, a station on my Rx frequency is a plain line "◂ <message>
              <SNR>" whose double-click sends select_row then enable_tx. When the contact is

@@ -581,9 +581,13 @@ attribute def ActivityOrdering {
         }
         doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
              compact QSO pane (operator decisions 2026-11-02): it shows only the running QSO
-             and nothing else, and takes about half the height the earlier pane needed (its
-             content height; at most 75em wide, where it sits below Band Activity, Band
-             Activity takes the rest; side by side the waterfall/workspace split is unchanged).
+             and nothing else, and its content takes about half the height the earlier pane
+             needed. Item 8 (operator-changeable default, coordinator choice 2026-11-02): at
+             most 75em wide, where the pane sits below Band Activity, the pane is content high
+             and Band Activity takes the freed height; side by side, where Band Activity
+             already fills the column height, the pane card fills its column with the free
+             height at its bottom, so there is no empty band under it; the waterfall/workspace
+             split is unchanged and the Others stay at most two lines.
              A running QSO is a contact with a DX call in replying..signoff
              (WstxContact::ContactState); a contact that is completed, logged or cancelled is
              gone from the pane, which then shows idle.

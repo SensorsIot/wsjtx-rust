@@ -213,8 +213,9 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-qso-head h3{margin:0;font-size:var(--op-font-secondary);color:#7e9bad;letter-spacing:.08em;text-transform:uppercase}
 #rx-focus .op-contact-identity strong{display:block;font:600 1.25rem/1.3 var(--op-mono);color:#e7f3f8;overflow-wrap:anywhere}
 #rx-focus .op-contact-identity div>span{font-size:var(--op-font-secondary);color:#8ba4b6;overflow-wrap:anywhere}
-/* #37 compact QSO pane: its content height (about half the earlier pane), top of its column. */
-#rx-focus{align-self:start;max-height:100%}
+/* #37 compact QSO pane: its content is about half the earlier pane. Side by side the card
+   fills its column (item 8 default: no empty band under it); stacked it is content high. */
+#rx-focus{max-height:100%}
 #rx-focus .op-contact-body{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;min-height:0;flex:0 1 auto;overflow:auto}
 #rx-focus .op-contact-body [hidden]{display:none}
 #rx-focus .ct-line,#rx-focus .ct-others li{margin:0;font:var(--op-font-normal)/1.3 var(--op-mono);white-space:pre-wrap;overflow-wrap:anywhere}

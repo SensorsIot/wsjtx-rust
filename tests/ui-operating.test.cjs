@@ -458,11 +458,17 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.deepEqual(metrics,{x:false,y:false});
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others li:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
-  const heights=await page.evaluate(()=>({pane:document.querySelector('#rx-focus').getBoundingClientRect().height,activity:document.querySelector('#band-activity').getBoundingClientRect().height}));
+  // Content height: the header plus the lines, buttons and fold-out of the pane body.
+  const heights=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect(),body=document.querySelector('#rx-focus .op-contact-body'),cs=getComputedStyle(body);
+    const content=box('#rx-focus .op-qso-head').height+[...body.children].filter(e=>e.getClientRects().length).reduce((h,e)=>Math.max(h,e.getBoundingClientRect().bottom),0)-body.getBoundingClientRect().top+parseFloat(cs.paddingBottom);
+    return {content,pane:box('#rx-focus'),activity:box('#band-activity')};});
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1366x768.png'});
   // The earlier pane needed about 380 px for this contact (at ad2f48bda it filled the 297 px
   // workspace and still clipped the buttons, the result line and the fold-out).
-  assert.ok(heights.pane<=250&&heights.pane<heights.activity-40,`compact pane ${heights.pane} px of ${heights.activity} px`);
+  assert.ok(heights.content<=250&&heights.content<heights.activity.height-40,`compact pane content ${heights.content} px of ${heights.activity.height} px`);
+  // Item 8 default: side by side the card fills its column, level with Band Activity, so no
+  // empty band lies under the pane.
+  assert.ok(Math.abs(heights.pane.bottom-heights.activity.bottom)<=1&&Math.abs(heights.pane.top-heights.activity.top)<=1,`pane ${heights.pane.top}-${heights.pane.bottom}, Band Activity ${heights.activity.top}-${heights.activity.bottom}`);
   // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
   m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,true],['enable_tx',true,undefined]]);
