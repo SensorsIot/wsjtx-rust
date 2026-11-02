@@ -763,6 +763,7 @@ package WstxContact {
         enum out_of_range; enum profile_incomplete; enum transmit_unavailable;
         enum redecode_unavailable; enum log_invalid_field; enum log_conflict;
         enum import_failed; enum storage_unavailable; enum snapshot_limit;
+        enum tx_watchdog; enum operator_required;
     }
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
