@@ -710,6 +710,74 @@ fn official_modern_recording_baselines() {
     );
 }
 
+// Proves: FR-003, FR-004, CL-007-04 (#56). On the recorded corpus the station finds at least
+// the pinned number of the complete-frame decodes of WSJT-X jt9 -8/-5 -d 3; jt9's output is a
+// lower bound, not exhaustive truth (CL-007-03).
+#[test]
+fn recorded_corpus_reaches_jt9_deep_decodes() {
+    const MINIMUM: usize = 380;
+    let reference: Value = serde_json::from_str(include_str!(
+        "../../fixtures/decoder/jt9-deep-reference.json"
+    ))
+    .unwrap();
+    let samples = PathBuf::from(
+        std::env::var_os("WSTX_SAMPLE_DIR").expect("WSTX_SAMPLE_DIR recording cache required"),
+    );
+    let canonical = |text: &str| text.replace(" R -", " R-").replace(" R +", " R+");
+    let decoder = Decoder::new();
+    let (mut found, mut total) = (0, 0);
+    for case in reference["cases"].as_array().unwrap() {
+        let input = case["input"].as_str().unwrap();
+        let file = if input == "WSTX_DECODER_OFFICIAL_FT8" {
+            PathBuf::from(
+                std::env::var_os("WSTX_DECODER_OFFICIAL_FT8")
+                    .expect("WSTX_DECODER_OFFICIAL_FT8 pinned recording required"),
+            )
+        } else {
+            samples.join(input)
+        };
+        let check = Command::new(if cfg!(windows) { "python" } else { "python3" })
+            .args(["-c", "import hashlib,pathlib,sys;assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]"])
+            .arg(&file)
+            .arg(case["sha256"].as_str().unwrap())
+            .output()
+            .unwrap();
+        assert!(check.status.success(), "{input}: recording hash changed");
+        let mode = if case["mode"] == "ft4" {
+            Mode::Ft4
+        } else {
+            Mode::Ft8
+        };
+        let decoded = decoder.decode(&wav(&file), mode, &|| false).unwrap();
+        let mut missing = vec![];
+        for r in case["decodes"].as_array().unwrap() {
+            if r["complete"] != true {
+                continue;
+            }
+            total += 1;
+            let text = r["text"].as_str().unwrap();
+            if decoded.iter().any(|d| {
+                d.payload
+                    .text
+                    .as_deref()
+                    .is_some_and(|t| canonical(t) == text)
+                    && (d.frequency_hz - r["freq"].as_f64().unwrap()).abs() <= 5.
+            }) {
+                found += 1;
+            } else {
+                missing.push(text);
+            }
+        }
+        eprintln!("JT9_PARITY {input}: missing {missing:?}");
+    }
+    eprintln!("JT9_PARITY total {found}/{total}");
+    assert_eq!(total, 409);
+    assert!(
+        found >= MINIMUM,
+        "{found}/{total} jt9 deep decodes found, below {MINIMUM}"
+    );
+}
+
 // Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn release_runtime_and_overlapping_window_history() {
