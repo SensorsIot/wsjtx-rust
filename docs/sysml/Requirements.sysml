@@ -2599,7 +2599,16 @@ package WstxRequirements {
              setup' when the safety revision is above1. A selected plaintext profile
              has no grant authority and therefore never runs the lifecycle (zero CAT
              I/O); its automatic CAT is unavailable by design. Live IC-7300
-             acceptance (TC-022-010) remains outstanding. */
+             acceptance (TC-022-010) remains outstanding.
+             Reconnect restores the selection (operator finding 2026-11-02, another
+             program held the port and released it): when the lifecycle's eligible
+             connection becomes Ready with a confirmed fresh dial while the selection
+             band is unknown, the station adopts that dial as the selection exactly as
+             WstxOperatingReceive S1 ReadbackSelectionAdoption states (exact preferred
+             entry of the station operating mode for one band, origin cat_readback,
+             read-only, no receive restart, no revision advance, never replacing a known
+             selection), so no band choice by hand is needed after startup or a
+             reconnect. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js";
     }
@@ -2653,7 +2662,12 @@ package WstxRequirements {
              snapshot_sequence changes or after a confirmation (no own timer) and
              shows session, CAT and audio/decoder separately. A retained frequency is
              labelled stale/unconfirmed unless the WS is connected and its fact is
-             confirmed in ready. Still target: Thin/Off accounted-traffic companion
+             confirmed in ready. The lifecycle reports a serial open refused because
+             the port is held (Windows access denied or sharing violation, or another
+             station's ownership lock) as error port_in_use, and the browser names it
+             '<port> in use by another program' (for example 'COM3 in use by another
+             program'); other unavailable causes keep radio_unavailable. Still target:
+             Thin/Off accounted-traffic companion
              including these status reads (TC-022-008) and the freeze trace. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
@@ -2817,7 +2831,11 @@ package WstxRequirements {
              immediate startup, exact1/2/4/8/8, reset only on readback, no catch-up,
              disable/revoke/identity cancel, quarantine; scripted CI-V peer through
              the real Actor/Executor: absent/open failure/timeout/removal/return,
-             failed close zero reopen, query-only bytes), server/src/auth_tests.rs
+             failed close zero reopen, query-only bytes; port held by another program
+             reports port_in_use, then its release reconnects and adopts the exact
+             operating-mode dial as the selection with zero setter bytes and unchanged
+             operating revision; a non-matching dial or an already known selection
+             is left unchanged), server/src/auth_tests.rs
              automatic_cat (real grant/commission flow, zero I/O before commission,
              endpoint edit and last-grant revocation release, deprecated routes409
              zero I/O, status retry reason) and tests/radio-selection.test.cjs

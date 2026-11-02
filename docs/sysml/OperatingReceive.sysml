@@ -1041,6 +1041,20 @@ device bytes, connection or revision change. A band action supplies its band. Fr
 readback can resolve that explicit action but does not automatically commit selection
 on a GET. No approximate band classifier or digital-mode inference from RF alone.
 
+ReadbackSelectionAdoption (issue22, operator finding 2026-11-02): while the committed
+selection band is unknown, a CL-022-03/04 automatic lifecycle tick that observes its
+current eligible connection Ready, with a confirmed fresh frequency fact bound to this
+profile, boot, profile revision and connection generation, and no active operation,
+adopts that dial when it EXACTLY equals the preferred entry of the station operating
+mode (WstxContact::StationOperatingMode) for exactly one band. It commits selection
+{mode: operating mode, band, nominal_hz: dial, origin: cat_readback,
+confirmed_command_id: null}. This applies at startup and after every reconnect (radio
+return, released port, cable return). Adoption never infers the mode, never replaces a
+known selection, never sends a setter/PTT byte, never starts/stops/restarts audio or
+decoder, does not advance operating_revision (it is a fact observation, not an
+admission) and does not happen on a GET. A non-matching dial leaves the selection
+unknown and select_band_first applies as before.
+
 **S2. Validation and authority.** These new routes exist only in selected-profile mode;
 environment-only mode returns404not_found. Validation order is route/method, exact
 Origin (GET may omit; mutations require; duplicates/mismatch403), TLS/session401,
@@ -1110,7 +1124,9 @@ are both null or both known and name the same admitted row for that mode. Origin
 unknown|manual|cat_readback. confirmed_command_id is UUID/null for the last successful
 nominal commit, not a claim that the physical dial remains locked. Current digital job
 mode may populate mode without a frequency claim. At startup, fresh readback may resolve
-an explicit action but does not populate committed band/nominal merely from polling.
+an explicit action but does not populate committed band/nominal merely from polling;
+the only automatic commit is S1 ReadbackSelectionAdoption by the CL-022 lifecycle
+(origin cat_readback with confirmed_command_id null).
 
 `available_bands` is a unique array in the12-band strip order of S3 containing only
 preferred entries admitted for selection.mode/backend. Manual uses the same initial

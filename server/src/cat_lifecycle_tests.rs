@@ -214,6 +214,17 @@ pub(crate) struct Peer {
     pub writes: Vec<Vec<u8>>,
     /// Radio transmit state reported by 1C 00 (a #9 transmit owner may release it).
     pub transmitting: bool,
+    /// Dial frequency in Hz answered to 03 (independent BCD encoding below).
+    pub dial: u64,
+}
+/// IC-7300 CI-V frequency: five bytes, two BCD digits each, least significant first.
+fn bcd(hz: u64) -> [u8; 5] {
+    let mut out = [0; 5];
+    for (i, b) in out.iter_mut().enumerate() {
+        let pair = hz / 100u64.pow(i as u32) % 100;
+        *b = ((pair / 10) << 4 | pair % 10) as u8;
+    }
+    out
 }
 struct Port {
     peer: Arc<Mutex<Peer>>,
@@ -235,7 +246,7 @@ impl Transport for Port {
         }
         assert_eq!(&bytes[..4], &[0xfe, 0xfe, 0x94, 0xe0]);
         let reply: Vec<u8> = match &bytes[4..bytes.len() - 1] {
-            [3] => vec![3, 0, 0x40, 7, 7, 0],
+            [3] => [&[3][..], &bcd(peer.dial)].concat(),
             [4] => vec![4, 1, 1],
             [0x1a, 6] => vec![0x1a, 6, 1, 1],
             [0x1c, 0] => vec![0x1c, 0, u8::from(peer.transmitting)],
@@ -303,6 +314,7 @@ pub(crate) fn attach_peer(recording: &Recording, device: Device) -> Arc<Mutex<Pe
         closes: 0,
         writes: Vec::new(),
         transmitting: false,
+        dial: 7_074_000,
     }));
     let physical = peer.clone();
     recording.fixture_cat_transport(Arc::new(move |_, _, _| {
@@ -469,7 +481,8 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
 #[test]
 fn station_open_failure_and_timeout_report_reason_and_release() {
     for (device, reason) in [
-        (Device::Busy, "radio_unavailable"),
+        // Windows access denied / sharing violation: another program holds the port.
+        (Device::Busy, "port_in_use"),
         (Device::Silent, "radio_timeout"),
     ] {
         let s = Station::new(device);
@@ -640,4 +653,102 @@ fn status_for_unobserved_key_is_waiting_not_previous_ready() {
     p.step(&eligible(1), Observed::Ready, t0);
     assert_eq!(p.status_for(&eligible(1)), ("ready", None, None));
     assert_eq!(p.status_for(&eligible(2)), ("waitingForDevice", None, None));
+}
+
+// Proves: CL-022-03, CL-022-05; TC-022-009 (operator finding 2026-11-02). Another program
+// holds COM3, then releases it: the status names the held port, the automatic retry
+// reconnects, and the confirmed dial becomes the selection without any band choice by
+// hand, setter byte, receive restart or operating revision advance.
+#[test]
+fn station_port_released_by_other_program_reconnects_and_restores_selection() {
+    let s = Station::new(Device::Busy);
+    let (_, job, _) = s.recording.fixture_live_job("ft4");
+    s.peer.lock().unwrap().dial = 14_080_000;
+    let gate = eligible(1);
+    let t0 = Instant::now();
+    s.tick(&gate, t0);
+    s.settle(FAILED);
+    s.tick(&gate, secs(t0, 0.1));
+    assert_eq!(
+        s.recording.cat_status(&gate),
+        ("retryWaiting", Some("port_in_use"), Some(1000))
+    );
+    let before = s.recording.selection_snapshot(true).unwrap();
+    assert_eq!(before["selection"]["band"], serde_json::Value::Null);
+    assert_eq!(before["selection"]["origin"], "unknown");
+    // The other program releases the port: the next due attempt reads back.
+    s.set(Device::Present);
+    s.tick(&gate, secs(t0, 1.1));
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 1.2));
+    assert_eq!(s.recording.cat_status(&gate), ("ready", None, None));
+    let after = s.recording.selection_snapshot(true).unwrap();
+    assert_eq!(
+        after["selection"],
+        serde_json::json!({"mode":"ft4","band":"20m","nominal_hz":14_080_000,
+            "origin":"cat_readback","confirmed_command_id":null})
+    );
+    assert_eq!(after["operating_revision"], before["operating_revision"]);
+    assert_eq!(after["receive"]["job_id"], job.as_str(), "receive not restarted");
+    assert_eq!(s.recording.operating_band(), Some("20m"));
+    // Cable removal and return keep the known selection.
+    s.set(Device::Removed);
+    s.settle(FAILED);
+    s.tick(&gate, secs(t0, 10.0));
+    s.set(Device::Present);
+    s.tick(&gate, secs(t0, 11.0));
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 11.1));
+    assert_eq!(
+        s.recording.selection_snapshot(true).unwrap()["selection"]["band"],
+        "20m"
+    );
+    s.assert_read_only();
+}
+
+// The adoption never infers the mode from RF and never replaces a known selection.
+#[test]
+fn station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band() {
+    // 14.074 MHz is the 20 m FT8 entry, but the station operates FT4.
+    let s = Station::new(Device::Present);
+    s.recording.fixture_live_job("ft4");
+    s.peer.lock().unwrap().dial = 14_074_000;
+    let gate = eligible(1);
+    let t0 = Instant::now();
+    s.tick(&gate, t0);
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 0.1));
+    let v = s.recording.selection_snapshot(true).unwrap();
+    assert_eq!(v["radio"]["observations"]["frequency"]["confirmed"], true);
+    assert_eq!(v["selection"]["band"], serde_json::Value::Null);
+    assert_eq!(v["selection"]["origin"], "unknown");
+    // Off any preferred entry: unknown.
+    let s = Station::new(Device::Present);
+    s.peer.lock().unwrap().dial = 14_076_000;
+    s.tick(&gate, t0);
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 0.1));
+    assert_eq!(
+        s.recording.selection_snapshot(true).unwrap()["selection"]["origin"],
+        "unknown"
+    );
+    // A known selection stays.
+    let s = Station::new(Device::Present);
+    s.recording.fixture_band("40m");
+    s.peer.lock().unwrap().dial = 14_074_000;
+    s.tick(&gate, t0);
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 0.1));
+    assert_eq!(s.recording.operating_band(), Some("40m"));
+    // FT8 operating mode at the 40 m FT8 entry: adopted at startup too.
+    let s = Station::new(Device::Present);
+    s.tick(&gate, t0);
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 0.1));
+    let v = s.recording.selection_snapshot(true).unwrap();
+    assert_eq!(v["selection"]["band"], "40m");
+    assert_eq!(v["selection"]["mode"], "ft8");
+    assert_eq!(v["selection"]["nominal_hz"], 7_074_000);
+    assert_eq!(v["receive"]["job_id"], serde_json::Value::Null, "no receive started");
+    s.assert_read_only();
 }

@@ -395,6 +395,10 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
   await page.locator('#cat-confirm').waitFor({state:'hidden',timeout:20000});
   await page.locator('#cat-status[data-condition="retryWaiting"]').waitFor({timeout:30000});
   assert.match(await page.locator('#cat-status').textContent(),/^CAT unavailable · [a-z_]+ · automatic retry in [1-8] s$/);
+  // CL-022-05 (operator finding 2026-11-02): a serial port held by another program
+  // (Windows access denied) is named in the status and its exception chip.
+  const held=await page.evaluate(()=>{catStatus={...catStatus,error:'port_in_use'};catShow();return document.querySelector('#cat-status').textContent;});
+  assert.match(held,/^CAT unavailable · COM250 in use by another program · automatic retry in [0-8] s$/);
   const s=(await request('/receive/selection')).body;assert.ok(s.radio.connection_generation>=1,'the station attempted automatically');
   assert.equal(s.radio.observations.frequency.confirmed,false);
   assert.equal(await page.locator('#op-dial').getAttribute('data-fresh'),'false');
