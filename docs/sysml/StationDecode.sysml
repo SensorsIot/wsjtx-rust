@@ -540,7 +540,9 @@ package WstxOfflineDecode {
              triple family with payload bits 0..28 fixed to the CQ token (c28=2, ipa=0) and
              bits 74..76 to i3=1, at 1.1 times that family's largest |LLR|, through
              Ft8ChannelDecode with those bits fixed; same acceptance. No callsign, contact or
-             other a-priori knowledge; no further fallback decode. FT4 has no a-priori pass.
+             other a-priori knowledge; no further fallback decode. Not yet delivered (#56,
+             later slice): ft4_decode's FT4 CQ pass, and WSJT-X's a1/? marking: a-priori words
+             are published like any other word, with UDP Low confidence false.
              Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
              Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
     }
@@ -699,7 +701,8 @@ package WstxOfflineDecode {
              Threeorderedfamilies, each through Ft8ChannelDecode; accept any word that is
              not the all-zero codeword (ft4_decode has no hard-disagreement cap), H+CRC.
              Failedwordcontinues;
-             no4thfallback. Sourceunsupported/invalidstatusretained, noAP/semanticprior. */
+             no4thfallback. Sourceunsupported/invalidstatusretained, no semanticprior. The FT4
+             CQ a-priori pass of ft4_decode is not yet delivered (#56, later slice). */
     }
     action def Ft4SubtractVerifiedFrame {
         in source : ModemSampleWindow;

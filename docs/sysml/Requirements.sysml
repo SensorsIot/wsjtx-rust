@@ -1845,7 +1845,7 @@ package WstxRequirements {
             verify 'FR-004';
             verify 'FR-018';
         }
-        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes";
+        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word";
     }
     verification 'TC-004-003' {
         doc /* TC-004-003 — Invalid and nonmatching input
