@@ -608,6 +608,12 @@ struct Inner {
     #[cfg(test)]
     fault: Option<&'static str>,
 }
+/// (records revision, country table, worked set of that log and table).
+type WorkedCache = (
+    u64,
+    std::sync::Arc<crate::dxcc::Cty>,
+    std::sync::Arc<crate::dxcc::Worked>,
+);
 pub struct Logbook {
     directory: PathBuf,
     inner: Mutex<Inner>,
@@ -615,7 +621,8 @@ pub struct Logbook {
     dxcc: Mutex<DxccState>,
     /// #55 the worked set of the log for (records revision, country table), rebuilt only
     /// when either changes: /receive/results reads it on every page.
-    worked_set: Mutex<Option<(u64, usize, std::sync::Arc<crate::dxcc::Worked>)>>,
+    /// The table is held (not its address), so a later table can never match it.
+    worked_set: Mutex<Option<WorkedCache>>,
 }
 struct DxccState {
     table: crate::dxcc::Table,
@@ -962,11 +969,11 @@ impl Logbook {
     /// #55 WorkedBefore of the stored log against the current country table (cached).
     pub fn worked_set(&self) -> Result<std::sync::Arc<crate::dxcc::Worked>, StoreError> {
         let (table, _) = self.dxcc();
-        let key_table = std::sync::Arc::as_ptr(&table.cty) as usize;
         let (revision, logged) = {
             let inner = self.lock()?;
             if let Some((r, t, w)) = &*self.worked_set.lock().unwrap_or_else(|p| p.into_inner())
-                && (*r, *t) == (inner.revision, key_table)
+                && *r == inner.revision
+                && std::sync::Arc::ptr_eq(t, &table.cty)
             {
                 return Ok(w.clone());
             }
@@ -983,7 +990,7 @@ impl Logbook {
         };
         let worked = std::sync::Arc::new(crate::dxcc::Worked::from_log(&table, &logged));
         *self.worked_set.lock().unwrap_or_else(|p| p.into_inner()) =
-            Some((revision, key_table, worked.clone()));
+            Some((revision, table.cty.clone(), worked.clone()));
         Ok(worked)
     }
     /// #55 the country table in use and whether an uploaded file was unreadable.

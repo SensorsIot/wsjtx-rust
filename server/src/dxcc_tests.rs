@@ -391,3 +391,46 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
         ])
     );
 }
+
+// Proves: TC-055-002 the cached worked set follows every country-table change: after
+// repeated uploads (freed tables whose memory may be reused) the set is always the one
+// of the current table.
+#[test]
+fn tc_055_002_worked_set_follows_each_uploaded_table() {
+    let dir =
+        std::env::temp_dir().join(format!("wstx-dxcc-{}", crate::profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let log = crate::logbook::Logbook::open(&dir);
+    let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(publish()) };
+    let adi = "<call:4>TT1A <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>\n";
+    let id = crate::profile::new_uuid().unwrap();
+    let sha: String = ring::digest::digest(&ring::digest::SHA256, adi.as_bytes())
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let now = std::time::Instant::now();
+    log.reserve(&id, adi.len() as u64, &sha, now).unwrap();
+    log.chunk(&id, 0, adi.len() as u64, adi.as_bytes(), now, &open)
+        .unwrap();
+    for round in 0..20 {
+        // Each table names the TT entity differently; the logged TT1A is always in it.
+        let text = format!("Land{round}:  14:  28:  EU:  1.00:  -2.00:  -1.0:  TT:\n    TT;\n");
+        log.replace_dxcc(Some(&text), &open).unwrap();
+        // Read on every other upload only: the table read last time is freed by the
+        // upload between, so its memory may be reused by the next one.
+        if round % 2 == 1 {
+            continue;
+        }
+        let (table, _) = log.dxcc();
+        let w = log.worked_set().unwrap();
+        let entity = table.lookup("TT2B").unwrap();
+        assert_eq!(entity.name, format!("Land{round}"));
+        assert!(
+            !w.flags("TT2B", None, Some(&entity), Some("20m"))
+                .contains(&"new_dxcc"),
+            "round {round}: the worked set is the current table's"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
