@@ -1,7 +1,8 @@
 package WstxUdp {
     private import ScalarValues::*;
     doc /* Canonical contract of the WSJT-X-compatible UDP interface with multiple targets
-         (issue #40, CL-040-01..04 in WstxRequirements; verification TC-012-001..004).
+         (issue #40, CL-040-01..05 in WstxRequirements; IPv6 multicast issue #46,
+         CL-040-06; verification TC-012-001..006).
          Nothing here is an execution result.
 
          Normative reference: WSJT-X v3.3.0-beta5 source Network/NetworkMessage.hpp
@@ -16,8 +17,9 @@ package WstxUdp {
             datagram carries schema 3 (MessageClient negotiation), Heartbeat maximum
             schema 3. For every field type used here schema 2 (Qt_5_2) and 3 (Qt_5_4)
             serialize identically.
-         D2 Targets: any number up to targetsMax, each its own UDP socket, unicast or IPv4
-            multicast with TTL and an optional interface address; per-target message
+         D2 Targets: any number up to targetsMax, each its own UDP socket, unicast, IPv4
+            multicast with TTL and an optional interface address, or IPv6 multicast (D6);
+            per-target message
             selection (default all) and accept_commands (default off). Default list: one
             target 127.0.0.1:2237, enabled, all messages, accept_commands off.
          D3 Safety: Halt Tx always acts, from any source, whether or not accept_commands
@@ -28,10 +30,19 @@ package WstxUdp {
          D5 Location (11) sets a session-only grid (CL-040-05): it replaces the profile
             locator for Status, generated messages and the log's my_gridsquare until the
             process restarts and is never saved to the profile.
-         D6 Scope of this slice: IPv6 multicast targets are refused (CL-040-06, target,
-            issue #46); the
-            Settings UI is #37's; Close is sent when a target is disabled or removed (the
-            station has no graceful-shutdown path). */
+         D6 IPv6 multicast (CL-040-06, issue #46 defaults, 2026-11-02; operator not asked,
+            standing instruction): a group of ff00::/8 with a hop limit (multicast_ttl,
+            1..255) and an interface given by its index (multicast_interface, decimal
+            text). Interface names are refused: resolving a name to an index on Windows
+            needs native FFI outside the permitted unsafe boundaries (Project-Specifics),
+            and getaddrinfo does not resolve scope names. Scope 0 and 15 (reserved,
+            RFC 4291 2.7) are refused; interface-local (1) and link-local (2) groups exist
+            on one interface only and need the index; wider scopes may leave it null (the
+            system's default interface). accept_commands stays refused as for IPv4
+            multicast. An index no interface has is admitted and shows the target
+            socket_unavailable.
+         D7 The Settings UI is #37's; Close is sent when a target is disabled or removed
+            (the station has no graceful-shutdown path). */
 
     attribute def UdpWire {
         attribute magic : String = "0xADBCCBDA";
@@ -69,10 +80,16 @@ package WstxUdp {
         assert constraint ttlRange { multicastTtl >= 1 and multicastTtl <= 255 }
         doc /* Wire keys exactly address, enabled, multicast_ttl, multicast_interface,
              messages, accept_commands, all required. address: "a.b.c.d:port" or
-             "[v6]:port", port 1..65535; unspecified, 255.255.255.255 and IPv6 multicast
-             are refused; an address is unique in the list (it is the target's identity).
-             multicast_ttl 1..255 and multicast_interface (null or an IPv4 address) apply
-             only to an IPv4 multicast address (224.0.0.0/4); accept_commands true is
+             "[v6]:port", port 1..65535; unspecified, 255.255.255.255 and an IPv6
+             multicast group of scope 0 or 15 are refused; an address is unique in the
+             list (it is the target's identity). multicast_ttl 1..255 is the TTL of an
+             IPv4 multicast address (224.0.0.0/4) and the hop limit of an IPv6 multicast
+             address (ff00::/8). multicast_interface is null or, for an IPv6 multicast
+             address, an interface index as decimal text 1..4294967295 without sign or
+             leading zero (D6); for any other address, an IPv4 address (unchanged from
+             #40, so a saved file keeps loading); an IPv6 multicast group of
+             scope 1 or 2 requires it. Both apply only to a multicast address;
+             accept_commands true is
              refused for a multicast address (a command's source is a host, never the
              group, so it could never act). messages: unique names of
              OutboundMessage, any order, stored in the enum order; empty sends nothing. */
@@ -107,7 +124,11 @@ package WstxUdp {
         doc /* Each enabled target has its own UDP socket, bound to the loopback address of
              the target's family for a loopback target and to the unspecified address
              otherwise, ephemeral port; an IPv4 multicast target sets multicast_ttl and,
-             when given, multicast_interface. A message type is sent to a target only when
+             when given, multicast_interface (IP_MULTICAST_TTL, IP_MULTICAST_IF); an IPv6
+             multicast target sets the hop limit and, when given, the interface index
+             (IPV6_MULTICAST_HOPS, IPV6_MULTICAST_IF); multicast loopback is on. A socket
+             option the system refuses leaves the target inactive with socket_unavailable.
+             A message type is sent to a target only when
              selected. The station step runs every 50 ms whether or not a browser is
              connected.
              Heartbeat (0): id, maximum schema 3, version (the station version), revision
