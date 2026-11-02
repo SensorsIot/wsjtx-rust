@@ -842,7 +842,9 @@ $('se-save').addEventListener('click',async()=>{
   $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;
   if(ok){drafts=structuredClone(config().strategies);renderEditor();}
 });
-addEventListener('station-ready',()=>{loadStrategy().then(showContinent);});
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')loadStrategy();
+// Read once per socket (a status refresh on the same socket reads nothing: Thin link).
+let strategySocket=null;
+addEventListener('station-ready',event=>{if(event.detail===strategySocket&&view)return;strategySocket=event.detail;loadStrategy();});
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){strategySocket=socket;loadStrategy();}
 show();
 })();
