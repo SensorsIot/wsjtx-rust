@@ -360,6 +360,9 @@ pub struct Contact {
     pub last_counted_end: Option<i64>,
     /// Set at completion when the contact was handed to the log (once per contact).
     pub logged_on_completion: bool,
+    /// With Auto Seq off: the message Auto Seq would send next after the latest counted
+    /// partner message (e.g. Tx5 after their RR73), offered to the operator (#11).
+    pub suggested: Option<Slot>,
 }
 impl Contact {
     /// WstxContact::LogRecord start time (MW set_dateTimeQSO).
@@ -637,6 +640,7 @@ impl Engine {
             first_tx3_period: None,
             last_counted_end: None,
             logged_on_completion: false,
+            suggested: None,
         });
         self.settings.report = report;
         Ok(())
@@ -790,6 +794,7 @@ impl Engine {
                     return Err("invalid_message");
                 }
                 c.next = slot;
+                c.suggested = None;
                 // A finished (completed or cancelled) contact is never reopened by a
                 // slot choice; Enable Tx then starts a fresh own-CQ contact.
                 if !matches!(c.state, State::Completed | State::Cancelled) {
@@ -936,6 +941,7 @@ impl Engine {
                         first_tx3_period: None,
                         last_counted_end: None,
                         logged_on_completion: false,
+                        suggested: None,
                     });
                 }
             }
@@ -1122,8 +1128,16 @@ impl Engine {
                             .max(period + period_ms(row.mode)),
                     );
                     if !auto {
+                        // Auto Seq off: nothing changes, but the step Auto Seq would take
+                        // is offered (e.g. Tx5 after an RR73), never silently dropped.
+                        if let Some(next) = transition(c.state, received)
+                            .filter(|s| *s != State::Completed && s.slot() != c.next)
+                        {
+                            c.suggested = Some(next.slot());
+                        }
                         continue;
                     }
+                    c.suggested = None;
                     if let Some(next) = transition(c.state, received) {
                         if next == State::Completed {
                             self.complete(core.as_deref_mut(), now);

@@ -373,7 +373,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
-            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false},
+            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5"},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
         "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
@@ -636,7 +636,8 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "messages",
             "start_utc",
             "end_utc",
-            "saved"
+            "saved",
+            "suggested_slot"
         ])
     );
     assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
@@ -891,6 +892,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         first_tx3_period: Some(P + 22_500),
         last_counted_end: Some(P + 45_000),
         logged_on_completion: true,
+        suggested: None,
     };
     let record = contact_http::Station::record_of(
         &c,
@@ -1324,7 +1326,9 @@ async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73
     )[0];
     f.tick();
     let row = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":cq});
-    let (s, v) = f.send("select_row", json!({"row":row,"replace":false})).await;
+    let (s, v) = f
+        .send("select_row", json!({"row":row,"replace":false}))
+        .await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
     let state = |snap: &Value| {
         (

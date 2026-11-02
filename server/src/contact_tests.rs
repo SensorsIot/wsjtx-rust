@@ -1,4 +1,4 @@
-﻿#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10, CL-010-12; TC-007-001, TC-008-001, TC-011-001.
 // (#41 DirectLog: the contacts the engine hands to the log.)
 // The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
@@ -1525,6 +1525,75 @@ fn ft4_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
         last: "RR73",
     };
     assert_replay(Mode::Ft4, &r, &late);
+}
+// The live 13:44-13:46 record with Auto Seq off: the partner's +10 and RR73s are
+// counted (report and TIME_OFF) but change nothing, so Tx3 repeats as observed; the
+// engine offers Tx5 instead of dropping the RR73, and choosing it sends 73 once.
+#[test]
+fn auto_seq_off_offers_tx5_after_the_partners_rr73_and_choosing_it_completes() {
+    let mut s = station();
+    s.mode = Mode::Ft4;
+    let len = period_ms(Mode::Ft4);
+    s.command(Command::SetAutoSeq(false)).unwrap();
+    s.fake.0.now.store(P0 + 7_000, Ordering::SeqCst);
+    let cq = s.row(P0, "CQ IW9FRA JM68", 1838.0, Some(10.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(P0 + 2 * len + 7_000);
+    let report = s.row(P0 + 2 * len, "HB9BLA IW9FRA +10", 1838.0, Some(10.0));
+    s.deliver(&[report]);
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!(
+        (c.state, c.next),
+        (State::Replying, Slot::Tx1),
+        "Auto Seq off"
+    );
+    assert_eq!(
+        c.suggested,
+        Some(Slot::Tx3),
+        "Tx3 offered after their report"
+    );
+    // The operator chooses Tx3 (late start in the open window).
+    s.run(P0 + 2 * len + 7_400);
+    s.command(Command::ChooseNext(Slot::Tx3)).unwrap();
+    assert_eq!(s.engine.contact.as_ref().unwrap().suggested, None);
+    for n in [6, 8] {
+        s.run(P0 + n * len + 7_000);
+        let rr73 = s.row(P0 + n * len, "HB9BLA IW9FRA RR73", 1838.0, Some(17.0));
+        s.deliver(&[rr73]);
+        let c = s.engine.contact.clone().unwrap();
+        assert_eq!((c.state, c.next), (State::RogerReport, Slot::Tx3));
+        assert_eq!(c.suggested, Some(Slot::Tx5), "Tx5 offered, never dropped");
+        assert_eq!(
+            c.last_counted_end,
+            Some(P0 + (n + 1) * len),
+            "counted: TIME_OFF"
+        );
+    }
+    s.command(Command::ChooseNext(Slot::Tx5)).unwrap();
+    s.run(P0 + 12 * len);
+    let sent: Vec<_> = s
+        .sent
+        .iter()
+        .map(|(p, t)| ((p - P0) / len, t.clone()))
+        .collect();
+    assert_eq!(
+        sent,
+        [
+            (1, "IW9FRA HB9BLA JN47"),
+            (3, "IW9FRA HB9BLA R+10"),
+            (5, "IW9FRA HB9BLA R+10"),
+            (7, "IW9FRA HB9BLA R+10"),
+            (9, "IW9FRA HB9BLA 73"),
+        ]
+        .map(|(n, t)| (n, t.to_string()))
+    );
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    assert_eq!(one_entry(&mut s).0, LogKind::Completion);
 }
 #[test]
 fn ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {

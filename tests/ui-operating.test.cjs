@@ -346,6 +346,40 @@ const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'sele
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
+// Proves: CL-011-03; TC-007-008 (#11 live stall 2026-11-02, IW9FRA): with Auto Seq off the
+// QSO pane says so, and the partner's RR73 in roger_report offers 73 as one action.
+test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout:40000},async t=>{
+  const commands=[];let contact=null,settings={auto_seq:false};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,settings})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
+  const iw9fra=['IW9FRA HB9BLA JN37','IW9FRA HB9BLA +10','IW9FRA HB9BLA R+10','IW9FRA HB9BLA RR73','IW9FRA HB9BLA 73','CQ HB9BLA JN37'];
+  const show=async next=>{contact=next;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(s=>window.wstxContact.snapshot().contact?.suggested_slot===s,next.suggested_slot);};
+  await show(partner('roger_report',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx3',tx4:'rr73',messages:iw9fra,suggested_slot:null}));
+  assert.equal(await shown(page,'#qso-autoseq'),true,'Auto Seq off is on the pane');
+  assert.match(await page.locator('#qso-autoseq-text').textContent(),/^Auto Seq off/);
+  assert.match(await page.locator('#contact-state').textContent(),/Auto Seq off/);
+  assert.equal(await shown(page,'#qso-suggest'),false,'nothing offered before their RR73');
+  // Their RR73 was counted: the engine offers Tx5; one click chooses it and arms (Reply).
+  await show({...contact,suggested_slot:'tx5'});
+  assert.equal(await page.locator('#qso-suggest').textContent(),'Send IW9FRA HB9BLA 73 next');
+  assert.match(await page.locator('#qso-autoseq-text').textContent(),/IW9FRA expects$/);
+  await page.locator('#qso-suggest').click();
+  for(let i=0;i<40&&commands.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.map(c=>[c.action,c.slot??c.enabled]),[['choose_next','tx5'],['enable_tx',true]]);
+  await page.locator('#qso-autoseq-on').click();
+  for(let i=0;i<40&&commands.length<3;i++)await page.waitForTimeout(50);
+  assert.deepEqual([commands[2].action,commands[2].enabled],['set_auto_seq',true]);
+  // Auto Seq on and nothing offered: the line is gone.
+  settings={auto_seq:true};await show({...contact,suggested_slot:null});
+  await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
+  assert.doesNotMatch(await page.locator('#contact-state').textContent(),/Auto Seq off/);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-010-16; TC-007-009 one fixed laptop screen and phone safety.
 test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating items',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});

@@ -361,6 +361,11 @@ package WstxContact {
              counted while my Tx3 is already pending for the next period replaces that
              request with Tx5 until its audio starts; after the audio start the Tx3 of
              that period is sent and Tx5 follows in my next period (TransmitSubmission).
+             With Auto Seq off a counted partner message changes no state (it still
+             updates the received report and TIME_OFF); the step Auto Seq would take is
+             offered as ContactSnapshot suggested_slot and the QSO pane shows the Auto
+             Seq state and that offer, so a signed-off partner is never silently
+             answered with a repeat (#11 live stall 2026-11-02).
              Messages not in the table
              (grid in report.., 73 in signoff, anything after completed/cancelled)
              change nothing.
@@ -847,8 +852,12 @@ package WstxContact {
              settings exactly {auto_seq,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,saved} (report_sent the
-             report of the last transmitted Tx2/Tx3 rendered, null until one is sent)
+             tx4,messages,start_utc,end_utc,saved,suggested_slot} (report_sent the
+             report of the last transmitted Tx2/Tx3 rendered, null until one is sent;
+             suggested_slot null or the slot AutoSequence would select after the latest
+             counted partner message while Auto Seq is off, e.g. tx5 after their RR73 in
+             rogerReport; the state and next slot do not change, the QSO pane offers it,
+             and choose_next clears it; null outside replying..signoff, #11)
              with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
              when contacts.adi holds the contact's record; log (DirectLog) null until a
