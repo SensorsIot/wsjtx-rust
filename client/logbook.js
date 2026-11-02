@@ -1,16 +1,16 @@
 'use strict';
-// CR #10 contact log (WstxContact::OfferLogReview, SaveContact, ContactHistory, ImportAdi,
-// ExportAdi, WorkedBeforeQuery). The server owns the log, its identities, times and
-// worked-before status; this browser renders confirmed responses and sends requests.
+// CR #10 contact log (WstxContact::ContactHistory, ImportAdi, ExportAdi, WorkedBeforeQuery).
+// The server owns the log, its identities, times and worked-before status, and logs each
+// completed QSO itself (DirectLog, #41: no review form); this browser renders confirmed
+// responses and sends requests.
 (()=>{
 const region=document.querySelector('#region-logbook .op-secondary-body');
 if(!region)return;
 for(const node of [...region.childNodes].slice(1))node.remove();
-region.querySelector('p').textContent='Contacts saved in this station profile\u2019s contacts.adi (ADIF 3.1.8). History is read-only.';
-const fieldDefinitions=[['call','DX call'],['gridsquare','DX grid'],['rst_sent','Report sent'],['rst_rcvd','Report received'],['qso_date','Date on (UTC, YYYYMMDD)'],['time_on','Time on (UTC, HHMMSS)'],['qso_date_off','Date off (UTC, YYYYMMDD)'],['time_off','Time off (UTC, HHMMSS)'],['tx_pwr','Power (W)'],['comment','Comment']];
-region.insertAdjacentHTML('beforeend',`<section id="log-review" hidden aria-labelledby="log-review-title"><h3 id="log-review-title">Log QSO</h3><p id="log-review-worked" role="status"></p><form id="log-review-form" novalidate>${fieldDefinitions.map(([key,label])=>`<label>${label}<input id="log-field-${key}" name="${key}" autocomplete="off" aria-describedby="log-error-${key}"></label><p id="log-error-${key}" class="log-field-error" role="alert"></p>`).join('')}<p id="log-review-fixed"></p><label class="op-check"><input type="checkbox" id="log-retain-power">Retain power for the next review</label><label class="op-check"><input type="checkbox" id="log-retain-comment">Retain comment for the next review</label><button type="submit" class="op-primary" id="log-review-save">Save contact</button> <button type="button" id="log-review-close">Close review</button><p id="log-review-result" role="status"></p></form></section><h3>Saved contacts</h3><p id="log-history-status" role="status">History not loaded</p><ol id="log-history"></ol><button type="button" id="log-history-older" disabled>Older contacts</button> <button type="button" id="log-history-newer" disabled>Newer contacts</button> <button type="button" id="log-history-refresh">Reload history</button><h3>ADIF interchange</h3><label>ADIF file (.adi)<input id="log-import-file" type="file" accept=".adi,.adif,text/plain"></label><button type="button" id="log-import">Import ADIF</button> <button type="button" id="log-export">Export ADIF</button><p id="log-import-status" role="status"></p>`);
+region.querySelector('p').textContent='Contacts logged in this station profile\u2019s contacts.adi (ADIF 3.1.8). Each completed QSO is logged automatically; history is read-only.';
+region.insertAdjacentHTML('beforeend',`<h3>Logged contacts</h3><p id="log-history-status" role="status">History not loaded</p><ol id="log-history"></ol><button type="button" id="log-history-older" disabled>Older contacts</button> <button type="button" id="log-history-newer" disabled>Newer contacts</button> <button type="button" id="log-history-refresh">Reload history</button><h3>ADIF interchange</h3><label>ADIF file (.adi)<input id="log-import-file" type="file" accept=".adi,.adif,text/plain"></label><button type="button" id="log-import">Import ADIF</button> <button type="button" id="log-export">Export ADIF</button><p id="log-import-status" role="status"></p>`);
 const $=id=>document.getElementById(id);
-for(const el of region.querySelectorAll('#log-history,#log-review-fixed,#log-import-status,#log-review-result'))el.style.overflowWrap='anywhere';
+for(const el of region.querySelectorAll('#log-history,#log-import-status'))el.style.overflowWrap='anywhere';
 const uuid=()=>crypto.randomUUID();
 const station=()=>profileData&&{profile_id:profileData.profile_id,boot_id:profileData.boot_id};
 async function call(path,options={}){
@@ -28,46 +28,6 @@ async function worked(band,mode,calls){
   if(!response.ok||!Array.isArray(data?.statuses))throw new Error(data?.error?.code??'worked_unavailable');
   return new Map(data.statuses.map(entry=>[entry.call,entry.status]));
 }
-
-// ---------------------------------------------------------------- review
-let review=null,retained={tx_pwr:null,comment:null},saving=false;
-function input(key){return $(`log-field-${key}`);}
-function clearErrors(){for(const [key] of fieldDefinitions){$(`log-error-${key}`).textContent='';input(key).removeAttribute('aria-invalid');}}
-function openReview(prefill){
-  review={record:{...prefill},commandId:null,outcome:'unsaved'};
-  if($('log-retain-power').checked&&retained.tx_pwr!==null)review.record.tx_pwr=retained.tx_pwr;
-  if($('log-retain-comment').checked&&retained.comment!==null)review.record.comment=retained.comment;
-  for(const [key] of fieldDefinitions)input(key).value=review.record[key]??'';
-  const r=review.record;
-  $('log-review-fixed').textContent=`Mode ${r.submode??r.mode} \u00b7 Band ${r.band??'unknown'} \u00b7 Frequency ${r.freq===null||r.freq===undefined?'unconfirmed':r.freq+' MHz'} \u00b7 Station ${r.station_callsign}${r.my_gridsquare?' '+r.my_gridsquare:''} \u00b7 Contact ${r.contact_id}`;
-  $('log-review-result').textContent='Unsaved';clearErrors();$('log-review').hidden=false;$('log-review-worked').textContent='Worked-before status unknown';
-  showRegion('logbook');input('call').focus();
-  const mode=r.mode==='MFSK'?r.submode:r.mode;
-  worked(r.band,mode,[r.call]).then(map=>{if(map&&review?.record.contact_id===r.contact_id)$('log-review-worked').textContent=statusText[map.get(r.call.toUpperCase())]??'Worked-before status unknown';}).catch(()=>{});
-}
-$('log-review-close').addEventListener('click',()=>{$('log-review').hidden=true;});
-$('log-review-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(!review||saving)return;
-  const s=station();if(!s){$('log-review-result').textContent='Not saved \u00b7 station profile unavailable';return;}
-  const record={...review.record};
-  for(const [key] of fieldDefinitions){const value=input(key).value.trim();record[key]=value===''?null:(key==='call'?value.toUpperCase():value);}
-  clearErrors();saving=true;$('log-review-save').disabled=true;$('log-review-result').textContent='Saving \u00b7 waiting for the station';
-  review.commandId=uuid();
-  try{
-    const {response,data}=await call('/contacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...s,command_id:review.commandId,record})});
-    if(response.status===201||response.status===200){
-      review.outcome='saved';retained={tx_pwr:record.tx_pwr,comment:record.comment};
-      $('log-review-result').textContent=data.outcome==='already_saved'?'Saved (this contact was already in the log)':'Saved to contacts.adi';
-      loadHistory(null);
-    }else{
-      const code=data?.error?.code??'request_failed',field=data?.error?.field;
-      const key=typeof field==='string'&&field.startsWith('record.')?field.slice(7):null;
-      if(code==='log_invalid_field'&&key&&input(key)){input(key).setAttribute('aria-invalid','true');$(`log-error-${key}`).textContent='Invalid value';input(key).focus();}
-      $('log-review-result').textContent=code==='log_conflict'?'Not saved \u00b7 this contact is already logged with different values':code==='storage_unavailable'?'Not saved \u00b7 storage unavailable \u00b7 retry saves the same contact once':`Not saved \u00b7 ${code}`;
-    }
-  }catch(error){$('log-review-result').textContent=`Save outcome unknown \u00b7 ${error.message} \u00b7 retry saves the same contact once`;}
-  finally{saving=false;$('log-review-save').disabled=false;}
-});
 
 // ---------------------------------------------------------------- history
 let cursor=null,total=0;const page=10;
@@ -156,7 +116,7 @@ function annotate(body,records){
 // Observe the rendered rows instead of changing recording.js (its served source is pinned).
 const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
-window.wstxLogbook=Object.freeze({openReview,annotate,loadHistory});
+window.wstxLogbook=Object.freeze({annotate,loadHistory});
 // Annotate rows already shown when this client arrives.
 if(activity)annotate(activity,resultRows);
 })();

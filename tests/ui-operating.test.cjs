@@ -329,13 +329,13 @@ const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
 async function shown(page,selector){return page.locator(selector).first().evaluate(el=>el.checkVisibility({visibilityProperty:true}));}
-function contactSnapshot(base,{contact=null,transmit={},settings={}}={}){
-  return {v:1,profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.revision??3,snapshot_sequence:base.sequence??3,monotonic_ms:1000,utc_ms:Date.now(),review:null,
+function contactSnapshot(base,{contact=null,transmit={},settings={},log=null}={}){
+  return {v:1,profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.revision??3,snapshot_sequence:base.sequence??3,monotonic_ms:1000,utc_ms:Date.now(),log,
     transmit:{capability:'available',arm_state:'disarmed',last_disarm_cause:'startup',tune:false,pending_sequence:null,last_text:null,last_period_utc:null,halt_state:'idle',safety_revision:7,refusal:null,...transmit},
     settings:{auto_seq:true,tx1_skip:false,tx_minutes:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
     contact,watchdog:{tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:0}};
 }
-const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,offered_for_log:false,saved:false,...extra});
+const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,...extra});
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
@@ -933,37 +933,47 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-04, CL-010-13; TC-011-001/TC-011-002 browser subset. Actual server and
-// Chromium: Log QSO review with power/comments, history, ADI import/export controls.
-test('TC-011-001 Log QSO review saves once with power and comment and shows worked-before',{timeout:30000},async t=>{
- const {page,app,errors}=await fixture(t,{width:1200,height:900});
- const posts=[];page.on('request',r=>{if(r.method()!=='GET')posts.push(new URL(r.url()).pathname);});
- await page.waitForFunction(()=>profileData&&window.wstxLogbook);
+// Proves: CL-010-04; TC-011-001 browser subset (#41 DirectLog). Actual server and
+// Chromium with the contact snapshot answered by the test: a completed contact opens no
+// review form and the browser never saves; Log QSO is one open_log command; the QSO pane
+// shows the server's log outcome; an open Logbook page lists a newly logged record by
+// itself. The record is stored through the server's own SaveContact route, standing in
+// for the server-side DirectLog store, which contact_http/udp tests prove.
+test('TC-011-001 completed QSOs log without a review and the open Logbook lists them live',{timeout:30000},async t=>{
+ let snapshot={contact:null,log:null};const commands=[],posts=[];
+ const {page,app,errors}=await fixture(t,{width:1200,height:900},{beforeNavigate:async(p,app)=>{
+   const base=await (await fetch(app.origin+'/profile')).json();
+   await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,snapshot)}));
+   await contactCommands(p,commands);
+   p.on('request',r=>{if(r.method()!=='GET')posts.push(new URL(r.url()).pathname);});
+ }});
+ await page.waitForFunction(()=>profileData&&window.wstxLogbook&&window.wstxContact?.snapshot(),null,{timeout:25000});
+ const profile=await (await fetch(app.origin+'/profile')).json();
+ const contact=partner('completed',{report_rcvd:'-05'});
+ snapshot={contact,log:null};await page.evaluate(()=>window.wstxContact.load());
+ await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='completed');
+ assert.equal(await page.locator('#operating-workspace').isVisible(),true,'no review page opens at completion');
+ assert.equal(await page.locator('#log-review, #log-review-form, [id^=log-field-]').count(),0,'the review form is retired');
+ assert.equal(await page.locator('#contact-discard').count(),0);
+ await page.getByRole('button',{name:'Log QSO'}).click();
+ await page.locator('#contact-result',{hasText:'Log QSO: accepted'}).waitFor();
+ assert.deepEqual(commands.map(c=>c.action),['open_log'],'Log QSO is one open_log command');
+ assert.deepEqual(Object.keys(commands[0]).sort(),['action','boot_id','command_id','contact_revision','profile_id','v']);
+ assert.equal(await page.locator('#operating-workspace').isVisible(),true,'Log QSO opens no form');
+ snapshot={contact,log:{contact_id:contact.id,call:'K1ABC',outcome:'unsaved',error:'storage_unavailable'}};await page.evaluate(()=>window.wstxContact.load());
+ await page.locator('#contact-logged',{hasText:'Not logged K1ABC \u00b7 storage unavailable \u00b7 retrying'}).waitFor();
  await page.locator('#station-bar [data-region="logbook"]').click();
  await page.locator('#log-history-status',{hasText:'No contacts saved yet'}).waitFor();
- assert.deepEqual(posts,[],'opening the log only reads history');
- const prefill={contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:'FN42',mode:'FT8',submode:null,rst_sent:'-12',rst_rcvd:'-05',qso_date:'20261031',time_on:'123015',qso_date_off:'20261031',time_off:'123200',band:'20m',freq:'14.075500',station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null};
- await page.evaluate(p=>window.wstxLogbook.openReview(p),prefill);
- assert.equal(await page.locator('#log-review').isVisible(),true);
- await page.locator('#log-review-worked',{hasText:'Not worked before'}).waitFor();
- assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true,'the review never hides Halt Tx');
- await page.getByLabel('Power (W)',{exact:true}).fill('-1');await page.getByRole('button',{name:'Save contact'}).click();
- await page.locator('#log-review-result',{hasText:'Not saved'}).waitFor();
- assert.equal(await page.getByLabel('Power (W)',{exact:true}).getAttribute('aria-invalid'),'true','invalid field refused beside the field');
- assert.match(await page.locator('#log-error-tx_pwr').innerText(),/Invalid value/);
- await page.getByLabel('Power (W)',{exact:true}).fill('10');await page.getByLabel('Comment',{exact:true}).fill('Tnx QSO 73');
- await page.getByRole('button',{name:'Save contact'}).click();
- await page.locator('#log-review-result',{hasText:'Saved to contacts.adi'}).waitFor();
- await page.getByRole('button',{name:'Save contact'}).click();
- await page.locator('#log-review-result',{hasText:'already in the log'}).waitFor();
- await page.locator('#log-history li').first().waitFor();
- assert.match(await page.locator('#log-history').innerText(),/K1ABC .*10 W .*Tnx QSO 73/);
- const history=await (await fetch(app.origin+'/contacts')).json();
- assert.equal(history.total,1,'exactly one record for the contact identity');
- assert.equal(history.records[0].tx_pwr,'10');assert.equal(history.records[0].comment,'Tnx QSO 73');
- await page.evaluate(p=>window.wstxLogbook.openReview({...p,contact_id:crypto.randomUUID()}),prefill);
- await page.locator('#log-review-worked',{hasText:'Worked before on this band and mode'}).waitFor();
- assert.equal(posts.filter(p=>p==='/contacts').length,3);assert.ok(posts.every(p=>['/contacts','/contact/worked'].includes(p)),posts.join());
+ // The server stores the record; the snapshot then reports it saved.
+ const record={contact_id:contact.id,call:'K1ABC',gridsquare:'FN42',mode:'FT8',submode:null,rst_sent:'-12',rst_rcvd:'-05',qso_date:'20261031',time_on:'123015',qso_date_off:'20261031',time_off:'123200',band:'20m',freq:'14.075500',station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null};
+ const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record})});
+ assert.equal(saved.status,201,await saved.text());
+ snapshot={contact:{...contact,saved:true},log:{contact_id:contact.id,call:'K1ABC',outcome:'saved',error:null}};await page.evaluate(()=>window.wstxContact.load());
+ await page.locator('#log-history li',{hasText:'K1ABC'}).waitFor({timeout:5000});
+ assert.match(await page.locator('#log-history-status').innerText(),/1 contact/);
+ assert.match(await page.locator('#contact-logged').textContent(),/^Logged K1ABC \u00b7 contacts\.adi$/);
+ assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true,'the Logbook page never hides Halt Tx');
+ assert.ok(posts.every(p=>p==='/contact/command'),'the browser never saves a contact: '+posts.join());
  assert.deepEqual(errors,[]);
 });
 

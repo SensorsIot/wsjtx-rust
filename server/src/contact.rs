@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! WstxContact (#10, FT4 #11): the server-owned standard FT8/FT4 contact engine. It owns contact
-//! identity, the AutoSequence state, the next-message choice, completion and the log
-//! review offer; it never keys PTT, opens audio or touches a radio. Every transmission
+//! identity, the AutoSequence state, the next-message choice, completion and which
+//! contacts are due for the log (WstxContact::DirectLog, #41); it never keys PTT, opens audio or touches a radio. Every transmission
 //! is a WstxTransmit::TransmitRequest submitted in-process to the #9 slice B transmit
 //! owner (`transmit::service::Core`), whose arming, halt, watchdogs and outcomes it
 //! consumes. The browser renders the snapshot and sends commands (contact_http).
@@ -38,8 +38,6 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
 const COUNTED_KEYS: usize = 4096;
-/// Unsaved log reviews retained per station session.
-pub const REVIEWS_MAX: usize = 8;
 
 pub fn period_ms(mode: Mode) -> i64 {
     match mode {
@@ -358,7 +356,8 @@ pub struct Contact {
     pub first_tx2_period: Option<i64>,
     pub first_tx3_period: Option<i64>,
     pub last_counted_end: Option<i64>,
-    pub offered_for_log: bool,
+    /// Set at completion when the contact was handed to the log (once per contact).
+    pub logged_on_completion: bool,
 }
 impl Contact {
     /// WstxContact::LogRecord start time (MW set_dateTimeQSO).
@@ -367,12 +366,6 @@ impl Contact {
             .or_else(|| self.first_tx3_period.map(|p| p - period_ms(self.mode)))
             .or(self.first_tx_period)
     }
-}
-/// The log review offered for a contact (WstxContact::OfferLogReview).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Review {
-    pub contact: Contact,
-    pub automatic: bool,
 }
 /// Station facts the engine reads at each command and step.
 #[derive(Clone, Debug, Default)]
@@ -428,7 +421,6 @@ pub enum Command {
     Tune(bool),
     Redecode,
     OpenLog,
-    DiscardReview(String),
 }
 #[derive(Clone, Debug)]
 struct Submitted {
@@ -445,13 +437,10 @@ pub struct Engine {
     pub revision: u64,
     pub settings: Settings,
     pub contact: Option<Contact>,
-    /// Offered, not yet saved or discarded reviews, oldest first (bounded).
-    reviews: VecDeque<Review>,
+    /// Contacts due for the log (completed, or Log QSO), taken by the station.
+    to_log: Vec<Contact>,
     /// The last request target refused without a disarm, never resubmitted as is.
     refused_target: Option<(i64, String, u32)>,
-    /// A completed, unsaved contact that found the review queue full; until it is
-    /// queued, saved or discarded no other contact or CQ may replace it.
-    unqueued: Option<String>,
     /// The last visible refusal or failure of a transmit outcome (snake_case).
     pub transmit_problem: Option<String>,
     sequence: u64,
@@ -484,9 +473,8 @@ impl Engine {
             revision: 0,
             settings: Settings::default(),
             contact: None,
-            reviews: VecDeque::new(),
+            to_log: Vec::new(),
             refused_target: None,
-            unqueued: None,
             transmit_problem: None,
             sequence: 0,
             pending: None,
@@ -501,47 +489,9 @@ impl Engine {
             new_id,
         }
     }
-    /// The review offered first (the oldest unsaved one).
-    pub fn review(&self) -> Option<&Review> {
-        self.reviews.front()
-    }
-    #[cfg(test)]
-    pub fn reviews(&self) -> impl Iterator<Item = &Review> {
-        self.reviews.iter()
-    }
-    /// Drops offered reviews whose contact is durably saved.
-    pub fn prune_saved(&mut self, saved: impl Fn(&str) -> bool) {
-        self.reviews.retain(|r| !saved(&r.contact.id));
-        if self.unqueued.as_deref().is_some_and(&saved) {
-            self.unqueued = None;
-        }
-    }
-    fn guard_unqueued(&self) -> Result<(), &'static str> {
-        if self.unqueued.is_some() {
-            return Err("state_conflict");
-        }
-        Ok(())
-    }
-    /// Offers a review: the same contact replaces its own offer in place; another
-    /// contact queues behind every unsaved one (CancelContact/ChangeContact keep a
-    /// completed unsaved contact until saved or discarded). Full queue: refused.
-    fn offer(&mut self, review: Review) -> Result<(), &'static str> {
-        if let Some(r) = self
-            .reviews
-            .iter_mut()
-            .find(|r| r.contact.id == review.contact.id)
-        {
-            *r = review;
-            return Ok(());
-        }
-        if self.reviews.len() == REVIEWS_MAX {
-            return Err("state_conflict");
-        }
-        if self.unqueued.as_deref() == Some(review.contact.id.as_str()) {
-            self.unqueued = None;
-        }
-        self.reviews.push_back(review);
-        Ok(())
+    /// The contacts due for the log since the last call (WstxContact::DirectLog).
+    pub fn take_logs(&mut self) -> Vec<Contact> {
+        std::mem::take(&mut self.to_log)
     }
     /// The Tx offset domain: the transmitting contact's mode, else the station's.
     fn tx_max(&self, ctx: &Ctx) -> u32 {
@@ -616,7 +566,6 @@ impl Engine {
         replace: bool,
         mode: Mode,
     ) -> Result<(), &'static str> {
-        self.guard_unqueued()?;
         let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
             return Err("profile_incomplete");
         };
@@ -666,7 +615,7 @@ impl Engine {
             first_tx2_period: None,
             first_tx3_period: None,
             last_counted_end: None,
-            offered_for_log: false,
+            logged_on_completion: false,
         });
         self.settings.report = report;
         Ok(())
@@ -786,8 +735,8 @@ impl Engine {
                 Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
                 if let Some(c) = self.contact.as_mut() {
                     if c.state == State::Completed {
-                        // A completed contact keeps its fields (Log QSO still works and a
-                        // held, unqueued contact is never stranded); only Tx6 is selected.
+                        // A completed contact keeps its fields (Log QSO can re-log it);
+                        // only Tx6 is selected.
                         c.next = Slot::Tx6;
                         self.pending = None;
                         if let Some(core) = core {
@@ -916,9 +865,6 @@ impl Engine {
                 // one itself (NotAuthorized), so there is no check-then-arm race.
                 let revision = shown.ok_or("stale_revision")?;
                 let needs_cq = self.contact.as_ref().is_none_or(|c| !c.state.transmits());
-                if needs_cq {
-                    self.guard_unqueued()?;
-                }
                 let cq = if needs_cq {
                     let set = generate(&call, &grid4, None, self.settings.report, Tx4::Rrr)
                         .ok_or("profile_incomplete")?;
@@ -953,7 +899,7 @@ impl Engine {
                         first_tx2_period: None,
                         first_tx3_period: None,
                         last_counted_end: None,
-                        offered_for_log: false,
+                        logged_on_completion: false,
                     });
                 }
             }
@@ -970,24 +916,12 @@ impl Engine {
             }
             Command::Redecode => return Err("redecode_unavailable"),
             Command::OpenLog => {
+                // Log QSO: log this contact now, in any state (DirectLog).
                 let c = self.contact.as_ref().ok_or("no_contact")?;
                 if c.dx_call.is_none() {
                     return Err("no_contact");
                 }
-                let review = Review {
-                    contact: c.clone(),
-                    automatic: false,
-                };
-                self.offer(review)?;
-            }
-            Command::DiscardReview(id) => {
-                let before = self.reviews.len();
-                self.reviews.retain(|r| r.contact.id != id);
-                if self.unqueued.as_deref() == Some(id.as_str()) {
-                    self.unqueued = None;
-                } else if self.reviews.len() == before {
-                    return Err("not_found");
-                }
+                self.to_log.push(c.clone());
             }
         }
         // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog).
@@ -1005,19 +939,9 @@ impl Engine {
             if c.last_counted_end.is_none() {
                 c.last_counted_end = Some(now);
             }
-            if !c.offered_for_log {
-                c.offered_for_log = true;
-                let id = c.id.clone();
-                let review = Review {
-                    contact: c.clone(),
-                    automatic: true,
-                };
-                if self.offer(review).is_err() {
-                    self.unqueued = Some(id);
-                    // Eight unsaved reviews already wait; the contact stays completed
-                    // and can still be offered with Log QSO once one is resolved.
-                    self.transmit_problem = Some("review_queue_full".into());
-                }
+            if !c.logged_on_completion {
+                c.logged_on_completion = true;
+                self.to_log.push(c.clone());
             }
         }
     }
@@ -1242,7 +1166,7 @@ impl Engine {
         });
         format!(
             "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
-            self.settings, self.contact, self.reviews, self.transmit_problem, view, self.last_arm
+            self.settings, self.contact, self.to_log, self.transmit_problem, view, self.last_arm
         )
     }
     /// Keeps exactly one pending request for the next period of the contact's parity
@@ -1405,7 +1329,7 @@ pub fn adif_time(utc_ms: i64) -> String {
     format!("{h:02}{mi:02}{s:02}")
 }
 
-/// A contact prepared for log review with its server-owned times (LogRecord).
+/// A contact's log fields with its server-owned times (LogRecord).
 pub struct LogFields {
     pub call: String,
     pub grid: Option<String>,
@@ -1415,9 +1339,9 @@ pub struct LogFields {
     pub start_utc_ms: i64,
     pub end_utc_ms: i64,
 }
-impl Review {
-    pub fn fields(&self, now_utc_ms: i64) -> Option<LogFields> {
-        let c = &self.contact;
+impl Contact {
+    pub fn log_fields(&self, now_utc_ms: i64) -> Option<LogFields> {
+        let c = self;
         let start = c.start_utc_ms().unwrap_or(c.prepared_utc_ms);
         let end = c.last_counted_end.unwrap_or(now_utc_ms).max(start);
         Some(LogFields {

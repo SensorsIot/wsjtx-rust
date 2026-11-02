@@ -651,17 +651,17 @@ fn worked_before_matches_call_case_insensitively_and_band_with_mode() {
 #[test]
 fn review_validation_refuses_each_invalid_field_with_its_key() {
     let good = reviewed(ID1, "K1ABC");
-    assert_eq!(validate_review(&good, "HB9BLA", "JN47AA"), Ok(()));
+    assert_eq!(validate_record(&good, "HB9BLA", "JN47AA"), Ok(()));
     let mut ft4 = good.clone();
     ft4.values[2] = Some("MFSK".into());
     ft4.values[3] = Some("FT4".into());
-    assert_eq!(validate_review(&ft4, "HB9BLA", "JN47AA"), Ok(()));
+    assert_eq!(validate_record(&ft4, "HB9BLA", "JN47AA"), Ok(()));
     let mut none = good.clone();
     for i in [1, 4, 5, 10, 11, 14, 15] {
         none.values[i] = None;
     }
     assert_eq!(
-        validate_review(&none, "HB9BLA", "JN47AA"),
+        validate_record(&none, "HB9BLA", "JN47AA"),
         Ok(()),
         "optional fields may be null"
     );
@@ -689,7 +689,7 @@ fn review_validation_refuses_each_invalid_field_with_its_key() {
         let mut record = good.clone();
         record.values[index] = Some(value.into());
         assert_eq!(
-            validate_review(&record, "HB9BLA", "JN47AA"),
+            validate_record(&record, "HB9BLA", "JN47AA"),
             Err(field),
             "{value}"
         );
@@ -697,19 +697,19 @@ fn review_validation_refuses_each_invalid_field_with_its_key() {
     let mut long = good.clone();
     long.values[15] = Some("x".repeat(1025));
     assert_eq!(
-        validate_review(&long, "HB9BLA", "JN47AA"),
+        validate_record(&long, "HB9BLA", "JN47AA"),
         Err("record.comment")
     );
     long.values[15] = Some("x".repeat(1024));
-    assert_eq!(validate_review(&long, "HB9BLA", "JN47AA"), Ok(()));
+    assert_eq!(validate_record(&long, "HB9BLA", "JN47AA"), Ok(()));
     let mut bad_id = good.clone();
     bad_id.contact_id = "not-a-uuid".into();
     assert_eq!(
-        validate_review(&bad_id, "HB9BLA", "JN47AA"),
+        validate_record(&bad_id, "HB9BLA", "JN47AA"),
         Err("record.contact_id")
     );
     assert_eq!(
-        validate_review(&good, "HB9BLA", ""),
+        validate_record(&good, "HB9BLA", ""),
         Err("record.my_gridsquare")
     );
 }

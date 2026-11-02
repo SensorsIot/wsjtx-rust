@@ -1066,3 +1066,182 @@ fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
         "the oversize datagram is counted"
     );
 }
+
+/// 2026-11-01T12:34:30Z, an even FT8 period (Julian day 2461346, see tc_012_002).
+const P1101: i64 = 1_793_536_470_000;
+/// Publishes `text` from the partner in FT8 period `period` and runs one contact step
+/// with the station clock frozen 16 s into that period (after its decode).
+fn partner(f: &Fixture, period: i64, text: &str) {
+    f.state
+        .recording
+        .fixture_publish_period(&period_text(period), vec![record(text, 1500.0, Some(-9.0))]);
+    f.bench.frozen.store(period + 16_000, Ordering::SeqCst);
+    f.tick();
+}
+fn stored(f: &Fixture) -> Vec<Value> {
+    f.state.logbook.history(&f.id, 0, 10).unwrap()["records"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+fn log_view(f: &Fixture) -> Value {
+    let bytes = f.contact().snapshot(&f.state).unwrap();
+    serde_json::from_slice::<Value>(&bytes).unwrap()["log"].clone()
+}
+fn enter(f: &Fixture, call: &str, grid: Option<&str>) {
+    operate(
+        f,
+        "enter_dx",
+        json!({"dx_call":call,"dx_grid":grid,"replace":true}),
+        false,
+    );
+}
+// Proves: CL-010-04, CL-040-01, TC-011-001, TC-012-002. #41 WstxContact::DirectLog: the
+// completed contact logs itself (no review, no browser) and reaches the UDP target as QSO
+// Logged + Logged ADIF; exactly one record per contact identity. Expected fields are
+// hand-computed from the LogRecord rules: TIME_ON = preparation (nothing transmitted),
+// TIME_OFF = end of the partner's last counted period, MY_GRIDSQUARE the profile locator.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target() {
+    let f = fixture("http://127.0.0.1:18407", true);
+    // No radio: the dial is unconfirmed, so BAND and FREQ are absent (record_of with a
+    // confirmed dial: contact_http_tests::direct_log_record_fields_from_the_confirmed_dial).
+    f.state.recording.fixture_live_job("ft8");
+    let a = peer();
+    let owner = install(
+        &f,
+        vec![target_json(
+            a.local_addr().unwrap(),
+            &["qso_logged", "logged_adif"],
+            false,
+        )],
+    );
+    owner.step(&f.state);
+    drain(&a);
+
+    // K1ABC: prepared at 12:34:20, R-09 in 12:34:30, 73 in 12:35:00 (rogers -> completed).
+    f.bench.frozen.store(P1101 - 10_000, Ordering::SeqCst);
+    enter(&f, "K1ABC", Some("FN42"));
+    partner(&f, P1101, "HB9BLA K1ABC R-09");
+    assert!(stored(&f).is_empty(), "nothing is logged before completion");
+    partner(&f, P1101 + 30_000, "HB9BLA K1ABC 73");
+    let records = stored(&f);
+    assert_eq!(records.len(), 1, "{records:?}");
+    let id = f.contact().facts().1.unwrap().id;
+    assert_eq!(
+        records[0],
+        json!({"index":0,"contact_id":id,"call":"K1ABC","gridsquare":"FN42","mode":"FT8","submode":null,
+            "rst_sent":null,"rst_rcvd":"-09","qso_date":"20261101","time_on":"123420",
+            "qso_date_off":"20261101","time_off":"123515","band":null,"freq":null,
+            "station_callsign":"HB9BLA","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null,
+            "unknown_field_count":0})
+    );
+    let logged = drain(&a);
+    assert_eq!(kinds(&logged), [5, 12], "QSO Logged then Logged ADIF");
+    let (_, _, _, mut q) = head(&logged[0]);
+    let _time_off = (q.i64(), q.u32(), q.u8());
+    assert_eq!(
+        (q.s(), q.s(), q.u64(), q.s()),
+        ("K1ABC".into(), "FN42".into(), 0, "FT8".into())
+    );
+    assert_eq!(
+        log_view(&f),
+        json!({"contact_id":id,"call":"K1ABC","outcome":"saved","error":null})
+    );
+    // A repeated 73 and an unchanged Log QSO add no record and send nothing.
+    partner(&f, P1101 + 60_000, "HB9BLA K1ABC 73");
+    operate(&f, "open_log", json!({}), false);
+    assert_eq!(stored(&f).len(), 1);
+    assert!(drain(&a).is_empty(), "already stored: nothing sent again");
+
+    // W1AW: Log QSO before completion stores it now; completion replaces it in place.
+    f.bench.frozen.store(P1101 + 80_000, Ordering::SeqCst);
+    enter(&f, "W1AW", None);
+    operate(&f, "open_log", json!({}), false);
+    let early = stored(&f);
+    assert_eq!(early.len(), 2);
+    assert_eq!(
+        (
+            early[1]["call"].as_str(),
+            early[1]["time_off"].as_str(),
+            early[1]["rst_rcvd"].clone()
+        ),
+        (Some("W1AW"), Some("123550"), Value::Null),
+        "logged now with the times so far"
+    );
+    assert_eq!(kinds(&drain(&a)), [5, 12]);
+    partner(&f, P1101 + 90_000, "HB9BLA W1AW R-05");
+    partner(&f, P1101 + 120_000, "HB9BLA W1AW 73");
+    let replaced = stored(&f);
+    assert_eq!(replaced.len(), 2, "one record per contact identity");
+    assert_eq!(replaced[1]["contact_id"], early[1]["contact_id"]);
+    assert_eq!(
+        (
+            replaced[1]["time_off"].as_str(),
+            replaced[1]["rst_rcvd"].as_str()
+        ),
+        (Some("123645"), Some("-05"))
+    );
+    assert_eq!(kinds(&drain(&a)), [5, 12], "the replaced record is sent");
+
+    // Storage failure at completion: unsaved and visible, retried only after the backoff.
+    f.state.logbook.inject_fault(Some("write"));
+    f.bench.frozen.store(P1101 + 140_000, Ordering::SeqCst);
+    enter(&f, "K1ABC", None);
+    partner(&f, P1101 + 150_000, "HB9BLA K1ABC R-03");
+    partner(&f, P1101 + 180_000, "HB9BLA K1ABC 73");
+    let third = f.contact().facts().1.unwrap().id;
+    assert_ne!(third, id, "the same call later is a new contact");
+    assert_eq!(
+        log_view(&f),
+        json!({"contact_id":third,"call":"K1ABC","outcome":"unsaved","error":"storage_unavailable"})
+    );
+    f.state.logbook.inject_fault(None);
+    f.tick();
+    assert_eq!(stored(&f).len(), 2, "no retry before the backoff");
+    assert!(drain(&a).is_empty());
+    f.contact().retry_logs_now();
+    f.tick();
+    let after = stored(&f);
+    assert_eq!(after.len(), 3, "the retry stores it");
+    assert_eq!(
+        (after[2]["contact_id"].as_str(), after[2]["call"].as_str()),
+        (Some(third.as_str()), Some("K1ABC"))
+    );
+    assert_eq!(kinds(&drain(&a)), [5, 12]);
+    assert_eq!(log_view(&f)["outcome"], "saved");
+    // Records survive a restart (a fresh station starts no contact, so logs nothing again).
+    assert_eq!(crate::logbook::Logbook::open(&f.dir).total().unwrap(), 3);
+
+    // While storage fails at most LOG_PENDING_MAX records wait; the oldest is dropped.
+    f.state.logbook.inject_fault(Some("write"));
+    for i in 0..=contact_http::LOG_PENDING_MAX {
+        let suffix: String = [b'A' + (i / 26) as u8, b'A' + (i % 26) as u8]
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        enter(&f, &format!("DL1{suffix}"), None);
+        operate(&f, "open_log", json!({}), false);
+    }
+    assert_eq!(
+        (
+            log_view(&f)["call"].as_str(),
+            log_view(&f)["error"].as_str()
+        ),
+        (Some("DL1AA"), Some("log_queue_full")),
+        "the dropped record stays shown"
+    );
+    f.state.logbook.inject_fault(None);
+    f.contact().retry_logs_now();
+    f.tick();
+    assert_eq!(
+        f.state.logbook.total().unwrap(),
+        3 + contact_http::LOG_PENDING_MAX
+    );
+    let page = f.state.logbook.history(&f.id, 3, 1).unwrap();
+    assert_eq!(
+        page["records"][0]["call"], "DL1AB",
+        "DL1AA was dropped (log_queue_full)"
+    );
+    assert_eq!(kinds(&drain(&a)).len(), 2 * contact_http::LOG_PENDING_MAX);
+}
