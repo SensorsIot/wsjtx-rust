@@ -399,9 +399,10 @@ attribute def ActivityOrdering {
              Frequency pane (WstxContact::RoutesToRxFrequencyPane) with Tx-labelled own
              messages, unread count and Erase. At 360 CSS px it stacks below Band Activity
              or is a labelled tab, with no horizontal page overflow.
-             Logbook region: the in-page log review (WstxContact::OfferLogReview) with
-             power and comments and retain toggles, saved/unsaved outcome and retry,
-             history and ADI import/export; opening it never hides Halt Tx.
+             Logbook region: history and ADI import/export (since #41 there is no log
+             review form: WstxContact::DirectLog stores each completed contact and Log
+             QSO, and an open Logbook page lists a new record when the contact snapshot
+             reports it saved); opening it never hides Halt Tx.
              Alt+letter bindings apply only where the browser delivers the key; every
              action is also a focusable labelled control. Ctrl+R, Ctrl+1..6, F11/F12 and
              Now buttons are not adopted (browser reload/tab keys; #10 decision 7).
@@ -545,7 +546,8 @@ attribute def ActivityOrdering {
              another station during a QSO highlighted. "Next" shows the next message with
              a progress bar and countdown to the next period of the contact's parity.
              Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
-             Log QSO keeps the existing OfferLogReview behaviour until direct logging).
+             Log QSO logs the contact now, WstxContact::DirectLog (#41), and the pane
+             shows the latest log outcome: logged, or not logged with its error).
              Always visible: partner header, dialogue, Next/Last with progress, direct buttons.
              A fold-out shows the DX Call/Grid entry with Generate, Erase (dialogue), Tx1-Tx6
              with their Next choice and editable text, Skip Tx1, RRR/RR73, report, Tx period

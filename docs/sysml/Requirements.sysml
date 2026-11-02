@@ -931,17 +931,18 @@ package WstxRequirements {
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
     // CL-010-04 partial coverage, open item: ExportAdi built in memory rather than
-    // streamed with backpressure. The automatic review offer and TIME_ON/TIME_OFF come
-    // from the contact engine (server/src/contact.rs).
+    // streamed with backpressure. #41 retired the #10 log review queue: completion and
+    // Log QSO log directly (WstxContact::DirectLog); TIME_ON/TIME_OFF come from the
+    // contact engine (server/src/contact.rs).
     // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
     // the same contact operations through WstxMcp (#12). CL-010-11 partial: since #37 the
     // browser sends no re-decode; the wire redecode stays refused redecode_unavailable.
     // CL-010-13 partial: worked-before marks are not yet shown in the Rx Frequency pane.
     // CL-010-15 partial: TC-007-005 Thin/Off measurement with the new events and MCP.
     requirement 'CL-010-04' {
-        doc /* Offer the prefilled log review automatically once at completion and on a manual Log QSO, including power and comments; persist each contact exactly once per profile in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity, Saved only after durable acknowledgement, explicit unsaved retry, and ADI import/export/history with the stated limits, identity, duplicate/conflict and unknown-field rules. Details: WstxContact::LogRecord, OfferLogReview, SaveContact, ImportAdi, ExportAdi, ContactHistory, AdiLimits. */
+        doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, a changed one replaces it), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; and ADI import/export/history with the stated limits, identity, duplicate/conflict and unknown-field rules. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, ImportAdi, ExportAdi, ContactHistory, AdiLimits; WstxUdp::OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/main.rs; client/logbook.js";
+        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/logbook.js; client/contact.js";
     }
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';
     requirement 'CL-010-15' {
@@ -980,7 +981,7 @@ package WstxRequirements {
     dependency CL_010_12_to_FR_005 from 'CL-010-12' to 'FR-005';
     dependency CL_010_12_to_FR_007 from 'CL-010-12' to 'FR-007';
     requirement 'CL-010-13' {
-        doc /* Indicate worked-before status of decoded calls in Band Activity, the Rx Frequency pane and the log review (this band and mode, other band or mode, not worked, unknown) determined by the server from the profile log, by text or icon as well as colour, with at most one bounded query per published period. Details: WstxContact::WorkedBeforeQuery. */
+        doc /* Indicate worked-before status of decoded calls in Band Activity and the Rx Frequency pane (this band and mode, other band or mode, not worked, unknown) determined by the server from the profile log, by text or icon as well as colour, with at most one bounded query per published period. Details: WstxContact::WorkedBeforeQuery. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; client/logbook.js";
     }
@@ -1059,8 +1060,8 @@ package WstxRequirements {
         doc /* TC-007-007 — Live FT8 contact on the IC-7300
              CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10
              Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, low power chosen by the operator, Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
-             Steps: complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq; review and save the log entry; then Enable Tx without operator activity until the Tx watchdog (set 1 min for the test) expires; Halt once during a transmission; restart the server.
-             Expected: the partner's messages addressed to HB9BLA appear in the Rx Frequency pane with the report we sent echoed back; the independent receiver decodes exactly the transmitted texts in the expected periods and audio offset within 10 Hz; the contact completes per the AutoSequence table with Enable Tx off; contacts.adi contains exactly one record with the independent observations (call, grid, reports, date/time, band, FREQ = dial + Tx offset) after restart; Halt stops RF promptly as observed on the radio; watchdog expiry stops transmission and disarms. Failures are recorded, not reworded as passes.
+             Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set 1 min for the test) expires; Halt once during a transmission; restart the server.
+             Expected: the partner's messages addressed to HB9BLA appear in the Rx Frequency pane with the report we sent echoed back; the independent receiver decodes exactly the transmitted texts in the expected periods and audio offset within 10 Hz; the contact completes per the AutoSequence table with Enable Tx off and logs itself (no review form; the Logbook page lists it); the listener receives one QSO Logged and one Logged ADIF with the same call, reports, times and frequency; contacts.adi contains exactly one record with the independent observations (call, grid, reports, date/time, band, FREQ = dial + Tx offset) after restart; Halt stops RF promptly as observed on the radio; watchdog expiry stops transmission and disarms. Failures are recorded, not reworded as passes.
              5 — Live RF transmission with operator authorization; HB9BLA station PC with the actual IC-7300 and antenna. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -1112,17 +1113,17 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs";
     }
     verification 'TC-011-001' {
-        doc /* TC-011-001 — Exactly-once contact persistence
+        doc /* TC-011-001 — Direct logging, exactly once per contact
              CL-010-04
-             Setup: actual server/browser, disposable profile directories, independent failure injection (read-only, full disk, failed atomic replace), completed contacts with known identities and fields.
-             Steps: completion offers; manual Log QSO before completion; edit power 10, comment, reports and times; invalid power -1, comment with CR/LF or 1025 characters; save, repeat save, duplicate completion, disconnect after commit before acknowledgement, restart; same call again on the same band; second profile.
-             Expected (independent record catalogue and direct file reading): one review offer per completion; exactly one record per contact identity in that profile's contacts.adi, Saved only after the atomic replace; identical resave alreadySaved, changed resave conflict; failures stay visibly unsaved and retry the same identity; invalid fields refused beside the field; the second contact with the same call is a separate record marked worked before; TIME_ON follows the first transmitted Tx2/Tx3 rule; no cross-profile record or browser-clock time.
+             Setup: actual server/browser, disposable profile directories, a UDP target socket bound on 127.0.0.1, independent failure injection (failed write, failed atomic replace), contacts with known identities and fields, transmit double.
+             Steps: complete a contact (transmitted Tx5 73 after the partner's report; received 73 in rogers); repeat the completion events; manual Log QSO before completion, then completion; Log QSO again unchanged; storage failure at completion, then recovery; restart; the same call again as a new contact; SaveContact with power 10 and comment, invalid power -1, comment with CR/LF or 1025 characters, repeat save; second profile; the browser Log QSO button.
+             Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; completion after an early Log QSO replaces that record in place (one record, end time of completion); a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-010-04';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs";
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
     }
     verification 'TC-011-002' {
         doc /* TC-011-002 — ADI interchange and boundaries
@@ -1142,7 +1143,7 @@ package WstxRequirements {
              CL-010-13
              Setup: profile log fixture with K1ABC on 20m FT8, W1XYZ on 40m FT8, DL1ABC on 20m MFSK/FT4; dial 20m FT8; rows from K1ABC, W1XYZ, DL1ABC, k1abc case variant, N0NEW and a hashed call; 65 distinct calls in one period.
              Steps: publish periods, save a new contact with N0NEW, publish again.
-             Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the indication is text/icon plus colour in Band Activity, the Rx Frequency pane and the review; one query per period with at most 64 calls (the 65th unknown); no change to decoding, sequence or log.
+             Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the indication is text/icon plus colour in Band Activity and the Rx Frequency pane; one query per period with at most 64 calls (the 65th unknown); no change to decoding, sequence or log.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {

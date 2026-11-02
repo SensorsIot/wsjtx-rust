@@ -131,7 +131,8 @@ package WstxUdp {
              Clear (3): when the current live job changes or ends after at least one of its
              records produced a Decode.
              QSO Logged (5) then Logged ADIF (12): when SaveContact stores a new record
-             (outcome saved, not already_saved). QSO Logged: Date & Time Off and On from
+             (outcome saved, not already_saved) and when WstxContact::DirectLog stores or
+             replaces a contact's record (not when it was already stored unchanged). QSO Logged: Date & Time Off and On from
              qso_date_off/time_off and qso_date/time_on (UTC), DX call, DX grid, Tx
              frequency = freq in Hz (else 0), mode FT8 or FT4, report sent/received, Tx
              power, comments, name "", operator call "", my call, my grid, exchange sent
@@ -213,6 +214,7 @@ package WstxUdp {
     dependency replyPath from InboundRules to WstxContact::ContactCommand;
     dependency haltPath from InboundRules to WstxTransmit::HaltTransmit;
     dependency logPath from OutboundRules to WstxContact::SaveContact;
+    dependency directLogPath from OutboundRules to WstxContact::DirectLog;
     dependency wireClause from UdpWire to WstxRequirements::'CL-040-01';
     dependency outboundClause from OutboundRules to WstxRequirements::'CL-040-01';
     dependency targetClause from UdpConfiguration to WstxRequirements::'CL-040-02';
