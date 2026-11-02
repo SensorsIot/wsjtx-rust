@@ -1,0 +1,311 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Harness CR loop, part 2: Ship (push to close)",
+    "locale": "en",
+    "output": "harness-cr-ship.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/SensorsIot/harness.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "f5cbaaab6fc0d98e9211c642776bb97e6b6e1f14"
+    },
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Operator job"
+        },
+        "external": {
+          "label": "Supervisor job"
+        },
+        "backend": {
+          "label": "Sub-agent job (CR agent, reviewer)"
+        },
+        "security": {
+          "label": "Gate: pass onward, fail back to the job that fixes it"
+        },
+        "cloud": {
+          "label": "Deploy or live job"
+        },
+        "database": {
+          "label": "Record"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "operator",
+      "label": "Operator"
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor (your session)"
+    },
+    {
+      "id": "cragent",
+      "label": "CR agent (sub-agent)"
+    },
+    {
+      "id": "reviewer",
+      "label": "Reviewer (sub-agent)"
+    },
+    {
+      "id": "gates",
+      "label": "Gates (decider and kind in each sublabel)",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "ship",
+      "label": "Deploy, test live, close, gates G7-G8",
+      "fromCol": 0,
+      "toCol": 4,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "dryrun",
+    "g7",
+    "install",
+    "live",
+    "g8",
+    "reconcile",
+    "close"
+  ],
+  "nodes": [
+    {
+      "id": "dryrun",
+      "lane": "supervisor",
+      "col": 0,
+      "type": "cloud",
+      "label": "Dry run",
+      "sublabel": "candidate built from the pushed commit",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 149,
+          "label": "step 5",
+          "end_line": 155
+        }
+      ]
+    },
+    {
+      "id": "g7",
+      "lane": "gates",
+      "col": 0,
+      "type": "security",
+      "label": "G7 dry run OK?",
+      "sublabel": "judgment - operator OK on the dry run, or the project's standing deploy authorization",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 149,
+          "label": "step 5",
+          "end_line": 155
+        },
+        {
+          "path": "core/docs/standards/security.md",
+          "line": 75,
+          "label": "deployment authority"
+        }
+      ]
+    },
+    {
+      "id": "install",
+      "lane": "supervisor",
+      "col": 1,
+      "type": "cloud",
+      "label": "Install",
+      "sublabel": "apply; independent probe of the result; failed probe rolls back",
+      "sources": [
+        {
+          "path": "core/docs/standards/security.md",
+          "line": 101,
+          "label": "prove the result",
+          "end_line": 104
+        }
+      ]
+    },
+    {
+      "id": "live",
+      "lane": "supervisor",
+      "col": 2,
+      "type": "cloud",
+      "label": "Live tests",
+      "sublabel": "acceptance items; cost 3, 4-5 only with consent",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 156,
+          "label": "step 6",
+          "end_line": 163
+        }
+      ]
+    },
+    {
+      "id": "consent",
+      "lane": "operator",
+      "col": 2,
+      "type": "frontend",
+      "label": "Consent",
+      "sublabel": "for cost 4-5 live tests",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 82,
+          "label": "roles"
+        }
+      ]
+    },
+    {
+      "id": "g8",
+      "lane": "gates",
+      "col": 2,
+      "type": "security",
+      "label": "G8 live tests green?",
+      "sublabel": "judgment - supervisor checks each item; record 'Accepted live'",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 156,
+          "label": "step 6",
+          "end_line": 163
+        }
+      ]
+    },
+    {
+      "id": "revert",
+      "lane": "cragent",
+      "col": 3,
+      "type": "backend",
+      "label": "Implement again (part 1)",
+      "sublabel": "after the supervisor has reverted and deployed the revert",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 161,
+          "label": "red item",
+          "end_line": 162
+        }
+      ]
+    },
+    {
+      "id": "reconcile",
+      "lane": "supervisor",
+      "col": 3,
+      "type": "external",
+      "label": "Reconcile the contract",
+      "sublabel": "model clauses and durable test cases",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 164,
+          "label": "step 7",
+          "end_line": 173
+        }
+      ]
+    },
+    {
+      "id": "close",
+      "lane": "supervisor",
+      "col": 4,
+      "type": "external",
+      "label": "Close by hand",
+      "sublabel": "checklist ticked in one line",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 174,
+          "label": "close",
+          "end_line": 177
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-dryrun-g7",
+      "from": "dryrun",
+      "to": "g7",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g7-install",
+      "from": "g7",
+      "to": "install",
+      "label": "pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g7-dryrun-fail",
+      "from": "g7",
+      "to": "dryrun",
+      "label": "fail: fix the candidate",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-install-live",
+      "from": "install",
+      "to": "live",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-consent-live",
+      "from": "consent",
+      "to": "live",
+      "label": "cost 4-5",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e-live-g8",
+      "from": "live",
+      "to": "g8",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g8-reconcile",
+      "from": "g8",
+      "to": "reconcile",
+      "label": "pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g8-revert-fail",
+      "from": "g8",
+      "to": "revert",
+      "label": "fail: red item",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-reconcile-close",
+      "from": "reconcile",
+      "to": "close",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Gates G7-G8",
+      "items": [
+        "G7 dry run OK? judgment of the operator on the dry run; this project: the standing permission for station-update.ps1 (Project-Specifics, deployment authority)",
+        "G8 live tests green? judgment of the supervisor on each acceptance item, recorded as Accepted live"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Part 1",
+      "items": [
+        "Build: G1 worth it? to G6 push gate, harness-cr-build",
+        "A red G8 sends the CR back to Implement in part 1"
+      ]
+    }
+  ]
+}
