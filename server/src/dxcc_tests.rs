@@ -145,6 +145,7 @@ fn tc_055_001_known_answers_from_the_bundled_file() {
         // no entity
         ("Q1ABC", None),
         ("", None),
+        ("DL\u{e9}1AB", None), // non-ASCII text (an imported ADIF call) never panics
     ] {
         assert_eq!(row(&t, call), expected, "{call}");
     }

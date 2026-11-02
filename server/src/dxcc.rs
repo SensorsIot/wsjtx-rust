@@ -159,7 +159,7 @@ impl Cty {
         let mut entities = Vec::new();
         let mut prefixes = HashMap::new();
         let mut version = None;
-        let mut lines = text.lines().enumerate().peekable();
+        let mut lines = text.lines().enumerate();
         while let Some((number, line)) = lines.next() {
             let parts: Vec<&str> = line.split(':').collect();
             if parts.len() < 8 {
@@ -265,7 +265,8 @@ impl Cty {
     /// prefix, where an exact entry only matches the whole call.
     pub fn lookup(&self, call: &str) -> Option<Resolved> {
         let call = call.trim().to_ascii_uppercase();
-        if call.is_empty() || call.ends_with("/MM") || call.ends_with("/AM") {
+        // Calls are ASCII (a logged ADIF call need not be): no entity otherwise.
+        if call.is_empty() || !call.is_ascii() || call.ends_with("/MM") || call.ends_with("/AM") {
             return None;
         }
         let mut search = effective_prefix(&call);
