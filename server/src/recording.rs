@@ -244,6 +244,9 @@ pub struct State {
     pub job: Option<Job>,
     pub frame: Option<Value>,
     pub detail_frame: Option<Value>,
+    /// #54: the most recent Detailed rows (at most DETAIL_RECENT, oldest first), so each
+    /// subscriber receives every row in order after a processing stall.
+    pub detail_recent: VecDeque<Value>,
     live: Option<LiveState>,
     latest_decode: Option<LatestDecode>,
     decode_counter: u64,
@@ -948,6 +951,7 @@ impl Recording {
             let stopped_cancel = j.cancel.clone();
             s.frame = None;
             s.detail_frame = None;
+            s.detail_recent.clear();
             if let Some(operation) = s.operating.operation.as_mut()
                 && (operation.old_job_id.as_deref() == Some(id)
                     || operation.new_job_id.as_deref() == Some(id)
@@ -1737,6 +1741,7 @@ impl Recording {
             }
             s.frame = None;
             s.detail_frame = None;
+            s.detail_recent.clear();
             // The station's operating mode follows an admitted selection at once, so the
             // #9 owner never keys the old mode on the new dial.
             s.operating_mode = operation.requested.mode;
@@ -1954,6 +1959,7 @@ impl Recording {
             current.result = "cancelled";
             s.frame = None;
             s.detail_frame = None;
+            s.detail_recent.clear();
             if already {
                 "already_cancelled"
             } else {
@@ -2081,6 +2087,7 @@ impl LiveWorker {
         }
         s.frame = None;
         s.detail_frame = None;
+            s.detail_recent.clear();
         s.latest_decode = None;
         s.decode_counter = 0;
         let l = s.live.as_mut().ok_or("state_conflict")?;
@@ -2163,6 +2170,7 @@ impl LiveWorker {
         s.job = Some(self.job.clone());
         s.frame = None;
         s.detail_frame = None;
+            s.detail_recent.clear();
         let l = s.live.as_mut().ok_or("state_conflict")?;
         l.source = Some(descriptor.clone());
         l.timing = Some(timing.clone());
@@ -2247,7 +2255,7 @@ impl LiveWorker {
                         "source_id":self.job.source_id,"job_id":self.job.id,"generation":self.job.generation,
                         "sequence":sequence,"first_frame":first,"end_frame":end,"levels_b64":STANDARD.encode(&levels)}});
                     if detailed {
-                        s.detail_frame = Some(frame);
+                        push_detail(&mut s, frame);
                     } else {
                         let mut frame = frame;
                         frame["data"].as_object_mut().unwrap().remove("levels_b64");
@@ -2285,6 +2293,7 @@ impl LiveWorker {
                 }
                 s.frame = None;
                 s.detail_frame = None;
+            s.detail_recent.clear();
                 s.latest_decode = None;
                 s.decode_counter = 0;
                 if let Some(l) = s.live.as_mut() {
@@ -2689,6 +2698,15 @@ fn utc_from_filetime(ticks: u64) -> Option<String> {
     ))
 }
 
+/// #54: 5 s of Detailed rows; a subscriber further behind than this sees a real gap.
+pub const DETAIL_RECENT: usize = 25;
+fn push_detail(s: &mut State, frame: Value) {
+    if s.detail_recent.len() == DETAIL_RECENT {
+        s.detail_recent.pop_front();
+    }
+    s.detail_recent.push_back(frame.clone());
+    s.detail_frame = Some(frame);
+}
 struct SpectrumRow {
     first: u64,
     end: u64,
@@ -2866,6 +2884,7 @@ impl Recording {
             job: None,
             frame: None,
             detail_frame: None,
+            detail_recent: VecDeque::new(),
             live: None,
             latest_decode: None,
             decode_counter: 0,
@@ -3052,6 +3071,7 @@ impl Recording {
         s.generation += 1;
         s.frame = None;
         s.detail_frame = None;
+            s.detail_recent.clear();
         s.live = None;
         Ok(s.generation)
     }
@@ -3347,6 +3367,7 @@ impl Recording {
             };
             s.frame = None;
             s.detail_frame = None;
+            s.detail_recent.clear();
             s.job = Some(job.clone());
         }
         let this = self.clone();
@@ -3364,6 +3385,7 @@ impl Recording {
         let value = json!({"v":1,"id":id,"generation":j.generation,"state":j.state});
         s.frame = None;
         s.detail_frame = None;
+            s.detail_recent.clear();
         Ok(value)
     }
     fn run(&self, job: Job, meta: Metadata) {
@@ -3518,7 +3540,8 @@ impl Recording {
                 j.id == job.id && j.generation == job.generation && j.state == "running"
             }) {
                 s.job.as_mut().unwrap().processed_frames = row_end;
-                s.detail_frame = Some(
+                push_detail(
+                    &mut s,
                     json!({"v":1,"type":"spectrum.detail.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":sequence,"first_frame":sequence*2400,"end_frame":row_end,"levels_b64":STANDARD.encode(levels)}}),
                 );
                 if row_end.is_multiple_of(12000) || row_end == meta.frames {

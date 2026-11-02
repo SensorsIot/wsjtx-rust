@@ -414,50 +414,42 @@ document.querySelector('#rxtx-strip').addEventListener('click',event=>{
 $('contact-hold').addEventListener('change',event=>send('set_hold_tx',{enabled:event.target.checked},'Hold Tx'));
 $('strip-tx-from-rx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:null,tx_hz:s.rx_hz},'Tx=Rx');});
 $('strip-rx-from-tx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:s.tx_hz,tx_hz:null},'Rx=Tx');});
-// WstxContact::PointerEffect: click Rx; shift- or right-click Tx; ctrl-click Rx and Tx;
+// WstxContact::PointerEffect (#50): click Tx; double-click Rx and Tx; drag a marker;
 const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector('#waterfall-wrap');
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
 rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.dataset.key='rx';txMarker.dataset.key='tx';
 for(const m of [rxMarker,txMarker]){m.setAttribute('role','slider');m.setAttribute('aria-valuemin','0');m.setAttribute('aria-valuemax','3000');m.setAttribute('aria-label',m===rxMarker?'Rx marker, drag to set the Rx frequency':'Tx marker, drag to set the Tx frequency');}
 wrap?.append(rxMarker,txMarker);
-// Labels only where the waterfall has room for them (no clipped text at 360 px/200 %).
-if(wrap)new ResizeObserver(()=>markers()).observe(wrap);
+// #50: 3 px green Rx and red Tx lines without text; the Rx/Tx strip below shows the values.
 let dragging=null;
 function markers(){
-  const s=snap?.settings,room=!wrap||wrap.clientHeight>=3*parseFloat(getComputedStyle(rxMarker).fontSize||'14');
-  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.textContent=room?`${label} ${hz}`:'';m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
-  // Close markers share one label so the texts never overlap.
-  if(room&&s&&Math.abs(s.rx_hz-s.tx_hz)<400){rxMarker.textContent=s.rx_hz===s.tx_hz?`Rx/Tx ${s.rx_hz}`:`Rx ${s.rx_hz} · Tx ${s.tx_hz}`;txMarker.textContent='';}
+  const s=snap?.settings;
+  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
 }
 const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
 for(const m of [rxMarker,txMarker]){
   m.addEventListener('pointerdown',event=>{if(event.button!==0||!snap)return;event.preventDefault();event.stopPropagation();dragging=m;m.setPointerCapture(event.pointerId);m.classList.add('ct-dragging');});
-  m.addEventListener('pointermove',event=>{if(dragging!==m)return;m.style.left=`${pointerHz(event)/30}%`;m.textContent=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)}`;});
+  m.addEventListener('pointermove',event=>{if(dragging!==m)return;m.style.left=`${pointerHz(event)/30}%`;m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
   m.addEventListener('pointerup',event=>{if(dragging!==m)return;dragging=null;m.classList.remove('ct-dragging');const hz=pointerHz(event);if(String(hz)!==m.dataset.hz)send('set_frequency',{rx_hz:m.dataset.key==='rx'?hz:null,tx_hz:m.dataset.key==='tx'?hz:null},m.dataset.key==='rx'?'Rx frequency':'Tx frequency');else markers();});
   m.addEventListener('click',event=>event.stopPropagation());
 }
-let lastRight=0;
+// #50 WstxContact::PointerEffect: click sets Tx, double-click sets Rx and Tx. The click waits
+// 250 ms (as in Band Activity) so a double-click sends only its one request.
+let pointerTimer=null;
 function pointer(rx,tx,label){send('set_frequency',{rx_hz:rx,tx_hz:tx},label);}
 waterfall?.addEventListener('contextmenu',event=>event.preventDefault());
 waterfall?.addEventListener('click',event=>{
-  if(event.button!==0)return;const hz=pointerHz(event);
-  if(event.ctrlKey)pointer(hz,hz,'Rx and Tx frequency');else if(event.shiftKey)pointer(null,hz,'Tx frequency');else pointer(hz,null,'Rx frequency');
+  if(event.button!==0)return;const hz=pointerHz(event);clearTimeout(pointerTimer);
+  pointerTimer=setTimeout(()=>pointer(null,hz,'Tx frequency'),250);
 });
-waterfall?.addEventListener('mouseup',event=>{
-  if(event.button!==2)return;const hz=pointerHz(event),now=performance.now();
-  if(now-lastRight<400){lastRight=0;pointer(hz,hz,'Rx and Tx frequency');}else{lastRight=now;pointer(null,hz,'Tx frequency');}
-});
+waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const hz=pointerHz(event);pointer(hz,hz,'Rx and Tx frequency');});
 const period=document.querySelector('#radio-toolbar .op-period'),meter=document.querySelector('#settings-audio .op-input-meter');
 function displays(){
   if(!period||!meter)return;
-  const label=period.querySelector('span'),small=period.querySelector('small'),track=period.querySelector('.op-period-track');
-  if(!tick){label.textContent='Receive period';small.textContent='Timing unavailable';meter.querySelector('strong').textContent='Unknown';return;}
-  const stale=connection.dataset.state!=='connected',utc=tick.utc+(performance.now()-tick.at),seconds=tick.period/1000;
-  const elapsed=Math.floor((utc%tick.period)/1000);
+  const label=period.querySelector('span');
+  if(!tick){label.textContent='UTC unavailable';meter.querySelector('strong').textContent='Unknown';return;}
+  const stale=connection.dataset.state!=='connected',utc=tick.utc+(performance.now()-tick.at);
   label.textContent=`UTC ${new Date(utc).toISOString().slice(11,19)}${stale?' (stale)':''}`;
-  small.textContent=`${elapsed}/${seconds}${tick.transmitting?' · Transmitting':''}${stale?' · stale':''}`;
-  period.classList.toggle('ct-transmitting',!!tick.transmitting);
-  track.style.setProperty('--ct-progress',`${Math.min(100,100*elapsed/seconds)}%`);
   const level=tick.level,strong=meter.querySelector('strong');
   strong.textContent=level===null?'Unavailable':`${level} dB${level>85?' high':level<15?' low':''}`;
   meter.dataset.level=level===null?'':level>85?'high':level<15?'low':'ok';
@@ -563,7 +555,7 @@ window.wstxChipsShow=function(){
 }
 setInterval(()=>window.wstxChipsShow(),1000);
 window.wstxChipsShow();if(typeof renderResults==='function')renderResults();
-document.querySelector('#help-keys').insertAdjacentHTML('beforeend','<div><dt>CQ / Reply / double-click a decode</dt><dd>Start the QSO: transmission starts with the next period and ends after RR73/73 or HALT</dd></div><div><dt>F2</dt><dd>Settings</dd></div><div><dt>F4</dt><dd>Clear the DX call (cancel the contact)</dd></div><div><dt>Alt+1 &hellip; Alt+6</dt><dd>Next message Tx1&hellip;Tx6</dd></div><div><dt>Alt+M</dt><dd>Start or stop receive</dd></div><div><dt>Alt+T / Alt+Q</dt><dd>Tune / Log QSO</dd></div><div><dt>F11 / F12</dt><dd>Rx &minus;/+ 1 Hz</dd></div><div><dt>Shift+F11 / Shift+F12</dt><dd>Tx &minus;/+ 60 Hz (FT4 90 Hz)</dd></div><div><dt>Ctrl+F11 / Ctrl+F12</dt><dd>Rx and Tx &minus;/+ 1 Hz</dd></div><div><dt>Waterfall click / Shift+click / Ctrl+click</dt><dd>Set Rx / Tx / both; drag the Rx or Tx marker</dd></div><div><dt>Rx/Tx fields: wheel, arrows, &minus;/+</dt><dd>1 Hz; with Shift 10 Hz</dd></div><div><dt>Band Activity: click / double-click / right-click</dt><dd>Select / Reply / menu</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the spectrum and waterfall</dd></div>');
+document.querySelector('#help-keys').insertAdjacentHTML('beforeend','<div><dt>CQ / Reply / double-click a decode</dt><dd>Start the QSO: transmission starts with the next period and ends after RR73/73 or HALT</dd></div><div><dt>F2</dt><dd>Settings</dd></div><div><dt>F4</dt><dd>Clear the DX call (cancel the contact)</dd></div><div><dt>Alt+1 &hellip; Alt+6</dt><dd>Next message Tx1&hellip;Tx6</dd></div><div><dt>Alt+M</dt><dd>Start or stop receive</dd></div><div><dt>Alt+T / Alt+Q</dt><dd>Tune / Log QSO</dd></div><div><dt>F11 / F12</dt><dd>Rx &minus;/+ 1 Hz</dd></div><div><dt>Shift+F11 / Shift+F12</dt><dd>Tx &minus;/+ 60 Hz (FT4 90 Hz)</dd></div><div><dt>Ctrl+F11 / Ctrl+F12</dt><dd>Rx and Tx &minus;/+ 1 Hz</dd></div><div><dt>Waterfall click / double-click</dt><dd>Set Tx / Rx and Tx; drag the green Rx or red Tx line</dd></div><div><dt>Rx/Tx fields: wheel, arrows, &minus;/+</dt><dd>1 Hz; with Shift 10 Hz</dd></div><div><dt>Band Activity: click / double-click / right-click</dt><dd>Select / Reply / menu</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the spectrum and waterfall</dd></div>');
 // WstxOperatingLayout::ThemeChoice: Day / Dark / Night for this browser only, manually, by
 const themeKey='wstx.theme.v1';
 function themeSettings(){let saved=null;try{saved=JSON.parse(localStorage.getItem(themeKey));}catch{}return {theme:['day','dark','night'].includes(saved?.theme)?saved.theme:'dark',mode:['manual','time','sun'].includes(saved?.mode)?saved.mode:'manual',day:/^\d\d:\d\d$/.test(saved?.day)?saved.day:'07:00',night:/^\d\d:\d\d$/.test(saved?.night)?saved.night:'20:00'};}

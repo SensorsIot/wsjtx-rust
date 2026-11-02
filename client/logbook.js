@@ -20,8 +20,9 @@ async function call(path,options={}){
   return {response,data};
 }
 const statusText={worked_this_band_and_mode:'Worked before on this band and mode',worked_other_band_or_mode:'Worked before on another band or mode',not_worked:'Not worked before'};
-const statusMark={worked_this_band_and_mode:'\u2713 worked',worked_other_band_or_mode:'\u25d0 worked other band/mode',not_worked:'\u2605 new'};
-const statusColor={worked_this_band_and_mode:'#9fb8c9',worked_other_band_or_mode:'#dfb48e',not_worked:'#99e1c3'};
+// #50: worked-before drives the WSJT-X "New call" slots (not worked: new_call; only on another band or
+// mode: new_call_band); a station worked on this band and mode gets no colour, as in WSJT-X.
+const statusSlot={worked_other_band_or_mode:'new_call_band',not_worked:'new_call'};
 async function worked(band,mode,calls){
   const s=station();if(!s||!band||!calls.length)return null;
   const {response,data}=await call('/contact/worked',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...s,band,mode,calls})});
@@ -105,7 +106,7 @@ function annotate(body,records){
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
   const complete=resultView?.complete&&resultCursor>=resultView.next_sequence;
   const from=r=>r.status==='decoded'&&r.fields?.type==='standard'&&r.fields.from?.kind==='call'&&typeof r.fields.from.text==='string'?r.fields.from.text.toUpperCase():null;
-  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);const cell=row.querySelector('td[data-col=message]')??row.lastElementChild;if(!cell||!status||cell.querySelector('.log-worked'))continue;const mark=document.createElement('span');mark.className='log-worked';mark.dataset.worked=status;mark.title=statusText[status];mark.textContent=` \u00b7 ${statusMark[status]}`;mark.style.color=statusColor[status];cell.append(mark);}};
+  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);if(!status||row.dataset.worked)continue;row.dataset.worked=status;const cell=row.querySelector('td[data-col=message]');if(cell)cell.title=statusText[status];const slot=statusSlot[status];if(slot)row.dataset.hl=[...(row.dataset.hl?row.dataset.hl.split(' '):[]),slot].join(' ');}};
   if(!period||!band||!['ft8','ft4'].includes(mode))return;
   if(period===askedPeriod){decorate();return;}
   if(!complete)return;
