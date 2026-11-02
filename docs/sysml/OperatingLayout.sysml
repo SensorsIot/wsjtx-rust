@@ -558,41 +558,81 @@ attribute def ActivityOrdering {
         in fromPartner : Boolean;
         return crowding : Boolean = not fromPartner and
             rowFrequencyHz >= rxOffsetHz - 50.0 and rowFrequencyHz <= rxOffsetHz + 50.0;
-        doc /* Another station within +/-50 Hz of my Rx frequency in the latest period:
-             shown in the QSO pane marked with a warning sign and counted in its header
-             badge. Presentation only. */
+        doc /* Another station within +/-50 Hz of my Rx frequency in the latest two
+             published periods (the latest and the one before it): a QsoPane Others line.
+             Presentation only. */
     }
     attribute def QsoPane {
         attribute crowdingWindowHz : Integer = 50;
         attribute hasPartnerHeader : Boolean = true;
-        attribute hasDialogue : Boolean = true;
+        attribute hasLastPartnerMessage : Boolean = true;
+        attribute maximumOtherLines : Integer = 2;
         attribute hasNextWithCountdown : Boolean = true;
+        attribute hasDialogue : Boolean = false;
+        attribute hasLastSentRow : Boolean = false;
+        attribute hasCrowdingBadge : Boolean = false;
+        attribute loggedNoticeSeconds : Integer = 8;
         attribute hasEnableTx : Boolean = false;
         attribute hasNowButtons : Boolean = false;
-        doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. Header:
-             partner call, grid, last SNR and distance; a badge counts
-             crowding stations (QsoPaneCrowding). Dialogue: the station's transmitted
-             messages (sent) and the rows routed by WstxContact::RoutesToRxFrequencyPane
-             (received), newest last; crowding rows marked; a call to my callsign from
-             another station during a QSO highlighted. "Next" shows the next message with
-             a progress bar and countdown to the next period of the contact's parity.
-             Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
-             Log QSO logs the contact now, WstxContact::DirectLog (#41), and the pane
-             shows the latest log outcome: logged, or not logged with its error).
-             Always visible: partner header, dialogue, Next/Last with progress, direct buttons.
+        assert constraint compact {
+            hasPartnerHeader and hasLastPartnerMessage and maximumOtherLines == 2 and
+            hasNextWithCountdown and not hasDialogue and not hasLastSentRow and
+            not hasCrowdingBadge and not hasEnableTx and not hasNowButtons
+        }
+        doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
+             compact QSO pane (operator decisions 2026-11-02): it shows only the running QSO
+             and nothing else, and its content takes about half the height the earlier pane
+             needed. Item 8 (operator-changeable default, coordinator choice 2026-11-02): at
+             most 75em wide, where the pane sits below Band Activity, the pane is content high
+             and Band Activity takes the freed height; side by side, where Band Activity
+             already fills the column height, the pane card fills its column with the free
+             height at its bottom, so there is no empty band under it; the waterfall/workspace
+             split is unchanged and the Others stay at most two lines.
+             A running QSO is a contact with a DX call in replying..signoff
+             (WstxContact::ContactState); a contact that is completed, logged or cancelled is
+             gone from the pane, which then shows idle.
+             Lines (each a message and its SNR only: no time, DT or audio frequency, which
+             Band Activity and the waterfall markers show; SNR as "+12 dB" / "−8 dB"):
+             1. Header: partner call and grid, distance from the profile locator, reports sent
+             and received; idle: "No contact selected" ("Calling CQ" while an own CQ runs); the badge
+             Ready, Tx on, Transmitting or Receive only.
+             2. Last partner message, while a QSO runs: the contact's ContactSnapshot
+             last_rcvd as one line "<text>  <SNR>" with "×N" when the identical message was
+             counted N > 1 times in a row; a new text replaces it.
+             3. Others, at most maximumOtherLines lines, newest first (period, then decode
+             order), from the decoded rows of the latest two published periods that are not
+             from the partner (the partner of the last QSO stays excluded after it ended,
+             until another contact runs): while a QSO runs, the stations within +/-50 Hz of my Rx
+             frequency (QsoPaneCrowding) and the stations calling my call, each marked with a
+             warning sign ("⚠ HB9BLA DL1ABC JO31  −8 dB");
+             double-click (or Enter) switches the contact to that station and replies
+             (SelectDecodedRow with replace, then SetEnableTx on). When no QSO runs (idle,
+             finished, or an own CQ), the same rows are candidates shown plainly with a
+             receive mark and no warning sign ("◂ CQ YO3GNF KN34  +12 dB");
+             double-click (or Enter) answers (select, then SetEnableTx on).
+             4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
+             the next period of the contact's parity, only while Enable Tx is on and the
+             contact is calling or a QSO runs.
+             5. Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
+             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
+             (#41), and closes it, so nothing stays queued). A command's accepted result
+             line goes when the QSO ends.
+             6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
+             be stored shows "Not logged <call> · <reason>" while that outcome holds.
+             There is no dialogue history, no LAST row, no crowding badge and no status line
+             for a finished contact. A status line under the header is shown only for an
+             exception: a refused transmission, a halt pending, an unknown contact state.
              Auto Seq off (#11): while Auto Seq is off during a contact or CQ, a warning
-             line below the status reads "Auto Seq off" (title: received messages do not
-             advance the QSO) with an "Auto Seq on" button, and the status gets "· Auto
-             Seq off"; when the contact's ContactSnapshot suggested_slot is set, the line
-             adds "<call> expects" and a "Send <exchange> next" button (e.g. "Send 73
-             next", the full message as its title) that chooses that slot and arms
-             (Reply). While shown, the line takes the place of the Last row (the last
-             sent text stays in the top-bar transmit state), so the dialogue stays and
-             the direct buttons sit no lower than without it; it is hidden otherwise.
-             A fold-out shows the DX Call/Grid entry with Generate, Erase (dialogue), Tx1-Tx6
-             with their Next choice and editable text, Skip Tx1, RRR/RR73, report, Tx period
-             and Auto Seq in place. On a station without
-             transmit capability the transmit buttons are disabled with the reason. */
+             line below the Others reads "Auto Seq off" (title: received messages do not
+             advance the QSO) with an "Auto Seq on" button; when the contact's ContactSnapshot
+             suggested_slot is set, the line adds "<call> expects" and a "Send <exchange>
+             next" button (e.g. "Send 73 next", the full message as its title) that chooses
+             that slot and arms (Reply). It is hidden otherwise and never clipped on the
+             1366x768 screen.
+             A fold-out shows the DX Call/Grid entry with Generate, Tx1-Tx6 with their Next
+             choice and editable text, Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
+             Cancel contact in place. On a station without transmit capability the transmit
+             buttons are disabled with the reason. */
     }
     attribute def SettingsDrawer {
         attribute sections : Integer = 4;

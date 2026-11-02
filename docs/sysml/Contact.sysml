@@ -523,7 +523,11 @@ package WstxContact {
         in containsMyCallAndDxCall : Boolean;
         return routed : Boolean = firstCallIsMyCall or containsMyCallAndDxCall or
             (rowFrequencyHz >= rxOffsetHz - 10.0 and rowFrequencyHz <= rxOffsetHz + 10.0);
-        doc /* D2 adopted (DOP decideRouting ~391-441): a decoded row is shown in the Rx
+        doc /* #37 (2026-11-02): no browser pane shows the routed rows any more; the
+             compact QSO pane (WstxOperatingLayout::QsoPane) shows the last partner message
+             and at most two other stations instead. The completion and log rules below
+             are unchanged. Earlier text:
+             D2 adopted (DOP decideRouting ~391-441): a decoded row is shown in the Rx
              Frequency pane when its audio frequency is within +/-10 Hz inclusive of the
              confirmed Rx offset (FT8 and FT4 alike), or its first ('to') call equals
              the profile callsign exactly, or it contains my call followed by the DX
@@ -597,12 +601,17 @@ package WstxContact {
              and FREQ from the dial confirmed at completion plus the Tx offset (absent when
              unconfirmed), STATION_CALLSIGN and MY_GRIDSQUARE; it is stored without any
              browser, whether or not one is connected. Manual Log QSO (button, Alt+Q,
-             open_log): available whenever a contact has a DX call, in any state; logs
+             open_log): the station accepts it whenever a contact has a DX call, in any
+             state; the QSO pane offers the button and Alt+Q only while a QSO runs
+             (WstxOperatingLayout::QsoPane, #37); it logs
              that contact now the same way with the times observed so far, without a
-             form. One record per contactId: logging a contactId already stored with
-             identical fields adds nothing (alreadySaved); with different fields (Log QSO
-             before completion, then completion) the contact's record is replaced in
-             place (replaced), keeping its index. Log QSO of a contact already logged at
+             form. Log QSO of an unfinished contact (replying..signoff) also closes it
+             (#37, 2026-11-02): it becomes completed with Tx6 selected, Enable Tx turns off
+             (disarm cause contactCompleted), nothing stays queued, and it counts as logged
+             at completion, so later partner messages neither advance nor log it again.
+             One record per contactId: logging a contactId already stored with
+             identical fields adds nothing (alreadySaved); with different fields the
+             contact's record is replaced in place (replaced), keeping its index. Log QSO of a contact already logged at
              its completion (stored or pending) changes nothing: the record keeps the
              dial, Tx offset and location of completion. A second contact with the same
              station is a new contactId and a new record (WSJT-X LogBook::add appends
@@ -854,12 +863,17 @@ package WstxContact {
              settings exactly {auto_seq,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,saved,suggested_slot} (report_sent the
+             tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd} (report_sent the
              report of the last transmitted Tx2/Tx3 rendered, null until one is sent;
              suggested_slot null or the slot AutoSequence would select after the latest
              counted partner message while Auto Seq is off, e.g. tx5 after their RR73 in
              rogerReport; the state and next slot do not change, the QSO pane offers it,
-             and choose_next clears it; null outside replying..signoff, #11)
+             and choose_next clears it; null outside replying..signoff, #11;
+             last_rcvd null or exactly {text,snr,period_utc_ms,count}: the latest partner
+             message to my call that the engine counted, or the selected row when it was
+             addressed to me, with its rounded SNR or null, its period start (Unix ms) and
+             how many consecutive counted messages had that identical text; null for a new
+             contact; the QSO pane's last partner message, #37)
              with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
              when contacts.adi holds the contact's record; log (DirectLog) null until a

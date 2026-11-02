@@ -896,7 +896,9 @@ fn log_qso_and_completion_log_at_once_and_never_block_a_new_contact() {
         s.command(Command::OpenLog).unwrap();
         let logged = one_log(&mut s);
         assert_eq!(logged.dx_call, Some(format!("DL{i}ABC")));
-        assert_eq!(logged.state, State::Replying, "Log QSO before completion");
+        // #37: Log QSO before completion closes the contact; nothing stays queued.
+        assert_eq!(logged.state, State::Completed, "Log QSO before completion");
+        assert_eq!(s.state(), (State::Completed, Slot::Tx6));
     }
     // A contact completes on a received 73 in rogers (no transmission needed).
     s.command(Command::EnterDx {
@@ -1629,4 +1631,109 @@ fn ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once()
             assert_replay(Mode::Ft8, &r, &at_once);
         }
     }
+}
+
+// ---------------------------------------------------------------- #37 compact QSO pane
+// Proves: CL-010-16, CL-011-01; TC-007-009, TC-011-001. Log QSO on a running, armed
+// contact closes it: completed with Tx6, Enable Tx off (contactCompleted), nothing
+// transmitted in the next period, one record (the Log QSO), and the partner's later
+// RR73/73 neither advances nor logs it again.
+#[test]
+fn log_qso_closes_a_running_contact_so_nothing_stays_queued_or_logs_twice() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1234.6, Some(-12.4));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    let report = s.row(period(2), "HB9BLA K1ABC -05", 1240.0, Some(-7.0));
+    s.deliver(&[report]);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    assert!(s.armed());
+    s.command(Command::OpenLog).unwrap();
+    let (kind, logged) = one_entry(&mut s);
+    assert_eq!(kind, LogKind::LogQso);
+    assert_eq!(logged.state, State::Completed);
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    assert!(!s.armed(), "Enable Tx off");
+    assert_eq!(
+        s.core.view().last_disarm_cause,
+        DisarmCause::ContactCompleted
+    );
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)),
+        None,
+        "nothing queued for the next period"
+    );
+    let rr73 = s.row(period(4), "HB9BLA K1ABC RR73", 1240.0, Some(-7.0));
+    let seventy_three = s.row(period(6), "HB9BLA K1ABC 73", 1240.0, Some(-7.0));
+    s.deliver(&[rr73, seventy_three]);
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    assert!(s.engine.take_logs().is_empty(), "logged once, by Log QSO");
+    s.command(Command::OpenLog).unwrap();
+    assert_eq!(
+        one_log(&mut s).id,
+        logged.id,
+        "a repeated Log QSO is the same contact"
+    );
+}
+
+// Proves: CL-010-16; TC-007-009. The QSO pane's last partner message (ContactSnapshot
+// last_rcvd): the latest counted partner message to my call with its rounded SNR; an
+// identical repeat counts up (xN), a new text starts again at 1; a selected row to my call
+// is the first one; a new contact starts empty.
+#[test]
+fn the_last_partner_message_counts_identical_repeats() {
+    let mut s = station();
+    let heard = |s: &Station| {
+        s.engine
+            .contact
+            .as_ref()
+            .unwrap()
+            .last_rcvd
+            .as_ref()
+            .map(|h| (h.text.clone(), h.snr, h.period_ms, h.count))
+    };
+    let call = s.row(P0, "HB9BLA IW9FRA JM68", 1838.0, Some(9.6));
+    s.command(Command::SelectRow {
+        row: call,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        heard(&s),
+        Some(("HB9BLA IW9FRA JM68".into(), Some(10), P0, 1))
+    );
+    for (n, text, snr, count) in [
+        (2, "HB9BLA IW9FRA R+10", -3.4, 1),
+        (4, "HB9BLA IW9FRA RR73", 17.0, 1),
+        (6, "HB9BLA IW9FRA RR73", 9.0, 2),
+        (8, "HB9BLA IW9FRA RR73", 16.0, 3),
+    ] {
+        let row = s.row(period(n), text, 1838.0, Some(snr));
+        s.deliver(&[row]);
+        let snr = Some(snr.round() as i32);
+        assert_eq!(
+            heard(&s),
+            Some((text.into(), snr, period(n), count)),
+            "{text} ({n})"
+        );
+    }
+    // Another station to my call and a message to someone else are not the partner's.
+    let other = s.row(period(10), "HB9BLA DL1ABC JO31", 1850.0, Some(-8.0));
+    let elsewhere = s.row(period(10), "K1ABC IW9FRA 73", 1838.0, Some(5.0));
+    s.deliver(&[other, elsewhere]);
+    assert_eq!(heard(&s).map(|h| h.3), Some(3));
+    s.command(Command::EnterDx {
+        call: "W1AW".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(heard(&s), None, "a new contact starts without one");
 }

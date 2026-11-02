@@ -373,7 +373,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
-            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5"},
+            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",
+            "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX}},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
         "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
@@ -637,7 +638,8 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "start_utc",
             "end_utc",
             "saved",
-            "suggested_slot"
+            "suggested_slot",
+            "last_rcvd"
         ])
     );
     assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
@@ -893,6 +895,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         last_counted_end: Some(P + 45_000),
         logged_on_completion: true,
         suggested: None,
+        last_rcvd: None,
     };
     let record = contact_http::Station::record_of(
         &c,
@@ -1168,21 +1171,35 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
             record["submode"].as_str().map(String::from),
         )
     };
-    let s4 = f4.snapshot().await;
+    let logged4 = f4.snapshot().await;
     let s8 = f8.snapshot().await;
-    assert_eq!(s4["contact"]["messages"][3], "K1ABC HB9BLA RR73");
+    assert_eq!(logged4["contact"]["messages"][3], "K1ABC HB9BLA RR73");
     assert_eq!(s8["contact"]["messages"][3], "K1ABC HB9BLA RRR");
-    assert_eq!(review(&s4), (Some("MFSK".into()), Some("FT4".into())));
+    assert_eq!(review(&logged4), (Some("MFSK".into()), Some("FT4".into())));
     assert_eq!(review(&s8), (Some("FT8".into()), None));
-    assert_ne!(s4["contact"]["id"], s8["contact"]["id"]);
-    // Only the FT4 station arms.
+    assert_ne!(logged4["contact"]["id"], s8["contact"]["id"]);
+    // #37: Log QSO closed each station's contact.
+    assert_eq!(
+        (
+            logged4["contact"]["state"].as_str(),
+            s8["contact"]["state"].as_str()
+        ),
+        (Some("completed"), Some("completed"))
+    );
+    // Only the FT4 station arms, on K1ABC selected again (a new contact).
     f4.contact().grant.store(true, Ordering::SeqCst);
+    let (s, v) = f4
+        .send("select_row", json!({"row":rows[0],"replace":false}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
     let (s, v) = f4
         .send("enable_tx", json!({"enabled":true,"safety_revision":3}))
         .await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
     f8.tick();
-    assert_eq!(f4.snapshot().await["transmit"]["arm_state"], "armed");
+    let s4 = f4.snapshot().await;
+    assert_eq!(s4["transmit"]["arm_state"], "armed");
+    assert_eq!(s4["contact"]["state"], "replying");
     assert_eq!(f8.snapshot().await["transmit"]["arm_state"], "disarmed");
     // The FT4 station switches to FT8: its contact is cancelled and Enable Tx is off;
     // its log record keeps MFSK/FT4. The FT8 station is untouched.
@@ -1201,14 +1218,14 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
             Some("contact_cancelled")
         )
     );
-    assert_eq!(review(&s4), (Some("MFSK".into()), Some("FT4".into())));
+    assert_eq!(review(&logged4), (Some("MFSK".into()), Some("FT4".into())));
     let s8 = f8.snapshot().await;
     assert_eq!(
         (
             s8["contact"]["state"].as_str(),
             s8["contact"]["dx_call"].as_str()
         ),
-        (Some("replying"), Some("K1ABC"))
+        (Some("completed"), Some("K1ABC"))
     );
     assert_eq!(review(&s8), (Some("FT8".into()), None));
 }
@@ -1310,7 +1327,7 @@ async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_con
 }
 
 // Proves: CL-011-03; TC-007-008. #11 live stall (IW9FRA, 2026-11-02 13:44-13:46 UTC):
-// the published FT4 records of the partner (even 7.5 s periods, Δf 1838 Hz, the real
+// the published FT4 records of the partner (even 7.5 s periods, Î”f 1838 Hz, the real
 // codec's fields and period_start_utc form) reach the engine through the station step
 // and move the contact Tx1 -> Tx3 -> Tx5 exactly as WSJT-X auto-sequence does.
 #[tokio::test]

@@ -363,8 +363,31 @@ pub struct Contact {
     /// With Auto Seq off: the message Auto Seq would send next after the latest counted
     /// partner message (e.g. Tx5 after their RR73), offered to the operator (#11).
     pub suggested: Option<Slot>,
+    /// The latest partner message to my call (#37 QSO pane), with its repeat count.
+    pub last_rcvd: Option<Heard>,
+}
+/// A partner message to my call as the QSO pane shows it (#37).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Heard {
+    pub text: String,
+    pub snr: Option<i32>,
+    pub period_ms: i64,
+    /// Consecutive counted messages with this identical text.
+    pub count: u32,
 }
 impl Contact {
+    fn heard(&mut self, row: &Row, period_ms: i64) {
+        let count = match &self.last_rcvd {
+            Some(h) if h.text == row.text => h.count.saturating_add(1),
+            _ => 1,
+        };
+        self.last_rcvd = Some(Heard {
+            text: row.text.clone(),
+            snr: row.snr_db.map(|s| s.round() as i32),
+            period_ms,
+            count,
+        });
+    }
     /// WstxContact::LogRecord start time (MW set_dateTimeQSO).
     pub fn start_utc_ms(&self) -> Option<i64> {
         self.first_tx2_period
@@ -642,6 +665,7 @@ impl Engine {
             last_counted_end: None,
             logged_on_completion: false,
             suggested: None,
+            last_rcvd: None,
         });
         self.settings.report = report;
         Ok(())
@@ -719,6 +743,7 @@ impl Engine {
                     }
                     if let Some(p) = row.period_start_ms {
                         c.last_counted_end = Some(p + period_ms(mode));
+                        c.heard(&row, p);
                     }
                 }
             }
@@ -943,6 +968,7 @@ impl Engine {
                         last_counted_end: None,
                         logged_on_completion: false,
                         suggested: None,
+                        last_rcvd: None,
                     });
                 }
             }
@@ -959,11 +985,18 @@ impl Engine {
             }
             Command::Redecode => return Err("redecode_unavailable"),
             Command::OpenLog => {
-                // Log QSO: log this contact now, in any state (DirectLog).
-                let c = self.contact.as_ref().ok_or("no_contact")?;
+                // Log QSO: log this contact now, in any state (DirectLog). An unfinished
+                // contact is closed by it (#37): completed, Enable Tx off, nothing queued,
+                // and this Log QSO is its only record.
+                let c = self.contact.as_mut().ok_or("no_contact")?;
                 if c.dx_call.is_none() {
                     return Err("no_contact");
                 }
+                if c.state.active() {
+                    c.logged_on_completion = true;
+                    self.complete(core.as_deref_mut(), ctx.now_utc_ms);
+                }
+                let c = self.contact.as_ref().expect("checked");
                 self.to_log.push((LogKind::LogQso, c.clone()));
             }
         }
@@ -1120,6 +1153,7 @@ impl Engine {
                     let received = classify(std);
                     let auto = self.settings.auto_seq;
                     let c = self.contact.as_mut().expect("checked");
+                    c.heard(row, period);
                     if let Exchange::Report(r) = std.exchange {
                         c.report_rcvd = Some(r.clamp(REPORT_MIN, REPORT_MAX));
                     }
