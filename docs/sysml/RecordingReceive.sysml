@@ -675,7 +675,7 @@ package WstxRecordingReceive {
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
              .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
              Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
-             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; one or two live Thin rows paced out between two sent rows are drawn with the next row, not as a gap; Thin sends keep a fixed period grid from the previous deadline). This continuous level-to-color
+             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; one or two live Thin rows paced out between two sent rows are drawn with the next row, not as a gap; live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
              outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
@@ -903,7 +903,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
              .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
              Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
-             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; one or two live Thin rows paced out between two sent rows are drawn with the next row, not as a gap; Thin sends keep a fixed period grid from the previous deadline). This continuous level-to-color
+             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; one or two live Thin rows paced out between two sent rows are drawn with the next row, not as a gap; live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
              outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB

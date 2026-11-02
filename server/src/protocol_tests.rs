@@ -211,4 +211,15 @@ fn thin_sends_are_anchored_to_the_previous_deadline() {
     // After a pause of more than a period the grid restarts at the send.
     let late = anchor + Duration::from_secs(5);
     assert_eq!(super::next_thin_anchor(anchor, period, late), late);
+    // A send 1.5 s late (more than half a period) also restarts the grid, so the next send is
+    // at least 1 s after it (at most 1 Thin send per second); 1 s late keeps the grid.
+    let due = late + period;
+    let sent = due + Duration::from_millis(1500);
+    let next = super::next_thin_anchor(late, period, sent);
+    assert_eq!(next, sent);
+    assert!(next + period - sent >= Duration::from_secs(1));
+    let sent = due + Duration::from_secs(1);
+    let next = super::next_thin_anchor(late, period, sent);
+    assert_eq!(next, due);
+    assert!(next + period - sent >= Duration::from_secs(1));
 }
