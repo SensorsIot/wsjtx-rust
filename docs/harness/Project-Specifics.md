@@ -190,23 +190,44 @@ This is the project's binding of the harness
 [deployment authority](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md#deployment-authority)
 rules (#26).
 
-**Mechanism.** There is one existing deploy mechanism: the Windows release executable
-built on HB9BLA and installed there by the reviewed package scripts (`apply.ps1`,
-`rollback.ps1`, as in the `deploy-ba176` package under
-`.git/harness-parallel/resources/issue-8/`), with the dry run (`apply.ps1 -PreflightOnly`)
-on the packaged candidate. The manual `windows-rust.yml` workflow and its
-`wstx-rust-windows-x64` artifact are build evidence only (operator decision 2026-10-30):
-that artifact is never installed on the station.
+**Mechanism.** There is one deploy mechanism: the Windows release executable built on
+HB9BLA and installed there at user level by the reviewed station-update scripts in
+`.git/harness-parallel/resources/station-update/` (operator decision 2026-10-31, see #30).
+`make_package.py <commit> <push-gate log>` builds a package of a commit on GitHub master
+whose push gate passed; `station-update.ps1 -Manifest <package>\manifest.json [-DryRun]`
+verifies it, stops the station gracefully, switches `active.json`, starts the task and
+switches back on failure; `station-update.ps1 -Rollback` returns to the previous version.
+The operator's one-time `setup-once.ps1` points the scheduled task at
+`station\launcher.ps1`, which runs the version named in `active.json`. The manual
+`windows-rust.yml` workflow and its `wstx-rust-windows-x64` artifact are build evidence
+only (operator decision 2026-10-30): that artifact is never installed on the station.
 
-**Rules not met yet.** Until each issue is done, the operator's OK on the dry run
-(CR process step 5) authorizes this mechanism.
+**After every install** run the independent probe; on `PROBE FAIL` (exit 1) run
+`station-update.ps1 -Rollback`; `PROBE ERROR` (exit 2) is a wrong argument, not a verdict:
+
+```powershell
+.harness\deploy\station-probe.ps1 -Manifest <package>\manifest.json
+```
+
+It is read-only. It asks Windows which process listens on TCP 18081, hashes that
+process's executable itself and requires the candidate's commit directory and the digest
+of the package's own `wstx-rust.exe` (recomputed, not read from the manifest), then HTTP
+200 from `https://192.168.0.37:18081/` over TLS that Windows trusts, and last that the
+launcher receipt agrees with what it observed. The service reports only its crate version
+(`0.1.0`), not its commit, so the running image's digest is the version identity; a
+service-reported commit would be a product change (CR). Tests:
+`python -m unittest discover -s .harness/deploy/tests`.
+
+**Rules not met yet.** Until each issue is done, the operator's standing permission to
+run `station-update.ps1` (decision 2026-10-31, recorded on #30) authorizes this mechanism
+in place of an OK per install.
 
 | Rule | State today | Issue |
 |---|---|---|
 | Credentials outside the agents | Agents run as the HB9BLA user and can write the version directory, receipt, gates record and package scripts. Only the task and firewall changes need the operator's elevation. | #30 |
 | Approval names the candidate | The manifest names commit, executable SHA-256 and destination, but the agents write it, and the elevation is not bound to it. | #31 |
 | Verify before writing | `apply.ps1` refuses a changed artifact, package, gates record, receipt, process, task or firewall state before writing, but checks against an agent-written manifest beside the artifact. | #32 |
-| Prove the result | After restart: a trusted-TLS, cookie-authenticated profile GET and a launcher-receipt check (commit, path, hash, PID). The version comes from the receipt, not from the service, and the deploying agent runs the probe. | #33 |
+| Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks independently of the receipt that the process listening on 18081 runs the candidate's bytes and answers over trusted TLS. Not met in full: an agent runs the probe and the rollback after it (the operator can run the same probe), and the service does not report its own commit. | #33 |
 | Show the refusals | Firewall-enum and profile-lock refusals were observed in past dry runs. Tampered artifact, stale or unapproved commit, mismatched approval and wrong destination were not each shown. | #34 |
 
 No rule is met in full.
