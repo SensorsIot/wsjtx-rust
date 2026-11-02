@@ -252,6 +252,10 @@ pub struct State {
     live: Option<LiveState>,
     latest_decode: Option<LatestDecode>,
     decode_counter: u64,
+    /// WstxUdp Status decoding (#40): the live decoder is processing an analysis window
+    /// now, and the number of windows it began (monotonic for the process).
+    decoding: bool,
+    decode_windows: u64,
     operating: selection::Operating,
     live_worker: Option<std::thread::JoinHandle<()>>,
     live_owner_released: bool,
@@ -295,6 +299,18 @@ pub(crate) type CatTransport = Arc<
         > + Send
         + Sync,
 >;
+
+/// One analysis window's decode in progress (Recording::begin_window_decode).
+pub(crate) struct WindowDecode(Arc<Recording>);
+impl Drop for WindowDecode {
+    fn drop(&mut self) {
+        self.0
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .decoding = false;
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct LatestDecode {
@@ -530,6 +546,20 @@ impl Recording {
                 d.period_start_utc.clone(),
             )
         })
+    }
+    /// (decoding now, windows begun) of the live decoder, for the UDP Status (#40).
+    pub(crate) fn decoder_activity(&self) -> (bool, u64) {
+        let s = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        (s.decoding, s.decode_windows)
+    }
+    /// Marks the start of one analysis window's decode; the returned guard ends it when
+    /// dropped (also on an abandoned, failed or cancelled decode). WSJT-X
+    /// MainWindow::beginDecode / endDecode.
+    pub(crate) fn begin_window_decode(self: &Arc<Self>) -> WindowDecode {
+        let mut s = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        s.decoding = true;
+        s.decode_windows = s.decode_windows.wrapping_add(1);
+        WindowDecode(self.clone())
     }
     /// Retained result records of the current live job with sequence >= `after` (all
     /// retained ones when `identity` is not the current job).
@@ -2394,6 +2424,8 @@ impl LiveWorker {
             // FT8 SNR measures from the UTC period start, as WSJT-X does (#52).
             state.set_period_start(period_start);
             self.note_window(&window, mode, period_start, period_utc, drift_ms);
+            // UDP Status decoding is true from here until this window's decode returns.
+            let busy = self.owner.begin_window_decode();
             let mut complete = false;
             let mut future = Box::pin(decoder.decode_window_into_async(
                 window.samples,
@@ -2469,6 +2501,7 @@ impl LiveWorker {
                 }
             };
             drop(future);
+            drop(busy);
             self.modem = if self.reset { None } else { Some(state) };
             result?;
             if !self.reset {
@@ -2970,6 +3003,8 @@ impl Recording {
             live: None,
             latest_decode: None,
             decode_counter: 0,
+            decoding: false,
+            decode_windows: 0,
             operating: selection::Operating::new(),
             live_worker: None,
             live_owner_released: true,

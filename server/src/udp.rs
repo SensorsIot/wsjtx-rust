@@ -250,7 +250,12 @@ struct Runtime {
     error: Option<&'static str>,
     last_command: Option<Value>,
     last_status: Option<Vec<u8>>,
-    heartbeat_at: Option<Instant>,
+    /// The decoder's windows-begun count when the last Status was sent.
+    status_windows: u64,
+    /// The last pulse (Heartbeat and Status resend), monotonic.
+    pulse_at: Option<Instant>,
+    /// A pulse fell due: the next Status goes out even when unchanged.
+    status_due: bool,
     replay: VecDeque<Vec<u8>>,
     replay_status: bool,
 }
@@ -524,7 +529,7 @@ fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::Status {
             .as_ref()
             .is_some_and(|v| v.arm_state == ArmState::Armed),
         transmitting: view.as_ref().is_some_and(|v| v.transmitting),
-        decoding: r.latest_publication().is_some_and(|p| !p.3),
+        decoding: r.decoder_activity().0,
         rx_df: facts.as_ref().map_or(0, |f| f.rx_hz),
         tx_df: facts.as_ref().map_or(0, |f| f.tx_hz),
         de_call: call,
@@ -766,14 +771,16 @@ impl Owner {
         });
         let id = config.instance.as_str();
         let version = env!("CARGO_PKG_VERSION");
+        // The pulse (MessageClient heartbeat_timer_, NetworkMessage::pulse 15 s): Heartbeat,
+        // and the Status resent unchanged so a tool started later learns the state (#40).
         for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
-            if rt.socket.is_some()
-                && t.messages & HEARTBEAT_BIT != 0
-                && rt.heartbeat_at.is_none_or(|at| at.elapsed() >= HEARTBEAT)
-            {
-                rt.heartbeat_at = Some(Instant::now());
-                let bytes = nm::heartbeat(rt.schema, id, version, "");
-                send(rt, t.address, &bytes, now);
+            if rt.socket.is_some() && rt.pulse_at.is_none_or(|at| at.elapsed() >= HEARTBEAT) {
+                rt.pulse_at = Some(Instant::now());
+                rt.status_due = true;
+                if t.messages & HEARTBEAT_BIT != 0 {
+                    let bytes = nm::heartbeat(rt.schema, id, version, "");
+                    send(rt, t.address, &bytes, now);
+                }
             }
         }
         // Decode and Clear of the current live job.
@@ -829,7 +836,10 @@ impl Owner {
         if !active {
             return;
         }
-        // Replay queues, then Status (on change, at activation and after a Replay).
+        // Replay queues, then Status: at activation, on change, on each decoder window (a
+        // window begun and ended between two steps still sends one), with each pulse and
+        // after a Replay.
+        let windows = r.decoder_activity().1;
         let status = status_of(state, r);
         for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
             if rt.socket.is_none() {
@@ -844,11 +854,17 @@ impl Owner {
             let replayed = rt.replay_status && rt.replay.is_empty();
             if t.messages & STATUS_BIT != 0 {
                 let bytes = nm::status(rt.schema, id, &status);
-                if replayed || rt.last_status.as_ref() != Some(&bytes) {
+                if replayed
+                    || rt.status_due
+                    || rt.status_windows != windows
+                    || rt.last_status.as_ref() != Some(&bytes)
+                {
                     send(rt, t.address, &bytes, now);
                     rt.last_status = Some(bytes);
+                    rt.status_windows = windows;
                 }
             }
+            rt.status_due = false;
             if replayed {
                 rt.replay_status = false;
             }
