@@ -971,7 +971,7 @@ async function transmitSync(){
   transmitShow();
 }
 function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
-setInterval(transmitPoll,2000);
+setInterval(transmitPoll,2000);addEventListener('station-ready',()=>transmitPoll()); // #57: HALT is enabled as soon as the station is ready, not on the first 2 s poll.
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
