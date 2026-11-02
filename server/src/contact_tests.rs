@@ -28,6 +28,8 @@ struct Bench {
     playing: Mutex<Option<(i64, usize)>>,
     /// Every waveform play: (UTC start, samples played).
     plays: Mutex<Vec<(i64, usize)>>,
+    /// The device reports the end this long after the last sample was due (#49).
+    late_ms: AtomicI64,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -77,7 +79,12 @@ impl Hardware for Fake {
     }
     fn poll_audio(&mut self) -> AudioPoll {
         match *self.0.playing.lock().unwrap() {
-            Some((at, n)) if (self.now_utc_ms() - at) * 48 >= n as i64 => AudioPoll::Finished,
+            Some((at, n))
+                if (self.now_utc_ms() - at - self.0.late_ms.load(Ordering::SeqCst)) * 48
+                    >= n as i64 =>
+            {
+                AudioPoll::Finished
+            }
             Some(_) => AudioPoll::Playing,
             None => AudioPoll::Idle,
         }
@@ -950,6 +957,48 @@ fn an_operator_disarm_is_not_reported_as_a_refused_transmission() {
     s.command(Command::EnableTx(false, None)).unwrap();
     s.run(s.now() + 200);
     assert_eq!(s.engine.transmit_problem, None, "disarm cancels quietly");
+}
+
+// Proves: CL-010-02, CL-010-03; TC-007-001. #49: CQ keeps calling, armed, when every
+// transmission's end is reported 900 ms late (inside the release bound).
+#[test]
+fn cq_keeps_calling_armed_when_the_device_reports_each_end_900_ms_late() {
+    let mut s = station();
+    s.fake.0.late_ms.store(900, Ordering::SeqCst);
+    s.command(Command::SetParity(Parity::Even)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+    s.run(period(6) + 14 * SECOND + 500);
+    let cqs: Vec<_> = s.sent.iter().map(|(p, t)| (*p, t.as_str())).collect();
+    assert_eq!(
+        cqs,
+        vec![
+            (period(0), "CQ HB9BLA JN47"),
+            (period(2), "CQ HB9BLA JN47"),
+            (period(4), "CQ HB9BLA JN47"),
+            (period(6), "CQ HB9BLA JN47")
+        ]
+    );
+    let releases: Vec<_> = s
+        .fake
+        .0
+        .keys
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|k| !k.1)
+        .map(|k| k.0)
+        .collect();
+    assert_eq!(
+        releases,
+        [0, 2, 4, 6]
+            .map(|n| period(n) + 500 + 12_640 + 900)
+            .to_vec(),
+        "released when the device reports the end"
+    );
+    assert!(s.armed(), "a late end report never disarms");
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+    assert_eq!(s.engine.transmit_problem, None);
 }
 
 #[test]
