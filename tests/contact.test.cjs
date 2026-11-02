@@ -66,8 +66,10 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.equal(select.row.source_id,live.source.id);assert.equal(select.row.job_id,live.job.id);assert.equal(select.row.generation,live.generation);
   assert.equal(String(select.row.sequence),await k1abc.getAttribute('data-sequence'));
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
-  // #55 TC-055-004: the QSO pane header names the partner's country and continent.
+  // #55 TC-055-004: the QSO pane header names the partner's country and continent, first on
+  // its detail line; the header line stays call and grid.
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:/^U\.S\.A\. \(NA\) \u00b7 \d+ km \u00b7 sent /}).waitFor();
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'K1ABC · FN42');
   const texts=await page.locator('#contact-messages .ct-text').evaluateAll(inputs=>inputs.map(i=>i.value));
   assert.deepEqual(texts,['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47']);
   assert.equal(await page.locator('input[name=contact-next][value=tx1]').isChecked(),true);
