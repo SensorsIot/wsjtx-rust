@@ -93,6 +93,7 @@ async function connect() {
       lastMessage = Date.now();
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
+        if (stationUpdated(message.data.build)) return;
         if (profileMode) {
           if (!profileRefresh.initialized) {
             if (!await refreshProfile(current, profileRefresh)) return;
@@ -113,6 +114,21 @@ async function connect() {
     } catch { disconnect(current); }
   };
   current.onclose = loseSocket;
+}
+// WstxStationProtocol::PageUpdate (#51): a page served with another client build than the
+// station's reloads itself once (local settings stay in browser storage). The operating
+// screen may hold the reload (window.wstxReloadHeld: QSO, dialog, unsaved settings); it then
+// shows its "Station updated" chip. A second mismatch for the same build never loops.
+const pageBuild = document.body.dataset.build;
+function stationUpdated(build) {
+  if (typeof build !== 'string' || !pageBuild || build === pageBuild) return false;
+  let reloaded = null; try {reloaded = sessionStorage.getItem('wstx.reloaded-build.v1');} catch {}
+  if (reloaded !== build && !window.wstxReloadHeld?.()) {
+    try {sessionStorage.setItem('wstx.reloaded-build.v1', build);} catch {}
+    location.reload(); return true;
+  }
+  window.dispatchEvent(new CustomEvent('station-updated', {detail: build}));
+  return false;
 }
 setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > 12000) disconnect(socket); }, 1000);
 refresh.addEventListener('click', requestStatus);

@@ -478,11 +478,11 @@ async fn index(State(app): State<App>) -> Html<String> {
         if app.profile.is_some() { "<script src=\"/authorization.js\" defer></script><script src=\"/app.js\" defer></script>" } else { "<script src=\"/app.js\" defer></script>" }
     ).replace(
         "data-profile=\"false\"",
-        if app.profile.is_some() {
-            "data-profile=\"true\""
-        } else {
-            "data-profile=\"false\""
-        },
+        &format!(
+            "data-profile=\"{}\" data-build=\"{}\"",
+            app.profile.is_some(),
+            client_build()
+        ),
     ))
 }
 fn cookie_name(app: &App) -> String {
@@ -766,6 +766,31 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         })
 }
 
+/// WstxStationProtocol::ClientBuild (#51): the identity of the embedded browser client, the
+/// first 16 hex digits of the SHA-256 over every served client file in route order. The page
+/// carries the build it was served with; station.status carries the station's.
+fn client_build() -> &'static str {
+    static BUILD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BUILD.get_or_init(|| {
+        let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
+        for asset in [
+            include_str!("../../client/index.html"),
+            include_str!("../../client/authorization.js"),
+            include_str!("../../client/app.js"),
+            include_str!("../../client/recording.js"),
+            include_str!("../../client/recording.css"),
+            include_str!("../../client/contact.js"),
+            include_str!("../../client/logbook.js"),
+            include_str!("../../client/style.css"),
+        ] {
+            digest.update(asset.as_bytes());
+        }
+        digest.finish().as_ref()[..8]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    })
+}
 fn reply(text: &str) -> Value {
     let error = |id: Value, code: &str| json!({"v":1,"type":"error","id":id,"data":{"code":code}});
     let Ok(value) = serde_json::from_str::<Value>(text) else {
@@ -792,7 +817,7 @@ fn reply(text: &str) -> Value {
     }
     match value["type"].as_str() {
         Some("station.get") => {
-            json!({"v":1,"type":"station.status","id":id,"data":{"version":env!("CARGO_PKG_VERSION"),"radio":"unconfigured"}})
+            json!({"v":1,"type":"station.status","id":id,"data":{"version":env!("CARGO_PKG_VERSION"),"radio":"unconfigured","build":client_build()}})
         }
         Some(_) => error(id, "unknown_command"),
         None => error(id, "invalid_request"),
@@ -868,10 +893,38 @@ fn optional_flush<S: futures_sink::Sink<Message> + Unpin>(
 fn arm_detail(
     tick: &mut tokio::time::Interval,
     accepted: tokio::time::Instant,
+    behind: bool,
 ) -> tokio::time::Instant {
-    let next = accepted + Duration::from_millis(200);
+    // #54: a subscriber behind the station catches up at 170 ms per row (under 10 KiB/s).
+    let next = accepted + Duration::from_millis(if behind { 170 } else { 200 });
     tick.reset_at(next);
     next
+}
+/// #54: the next live Thin pacing anchor is the previous one plus the period, so 100 ms ticks do
+/// not drift against the 1 row/s source. A send more than half a period late restarts the grid
+/// at the send, so two sends are always at least half a period (1 s live) apart.
+fn next_thin_anchor(previous: Instant, period: Duration, now: Instant) -> Instant {
+    let next = previous + period;
+    if now.saturating_duration_since(next) > period / 2 {
+        now
+    } else {
+        next
+    }
+}
+/// #54: the oldest retained Detailed row after the one this socket sent last (rows of
+/// another job all count as new), and whether more rows wait behind it.
+fn detail_after(
+    recent: &std::collections::VecDeque<Value>,
+    seen: &Option<(Value, Value)>,
+) -> Option<(Value, bool)> {
+    let mut pending = recent.iter().filter(|f| match seen {
+        Some((job, sequence)) if f["data"]["job_id"] == *job => {
+            f["data"]["sequence"].as_u64() > sequence.as_u64()
+        }
+        _ => true,
+    });
+    let first = pending.next()?.clone();
+    Some((first, pending.next().is_some()))
 }
 
 struct ConnectionAuthority {
@@ -926,7 +979,7 @@ async fn connection(
     display.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut detail_tick = interval(Duration::from_millis(200));
     detail_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut next_detail = arm_detail(&mut detail_tick, tokio::time::Instant::now());
+    let mut next_detail = arm_detail(&mut detail_tick, tokio::time::Instant::now(), false);
     let mut display_profile = "off";
     let mut seen = None;
     let mut last_display = Instant::now() - Duration::from_secs(1);
@@ -1028,7 +1081,7 @@ async fn connection(
                                 } else {
                                     display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
                                     subscribed = true;
-                                    if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now()); }
+                                    if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),false); }
                                     let state=r.state.lock().unwrap();
                                     let frame=if display_profile=="detail" {&state.detail_frame} else {&state.frame};
                                     seen=frame.as_ref().map(|f|(f["data"]["job_id"].clone(),f["data"]["sequence"].clone()));
@@ -1052,7 +1105,7 @@ async fn connection(
                 let live=recording.as_ref().is_some_and(|r|r.state.lock().unwrap().job.as_ref().is_some_and(|j|j.kind=="live"));
                 if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(if live {2}else{1}) {continue;}
                 if display_profile=="detail" && tokio::time::Instant::now()<next_detail {detail_tick.reset_at(next_detail);continue;}
-                let frame = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {s.detail_frame.clone()} else {s.frame.clone()}});
+                let (frame,behind) = recording.as_ref().and_then(|r| {let s=r.state.lock().unwrap();if display_profile=="detail" {detail_after(&s.detail_recent,&seen)} else {s.frame.clone().map(|f|(f,false))}}).map_or((None,false),|(f,b)|(Some(f),b));
                 if let Some(frame) = frame {
                     let identity = (frame["data"]["job_id"].clone(),frame["data"]["sequence"].clone());
                     if seen.as_ref() != Some(&identity) {
@@ -1060,7 +1113,7 @@ async fn connection(
                         if text.len()>if display_profile=="detail" {2048} else {1024} { continue; }
                         match optional_write(&mut socket,Message::Text(text.into())) {
                             Ok(None)=>{},
-                            Ok(Some(flushed))=>{seen=Some(identity);last_display=Instant::now();if display_profile=="detail" {next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now());}
+                            Ok(Some(flushed))=>{seen=Some(identity);last_display=if live {next_thin_anchor(last_display,Duration::from_secs(2),Instant::now())} else {Instant::now()};if display_profile=="detail" {next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),behind);}
                             if !flushed {optional_since=Some(Instant::now());}},
                             Err(_)=>break,
                         }

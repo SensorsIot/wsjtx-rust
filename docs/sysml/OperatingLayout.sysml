@@ -231,7 +231,7 @@ attribute def ActivityOrdering {
              Home chooses the minimum, End maximum with workspace retained.
              ARIA min/max/current follow the clamped actual signal height.
              360CSSpx and 200% zoom stack lower panes; text remains reachable.
-             Existing 0..3000Hz, palette, 1:5 curve/waterfall and native bin contracts
+             Existing 0..3000Hz, palette, optional 1:5 curve/waterfall (#54) and native bin contracts
              are unchanged. Secondary in-page disclosures reuse existing forms,
              preserve login and never obscure the station bar or disabled Halt Tx. */
     }
@@ -422,6 +422,7 @@ attribute def ActivityOrdering {
         enum linkStale; enum catLost; enum catSetupUnconfirmed; enum audioUnavailable;
         enum audioLevelLow; enum audioLevelHigh; enum clockOff; enum receiveStopped;
         enum receiveRestarted; enum receiveOutcomeUnknown;
+        enum stationUpdated; enum stationDataRejected;
     }
     enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
     enum def ChangeKind { enum operative; enum restart; }
@@ -454,11 +455,12 @@ attribute def ActivityOrdering {
              Top bar (TopBarItem, only these): band select and FT8/FT4 select, both marked
              restart (ChangeKind restart: a change restarts receive through the operating
              selection, contract 4.7.5, and asks first while a QSO or transmission is
-             active); dial frequency (display, CAT readback or nominal); UTC with a compact
-             period progress; exception chips (ExceptionChip, shown only while the
+             active); dial frequency (display, CAT readback or nominal); UTC (#50: the
+             period progress is only the QSO pane's NEXT bar); exception chips (ExceptionChip, shown only while the
              condition holds, nothing when all is well; each names its cause, opens its
              detail in the Settings drawer, and receiveStopped offers the explicit receive
-             start); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
+             start; stationUpdated and stationDataRejected reload the page instead,
+             WstxStationProtocol::PageUpdate, #51); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
              HALT stays reachable by pointer too: a confirmation popup (the only popup kind)
              carries its own HALT with the same action and enabled state as the top-bar one,
              because a modal popup makes the rest of the page inert. A
@@ -466,7 +468,7 @@ attribute def ActivityOrdering {
              refresh control: the status refreshes itself (an explicit Refresh status is in
              Settings > Expert).
              Waterfall full width with the Rx/Tx strip (RxTxStrip) directly below it; its corner
-             holds Sensitivity and Waterfall speed (operative, immediate; the speed is a
+             holds Sensitivity, Range (#54) and Waterfall speed (operative, immediate; the speed is a
              per-browser preference).
              Workspace: Band Activity (BandActivityView) on the left with the strategy
              element above it, the QSO pane (QsoPane) on the right; at most 75em wide the
@@ -495,10 +497,36 @@ attribute def ActivityOrdering {
              Exact Hz can be typed; the buttons, the mouse wheel and the arrow keys step
              1 Hz, with Shift 10 Hz. Each change is one WstxContact set_frequency or
              set_hold_tx request; the fields show only server-confirmed values (a typed
-             value is not shown as applied until confirmed). Waterfall pointer: click Rx,
-             Shift+click Tx, Ctrl+click both (WstxContact::PointerEffect); the Rx and Tx
-             markers can be dragged and the release sends one set_frequency. No strip or
+             value is not shown as applied until confirmed). Waterfall pointer (#50): click Tx,
+             double-click Rx and Tx (WstxContact::PointerEffect). The Rx and Tx markers are 3 px
+             green (Rx) and red (Tx) lines over the full waterfall height, without text, and can be
+             dragged; the release sends one set_frequency. No strip or
              pointer action enables transmission. */
+    }
+    enum def BandActivitySlot {
+        enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;
+        enum new_itu_zone; enum new_itu_zone_band; enum new_dxcc; enum new_dxcc_band; enum new_grid;
+        enum new_grid_band; enum new_call; enum new_call_band; enum lotw; enum cq;
+    }
+    attribute def BandActivityColours {
+        attribute slots : Integer = 15;
+        doc /* CL-050-02 (#50). The WSJT-X 3.3 DecodeHighlightingModel slots in its priority order
+             (BandActivitySlot order, highest first) with its default on/off and colours (row
+             background; dark theme as the same colour at 0.2-0.35 alpha; the Day and Night themes
+             transform the whole page): mycall #ff6666 on; new_continent #ff0063 on;
+             new_continent_band #ff99c2 on; new_cq_zone #ffbf00 on; new_cq_zone_band #ffe499 on;
+             new_itu_zone #a6ff00 off; new_itu_zone_band #ddff99 off; new_dxcc #ff00ff on;
+             new_dxcc_band #ffaaff on; new_grid #ff8000 off; new_grid_band #ffcc99 off; new_call
+             #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 on. A row takes
+             the highest-priority enabled slot it matches. Matches: mycall, a decoded message to the
+             profile callsign; cq, a decoded message starting CQ; new_call, the worked-before status
+             not_worked of the sending call; new_call_band, not_worked or worked_other_band_or_mode; every new_*
+             slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
+             zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
+             new_* slot applies only to CQ/QRZ lines, and a never-worked call matches new_call and
+             new_call_band. Worked before on this band and mode has no colour. Settings > General > Display lists the slots with their
+             colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
+             accent (a left bar and the message text), never a row background. */
     }
     attribute def BandActivityView {
         attribute newestFirst : Boolean = true;
@@ -515,9 +543,9 @@ attribute def ActivityOrdering {
              header click). DXCC needs the cty.dat prefix table, which the station does not
              yet provide: the column shows an explicit unavailable mark. Distance is the
              great-circle distance from the profile locator to a grid carried in the
-             message, unavailable otherwise. Colours keep the WSJT-X meanings: CQ, a
-             message addressed to my call, worked-before marks (WstxContact::
-             WorkedBeforeQuery), and with Highlight on the strategy marks of
+             message, unavailable otherwise. Colours (#50, BandActivityColours) are the WSJT-X
+             row backgrounds; there are no text marks; worked before (WstxContact::
+             WorkedBeforeQuery) feeds only the New call slots; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits); double-click replies (select, then SetEnableTx on); right-click

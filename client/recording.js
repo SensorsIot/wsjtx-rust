@@ -12,7 +12,7 @@ main.append(signal,splitter,controls);
 const stationBar=controls.querySelector('header');stationBar.id='station-bar';stationBar.className='op-header op-topbar';
 const stationConnectionNode=document.querySelector('#connection');
 const tuning=document.createElement('div');tuning.id='radio-toolbar';tuning.className='op-tuning';tuning.setAttribute('role','group');tuning.setAttribute('aria-label','Radio operation');
-tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</span><input id="op-dial" disabled placeholder="Unknown" aria-label="Dial frequency unavailable" title="CAT readback unavailable"></div><div class="op-period"><span>Receive period</span><div class="op-period-track"></div><small>Timing unavailable</small></div>';
+tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</span><input id="op-dial" disabled placeholder="Unknown" aria-label="Dial frequency unavailable" title="CAT readback unavailable"></div><div class="op-period"><span>UTC unavailable</span></div>';
 const chips=document.createElement('div');chips.id='exception-chips';chips.className='op-chips';chips.setAttribute('role','group');chips.setAttribute('aria-label','Station exceptions');
 const headerActions=document.createElement('div');headerActions.className='op-header-actions';
 headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
@@ -90,13 +90,29 @@ new MutationObserver(updateIdentity).observe(document.querySelector('#profile-na
 const panel = document.createElement('section'); panel.id = 'recording-controls'; panel.setAttribute('aria-label','Recording controls');
 panel.innerHTML = '<label>Import mono 12 kHz PCM16 WAV (up to 120 seconds)<input id="recording-file" type="file" accept=".wav,audio/wav"></label><button id="recording-import">Import recording</button><button id="recording-replay" disabled>Replay spectrum</button><button id="recording-cancel" disabled>Cancel operation</button><p>One processing worker per station &#183; no speaker playback</p><p id="recording-progress" role="status"></p>';
 const localPreferences=document.createElement('div');localPreferences.id='local-display-preferences';
-localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
+localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label class="op-check"><input id="display-flatten" type="checkbox"> Flatten (even out the passband across frequency)</label><label class="op-check"><input id="display-spectrum" type="checkbox"> Show spectrum line</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
+// #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority
+// order with its default on/off. A slot without data (DXCC, zones and continent need cty.dat, #55; grids
+// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour.
+const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',true]];
+const bandFlags=bandSlots.map(([k])=>k).filter(k=>k.startsWith('new_'));
+const bandColours=document.createElement('fieldset');bandColours.id='band-colours';bandColours.className='op-server-fieldset';
+bandColours.innerHTML='<legend>Band Activity colours (WSJT-X)</legend>'+bandSlots.map(([k,label])=>`<label class="op-check"><input type="checkbox" data-hl-slot="${k}"> <span class="op-swatch" data-hl-swatch="${k}"></span>${label}</label>`).join('');
+displaySettings.append(bandColours);
+function bandColoursApply(){
+  let saved=null;try{saved=JSON.parse(localStorage.getItem('wstx.band-colours.v1'));}catch{}
+  const on=bandSlots.filter(([k,,d])=>typeof saved?.[k]==='boolean'?saved[k]:d).map(([k])=>k);
+  document.querySelector('#band-activity').dataset.hlOn=on.join(' ');
+  for(const box of bandColours.querySelectorAll('[data-hl-slot]'))box.checked=on.includes(box.dataset.hlSlot);
+}
+bandColours.addEventListener('change',()=>{const value=Object.fromEntries([...bandColours.querySelectorAll('[data-hl-slot]')].map(b=>[b.dataset.hlSlot,b.checked]));try{localStorage.setItem('wstx.band-colours.v1',JSON.stringify(value));}catch{}bandColoursApply();});
+bandColoursApply();
 secondary('recorded-input','Recordings and replay',panel,expertSection).open=true;
 expertSection.insertAdjacentHTML('afterbegin','<p class="op-muted">Diagnostics that are not needed while operating.</p>');
 const sliders=document.createElement('div');sliders.id='presentation-sliders';sliders.className='op-display-controls';
-sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label>';
+sliders.innerHTML='<label title="WSJT-X Zero: moves the whole colour scale; the noise floor sits lower or higher">Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity (zero)"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="WSJT-X Gain: the dB span from dark blue to red">Range <input id="display-range" type="range" min="10" max="80" step="1" value="50" aria-label="Waterfall range (gain)"><output id="range-value">50 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="1" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">10 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
 const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
@@ -148,8 +164,11 @@ function restoreDisplayPreference(){
   profileSelect.value=['detail','thin','off'].includes(saved)?saved:defaultDisplayProfile();
 }
 restoreDisplayPreference();
-let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=2, fallbackText='', detailRequest;
+// #54 WstxRecordingReceive::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
+// over time. displayBlack is the fixed -85 dBFS reference; nothing in this page changes it.
+let displayBlack=-85, displayRange=50, flatten=false, spectrumLine=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
+try{const zero=localStorage.getItem('wstx.waterfall-zero.v1'),range=localStorage.getItem('wstx.waterfall-range.v1'),z=Number(zero),r=Number(range);if(zero!==null&&Number.isInteger(z)&&z>=-30&&z<=30)sensitivity=z;if(range!==null&&Number.isInteger(r)&&r>=10&&r<=80)displayRange=r;flatten=localStorage.getItem('wstx.waterfall-flatten.v1')==='on';spectrumLine=localStorage.getItem('wstx.spectrum-line.v1')==='on';}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
 function paletteRGB(t){
   t=Math.max(0,Math.min(1,t));
@@ -160,31 +179,36 @@ function effectiveBlack(){return Math.max(-120,Math.min(-displayRange,displayBla
 function color(q){return `rgb(${paletteRGB((q-120-effectiveBlack())/displayRange).join(' ')})`;}
 function updateSliders(){
   document.querySelector('#display-sensitivity').value=sensitivity;document.querySelector('#sensitivity-value').textContent=`${sensitivity>=0?'+':''}${sensitivity} dB`;
+  document.querySelector('#display-range').value=displayRange;document.querySelector('#range-value').textContent=`${displayRange} dB`;
   document.querySelector('#display-speed').value=speed;document.querySelector('#speed-value').textContent=`${10*speed} px/s`;
+  document.querySelector('#display-flatten').checked=flatten;document.querySelector('#display-spectrum').checked=spectrumLine;document.querySelector('#spectrum').hidden=!spectrumLine;
 }
-for(const id of ['display-sensitivity','display-speed'])document.querySelector(`#${id}`).addEventListener('input',event=>{
+const storeDisplay=(key,value)=>{try{localStorage.setItem(key,value);}catch{}};
+for(const id of ['display-sensitivity','display-range','display-speed'])document.querySelector(`#${id}`).addEventListener('input',event=>{
   const value=Number(event.target.value);if(!Number.isFinite(value))return;
-  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else{speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));try{localStorage.setItem('wstx.waterfall-speed.v1',String(speed));}catch{}}
+  if(id==='display-sensitivity'){sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));storeDisplay('wstx.waterfall-zero.v1',String(sensitivity));}
+  else if(id==='display-range'){displayRange=Math.max(10,Math.min(80,Math.floor(value+.5)));storeDisplay('wstx.waterfall-range.v1',String(displayRange));}
+  else{speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));try{localStorage.setItem('wstx.waterfall-speed.v1',String(speed));}catch{}}
   selectedRow=Math.max(0,Math.min(visibleCount()-1,selectedRow));pointerTime=null;updateSliders();paint();
 });
 
-function resetLevels(){displayBlack=-120;displayRange=30;autoBlack=true;estimateFrozen=false;selectedBin=0;selectedRow=0;pointerColumn=null;pointerTime=null;updateLevels();}
-function updateLevels(){
-  document.querySelector('#display-black').value=displayBlack;document.querySelector('#display-black').max=-displayRange;
-  document.querySelector('#display-range').value=displayRange;document.querySelector('#display-auto').checked=autoBlack;updateSliders();
+function resetLevels(){selectedBin=0;selectedRow=0;pointerColumn=null;pointerTime=null;updateLevels();}
+function updateLevels(){updateSliders();}
+// The controls show the restored per-browser values at once, not only after the first snapshot.
+updateSliders();
+// Flatten (WSJT-X flat4 equivalent): per row, the lower envelope across frequency (20th
+// percentile of 32 blocks, linearly interpolated) is subtracted and its median added back, so
+// the passband shape evens out while the overall level stays; it never follows time.
+function flattenLevels(levels){
+  const B=levels.length,n=32,size=B/n,floor=[];
+  for(let b=0;b<n;b++){const block=[...levels.slice(b*size,(b+1)*size)].sort((x,y)=>x-y);floor.push(block[Math.floor((size-1)*.2)]);}
+  const middle=[...floor].sort((x,y)=>x-y)[n>>1],out=new Uint8Array(B);
+  for(let k=0;k<B;k++){const at=Math.max(0,Math.min(n-1,(k+.5)/size-.5)),i=Math.min(n-2,Math.floor(at)),base=floor[i]+(floor[i+1]-floor[i])*(at-i);out[k]=Math.max(0,Math.min(120,Math.floor(levels[k]-base+middle+.5)));}
+  return out;
 }
-function estimate(row){
-  if(!autoBlack||estimateFrozen||!row?.levels)return;
-  const q=[...row.levels].sort((a,b)=>a-b)[Math.floor((row.levels.length-1)/2)];
-  if(q>0){displayBlack=Math.max(-120,Math.min(-displayRange,q-123));estimateFrozen=true;updateLevels();}
-}
-for(const id of ['display-black','display-range'])document.querySelector(`#${id}`).addEventListener('change',e=>{
-  if(e.target.value.trim()==='')return;const n=Number(e.target.value);if(!Number.isFinite(n))return;
-  if(id==='display-range')displayRange=Math.max(10,Math.min(80,Math.floor(n+.5)));else displayBlack=Math.floor(n+.5);
-  displayBlack=Math.max(-120,Math.min(-displayRange,displayBlack));autoBlack=false;estimateFrozen=false;updateLevels();paint();
-});
-document.querySelector('#display-auto').addEventListener('change',e=>{
-  autoBlack=e.target.checked;estimateFrozen=false;if(autoBlack){displayBlack=-120;for(const row of [...rows].reverse()){estimate(row);if(estimateFrozen)break;}}updateLevels();paint();
+const shown=row=>row?.levels?(flatten?row.flat??=flattenLevels(row.levels):row.levels):null;
+for(const [id,key] of [['display-flatten','wstx.waterfall-flatten.v1'],['display-spectrum','wstx.spectrum-line.v1']])document.querySelector(`#${id}`).addEventListener('change',event=>{
+  if(id==='display-flatten')flatten=event.target.checked;else spectrumLine=event.target.checked;storeDisplay(key,event.target.checked?'on':'off');updateSliders();split(upper);
 });
 function subscribe(current){
   const id=nextId++,profile=profileSelect.value;if(profile==='detail')detailRequest=id;
@@ -201,7 +225,7 @@ function split(value) {
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
-  upper = Math.max(minimum,Math.min(maximum,value ?? 210));
+  upper = Math.max(minimum,Math.min(maximum,value ?? 330));
   signal.style.height = `${upper}px`;
   for (const [name,value] of [['min',minimum],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
@@ -231,7 +255,7 @@ function visibleCount(){return timeProjection().count;}
 function groupLevels(first,last,B){
   const q=new Uint8Array(B);
   for(let r=first;r<=last;r++){
-    const native=rows.at(-1-r)?.levels;if(!native)return null;
+    const native=shown(rows.at(-1-r));if(!native)return null;
     for(let k=0;k<B;k++)q[k]=Math.max(q[k],native[k]);
   }
   return q;
@@ -279,9 +303,9 @@ function paint() {
         const q=new Uint8Array(c.width);levels.forEach((v,k)=>{const x=Math.floor(k*c.width/B);q[x]=Math.max(q[x],v);});return q;
       };
       if(id==='spectrum'){
-        const row=rows.at(-1);if(!row?.levels)continue;const values=project(row.levels);
+        const row=rows.at(-1);if(!row?.levels||c.hidden)continue;const values=project(shown(row)),E=effectiveBlack();
         ctx.strokeStyle='rgb(180 245 220)';ctx.lineWidth=Math.max(1,devicePixelRatio);ctx.beginPath();
-        values.forEach((q,k)=>{const x=Math.floor(k*c.width/values.length),y=Math.max(0,Math.min(c.height-1,(displayBlack+displayRange-(q-120))*c.height/displayRange));k?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+        values.forEach((q,k)=>{const x=Math.floor(k*c.width/values.length),y=Math.max(0,Math.min(c.height-1,(120-q)*c.height/(-E)));k?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
       }else{
         const W=c.width,H=c.height,projection=timeProjection(H,box.height),R=projection.count;
         if(R){
@@ -320,7 +344,7 @@ function paint() {
     legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
     legend.setAttribute('aria-label',`${legend.textContent}; ${legend.title}`);
-    document.querySelector('#spectrum').title=`Curve base scale ${displayBlack} to ${displayBlack+displayRange} dBFS; Sensitivity changes waterfall colors only`;
+    document.querySelector('#spectrum').title=`Spectrum line scale ${effectiveBlack()} to 0 dBFS`;
     const bar=document.querySelector('#level-bar'),box=bar.getBoundingClientRect();bar.width=Math.max(1,Math.round(box.width*devicePixelRatio));bar.height=Math.max(1,Math.round(box.height*devicePixelRatio));
     const context=bar.getContext('2d'),image=context.createImageData(bar.width,bar.height);
     for(let x=0;x<bar.width;x++){const rgb=[...paletteRGB(x/Math.max(1,bar.width-1)),255];for(let y=0;y<bar.height;y++)image.data.set(rgb,(y*bar.width+x)*4);}context.putImageData(image,0,0);
@@ -384,9 +408,9 @@ addEventListener('station-message',event => {
   if(snapshot?.job?.kind==='live'&&!currentLive)return;
   const context=currentLive?{boot_id:live.boot_id,generation:live.generation,job:{...live.job,source_id:live.source.id}}:snapshot;
   if(!f||!context||!['running','completed'].includes(context.job?.state)||f.boot_id!==context.boot_id||f.generation!==context.generation||f.job_id!==context.job?.id||f.source_id!==context.job?.source_id)return;
-  if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1)return;
+  if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1){stationData('waterfall',false);return;}
   const keys=['boot_id','source_id','job_id','generation','sequence','first_frame','end_frame',detail?'levels_b64':'levels'].sort().join(',');
-  if(Object.keys(f).sort().join(',')!==keys||!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
+  if(Object.keys(f).sort().join(',')!==keys){stationData('waterfall',false);return;}if(!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
   if(currentLive ? f.end_frame!==f.first_frame+interval : (!snapshot.recording||f.first_frame>=snapshot.recording.frames||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording.frames)))return;
   let values=f.levels;
   if(detail){
@@ -395,8 +419,10 @@ addEventListener('station-message',event => {
   }
   if((!detail&&!Array.isArray(values))||values.length!==B||!values.every(q=>Number.isInteger(q)&&q>=0&&q<=120))return;
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
-  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:null});
-  const row={...f,levels:Uint8Array.from(values)};rows.push(row);rows=rows.slice(-cap);estimate(row);paint();
+  // #54: live Thin is paced to one row per 2 s, so one or two missing sequences are drawn with the next row (held); longer runs are real gaps.
+  const held=!detail&&currentLive&&previous>=0&&f.sequence-previous<=3;
+  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held});
+  const row={...f,levels:Uint8Array.from(values)};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);paint();
 
   if(currentLive){live.job.processed_frames=Math.max(live.job.processed_frames,f.end_frame);live.source.next_frame=Math.max(live.source.next_frame,f.end_frame);}
   else snapshot.job.processed_frames=f.end_frame;
@@ -529,7 +555,7 @@ async function receiveSync(current=socket){
   try{
     const data=await request('/receive');
     if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
-    if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
+    if(!validLiveSnapshot(data)){stationData('receive',false);throw new Error('Invalid receive snapshot');}stationData('receive',true);
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
       if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
@@ -589,8 +615,12 @@ function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
   const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
-  if(decoded&&my&&to===my)row.classList.add('ba-tome');
+  // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
+  // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
+  const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
+  if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
+  if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
+  if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null;
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,'\u2014',km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
@@ -641,8 +671,8 @@ async function receiveResults(){
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
-    live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
-  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
+    live.job.state=page.state;live.job.error=page.error;stationData('results',true);renderResults();receiveShow();
+  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch){receiveStatus.textContent=`Result state unavailable · ${error.message}`;if(/^Invalid|descriptor/.test(error.message))stationData('results',false);}}
   finally{resultPending=false;}
 }
 async function receiveStart(){
@@ -770,7 +800,7 @@ async function operatingSync(reconcile=false){
     let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
     if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
     if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
-    if(new TextEncoder().encode(text).length>3072||!validOperatingState(s))throw new Error('Invalid operating snapshot');
+    if(new TextEncoder().encode(text).length>3072||!validOperatingState(s)){stationData('selection',false);throw new Error('Invalid operating snapshot');}stationData('selection',true);
     if(s.profile_id!==profileData.profile_id||s.boot_id!==profileData.boot_id||s.profile_revision!==profileData.revision)throw new Error('Operating identity is stale');
     if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
     const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
@@ -984,3 +1014,20 @@ function clientsLoad(){
 // app.js runs first and may already be connected when this script runs (as for sync above).
 addEventListener('station-ready',clientsLoad);if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')clientsLoad();
 chipsReady=true;chipsShow();
+
+// WstxStationProtocol::PageUpdate (#51). app.js reloads a page whose client build differs
+// from the station's, unless this screen holds the reload: a QSO or transmission in
+// progress, an open dialog or unsaved settings. A held update and a station snapshot this
+// page cannot validate are never silent: one chip names it and reloads on a click.
+const stationNotice=document.createElement('button');stationNotice.type='button';stationNotice.id='station-notice';stationNotice.className='op-chip';stationNotice.hidden=true;chips.before(stationNotice);
+stationNotice.addEventListener('click',()=>location.reload());
+const rejectedData=new Set();let stationUpdate=null;
+window.wstxReloadHeld=()=>!!restartBusy()||!!document.querySelector('dialog[open]')||dirty;
+function stationNoticeShow(){
+  const text=stationUpdate?'Station updated \u00b7 reload':rejectedData.size?`Station data not understood (${[...rejectedData].join(', ')}) \u00b7 reload`:'';
+  stationNotice.hidden=!text;stationNotice.dataset.severity=stationUpdate?'warn':'error';
+  stationNotice.textContent=text&&`${stationUpdate?'\u26A0':'\u2716'} ${text}`;stationNotice.title=stationUpdate?'The station runs a newer client; reload this page to use it':'This page rejected a station snapshot; reload to load the station\u2019s current client';
+}
+function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
+addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
+window.wstxStationData=stationData;
