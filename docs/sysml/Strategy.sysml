@@ -227,7 +227,9 @@ package WstxStrategy {
              MCP request (also starting or restarting a run) and any UDP command (Reply,
              Free Text). Such an enable_tx arms with the watchdog already counting from
              the last browser action and is refused tx_watchdog when that time is spent
-             (until a human acts in the browser); an MCP-started run is bounded by it; a changed message text of a contact armed by
+             (until a human acts in the browser); an MCP-started run is bounded by it;
+             only the browser may change the watchdog setting (set_watchdogs from any
+             other source is refused operator_required); a changed message text of a contact armed by
              automation does not reset it. Halt from any source stops the run; grant,
              clock, period and safety-revision checks are unchanged. */
     }

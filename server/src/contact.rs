@@ -890,6 +890,11 @@ impl Engine {
                 tx_minutes,
                 tune_seconds,
             } => {
+                // #39: only the operator in the browser may change the watchdogs; an MCP,
+                // UDP or automation source could otherwise lengthen a spent watchdog.
+                if ctx.automatic {
+                    return Err("operator_required");
+                }
                 if !(1..=99).contains(&tx_minutes) || !(1..=300).contains(&tune_seconds) {
                     return Err("out_of_range");
                 }

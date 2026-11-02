@@ -864,11 +864,7 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    let revision = f.read("contact").await["contact_revision"]
-        .as_u64()
-        .unwrap();
-    let w = f.tool("wstx_contact_command", json!({"command":f.command(revision, "set_watchdogs", json!({"tx_minutes":1,"tune_seconds":90}))})).await;
-    assert_eq!(w["status"], 202, "{w}");
+    browser_watchdog(&f, 1).await;
     save(&f, config(Some("NA first"), "cq")).await;
     assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
     f.tick();
@@ -963,11 +959,7 @@ async fn tc_039_005_auto_never_arms_after_the_operator_watchdog_time() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    let revision = f.read("contact").await["contact_revision"]
-        .as_u64()
-        .unwrap();
-    let w = f.tool("wstx_contact_command", json!({"command":f.command(revision, "set_watchdogs", json!({"tx_minutes":1,"tune_seconds":90}))})).await;
-    assert_eq!(w["status"], 202, "{w}");
+    browser_watchdog(&f, 1).await;
     save(&f, config(Some("NA first"), "call")).await;
     assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
     // 61 s after the start (no candidate meanwhile) a matching CQ arrives.
@@ -1081,6 +1073,18 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
         assert!(!spent(), "still within the minute");
     }
     advance(6_000);
+    assert!(spent());
+    let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
+    assert!(!armed());
+    // An MCP client may not lengthen the spent watchdog (only the browser sets it).
+    let v = mcp_contact(
+        &f,
+        "set_watchdogs",
+        json!({"tx_minutes":99,"tune_seconds":90}),
+    )
+    .await;
+    assert_eq!(v["result"]["error"]["code"], "operator_required", "{v}");
     assert!(spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");

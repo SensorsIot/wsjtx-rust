@@ -50,7 +50,8 @@ package WstxMcp {
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7); an MCP Enable Tx or
             run arm is refused tx_watchdog when that time is spent, until a browser
-            action; a watchdog disarm stops tx_watchdog. */
+            action; set_watchdogs through MCP is refused operator_required (only the
+            browser sets the watchdog); a watchdog disarm stops tx_watchdog. */
 
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";

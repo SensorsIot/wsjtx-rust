@@ -445,7 +445,9 @@ package WstxContact {
              operator activity; automation, MCP requests (including a run start) and UDP
              commands never reset or extend the watchdog, their Enable Tx counts from the
              last browser action and is refused tx_watchdog when that time is spent, and
-             a changed text of a contact armed by them does not reset it. Mouse movement the server cannot
+             a changed text of a contact armed by them does not reset it; only the
+             browser may set the watchdogs (set_watchdogs from another source is refused
+             operator_required). Mouse movement the server cannot
              observe is not activity. At expiry the server sends #9's halt (the
              transmission stops, as MW ~7690/7763), turns Enable Tx off, keeps the
              contact state, and shows "Tx watchdog expired" until the next Enable Tx.
