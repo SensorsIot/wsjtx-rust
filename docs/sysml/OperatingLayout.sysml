@@ -557,7 +557,15 @@ attribute def ActivityOrdering {
              WorkedBeforeQuery) feeds only the New call slots; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
-             transmits); double-click replies (select, then SetEnableTx on); right-click
+             transmits; another station while a contact is active only offers "Change
+             contact to <call>", whose replacement keeps Enable Tx as it is); double-click
+             replies (select, then SetEnableTx on), and on another station while a contact
+             is active, or during an own CQ, it is itself the explicit
+             WstxContact::ChangeContact (replace true, no confirmation, as WSJT-X
+             handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,
+             DecodedMessageReaction.cpp ~411-413), so the next own period calls the new
+             station and Auto Seq runs that QSO to its completion and log (#50, operator
+             2026-11-02); the Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here. Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }
