@@ -658,6 +658,10 @@ function liveSelectionFixture(){
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}
+      // A click during an in-flight timer read is coalesced into a follow-up read (operatingReadAgain),
+      // and Node may see the timer read only after `before`. The operator acts once the page has no
+      // selection read pending, so the next action cannot make the page discard its own read (#8).
+      await pages[index].waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:Math.max(1,Math.ceil(deadline-performance.now()))});
     };
     async function command(action,value,mode,hz){
       await freshRead(0);
