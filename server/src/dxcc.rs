@@ -127,14 +127,23 @@ fn between(s: &str, open: char, close: char) -> Option<&str> {
     let rest = &s[start..];
     Some(rest.find(close).map_or(rest, |end| &rest[..end]))
 }
+/// Zone ranges the browser accepts (CQ zones 1..40, ITU zones 1..90; 0 tolerated).
+const CQ_MAX: u8 = 40;
+const ITU_MAX: u8 = 90;
+fn zone(v: &str, max: u8) -> Option<u8> {
+    v.trim().parse::<u8>().ok().filter(|z| *z <= max)
+}
+/// A shown name the browser accepts: 1..40 printable ASCII characters.
+fn shown(name: &str) -> bool {
+    (1..=40).contains(&name.len()) && name.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
 fn overrides(entry: &str) -> Option<Overrides> {
-    let zone = |v: &str| v.trim().parse::<u8>().ok();
     let mut o = Overrides::default();
     if let Some(v) = between(entry, '(', ')') {
-        o.cq = Some(zone(v)?);
+        o.cq = Some(zone(v, CQ_MAX)?);
     }
     if let Some(v) = between(entry, '[', ']') {
-        o.itu = Some(zone(v)?);
+        o.itu = Some(zone(v, ITU_MAX)?);
     }
     if let Some(v) = between(entry, '<', '>') {
         let (lat, lon) = v.split_once('/')?;
@@ -166,21 +175,20 @@ impl Cty {
                 continue; // WSJT-X skips a line that is no entity line.
             }
             let num = |i: usize| parts[i].trim().parse::<f64>().ok();
-            let zone = |i: usize| parts[i].trim().parse::<u8>().ok();
             let primary = parts[7].trim();
             let entity = (|| {
                 Some(Entity {
                     name: parts[0].trim().to_owned(),
                     display: abbreviated(parts[0].trim()),
                     prefix: primary.strip_prefix('*').unwrap_or(primary).to_owned(),
-                    cq: zone(1)?,
-                    itu: zone(2)?,
+                    cq: zone(parts[1], CQ_MAX)?,
+                    itu: zone(parts[2], ITU_MAX)?,
                     continent: continent(parts[3].trim())?,
                     lat: num(4)?,
                     lon_west: num(5)?,
                 })
             })()
-            .filter(|_| num(6).is_some() && !primary.is_empty())
+            .filter(|e| num(6).is_some() && !primary.is_empty() && shown(&e.display))
             .ok_or(number + 1)?;
             let mut detail = String::new();
             loop {
@@ -347,9 +355,13 @@ impl Table {
     }
 }
 
-/// WSJT-X decode highlighting categories that need the entity, each ever and on this
-/// band (the names of the decoded-record flags).
-pub const NEW_FLAGS: [&str; 8] = [
+/// The WSJT-X decode highlighting categories as decoded-record flags, each ever and on
+/// this band: call, 4-character grid, DXCC entity, continent, CQ zone, ITU zone.
+pub const FLAGS: [&str; 12] = [
+    "new_call",
+    "new_call_band",
+    "new_grid",
+    "new_grid_band",
     "new_dxcc",
     "new_dxcc_band",
     "new_continent",
@@ -359,56 +371,79 @@ pub const NEW_FLAGS: [&str; 8] = [
     "new_itu_zone",
     "new_itu_zone_band",
 ];
-/// What the log holds per category, ever and per band (WorkedBefore with highlight by
-/// mode off): entity names, continents and zones of the logged calls.
+/// One logged contact as the worked set reads it.
+pub struct Logged {
+    pub call: String,
+    pub grid: Option<String>,
+    /// ADIF band, lower case.
+    pub band: Option<String>,
+}
+/// WorkedBefore with highlight by mode off (the WSJT-X default): what the log holds per
+/// category, ever and per band. Calls compare upper case, grids by their 4-character
+/// square upper case; the entity categories use the logged call's entity (WSJT-X keys
+/// DXCC by the full entity name, WAE entities included). A call without an entity adds
+/// nothing to the entity categories.
 #[derive(Default)]
 pub struct Worked {
     ever: HashSet<(u8, String)>,
     band: HashSet<(u8, String, String)>,
 }
+fn square(grid: &str) -> Option<String> {
+    grid.get(..4).map(str::to_ascii_uppercase)
+}
+/// The keys of each category (None: the category does not apply).
+fn keys(call: &str, grid: Option<&str>, r: Option<&Resolved>) -> [Option<String>; 6] {
+    [
+        Some(call.to_ascii_uppercase()),
+        grid.and_then(square),
+        r.map(|r| r.name.clone()),
+        r.map(|r| r.continent.to_owned()),
+        r.map(|r| r.cq_zone.to_string()),
+        r.map(|r| r.itu_zone.to_string()),
+    ]
+}
 impl Worked {
-    /// `logged`: (call, band in lower case) of each logged contact. A call without an
-    /// entity counts for nothing (WSJT-X stores an empty name and never matches it).
-    pub fn from_log(table: &Table, logged: &[(String, Option<String>)]) -> Self {
+    pub fn from_log(table: &Table, logged: &[Logged]) -> Self {
         let mut w = Self::default();
-        for (call, band) in logged {
-            let Some(r) = table.lookup(call) else {
-                continue;
-            };
-            for (i, key) in keys(&r).into_iter().enumerate() {
-                w.ever.insert((i as u8, key.clone()));
-                if let Some(b) = band {
-                    w.band.insert((i as u8, key, b.clone()));
+        for l in logged {
+            let r = table.lookup(&l.call);
+            for (i, key) in keys(&l.call, l.grid.as_deref(), r.as_ref())
+                .into_iter()
+                .enumerate()
+            {
+                let Some(key) = key else { continue };
+                if let Some(b) = &l.band {
+                    w.band.insert((i as u8, key.clone(), b.clone()));
                 }
+                w.ever.insert((i as u8, key));
             }
         }
         w
     }
-    /// The NEW_FLAGS that hold for this entity; the band flags only with a known band.
-    pub fn new_flags(&self, r: &Resolved, band: Option<&str>) -> Vec<&'static str> {
+    /// The FLAGS that hold for a decoded sender; the _band flags only with a known band,
+    /// the grid flags only with a message grid, the entity flags only with an entity.
+    pub fn flags(
+        &self,
+        call: &str,
+        grid: Option<&str>,
+        r: Option<&Resolved>,
+        band: Option<&str>,
+    ) -> Vec<&'static str> {
         let band = band.map(str::to_ascii_lowercase);
         let mut out = Vec::new();
-        for (i, key) in keys(r).into_iter().enumerate() {
-            let i = i as u8;
-            if !self.ever.contains(&(i, key.clone())) {
-                out.push(NEW_FLAGS[2 * i as usize]);
+        for (i, key) in keys(call, grid, r).into_iter().enumerate() {
+            let Some(key) = key else { continue };
+            if !self.ever.contains(&(i as u8, key.clone())) {
+                out.push(FLAGS[2 * i]);
             }
             if let Some(b) = &band
-                && !self.band.contains(&(i, key, b.clone()))
+                && !self.band.contains(&(i as u8, key, b.clone()))
             {
-                out.push(NEW_FLAGS[2 * i as usize + 1]);
+                out.push(FLAGS[2 * i + 1]);
             }
         }
         out
     }
-}
-fn keys(r: &Resolved) -> [String; 4] {
-    [
-        r.name.clone(),
-        r.continent.to_owned(),
-        r.cq_zone.to_string(),
-        r.itu_zone.to_string(),
-    ]
 }
 
 /// The compact entity of a call as the browser shows it: {name (as WSJT-X shows it),
@@ -423,59 +458,39 @@ pub fn compact(r: &Resolved, me: Option<(f64, f64)>) -> Value {
 }
 
 /// #55 DecodedEntity: adds to each decoded standard record with a resolved sender its
-/// `dxcc` (compact, when the call has an entity) and `flags` (only the flags that hold:
-/// new_call/new_grid ever and on this band and mode, and the NEW_FLAGS ever and on this
-/// band; omitted when none holds or the log is unreadable). Band: the CAT dial band, else
-/// the operating selection band; without a band no `_band` flag is set.
+/// `dxcc` (compact, when the call has an entity) and `flags` (only the FLAGS that hold,
+/// against the cached worked set of the log; omitted when none holds or the log is
+/// unreadable). Band: the CAT dial band, else the operating selection band; without a
+/// band no `_band` flag is set. Blocking (log lock): call it off the async runtime.
 pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
     if !records.iter().any(|r| crate::strategy::facts(r).is_some()) {
         return;
     }
-    let st = crate::strategy::station(state, &Default::default(), records);
-    let worked = state
-        .logbook
-        .logged_bands()
-        .ok()
-        .map(|l| Worked::from_log(&st.dxcc, &l));
-    let me = st.my_grid.as_deref().and_then(crate::strategy::maidenhead);
-    let band = st.band.as_deref();
+    let (table, _) = state.logbook.dxcc();
+    let worked = state.logbook.worked_set().ok();
+    let me = crate::contact_http::profile_facts(state)
+        .1
+        .as_deref()
+        .and_then(crate::strategy::maidenhead);
+    let band = crate::strategy::station_band(&state.recording);
     for record in records.iter_mut() {
         let Some(f) = crate::strategy::facts(record) else {
             continue;
         };
-        let entity = st.dxcc.lookup(&f.from);
-        let mut flags = serde_json::Map::new();
-        if let Some(w) = &worked {
-            let mut set = |name: &str| {
-                flags.insert(name.to_owned(), Value::Bool(true));
-            };
-            let (ever, here) = st.calls.get(&f.from).copied().unwrap_or_default();
-            let grid = f.grid.as_ref().map(|g| {
-                st.grids
-                    .get(&g[..4].to_ascii_uppercase())
-                    .copied()
-                    .unwrap_or_default()
-            });
-            for (prefix, worked) in [("new_call", Some((ever, here))), ("new_grid", grid)] {
-                let Some((ever, here)) = worked else { continue };
-                if !ever {
-                    set(prefix);
-                }
-                if band.is_some() && !here {
-                    set(&format!("{prefix}_band"));
-                }
-            }
-            if let Some(r) = &entity {
-                for name in w.new_flags(r, band) {
-                    set(name);
-                }
-            }
-        }
+        let entity = table.lookup(&f.from);
         if let Some(r) = &entity {
             record["dxcc"] = compact(r, me);
         }
+        let flags = worked.as_ref().map_or_else(Vec::new, |w| {
+            w.flags(&f.from, f.grid.as_deref(), entity.as_ref(), band)
+        });
         if !flags.is_empty() {
-            record["flags"] = Value::Object(flags);
+            record["flags"] = Value::Object(
+                flags
+                    .into_iter()
+                    .map(|n| (n.to_owned(), Value::Bool(true)))
+                    .collect(),
+            );
         }
     }
 }

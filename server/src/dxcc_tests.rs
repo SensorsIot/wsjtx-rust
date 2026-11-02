@@ -192,6 +192,18 @@ fn tc_055_001_overrides_and_refused_files() {
             3,
         ),
         ("no entity lines at all\n", 1),
+        // values the browser would refuse (it would stop Band Activity): CQ zone over
+        // 40, ITU zone over 90 (also as overrides), an empty or long or non-ASCII name
+        ("X: 41: 2: EU: 0: 0: 0: X:\n X;\n", 1),
+        ("X: 1: 91: EU: 0: 0: 0: X:\n X;\n", 1),
+        ("X: 1: 2: EU: 0: 0: 0: X:\n X(41);\n", 1),
+        ("X: 1: 2: EU: 0: 0: 0: X:\n X[91];\n", 1),
+        (" : 1: 2: EU: 0: 0: 0: X:\n X;\n", 1),
+        (
+            "Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1: 1: 2: EU: 0: 0: 0: X:\n X;\n",
+            1,
+        ),
+        ("Z\u{fc}rich: 1: 2: EU: 0: 0: 0: X:\n X;\n", 1),
     ] {
         assert_eq!(Cty::parse(bad).err(), Some(line), "{bad}");
     }
@@ -202,13 +214,23 @@ fn tc_055_001_overrides_and_refused_files() {
 fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
     let t = bundled();
     // Logged: DL1ABC on 20m (Germany, EU, CQ 14, ITU 28), K1ABC with no band known.
+    let log = |call: &str, grid: Option<&str>, band: Option<&str>| Logged {
+        call: call.into(),
+        grid: grid.map(Into::into),
+        band: band.map(Into::into),
+    };
     let logged = vec![
-        ("DL1ABC".to_owned(), Some("20m".to_owned())),
-        ("K1ABC".to_owned(), None),
-        ("Q1ABC".to_owned(), Some("40m".to_owned())),
+        log("DL1ABC", Some("JO62"), Some("20m")),
+        log("K1ABC", None, None),
+        log("Q1ABC", None, Some("40m")),
     ];
     let w = Worked::from_log(&t, &logged);
-    let flags = |call: &str, band: Option<&str>| w.new_flags(&t.lookup(call).unwrap(), band);
+    // The entity flags of a call (its call and grid flags left out).
+    let flags = |call: &str, band: Option<&str>| {
+        let mut f = w.flags(call, None, t.lookup(call).as_ref(), band);
+        f.retain(|n| !n.starts_with("new_call"));
+        f
+    };
     let band_flags = [
         "new_dxcc_band",
         "new_continent_band",
@@ -230,12 +252,27 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
     assert_eq!(flags("HB9BLA", Some("20m")), ["new_dxcc", "new_dxcc_band"]);
     // A US call: entity worked ever (no band), so only the band flags.
     assert_eq!(flags("W1AW", Some("20m")), band_flags);
-    assert_eq!(flags("JA1XYZ", Some("20m")), NEW_FLAGS);
+    assert_eq!(flags("JA1XYZ", Some("20m")), FLAGS[4..]);
+    // Call and grid: case-insensitive, the 4-character square; no grid, no grid flag;
+    // an unresolved call still has its call flags.
+    assert_eq!(
+        w.flags("dl1abc", Some("jo62xx"), None, Some("20m")),
+        Vec::<&str>::new()
+    );
+    assert_eq!(
+        w.flags("DL1ABC", Some("JO62"), None, Some("40m")),
+        ["new_call_band", "new_grid_band"]
+    );
+    assert_eq!(w.flags("Q1ABC", None, None, None), Vec::<&str>::new());
+    assert_eq!(
+        w.flags("Q2ABC", Some("AA00"), None, None),
+        ["new_call", "new_grid"]
+    );
     // Sicily is its own (WAE) name for worked status, as in WSJT-X.
-    let italy = Worked::from_log(&t, &[("I1ABC".into(), Some("20m".into()))]);
+    let italy = Worked::from_log(&t, &[log("I1ABC", None, Some("20m"))]);
     assert!(
         italy
-            .new_flags(&t.lookup("IT9ABC").unwrap(), Some("20m"))
+            .flags("IT9ABC", None, t.lookup("IT9ABC").as_ref(), Some("20m"))
             .contains(&"new_dxcc")
     );
     // JN47AA (47.0208, 8.0417) to 37.60 N 91.87 W: hand haversine, R 6371 km.
@@ -256,24 +293,25 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
 async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
     use crate::automation_tests::{at_even, publish};
     let f = crate::mcp_tests::station(false).await;
-    let adi = "<call:6>DL1ABC <gridsquare:4>JO62 <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>\n<call:5>K1ABC <gridsquare:4>FN42 <qso_date:8>20261031 <time_on:4>1240 <band:3>40m <mode:3>FT8 <eor>\n";
-    let id = crate::profile::new_uuid().unwrap();
-    let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(publish()) };
-    let sha: String = ring::digest::digest(&ring::digest::SHA256, adi.as_bytes())
-        .as_ref()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let now = std::time::Instant::now();
-    f.state
-        .logbook
-        .reserve(&id, adi.len() as u64, &sha, now)
-        .unwrap();
-    f.state
-        .logbook
-        .chunk(&id, 0, adi.len() as u64, adi.as_bytes(), now, &open)
-        .unwrap();
-    assert_eq!(f.state.logbook.total().unwrap(), 2);
+    // W1AW was worked on 20m in FT4: on 20m FT8 it is not new on the band (WSJT-X
+    // highlights by band, not mode, by default).
+    let adi = "<call:6>DL1ABC <gridsquare:4>JO62 <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>\n<call:5>K1ABC <gridsquare:4>FN42 <qso_date:8>20261031 <time_on:4>1240 <band:3>40m <mode:3>FT8 <eor>\n<call:4>W1AW <gridsquare:4>FN31 <qso_date:8>20261031 <time_on:4>1250 <band:3>20m <mode:4>MFSK <submode:3>FT4 <eor>\n";
+    fn import(f: &crate::mcp_tests::Mcp, adi: &str) {
+        let id = crate::profile::new_uuid().unwrap();
+        let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(publish()) };
+        let sha: String = ring::digest::digest(&ring::digest::SHA256, adi.as_bytes())
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let now = std::time::Instant::now();
+        let log = &f.state.logbook;
+        log.reserve(&id, adi.len() as u64, &sha, now).unwrap();
+        log.chunk(&id, 0, adi.len() as u64, adi.as_bytes(), now, &open)
+            .unwrap();
+    }
+    import(&f, adi);
+    assert_eq!(f.state.logbook.total().unwrap(), 3);
     let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     publish(
@@ -285,6 +323,7 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
             ("CQ JA1XYZ PM95", 1200.0, Some(-5.0)),
             ("HB9BLA G4ABC IO91", 1300.0, Some(-5.0)),
             ("TNX BOB 73 GL", 1400.0, Some(-5.0)),
+            ("CQ W1AW FN31", 1500.0, Some(-5.0)),
         ],
     );
     let uri = format!(
@@ -299,7 +338,7 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
     };
     // No band known: no _band flag; K1ABC, FN42 and the US are all worked ever.
     let records = read(&f, &uri).await;
-    assert_eq!(records.as_array().unwrap().len(), 5);
+    assert_eq!(records.as_array().unwrap().len(), 6);
     let us = json!({"name":"U.S.A.","cont":"NA","cq":5,"itu":8,"km":7706});
     assert_eq!(pick(&records[0]), (us.clone(), Value::Null));
     assert_eq!(pick(&records[1]).1, flags(&["new_call"]));
@@ -311,19 +350,15 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
 
     f.state.recording.fixture_band("20m");
     let records = read(&f, &uri).await;
+    // K1ABC and FN42 only on 40m; the US (W1AW) on 20m in another mode.
     assert_eq!(
         pick(&records[0]),
-        (
-            us,
-            flags(&[
-                "new_call_band",
-                "new_grid_band",
-                "new_dxcc_band",
-                "new_continent_band",
-                "new_cq_zone_band",
-                "new_itu_zone_band"
-            ])
-        )
+        (us, flags(&["new_call_band", "new_grid_band"]))
+    );
+    assert_eq!(
+        pick(&records[5]).1,
+        Value::Null,
+        "same band, other mode: nothing new"
     );
     // Germany (465 km) with JO62 worked on 20m FT8: only the call is new.
     assert_eq!(
@@ -333,9 +368,13 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
             flags(&["new_call", "new_call_band"])
         )
     );
-    let mut all = vec!["new_call", "new_call_band", "new_grid", "new_grid_band"];
-    all.extend(NEW_FLAGS);
-    assert_eq!(pick(&records[2]).1, flags(&all));
+    assert_eq!(pick(&records[2]).1, flags(&FLAGS));
+    // A contact logged later counts at once (the cached worked set follows the log).
+    import(
+        &f,
+        "<call:6>DL2XYZ <qso_date:8>20261101 <time_on:4>0800 <band:3>20m <mode:3>FT8 <eor>\n",
+    );
+    assert_eq!(pick(&read(&f, &uri).await[1]).1, Value::Null);
     assert_eq!(records[2]["dxcc"]["name"], "Japan");
     // England: EU and CQ 14 worked on 20m (Germany), ITU 27 is not.
     assert_eq!(

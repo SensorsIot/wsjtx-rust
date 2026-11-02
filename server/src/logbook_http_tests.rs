@@ -891,6 +891,23 @@ async fn cty_upload_replaces_the_country_table_and_refusals_change_nothing() {
         view(&f, "bundled", json!("VER20250115"), 346, false)
     );
     assert_eq!(entity(&f).await, "Switzerland");
+    let look = |q: &'static str| get(&f, q, None);
+    assert_eq!(
+        look("/dxcc?call=DL/HB9BLA").await.json()["entity"]["name"],
+        "Germany"
+    );
+    assert_eq!(
+        look("/dxcc?call=K1ABC/MM").await.json()["entity"],
+        Value::Null
+    );
+    for bad in [
+        "/dxcc?call=",
+        "/dxcc?call=HB9BLA%2FP",
+        "/dxcc?x=HB9BLA",
+        "/dxcc?call=ABCDEFGHIJKLMN",
+    ] {
+        assert_eq!(code(&look(bad).await).2, "call", "{bad}");
+    }
 
     let text = "Testland:  14:  28:  EU:  1.00:  -2.00:  -1.0:  TT:\n    TT,HB,=VER20991231;\n";
     let reply = put(&f, json!(text)).await;

@@ -603,6 +603,8 @@ struct Inner {
     created: String,
     import: Option<Import>,
     receipts: VecDeque<Receipt>,
+    /// Counts every change of `records` (#55 worked-set cache key).
+    revision: u64,
     #[cfg(test)]
     fault: Option<&'static str>,
 }
@@ -611,6 +613,9 @@ pub struct Logbook {
     inner: Mutex<Inner>,
     /// #55 the country table of this profile (WSJT-X keeps AD1CCty in WorkedBefore).
     dxcc: Mutex<DxccState>,
+    /// #55 the worked set of the log for (records revision, country table), rebuilt only
+    /// when either changes: /receive/results reads it on every page.
+    worked_set: Mutex<Option<(u64, usize, std::sync::Arc<crate::dxcc::Worked>)>>,
 }
 struct DxccState {
     table: crate::dxcc::Table,
@@ -739,10 +744,12 @@ impl Logbook {
                 created,
                 import: None,
                 receipts: VecDeque::new(),
+                revision: 0,
                 #[cfg(test)]
                 fault: None,
             }),
             dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
+            worked_set: Mutex::new(None),
         }
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, StoreError> {
@@ -816,6 +823,7 @@ impl Logbook {
             .map(|(i, r)| (r.contact_id.clone(), i))
             .collect();
         inner.records = next;
+        inner.revision += 1;
         Ok(())
     }
     /// SaveContact: exactly once per contact id. Identical resave is AlreadySaved;
@@ -854,6 +862,7 @@ impl Logbook {
         };
         self.publish(&inner, &next, gate)?;
         inner.records = next;
+        inner.revision += 1;
         Ok(LogOutcome::Replaced)
     }
     pub fn receipt(&self, command_id: &str) -> Result<Option<(Value, u16, Value)>, StoreError> {
@@ -950,18 +959,32 @@ impl Logbook {
     }
 
     /// #55 the (call, band) of every logged contact, for the entity worked status.
-    pub fn logged_bands(&self) -> Result<Vec<(String, Option<String>)>, StoreError> {
-        let inner = self.lock()?;
-        Ok(inner
-            .records
-            .iter()
-            .map(|r| {
-                (
-                    r.values[CALL].clone().unwrap_or_default(),
-                    r.effective_band(),
-                )
-            })
-            .collect())
+    /// #55 WorkedBefore of the stored log against the current country table (cached).
+    pub fn worked_set(&self) -> Result<std::sync::Arc<crate::dxcc::Worked>, StoreError> {
+        let (table, _) = self.dxcc();
+        let key_table = std::sync::Arc::as_ptr(&table.cty) as usize;
+        let (revision, logged) = {
+            let inner = self.lock()?;
+            if let Some((r, t, w)) = &*self.worked_set.lock().unwrap_or_else(|p| p.into_inner())
+                && (*r, *t) == (inner.revision, key_table)
+            {
+                return Ok(w.clone());
+            }
+            let logged: Vec<crate::dxcc::Logged> = inner
+                .records
+                .iter()
+                .map(|r| crate::dxcc::Logged {
+                    call: r.values[CALL].clone().unwrap_or_default(),
+                    grid: r.values[GRID].clone(),
+                    band: r.effective_band(),
+                })
+                .collect();
+            (inner.revision, logged)
+        };
+        let worked = std::sync::Arc::new(crate::dxcc::Worked::from_log(&table, &logged));
+        *self.worked_set.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some((revision, key_table, worked.clone()));
+        Ok(worked)
     }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {

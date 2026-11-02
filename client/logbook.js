@@ -143,7 +143,9 @@ if(general&&typeof block==='function'){
     replace(await file.text(),`Uploaded ${file.name}`);
   });
   $('cty-bundled').addEventListener('click',()=>replace(null,'Using the bundled cty.dat'));
-  loadCty();
+  // Read only when Settings > General is shown, not at page load (Thin link).
+  document.addEventListener('click',event=>{if(event.target.closest?.('#open-server-settings,#tab-general'))loadCty();},true);
+  if($('settings-cty').getClientRects().length)loadCty();
 }
 // Annotate rows already shown when this client arrives.
 if(activity)annotate(activity,resultRows);

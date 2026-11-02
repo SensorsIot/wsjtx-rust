@@ -740,13 +740,16 @@ pub(crate) fn my_continent(
 }
 /// Builds the evaluation facts for these records from the profile, the station band and
 /// the internal log.
+/// The station band: the CAT dial band, else the operating selection band.
+pub(crate) fn station_band(r: &recording::Recording) -> Option<&'static str> {
+    contact_http::confirmed_dial(r)
+        .and_then(logbook::band_of_hz)
+        .or(r.operating_band())
+}
 pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) -> Station {
     let r = &state.recording;
     let (call, locator) = contact_http::profile_facts(state);
-    let band = contact_http::confirmed_dial(r)
-        .and_then(logbook::band_of_hz)
-        .or(r.operating_band())
-        .map(str::to_owned);
+    let band = station_band(r).map(str::to_owned);
     let mode = r.operating_mode().to_ascii_uppercase();
     let facts: Vec<Facts> = records.iter().filter_map(facts).collect();
     let mut calls: Vec<String> = facts.iter().map(|f| f.from.clone()).collect();

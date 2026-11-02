@@ -660,9 +660,11 @@ package WstxContact {
              lon: utc: primary prefix:" (lon positive West; a leading * marks a WAE-only
              entity) followed by comma-separated entries up to ";"; "=" marks an exact
              call; an entry may carry (cq) [itu] <lat/lon> {continent} ~utc~ overrides.
-             Lines that are no entity line are skipped; an invalid number, zone or
-             continent, a missing ";" or a file without entities is refused with the
-             1-based line. A key listed twice keeps its first entry. "=VERyyyymmdd" is
+             Lines that are no entity line are skipped; an invalid number, a CQ zone
+             above 40 or ITU zone above 90 (also as an override), an unknown continent, a
+             shown name (EntityOfCall) that is not 1..40 printable ASCII characters, a
+             missing ";" or a file without entities is refused with the 1-based line, so
+             every accepted file gives values the browser accepts. A key listed twice keeps its first entry. "=VERyyyymmdd" is
              the version. */
     }
     calc def EntityOfCall {
@@ -688,13 +690,16 @@ package WstxContact {
              dxcc {name (shown name), cont, cq, itu, km (only with a profile locator:
              great circle in whole km to the entity position)} when the sender has an
              entity; flags {name: true ...} holding only the flags that are true, omitted
-             when none is or the log is unreadable: new_call and new_grid (not in the log;
-             the 4-character square of the message grid) and their _band forms (not on
-             this band and mode, WorkedBeforeQuery), new_dxcc (entity full name, WAE
-             entities by their own name as in WSJT-X), new_continent, new_cq_zone,
-             new_itu_zone (not in the log, from EntityOfCall of each logged call; a
-             logged call without an entity counts for nothing) and their _band forms (not
-             on this band, any mode: WSJT-X highlight by mode off). Band: the CAT dial
+             when none is or the log is unreadable: new_call (the call, case-insensitive)
+             and new_grid (the 4-character square of the message grid; none without a
+             grid) not in the log; new_dxcc (entity full name, WAE entities by their own
+             name as in WSJT-X), new_continent, new_cq_zone, new_itu_zone not in the log
+             (from EntityOfCall of each logged call; a logged call without an entity
+             counts for nothing); each with its _band form: not on this band in any mode
+             (WSJT-X LogBook::match with highlight by mode off, its default; the
+             strategy's new_call/new_grid conditions keep band and mode). The worked set
+             is rebuilt only when the log or the country table changes; the annotation
+             runs off the async runtime. Band: the CAT dial
              band, else the operating selection band; without a band no _band flag is
              set. The browser accepts exactly these optional keys and values; any other
              key or value refuses the page like any invalid record. */
@@ -702,7 +707,7 @@ package WstxContact {
     attribute def CountryFileHttp {
         doc /* #55 (CL-055-03). GET /dxcc (read): {v:1, profile_id, boot_id, source
              "bundled"|"uploaded", version (the =VER marker or null), entities,
-             upload_unreadable}; with ?call=<1..13 of A-Z 0-9 /> also entity (the dxcc
+             upload_unreadable}; with ?call=<1..13 of A-Z 0-9 /, unencoded> also entity (the dxcc
              object of DecodedEntity or null), any other query 400 invalid_request call.
              PUT /dxcc {v, profile_id, boot_id, text} with exactly these keys, body at
              most 2 MiB: text null removes the upload (bundled again); a string of at most

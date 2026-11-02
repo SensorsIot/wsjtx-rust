@@ -138,7 +138,8 @@ function render(){
 function dxEntity(call){
   if(dxLookup.call!==call){
     dxLookup={call,entity:null};
-    stationFetch(`/dxcc?call=${encodeURIComponent(call)}`,{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(dxLookup.call===call&&v?.entity){dxLookup.entity=v.entity;render();}}).catch(()=>{});
+    // The call is A-Z 0-9 / only: sent as it is (the station refuses an encoded slash).
+    stationFetch(`/dxcc?call=${call}`,{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(dxLookup.call===call&&v?.entity){dxLookup.entity=v.entity;render();}}).catch(()=>{});
   }
   const e=dxLookup.entity;return e?` · ${e.name} (${e.cont})`:'';
 }
