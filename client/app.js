@@ -243,6 +243,7 @@ settingsForm.addEventListener('submit', async event => {
     if(!stationContext(current,authEpoch)||context!==JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]))throw new Error('Stale save completion');
     if (!response.ok) {
       if (response.status === 409) {conflict = true; settingsResult.textContent = 'Settings changed or revision limit reached. Reload saved settings before saving.';}
+      else if (result.error?.code === 'audio_device_not_endpoint') settingsResult.textContent = `${result.error.field} must be a Windows audio endpoint ID ({0.0.x.00000000}.{GUID}), not a device name.`;
       else settingsResult.textContent = result.error?.field ? `Invalid ${result.error.field}. Check this field.` : `Could not save settings (${result.error?.code || 'connection error'}).`;
       return;
     }

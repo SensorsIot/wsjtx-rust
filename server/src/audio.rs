@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex};
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{AudioController, CaptureHandle, InputDevice, enumerate_inputs, system_clock};
+pub use windows::{
+    AudioController, CaptureHandle, InputDevice, enumerate_inputs, enumerate_outputs, system_clock,
+};
 
 pub const MAX_NATIVE_PACKET: usize = 8192;
 pub const FILTER_TAPS: usize = 257;

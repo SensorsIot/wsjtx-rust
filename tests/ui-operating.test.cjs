@@ -331,7 +331,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -610,6 +610,81 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   await page.locator('#open-logbook').click();assert.equal(await page.locator('#region-logbook').isVisible(),true,'Logbook is a full page');
   assert.equal(await page.locator('#waterfall').isVisible(),false);assert.equal(await page.locator('#halt-tx').isVisible(),true);
   await page.locator('#region-logbook .return-operate').click();assert.equal(await page.locator('#operating-workspace').isVisible(),true);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-044-06; TC-044-005. Settings > Radio "Detect radio": the station's /radio routes are
+// answered by route fixtures, so no serial port is ever probed or written by this test.
+test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fills the Radio section',{timeout:60000},async t=>{
+  const capture='{0.0.1.00000000}.{6b9f2c1e-1111-4222-8333-944444444444}',render='{0.0.0.00000000}.{f4069c8a-1111-4222-8333-944444444444}';
+  const radio=[],requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
+    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+    await p.route('**/radio/detect',async route=>{const body=JSON.parse(route.request().postData());radio.push(['detect',body]);await route.fulfill({json:{v:1,profile_id:body.profile_id,boot_id:body.boot_id,
+      ports:[{port:'COM250',friendly_name:'Silicon Labs CP210x USB to UART Bridge (COM250)',vid:'10C4',pid:'EA60',instance_id:'USB\\VID_10C4&PID_EA60\\IC-7300',state:'identified',
+        radios:[{model:'IC-7300',id:'94',civ_address:'94',baud:19200,station_cat:true,unknown_model:false}],audio:null}],
+      manual:['Yaesu','Kenwood','Elecraft'],supported_radios:1,audio_error:null,
+      proposal:{port:'COM250',model:'IC-7300',civ_address:'94',baud:19200,control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},
+        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC )',output_name:'Speakers (USB Audio CODEC )'}},
+      settings:{port:3,source:'probe',civ_baud:19200,error:null,items:[{item:'0078',name:'usb_send',value:1,label:'DTR',recommended:0,severity:'blocking',message:'USB SEND on DTR/RTS can key the transmitter.'},
+        {item:'0067',name:'data_mod',value:3,label:'USB',recommended:3,severity:'ok',message:'DATA MOD takes transmit audio from USB.'}]}}});});
+    await p.route('**/radio/settings/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop(),body=JSON.parse(route.request().postData());radio.push([action,body]);
+      await route.fulfill({json:{v:1,profile_id:body.profile_id,boot_id:body.boot_id,action,result:'done',written:[{item:'0078',name:'usb_send',value:action==='apply'?0:1}],failed_item:null,error:null,undo:null}});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact&&!!profileData,null,{timeout:30000});
+  const profile=await (await fetch(app.origin+'/profile')).json();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  await page.locator('#detect-run').scrollIntoViewIfNeeded();assert.equal(await inViewport(page,'#detect-run'),true,'Detect radio is in Settings > Radio');
+  await page.waitForTimeout(1500);assert.deepEqual(radio,[],'nothing is fetched before a button press');
+  assert.equal(await page.locator('#detect-run').isDisabled(),true,'detection waits for the keying-inhibit confirmation');
+  await page.locator('#detect-ack').check();await page.locator('#detect-run:enabled').click();
+  await page.locator('#detect-proposal:not([hidden])').waitFor();
+  assert.deepEqual(radio,[['detect',{v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,keying_inhibit_confirmed:true}]]);
+  const fields=await page.locator('#detect-fields').textContent();
+  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC )',capture,'Speakers (USB Audio CODEC )',render])assert.ok(fields.includes(text),text);
+  assert.match(await page.locator('#detect-items').textContent(),/0078 usb send: DTR · blocking/);
+  assert.equal(await page.locator('#detect-ack').isChecked(),false,'the confirmation is asked again for the next detection');
+  await page.locator('#detect-use').click();
+  assert.deepEqual(await page.evaluate(()=>['control-mode','control-endpoint','ptt-mode','audio-input','audio-output'].map(id=>document.getElementById(id).value)),
+    ['cat','icom7300://COM250?baud=19200&radio=94&controller=e0','cat',capture,render]);
+  assert.equal(requests.includes('PUT /profile'),false,'Use this setup only fills the form');
+  // Apply/Undo stay disabled until CAT is ready and the transmitter is disarmed.
+  assert.equal(await page.locator('#radio-settings-apply').isDisabled(),true);assert.equal(await page.locator('#radio-settings-undo').isDisabled(),true);
+  // The station's own connection generation (from its selection snapshot) is sent; CAT ready is injected.
+  await page.waitForFunction(()=>Number.isSafeInteger(operatingState?.radio?.connection_generation));const generation=await page.evaluate(()=>operatingState.radio.connection_generation);
+  await page.evaluate(()=>{catStatus={condition:'ready'};radioSetupShow();});
+  await page.locator('#radio-settings-apply:enabled').click();await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/USB SEND and USB keying OFF, DATA MOD USB/);
+  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.equal(radio.length,1,'a cancelled apply sends nothing');
+  await page.locator('#radio-settings-apply').click();await page.locator('#op-confirm-ok').click();
+  await page.locator('#radio-settings-result').filter({hasText:'Applied'}).waitFor();
+  await page.locator('#radio-settings-undo').click();await page.locator('#op-confirm-ok').click();
+  await page.locator('#radio-settings-result').filter({hasText:'Restored'}).waitFor();
+  const settingsBody={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,connection_generation:generation};
+  assert.deepEqual(radio.slice(1),[['apply',settingsBody],['undo',settingsBody]],JSON.stringify(radio.slice(1)));
+  // The filled Radio section is saved by the existing Apply ⟳ with endpoint IDs.
+  await page.locator('#settings-save').click();await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  const saved=(await (await fetch(app.origin+'/profile')).json()).settings;
+  assert.deepEqual([saved.control,saved.audio],[{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},{input_device:capture,output_device:render}]);
+  await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'the panel fits a phone');
+  await page.locator('#settings-detect').screenshot({path:'test-results/ui-operating/detect-radio-mobile.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-044-06; TC-044-005. Before the contact client (confirmation dialog, transmit state)
+// is loaded, Apply/Undo radio settings stay disabled and send nothing, even with CAT ready.
+test('TC-044-005 radio settings writes wait for the confirmation dialog and a known disarmed transmitter',{timeout:40000},async t=>{
+  const radio=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
+    await p.route('**/contact.js',()=>{});
+    await p.route('**/radio/settings/*',async route=>{radio.push(route.request().url());await route.fulfill({status:409,json:{error:{code:'unexpected'}}});});
+  }});
+  await page.waitForFunction(()=>!!profileData&&Number.isSafeInteger(operatingState?.radio?.connection_generation),null,{timeout:30000});
+  assert.equal(await page.evaluate(()=>!!window.wstxConfirm||!!window.wstxContact),false,'contact client held back');
+  await page.evaluate(()=>{catStatus={condition:'ready'};radioSetupShow();});
+  for(const id of ['#radio-settings-apply','#radio-settings-undo'])assert.equal(await page.locator(id).isDisabled(),true,id);
+  await page.evaluate(()=>radioSettings('apply'));await page.waitForTimeout(500);
+  assert.deepEqual(radio,[],'no unconfirmed settings write');assert.equal(await page.locator('#op-confirm[open]').count(),0);
   assert.deepEqual(errors,[]);
 });
 

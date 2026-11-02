@@ -938,6 +938,76 @@ document.querySelector('#cat-confirm-button').addEventListener('click',async()=>
   }catch(error){result.textContent=`Confirmation not recorded · ${error.message}`;}
   finally{catConfirming=false;catSync();}
 });
+// #44 CL-044-06 Settings > Radio "Detect radio": one request per button press, no polling.
+// Detection writes nothing; "Use this setup" only fills the Radio form, which the operator
+// applies with Apply (restart receive) and then the receive-only confirmation above.
+const detectSection=block('settings-detect','Detect radio',radioSection,'<p class="op-muted">Detection opens only USB radio bridges (Silicon Labs CP210x) that this station\'s CAT does not hold, reads the CI-V ID and the IC-7300 menu, and writes nothing.</p><label class="receive-only-verification"><input type="checkbox" id="detect-ack">USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load; opening a port can pulse DTR/RTS, also on other CP210x boards</label><p class="op-actions"><button type="button" id="detect-run" disabled>Detect radio</button></p><p id="detect-result" role="status">Not run</p><div id="detect-proposal" hidden><dl id="detect-fields"></dl><p class="op-actions"><button type="button" id="detect-use">Use this setup</button></p></div><div id="detect-settings" hidden><h4>IC-7300 settings</h4><ul id="detect-items"></ul><p class="op-actions"><button type="button" id="radio-settings-apply" disabled>Apply recommended radio settings</button><button type="button" id="radio-settings-undo" disabled>Undo radio settings</button></p><p id="radio-settings-result" role="status"></p></div>');
+radioSection.insertBefore(detectSection,profilePanel);
+let detectPending=false,detectProposal=null,radioSettingsPending=false;
+const detectEl=id=>document.getElementById(id);
+function radioSetupShow(){
+  const connected=connection.dataset.state==='connected',s=window.wstxContact?.snapshot?.()?.transmit;
+  detectEl('detect-run').disabled=!connected||detectPending||!detectEl('detect-ack').checked||!profileData;
+  // Writes need the contact client: its confirmation dialog and a known disarmed transmitter.
+  const ready=connected&&!!window.wstxConfirm&&!!s&&catStatus?.condition==='ready'&&Number.isSafeInteger(operatingState?.radio?.connection_generation)&&s.arm_state==='disarmed'&&!s.tune;
+  for(const id of ['radio-settings-apply','radio-settings-undo'])detectEl(id).disabled=!ready||radioSettingsPending;
+}
+detectEl('detect-ack').addEventListener('change',radioSetupShow);
+setInterval(radioSetupShow,1000);
+async function radioSetupPost(path,body){
+  const response=await stationFetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
+  let value=null;try{value=await response.json();}catch{}
+  if(!response.ok)throw new Error(value?.error?.code??`request_failed ${response.status}`);
+  return value;
+}
+function detectRow(list,term,text){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=term;dd.textContent=text;list.append(dt,dd);}
+function detectShow(v){
+  const ports=v.ports??[],radios=ports.flatMap(p=>(p.radios??[]).map(r=>`${p.port} ${r.model??'unknown ID '+r.id} ${r.civ_address}h ${r.baud} baud`));
+  detectEl('detect-result').textContent=ports.length?`${ports.length} port(s): ${ports.map(p=>`${p.port} ${p.state}`).join(', ')}${radios.length?' · found '+radios.join('; '):' · no radio answered'}${v.proposal?'':v.supported_radios>1?' · several supported radios: no proposal':''}`:'No COM ports found';
+  detectProposal=v.proposal;const fields=detectEl('detect-fields');fields.replaceChildren();
+  if(v.proposal){
+    const p=v.proposal,a=p.audio;
+    detectRow(fields,'Port',p.port);detectRow(fields,'Model',p.model);detectRow(fields,'CI-V address',`${p.civ_address}h`);detectRow(fields,'Baud',String(p.baud));
+    detectRow(fields,'Control endpoint',p.control.endpoint);
+    detectRow(fields,'Audio input',a.input_device?`${a.input_name} · ${a.input_device}`:'not matched (choose manually)');
+    detectRow(fields,'Audio output',a.output_device?`${a.output_name} · ${a.output_device}`:'not matched (choose manually)');
+  }
+  detectEl('detect-proposal').hidden=!v.proposal;
+  const items=detectEl('detect-items');items.replaceChildren();
+  for(const i of v.settings?.items??[]){const li=document.createElement('li');li.dataset.severity=i.severity;li.textContent=`${i.item} ${i.name.replaceAll('_',' ')}: ${i.label??'unreadable'} · ${i.severity} · ${i.message}`;items.append(li);}
+  if(v.settings?.error){const li=document.createElement('li');li.textContent=`Settings read stopped · ${v.settings.error}`;items.append(li);}
+  detectEl('detect-settings').hidden=!v.settings;
+}
+detectEl('detect-run').addEventListener('click',async()=>{
+  if(detectPending||!profileData||!detectEl('detect-ack').checked)return;
+  detectPending=true;radioSetupShow();detectEl('detect-result').textContent='Detecting · this can take several seconds per port';
+  try{detectShow(await radioSetupPost('/radio/detect',{v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,keying_inhibit_confirmed:true}));}
+  catch(error){detectEl('detect-result').textContent=`Detection failed · ${error.message}`;}
+  finally{detectPending=false;detectEl('detect-ack').checked=false;radioSetupShow();}
+});
+detectEl('detect-use').addEventListener('click',()=>{
+  const p=detectProposal;if(!p)return;
+  const set=(id,value)=>{const field=document.getElementById(id);if(value===null||value===undefined)return;field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));};
+  set('control-mode',p.control.mode);set('control-endpoint',p.control.endpoint);set('ptt-mode',p.control.ptt);
+  set('audio-input',p.audio.input_device);set('audio-output',p.audio.output_device);
+  detectEl('detect-result').textContent='Radio section filled · press Apply ⟳, then confirm the receive-only setup';
+  document.querySelector('#settings-save').focus();
+});
+async function radioSettings(action){
+  const generation=operatingState?.radio?.connection_generation;if(radioSettingsPending||!profileData||!Number.isSafeInteger(generation)||!window.wstxConfirm)return;
+  const text=action==='apply'?'Write the recommended IC-7300 settings by CI-V (USB SEND and USB keying OFF, DATA MOD USB, CI-V transceive OFF)? Each write is read back; the old values are kept for Undo.':'Write the recorded old IC-7300 settings back by CI-V?';
+  if(!await window.wstxConfirm(text,action==='apply'?'Apply radio settings':'Undo radio settings'))return;
+  radioSettingsPending=true;radioSetupShow();const result=detectEl('radio-settings-result');result.textContent=action==='apply'?'Writing radio settings':'Restoring radio settings';
+  try{
+    const v=await radioSetupPost(`/radio/settings/${action}`,{v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,connection_generation:generation});
+    const written=(v.written??[]).map(w=>`${w.item}=${w.value}`).join(', ')||'nothing to change';
+    result.textContent=v.result==='done'?`${action==='apply'?'Applied':'Restored'} · ${written}${v.undo?' · undo available':''}`:`Stopped at ${v.failed_item} · ${v.error} · written ${written}`;
+  }catch(error){result.textContent=`${action==='apply'?'Apply':'Undo'} refused · ${error.message}`;}
+  finally{radioSettingsPending=false;radioSetupShow();}
+}
+detectEl('radio-settings-apply').addEventListener('click',()=>radioSettings('apply'));
+detectEl('radio-settings-undo').addEventListener('click',()=>radioSettings('undo'));
+radioSetupShow();
 addEventListener('station-stale',catShow);
 // WstxTransmit::TransmitWire operator panel (#9 slice B). Active only for a profile with
 // CAT PTT; the browser renders server-confirmed transmit state and sends explicit
