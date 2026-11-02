@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "purpose": "Pinned external observations for comparison only, not exhaustive or independently established truth",
+  "purpose": "Pinned external observations for comparison only, not exhaustive or independently established truth; snr_db is the reference jt9 3.3.0-beta4 report (-d 3), identical in 3.3.0-beta5",
   "cases": [
     {
       "id": "ft4-current",
@@ -13,79 +13,98 @@
       "observations": [
         {
           "text": "N1TRK N4FKH 569 VA",
-          "frequency_hz": 296
+          "frequency_hz": 296,
+          "snr_db": -10
         },
         {
           "text": "N1TRK KB7RUQ RR73",
-          "frequency_hz": 422
+          "frequency_hz": 422,
+          "snr_db": -9
         },
         {
           "text": "CQ RU AB5XS EM12",
-          "frequency_hz": 560
+          "frequency_hz": 560,
+          "snr_db": -7
         },
         {
           "text": "NZ7P WA7JAY 589 CA",
-          "frequency_hz": 727
+          "frequency_hz": 727,
+          "snr_db": -12
         },
         {
           "text": "KB0VHA KA1YQC R 539 MA",
-          "frequency_hz": 1149
+          "frequency_hz": 1149,
+          "snr_db": 16
         },
         {
           "text": "CQ RU N9OY EN43",
-          "frequency_hz": 1640
+          "frequency_hz": 1640,
+          "snr_db": -3
         },
         {
           "text": "K1JT WB4HXE 559 GA",
-          "frequency_hz": 1910
+          "frequency_hz": 1910,
+          "snr_db": -11
         },
         {
           "text": "VE3LON K7RL R 549 WA",
-          "frequency_hz": 2067
+          "frequency_hz": 2067,
+          "snr_db": 5
         },
         {
           "text": "WD9IGY KX1X 73",
-          "frequency_hz": 2310
+          "frequency_hz": 2310,
+          "snr_db": -1
         },
         {
           "text": "W7BOB KJ7G RR73",
-          "frequency_hz": 2413
+          "frequency_hz": 2413,
+          "snr_db": -17
         },
         {
           "text": "NI6G W7DRW 569 AZ",
-          "frequency_hz": 2566
+          "frequency_hz": 2566,
+          "snr_db": -7
         },
         {
           "text": "K4SQC VE3RX RR73",
-          "frequency_hz": 2725
+          "frequency_hz": 2725,
+          "snr_db": 2
         },
         {
           "text": "CQ RU W1QA FN32",
-          "frequency_hz": 2813
+          "frequency_hz": 2813,
+          "snr_db": -6
         },
         {
           "text": "CQ RU WS4WW FM17",
-          "frequency_hz": 2995
+          "frequency_hz": 2995,
+          "snr_db": 0
         },
         {
           "text": "HB9BUN KG4W R 549 VA",
-          "frequency_hz": 3159
+          "frequency_hz": 3159,
+          "snr_db": 13
         },
         {
           "text": "W9TO KN3ILZ 529 PA",
-          "frequency_hz": 3337
+          "frequency_hz": 3337,
+          "snr_db": -8
         },
         {
           "text": "W9JA PY2APK RRR",
-          "frequency_hz": 520
+          "frequency_hz": 520,
+          "snr_db": -10
         },
         {
           "text": "AC6BW KR9A R 559 WI",
-          "frequency_hz": 2299
+          "frequency_hz": 2299,
+          "snr_db": -15
         },
         {
           "text": "CQ RU W0FRC DM79",
-          "frequency_hz": 2560
+          "frequency_hz": 2560,
+          "snr_db": -13
         }
       ]
     },
@@ -100,59 +119,73 @@
       "observations": [
         {
           "text": "W1FC F5BZB -08",
-          "frequency_hz": 2571
+          "frequency_hz": 2571,
+          "snr_db": 16
         },
         {
           "text": "CQ F5RXL IN94",
-          "frequency_hz": 1197
+          "frequency_hz": 1197,
+          "snr_db": -2
         },
         {
           "text": "WM3PEN EA6VQ -09",
-          "frequency_hz": 2157
+          "frequency_hz": 2157,
+          "snr_db": 12
         },
         {
           "text": "K1JT HA0DU KN07",
-          "frequency_hz": 590
+          "frequency_hz": 590,
+          "snr_db": -14
         },
         {
           "text": "A92EE F5PSR -14",
-          "frequency_hz": 723
+          "frequency_hz": 723,
+          "snr_db": -7
         },
         {
           "text": "K1BZM EA3GP -09",
-          "frequency_hz": 2695
+          "frequency_hz": 2695,
+          "snr_db": -3
         },
         {
           "text": "N1JFU EA6EE R-07",
-          "frequency_hz": 641
+          "frequency_hz": 641,
+          "snr_db": -12
         },
         {
           "text": "N1PJT HB9CQK -10",
-          "frequency_hz": 466
+          "frequency_hz": 466,
+          "snr_db": -2
         },
         {
           "text": "W1DIG SV9CVY -14",
-          "frequency_hz": 2734
+          "frequency_hz": 2734,
+          "snr_db": -7
         },
         {
           "text": "K1JT EA3AGB -15",
-          "frequency_hz": 1649
+          "frequency_hz": 1649,
+          "snr_db": -16
         },
         {
           "text": "W0RSJ EA3BMU RR73",
-          "frequency_hz": 400
+          "frequency_hz": 400,
+          "snr_db": -16
         },
         {
           "text": "XE2X HA2NP RR73",
-          "frequency_hz": 2855
+          "frequency_hz": 2855,
+          "snr_db": -11
         },
         {
           "text": "KD2UGC F6GCP R-23",
-          "frequency_hz": 472
+          "frequency_hz": 472,
+          "snr_db": -6
         },
         {
           "text": "K1BZM EA3CJ JN01",
-          "frequency_hz": 2522
+          "frequency_hz": 2522,
+          "snr_db": -7
         }
       ]
     }

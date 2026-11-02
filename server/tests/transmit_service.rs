@@ -955,7 +955,8 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
         *f.0.audio.lock().unwrap() = Some(stuck);
         // Disarm does not unbound the keyed transmission.
         core.disarm(DisarmCause::Operator);
-        let deadline = P + 500 + 606_720 * 1000 / 48_000 + 500;
+        // Audio end P + 13 140 ms plus the 1 000 ms release margin (#49).
+        let deadline = P + 14_140;
         run(&mut core, &f, deadline - 1);
         assert_eq!(f.keys(), vec![(P, true)], "still keyed before the deadline");
         run(&mut core, &f, deadline);
@@ -964,6 +965,116 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
         assert_eq!(last.kind, OutcomeKind::Failed);
         assert!(last.failure.is_some());
         assert_eq!(core.view().ptt, PttState::Released);
+    }
+}
+
+// Proves: CL-009-04; TC-008-003. #49: a device that reports the end 300 or 900 ms late,
+// still inside the release bound, completes normally; the station stays armed and its
+// next request plays.
+#[test]
+fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
+    let end = P + 500 + 12_640;
+    for late in [300, 900] {
+        let f = Fake::new();
+        let mut core = Core::new(f.clone());
+        f.at(P - 100);
+        core.arm(7).unwrap();
+        core.submit(request(1, P, "CQ HB9BLA JN47"));
+        run(&mut core, &f, end + late - 1);
+        assert_eq!(f.keys(), vec![(P, true)], "keyed while the device plays");
+        f.at(end + late);
+        *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+        core.tick();
+        assert_eq!(f.keys(), vec![(P, true), (end + late, false)], "+{late} ms");
+        let last = core.view().outcomes.last().cloned().unwrap();
+        assert_eq!((last.kind, last.failure), (OutcomeKind::Completed, None));
+        let v = core.view();
+        assert_eq!((v.arm_state, v.ptt), (ArmState::Armed, PttState::Released));
+        let next = core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+        assert_eq!(next.kind, OutcomeKind::Accepted);
+        run(&mut core, &f, P + 30_500);
+        assert_eq!(f.keys().last(), Some(&(P + 30_000, true)));
+        assert_eq!(kinds(&core).last(), Some(&(2, OutcomeKind::Started)));
+    }
+}
+
+// Proves: CL-009-04; TC-008-003. #49: the device is asked before the deadline is
+// applied, so a device that consumed every sample completes even when the owner's next
+// step runs only after the deadline (owner thread delayed by load).
+#[test]
+fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    f.at(P - 100);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 600);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 14_140 + 50);
+    core.tick();
+    assert_eq!(f.keys(), vec![(P, true), (P + 14_190, false)]);
+    let last = core.view().outcomes.last().cloned().unwrap();
+    assert_eq!((last.kind, last.failure), (OutcomeKind::Completed, None));
+    assert_eq!(core.view().arm_state, ArmState::Armed);
+}
+
+// Proves: CL-009-04; TC-008-003. #49: a device that stops consuming half way never
+// reports the end: PTT is released by the device-independent bound (FT8 audio end
+// + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
+// start), the transmission fails audioStalled and the station disarms.
+#[test]
+fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound() {
+    let ft4 = |seq| Request {
+        mode: Mode::Ft4,
+        ..request(seq, P, "CQ HB9BLA JN47")
+    };
+    // (request, submitted at, half way, deadline, bound)
+    let cases = [
+        (
+            request(1, P, "CQ HB9BLA JN47"),
+            P - 100,
+            P + 6_820,
+            P + 14_140,
+            P + 14_500,
+        ),
+        (
+            request(1, P, "CQ HB9BLA JN47"),
+            P + 3_000,
+            P + 8_000,
+            P + 14_140,
+            P + 14_500,
+        ),
+        (ft4(1), P - 100, P + 2_820, P + 6_340, P + 7_000),
+    ];
+    for (req, at, half, deadline, bound) in cases {
+        let f = Fake::new();
+        let mut core = Core::new(f.clone());
+        f.at(at);
+        core.arm(7).unwrap();
+        core.submit(req.clone());
+        run(&mut core, &f, half);
+        assert!(core.view().transmitting, "{:?} at {at}", req.mode);
+        // The device stops consuming: it keeps reporting playing and never the end.
+        run(&mut core, &f, deadline - 1);
+        assert_eq!(f.keys().len(), 1, "still keyed before the deadline");
+        run(&mut core, &f, deadline);
+        let release = f.keys()[1];
+        assert_eq!(release, (deadline, false), "{:?} at {at}", req.mode);
+        assert!(release.0 <= bound);
+        let last = core.view().outcomes.last().cloned().unwrap();
+        assert_eq!(
+            (last.kind, last.failure),
+            (OutcomeKind::Failed, Some(TransmitFailure::AudioStalled))
+        );
+        let v = core.view();
+        assert_eq!(
+            (v.arm_state, v.last_disarm_cause, v.ptt),
+            (
+                ArmState::Disarmed,
+                DisarmCause::DeviceLost,
+                PttState::Released
+            )
+        );
     }
 }
 
@@ -1128,6 +1239,89 @@ fn render_drain_stops_topping_up_and_watchdog_flags_a_stall() {
     assert!(p.stalled(601), "no consumption for 601 ms");
     p.observe(400, 650);
     assert!(!p.stalled(1_100));
+}
+
+/// The real render fill decisions (`plan_fill`, `Renderer`) against a modelled
+/// shared-mode engine that consumes 480 frames every 10 ms period; the render thread
+/// wakes on each period plus `delay(period)` ms. Returns (program start after play,
+/// end report after the nominal end, underrun while the program played), in ms.
+fn render_model(capacity: u32, delay: impl Fn(i64) -> i64) -> (i64, i64, i64) {
+    use wstx_rust::audio::{Encoding, NativeFormat};
+    use wstx_rust::playback::{Fill, Renderer, Source, plan_fill};
+    const PLAY: i64 = 1_005;
+    let format = NativeFormat {
+        rate: 48_000,
+        channels: 1,
+        encoding: Encoding::Float32,
+    };
+    let mut buffer = vec![0u8; capacity as usize * 4];
+    let (mut padding, mut ahead, mut wake) = (0u32, 0u32, 0i64);
+    let (mut program, mut started, mut underrun) = (None::<Renderer>, None, 0);
+    for t in 0..20_000 {
+        if t > 0 && t % 10 == 0 {
+            let take = padding.min(480);
+            padding -= take;
+            if let Some(r) = &program {
+                let silence = ahead.min(take);
+                ahead -= silence;
+                if started.is_none() && take > silence {
+                    started = Some(t - PLAY);
+                } else if started.is_some() && take < 480 && !r.exhausted() {
+                    underrun += 10;
+                }
+            }
+        }
+        if t == PLAY {
+            let samples: Arc<[f32]> = vec![0.; 606_720].into();
+            program = Some(Renderer::new(Source::Samples { samples, skip: 0 }, 0.5));
+            ahead = padding;
+        }
+        if t >= wake {
+            match plan_fill(program.as_ref(), padding, capacity) {
+                Fill::Finished => return (started.unwrap(), t - PLAY - 12_640, underrun),
+                Fill::Nothing => {}
+                Fill::Silence(n) => padding += n,
+                Fill::Program(n) => {
+                    if let Some(r) = program.as_mut() {
+                        r.fill(format, &mut buffer, n as usize);
+                    }
+                    padding += n;
+                }
+            }
+            let period = (t / 10 + 1) * 10;
+            wake = period + delay(period);
+        }
+    }
+    panic!("the program never finished");
+}
+
+// Proves: CL-009-03, CL-009-04; TC-008-003. #49: with the 100 ms render buffer
+// (renderBufferMs, 4 800 frames) and 20 ms of silence ahead (silencePrefillMs), the
+// program starts within 30 ms of play (20 ms ahead plus one 10 ms engine period) and
+// its end is reported within 100 ms of the nominal end, also when the render thread is
+// delayed 40 ms once a second; a 20 ms buffer underruns then and its end report slips
+// by about 400 ms.
+#[test]
+fn the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end() {
+    let load = |period: i64| if period % 1_000 == 500 { 40 } else { 0 };
+    for delayed in [false, true] {
+        let (start, late, underrun) = if delayed {
+            render_model(4_800, load)
+        } else {
+            render_model(4_800, |_| 0)
+        };
+        assert!(start <= 30, "program start {start} ms after play");
+        assert!(
+            late <= 100,
+            "end reported {late} ms late (delayed {delayed})"
+        );
+        assert_eq!(underrun, 0, "delayed {delayed}");
+    }
+    let (_, late, underrun) = render_model(960, load);
+    assert!(
+        underrun >= 200 && late >= 300,
+        "20 ms buffer: {late} ms, {underrun} ms"
+    );
 }
 
 #[test]

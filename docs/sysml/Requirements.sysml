@@ -553,7 +553,11 @@ package WstxRequirements {
              duplicate sequence; replacement before and after audio start; halt
              mid-audio on the virtual clock, through the owner thread and through the
              real actor; audio device loss, CAT loss, key timeout, output open failure,
-             safety revision change; restart; Tx watchdog expiry and Tune limit;
+             safety revision change; an end report 300/900 ms late and one seen only
+             by an owner step after the deadline; a device that stops consuming half
+             way (FT8, late FT8, FT4); the render fill decisions against a modelled
+             10 ms engine with and without 40 ms render delays (#49); restart; Tx
+             watchdog expiry and Tune limit;
              lifecycle polling with the transmit owner present; malformed and extra-key
              wire bodies, wrong Origin, stale boot, retained command_id.
              Oracles: no PTT or audio call/byte while disarmed or unauthorized or
@@ -561,7 +565,12 @@ package WstxRequirements {
              1C 00 00 with 1C 00 readback; open before key at the period start, audio at
              period start + 500 ms with skip 0, late skip (t-500 ms)*48; replaced and
              audioStarted outcomes in order; halt releases within 250 ms and disarms;
-             every failure stops audio, attempts release and disarms with its cause; an
+             every failure stops audio, attempts release and disarms with its cause; a
+             late end report inside the bound completes, stays armed and the next
+             request plays; a device that never reports the end is released at audio
+             end + 1000 ms (FT8 P+14140 <= P+14500, FT4 P+6340 <= P+7000) as
+             audioStalled, disarmed deviceLost; the 100 ms buffer starts the program
+             within 30 ms and reports the end within 100 ms without underrun; an
              unconfirmed release is indeterminate and recovered off-only; restart is
              disarmed (startup) with nothing pending; watchdog expiry at the configured
              minute; no poll during the transmit hold; one off-only release on close of
@@ -975,7 +984,7 @@ package WstxRequirements {
     }
     dependency CL_010_10_to_FR_008 from 'CL-010-10' to 'FR-008';
     requirement 'CL-010-11' {
-        doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (click Rx; shift- or right-click Tx; ctrl-click both; left double-click Rx only; right double-click both; dragging the Rx/Tx markers and the Rx/Tx strip fields with 1 Hz/10 Hz steps), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
+        doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (#50: click Tx; double-click Rx and Tx; dragging the 3 px Rx/Tx lines and the Rx/Tx strip fields with 1 Hz/10 Hz steps), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -1098,8 +1107,8 @@ package WstxRequirements {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
              CL-010-11
              Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder.
-             Steps: at independently computed pixel positions for 200, 1500 and 2950 Hz perform click, shift-click, right-click, ctrl-click, left and right double-click, each with Hold Tx on and off; touch tap; numeric Rx/Tx inputs with 0/3000 Rx and 199/200/2950/2951 Tx.
-             Expected: requested offsets equal the independently computed axis frequency rounded to integer Hz; click Rx only, shift/right Tx only, ctrl and right double-click both, left double-click Rx only and no re-decode request; Tx pointer actions apply with Hold Tx on; markers move only after confirmation; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
+             Steps: at independently computed pixel positions for 700, 1000, 1500 and 2950 Hz perform click, double-click, shift-click with Hold Tx on and right-click; numeric Rx/Tx inputs with 199/200/2950/2951 Tx.
+             Expected (#50): requested offsets equal the independently computed axis frequency rounded to integer Hz; click Tx only; a double-click exactly one request for Rx and Tx and no re-decode request; shift-click as click and with Hold Tx on; right-click nothing; the markers are 3 px lines (Rx rgb(48,208,80), Tx rgb(255,64,64)) without text at the confirmed values; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1194,7 +1203,9 @@ package WstxRequirements {
              **Inputs/actions and expected results:**
 
              1. Send the contract's valid station.get example. Expect the specified station.status
-                envelope, matching ID, candidate package version and radio state unconfigured.
+                envelope, matching ID, candidate package version, radio state unconfigured and
+                the ClientBuild (#51) computed independently from the client files; the page
+                carries the same build.
              2. Send different request IDs through two concurrent connections. Expect each response
                 on its originating connection with its own ID and authoritative state.
              3. Send malformed JSON, a non-object, unknown command, unsupported version, missing ID,
@@ -1802,6 +1813,7 @@ package WstxRequirements {
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets.
+             SNR (#52): every decoded observation of the pinned modern FT4 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -21.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1821,6 +1833,7 @@ package WstxRequirements {
              Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets.
              Recorded corpus (22 FT8 recordings, the official FT8 and the modern FT4 recording, #56): the decoder finds at least the pinned number of the 409 complete-frame decodes of WSJT-X 3.3.0-beta5 jt9 -8/-5 -d 3 (fixtures/decoder/jt9-deep-reference.json; same text, carrier within 5 Hz); jt9 is a lower bound, not exhaustive truth.
+             SNR (#52): every decoded observation of the pinned official FT8 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -25.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1943,7 +1956,7 @@ package WstxRequirements {
         doc /* TC-010-004
              CL-006-03, CL-006-04
              Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames1920/2400/2880 and sources of1/2399/2400/2401/2879/2880/2881 frames with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected power-averaged rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement.
-             Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, two latest frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
+             Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, the latest Thin frame and the retained Detailed rows (#54, at most 25), declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-006-03';
@@ -1954,8 +1967,8 @@ package WstxRequirements {
     verification 'TC-010-005' {
         doc /* TC-010-005
              CL-006-03, CL-006-04
-             Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-             Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness.  Preference persistence: with disposable browser storage and actual server/Chromium, verify unchanged defaults without a valid choice; explicit Detailed/Thin/Off survives reload and reopened browser context; origins/ports and profile UUIDs are isolated while boot/revision changes preserve choice. Invalid value or denied storage uses normal defaults without page error and leaves in-memory selection usable. Inspect only versioned UUID keys and enumerated values, with no secrets. Unknown-command runtime Thin fallback preserves stored Detailed; subsequent explicit Thin replaces it. Existing subscription commands, no retry loop, Detailed bounds and Thin32kbit/s tests remain unchanged; no synthetic decoded records are used. */
+             Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise the fixed level mapping (#54 DisplayLevels: reference, Zero/Gain sliders, no automatic level) and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
+             Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. At most 1 Hz Thin and, for Detailed, 5 rows/s steady with catch-up of retained rows at most 5.9 rows/s (#54 TransferDisplay); no second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness.  Preference persistence: with disposable browser storage and actual server/Chromium, verify unchanged defaults without a valid choice; explicit Detailed/Thin/Off survives reload and reopened browser context; origins/ports and profile UUIDs are isolated while boot/revision changes preserve choice. Invalid value or denied storage uses normal defaults without page error and leaves in-memory selection usable. Inspect only versioned UUID keys and enumerated values, with no secrets. Unknown-command runtime Thin fallback preserves stored Detailed; subsequent explicit Thin replaces it. Existing subscription commands, no retry loop, Detailed bounds and Thin32kbit/s tests remain unchanged; no synthetic decoded records are used. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-006-03';
@@ -1966,8 +1979,8 @@ package WstxRequirements {
     verification 'TC-010-006' {
         doc /* TC-010-006
              CL-006-03, CL-006-04
-             Cost2 automated Windows real browser/candidate fixtures. Inject independently known native rows of2,75,600 Detailed or120 Thin values with contrasting bins/rows and gaps; inspect actual RGBA/backing and CSS box dimensions at desktop1100x850/mobile360x640, DPR1/2,200% zoom and splitter bounds. Exercise Sensitivity-30/0/+30 and Speed1/2/8 via input, keyboard and numeric outputs, manual Black/Range, Auto silence/noise/freeze/reset, new jobs/profiles and resize. Replay actual busy FT8 with a red saturated carrier, capture desktop/mobile screenshots and move both live sliders.
-             Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With base B=-83,R=30, g=+10 yields E=-93 and g=-30 yields E=-53, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. Sensitivity does not disable/re-estimate Auto; manual Black/Range does, new-job/profile resets only existing base/Auto settings and preserves both slider values. Fixed source-time scrolling, independent pixel movement, clipping, gap and unobserved-region oracles are specified in TC-010-007. Native/projected readouts and rulers agree with that mapping. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a full-height waterfall canvas with unobserved regions dark, dark floor, red strongest traces and visible working live sliders; original numeric/wire/security/Thin32k assertions remain. */
+             Cost2 automated Windows real browser/candidate fixtures. Inject independently known native rows of2,75,600 Detailed or120 Thin values with contrasting bins/rows and gaps; inspect actual RGBA/backing and CSS box dimensions at desktop1100x850/mobile360x640, DPR1/2,200% zoom and splitter bounds. Exercise Sensitivity-30/0/+30 and Speed1/2/8 via input, keyboard and numeric outputs, Range 10/50/80 (#54), new jobs/profiles and resize. Replay actual busy FT8 with a red saturated carrier, capture desktop/mobile screenshots and move both live sliders.
+             Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With the fixed reference B=-85 and R=50 (#54), g=+10 yields E=-95 and g=-30 yields E=-55, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. No setting follows the signal or resets on a new job or profile; Sensitivity, Range and Speed persist per browser. Fixed source-time scrolling, independent pixel movement, clipping, gap and unobserved-region oracles are specified in TC-010-007. Native/projected readouts and rulers agree with that mapping. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a full-height waterfall canvas with unobserved regions dark, dark floor, red strongest traces and visible working live sliders; original numeric/wire/security/Thin32k assertions remain. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-006-03';
@@ -3251,5 +3264,177 @@ package WstxRequirements {
     dependency CL_039_04_verified_by_TC_039_007 from 'CL-039-04' to 'TC-039-007';
     dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
     dependency CL_039_06_verified_by_TC_039_007 from 'CL-039-06' to 'TC-039-007';
+
+    // #51 An open page recovers after a station update (chosen defaults: WstxStationProtocol::PageUpdate).
+    requirement 'CL-051-01' {
+        doc /* The station identifies the browser client it serves with WstxStationProtocol::ClientBuild: the first 16 lower-case hex digits of the SHA-256 over its served client files in route order. The served page carries it as body data-build and every station.status reply carries it as data.build (data exactly {version, radio, build}). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/main.rs";
+    }
+    dependency CL_051_01_to_FR_021 from 'CL-051-01' to 'FR-021';
+    requirement 'CL-051-02' {
+        doc /* A page whose build differs from the build in a station.status reloads itself once for that station build, keeping its browser storage (WstxStationProtocol::PageUpdate). The operating screen holds the reload while a contact or transmission is in progress, a popup is open or the Settings form has unsaved edits, and shows the "Station updated · reload" chip instead; the chip's click reloads. A second mismatch for a build the tab already reloaded for shows the chip and never loops. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/app.js; client/recording.js";
+    }
+    dependency CL_051_02_to_FR_021 from 'CL-051-02' to 'FR-021';
+    requirement 'CL-051-03' {
+        doc /* A receive snapshot, result page, operating selection snapshot, contact snapshot or waterfall frame of an unknown shape that the page rejects by its validation is never silent: the top bar shows the error chip "Station data not understood (<which>) · reload", whose click reloads the page; a later valid snapshot of that kind clears it. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/contact.js";
+    }
+    dependency CL_051_03_to_FR_021 from 'CL-051-03' to 'FR-021';
+    verification 'TC-051-001' {
+        doc /* TC-051-001 — An open page reloads after a station update and receives again
+             CL-051-01, CL-051-02
+             Setup: actual candidate server on a disposable profile and Chromium at 1366x768; browser storage theme day and waterfall speed 4; a WebSocket proxy (Playwright routeWebSocket) forwards every message and, after the restart, rewrites the build of one station.status to 0123456789abcdef, standing for the updated station. The communication suite computes the build independently (Node SHA-256 over the client files on disk).
+             Steps: read the page's data-build; reconnect; stop the server and start it again on the same profile; wait for the page; let a later status of the same rewritten build arrive.
+             Expected: the page build is 16 hex digits and equals the status build of the unchanged station (no reload); after the restart exactly one reload, a new boot id, the receive snapshot of the new station accepted, theme day and speed 4 kept, the tab's session storage names the build; the second mismatch for the same build shows "Station updated · reload" with no second reload. The status envelope is {version 0.1.0, radio unconfigured, build}.
+             2 — Isolated automated functional tests; Windows development PC, loopback only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-051-01';
+            verify 'CL-051-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs; tests/communication.test.cjs; server/src/protocol_tests.rs";
+    }
+    dependency CL_051_01_verified_by_TC_051_001 from 'CL-051-01' to 'TC-051-001';
+    dependency CL_051_02_verified_by_TC_051_001 from 'CL-051-02' to 'TC-051-001';
+    verification 'TC-051-002' {
+        doc /* TC-051-002 — A held update and a rejected snapshot show the reload chip
+             CL-051-02, CL-051-03
+             Setup: actual candidate server and Chromium at 1366x768; routed contact snapshot with a contact calling CQ; the receive snapshot routed through, optionally with an unknown key dxcc; the proxy of TC-051-001.
+             Steps: read receive with the unknown key, then without; the same for a result page, the operating selection snapshot and a contact snapshot; announce a spectrum.detail.frame of the current job with an unknown key; restart the station with build fedcba9876543210 while calling CQ; wait 1.5 s; click the chip; open a confirmation popup and reconnect to a status with another build.
+             Expected: the error chip "Station data not understood (receive) · reload" in the top bar, hidden again after the valid read; the same with (results), (selection) and (contact); (waterfall) for the frame; while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
+             2 — Isolated automated functional tests; Windows development PC, loopback only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-051-02';
+            verify 'CL-051-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_051_02_verified_by_TC_051_002 from 'CL-051-02' to 'TC-051-002';
+    dependency CL_051_03_verified_by_TC_051_002 from 'CL-051-03' to 'TC-051-002';
+    verification 'TC-051-003' {
+        doc /* TC-051-003 — Live update with the operating page open
+             CL-051-01, CL-051-02
+             Setup: HB9BLA running a build of this CR or later, the operator's page open and receiving, no QSO in progress.
+             Steps: install a later candidate whose client differs, with the page open.
+             Expected: the page reloads by itself and the waterfall moves again within about 10 s of the station's restart; browser settings kept.
+             3 — Live, read-only on the station; run at CR acceptance with the operator. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-051-01';
+            verify 'CL-051-02';
+        }
+    }
+    dependency CL_051_01_verified_by_TC_051_003 from 'CL-051-01' to 'TC-051-003';
+    dependency CL_051_02_verified_by_TC_051_003 from 'CL-051-02' to 'TC-051-003';
+
+    // #50 Operating screen operator feedback and #54 continuous WSJT-X-like waterfall (one CR, 2026-11-02).
+    requirement 'CL-050-01' {
+        doc /* The top bar shows UTC without a period bar; the period progress is the QSO pane's NEXT bar. The waterfall Rx and Tx markers are 3 px green and red lines without text labels, draggable. A waterfall click sets Tx (sent after 250 ms), a double-click sets Rx and Tx with one request; modifiers do not change the effect and a right-click sets nothing (WstxContact::PointerEffect). The help overview states this mapping. A double-click on a decoded Band Activity row selects the station and starts the reply, as Reply. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
+    }
+    dependency CL_050_01_to_FR_007 from 'CL-050-01' to 'FR-007';
+    dependency CL_050_01_to_FR_019 from 'CL-050-01' to 'FR-019';
+    requirement 'CL-050-02' {
+        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks: My call and CQ from the message, New call / New call on band from the station's worked-before status (a never-worked call is both), the DXCC, continent, zone and grid slots from record flags when a station supplies them, every New slot on CQ/QRZ lines only as in WSJT-X; worked before has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/logbook.js; client/recording.css";
+    }
+    dependency CL_050_02_to_FR_019 from 'CL-050-02' to 'FR-019';
+    requirement 'CL-054-01' {
+        doc /* A Detailed waterfall subscriber receives every Detailed row of the current job in order after a processing stall: the station retains the last 25 rows and sends each peer the oldest row it has not sent, 200 ms apart, 170 ms apart while rows wait (WstxRecordingReceive::TransferDisplay). Live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart. The browser draws a gap row only for a real gap; one or two live Thin rows paced out between two sent rows are drawn with the next row. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/recording.rs; server/src/main.rs; client/recording.js";
+    }
+    dependency CL_054_01_to_FR_019 from 'CL-054-01' to 'FR-019';
+    dependency CL_054_01_to_FR_021 from 'CL-054-01' to 'FR-021';
+    requirement 'CL-054-02' {
+        doc /* The waterfall colour follows a fixed dBFS mapping (WstxRecordingReceive::DisplayLevels): reference -85 dBFS, Sensitivity as WSJT-X Zero, a Range slider as WSJT-X Gain (default 50 dB), no automatic level and no reset on a new job, source or profile; optional Flatten across frequency. The spectrum line is a Settings option (default off) with a [E,0] dBFS scale that never clips; the default signal height is 330 px and the default speed 10 px/s, about two FT8 periods. All are per-browser settings that apply at once. Cells keep one native bin per column range, nearest-neighbour, without smoothing. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/recording.css";
+    }
+    dependency CL_054_02_to_FR_019 from 'CL-054-02' to 'FR-019';
+    verification 'TC-050-001' {
+        doc /* TC-050-001 — Waterfall pointer, lines, top bar and double-click to call
+             CL-050-01
+             Setup: actual release candidate with the contact engine (contact_http_tests::contact_browser_operating_flow) and Chromium; the operating screen fixture of ui-operating with routed Band Activity rows.
+             Steps: as TC-010-008; read the top bar and the QSO pane; double-click a CQ row and a row to my call.
+             Expected: TC-010-008's #50 expectations; the top bar holds UTC only (one child, no period bar) and the QSO pane keeps #qso-progress; a row double-click sends select_row then enable_tx with the shown safety revision, one each; the help names "Waterfall click / double-click: Set Tx / Rx and Tx".
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-01';
+        }
+        attribute executable : String = "tests/contact.test.cjs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_01_verified_by_TC_050_001 from 'CL-050-01' to 'TC-050-001';
+    verification 'TC-050-002' {
+        doc /* TC-050-002 — WSJT-X Band Activity colours
+             CL-050-02
+             Setup: actual candidate server with a logged K1ABC on 20m FT8; routed live job with CQ K1ABC, CQ W1XYZ and a free-text row; Chromium.
+             Steps: wait for the worked-before query; read row backgrounds; enable New call in Settings; append synthetic rows with slot sets for the #55 flags.
+             Expected: no text marks; CQ rows rgba(102,255,102,0.24) with New call off (WSJT-X default); W1XYZ (not worked) slots new_call and new_call_band, rgba(0,255,255,0.24) once enabled, K1ABC (worked) stays CQ; a not-worked caller on a non-CQ line gets no New slot; the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
+             2 — Isolated automated functional tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_02_verified_by_TC_050_002 from 'CL-050-02' to 'TC-050-002';
+    verification 'TC-054-001' {
+        doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
+             CL-054-01
+             Setup: the station's detail_after/arm_detail functions with a hand-written ring; the browser page with injected live frames.
+             Steps: five rows 11..15 retained after the socket sent row 10; a new job's rows; a caught-up socket; Thin sends 100 ms late for 10 periods, after a 5 s pause, 1.5 s and 1 s late; inject live Thin frames 0, 2, 5, 6 and 10; run the Detailed replay cadence.
+             Expected: rows 11..15 sent once in order, "behind" true until the last; a new job starts at its oldest row; nothing resent; catch-up spacing 170 ms, steady 200 ms; Thin anchors stay on the 2 s grid, restart after the pause and after a send 1.5 s late, and the next send is at least 1 s later; row 1 drawn with row 2's levels and rows 3..4 with row 5's, rows 7..9 grey gaps; Detailed sends at least 165 ms apart and at most 5.9 per second.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-054-01';
+        }
+        attribute executable : String = "server/src/protocol_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_054_01_verified_by_TC_054_001 from 'CL-054-01' to 'TC-054-001';
+    verification 'TC-054-002' {
+        doc /* TC-054-002 — Fixed level mapping, Zero/Gain sliders, Flatten and the spectrum line option
+             CL-054-02
+             Setup: actual candidate and Chromium at 1366x768; injected Detailed rows with known levels (noise q=40, a -40 dBFS carrier, a passband slope).
+             Steps: read cells; move Sensitivity to +10 and Range to 30; reload; start a new job; turn Flatten and Show spectrum line on.
+             Expected: E=-85 and span 50 by default (q=40 -> t=0.1, -40 dBFS -> t=0.9 by the palette anchors); g=+10 gives E=-95, R=30 the span 30; values survive a reload and a new job (no auto level, no reset); Flatten evens the slope across frequency within one palette step while the native readout is unchanged; the spectrum canvas is hidden by default and shown on request; signal height 330 px, speed 10 px/s.
+             2 — Isolated automated functional tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-054-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_054_02_verified_by_TC_054_002 from 'CL-054-02' to 'TC-054-002';
+    verification 'TC-054-003' {
+        doc /* TC-054-003 — Live waterfall on HB9BLA
+             CL-054-01, CL-054-02, CL-050-01, CL-050-02
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 receive, the operator's page.
+             Steps: watch 5 min of receive; the operator, who knows the WSJT-X Wide Graph, judges the waterfall against it (coordinator decision on #54: no WSJT-X GUI run).
+             Expected: no grey seams during continuous receive; FT8 signals show start and end; strong signals distinguishable; the operator confirms the colours and the pointer mapping.
+             3 — Live, read-only on the station; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-054-01';
+            verify 'CL-054-02';
+            verify 'CL-050-01';
+            verify 'CL-050-02';
+        }
+    }
+    dependency CL_054_01_verified_by_TC_054_003 from 'CL-054-01' to 'TC-054-003';
+    dependency CL_054_02_verified_by_TC_054_003 from 'CL-054-02' to 'TC-054-003';
+    dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
+    dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
 
 }

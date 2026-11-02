@@ -70,24 +70,27 @@ package WstxRecordingReceive {
         attribute statusDisplayMs : Integer = 2000;
     }
     attribute def DisplayLevels {
-        attribute blackDbfs : Integer = -120;
-        attribute rangeDb : Integer = 30;
-        attribute autoBlack : Boolean = true;
-        attribute estimateFrozen : Boolean = false;
+        attribute blackDbfs : Integer = -85;
+        attribute rangeDb : Integer = 50;
         attribute sensitivityDb : Integer = 0;
-        attribute speedMultiplier : Real = 2;
+        attribute speedMultiplier : Real = 1;
+        attribute flatten : Boolean = false;
+        attribute spectrumLine : Boolean = false;
         assert constraint localSliders { sensitivityDb >= -30 and sensitivityDb <= 30 and speedMultiplier >= 0.5 and speedMultiplier <= 8 }
-        assert constraint displayRange { rangeDb >= 10 and rangeDb <= 80 and blackDbfs >= -120 and blackDbfs <= -rangeDb }
-        doc /* Browser-local per job/profile state, no station-service mutation.
-             Reset on job/source/profile: B=-120,R=30,Auto=true,frozen=false;
-             preserve sensitivityDb/speedMultiplier until new page load. Effective
-             waterfall black=clamp(B-sensitivityDb,-120,-R), curve retains baseB.
-             Speed sets10*speedMultiplier CSSpx/source-second; fixed source intervals
-             move down independent of history length, clip at bottom; unobserved
-             pixels dark/no-measurement. Freeze without accepted rows; no source/network change.
-             First lower-median q>0 row sets clamp(q-123,-120,-R), freezes.
-             Median0/gap waits; manual B/R disables Auto. Re-enable uses latest
-             qualifying retained row or waits. Original calibrated levels unchanged.
+        assert constraint displayRange { rangeDb >= 10 and rangeDb <= 80 and blackDbfs == -85 }
+        doc /* #54 (CL-054-02), as WSJT-X's Wide Graph: a fixed dBFS-to-colour mapping; no level
+             follows the signal over time and nothing resets it on a new job, source or profile.
+             B is the fixed reference -85 dBFS. Sensitivity g (WSJT-X Zero, -30..+30, default 0)
+             moves the scale: effective black E=clamp(B-g,-120,-R). Range R (WSJT-X Gain, a slider
+             10..80 dB, default 50) is the span [E,E+R]. Speed sets 10*speedMultiplier CSS px per
+             source second (default 1: about two FT8 periods in the default height); fixed source
+             intervals move down independent of history length, clip at bottom; unobserved pixels
+             dark/no-measurement. Sensitivity, Range, Speed, Flatten and the spectrum line are
+             per-browser settings that apply at once and persist in browser storage. Flatten
+             (default off, WSJT-X flat4 equivalent) subtracts per row the lower envelope across
+             frequency (20th percentile of 32 blocks, linearly interpolated) and adds back its
+             median: it evens out the passband shape, never a level change over time; the readout
+             keeps the original native levels. Original calibrated levels unchanged.
              Rounding, exact RGB palette, ruler/readout/geometry and all actions
              remain normative in PresentStation/CalculateSpectrum source contract. */
     }
@@ -634,7 +637,10 @@ package WstxRecordingReceive {
              clamping it to the oldest measured row. Left/Right still steps native frequency bins.
              Speed or geometry changes recompute visible rows/readouts without mutating native data.
 
-                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. Allocate the remaining plot
+                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. #54: the spectrum line is shown
+             only with the per-browser option Show spectrum line (default off); hidden, the waterfall
+             takes its height. Shown, its vertical scale is [E,0] dBFS, so no level clips at the top.
+             The default signal height is 330 CSS px (splitter), at most 560. Allocate the remaining plot
              budget after headings/rulers/legend approximately1:5 to spectrum:waterfall, using explicit
              zero flex bases and min-height0 so intrinsic canvas bitmap heights cannot feed back into
              layout. Each backing bitmap is round(its actual CSS box * DPR), minimum1, and each
@@ -653,32 +659,15 @@ package WstxRecordingReceive {
 
              **Display levels and palette.** The display is a local presentation of calibrated
              levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
-             and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
-             and Auto black controls in the station page, plus labeled keyboard-operable Sensitivity
-             and Speed range sliders. Sliders repaint on every input event with an adjacent current
-             numeric output; no server persistence/new WS commands. Sensitivity g is integer-30..+30
-             dB, default0. Speed is the fixed source-time scroll scale defined above. Both slider
-             values persist through source/job/profile-display changes and resize within this page;
-             only a new page load resets defaults. Existing Black/Range/Auto reset behavior remains.
-             Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
-             until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
-             nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
-             down to -R if necessary. The spectrum curve continues to use base[B,B+R] for its vertical scale. Sensitivity
-             changes waterfall colors only: effective black E=clamp(B-g,-120,-R), with waterfall
-             mapping span exactly[E,E+R]. Its color legend shows both effective ends in dBFS,
-             Sensitivity output shows the signed dB offset, and the curve scale title identifies its
-             base range. Neither curve data/scale nor original q-120 bin readouts are changed by
-             Sensitivity. Clipping affects presentation only; the native values remain available.
-
-             Auto black defaults on after each new source/job or display profile change, resetting
-             R=30 and B=-120, without resetting Sensitivity or Speed. Sort a valid row's Bins quantized values and take the lower median
-             qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
-             floor); continue waiting instead of locking a false noise floor. On the first accepted
-             row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
-             manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
-             turns Auto off. Moving Sensitivity leaves Auto enabled/frozen state unchanged: it is
-             an offset applied after base noise estimation, not a new noise estimate. Turning Auto on clears its frozen estimate and derives it from the latest
-             qualifying retained row, or waits for the next one if none exists. Repaint all retained
+             and future decoding (#54, CL-054-02). The waterfall corner holds labelled keyboard-operable
+             Sensitivity (WSJT-X Zero), Range (WSJT-X Gain) and Speed range sliders, each with an
+             adjacent numeric output, repainting on every input event; Settings > General > Display
+             holds Flatten and Show spectrum line. DisplayLevels gives the values and the fixed
+             mapping: there is no Black level input, no Auto black and no noise estimate, and a new
+             source, job or display profile changes no level. Sensitivity and Range change
+             waterfall colours only; the legend shows both effective ends in dBFS. Inputs are rounded
+             with floor(value+0.5) and clamped; nonfinite values leave settings unchanged. Clipping
+             affects presentation only; the native values remain available. Repaint all retained
              rows when presentation controls change; samples/wire data never change or restart.
 
              For an original quantized level q, t=clamp(((q-120)-E)/R,0,1). Map t to this project's
@@ -686,12 +675,12 @@ package WstxRecordingReceive {
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
              .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
              Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
-             is RGB(0,0,12); gaps are RGB(96,96,96). This continuous level-to-color
+             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; one or two live Thin rows paced out between two sent rows are drawn with the next row, not as a gap; live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
              outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
              channel interpolation/rounding, ending in the same saturated red; it displays the
-             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. No flattening, palette editor, gain normalization or new framework.
+             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. Flatten is the optional per-row passband equalisation of DisplayLevels; no palette editor, gain normalization over time or new framework.
 
              Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
              bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)
@@ -788,8 +777,13 @@ package WstxRecordingReceive {
 These application-payload and WebSocket exclusions do not prohibit the bounded
 HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
 
-             One replaceable pending display event per peer, of its selected profile, and <=1 Thin
-             or <=5 Detailed sends per second; no replay of old
+             One replaceable pending Thin event per peer and <=1 Thin send per second. #54 (CL-054-01):
+             the station retains the last 25 Detailed rows (5 s) of the current job, and each
+             Detailed peer receives every retained row after the last one it was sent, oldest
+             first: 200 ms apart, 170 ms apart while rows wait (at most 5.9 sends per second,
+             within 10 KiB/s), so a processing stall delays rows instead of dropping them; a peer
+             further behind than the retained window has a real gap. A new subscription starts at
+             the newest row; no replay of old
              frames after reconnect or off. Ready status replies and heartbeats take precedence;
              optional display output never waits in the connection loop and is skipped when send
              readiness/control headroom is unavailable. Its guard enforces event payload <=2048 and
@@ -871,7 +865,10 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              clamping it to the oldest measured row. Left/Right still steps native frequency bins.
              Speed or geometry changes recompute visible rows/readouts without mutating native data.
 
-                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. Allocate the remaining plot
+                          Keep spectrum above the fixed0..3000Hz ruler and waterfall. #54: the spectrum line is shown
+             only with the per-browser option Show spectrum line (default off); hidden, the waterfall
+             takes its height. Shown, its vertical scale is [E,0] dBFS, so no level clips at the top.
+             The default signal height is 330 CSS px (splitter), at most 560. Allocate the remaining plot
              budget after headings/rulers/legend approximately1:5 to spectrum:waterfall, using explicit
              zero flex bases and min-height0 so intrinsic canvas bitmap heights cannot feed back into
              layout. Each backing bitmap is round(its actual CSS box * DPR), minimum1, and each
@@ -890,32 +887,15 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
 
              **Display levels and palette.** The display is a local presentation of calibrated
              levels, independent of source samples, FFT/averaging, wire quantization, Thin bandwidth
-             and future decoding. Provide labeled keyboard-operable Black level (dBFS), Range (dB)
-             and Auto black controls in the station page, plus labeled keyboard-operable Sensitivity
-             and Speed range sliders. Sliders repaint on every input event with an adjacent current
-             numeric output; no server persistence/new WS commands. Sensitivity g is integer-30..+30
-             dB, default0. Speed is the fixed source-time scroll scale defined above. Both slider
-             values persist through source/job/profile-display changes and resize within this page;
-             only a new page load resets defaults. Existing Black/Range/Auto reset behavior remains.
-             Range R is integer10..80dB, default30. Black B is integer[-120,-R]dBFS; default-120
-             until Auto finds a noise estimate. Inputs are rounded with floor(value+0.5) and clamped;
-             nonfinite/unparseable values leave current settings unchanged. Increasing R clamps B
-             down to -R if necessary. The spectrum curve continues to use base[B,B+R] for its vertical scale. Sensitivity
-             changes waterfall colors only: effective black E=clamp(B-g,-120,-R), with waterfall
-             mapping span exactly[E,E+R]. Its color legend shows both effective ends in dBFS,
-             Sensitivity output shows the signed dB offset, and the curve scale title identifies its
-             base range. Neither curve data/scale nor original q-120 bin readouts are changed by
-             Sensitivity. Clipping affects presentation only; the native values remain available.
-
-             Auto black defaults on after each new source/job or display profile change, resetting
-             R=30 and B=-120, without resetting Sensitivity or Speed. Sort a valid row's Bins quantized values and take the lower median
-             qmed=sorted[floor((Bins-1)/2)]. Ignore gaps and rows with qmed=0 (silence/sparse-only
-             floor); continue waiting instead of locking a false noise floor. On the first accepted
-             row with qmed>0, set B=clamp(qmed-120-3,-120,-R), then freeze for this job/profile until
-             manual action or reset. If no qualifying row exists, keep B=-120. Editing Black or Range
-             turns Auto off. Moving Sensitivity leaves Auto enabled/frozen state unchanged: it is
-             an offset applied after base noise estimation, not a new noise estimate. Turning Auto on clears its frozen estimate and derives it from the latest
-             qualifying retained row, or waits for the next one if none exists. Repaint all retained
+             and future decoding (#54, CL-054-02). The waterfall corner holds labelled keyboard-operable
+             Sensitivity (WSJT-X Zero), Range (WSJT-X Gain) and Speed range sliders, each with an
+             adjacent numeric output, repainting on every input event; Settings > General > Display
+             holds Flatten and Show spectrum line. DisplayLevels gives the values and the fixed
+             mapping: there is no Black level input, no Auto black and no noise estimate, and a new
+             source, job or display profile changes no level. Sensitivity and Range change
+             waterfall colours only; the legend shows both effective ends in dBFS. Inputs are rounded
+             with floor(value+0.5) and clamped; nonfinite values leave settings unchanged. Clipping
+             affects presentation only; the native values remain available. Repaint all retained
              rows when presentation controls change; samples/wire data never change or restart.
 
              For an original quantized level q, t=clamp(((q-120)-E)/R,0,1). Map t to this project's
@@ -923,12 +903,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              rounding with floor(channel+0.5): t=0:(0,0,12), .15:(0,0,80), .35:(0,80,220),
              .50:(0,220,240), .65:(30,230,80), .80:(255,235,0), .95:(255,40,0),1:(255,0,0).
              Saturated/above-range signal is exactly RGB(255,0,0), never white. Below-floor/no-signal
-             is RGB(0,0,12); gaps are RGB(96,96,96). This continuous level-to-color
+             is RGB(0,0,12); gaps are RGB(96,96,96) and appear only for a real gap (#54: rows the station did not send within its retained window, a source or job change; one or two live Thin rows paced out between two sent rows are drawn with the next row, not as a gap; live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart). This continuous level-to-color
              mapping does not interpolate spatial bins/rows: each rendered cell has one exact RGB
              color, fully opaque. Spectrum trace is RGB(180,245,220). Ruler/grid/text overlays stay
              outside waterfall measured cell interiors. A narrow labeled color legend uses these exact same anchors, positions and linear RGB
              channel interpolation/rounding, ending in the same saturated red; it displays the
-             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. No flattening, palette editor, gain normalization or new framework.
+             effective waterfall range. Rainbow hue progression does not assert monotonic luminance. Flatten is the optional per-row passband equalisation of DisplayLevels; no palette editor, gain normalization over time or new framework.
 
              Conventional presentation references, consulted2026-10-25: [WSJT-X User Guide9.2/14.7](https://wsjt.sourceforge.io/wsjtx-main_en.html#_wide_graph) describes spectral averaging,
              bin visibility and display level controls; [FlexRadio SmartSDR User Guide, Waterfall](https://edge.flexradio.com/www/offload/20260423063240/SmartSDR-Software-User-Guide.pdf)
@@ -1157,23 +1137,23 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-004: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
                  Setup/actions: Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames1920/2400/2880 and sources of1/2399/2400/2401/2879/2880/2881 frames with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected power-averaged rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement.
-                 Independent expected oracle: Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, two latest frames, declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
+                 Independent expected oracle: Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, the latest Thin frame and the retained Detailed rows (#54, at most 25), declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
         }
         dependency tracenativeBinDetail from nativeBinDetail to WstxRequirements::'TC-010-004';
         verification crispDetailTransport {
             subject operation : PresentStation;
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-005: Executable companions: server/src/recording_tests.rs, server/src/protocol_tests.rs and tests/recording.test.cjs; cost2 automated Windows offline.
-                 Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise Auto silence-then-noise, lower-median/round/clamp vectors, freeze/reset/manual overrides and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. No >5Hz Detailed or >1Hz Thin, backfill or second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Explicit Detailed/Thin/Off survives reload and reopened browser context; origin/port/profile UUIDs isolate choices while boot/revision changes preserve them. Invalid/denied storage uses defaults without page errors or disabling memory selection. Only versioned UUID keys and enumerated values are stored, no secrets/traffic. Automatic fallback preserves saved Detailed; explicit Thin replaces it. Existing wire and bandwidth tests remain unchanged, with no synthesized decoded records. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
+                 Setup/actions: Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise the fixed level mapping (#54 DisplayLevels: reference, Zero/Gain sliders, no automatic level) and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
+                 Independent expected oracle: Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. At most 1 Hz Thin and, for Detailed, 5 rows/s steady with catch-up of retained rows at most 5.9 rows/s (#54 TransferDisplay); no second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Explicit Detailed/Thin/Off survives reload and reopened browser context; origin/port/profile UUIDs isolate choices while boot/revision changes preserve them. Invalid/denied storage uses defaults without page errors or disabling memory selection. Only versioned UUID keys and enumerated values are stored, no secrets/traffic. Automatic fallback preserves saved Detailed; explicit Thin replaces it. Existing wire and bandwidth tests remain unchanged, with no synthesized decoded records. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness. */
         }
         dependency tracecrispDetailTransport from crispDetailTransport to WstxRequirements::'TC-010-005';
         verification fullHeightSliderPresentation {
             subject operation : PresentStation;
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
             doc /* TC-010-006: implemented executable companion in tests/recording.test.cjs.
-                 Setup/actions: Cost2 automated Windows real browser/candidate fixtures. Inject independently known native rows of2,75,600 Detailed or120 Thin values with contrasting bins/rows and gaps; inspect actual RGBA/backing and CSS box dimensions at desktop1100x850/mobile360x640, DPR1/2,200% zoom and splitter bounds. Exercise Sensitivity-30/0/+30 and Speed1/2/8 via input, keyboard and numeric outputs, manual Black/Range, Auto silence/noise/freeze/reset, new jobs/profiles and resize. Replay actual busy FT8 with a red saturated carrier, capture desktop/mobile screenshots and move both live sliders.
-                 Independent expected oracle: Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With base B=-83,R=30, g=+10 yields E=-93 and g=-30 yields E=-53, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. Sensitivity does not disable/re-estimate Auto; manual Black/Range does, new-job/profile resets only existing base/Auto settings and preserves both slider values. Fixed source-time scrolling, independent pixel movement, clipping, gap and unobserved-region oracles are specified in TC-010-007. Native/projected readouts and rulers agree with that mapping. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a full-height waterfall canvas with unobserved regions dark, dark floor, red strongest traces and visible working live sliders; original numeric/wire/security/Thin32k assertions remain. */
+                 Setup/actions: Cost2 automated Windows real browser/candidate fixtures. Inject independently known native rows of2,75,600 Detailed or120 Thin values with contrasting bins/rows and gaps; inspect actual RGBA/backing and CSS box dimensions at desktop1100x850/mobile360x640, DPR1/2,200% zoom and splitter bounds. Exercise Sensitivity-30/0/+30 and Speed1/2/8 via input, keyboard and numeric outputs, Range 10/50/80 (#54), new jobs/profiles and resize. Replay actual busy FT8 with a red saturated carrier, capture desktop/mobile screenshots and move both live sliders.
+                 Independent expected oracle: Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With the fixed reference B=-85 and R=50 (#54), g=+10 yields E=-95 and g=-30 yields E=-55, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. No setting follows the signal or resets on a new job or profile; Sensitivity, Range and Speed persist per browser. Fixed source-time scrolling, independent pixel movement, clipping, gap and unobserved-region oracles are specified in TC-010-007. Native/projected readouts and rulers agree with that mapping. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a full-height waterfall canvas with unobserved regions dark, dark floor, red strongest traces and visible working live sliders; original numeric/wire/security/Thin32k assertions remain. */
         }
         dependency traceFullHeightSliders from fullHeightSliderPresentation to WstxRequirements::'TC-010-006';
         verification sourceTimeScroll {

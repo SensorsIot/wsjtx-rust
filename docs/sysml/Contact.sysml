@@ -476,11 +476,12 @@ package WstxContact {
         doc /* D3 adopted (PL mouseReleaseEvent ~976, mouseDoubleClickEvent ~1012; MW
              setFreq4 ~12816). pointerAction and pointerHz: pointerHz is the waterfall/spectrum frequency under the
              pointer from the fixed 0..3000 Hz axis, rounded to integer Hz (the native/
-             projected readout of WstxRecordingReceive is unchanged). click -> Rx;
-             shiftClick or rightClick -> Tx; ctrlClick -> Rx and Tx; leftDoubleClick
-             -> Rx only, as two clicks (#37: no decode-at-point; the fixed full-band
-             decoder always runs and the browser sends no redecode); rightDoubleClick
-             -> Rx and Tx. Dragging the Rx or Tx marker sets that offset on release
+             projected readout of WstxRecordingReceive is unchanged). #50 (CL-050-01, operator
+             2026-11-02, replacing the #37 mapping): click -> Tx, sent after 250 ms so that a
+             leftDoubleClick -> Rx and Tx sends only its one request; shiftClick and ctrlClick
+             act as click; rightClick and rightDoubleClick set nothing (no context menu).
+             No decode-at-point: the fixed full-band decoder always runs and the browser sends
+             no redecode. Dragging the Rx or Tx marker sets that offset on release
              (WstxOperatingLayout::RxTxStrip). Explicit Tx pointer actions move Tx even with Hold Tx on, as
              WSJT-X setFreq4 (Hold Tx only stops implicit moves on selection).
              A Tx outside its domain is refused with the domain; Rx accepts 0..3000.
@@ -655,9 +656,9 @@ package WstxContact {
         doc /* D11 adopted. UTC clock HH:MM:SS (MW labUTC) from the server's UTC
              observation in the status stream, advanced locally between observations
              for display only; marked stale with the link; never a scheduling input.
-             Tx progress (MW ~8388): elapsed whole seconds of the current period over
-             the period, "v/15" (FT4-NOTE 7.5), with a Transmitting label (and colour)
-             while #9 reports an active transmission. Rx level meter (widgets/
+             Tx progress (MW ~8388): #50, one period bar only, the QSO pane's NEXT bar
+             (its width the elapsed part of the period, FT4-NOTE 7.5) with the countdown or
+             "Transmitting" while #9 reports an active transmission; the top bar shows UTC only. Rx level meter (widgets/
              signalmeter.cpp, meterwidget.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
              the canonical receive samples scaled to 16-bit full scale (32768), over the
              last status interval, at most one value per second on the status link;

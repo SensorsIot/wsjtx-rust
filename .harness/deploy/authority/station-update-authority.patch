@@ -1,0 +1,29 @@
+--- a/station-update.ps1
++++ b/station-update.ps1
+@@ -33,9 +33,12 @@
+   return $p
+ }
+ function Station-Processes { @(Get-CimInstance Win32_Process -Filter "Name='wstx-rust.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$Station\",[StringComparison]::OrdinalIgnoreCase) }) }
++$Authority='C:\ProgramData\WstxRust\deploy-authority'
+ function Assert-Setup {
+   $args0=[string](Get-ScheduledTask -TaskName $TaskName).Actions[0].Arguments
+-  if ($args0 -notlike "*-File*$Station\launcher.ps1*") { throw 'setup-once.ps1 has not been run (task does not use launcher.ps1).' }
++  # With the deploy authority on (enable-authority.ps1) the task runs the protected launcher.
++  $script:AuthorityOn=$args0 -like "*-File*`"$Authority\protected-launcher.ps1`"*"
++  if ($args0 -notlike "*-File*$Station\launcher.ps1*" -and -not $script:AuthorityOn) { throw 'setup-once.ps1 has not been run (task does not use launcher.ps1).' }
+ }
+ function Firewall-Scope {
+   $r=Get-NetFirewallRule -Name $RuleName; $a=$r|Get-NetFirewallAddressFilter; $p=$r|Get-NetFirewallPortFilter
+@@ -160,6 +163,12 @@
+ & git -C $Repo merge-base --is-ancestor $commit FETCH_HEAD
+ if ($LASTEXITCODE -ne 0) { throw "Commit $ver is not on GitHub master." }
+ Step "package verified: $ver, exe $($exeHash.Substring(0,12)), gate passed, on GitHub master"
++if ($AuthorityOn) {
++  # The protected verifier hashes the executable itself and checks the operator's signed
++  # approval; the protected launcher checks it again before it starts the version.
++  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Authority\verify-approval.ps1" -Manifest $Manifest | ForEach-Object { Step $_ }
++  if ($LASTEXITCODE -ne 0) { throw 'The operator has not approved this package.' }
++}
+ 
+ $target=Safe-Child $Station (Join-Path $Station $ver)
+ if (Test-Path -LiteralPath $target) {

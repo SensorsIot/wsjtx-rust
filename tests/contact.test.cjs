@@ -4,7 +4,7 @@
 // (no audio, PTT or radio). Decoded rows are hand-authored and published through the
 // test-only control peer; expected values below are the independent TC tables.
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-06, CL-010-11, CL-010-14; TC-007-001,
-// TC-007-003, TC-007-004, TC-010-008, TC-010-009.
+// TC-007-003, TC-007-004, TC-010-008, TC-010-009; CL-050-01, TC-050-001.
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
@@ -66,7 +66,7 @@ test('TC-007-003 Rx Frequency pane routing and TC-007-001 selection without tran
   assert.equal(await page.locator('input[name=contact-next][value=tx1]').isChecked(),true);
   assert.equal(await page.locator('#contact-rx').inputValue(),'1235');assert.equal(await page.locator('#contact-tx').inputValue(),'1235');
   assert.equal(await page.locator('#contact-parity').inputValue(),'odd');
-  assert.equal(await page.locator('#waterfall-wrap .ct-rx').textContent(),'Rx/Tx 1235');
+  assert.deepEqual(await page.locator('#waterfall-wrap .ct-marker').evaluateAll(ms=>ms.map(m=>[m.dataset.key,m.getAttribute('aria-valuenow'),m.textContent])),[['rx','1235',''],['tx','1235','']],'#50: unlabelled lines at the selected frequency');
   assert.equal((await snapshot()).transmit.arm_state,'disarmed','selection alone never arms');
   assert.equal(requests.some(r=>r.method==='POST'&&r.path.startsWith('/transmit')),false,'no transmit request from selection');
   assert.equal(commands().some(c=>c.action==='enable_tx'),false);
@@ -120,7 +120,7 @@ test('TC-007-001 Reply starts transmission, partner report advances to Tx3, Esc 
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-010-008 waterfall pointer actions and numeric frequency inputs',{timeout:60000},async()=>{
+test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx, 3 px lines and numeric inputs',{timeout:60000},async()=>{
   const canvas=page.locator('#waterfall');
   // Measured at every action: station-bar text changes may move the signal area.
   let box;const at=hz=>({x:box.x+box.width*hz/3000,y:box.y+box.height/2});
@@ -128,27 +128,26 @@ test('TC-010-008 waterfall pointer actions and numeric frequency inputs',{timeou
   const dblAt=async hz=>{box=await canvas.boundingBox();const p=at(hz);await page.mouse.dblclick(p.x,p.y);};
   const last=async(n=1)=>{await waitFor(()=>commands().length>=n,()=>`command ${n} ${JSON.stringify(requests.slice(-8).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())}`);return commands().at(-1);};
   const settle=async(field,hz)=>waitFor(async()=>(await snapshot()).settings[field]===hz,async()=>`${field} ${hz}: ${await page.locator('#contact-result').textContent()}`);
+  // #50 PointerEffect: click sets Tx (after the 250 ms double-click wait), double-click sets Rx and Tx.
   let n=commands().length;
   await clickAt(1500);
-  assert.deepEqual([(await last(n+1)).action,(await last(n+1)).rx_hz,(await last(n+1)).tx_hz],['set_frequency',1500,null]);await settle('rx_hz',1500);
-  await page.locator('#waterfall-wrap .ct-rx').filter({hasText:/^Rx 1500/}).waitFor();
-  n=commands().length;await page.keyboard.down('Shift');await clickAt(200);await page.keyboard.up('Shift');
-  let c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[null,200]);await settle('tx_hz',200);
-  n=commands().length;await page.keyboard.down('Control');await clickAt(2950);await page.keyboard.up('Control');
-  c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[2950,2950]);await settle('tx_hz',2950);
-  // Hold Tx only blocks implicit moves: an explicit right-click still moves Tx.
+  let c=await last(n+1);assert.deepEqual([c.action,c.rx_hz,c.tx_hz],['set_frequency',null,1500]);await settle('tx_hz',1500);
+  const tx=page.locator('#waterfall-wrap .ct-txm');await page.waitForFunction(()=>document.querySelector('#waterfall-wrap .ct-txm').getAttribute('aria-valuenow')==='1500');
+  assert.deepEqual(await tx.evaluate(m=>[m.textContent,getComputedStyle(m).borderLeftWidth,getComputedStyle(m).borderLeftColor]),['','3px','rgb(255, 64, 64)'],'a 3 px red Tx line without text');
+  assert.deepEqual(await page.locator('#waterfall-wrap .ct-rx').evaluate(m=>[m.textContent,getComputedStyle(m).borderLeftWidth,getComputedStyle(m).borderLeftColor]),['','3px','rgb(48, 208, 80)'],'a 3 px green Rx line without text');
+  // A double-click sends exactly one request for both, none for its two clicks.
+  n=commands().length;await dblAt(700);
+  c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[700,700]);await settle('rx_hz',700);
+  await new Promise(r=>setTimeout(r,600));assert.equal(commands().length,n+1,'one request for a double-click');
+  assert.equal(commands().slice(n).some(x=>x.action==='redecode'),false,'no re-decode request');
+  // Modifiers no longer change the effect; Hold Tx only blocks implicit moves, so a click still moves Tx.
   await page.locator('#contact-hold').check();await waitFor(async()=>(await snapshot()).settings.hold_tx,'hold');
-  n=commands().length;await clickAt(1000,{button:'right'});
+  n=commands().length;await page.keyboard.down('Shift');await clickAt(1000);await page.keyboard.up('Shift');
   c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[null,1000]);await settle('tx_hz',1000);
+  n=commands().length;await clickAt(2950,{button:'right'});await new Promise(r=>setTimeout(r,600));
+  assert.equal(commands().length,n,'a right-click sets nothing');
   const prevented=await canvas.evaluate(el=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented;});
   assert.equal(prevented,true,'no context menu over the waterfall');
-  await new Promise(r=>setTimeout(r,500));
-  // #37 decision 7: a left double-click is two Rx clicks; no decode-at-point request.
-  const dbl=performance.now();n=commands().length;await dblAt(700);
-  await waitFor(()=>commands().slice(n).some(x=>x.action==='set_frequency'&&x.rx_hz===700),async()=>`redecode after ${JSON.stringify(commands().slice(n).map(x=>[x.action,x.rx_hz,x.tx_hz]))}: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(requests.slice(-12).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())} ${JSON.stringify(await page.evaluate(()=>{const c=document.querySelector('#waterfall').getBoundingClientRect();const e=document.elementFromPoint(c.left+c.width*700/3000,c.top+c.height/2);return [e?.id||e?.className||e?.tagName,c.width,c.height];}))}`);
-  const after=commands().slice(n).filter(x=>x.action!=='set_frequency'||x.rx_hz===700);
-  assert.ok(after.some(x=>x.action==='set_frequency'&&x.rx_hz===700&&x.tx_hz===null));
-  await new Promise(r=>setTimeout(r,800));assert.equal(commands().slice(n).some(x=>x.action==='redecode'),false,'no re-decode request');
   // Numeric inputs: 199/2951 refused with the domain, 200/2950 accepted.
   for(const [value,ok] of [[199,false],[200,true],[2951,false],[2950,true]]){
     await page.locator('#contact-tx').fill(String(value));await page.locator('#contact-tx').press('Tab');
@@ -164,7 +163,9 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
   await label.filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
   const shown=(await label.textContent()).slice(4),now=new Date(),seconds=t=>{const [h,m,s]=t.split(':').map(Number);return h*3600+m*60+s;};
   const delta=Math.abs(seconds(shown)-seconds(now.toISOString().slice(11,19)));assert.ok(delta<=2||delta>=86398,`server UTC ${shown}`);
-  assert.match(await page.locator('#radio-toolbar .op-period small').textContent(),/^\d{1,2}\/15/);
+  // #50: the period progress is the QSO pane's NEXT bar only (its width follows the period).
+  assert.equal(await page.locator('#radio-toolbar .op-period small, #radio-toolbar .op-period-track').count(),0);
+  assert.match(await page.locator('#qso-progress').evaluate(b=>b.style.width),/^\d+(\.\d+)?%$/);
   // #37: the Rx level meter is in Settings > Radio > Audio; the top bar shows only a low/high chip.
   assert.equal(await page.locator('#settings-audio .op-input-meter strong').textContent(),'47 dB');
   assert.equal(await page.locator('#exception-chips [data-chip=level]').count(),0,'a normal level shows no chip');

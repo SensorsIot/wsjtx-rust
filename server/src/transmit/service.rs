@@ -28,8 +28,18 @@ pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
 /// WstxTransmit::TransmitTiming releaseMarginMs: PTT is released at the latest this long
-/// after the waveform's last sample was due, whatever the device reports.
-pub const RELEASE_MARGIN_MS: i64 = 500;
+/// after the waveform's last sample was due, whatever the device reports. It covers the
+/// render drain (RENDER_BUFFER_MS) and scheduling delays under load with headroom, and
+/// keeps the release inside the period (releaseBoundFt8Ms, releaseBoundFt4Ms).
+pub const RELEASE_MARGIN_MS: i64 = 1000;
+/// WstxTransmit::TransmitTiming releaseBoundFt8Ms / releaseBoundFt4Ms: the latest
+/// device-independent release deadline, from the period start.
+pub const fn release_bound_ms(mode: Mode) -> i64 {
+    match mode {
+        Mode::Ft8 => 14_500,
+        Mode::Ft4 => 7_000,
+    }
+}
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const OUTCOMES: usize = 32;
 const HALT_RECEIPTS: usize = 16;
@@ -920,27 +930,31 @@ impl<H: Hardware> Core<H> {
             self.last_period = Some(period);
             let remaining = (job_len - start.skipped_samples as usize) as i64 * 1000
                 / i64::from(SAMPLE_RATE_HZ);
+            // The release deadline never passes the period's release bound.
+            let bound = period + release_bound_ms(mode) - now;
             if let Some(job) = &mut self.current {
                 job.audio_start_utc_ms = Some(now);
                 job.release_by_mono_ms =
-                    Some(self.hardware.monotonic_ms() + remaining + RELEASE_MARGIN_MS);
+                    Some(self.hardware.monotonic_ms() + (remaining + RELEASE_MARGIN_MS).min(bound));
             }
             self.emit_full(sequence, OutcomeKind::Started, None, None, Some(now));
             return;
         }
-        // Device-independent bound: PTT is released at the deadline whatever the device
+        // The device is polled first, also at the deadline: a device that consumed every
+        // sample completes normally however late its step ran (#49). Otherwise the
+        // device-independent bound releases PTT at the deadline whatever the device
         // reports (stalled, silent, never finishing).
-        if self
-            .current
-            .as_ref()
-            .and_then(|j| j.release_by_mono_ms)
-            .is_some_and(|by| self.hardware.monotonic_ms() >= by)
-        {
-            self.fail_current(TransmitFailure::AudioStalled, DisarmCause::DeviceLost);
-            return;
-        }
         match self.hardware.poll_audio() {
-            AudioPoll::Playing | AudioPoll::Idle => {}
+            AudioPoll::Playing | AudioPoll::Idle => {
+                if self
+                    .current
+                    .as_ref()
+                    .and_then(|j| j.release_by_mono_ms)
+                    .is_some_and(|by| self.hardware.monotonic_ms() >= by)
+                {
+                    self.fail_current(TransmitFailure::AudioStalled, DisarmCause::DeviceLost);
+                }
+            }
             AudioPoll::Failed(_) => {
                 self.fail_current(TransmitFailure::AudioDeviceLost, DisarmCause::DeviceLost);
             }

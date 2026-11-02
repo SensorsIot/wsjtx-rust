@@ -1,0 +1,482 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Harness CR loop, part 1: Build (finding to push)",
+    "locale": "en",
+    "output": "harness-cr-build.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/SensorsIot/harness.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "f5cbaaab6fc0d98e9211c642776bb97e6b6e1f14"
+    },
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Operator job"
+        },
+        "external": {
+          "label": "Supervisor job"
+        },
+        "backend": {
+          "label": "Sub-agent job (CR agent, reviewer)"
+        },
+        "security": {
+          "label": "Gate: pass onward, fail back to the job that fixes it"
+        },
+        "cloud": {
+          "label": "Deploy or live job"
+        },
+        "database": {
+          "label": "Record"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "operator",
+      "label": "Operator"
+    },
+    {
+      "id": "supervisor",
+      "label": "Supervisor (your session)"
+    },
+    {
+      "id": "cragent",
+      "label": "CR agent (sub-agent)"
+    },
+    {
+      "id": "reviewer",
+      "label": "Reviewer (sub-agent)"
+    },
+    {
+      "id": "gates",
+      "label": "Gates (decider and kind in each sublabel)",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "build",
+      "label": "Build in a development clone, gates G1-G6",
+      "fromCol": 0,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "intake",
+    "g1",
+    "prepare",
+    "g2",
+    "implement",
+    "g3",
+    "selftest",
+    "g4",
+    "review",
+    "g5",
+    "push",
+    "g6",
+    "ship"
+  ],
+  "nodes": [
+    {
+      "id": "intake",
+      "lane": "supervisor",
+      "col": 0,
+      "type": "external",
+      "label": "Intake",
+      "sublabel": "finding or request; search open issues",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 29,
+          "label": "intake and authorization",
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "g1",
+      "lane": "gates",
+      "col": 0,
+      "type": "security",
+      "label": "G1 worth it?",
+      "sublabel": "judgment - operator: qualifies, no open issue to reuse",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 38,
+          "label": "qualification",
+          "end_line": 55
+        }
+      ]
+    },
+    {
+      "id": "prepare",
+      "lane": "supervisor",
+      "col": 1,
+      "type": "external",
+      "label": "Prepare",
+      "sublabel": "contract settled, test plan on the issue",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 96,
+          "label": "step 1"
+        },
+        {
+          "path": "core/skills/test-design/SKILL.md",
+          "line": 1,
+          "label": "test design"
+        }
+      ]
+    },
+    {
+      "id": "g2",
+      "lane": "gates",
+      "col": 1,
+      "type": "security",
+      "label": "G2 ready?",
+      "sublabel": "judgment - operator go: one goal, acceptance items, blast",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 56,
+          "label": "approval before implementation",
+          "end_line": 60
+        }
+      ]
+    },
+    {
+      "id": "implement",
+      "lane": "cragent",
+      "col": 2,
+      "type": "backend",
+      "label": "Implement",
+      "sublabel": "least code, exactly the issue",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 105,
+          "label": "step 2"
+        },
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 191,
+          "label": "programming rules"
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "lane": "gates",
+      "col": 2,
+      "type": "security",
+      "label": "G3 commit?",
+      "sublabel": "hook - pre-commit (whitespace, secrets) + commit-msg (no closes #N); agent guard: no --no-verify",
+      "sources": [
+        {
+          "path": "core/hooks/pre-commit",
+          "line": 1,
+          "label": "pre-commit"
+        },
+        {
+          "path": "core/hooks/commit-msg",
+          "line": 1,
+          "label": "commit-msg"
+        },
+        {
+          "path": "core/hooks/agent-guard",
+          "line": 1,
+          "label": "agent guard"
+        }
+      ]
+    },
+    {
+      "id": "selftest",
+      "lane": "cragent",
+      "col": 3,
+      "type": "backend",
+      "label": "Run the tests",
+      "sublabel": "build, tests, each new test red on the parent",
+      "sources": [
+        {
+          "path": "core/tools/red_on_parent.py",
+          "line": 1,
+          "label": "red on parent"
+        }
+      ]
+    },
+    {
+      "id": "g4",
+      "lane": "gates",
+      "col": 3,
+      "type": "security",
+      "label": "G4 tests green?",
+      "sublabel": "judgment - CR agent at hand-back; a check not run is reported as not run",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 105,
+          "label": "step 2",
+          "end_line": 111
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "lane": "reviewer",
+      "col": 4,
+      "type": "backend",
+      "label": "Review once",
+      "sublabel": "fresh context: exactly the issue? simplest? anything let through?",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 112,
+          "label": "step 3",
+          "end_line": 120
+        },
+        {
+          "path": "core/skills/conformance-review/SKILL.md",
+          "line": 1,
+          "label": "conformance review"
+        }
+      ]
+    },
+    {
+      "id": "g5",
+      "lane": "gates",
+      "col": 4,
+      "type": "security",
+      "label": "G5 review PASS?",
+      "sublabel": "judgment - reviewer; record 'Review: PASS - <sha>' on the issue",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 117,
+          "label": "review record",
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "push",
+      "lane": "supervisor",
+      "col": 5,
+      "type": "external",
+      "label": "Push",
+      "sublabel": "supervisor, never the CR agent",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 84,
+          "label": "roles",
+          "end_line": 86
+        }
+      ]
+    },
+    {
+      "id": "g6",
+      "lane": "gates",
+      "col": 5,
+      "type": "security",
+      "label": "G6 push gate?",
+      "sublabel": "hook - gate.py: Review: PASS for the pushed content, cost 1-2 checks, secret scan; agent guard: no override",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 121,
+          "label": "step 4",
+          "end_line": 139
+        },
+        {
+          "path": "core/tools/gate.py",
+          "line": 16,
+          "label": "review record"
+        }
+      ]
+    },
+    {
+      "id": "ship",
+      "lane": "operator",
+      "col": 5,
+      "type": "cloud",
+      "label": "Part 2: Ship",
+      "sublabel": "continues in harness-cr-ship: dry run, G7, G8",
+      "sources": [
+        {
+          "path": "core/docs/CR-Process.md",
+          "line": 149,
+          "label": "step 5"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-intake-g1",
+      "from": "intake",
+      "to": "g1",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g1-prepare",
+      "from": "g1",
+      "to": "prepare",
+      "label": "pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g1-intake-fail",
+      "from": "g1",
+      "to": "intake",
+      "label": "fail: drop, or add to the open issue",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-prepare-g2",
+      "from": "prepare",
+      "to": "g2",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g2-implement",
+      "from": "g2",
+      "to": "implement",
+      "label": "pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g2-prepare-fail",
+      "from": "g2",
+      "to": "prepare",
+      "label": "fail: settle goal or items",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-implement-g3",
+      "from": "implement",
+      "to": "g3",
+      "variant": "emphasis",
+      "label": "commit"
+    },
+    {
+      "id": "e-g3-selftest",
+      "from": "g3",
+      "to": "selftest",
+      "label": "pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g3-implement-fail",
+      "from": "g3",
+      "to": "implement",
+      "label": "fail: fix the commit",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-selftest-g4",
+      "from": "selftest",
+      "to": "g4",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g4-review",
+      "from": "g4",
+      "to": "review",
+      "label": "pass: hand back",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g4-implement-fail",
+      "from": "g4",
+      "to": "implement",
+      "label": "fail: red",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-review-g5",
+      "from": "review",
+      "to": "g5",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g5-push",
+      "from": "g5",
+      "to": "push",
+      "label": "pass",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g5-implement-fail",
+      "from": "g5",
+      "to": "implement",
+      "label": "fail: N findings, one batch",
+      "variant": "security",
+      "role": "return"
+    },
+    {
+      "id": "e-push-g6",
+      "from": "push",
+      "to": "g6",
+      "variant": "emphasis",
+      "label": "git push"
+    },
+    {
+      "id": "e-g6-ship",
+      "from": "g6",
+      "to": "ship",
+      "label": "pass: on master",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-g6-implement-fail",
+      "from": "g6",
+      "to": "implement",
+      "label": "fail: red or no review record",
+      "variant": "security",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Gates G1-G6",
+      "items": [
+        "G1 worth it? judgment, operator (intake rules, reuse check)",
+        "G2 ready? judgment, operator go on goal, items and blast",
+        "G3 commit? hooks pre-commit and commit-msg; the agent guard refuses an agent's --no-verify",
+        "G4 tests green? judgment of the CR agent, read by the reviewer",
+        "G5 review PASS? judgment of the reviewer, recorded on the issue with the commit",
+        "G6 push gate? hook gate.py: refuses without Review: PASS for the pushed content (harness #25), a red cost 1-2 check or a secret; only the operator may override"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Where tests run",
+      "items": [
+        "Cost 1 compile, format, lint: every push (G6)",
+        "Cost 2 offline with fixtures: every push that touches its paths (G6)",
+        "Cost 3-5: after the deploy (part 2, G8)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Escapes on record",
+      "items": [
+        "HARNESS_GATE_OVERRIDE=\"<reason>\" git push, by the operator only",
+        "Every fail goes back to Implement and passes the following gates again",
+        "Harness changes are reviewed (G5), not gated (G6 runs only the secret scan)"
+      ]
+    }
+  ]
+}
