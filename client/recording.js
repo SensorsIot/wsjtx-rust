@@ -471,7 +471,7 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
-let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+let live,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
@@ -479,7 +479,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
-const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
   return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
@@ -505,10 +505,10 @@ function applyLatestDecode(view,first){
     return true;
   }
   if(resultView===null&&view===null)return true;
-  if(resultView&&resultRows.length&&live?.job){
-    activityHistory.unshift({id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]});
-    let total=0;activityHistory=activityHistory.slice(0,20).filter(h=>(total+=h.rows.length)<=2048);
-  }
+  // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
+  const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
+  const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
+  activityHistory=other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;
@@ -565,7 +565,7 @@ async function receiveSync(current=socket){
     }
     live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
   }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
-  finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
+  finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);else if(resultsDue())receiveResults();}
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
@@ -643,7 +643,7 @@ function validRecord(r){
 }const FLAG_NAMES=['new_call','new_call_band','new_grid','new_grid_band','new_dxcc','new_dxcc_band','new_continent','new_continent_band','new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band'];function validDxcc(d){return !!d&&typeof d==='object'&&!Array.isArray(d)&&Object.keys(d).every(k=>['name','cont','cq','itu','km'].includes(k))&&typeof d.name==='string'&&/^[\x20-\x7e]{1,40}$/.test(d.name)&&['AF','AN','AS','EU','NA','OC','SA'].includes(d.cont)&&Number.isInteger(d.cq)&&d.cq>=0&&d.cq<=40&&Number.isInteger(d.itu)&&d.itu>=0&&d.itu<=90&&(d.km===undefined||(Number.isInteger(d.km)&&d.km>=0&&d.km<=20038));}function validFlags(f){return !!f&&typeof f==='object'&&!Array.isArray(f)&&Object.keys(f).length>0&&Object.entries(f).every(([k,v])=>FLAG_NAMES.includes(k)&&v===true);}
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
-  const now=performance.now();if(now-lastResultStart<4000)return;
+  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:4000))return;
   resultPending=true;lastResultStart=now;
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
@@ -671,9 +671,9 @@ async function receiveResults(){
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
-    live.job.state=page.state;live.job.error=page.error;stationData('results',true);renderResults();receiveShow();
-  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch){receiveStatus.textContent=`Result state unavailable · ${error.message}`;if(/^Invalid|descriptor/.test(error.message))stationData('results',false);}}
-  finally{resultPending=false;}
+    live.job.state=page.state;live.job.error=page.error;resultFailed=false;stationData('results',true);renderResults();receiveShow();
+  }catch(error){resultFailed=true;if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch){receiveStatus.textContent=`Result state unavailable · ${error.message}`;if(/^Invalid|descriptor/.test(error.message))stationData('results',false);}}
+  finally{resultPending=false;if(resultsDue()&&resultCursor!==cursor)setTimeout(receiveResults,0);}
 }
 async function receiveStart(){
   const active=live?.job&&['running','cancelling'].includes(live.job.state);
@@ -1041,7 +1041,7 @@ async function transmitSync(){
   transmitShow();
 }
 function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
-setInterval(transmitPoll,2000);
+setInterval(transmitPoll,2000);addEventListener('station-ready',()=>transmitPoll()); // #57: HALT is enabled as soon as the station is ready, not on the first 2 s poll.
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}

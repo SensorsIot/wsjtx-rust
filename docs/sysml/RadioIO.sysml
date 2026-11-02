@@ -623,6 +623,8 @@ The combined Thin live mode emits at most one optional spectrum row/2 s; each br
 has one result request pending, requests limit1 and starts at most once/4 s, waiting
 behind explicit status/control. Its result page is at most3072 encoded bytes.
 Detailed remains an explicit fast-link option; Off disables optional spectrum only.
+On Detailed a decode publication is announced at once and its records are fetched page
+after page without the 4 s cadence (#57 CL-057-01).
 The two-browser32kbit/s acceptance accounts all headers/TLS/transport: <=3000 B/s mean
 in each direction and <=2 s visible status response. Read requests may retry after
 explicit stale/error handling; mutations are never automatically replayed.

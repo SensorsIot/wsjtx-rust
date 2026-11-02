@@ -281,6 +281,9 @@ pub struct Recording {
     pub(crate) clock: std::sync::OnceLock<Arc<crate::clock_http::Clock>>,
     /// #44 radio detection of this station (one at a time).
     pub(crate) radio_setup: crate::radio_setup::Owner,
+    /// Bumped at each latest_decode publication so Detailed WebSocket peers announce it at
+    /// once instead of on the 2 s receive tick (#57 CL-057-01).
+    pub(crate) publication: tokio::sync::watch::Sender<u64>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
     startup: Mutex<startup::Startup>,
     /// #52 per-window receive diagnostics and the dump setting (receive-diagnostics.json).
@@ -713,6 +716,7 @@ impl Recording {
             period_start_utc: Some(period_start_utc.into()),
             complete: true,
         });
+        self.publication.send_modify(|n| *n = n.wrapping_add(1));
         sequences
     }
     pub fn receive_snapshot(&self) -> Value {
@@ -1179,6 +1183,7 @@ impl Recording {
         {
             view.next_sequence = next_sequence;
             view.complete |= complete;
+            self.publication.send_modify(|n| *n = n.wrapping_add(1));
             return Ok(());
         }
         let id = s
@@ -1194,6 +1199,7 @@ impl Recording {
             period_start_utc: period,
             complete,
         });
+        self.publication.send_modify(|n| *n = n.wrapping_add(1));
         Ok(())
     }
     fn publish_decode(
@@ -3080,6 +3086,7 @@ impl Recording {
                 udp: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
+                publication: tokio::sync::watch::Sender::new(0),
                 startup,
                 diagnostics,
                 diagnostics_error: Arc::new(AtomicBool::new(false)),
@@ -3150,6 +3157,7 @@ impl Recording {
             udp: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),
+            publication: tokio::sync::watch::Sender::new(0),
             startup,
             diagnostics,
             diagnostics_error: Arc::new(AtomicBool::new(false)),
