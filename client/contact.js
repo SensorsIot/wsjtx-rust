@@ -104,9 +104,9 @@ function render(){
   const strong=identity.querySelector('strong'),detail=identity.querySelector('div > span');
   if(qso){
     const km=c.dx_grid&&typeof distanceKm==='function'?distanceKm(profileData?.settings?.locator,c.dx_grid):null;
-    strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}${dxEntity(c.dx_call)}`;
+    strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}`;
     const approx=km===null&&Number.isInteger(dxLookup.entity?.km)&&dxLookup.call===c.dx_call?`~${dxLookup.entity.km} km`:null;
-    detail.textContent=`${km!==null?`${km} km · `:approx?`${approx} · `:''}sent ${c.report_sent??'none'} · rcvd ${c.report_rcvd??'none'}`;
+    detail.textContent=`${dxEntity(c.dx_call)}${km!==null?`${km} km · `:approx?`${approx} · `:''}sent ${c.report_sent??'none'} · rcvd ${c.report_rcvd??'none'}`;
   }
   else if(c){strong.textContent=c.state==='calling'?'Calling CQ':'No contact selected';detail.textContent=c.state==='calling'?'':'Select a decoded station or enter a DX call.';}
   for(const id of ['dx-call','dx-grid','dx-generate','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
@@ -154,7 +154,8 @@ function render(){
   othersShow();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   logShow();
 }
-// #55 WstxDxcc: the partner's country and continent in the QSO pane header, looked up
+// #55 WstxDxcc: the partner's country and continent in the QSO pane header (first on its
+// detail line, so the compact header keeps one row), looked up
 // once per DX call (GET /dxcc?call=).
 function dxEntity(call){
   if(dxLookup.call!==call){
@@ -162,7 +163,7 @@ function dxEntity(call){
     // The call is A-Z 0-9 / only: sent as it is (the station refuses an encoded slash).
     stationFetch(`/dxcc?call=${call}`,{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(dxLookup.call===call&&v?.entity){dxLookup.entity=v.entity;render();}}).catch(()=>{});
   }
-  const e=dxLookup.entity;return e?` · ${e.name} (${e.cont})`:'';
+  const e=dxLookup.entity;return e?`${e.name} (${e.cont}) · `:'';
 }
 // #11: Auto Seq off is shown on the QSO pane while a contact or CQ runs, and the step Auto
 // Seq would take after the partner's latest message (suggested_slot, e.g. 73 after their

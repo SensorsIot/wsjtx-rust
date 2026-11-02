@@ -445,7 +445,10 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
-  assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`${km} km · sent +10 · rcvd +10`);
+  // #55: the partner's cty.dat entity (shown name and continent) leads the detail line once
+  // GET /dxcc answers; with a grid the distance stays the exact one.
+  await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
+  assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
   assert.deepEqual(await others(),[['warn','⚠ CQ YO3GNF KN34  +12 dB'],['warn','⚠ HB9BLA DL1ABC JO31  −8 dB']]);
   assert.equal(await shown(page,'#qso-next'),true,'NEXT while armed');

@@ -546,7 +546,7 @@ attribute def ActivityOrdering {
              distance from the profile locator to a grid carried in the message; without
              a grid the entity distance marked approximate ("~n km"); unavailable
              otherwise. The QSO pane header shows the partner's shown name and continent
-             after the call and grid (GET /dxcc?call=, once per DX call), and the
+             first on its detail line under the call and grid (GET /dxcc?call=, once per DX call), and the
              entity distance marked approximate when the contact has no grid. Colours (#50, BandActivityColours) are the WSJT-X
              row backgrounds; there are no text marks; worked before (WstxContact::
              WorkedBeforeQuery) feeds only the New call slots; with Highlight on the strategy accent of
@@ -597,9 +597,9 @@ attribute def ActivityOrdering {
              gone from the pane, which then shows idle.
              Lines (each a message and its SNR only: no time, DT or audio frequency, which
              Band Activity and the waterfall markers show; SNR as "+12 dB" / "−8 dB"):
-             1. Header: partner call and grid with the #55 shown name and continent, distance from
-             the profile locator (the approximate entity distance without a grid), reports sent
-             and received; idle: "No contact selected" ("Calling CQ" while an own CQ runs); the badge
+             1. Header: partner call and grid; its detail line the #55 shown name and continent,
+             distance from the profile locator (the approximate entity distance without a grid),
+             reports sent and received; idle: "No contact selected" ("Calling CQ" while an own CQ runs); the badge
              Ready, Tx on, Transmitting or Receive only.
              2. Last partner message, while a QSO runs: the contact's ContactSnapshot
              last_rcvd as one line "<text>  <SNR>" with "×N" when the identical message was
