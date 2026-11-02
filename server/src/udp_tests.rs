@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 // Proves: CL-040-01, CL-040-02, CL-040-03, CL-040-04, CL-040-06, TC-012-001, TC-012-002, TC-012-003,
-// TC-012-004, TC-012-006.
+// TC-012-004, TC-012-006, CL-040-07, TC-012-007.
 // The actual router, UDP owner, contact engine and #9 transmit
 // owner on the recording hardware double (no audio, PTT or radio), hand-authored rows
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
@@ -1518,4 +1518,93 @@ async fn tc_012_006_ipv6_multicast_targets() {
         (last["type"].as_str(), outcome(&last).0.as_str()),
         (Some("free_text"), "not_accepted")
     );
+}
+
+// Proves: CL-040-07, TC-012-007. Status cadence as WSJT-X (MainWindow::beginDecode /
+// endDecode -> updateDecodeControls -> statusUpdate; MessageClient pulse 15 s): one Status
+// for each decoding toggle of the actual live-decoder signal, one for a window begun and
+// ended between two steps, and the unchanged Status resent with each Heartbeat pulse; a
+// target without status receives none of them. Time is deterministic: the pulse is
+// reached by back-dating the stored pulse instant, never by sleeping.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_007_status_follows_each_decode_window_and_the_pulse() {
+    let f = fixture("http://127.0.0.1:18409", true);
+    let (a, b, c) = (peer(), peer(), peer());
+    let owner = install(
+        &f,
+        vec![
+            target_json(a.local_addr().unwrap(), &MESSAGES, false),
+            target_json(b.local_addr().unwrap(), &["status"], false),
+            target_json(c.local_addr().unwrap(), &["heartbeat", "decode"], false),
+        ],
+    );
+    let r = &f.state.recording;
+    let decoding = |list: &[Vec<u8>]| -> Vec<Value> {
+        list.iter()
+            .filter(|d| head(d).1 == 1)
+            .map(|d| status_fields(d)["decoding"].clone())
+            .collect()
+    };
+    owner.step(&f.state);
+    let first = drain(&a);
+    assert_eq!(kinds(&first), [0, 1], "Heartbeat then Status at activation");
+    assert_eq!(decoding(&first), [json!(0)]);
+    assert_eq!(kinds(&drain(&b)), [1]);
+    assert_eq!(kinds(&drain(&c)), [0], "C selects no status");
+    owner.step(&f.state);
+    assert!(drain(&a).is_empty() && drain(&b).is_empty() && drain(&c).is_empty());
+
+    // Two decode windows (one T/R period with its early and late window).
+    for window in 0..2 {
+        let busy = r.begin_window_decode();
+        owner.step(&f.state);
+        let at_a = drain(&a);
+        assert_eq!(kinds(&at_a), [1], "window {window} begins");
+        assert_eq!(decoding(&at_a), [json!(1)]);
+        assert_eq!(decoding(&drain(&b)), [json!(1)]);
+        owner.step(&f.state);
+        assert!(drain(&a).is_empty(), "no repeat while the window decodes");
+        drop(busy);
+        owner.step(&f.state);
+        let at_a = drain(&a);
+        assert_eq!(kinds(&at_a), [1], "window {window} ends");
+        assert_eq!(decoding(&at_a), [json!(0)]);
+        assert_eq!(decoding(&drain(&b)), [json!(0)]);
+        assert!(drain(&c).is_empty(), "C never receives a Status");
+    }
+    // A window begun and ended between two steps still sends one Status.
+    drop(r.begin_window_decode());
+    owner.step(&f.state);
+    assert_eq!(decoding(&drain(&a)), [json!(0)]);
+    assert_eq!(kinds(&drain(&b)), [1]);
+    owner.step(&f.state);
+    assert!(drain(&a).is_empty() && drain(&b).is_empty());
+
+    let back_date = |seconds: u64| {
+        let at = Instant::now()
+            .checked_sub(Duration::from_secs(seconds))
+            .unwrap();
+        for rt in owner.lock().runtimes.iter_mut() {
+            rt.pulse_at = Some(at);
+        }
+    };
+    // 14 s after the pulse: nothing is due.
+    back_date(14);
+    owner.step(&f.state);
+    assert!(drain(&a).is_empty() && drain(&b).is_empty() && drain(&c).is_empty());
+    // 15 s: Heartbeat and the unchanged Status, byte for byte the last one sent.
+    let last = owner.lock().runtimes[0].last_status.clone().unwrap();
+    back_date(15);
+    owner.step(&f.state);
+    let pulse = drain(&a);
+    assert_eq!(kinds(&pulse), [0, 1], "pulse: Heartbeat then Status");
+    assert_eq!(pulse[1], last, "the Status is resent unchanged");
+    assert_eq!(
+        kinds(&drain(&b)),
+        [1],
+        "status without heartbeat is resent too"
+    );
+    assert_eq!(kinds(&drain(&c)), [0], "heartbeat only, no Status");
+    owner.step(&f.state);
+    assert!(drain(&a).is_empty() && drain(&b).is_empty() && drain(&c).is_empty());
 }

@@ -1905,6 +1905,8 @@ struct DecodeBoundaryInput {
     next: Option<SampleBlock>,
     owner: Arc<Recording>,
     views: Arc<Mutex<Vec<Value>>>,
+    /// Distinct decoder_activity values seen while the decode in progress polls.
+    activity: Arc<Mutex<Vec<(bool, u64)>>>,
     running: bool,
 }
 impl SampleSource for DecodeBoundaryInput {
@@ -1924,6 +1926,12 @@ impl SampleSource for DecodeBoundaryInput {
         if !view.is_null() && self.views.lock().unwrap().last() != Some(&view) {
             self.views.lock().unwrap().push(view);
         }
+        let activity = self.owner.decoder_activity();
+        let mut seen = self.activity.lock().unwrap();
+        if seen.last() != Some(&activity) {
+            seen.push(activity);
+        }
+        drop(seen);
         self.next
             .take()
             .map(SourcePoll::Block)
@@ -1981,6 +1989,7 @@ fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
         next: Some(next),
         owner: r.clone(),
         views: views.clone(),
+        activity: Default::default(),
         running: true,
     };
     let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
@@ -2044,6 +2053,7 @@ fn late_window_waits_for_the_prompt_decode_without_overrun() {
         next: Some(next),
         owner: r.clone(),
         views: views.clone(),
+        activity: Default::default(),
         running: true,
     };
     let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
@@ -2065,6 +2075,70 @@ fn late_window_waits_for_the_prompt_decode_without_overrun() {
     assert!(s["job"]["last_overrun"].is_null());
     assert_eq!(s["job"]["latest_decode"]["id"], 2);
     assert_eq!(s["job"]["latest_decode"]["complete"], true);
+}
+// Proves: CL-040-07; TC-012-007. The actual live worker marks each analysis window's
+// decode (the UDP Status decoding flag) while it runs and clears it when it returns,
+// observed from the capture poll the decode in progress drives, also when a window
+// abandons the decode before it as an overrun.
+#[test]
+fn live_worker_marks_decoding_for_each_window_and_clears_it_after() {
+    for late in [true, false] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        let (job, decoded) = live_ring(&r);
+        relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+        r.publish_decode(&job, &decoded).unwrap();
+        let context = {
+            let s = r.state.lock().unwrap();
+            let l = s.live.as_ref().unwrap();
+            source::SourceContext {
+                descriptor: l.source.as_ref().unwrap().clone(),
+                timing: Arc::new(l.timing.as_ref().unwrap().clone()),
+            }
+        };
+        let block =
+            |first| SampleBlock::live(&context, first, Arc::from(vec![0.0; 240]), false).unwrap();
+        let mut window =
+            receive::WindowBuffer::new(decoder::Mode::Ft8, context.descriptor.clone()).unwrap();
+        if late {
+            window = window.with_schedule(&[(0, 180000, true)]);
+        }
+        for first in (180000..359760).step_by(240) {
+            assert!(window.push(&block(first)).unwrap().window.is_none());
+        }
+        r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 359760;
+        let activity = Arc::new(Mutex::new(vec![]));
+        let next = block(359760);
+        let input = DecodeBoundaryInput {
+            context,
+            next: Some(next),
+            owner: r.clone(),
+            views: Default::default(),
+            activity: activity.clone(),
+            running: true,
+        };
+        assert_eq!(r.decoder_activity(), (false, 0), "idle before any window");
+        let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
+        worker.window = Some(window);
+        worker.spectrum.reset(359760);
+        worker
+            .analyze(receive::AnalysisWindow {
+                origin: 0,
+                samples: vec![0.0; 180000],
+                waits: false,
+            })
+            .unwrap();
+        // Hand table: window 1 decodes (true, 1); window 2 (the waiting late window, or the
+        // overrun replacement) decodes (true, 2); both returned: (false, 2).
+        let seen = activity.lock().unwrap().clone();
+        assert_eq!(seen.first(), Some(&(true, 1)), "late {late}: {seen:?}");
+        assert!(seen.contains(&(true, 2)), "late {late}: {seen:?}");
+        assert!(
+            seen.iter().all(|a| a.0),
+            "polled only while decoding: {seen:?}"
+        );
+        assert_eq!(r.decoder_activity(), (false, 2), "late {late}");
+    }
 }
 // Proves: CL-010-09; TC-007-006. Real terminal owner path preserves last view, never an invented completion.
 #[test]
