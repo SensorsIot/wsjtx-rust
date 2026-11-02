@@ -793,14 +793,27 @@ impl LiveSource {
                 .channel_zero(&packet.bytes, packet.frames, packet.flags & SILENT != 0)?;
         if packet.flags & SILENT != 0 || glitch {
             let rate = u128::from(self.format.rate);
-            if self.marks.len() == MAX_MARKS {
-                self.marks.pop_front();
-            }
-            self.marks.push_back(CaptureMark {
+            let mark = CaptureMark {
                 first_frame: u64::try_from(u128::from(relative) * 12000 / rate).unwrap_or(u64::MAX),
                 frames: u64::try_from(packet.frames as u128 * 12000 / rate).unwrap_or(0),
                 zero_filled: packet.flags & SILENT != 0,
-            });
+            };
+            // Consecutive packets of one kind extend one mark, so sustained silence stays
+            // counted in full however many packets it spans.
+            match self.marks.back_mut() {
+                Some(last)
+                    if last.zero_filled == mark.zero_filled
+                        && last.first_frame + last.frames == mark.first_frame =>
+                {
+                    last.frames += mark.frames;
+                }
+                _ => {
+                    if self.marks.len() == MAX_MARKS {
+                        self.marks.pop_front();
+                    }
+                    self.marks.push_back(mark);
+                }
+            }
         }
         self.queue.record_native_levels(&samples);
         let (first, output) = self.converter.convert(&samples)?;

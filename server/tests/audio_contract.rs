@@ -851,3 +851,30 @@ fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
     drain(&mut s, &mut blocks);
     assert_eq!(s.marked_frames(0, u64::MAX), (0, 0));
 }
+
+// Proves: CL-052-01; TC-052-001. #52 review: sustained silence over more packets than the
+// mark limit (600 silent 480-frame packets after one signal packet) stays counted in full.
+#[test]
+fn audio_sustained_silence_is_counted_in_full() {
+    let f = format(48000);
+    let q = PacketQueue::new(f).unwrap();
+    let mut s = LiveSource::new(q.clone(), f).unwrap();
+    let x = bytes(&signal(48000, 1000.0, 480));
+    let mut blocks = Vec::new();
+    let (mut frame, mut qpc) = (0u64, 1_000_000u64);
+    for i in 0..601u64 {
+        let silent = i > 0;
+        assert!(q.push(
+            if silent { &[][..] } else { &x[..] },
+            480,
+            frame,
+            qpc,
+            if silent { SILENT } else { 0 }
+        ));
+        drain(&mut s, &mut blocks);
+        frame += 480;
+        qpc += 100_000;
+    }
+    assert_eq!(s.marked_frames(0, u64::MAX), (600 * 120, 0));
+    assert_eq!(s.marked_frames(120, 120 + 180000), (72000, 0));
+}
