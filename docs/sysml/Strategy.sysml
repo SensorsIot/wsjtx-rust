@@ -220,12 +220,14 @@ package WstxStrategy {
     }
     attribute def WatchdogFromOperator {
         doc /* The Tx watchdog counts from the last operator action and is never paused or
-             reset by automation. Operator actions: an operator Enable Tx, any accepted
-             operator ContactCommand (browser, MCP request, UDP command) and an automation
-             start. Commands of a run (select_row, set_frequency, enable_tx, cancel,
-             disarm) are not operator activity; a run's enable_tx arms with the watchdog
-             already counting from the last operator action and is refused tx_watchdog
-             when that time is spent; a changed message text of a contact armed by
+             reset by automation. Only a human action in the browser is an operator
+             action: an Enable Tx, any accepted ContactCommand or an Auto start sent by
+             the browser (cookie session, not an MCP tool call). Never operator actions:
+             commands of a run (select_row, set_frequency, enable_tx, cancel, disarm), any
+             MCP request (also starting or restarting a run) and any UDP command (Reply,
+             Free Text). Such an enable_tx arms with the watchdog already counting from
+             the last browser action and is refused tx_watchdog when that time is spent
+             (until a human acts in the browser); an MCP-started run is bounded by it; a changed message text of a contact armed by
              automation does not reset it. Halt from any source stops the run; grant,
              clock, period and safety-revision checks are unchanged. */
     }

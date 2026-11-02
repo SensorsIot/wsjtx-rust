@@ -1066,3 +1066,55 @@ fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
         "the oversize datagram is counted"
     );
 }
+
+// Proves: CL-039-06, TC-039-005. A UDP Reply or Free Text is never an operator action
+// for the Tx watchdog: 61 s after the browser's action it is spent although both came
+// at 50 s (#39, WstxStrategy::WatchdogFromOperator).
+#[test]
+fn tc_039_005_udp_reply_and_free_text_never_reset_the_watchdog() {
+    let f = fixture("http://127.0.0.1:18407", true);
+    early_in_period(&f);
+    let c = peer();
+    let owner = install(
+        &f,
+        vec![target_json(c.local_addr().unwrap(), &MESSAGES, true)],
+    );
+    f.state.recording.fixture_live_job("ft8");
+    let period = 1_793_536_470_000i64;
+    f.state.recording.fixture_publish_period(
+        &period_text(period),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    owner.step(&f.state);
+    drain(&c);
+    let spent = || {
+        f.state
+            .recording
+            .transmit
+            .get()
+            .unwrap()
+            .service
+            .with(|core| core.watchdog_spent())
+    };
+    // The operator's action (the browser's ContactCommand path, not automatic).
+    operate(
+        &f,
+        "set_watchdogs",
+        json!({"tx_minutes":1,"tune_seconds":90}),
+        false,
+    );
+    assert!(!spent());
+    f.bench.offset.fetch_add(50_000, Ordering::SeqCst);
+    let v = command(
+        &f,
+        &owner,
+        &c,
+        0,
+        &reply(45_270_000, -12, 1235, "CQ K1ABC FN42"),
+    );
+    assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
+    let v = command(&f, &owner, &c, 0, &free_text("K1ABC HB9BLA 73"));
+    assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
+    f.bench.offset.fetch_add(11_000, Ordering::SeqCst);
+    assert!(spent(), "the UDP commands did not extend the watchdog");
+}

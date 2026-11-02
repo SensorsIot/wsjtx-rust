@@ -44,9 +44,13 @@ package WstxMcp {
             key strategy true lets the station's active strategy choose and order
             candidates (Auto Call), call CQ and answer callers (Auto CQ) or alternate; such
             a run skips an unanswered station instead of stopping no_answer. For every run
-            (D6 included) the Tx watchdog counts from the last operator action (the start
-            is one) and is never reset by the run's commands
-            (WstxStrategy::WatchdogFromOperator); a watchdog disarm stops tx_watchdog. */
+            (D6 included) the Tx watchdog counts from the last human action in the browser
+            and is never reset or extended by the run's commands, by an MCP request
+            (including starting or restarting a run) or by a UDP command
+            (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
+            rule, recorded on #39/#12, 2026-11-02, amending D5/D7); an MCP Enable Tx or
+            run arm is refused tx_watchdog when that time is spent, until a browser
+            action; a watchdog disarm stops tx_watchdog. */
 
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";

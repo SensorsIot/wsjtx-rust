@@ -988,3 +988,122 @@ async fn tc_039_005_auto_never_arms_after_the_operator_watchdog_time() {
     );
     assert_eq!(f.keys(), 0);
 }
+
+// ------------------------------------------------------------------ operator actions
+async fn mcp_contact(f: &Mcp, action: &str, extra: Value) -> Value {
+    let revision = f.read("contact").await["contact_revision"]
+        .as_u64()
+        .unwrap();
+    f.tool(
+        "wstx_contact_command",
+        json!({"command":f.command(revision, action, extra)}),
+    )
+    .await
+}
+/// A browser (human) action that sets the Tx watchdog to `minutes`.
+async fn browser_watchdog(f: &Mcp, minutes: u64) {
+    let c = f.browser("GET", "/contact", None).await.json;
+    let body = f.command(
+        c["contact_revision"].as_u64().unwrap(),
+        "set_watchdogs",
+        json!({"tx_minutes":minutes,"tune_seconds":90}),
+    );
+    let r = f.browser("POST", "/contact/command", Some(body)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+}
+
+// Proves: TC-039-005
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    let armed = || service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed;
+    let spent = || service.with(|c| c.watchdog_spent());
+    let advance = |ms: i64| {
+        f.bench.offset.fetch_add(ms, Ordering::SeqCst);
+    };
+    // No browser action since boot: an MCP Enable Tx is refused.
+    let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(
+        (v["status"].clone(), v["result"]["error"]["code"].clone()),
+        (json!(409), json!("tx_watchdog")),
+        "{v}"
+    );
+    assert!(!armed());
+    // (1) An MCP run start 40 s after the browser action does not extend the watchdog.
+    browser_watchdog(&f, 1).await;
+    advance(40_000);
+    let auto = |action: &str, extra: Value| {
+        let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"action":action});
+        b.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json!({ "command": b })
+    };
+    let a = f.read("automation").await;
+    let cfg = crate::automation_tests::config_json();
+    let c = f
+        .tool(
+            "wstx_automation_command",
+            auto(
+                "configure",
+                json!({"expected_policy_revision":a["policy_revision"],"configuration":cfg}),
+            ),
+        )
+        .await;
+    assert_eq!(c["status"], 202, "{c}");
+    let a = f.read("automation").await;
+    let s = f
+        .tool(
+            "wstx_automation_command",
+            auto("start", json!({"expected_policy_revision":a["policy_revision"],"expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":3})),
+        )
+        .await;
+    assert_eq!(s["status"], 202, "{s}");
+    advance(21_000);
+    publish(&f, e + 60_000, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(
+        run_state(&f).await,
+        ("stopped".into(), json!("tx_watchdog")),
+        "the MCP start is no operator action"
+    );
+    assert!(!armed());
+    // (2) Repeated MCP commands do not extend it: 61 s after the browser action an MCP
+    // Enable Tx is refused although MCP commands came at 20, 40 and 55 s.
+    let _ = mcp_contact(&f, "cancel", json!({})).await;
+    browser_watchdog(&f, 1).await;
+    for step in [20_000, 20_000, 15_000] {
+        advance(step);
+        let v = mcp_contact(&f, "set_frequency", json!({"rx_hz":1200,"tx_hz":null})).await;
+        assert_eq!(v["status"], 202, "{v}");
+        assert!(!spent(), "still within the minute");
+    }
+    advance(6_000);
+    assert!(spent());
+    let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
+    assert!(!armed());
+    // (3) A browser action resets it: MCP may arm again; a later browser action extends it.
+    browser_watchdog(&f, 1).await;
+    let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(v["status"], 202, "{v}");
+    assert!(armed());
+    let v = mcp_contact(
+        &f,
+        "enable_tx",
+        json!({"enabled":false,"safety_revision":null}),
+    )
+    .await;
+    assert_eq!(v["status"], 202, "{v}");
+    advance(50_000);
+    browser_watchdog(&f, 1).await;
+    advance(11_000);
+    assert!(
+        !spent(),
+        "61 s after the first but 11 s after the last browser action"
+    );
+    advance(50_000);
+    assert!(spent());
+}

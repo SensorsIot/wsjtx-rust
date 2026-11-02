@@ -216,6 +216,11 @@ pub(crate) fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
     f.tick();
 }
 async fn automation(f: &Mcp, action: &str, extra: Value) -> Value {
+    // #39: an MCP run arms only within the Tx watchdog time of the operator's last
+    // browser action; these MCP cases start with the operator present.
+    if action == "start" {
+        f.operator_present().await;
+    }
     let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"action":action});
     b.as_object_mut()
         .unwrap()

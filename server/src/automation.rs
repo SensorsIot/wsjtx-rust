@@ -405,6 +405,7 @@ impl Owner {
         state: &ProfileState,
         body: Value,
         access: Option<(authorization::Access, String)>,
+        operator: bool,
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
         let o = body.as_object().ok_or(("invalid_request", None))?;
@@ -567,8 +568,11 @@ impl Owner {
                     return Err(("counter_exhausted", None));
                 }
                 let id = profile::new_uuid().map_err(|_| ("storage_unavailable", None))?;
-                // The start is the operator action the Tx watchdog counts from (#39).
-                transmit.service.with(|c| c.activity());
+                // A start from the browser is the operator action the Tx watchdog counts
+                // from; an MCP start never resets or extends it (#39).
+                if operator {
+                    transmit.service.with(|c| c.activity());
+                }
                 let last_decode = r.latest_publication().map_or(0, |p| p.0);
                 let deadline = self.now() + Duration::from_secs(config.max_run_minutes * 60);
                 inner.run = Some(Run {
@@ -1171,6 +1175,7 @@ pub async fn snapshot(
 }
 pub async fn command(
     State(app): State<App>,
+    mcp: Option<axum::Extension<crate::mcp::Dispatched>>,
     headers: HeaderMap,
     RawQuery(query): RawQuery,
     body: Result<Bytes, BytesRejection>,
@@ -1194,8 +1199,11 @@ pub async fn command(
     let (Ok(contact), Some(state)) = (owner(&r), app.profile.clone()) else {
         return refusal("not_found", None);
     };
-    match tokio::task::spawn_blocking(move || contact.automation.command(&state, body, access))
-        .await
+    let operator = mcp.is_none();
+    match tokio::task::spawn_blocking(move || {
+        contact.automation.command(&state, body, access, operator)
+    })
+    .await
     {
         Ok(Ok((status, reply))) => (status, Json(reply)).into_response(),
         Ok(Err((c, f))) => refusal(c, f),

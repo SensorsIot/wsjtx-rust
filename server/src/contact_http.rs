@@ -210,7 +210,9 @@ impl Station {
         }
     }
     /// One ContactCommand body through exactly the browser's validation and execution
-    /// (WstxContact::ContactCommand); `granted` is the caller's current CL-022 grant.
+    /// (WstxContact::ContactCommand) as a browser operator action; `granted` is the
+    /// caller's current CL-022 grant. Station code uses `operate_as` with its source.
+    #[cfg(test)]
     pub(crate) fn operate(
         &self,
         state: &ProfileState,
@@ -219,8 +221,9 @@ impl Station {
     ) -> Result<(StatusCode, Value), Refusal> {
         self.operate_as(state, body, granted, false)
     }
-    /// The same ContactCommand path for station automation (`automatic`): it never
-    /// resets the Tx watchdog and arms only within the operator's watchdog time (#39).
+    /// The ContactCommand path; `automatic` is every source that is not a human action in
+    /// the browser (automation, MCP, UDP): it never resets the Tx watchdog and arms only
+    /// within the watchdog time of the last browser action (#39).
     pub(crate) fn operate_as(
         &self,
         state: &ProfileState,
@@ -624,6 +627,7 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
 
 pub async fn command(
     State(app): State<App>,
+    mcp: Option<axum::Extension<crate::mcp::Dispatched>>,
     headers: HeaderMap,
     RawQuery(query): RawQuery,
     body: Result<Bytes, BytesRejection>,
@@ -661,7 +665,12 @@ pub async fn command(
     {
         granted |= station.grant.load(Ordering::Acquire);
     }
-    let outcome = tokio::task::spawn_blocking(move || station.operate(&state, body, granted)).await;
+    // #39: only a human action in the browser is an operator action for the Tx
+    // watchdog; an MCP tool call runs like automation (no reset, arms only within it).
+    let automatic = mcp.is_some();
+    let outcome =
+        tokio::task::spawn_blocking(move || station.operate_as(&state, body, granted, automatic))
+            .await;
     match outcome {
         Ok(Ok((status, reply))) => (status, Json(reply)).into_response(),
         Ok(Err((c, f))) => refusal(c, f),
