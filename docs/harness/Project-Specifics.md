@@ -99,14 +99,14 @@ names in its own `select` the files whose behaviour its test cases prove.
 |---|---|---|
 | `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
 | `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
-| `protocol-thin` | Measurement: TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
+| `protocol-thin` | Measurement: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
 | `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests |
 | `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Router, recording owners, recording client, recording test file, fixture tool and recording manifests |
 | `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Router, recording and spectrum owners, recording client, recording test file and manifests |
 | `recording-thin` | Measurement: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Router, recording/spectrum owners, HTTP compression, recording client and test file |
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
-| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, recording client, selection test |
+| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
 | `radio-selection-thin` | Measurement: the 75 s native/CAT/TLS two-browser Thin and Off workload | As `radio-selection` plus spectrum, audio, decoder and library code, which set the real-time load |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
@@ -114,10 +114,11 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
-names: `^TC-018-` goes to storage, `^TC-010-002` and the TC-010-005 Detailed peer
-cadence to thin-link checks, and the complement to display. The communication test
-file sends `^TC-021-008` and the link simulator check to `protocol-thin`, the complement
-to `protocol`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
+names: `^TC-018-` goes to storage, except its two 250 ms cancellation bounds;
+those, `^TC-010-002` and the TC-010-005 Detailed peer cadence go to thin-link checks,
+and the complement to display. The communication test file sends `^TC-021-007`
+(silence detection and recovery bounds), `^TC-021-008` and the link simulator check
+to `protocol-thin`, the complement to `protocol`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
 runs in `radio-selection-thin`, the other selection tests in `radio-selection`. Each
 complement includes future names instead of silently omitting them. No test assertion,
 budget or test case is removed by selection.
@@ -127,7 +128,9 @@ Timing promises live in measurement groups (`protocol-thin`, `recording-thin`,
 `radio-selection-thin`, `decoder-quality`) selected only by the code that can change
 that timing: the router/websocket and its pacing, HTTP compression, the link simulator,
 the recording/spectrum producers, the receive/audio/decoder pipeline and the clients
-that pace the display. Functional groups do not measure.
+that pace the display. Functional groups assert behaviour; a residual liveness deadline
+in a functional case (for example the 2 s status refresh and 10 s recovery bounds of
+the profile tests) is a known follow-up for harness#28, not a measurement promise.
 
 The model has an explicit documentation owner. Its edits select full model validation;
 runtime oracles are selected by changed implementation and executable tests. Source
@@ -140,7 +143,9 @@ Independent contract comparison still checks that tests prove the changed promis
 A file selects the groups whose test cases prove its promises, not every group whose
 fixture merely loads it. The router `main.rs` (routes, authentication, websocket and
 profile HTTP) selects every browser group. The operating page client files select
-`operating-layout`, the operating-page regression, besides their owning groups. A
+`operating-layout`, the operating-page regression, besides their owning groups. The
+status client (`app.js`, `index.html`, `authorization.js`) also selects every group
+whose page boots from it, since `station-ready` starts the recording client. A
 contact engine edit therefore selects `wstx-rust`, `contact-browser` and
 `source-model-traces`; its HTTP surface adds `operating-layout`. An edit to the shared
 recording test file selects all three recording groups. Cargo and Node dependency
