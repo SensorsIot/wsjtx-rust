@@ -218,6 +218,33 @@ launcher receipt agrees with what it observed. The service reports only its crat
 service-reported commit would be a product change (CR). Tests:
 `python -m unittest discover -s .harness/deploy/tests`.
 
+**When `station-update.ps1` changes** run the refusal drill and record its output on the
+change's issue:
+
+```powershell
+python .harness\deploy\station_drill.py
+```
+
+It runs a copy of the script against a sandbox station, with `LOCALAPPDATA` in a temporary
+directory and the task, firewall, processes, network and git replaced by mocks. Starting
+or stopping anything records a sentinel and throws. Before running, it parses the script
+and refuses any command (also inside `"$(...)"`), .NET type or call target it has not
+classified, `$ExecutionContext`, an environment variable other than `LOCALAPPDATA`, and a
+literal absolute path other than the repository and the deploy-authority root. This keeps
+the commands the drill knows away from the live station. It is no sandbox against a
+script written to escape it: read a changed script's diff before drilling it. Each case damages one thing in a package built as `make_package.py`
+builds it and requires the refusal's own message, no sentinel and an unchanged
+destination (version folders, `active.json`, profiles, launcher; `logs\` may change).
+The cases are: tampered artifact, manifest naming another artifact, changed gate
+record, gate record of another commit or artifact or not passed, changed push-gate log,
+commit not on GitHub master, master unreachable, abbreviated commit, package paths that
+escape or name a stream, gate record outside the package, no executable, wrong firewall
+scope, task not on the launcher and a staged copy that differs. Two controls show the
+mocks refuse nothing by themselves: the intact package passes `-DryRun`, and without it
+the script reaches the station stop. Two `LIMIT` cases are expected to be accepted: a
+consistent rewrite of executable and records, and an older commit on master. With the
+authority patch applied, two more cases cover an approved and a refused approval.
+
 **Rules not met yet.** Until each issue is done, the operator's standing permission to
 run `station-update.ps1` (decision 2026-10-31, recorded on #30) authorizes this mechanism
 in place of an OK per install.
@@ -228,7 +255,7 @@ in place of an OK per install.
 | Approval names the candidate | Off (today): the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. Prepared: an operator-signed approval of one commit, one digest and one destination. | #31 |
 | Verify before writing | Off (today): `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. Prepared: the protected verifier hashes the executable itself against the signed digest before the switch, and the protected launcher again before it starts it. | #32 |
 | Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks independently of the receipt that the process listening on 18081 runs the candidate's bytes and answers over trusted TLS. Not met in full: an agent runs the probe and the rollback after it (the operator can run the same probe), and the service does not report its own commit. | #33 |
-| Show the refusals | Firewall-enum and profile-lock refusals were observed in past dry runs. Tampered artifact, stale or unapproved commit, mismatched approval and wrong destination were not each shown. | #34 |
+| Show the refusals | `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (below). Not met in full: the drill shows that a consistent rewrite of artifact and records and an older commit on master are accepted (#32, #31), and a mismatched approval exists only with the deploy authority on. | #34 |
 
 No rule is met in full.
 
@@ -299,7 +326,9 @@ switches back.
    protected launcher and does not restart the station.
 4. Apply `.harness/deploy/authority/station-update-authority.patch` to
    `station-update.ps1` (it accepts the protected launcher in `Assert-Setup` and calls
-   the verifier after the package checks). Without the patch, `station-update.ps1` refuses every install and rollback with
+   the verifier after the package checks). Then run
+   `python .harness/deploy/station_drill.py`: it must show the two approval cases.
+   Without the patch, `station-update.ps1` refuses every install and rollback with
    "setup-once.ps1 has not been run".
 
 From then on each install is: `make_package.py`, `request-approval.ps1`, your signature,
