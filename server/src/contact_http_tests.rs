@@ -770,9 +770,19 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
         f.tick();
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let (_, t1, _, _) = f.call("GET", "/transmit", None).await;
-    let started = !t1["transmit"]["last_text"].is_null();
-    let new = accepted(&t1).difference(&accepted(&t0)).count();
+    // The audio may start after the fifth step (real clock); the next request is then
+    // queued by a later step, so keep stepping for a bounded time (#10 flake).
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (t1, started, new) = loop {
+        let (_, t1, _, _) = f.call("GET", "/transmit", None).await;
+        let started = !t1["transmit"]["last_text"].is_null();
+        let new = accepted(&t1).difference(&accepted(&t0)).count();
+        if !started || new > 0 || Instant::now() >= deadline {
+            break (t1, started, new);
+        }
+        f.tick();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
     assert_eq!(new, usize::from(started), "{t1}");
     // Every key falls inside an own-parity (odd) period's start window.
     for (at, on) in f.bench.keys.lock().unwrap().iter().copied() {
