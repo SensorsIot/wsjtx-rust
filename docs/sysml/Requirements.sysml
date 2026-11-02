@@ -3075,6 +3075,42 @@ package WstxRequirements {
     dependency CL_045_02_verified_by_TC_045_002 from 'CL-045-02' to 'TC-045-002';
     dependency CL_045_03_verified_by_TC_045_002 from 'CL-045-03' to 'TC-045-002';
 
+    // #57 Decode display speed (operator 2026-11-02; defaults recorded on issue #57).
+    requirement 'CL-057-01' {
+        doc /* Band Activity on the Detailed display profile shows a published decode view without waiting for a refresh cadence: each new or grown latest_decode publication is announced to every Detailed WebSocket peer at once as a receive.state event (unchanged exact data; Thin and Off peers keep the 2 s receive tick), and a Detailed browser then reads GET /receive and fetches the view's records immediately, page after page (limit 16), until its cursor reaches the view's frozen end, instead of at most once per 4 s. The idle poll, a failed result read (which falls back to at most once per 4 s until a page succeeds) and the Thin rules (one pending request, limit 1, at most once per 4 s, page at most 3072 bytes) are unchanged, so the two-browser 32 kbit/s budget still holds. On a LAN every row of a published view is painted at most 0.3 s after its publication; "Loading results" shows only while records of the view are still being fetched. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/recording.rs; server/src/main.rs; client/recording.js";
+    }
+    dependency CL_057_01_to_FR_010 from 'CL-057-01' to 'FR-010';
+    dependency CL_057_01_to_FR_019 from 'CL-057-01' to 'FR-019';
+    verification 'TC-057-001' {
+        doc /* TC-057-001 — Busy live period reaches Band Activity promptly (Detailed)
+             CL-057-01
+             Setup: actual isolated station Router, Recording owner, native live source, converter, UTC window schedule and modem, fed in real time with the hash-pinned busy recording websdr_test7.wav as 48 kHz native capture whose QPC clock is the system clock, filling an FT8 UTC period and again the period 30 s later, with silence around both; one Chromium page on the Detailed default.
+             Steps: start FT8 receive from the Receive stopped chip; record the server's published counters and latest_decode (1 ms sampling), the browser's receive.state frames, /receive and /receive/results requests and every Band Activity change at the next animation frame, all on the system clock; read each period view's records through the actual results API.
+             Expected (independent oracle: the published records themselves and the issue's 0.3 s decode-to-row target): for each of the two periods: at least 25 records in the view; the painted rows are exactly the view's records (same message texts); every row is painted at most 300 ms after the view's publication. The parent client (2 s receive tick, one 16-record page per 4 s) painted them about 5 s after publication.
+             2 — Isolated automated functional test; Windows PC, release build, WSTX_SAMPLE_DIR, no radio or audio device (live-station-browser suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-057-01';
+        }
+        attribute executable : String = "server/src/receive_http_tests.rs; tests/receive-latency.test.cjs";
+    }
+    dependency CL_057_01_verified_by_TC_057_001 from 'CL-057-01' to 'TC-057-001';
+    verification 'TC-057-003' {
+        doc /* TC-057-003 — Live decode display on HB9BLA
+             CL-057-01
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 receiving a busy FT8 band, one browser on the LAN on the Detailed profile; no transmission.
+             Steps: watch Band Activity over 10 consecutive FT8 periods.
+             Expected: no "Loading results" visible in normal operation; each period's rows appear at about +14.0 to +14.5 s of the period.
+             4 — Live on the station, receive only; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-057-01';
+        }
+    }
+    dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
+
     // #39 Strategy engine: Highlight and Auto, editor popup, directed-CQ rule (decisions
     // on #37/#39/#42, 2026-11-01); detailed contract in WstxStrategy.
     requirement 'CL-039-01' {

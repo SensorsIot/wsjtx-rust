@@ -445,7 +445,7 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
-let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+let live,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
@@ -453,7 +453,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
-const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
   return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
@@ -539,7 +539,7 @@ async function receiveSync(current=socket){
     }
     live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
   }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
-  finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
+  finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);else if(resultsDue())receiveResults();}
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
@@ -613,7 +613,7 @@ function validRecord(r){
 }
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
-  const now=performance.now();if(now-lastResultStart<4000)return;
+  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:4000))return;
   resultPending=true;lastResultStart=now;
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
@@ -641,9 +641,9 @@ async function receiveResults(){
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
-    live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
-  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
-  finally{resultPending=false;}
+    live.job.state=page.state;live.job.error=page.error;resultFailed=false;renderResults();receiveShow();
+  }catch(error){resultFailed=true;if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
+  finally{resultPending=false;if(resultsDue()&&resultCursor!==cursor)setTimeout(receiveResults,0);}
 }
 async function receiveStart(){
   const active=live?.job&&['running','cancelling'].includes(live.job.state);

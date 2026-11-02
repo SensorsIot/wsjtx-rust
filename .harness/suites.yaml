@@ -270,6 +270,7 @@
   - server/src/lib.rs
   - client/
   - tests/receive-integration.test.cjs
+  - tests/receive-latency.test.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -293,6 +294,7 @@
   - server/src/lib.rs
   - client/
   - tests/receive-integration.test.cjs
+  - tests/receive-latency.test.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -302,7 +304,7 @@
   - package.json
   - package-lock.json
   depends_on: [live-receive-integration]
-  needs: Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. Cheap seeded manager/epoch/ring cases remain in debug.
+  needs: Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. WSTX_SAMPLE_DIR must name the verified recordings (the #57 busy-period browser latency case). Missing inputs fail closed. No physical audio device, CAT or network service. Cheap seeded manager/epoch/ring cases remain in debug.
 
 - suite: operating-layout
   cost: 2

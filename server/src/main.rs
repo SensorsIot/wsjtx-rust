@@ -933,6 +933,9 @@ async fn connection(
     let mut receive_tick = interval(Duration::from_secs(2));
     receive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut receive_seen = Value::Null;
+    // #57 CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
+    // and Off keep the 2 s receive tick that their link budget is measured with.
+    let mut publication = recording.as_ref().map(|r| r.publication.subscribe());
     // WstxContact::ContactStateEvent / StationTickEvent pacing (optional writes).
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -963,7 +966,12 @@ async fn connection(
                 optional_since=None;
                 if !send(&mut socket,Message::Ping(Vec::new().into())).await {break;}
             }
-            _ = receive_tick.tick(), if recording.is_some() => {
+            _ = async {
+                tokio::select! {
+                    _ = receive_tick.tick() => {},
+                    Some(Ok(())) = async { Some(publication.as_mut()?.changed().await) }, if display_profile == "detail" => {},
+                }
+            }, if recording.is_some() => {
                 if !auth_ready { continue; }
                 let r=recording.as_ref().unwrap();
                 let s=r.receive_snapshot();
