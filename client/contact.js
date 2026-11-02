@@ -495,10 +495,13 @@ async function selectRow(tr){
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
 // handleDecodeSelection with quick_call): replace true, no confirmation, then Enable Tx on;
 // the replacement itself keeps Enable Tx as it is.
+// The contact revision moves with every transmit step: a stale_revision refusal of this
+// explicit choice is retried, at most twice, with the reloaded snapshot (send reloads it).
+async function sendExplicit(run){let reply=await run();for(let i=0;i<2&&reply?.refused==='stale_revision';i++)reply=await run();return reply;}
 async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
-  const reply=await send('select_row',{row,replace:true},'Reply');
-  if(reply&&!reply.refused&&transmitCapable())arm('Reply');
+  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},'Reply'));
+  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm('Reply'));
 }
 let clickTimer=null;
 activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>selectRow(tr),250);});

@@ -300,6 +300,8 @@ async function completes(call,report){
   assert.equal(done.contact.dx_call,call);
   const log=await (await fetch(origin+'/contacts')).json();
   assert.equal(log.records.filter(r=>r.contact_id===done.contact.id).length,1,`${call} logged once`);
+  // The pane shows the completion (its snapshot is current) before the next action.
+  await page.locator('#contact-logged').filter({hasText:`Logged ${call}`}).waitFor({timeout:15000});
 }
 test('TC-050-004 a double-click switches mid-QSO and from my CQ with Tx kept on, and the new QSO completes',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
@@ -307,17 +309,19 @@ test('TC-050-004 a double-click switches mid-QSO and from my CQ with Tx kept on,
   await waitFor(async()=>{const s=await snapshot();return s.transmit.arm_state==='armed'&&s.contact?.dx_call==='K1ABC';},'armed with K1ABC',15000);
   await waitFor(()=>sentTo('K1ABC HB9BLA JN47'),'Tx1 to K1ABC',45000);
   mark=await dblclickRow('CQ DL1ABC JO62',800,-3);
-  await waitFor(async()=>(await snapshot()).contact?.dx_call==='DL1ABC','switched to DL1ABC',15000);
+  await waitFor(async()=>(await snapshot()).contact?.dx_call==='DL1ABC',async()=>`switched to DL1ABC: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-3))} ${JSON.stringify((await snapshot()).contact)}`,15000);
   const switched=requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body));
   await waitFor(async()=>requests.slice(mark).some(r=>r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx'),'enable_tx after the switch');
-  assert.deepEqual(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body)).map(c=>[c.action,c.replace??c.enabled]),[['select_row',true],['enable_tx',true]],JSON.stringify(switched));
+  // A stale_revision refusal (the revision moves with every transmit step) is retried, so a
+  // request may repeat; the sequence is select_row (replace) then enable_tx.
+  assert.deepEqual(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body)).map(c=>[c.action,c.replace??c.enabled]).filter((c,i,a)=>i===0||JSON.stringify(c)!==JSON.stringify(a[i-1])),[['select_row',true],['enable_tx',true]],JSON.stringify(switched));
   assert.equal(await page.locator('#contact-change').count(),0,'no confirmation button');
   const s=await snapshot();assert.equal(s.transmit.arm_state,'armed','Enable Tx stays on');
   assert.notEqual(s.transmit.last_disarm_cause,'contact_cancelled');
   await completes('DL1ABC','-03');
   // From my CQ: CQ (arms, calling), then double-click another station's CQ.
   await page.locator('#qso-cq').click();
-  await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},'calling CQ',15000);
+  await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},async()=>`calling CQ: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-2))} ${JSON.stringify((await snapshot()).transmit)} ${JSON.stringify((await snapshot()).contact?.state)}`,15000);
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'Calling CQ'}).waitFor();
   mark=await dblclickRow('CQ EA8BIA IL18',1595,0);
   await waitFor(async()=>(await snapshot()).contact?.dx_call==='EA8BIA','answered EA8BIA',15000);

@@ -565,7 +565,10 @@ attribute def ActivityOrdering {
              handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,
              DecodedMessageReaction.cpp ~411-413), so the next own period calls the new
              station and Auto Seq runs that QSO to its completion and log (#50, operator
-             2026-11-02); the Reply menu item does the same; right-click
+             2026-11-02); a stale_revision refusal of its select_row or enable_tx (the
+             contact revision moves with every transmit step) is retried at most twice
+             with the reloaded snapshot, since the operator's choice is explicit; the
+             Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here. Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }

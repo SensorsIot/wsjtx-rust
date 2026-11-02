@@ -1256,6 +1256,13 @@ impl Engine {
         if c.state != State::Calling || self.automatic_cq.as_ref() == Some(&c.id) {
             return;
         }
+        // WSJT-X opens the respond period only while Enable Tx is on (observePeriod).
+        if core
+            .as_ref()
+            .is_none_or(|core| core.view().arm_state != ArmState::Armed)
+        {
+            return;
+        }
         let (Some(my), Some(mode)) = (ctx.call.as_deref(), ctx.mode) else {
             return;
         };
@@ -1285,7 +1292,14 @@ impl Engine {
             ..ctx.clone()
         };
         // A refusal (e.g. an incomplete profile) leaves the CQ running.
-        let _ = self.command(Command::SelectRow { row, replace: false }, core, &automatic);
+        let _ = self.command(
+            Command::SelectRow {
+                row,
+                replace: false,
+            },
+            core,
+            &automatic,
+        );
     }
     /// The material state a revision covers (sequence, transmit and watchdog view).
     pub fn fingerprint<H: Hardware>(&self, core: Option<&Core<H>>) -> String {

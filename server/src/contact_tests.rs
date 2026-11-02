@@ -1853,7 +1853,7 @@ fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
         Settings::default().call_first,
         "Call 1st is on by default (#10)"
     );
-    for case in 0..3 {
+    for case in 0..4 {
         let mut s = station();
         match case {
             0 => s.command(Command::SetCallFirst(false)).unwrap(),
@@ -1862,6 +1862,20 @@ fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
         }
         s.command(Command::EnableTx(true, Some(7))).unwrap();
         s.run(period(2) + 14 * SECOND);
+        if case == 3 {
+            // Enable Tx off: the CQ contact stays calling, but nobody is answered.
+            s.command(Command::EnableTx(false, None)).unwrap();
+            let rows = callers(&mut s, period(2), period(4)).0;
+            s.deliver(&rows);
+            assert_eq!(s.state(), (State::Calling, Slot::Tx6), "Enable Tx off");
+            s.run(period(3) + 14 * SECOND);
+            assert_eq!(
+                s.sent_in(period(3)),
+                None,
+                "nothing sent with Enable Tx off"
+            );
+            continue;
+        }
         let rows = if case == 2 {
             vec![
                 s.row(period(2), "HB9BLA DL1ABC RR73", 900.0, None),
@@ -1884,4 +1898,37 @@ fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
     let mut s = station();
     s.command(Command::SetCallFirst(false)).unwrap();
     assert!(!s.engine.settings.call_first);
+}
+
+// Proves: CL-050-04; TC-050-004 (a). A switch in my own period after PTT is keyed and before
+// its audio starts (FT8 audio delay 500 ms) replaces that period's request: the new
+// contact's Tx1 goes out in the same period and Enable Tx stays on (review #50 finding 1).
+#[test]
+fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_period() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(3) + 100);
+    let keys = s.fake.0.keys.lock().unwrap().clone();
+    assert_eq!(
+        keys.last(),
+        Some(&(period(3), true)),
+        "PTT keyed at the period start"
+    );
+    assert!(!s.core.view().transmitting, "audio not started yet");
+    let other = s.row(period(2), "CQ DL1ABC JO62", 800.0, Some(-3.0));
+    s.command(Command::SelectRow {
+        row: other,
+        replace: true,
+    })
+    .unwrap();
+    assert!(s.armed(), "Enable Tx stays on");
+    s.run(period(3) + 14 * SECOND);
+    assert!(s.armed());
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("DL1ABC HB9BLA JN47"));
 }

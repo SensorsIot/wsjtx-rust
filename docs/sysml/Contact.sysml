@@ -256,7 +256,8 @@ package WstxContact {
              R+report -> tx4/rogers; RRR or RR73 -> tx5/signoff; 73 -> tx5/signoff
              (logged once tx5 is sent, DirectLog). Responding to a station that answered
              my CQ is this case; CQ response mode (automatic choice of the responder)
-             is #12 (D6), so a reply to my CQ always needs this explicit selection. */
+             was #12 (D6): a reply to my CQ needs this explicit selection unless CallFirst
+             answers it (#10, operator 2026-11-02, Call 1st on by default). */
     }
     action def EnterDxStation {
         in dxCallText : String;
@@ -284,7 +285,12 @@ package WstxContact {
              sets Tx enable", Enable Tx on), so while it is on the next period of the new
              contact's parity carries the new contact's next message (the pending request
              of the old contact is replaced; a transmission already on the air continues,
-             as with CancelContact). The replacement itself never turns Enable Tx on. A
+             as with CancelContact; a replacement in my own period after PTT is keyed and
+             before its audio starts replaces that period's request, so the new message is
+             sent in it). The replacement itself never turns Enable Tx on. During a station
+             automation run (WstxMcp OperatingAutomation) an operator replacement of the
+             run's contact ends the run, which disarms (contact_changed, TC-020-003); this
+             exception stands until the operator decides otherwise. A
              completed contact is not active and is already logged (DirectLog), so a new
              partner simply replaces it (#41: no held unsaved contact). */
     }
@@ -297,8 +303,9 @@ package WstxContact {
              isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
              than me, an exchange that is not R+report, RRR, RR73 or 73): while the
              contact is calling (an own CQ started by the operator; a CQ of station
-             automation is answered by its strategy instead, WstxMcp) with Auto Seq and
-             Call 1st on, the first decoded row of the step, in decode order (row
+             automation is answered by its strategy instead, WstxMcp) with Enable Tx,
+             Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
+             the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the
              station's mode, decoded in a period of the parity opposite to my Tx parity,
              whose exchange is a grid or a report, is answered at once as SelectDecodedRow
