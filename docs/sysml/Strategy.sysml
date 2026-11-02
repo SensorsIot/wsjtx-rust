@@ -115,8 +115,10 @@ package WstxStrategy {
              seven continent codes is addressed to me only when x is my continent; "CQ DX"
              only when both continents are known and differ (a CQ DX from my own continent,
              or from an unknown one, is not for me); any other target (TEST, POTA, a
-             number, a country) is not continent-directed and is left to cq_target
-             conditions. A CQ not addressed to me is greyed in Band Activity, never matches
+             number, a country) is not continent-directed: Highlight leaves it to the
+             rules, and Auto answers it only when the matched rule has a non-negated
+             cq_target condition listing that target (AutoTarget), so a country-directed
+             CQ such as CQ JA is never answered by default. A CQ not addressed to me is greyed in Band Activity, never matches
              a rule and is never answered by Auto. My continent unknown: every continent-
              directed CQ and CQ DX is greyed. */
     }
@@ -190,7 +192,9 @@ package WstxStrategy {
              starts as Auto Call, Cq as Auto CQ; a saved role other than alternate applies
              at the next step.
              Auto Call (waiting): on each fresh complete publication the candidates are
-             the verdicts with a rank, cq-like (D3), not greyed, a sane call (SaneCall),
+             the verdicts with a rank, cq-like (D3), not greyed, a CQ target other than a
+             continent or DX only when the matched rule asks for it with a non-negated
+             cq_target condition, a sane call (SaneCall),
              not mine, not completed or skipped in this run, one per call, in display
              order; the first is selected (select_row) and armed (enable_tx); an RR73/73
              candidate keeps the previous Tx frequency (set_frequency). No candidate: one

@@ -315,6 +315,27 @@ fn tc_039_002_each_condition_and_its_negation() {
     let v = evaluate(&s, &records, &st);
     assert_eq!(v[0].why, "no match (rule 1: SNR 0.. dB)");
     assert_eq!(v[2].why, "CQ NA is not addressed to my continent (EU)");
+    // Auto: a CQ TEST is answered only when the matched rule asks for TEST.
+    let plain = strat(vec![vec![cq()]], Sort::Newest, false);
+    let asks = strat(
+        vec![vec![
+            cq(),
+            json!({"kind":"cq_target","negate":false,"values":["TEST"]}),
+        ]],
+        Sort::Newest,
+        false,
+    );
+    let row = |s: &Strategy, n: u64| {
+        evaluate(s, &records, &st)
+            .into_iter()
+            .find(|v| v.facts.sequence == n)
+            .unwrap()
+    };
+    assert!(!auto_target_ok(&plain, &row(&plain, 8)) && auto_target_ok(&asks, &row(&asks, 8)));
+    assert!(
+        auto_target_ok(&plain, &row(&plain, 3)),
+        "CQ EU for my continent stays answerable"
+    );
     assert!(sane_call("K1ABC") && !sane_call("K1") && !sane_call("ABCDE") && !sane_call("W1AW/R"));
 }
 
@@ -700,6 +721,9 @@ async fn tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule() {
         e,
         &[
             ("CQ NA W1AW FN31", 900.0, Some(5.0)),
+            // Country- and number-directed: never answered unless a rule asks for them.
+            ("CQ JA JA1XYZ PM95", 600.0, Some(9.0)),
+            ("CQ 290 N1MM FN31", 700.0, Some(8.0)),
             ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
             ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
         ],
@@ -931,4 +955,36 @@ fn tc_039_005_core_watchdog_counts_from_the_operator_mark() {
         "an operator arm restarts it"
     );
     assert_eq!(core.view().arm_state, ArmState::Armed);
+}
+
+// Proves: TC-039-005
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_005_auto_never_arms_after_the_operator_watchdog_time() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let revision = f.read("contact").await["contact_revision"]
+        .as_u64()
+        .unwrap();
+    let w = f.tool("wstx_contact_command", json!({"command":f.command(revision, "set_watchdogs", json!({"tx_minutes":1,"tune_seconds":90}))})).await;
+    assert_eq!(w["status"], 202, "{w}");
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // 61 s after the start (no candidate meanwhile) a matching CQ arrives.
+    f.bench.offset.fetch_add(61_000, Ordering::SeqCst);
+    publish(&f, e + 60_000, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(
+        run_state(&f).await,
+        ("stopped".into(), json!("tx_watchdog"))
+    );
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["transmit"]["arm_state"].clone(),
+            c["contact"]["dx_call"].clone()
+        ),
+        (json!("disarmed"), Value::Null),
+        "{c}"
+    );
+    assert_eq!(f.keys(), 0);
 }

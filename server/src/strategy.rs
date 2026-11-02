@@ -721,6 +721,22 @@ pub(crate) fn order(list: &mut [Verdict], sort: Sort) {
             .then(a.facts.sequence.cmp(&b.facts.sequence))
     });
 }
+/// Auto answers a CQ with a target that DirectedCqRule leaves open (TEST, POTA, a
+/// country or a number) only when the matched rule asks for that target with a
+/// non-negated cq_target condition: a country-directed CQ is never answered by default.
+pub(crate) fn auto_target_ok(s: &Strategy, v: &Verdict) -> bool {
+    let Some(target) = v.facts.target.as_deref() else {
+        return true;
+    };
+    if CONTINENTS.contains(&target) || target == "DX" {
+        return true; // DirectedCqRule already decided (not greyed here).
+    }
+    v.rank.and_then(|r| s.rules.get(r)).is_some_and(|rule| {
+        rule.iter().any(|c| {
+            !c.negate && matches!(&c.cond, Cond::CqTarget(l) if l.iter().any(|t| t == target))
+        })
+    })
+}
 /// The callsign guard before Auto answers (WSJT-Z): at least 3 characters with a digit
 /// and a letter, not a rover (/R).
 pub(crate) fn sane_call(call: &str) -> bool {

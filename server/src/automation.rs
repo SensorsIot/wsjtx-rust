@@ -906,6 +906,7 @@ impl Owner {
                             .filter(|v| {
                                 v.rank.is_some()
                                     && st.cq_like(&v.facts, s.treat_73_as_cq)
+                                    && strategy::auto_target_ok(s, v)
                                     && strategy::sane_call(&v.facts.from)
                                     && v.facts.from != my
                                     && eligible(run, &v.facts.from)
