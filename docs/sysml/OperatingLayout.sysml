@@ -437,7 +437,7 @@ attribute def ActivityOrdering {
         attribute hasNextReceiveMode : Boolean = false;
         attribute healthyStatusShown : Boolean = false;
         attribute hasStrategyElement : Boolean = true;
-        attribute strategyEngineInScope : Boolean = false;
+        attribute strategyEngineInScope : Boolean = true;
         attribute hasRxTxStrip : Boolean = true;
         attribute hasQsoPane : Boolean = true;
         attribute haltAlwaysVisible : Boolean = true;
@@ -445,7 +445,7 @@ attribute def ActivityOrdering {
         assert constraint operatingOnly {
             not pageScrolls and listsScrollInside and not hasMonitorControl and
             not hasEnableTxControl and not hasLegacyStartStop and not hasNextReceiveMode and
-            not healthyStatusShown and hasStrategyElement and not strategyEngineInScope and
+            not healthyStatusShown and hasStrategyElement and strategyEngineInScope and
             hasRxTxStrip and hasQsoPane and haltAlwaysVisible and fixedWidthListsAndFrequencies
         }
         doc /* CL-010-16. One fixed full screen at 1366x768 and larger: no page scroll, only
@@ -471,10 +471,11 @@ attribute def ActivityOrdering {
              element above it, the QSO pane (QsoPane) on the right; at most 75em wide the
              QSO pane goes below Band Activity, at most 48em everything stacks (a phone
              scrolls the workspace, never horizontally).
-             Strategy element: `Strategy [name] [edit] [Highlight | Auto]`. The strategy
-             engine (rules, Highlight/Auto, editor, directed-CQ rule) is a later CR; in
-             #37 the element shows the existing WstxMcp automation run state and its
-             controls stay disabled with that reason; it filters and arms nothing.
+             Strategy element: `Strategy [name] [edit] [Highlight | Auto]` (#39,
+             WstxStrategy): the name chooses the active strategy (None: none), edit opens
+             the StrategyEditor popup, Highlight marks matches in Band Activity
+             (HighlightView) and Auto starts or stops an Auto strategy run
+             (AutoStrategyRun); beside them the WstxMcp automation run state.
              There is no Monitor and no Enable Tx control on the screen: receive follows
              the band/mode selection; transmission follows SetEnableTx (#37). The legacy
              receive start/stop is an Expert action. Status texts of a healthy station
@@ -515,7 +516,9 @@ attribute def ActivityOrdering {
              great-circle distance from the profile locator to a grid carried in the
              message, unavailable otherwise. Colours keep the WSJT-X meanings: CQ, a
              message addressed to my call, worked-before marks (WstxContact::
-             WorkedBeforeQuery). Pointer: click selects (SelectDecodedRow, prepares, never
+             WorkedBeforeQuery), and with Highlight on the strategy marks of
+             WstxStrategy::HighlightView (matches first in their period, greyed directed
+             CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits); double-click replies (select, then SetEnableTx on); right-click
              opens a menu: Reply, Select, Set Rx here. Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
@@ -598,8 +601,9 @@ attribute def ActivityOrdering {
         doc /* Browser-local view preference (per browser, never a station setting). Day,
              Dark and Night (dim warm/red for dark adaptation). byTime switches Day/Night at
              two local times; bySun at sunrise and sunset computed for the profile locator.
-             The continent (General) is likewise browser-local until the strategy engine
-             needs it at the station; its default derives from the locator. */
+             The continent (General) is a station setting since #39
+             (WstxStrategy::StrategyConfiguration continent); its default derives from the
+             locator. */
     }
     attribute def UnauthorizedView {
         attribute showsOnlyTokenForm : Boolean = true;
