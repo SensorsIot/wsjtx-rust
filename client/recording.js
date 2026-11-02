@@ -908,7 +908,8 @@ const detectEl=id=>document.getElementById(id);
 function radioSetupShow(){
   const connected=connection.dataset.state==='connected',s=window.wstxContact?.snapshot?.()?.transmit;
   detectEl('detect-run').disabled=!connected||detectPending||!detectEl('detect-ack').checked||!profileData;
-  const ready=connected&&catStatus?.condition==='ready'&&Number.isSafeInteger(operatingState?.radio?.connection_generation)&&s?.arm_state!=='armed'&&!s?.tune;
+  // Writes need the contact client: its confirmation dialog and a known disarmed transmitter.
+  const ready=connected&&!!window.wstxConfirm&&!!s&&catStatus?.condition==='ready'&&Number.isSafeInteger(operatingState?.radio?.connection_generation)&&s.arm_state==='disarmed'&&!s.tune;
   for(const id of ['radio-settings-apply','radio-settings-undo'])detectEl(id).disabled=!ready||radioSettingsPending;
 }
 detectEl('detect-ack').addEventListener('change',radioSetupShow);
@@ -953,9 +954,9 @@ detectEl('detect-use').addEventListener('click',()=>{
   document.querySelector('#settings-save').focus();
 });
 async function radioSettings(action){
-  const generation=operatingState?.radio?.connection_generation;if(radioSettingsPending||!profileData||!Number.isSafeInteger(generation))return;
+  const generation=operatingState?.radio?.connection_generation;if(radioSettingsPending||!profileData||!Number.isSafeInteger(generation)||!window.wstxConfirm)return;
   const text=action==='apply'?'Write the recommended IC-7300 settings by CI-V (USB SEND and USB keying OFF, DATA MOD USB, CI-V transceive OFF)? Each write is read back; the old values are kept for Undo.':'Write the recorded old IC-7300 settings back by CI-V?';
-  if(!await confirmAction(text,action==='apply'?'Apply radio settings':'Undo radio settings'))return;
+  if(!await window.wstxConfirm(text,action==='apply'?'Apply radio settings':'Undo radio settings'))return;
   radioSettingsPending=true;radioSetupShow();const result=detectEl('radio-settings-result');result.textContent=action==='apply'?'Writing radio settings':'Restoring radio settings';
   try{
     const v=await radioSetupPost(`/radio/settings/${action}`,{v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,connection_generation:generation});

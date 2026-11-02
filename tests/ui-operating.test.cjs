@@ -494,6 +494,23 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-044-06; TC-044-005. Before the contact client (confirmation dialog, transmit state)
+// is loaded, Apply/Undo radio settings stay disabled and send nothing, even with CAT ready.
+test('TC-044-005 radio settings writes wait for the confirmation dialog and a known disarmed transmitter',{timeout:40000},async t=>{
+  const radio=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
+    await p.route('**/contact.js',()=>{});
+    await p.route('**/radio/settings/*',async route=>{radio.push(route.request().url());await route.fulfill({status:409,json:{error:{code:'unexpected'}}});});
+  }});
+  await page.waitForFunction(()=>!!profileData&&Number.isSafeInteger(operatingState?.radio?.connection_generation),null,{timeout:30000});
+  assert.equal(await page.evaluate(()=>!!window.wstxConfirm||!!window.wstxContact),false,'contact client held back');
+  await page.evaluate(()=>{catStatus={condition:'ready'};radioSetupShow();});
+  for(const id of ['#radio-settings-apply','#radio-settings-undo'])assert.equal(await page.locator(id).isDisabled(),true,id);
+  await page.evaluate(()=>radioSettings('apply'));await page.waitForTimeout(500);
+  assert.deepEqual(radio,[],'no unconfirmed settings write');assert.equal(await page.locator('#op-confirm[open]').count(),0);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-045-01, CL-010-16; TC-007-009 "Monitor off at startup" is a plain General setting.
 test('TC-007-009 Monitor off at startup reads and saves the station setting without touching receive',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
