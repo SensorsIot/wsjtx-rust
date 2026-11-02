@@ -468,7 +468,7 @@ fn startup_error(code: &str, path: &std::path::Path) -> String {
 }
 async fn index(State(app): State<App>) -> Html<String> {
     Html(include_str!("../../client/index.html").replace(
-        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script><script src=\"/logbook.js\" defer></script></head>" } else { "</head>" }
+        "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script></head>" } else { "</head>" }
     ).replace(
         "<script src=\"/app.js\" defer></script>",
         if app.profile.is_some() { "<script src=\"/authorization.js\" defer></script><script src=\"/app.js\" defer></script>" } else { "<script src=\"/app.js\" defer></script>" }

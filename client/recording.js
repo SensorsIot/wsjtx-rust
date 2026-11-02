@@ -4,97 +4,139 @@ controls.id = 'controls';
 while (main.firstChild) controls.append(main.firstChild);
 main.classList.add('op-app');
 const signal = document.createElement('section'); signal.id = 'signal'; signal.className='op-signal'; signal.setAttribute('aria-label','Recorded spectrum and waterfall');
-signal.innerHTML = '<div class="op-signal-heading"><div><span class="op-live-dot" aria-hidden="true"></span><h2 id="signal-status" role="status">Waiting for station snapshot</h2><span>0&ndash;3000 Hz</span></div></div><p id="signal-meta"></p><canvas id="spectrum" aria-label="Spectrum in calibrated dBFS"></canvas><div id="frequency-ruler" aria-label="Fixed frequency span 0 to 3000 Hz"></div><div id="waterfall-wrap"><div id="time-ruler"></div><canvas id="waterfall" tabindex="0" aria-label="Waterfall in source seconds; arrow keys select native bins and rows"></canvas></div><div id="level-legend"></div><canvas id="level-bar" aria-label="Waterfall color scale from navy to red"></canvas>';
+signal.innerHTML = '<div class="op-signal-heading"></div><h2 id="signal-status" role="status">Waiting for station snapshot</h2><p id="signal-meta"></p><canvas id="spectrum" aria-label="Spectrum in calibrated dBFS"></canvas><div id="frequency-ruler" aria-label="Fixed frequency span 0 to 3000 Hz"></div><div id="waterfall-wrap"><div id="time-ruler"></div><canvas id="waterfall" tabindex="0" aria-label="Waterfall in source seconds; arrow keys select native bins and rows"></canvas></div><div id="level-legend"></div><canvas id="level-bar" aria-label="Waterfall color scale from navy to red"></canvas>';
 const splitter = document.createElement('div'); splitter.id = 'splitter'; splitter.className='op-splitter'; splitter.tabIndex = 0; splitter.innerHTML='<span></span>';
 for (const [key,value] of Object.entries({role:'separator','aria-orientation':'horizontal','aria-label':'Resize spectrum and controls','aria-controls':'signal controls'})) splitter.setAttribute(key,value);
 main.append(signal,splitter,controls);
-const stationBar=controls.querySelector('header');stationBar.id='station-bar';stationBar.className='op-header';
-const stationIdentity=document.createElement('button');stationIdentity.type='button';stationIdentity.className='op-station-button';stationIdentity.dataset.region='connection';stationIdentity.setAttribute('aria-label','Station connection details');
-stationIdentity.innerHTML='<span><span class="op-eyebrow">WSTX / REMOTE STATION</span><strong id="operating-station">Waiting for station</strong></span><span aria-hidden="true">&#8964;</span>';
+// WstxOperatingLayout::OperatingScreen (#37): top bar, waterfall + RxTxStrip, Band Activity, QsoPane.
+const stationBar=controls.querySelector('header');stationBar.id='station-bar';stationBar.className='op-header op-topbar';
 const stationConnectionNode=document.querySelector('#connection');
-stationBar.replaceChildren(stationIdentity);
-const nav=document.createElement('nav');nav.className='op-nav';nav.setAttribute('aria-label','Workspace');
-nav.innerHTML='<button type="button" data-region="operate" class="active" aria-current="page">Operate</button><button type="button" data-region="recordings" id="open-recordings">Recordings</button><button type="button" data-region="logbook">Logbook</button>';
+const tuning=document.createElement('div');tuning.id='radio-toolbar';tuning.className='op-tuning';tuning.setAttribute('role','group');tuning.setAttribute('aria-label','Radio operation');
+tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</span><input id="op-dial" disabled placeholder="Unknown" aria-label="Dial frequency unavailable" title="CAT readback unavailable"></div><div class="op-period"><span>Receive period</span><div class="op-period-track"></div><small>Timing unavailable</small></div>';
+const chips=document.createElement('div');chips.id='exception-chips';chips.className='op-chips';chips.setAttribute('role','group');chips.setAttribute('aria-label','Station exceptions');
 const headerActions=document.createElement('div');headerActions.className='op-header-actions';
-headerActions.innerHTML='<button type="button" data-region="strategies" id="open-strategies">&#10023; Strategies</button><button type="button" data-region="server-settings" id="open-server-settings" title="Server settings (F2)">&#9881; Server settings</button><button type="button" data-region="client-preferences" id="open-client-preferences" title="Client preferences">Preferences</button><button type="button" data-region="help" aria-label="Help">?</button>';
-headerActions.prepend(stationConnectionNode);
-const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>Halt Tx';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
-stationBar.append(nav,headerActions);
-const tuning=document.createElement('section');tuning.id='radio-toolbar';tuning.className='op-tuning';tuning.setAttribute('aria-label','Radio operation');
-tuning.innerHTML='<div class="op-dial"><label for="op-dial">DIAL FREQUENCY <span>MHz</span></label><input id="op-dial" disabled placeholder="Unknown" aria-label="Dial frequency unavailable" title="CAT readback unavailable"></div><label class="op-compact-label">Mode<select disabled aria-label="Operating mode unavailable"><option>Unavailable</option></select></label><div class="op-divider"></div><button type="button" class="op-monitor" disabled title="This server does not offer live audio capture">&#8545; Monitor</button><div class="op-decode-group"><button type="button" disabled title="This server does not offer live decoding">&#10227; Decode</button><select disabled aria-label="Decoding depth unavailable"><option>Depth</option></select></div><div class="op-period"><span>Receive period</span><div class="op-period-track"></div><small>Timing unavailable</small></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div>';
-const bands=document.createElement('section');bands.id='band-strip';bands.className='op-band-row';bands.setAttribute('aria-label','Band selection');
-bands.innerHTML='<span class="op-eyebrow">BAND</span>'+['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'].map(band=>`<button type="button" disabled title="CAT tuning unavailable">${band}</button>`).join('');
+headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
+const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx (Esc, Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
+stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
+const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
 const workspace=document.createElement('div');workspace.id='operating-workspace';
+const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div><div class="op-order-controls"><label>Sort<select id="activity-sort" aria-label="Band Activity sort"><option value="frequency">Frequency</option><option value="signal">Signal strength</option><option value="dt">DT</option><option value="message">Callsign/message</option></select></label><label>Direction<select id="activity-direction" aria-label="Band Activity sort direction"><option value="asc">Ascending</option><option value="desc">Descending</option></select></label></div></header><div class="op-search"><input disabled aria-label="Find a callsign or message" placeholder="Find callsign or message&#8230;"><span>Unavailable</span></div><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">Time</th><th scope="col">SNR</th><th scope="col">DT</th><th scope="col">Hz</th><th scope="col">Message</th><th scope="col">Status</th></tr></thead><tbody role="rowgroup"><tr><td colspan="6" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div><footer><span class="op-selection-dot"></span>Station selection requires decoded results<span class="op-muted">No sample data</span></footer></section>
-<section id="rx-focus" class="message-pane op-card op-contact" aria-labelledby="focus-heading"><header><div><h3 id="focus-heading">Current QSO</h3><span class="op-muted">No active contact &#183; transmission unavailable</span></div><span class="op-contact-badge">Unavailable</span></header><div class="op-contact-body"><div class="op-contact-identity"><div><strong>No station selected</strong><span>Contact selection requires decoded results</span></div></div><ol class="op-qso-steps" aria-label="QSO progression"><li><span>1</span>Call</li><li><span>2</span>Report</li><li><span>3</span>Confirm</li><li><span>4</span>Log</li></ol><div class="op-receive-bubble"><span>LAST RECEIVED <time>Unknown</time></span><p>No received contact message</p></div><div class="op-frequency-fields"><label>Rx audio<input disabled placeholder="Unknown"><span>Hz</span></label><label>Tx audio<input disabled placeholder="Unknown"><span>Hz</span></label><button type="button" disabled title="Tuning unavailable">Rx &#8594; Tx</button></div><div class="op-next-label"><span>NEXT MESSAGE</span><select disabled aria-label="Transmit period unavailable"><option>Period</option></select></div><select class="op-message-select" disabled aria-label="Next outgoing message unavailable"><option>No outgoing message</option></select><div class="op-auto-row"><label class="op-check"><input type="checkbox" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" class="op-text-button" disabled>Prepare CQ</button></div><div class="op-contact-actions"><button type="button" class="op-primary" disabled aria-describedby="transmit-unavailable"><span aria-hidden="true">&#9655;</span>Enable Tx</button><button type="button" disabled aria-describedby="contact-unavailable">Log QSO</button></div><p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Contact workflow and logging are unavailable.</p></div></section>
-<section id="strategy-panel" class="op-card op-strategy" aria-labelledby="strategy-heading"><header><div><h3 id="strategy-heading">&#10023; Strategy</h3><span class="op-muted">Server execution</span></div><span class="op-state">Unavailable</span></header><div class="op-strategy-body"><div class="op-strategy-name"><strong>No active definition</strong></div><p class="op-muted op-strategy-description">The station does not yet offer strategy execution. No browser-side selection or automation is running.</p><div class="op-rule-chips"><span>Filters unavailable</span><span>Ranking unavailable</span></div><div class="op-candidate"><span class="op-eyebrow">SELECTED CANDIDATE</span><strong>None</strong><p>No server-confirmed candidate or decision.</p></div><div class="op-policy-summary"><span>Reply attempts<strong>Unavailable</strong></span><span>Stop condition<strong>Unavailable</strong></span><span>Transmission<strong>Unavailable</strong></span></div><button type="button" class="op-primary" disabled title="Strategy service unavailable">&#9655; Resume strategy</button><button type="button" class="op-edit-definition" data-region="strategies">View definition <span>&#8594;</span></button></div></section></div>`;
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
+<section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span id="qso-crowd" class="op-qso-badge" hidden></span><span class="op-contact-badge">Unavailable</span></header>
+<div class="op-contact-body">
+<p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
+</div></section></div>`;
 controls.prepend(workspace);
 const secondaryRoot=document.createElement('div');secondaryRoot.id='workspace-secondary';secondaryRoot.hidden=true;controls.append(secondaryRoot);
 const secondaryRegions=new Map();
 function region(id,title,intro){const section=document.createElement('section');section.id='region-'+id;section.className='op-secondary';section.hidden=true;section.setAttribute('aria-labelledby','region-title-'+id);section.innerHTML=`<header><div><span class="op-eyebrow">WSTX / ${title.toUpperCase()}</span><h2 id="region-title-${id}">${title}</h2></div><button type="button" data-region="operate" class="return-operate">&#8592; Back to operation</button></header><div class="op-secondary-body"><p class="op-muted">${intro}</p></div>`;secondaryRoot.append(section);secondaryRegions.set(id,section);return section.querySelector('.op-secondary-body');}
-const settingsRegion=region('server-settings','Server settings','Saved station definitions and actual interface state remain separate. Saving a profile does not activate radio hardware.');
-const preferencesRegion=region('client-preferences','Client preferences','Display controls affect this browser view only. They do not change station configuration or run automation.');
-const recordingsRegion=region('recordings','Recordings','Inspect a real recording with the station spectrum service. This is not offline decoding.');
-const connectionRegion=region('connection','Station connection','Confirmed station identity and capabilities. Unknown hardware state is not inferred from saved settings.');
-const strategiesRegion=region('strategies','Strategy definition','The server validates, stores and executes strategy definitions. This server does not yet offer that service.');
-strategiesRegion.insertAdjacentHTML('beforeend','<div class="op-definition-grid"><fieldset disabled><legend>Eligibility filters</legend><label>Name<input placeholder="No saved definition"></label><label>Minimum signal &#183; dB<input type="number" placeholder="Unavailable"></label><label class="op-check"><input type="checkbox">Calling CQ only</label><label class="op-check"><input type="checkbox">Exclude stations already worked</label></fieldset><fieldset disabled><legend>Ranking &amp; QSO policy</legend><label>Priority<select><option>Unavailable</option></select></label><label>Maximum reply attempts<input type="number" placeholder="Unavailable"></label><p class="op-muted">No active revision, candidate or decision. Definition editing and activation require the station service.</p></fieldset></div><button type="button" disabled title="Strategy service unavailable">Save definition</button>');
 const logRegion=region('logbook','Logbook','Contact history and ADIF operations are unavailable until this station offers contact logging.');
 logRegion.insertAdjacentHTML('beforeend','<p>No server-confirmed contacts are available.</p><button type="button" disabled>Import ADIF</button> <button type="button" disabled>Export ADIF</button>');
-const helpRegion=region('help','Help','Operating controls use confirmed station capabilities. Unavailable controls do not send radio commands.');
-helpRegion.insertAdjacentHTML('beforeend','<dl><div><dt>F2</dt><dd>Open Server settings</dd></div><div><dt>Escape</dt><dd>Halt Tx and abort the contact (panels stay open; use Back to operation)</dd></div><div><dt>Alt+N / Alt+H / Alt+Q</dt><dd>Enable Tx / Halt Tx / Log QSO</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the actual spectrum/waterfall</dd></div><div><dt>Waterfall arrows</dt><dd>Inspect measured bins and source time</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
+const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Esc and Alt+H always halt.');
+helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Esc / Alt+H / HALT</dt><dd>Halt Tx now (Esc also cancels the contact). Panels stay open.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
-secondary('station-settings','Station settings',document.querySelector('#profile-panel'),settingsRegion).open=true;
-const connectionDetails=secondary('connection-details','Connection details',controls.querySelector('section[aria-label="Station status"]'),connectionRegion);connectionDetails.open=true;
-const operatingRefresh=document.querySelector('#refresh');operatingRefresh.className='op-icon-button';operatingRefresh.setAttribute('aria-label','Refresh status');operatingRefresh.title='Refresh status';operatingRefresh.innerHTML='&#10227;';headerActions.insertBefore(operatingRefresh,headerActions.firstChild);
-const profileMetadata=document.querySelector('#profile-panel>dl');connectionRegion.append(profileMetadata);
-const serverForm=document.querySelector('#settings'),serverFieldGroups=[];
-for(const [name,ids] of [['General',['display-name','callsign','locator']],['Radio',['control-mode','control-endpoint','ptt-mode']],['Audio',['audio-input','audio-output']]]){
-  const group=document.createElement('fieldset');group.id='server-fields-'+name.toLowerCase();group.className='op-server-fieldset';
-  const legend=document.createElement('legend');legend.textContent=name;group.append(legend);
-  if(name==='Radio')group.append(serverForm.querySelector('select:not([id])').closest('label'));
-  for(const id of ids)group.append(document.getElementById(id).closest('label'));
-  serverFieldGroups.push(group);
+function block(id,title,parent,html=''){const section=document.createElement('section');section.id=id;section.className='op-section';section.setAttribute('aria-labelledby',id+'-title');section.innerHTML=`<h3 id="${id}-title">${title}</h3>${html}`;parent.append(section);return section;}
+const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');
+const drawerSections=[['general','General'],['radio','Radio &#10227;'],['logging','Logging &amp; Reporting'],['expert','Expert']];
+drawer.innerHTML=`<header><div><span class="op-eyebrow">WSTX / <span id="operating-station">Waiting for station</span></span><h2 id="drawer-title">Settings</h2></div><button type="button" data-region="operate" class="return-operate" aria-label="Close settings">&#10005; Close</button></header><nav class="op-drawer-tabs" aria-label="Settings sections">${drawerSections.map(([key,label],i)=>`<button type="button" id="tab-${key}" data-drawer-tab="${key}" aria-controls="settings-${key}"${i?'':' aria-current="true"'}>${label}</button>`).join('')}</nav><div class="op-drawer-body">${drawerSections.map(([key,label])=>`<section id="settings-${key}" aria-labelledby="settings-${key}-heading" class="op-drawer-section"><h2 id="settings-${key}-heading" class="op-drawer-heading">${label}</h2></section>`).join('')}</div>`;
+main.append(drawer);
+const [generalSection,radioSection,loggingSection,expertSection]=drawerSections.map(([key])=>drawer.querySelector('#settings-'+key));
+function markTab(key){for(const [k] of drawerSections){const tab=drawer.querySelector('#tab-'+k);if(k===key)tab.setAttribute('aria-current','true');else tab.removeAttribute('aria-current');}}
+function drawerTab(key){markTab(key);const body=drawer.querySelector('.op-drawer-body'),section=drawer.querySelector('#settings-'+key);body.scrollTop=section.offsetTop-body.offsetTop;}
+drawer.querySelector('.op-drawer-tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-drawer-tab]');if(tab){drawerTab(tab.dataset.drawerTab);tab.focus();}});
+drawer.querySelector('.op-drawer-body').addEventListener('scroll',event=>{const body=event.currentTarget;let current=drawerSections[0][0];for(const [k] of drawerSections)if(drawer.querySelector('#settings-'+k).offsetTop-body.offsetTop<=body.scrollTop+8)current=k;markTab(current);},{passive:true});
+drawer.querySelector('.op-drawer-tabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;const keys=drawerSections.map(([k])=>k),current=keys.indexOf((event.target.closest('[data-drawer-tab]')??drawer.querySelector('[aria-current=true]')).dataset.drawerTab),next=keys[(current+(event.key==='ArrowRight'?1:keys.length-1))%keys.length];drawerTab(next);drawer.querySelector('#tab-'+next).focus();});
+function showSection(id){
+  const target=document.getElementById(id);if(!target)return;
+  const section=target.closest('.op-drawer-section');if(section)markTab(section.id.slice(9));
+  for(let node=target;node;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
+  target.scrollIntoView({block:'nearest'});
+  (target.matches('details')?target.querySelector('summary'):target.querySelector('input:not([type=hidden]):not(:disabled),select:not(:disabled),button:not(:disabled),summary')??target).focus();
 }
-serverForm.prepend(...serverFieldGroups);
-const settingsGrid=document.createElement('div');settingsGrid.className='op-settings-grid';
-const settingsSide=document.createElement('nav');settingsSide.className='op-settings-sidebar';settingsSide.setAttribute('aria-label','Server settings sections');
-settingsSide.innerHTML='<span class="op-eyebrow">SERVER DEFINITIONS</span>'+['General','Radio','Audio'].map(name=>`<button type="button" data-settings-section="${name.toLowerCase()}">${name}</button>`).join('')+'<button type="button" data-region="connection">Connection</button><hr><button type="button" data-region="client-preferences">Client preferences</button>';
-settingsGrid.append(settingsSide,document.querySelector('#station-settings'));settingsRegion.append(settingsGrid);
-settingsSide.addEventListener('click',event=>{const button=event.target.closest('button[data-settings-section]');if(!button)return;for(const entry of settingsSide.querySelectorAll('[data-settings-section]')){entry.classList.toggle('active',entry===button);}const group=document.querySelector('#server-fields-'+button.dataset.settingsSection);group.querySelector('input,select').focus();group.scrollIntoView({block:'nearest'});});
-const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionRegion.append(capabilities);
-const profileHeading=document.querySelector('#profile-name');
+const serverForm=document.querySelector('#settings');
+const stationFields=document.createElement('fieldset');stationFields.id='server-fields-general';stationFields.className='op-server-fieldset';stationFields.innerHTML='<legend>Station &#10227;</legend>';
+for(const id of ['display-name','callsign','locator']){const input=document.getElementById(id);input.setAttribute('form','settings');stationFields.append(input.closest('label'));}
+stationFields.insertAdjacentHTML('beforeend','<p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
+for(const type of ['input','change'])stationFields.addEventListener(type,event=>{if(event.target.form===serverForm&&event.target.id!=='station-continent')serverForm.dispatchEvent(new Event(type));});
+generalSection.append(stationFields);
+block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clock: system UTC. Measured offset unavailable.</p>');
+const displaySettings=block('settings-display','Display',generalSection,'<p class="op-muted">Display settings affect this browser only and apply at once.</p>');
+const browserSettings=block('settings-browsers','Access &amp; grants',generalSection,'<p class="op-muted">This browser holds its own station authorization. Logging out or forgetting the credential needs the station access token to authorize again.</p>');
+browserSettings.append(document.querySelector('#authorization-actions'));
+chips.after(document.querySelector('#forget'));
+const profilePanel=document.querySelector('#profile-panel'),profileMetadata=profilePanel.querySelector('dl');
+for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']],['audio','Audio &#10227;',['audio-input','audio-output']]]){
+  const group=document.createElement('fieldset');group.id='server-fields-'+name;group.className='op-server-fieldset';group.innerHTML=`<legend>${legendText}</legend>`;
+  if(name==='radio')group.append(serverForm.querySelector('select:not([id])').closest('label'));
+  for(const id of ids)group.append(document.getElementById(id).closest('label'));
+  serverForm.insertBefore(group,serverForm.querySelector('p'));
+}
+document.querySelector('#settings-save').textContent='Apply ⟳';
+radioSection.append(profilePanel);
+const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
+block('settings-audio','Audio input',radioSection,'<div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><p class="op-muted">Listing the inputs reads the device names only; it never opens audio.</p><button type="button" id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output>');
+const connectionPanel=document.createElement('div');connectionPanel.append(controls.querySelector('section[aria-label="Station status"]'),profileMetadata);
+const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionPanel.append(capabilities);
+const receivePanel=document.createElement('div');receivePanel.id='receive-diagnostics';
+receivePanel.append(signal.querySelector('#signal-status'));
+receivePanel.insertAdjacentHTML('beforeend','<p id="receive-status" role="status">Live receive unavailable until station snapshot</p><p id="receive-generation">Receive generation unknown</p><p id="clock-detail">Clock detail unavailable until station snapshot</p><p><button type="button" id="receive-toggle" disabled>Start receive</button></p>');
+secondary('receive-details','Receive, CAT and timing',receivePanel,expertSection).open=true;
+secondary('connection-details','Connection details',connectionPanel,expertSection).open=true;
+new MutationObserver(()=>{document.querySelector('#general-apply-result').textContent=document.querySelector('#settings-result').textContent;}).observe(document.querySelector('#settings-result'),{childList:true,characterData:true,subtree:true});
+connectionPanel.querySelector('#refresh').textContent='Refresh status';
 const updateIdentity=()=>{document.querySelector('#operating-station').textContent=profileData?.settings.display_name??'Waiting for station';};
-new MutationObserver(updateIdentity).observe(profileHeading,{childList:true,subtree:true,characterData:true});updateIdentity();
+new MutationObserver(updateIdentity).observe(document.querySelector('#profile-name'),{childList:true,subtree:true,characterData:true});updateIdentity();
 const panel = document.createElement('section'); panel.id = 'recording-controls'; panel.setAttribute('aria-label','Recording controls');
 panel.innerHTML = '<label>Import mono 12 kHz PCM16 WAV (up to 120 seconds)<input id="recording-file" type="file" accept=".wav,audio/wav"></label><button id="recording-import">Import recording</button><button id="recording-replay" disabled>Replay spectrum</button><button id="recording-cancel" disabled>Cancel operation</button><p>One processing worker per station &#183; no speaker playback</p><p id="recording-progress" role="status"></p>';
 const localPreferences=document.createElement('div');localPreferences.id='local-display-preferences';
-localPreferences.innerHTML='<label>Display <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
-panel.append(localPreferences,document.querySelector('#signal-meta'));
-secondary('recorded-input','Recorded input',panel,recordingsRegion).open=true;
+localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label>Black level (dBFS)<input id="display-black" type="number" min="-120" max="-30" step="1" value="-120"></label><label>Range (dB)<input id="display-range" type="number" min="10" max="80" step="1" value="30"></label><label><input id="display-auto" type="checkbox" checked> Auto black</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
+panel.append(document.querySelector('#signal-meta'));
+displaySettings.append(localPreferences);
+secondary('recorded-input','Recordings and replay',panel,expertSection).open=true;
+expertSection.insertAdjacentHTML('afterbegin','<p class="op-muted">Diagnostics that are not needed while operating.</p>');
 const sliders=document.createElement('div');sliders.id='presentation-sliders';sliders.className='op-display-controls';
-sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label><label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label><button type="button" data-region="client-preferences" title="Display preferences" aria-label="Display preferences">Display</button>';
+sliders.innerHTML='<label>Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="2" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">20 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
-const statusBar=document.createElement('footer');statusBar.id='workspace-statusbar';statusBar.className='op-statusbar';statusBar.innerHTML='<span>Profile-mode preview &#183; capabilities shown explicitly</span><span>Audio / CAT / decoder unavailable</span><span>No radio transmission</span>';
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
-main.append(stationBar,tuning,signal,splitter,bands,controls,statusBar);
+const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
+loginView.innerHTML='<span class="op-eyebrow">WSTX / REMOTE STATION</span><h1>Authorize this browser</h1><p class="op-muted">Enter the station access token. The station is shown once this browser is authorized.</p>';
+loginView.append(login);
+function confirmAction(text,okLabel){return window.wstxConfirm?window.wstxConfirm(text,okLabel):Promise.resolve(true);}
+main.append(stationBar,signal,strip,splitter,controls,drawer,loginView);
+const authorizationView=()=>{const required=!login.hidden;main.dataset.auth=required?'required':'granted';loginView.hidden=!required;};
+new MutationObserver(authorizationView).observe(login,{attributes:true,attributeFilter:['hidden']});authorizationView();
 let currentRegion='operate',returnFocus=null;
-function showRegion(name,opener){
+const drawerAlias={'server-settings':null,connection:'connection-details',recordings:'recorded-input','client-preferences':'settings-display',strategies:'settings-automation',expert:'receive-details'};
+function drawerOpen(){return !drawer.hidden;}
+function closeDrawer(){if(drawer.hidden)return;drawer.hidden=true;main.dataset.drawer='closed';if(returnFocus?.isConnected&&currentRegion==='operate'){returnFocus.focus();returnFocus=null;}}
+function showRegion(name,opener,anchor=null){
+  if(name in drawerAlias||anchor){
+    if(opener)returnFocus=opener;
+    drawer.hidden=false;main.dataset.drawer='open';
+    const section=anchor??drawerAlias[name];
+    if(section)showSection(section);else drawer.querySelector('[aria-current=true]').focus();
+    return;
+  }
   if(name!=='operate'&&!secondaryRegions.has(name))return;
+  if(name==='operate'&&drawerOpen()){closeDrawer();if(currentRegion==='operate')return;}
   currentRegion=name;main.dataset.region=name;
   if(name!=='operate'&&opener)returnFocus=opener;
   workspace.hidden=name!=='operate';secondaryRoot.hidden=name==='operate';
-  for(const [id,section]of secondaryRegions)section.hidden=id!==name;
-  const keepSignal=['operate','recordings','client-preferences'].includes(name);
-  for(const node of [signal,splitter,tuning])node.hidden=!keepSignal;
-  bands.hidden=name!=='operate';
-  (name==='client-preferences'?preferencesRegion:panel).append(localPreferences);
-  for(const button of nav.querySelectorAll('[data-region]')){button.classList.toggle('active',button.dataset.region===name);if(button.dataset.region===name)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
+  for(const [id,node]of secondaryRegions)node.hidden=id!==name;
+  for(const node of [signal,splitter,strip])node.hidden=name!=='operate';
   if(name==='operate') {split(upper);if(returnFocus?.isConnected){returnFocus.focus();returnFocus=null;}}
   else secondaryRegions.get(name).querySelector('.return-operate').focus();
 }
 main.addEventListener('click',event=>{const button=event.target.closest('button[data-region]');if(button&&!button.disabled)showRegion(button.dataset.region,button);});
-addEventListener('keydown',event=>{if(event.key==='F2'){event.preventDefault();showRegion('server-settings',document.querySelector('#open-server-settings'));}});
+document.addEventListener('pointerdown',event=>{if(drawer.hidden||event.target.closest?.('#settings-drawer,#station-bar,#signal,#rxtx-strip,#splitter,dialog'))return;closeDrawer();},true);
+const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]),textarea,select,[contenteditable=true]');
+addEventListener('keydown',event=>{
+  if(event.defaultPrevented)return;
+  if(event.key==='F2'){event.preventDefault();showRegion('server-settings',document.querySelector('#open-server-settings'));return;}
+  if(['F1','F3','F5'].includes(event.key)||(event.key==='?'&&!typing(event.target)&&!event.ctrlKey&&!event.altKey)){event.preventDefault();showRegion('help',document.querySelector('#station-bar [data-region=help]'));return;}
+  if(event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='m'){event.preventDefault();receiveToggle();}
+});
 const profileSelect=document.querySelector('#display-profile');
 const defaultDisplayProfile=()=>'detail';
 const displayPreferenceKey=id=>`wstx.display-profile.v1:${id}`;
@@ -107,6 +149,7 @@ function restoreDisplayPreference(){
 }
 restoreDisplayPreference();
 let displayBlack=-120, displayRange=30, autoBlack=true, estimateFrozen=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=2, fallbackText='', detailRequest;
+try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
 function paletteRGB(t){
   t=Math.max(0,Math.min(1,t));
@@ -121,7 +164,7 @@ function updateSliders(){
 }
 for(const id of ['display-sensitivity','display-speed'])document.querySelector(`#${id}`).addEventListener('input',event=>{
   const value=Number(event.target.value);if(!Number.isFinite(value))return;
-  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));
+  if(id==='display-sensitivity')sensitivity=Math.max(-30,Math.min(30,Math.floor(value+.5)));else{speed=Math.max(.5,Math.min(8,Math.floor(2*value+.5)/2));try{localStorage.setItem('wstx.waterfall-speed.v1',String(speed));}catch{}}
   selectedRow=Math.max(0,Math.min(visibleCount()-1,selectedRow));pointerTime=null;updateSliders();paint();
 });
 
@@ -153,8 +196,8 @@ const statusText = document.querySelector('#signal-status'), progress = document
 let upper, snapshot, importOutcome, rows = [], drawPending = false, syncPending = false, syncAgain = false, uploading = false, uploadId, uploadAbort, stopped = false, subscribedSocket;
 const identity = s => s ? `${s.boot_id}/${s.job?.source_id}/${s.job?.id}/${s.generation}` : '';
 function split(value) {
-  const otherHeight=stationBar.offsetHeight+tuning.offsetHeight+bands.offsetHeight+statusBar.offsetHeight;
-  const signalText=[signal.querySelector(".op-signal-heading"),document.querySelector("#signal-meta"),document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")].reduce((height,node)=>height+(node?.offsetHeight||0),0);
+  const otherHeight=stationBar.offsetHeight+strip.offsetHeight;
+  const signalText=[signal.querySelector(".op-signal-heading"),document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")].reduce((height,node)=>height+(node?.offsetHeight||0),0);
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
@@ -168,10 +211,10 @@ splitter.addEventListener('keydown',event => {
   if (event.key in values) {event.preventDefault();split(values[event.key]);}
 });
 splitter.addEventListener('pointerdown',event => {splitter.setPointerCapture(event.pointerId);splitter.focus();});
-splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top)/(box.height/signal.offsetHeight));}});
+splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture(event.pointerId)){const box=signal.getBoundingClientRect();split((event.clientY-box.top-strip.offsetHeight)/(box.height/signal.offsetHeight));}});
 addEventListener('resize',() => split(upper));
 const textLayoutObserver=new ResizeObserver(()=>split(upper));
-for(const node of [stationBar,signal.querySelector(".op-signal-heading"),document.querySelector("#level-legend")])textLayoutObserver.observe(node); split();
+for(const node of [stationBar,strip,document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")])textLayoutObserver.observe(node); split();
 function timeProjection(H=waterfall.height,C=waterfall.getBoundingClientRect().height){
   const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1);
   let count=0;
@@ -359,7 +402,8 @@ addEventListener('station-message',event => {
   else snapshot.job.processed_frames=f.end_frame;
   show();
 });
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot)socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
+// While the live job this snapshot shows is running, receive.state carries its changes (below), so the poll rests.
+setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot && !liveCovered())socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
 setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot?.import && !uploading)sync();},5000);
 function startBody(){return {v:1,profile_id:snapshot.profile_id,boot_id:snapshot.boot_id,generation:snapshot.generation};}
 document.querySelector('#recording-import').addEventListener('click',async()=>{
@@ -401,20 +445,12 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
-const receiveControls=document.createElement('div');receiveControls.id='live-receive-controls';
-receiveControls.innerHTML='<label>Next receive mode<select id="receive-mode"><option value="ft8">FT8</option><option value="ft4">FT4</option><option value="spectrum">Spectrum only</option></select></label><button id="receive-start" disabled>Start receive</button><button id="receive-stop" disabled>Stop receive</button><button id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output><p id="receive-status" role="status">Live receive unavailable until station snapshot</p>';
-// The shared receive operations occupy the agreed operating toolbar.
-// These are modem receive controls, not CAT mode or RF-transmit controls.
-tuning.querySelector('.op-compact-label').remove();
-tuning.querySelector('.op-monitor').remove();
-tuning.querySelector('.op-decode-group').remove();
-tuning.insertBefore(receiveControls,tuning.querySelector('.op-period'));
 let live,livePending=false,liveAgain=null,resultPending=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
-let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,lastOperatingCommit=null,operatingSocket=null;
+let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
-let receiveMutationEpoch=0,liveRevision=0,resultView=null;
+let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';
@@ -433,6 +469,10 @@ function applyLatestDecode(view,first){
   if(resultView&&view&&view.id<resultView.id)return false;
   if(resultView&&view&&view.id===resultView.id){if(['id','first_sequence','next_sequence','period_start_utc','complete'].some(k=>view[k]!==resultView[k]))throw new Error('Changed decode descriptor');return true;}
   if(resultView===null&&view===null)return true;
+  if(resultView&&resultRows.length&&live?.job){
+    activityHistory.unshift({id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]});
+    let total=0;activityHistory=activityHistory.slice(0,20).filter(h=>(total+=h.rows.length)<=2048);
+  }
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;
@@ -457,17 +497,18 @@ function validLiveSnapshot(s){
 function receiveShow(){
   if(!resultRows.length)renderResults();
   const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
-  document.querySelector('#receive-start').disabled=!connected||!live||!!active||mutationPending||uncertainMutation||operatingBlocked()||!profileData?.settings.audio.input_device;
-  document.querySelector('#receive-stop').disabled=!connected||!active||mutationPending||uncertainMutation||operatingSelectionBlocked()||live.job.state==='cancelling';
   if(live){
     receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.audio.loss_epochs?` · ${live.audio.loss_epochs} audio loss restart${live.audio.loss_epochs===1?'':'s'} (last ${live.audio.last_loss})`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
     capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
-    statusBar.children[1].textContent=`Audio ${live.audio.state} \u00b7 ${live.job?`${live.job.mode.toUpperCase()} ${live.job.state}`:'Receive stopped'} \u00b7 CAT unavailable`;
+    document.querySelector('#receive-generation').textContent=`Receive generation ${live.generation} · source ${live.source?.id??'none'} · job ${live.job?.id??'none'}`;
+    const c=live.clock;document.querySelector('#clock-detail').textContent=`Clock ${c.basis} · ${c.correlated?`receive periods correlated to UTC anchor ${c.utc_anchor}, uncertainty ${c.uncertainty_ns} ns`:'receive periods not correlated to UTC'} · external accuracy ${c.external_accuracy}`;
     const focus=document.querySelector('#rx-focus .op-contact-identity');
-    if(live.job&&live.job.mode!=='spectrum'&&!document.querySelector('#rx-focus').dataset.contact){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Select a decoded station or enter a DX call.';}
-    else{focus.querySelector('strong').textContent='No station selected';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
+    if(!document.querySelector('#rx-focus').dataset.contact){
+      if(live.job&&live.job.mode!=='spectrum'){focus.querySelector('strong').textContent='No contact selected';focus.querySelector('div > span').textContent='Select a decoded station or enter a DX call.';}
+      else{focus.querySelector('strong').textContent='No station selected';focus.querySelector('div > span').textContent='No station selected. Contact selection requires decoded results.';}
+    }
   }
   operatingShow();
 }
@@ -481,30 +522,35 @@ async function receiveSync(current=socket){
     if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
-      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;
+      if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
+      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;activityHistory=[];
       if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
-    live=data;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
+    live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
   }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
   finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);}
 }
-const activitySort=document.querySelector('#activity-sort'),activityDirection=document.querySelector('#activity-direction');
-function activityOrdering(){
+function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
   if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='frequency';activitySortDirection='asc';}
-  activitySort.value=activitySortField;activityDirection.value=activitySortDirection;
+  for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
-  return [...resultRows].sort((a,b)=>{
+  return [...records].sort((a,b)=>{
     const left=key(a),right=key(b);
     if(missing(left)!==missing(right))return missing(left)?1:-1;
     const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
     return compared*(activitySortDirection==='asc'?1:-1)||a.sequence-b.sequence;
   });
 }
-activitySort.addEventListener('change',()=>{activitySortField=activitySort.value;activitySortDirection=activitySortField==='signal'?'desc':'asc';renderResults();});
-activityDirection.addEventListener('change',()=>{activitySortDirection=activityDirection.value;renderResults();});
+function sortBy(button){
+  if(button.dataset.sort===activitySortField)activitySortDirection=activitySortDirection==='asc'?'desc':'asc';
+  else{activitySortField=button.dataset.sort;activitySortDirection=activitySortField==='signal'?'desc':'asc';}
+  renderResults();
+}
+document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
+document.querySelector('#band-activity thead').addEventListener('keydown',event=>{const th=event.target.closest('th[data-sort]');if(th&&(event.key==='Enter'||event.key===' ')){event.preventDefault();sortBy(th);}});
 function renderResults(){
   const ordered=activityOrdering();
   const body=document.querySelector('#band-activity tbody');
@@ -514,7 +560,7 @@ function renderResults(){
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
   document.querySelector('#band-activity .op-count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
   if(!resultRows.length){
-    body.innerHTML='<tr><td colspan="6" class="empty-messages"><strong></strong><span></span></td></tr>';
+    body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
     const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
     let heading='Decoder unavailable',message='No decoded messages are available from this server.';
     if(decoder){
@@ -523,17 +569,27 @@ function renderResults(){
       message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
       if(resultView){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
     }
-    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;return;
+    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;window.wstxRenderHistory?.(body);return;
   }
   body.replaceChildren();
+  for(const record of ordered)body.append(activityRow(record,'latest',liveIdentity(live),live.job.mode));
+  window.wstxRenderHistory?.(body);
+}
+function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
-  for(const record of ordered){
-    const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${liveIdentity(live)}/${record.sequence}`;row.dataset.sequence=String(record.sequence);
-    for(const [index,text] of [periodLabel(record.period_start_utc,live.job.mode),record.snr_db===null?'—':record.snr_db.toFixed(1),record.dt_seconds===null?'—':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),record.status==='decoded'?record.text:`Payload ${record.status}`,record.status==='decoded'?'Decoded':record.status].entries()){
-      const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;row.append(cell);
-    }
-    body.append(row);
+  const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
+  const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
+  if(decoded&&my&&to===my)row.classList.add('ba-tome');
+  const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null;
+  const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,'\u2014',km===null?'\u2014':`${km} km`];
+  for(const [index,text] of cells.entries()){
+    const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
+    if(index===4)cell.dataset.col='message';
+    if(index===5)cell.title='DXCC needs the cty.dat prefix table, which this station does not provide yet';
+    row.append(cell);
   }
+  return row;
 }
 function validRecord(r){
   return r&&Object.keys(r).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
@@ -579,18 +635,21 @@ async function receiveResults(){
   }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
   finally{resultPending=false;}
 }
-document.querySelector('#receive-start').addEventListener('click',async()=>{
-  if(!live||mutationPending)return;receiveMutationEpoch++;mutationPending=true;receiveShow();
-  try{await request('/receive/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,profile_revision:profileData.revision,mode:document.querySelector('#receive-mode').value})});await sync();await receiveSync();}
+async function receiveStart(){
+  const active=live?.job&&['running','cancelling'].includes(live.job.state);
+  if(!live||active||mutationPending||uncertainMutation||operatingBlocked()||!profileData?.settings.audio.input_device)return;
+  receiveMutationEpoch++;mutationPending=true;ownReceiveMutationAt=performance.now();receiveShow();
+  try{await request('/receive/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,profile_revision:profileData.revision,mode:operatingState?.selection.mode??'ft8'})});await sync();await receiveSync();}
   catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Start outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
-});
-document.querySelector('#receive-stop').addEventListener('click',async()=>{
-  if(!live?.job||mutationPending)return;receiveMutationEpoch++;mutationPending=true;receiveShow();
+}
+async function receiveStop(){
+  if(!live?.job||live.job.state==='cancelling'||mutationPending||uncertainMutation)return;
+  receiveMutationEpoch++;mutationPending=true;ownReceiveMutationAt=performance.now();receiveShow();
   try{await request('/receive/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,job_id:live.job.id})});await receiveSync();await sync();}
   catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
-});
+}
 document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
   const output=document.querySelector('#audio-inputs');
   try{const data=await request('/audio/devices');output.textContent=data.devices.map(d=>`${d.name} [${d.id}]`).join('\n')||'No audio inputs available';}
@@ -614,15 +673,20 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-addEventListener('station-message',event=>{if(event.detail.current===socket&&event.detail.message.type==='receive.state')receiveSync(event.detail.current);});
+function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;receiveSync(current);
+  const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
 
 // These controls share the existing station/receive authority. Nominal selection
 // and dated CAT observations remain different values throughout a transition.
 const operatingControls=document.createElement('div');operatingControls.id='operating-receive-controls';
-operatingControls.innerHTML='<label>Operating mode<select id="operating-mode" disabled><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Band<select id="operating-band" disabled><option value="">Choose band</option></select></label><button id="operating-monitor" disabled aria-pressed="false">Monitor</button><button id="operating-stop" disabled>Stop</button><button id="operating-refresh" disabled>Refresh operating state</button><output id="operating-radio">CAT readback unavailable</output><div id="cat-lifecycle"><p id="cat-status" role="status">CAT status unavailable</p><div id="cat-confirm" hidden><p id="cat-confirm-summary"></p><label class="receive-only-verification"><input type="checkbox" id="cat-confirm-ack">USB SEND/CW/RTTY keying is OFF or receive inhibit is verified</label><button id="cat-confirm-button" type="button" disabled>Confirm receive-only setup</button></div><p id="cat-confirm-result" role="status"></p></div><p id="operating-selection-status" role="status">Operating selection unavailable until station snapshot</p>';
-receiveControls.before(operatingControls);
+operatingControls.innerHTML='<label class="op-compact-label">Band &#10227;<select id="operating-band" disabled title="Band: changing it restarts receive"><option value="">Choose band</option></select></label><label class="op-compact-label">Mode &#10227;<select id="operating-mode" disabled title="Mode: changing it restarts receive"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label>';
+tuning.prepend(operatingControls);
+const receiveToggleButton=document.querySelector('#receive-toggle');
+receivePanel.insertAdjacentHTML('beforeend','<p id="operating-selection-status" role="status">Operating selection unavailable until station snapshot</p><output id="operating-radio">CAT readback unavailable</output><p><button id="operating-refresh" type="button" disabled>Refresh operating state</button></p>');
+catSettings.insertAdjacentHTML('beforeend','<div id="cat-lifecycle"><p id="cat-status" role="status">CAT status unavailable</p><div id="cat-confirm" hidden><p id="cat-confirm-summary"></p><label class="receive-only-verification"><input type="checkbox" id="cat-confirm-ack">USB SEND/CW/RTTY keying is OFF or receive inhibit is verified</label><button id="cat-confirm-button" type="button" disabled>Confirm receive-only setup</button></div><p id="cat-confirm-result" role="status"></p></div>');
 const operatingMode=document.querySelector('#operating-mode'),operatingBand=document.querySelector('#operating-band'),operatingStatus=document.querySelector('#operating-selection-status');
 const operatingBands=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m'];
 const operatingUuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
@@ -666,9 +730,9 @@ function operatingShow(){
   const blocked=!ready||mutationPending||uncertainMutation||operatingBlocked();
   operatingMode.disabled=blocked;operatingBand.disabled=blocked;
   const active=live?.job&&['running','cancelling'].includes(live.job.state),target=operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);
-  document.querySelector('#operating-monitor').disabled=!connected||!live||mutationPending||uncertainMutation||!!operatingUnknown||(active?live.job.state==='cancelling':(!live.audio||!profileData?.settings.audio.input_device||s?.receive.owner_released===false));
-  document.querySelector('#operating-monitor').setAttribute('aria-pressed',String(!!active));
-  document.querySelector('#operating-stop').disabled=!connected||(!target&&(!active||mutationPending||uncertainMutation));
+  receiveToggleButton.disabled=!receiveToggleAvailable();
+  receiveToggleButton.textContent=target?'Cancel band/mode change':active?'Stop receive':'Start receive';
+  receiveToggleButton.setAttribute('aria-pressed',String(!!active||!!target));
   document.querySelector('#operating-refresh').disabled=!connected||operatingReadPending;
   catShow();
   if(!s){operatingStatus.textContent=operatingFailure||'Operating selection unavailable until station snapshot';return;}
@@ -683,9 +747,8 @@ function operatingShow(){
   document.querySelector('#operating-radio').textContent=`CAT ${s.radio.state}${s.radio.error?' · '+s.radio.error:''} · ${observed} · ${nominal}`;
   const dial=document.querySelector('#op-dial');dial.value=frequency.value!==null?(frequency.value/1e6).toFixed(6):s.selection.nominal_hz!==null?(s.selection.nominal_hz/1e6).toFixed(6):'';dial.title=`${observed}. ${nominal}`;const fresh=connected&&frequency.confirmed;dial.dataset.fresh=String(fresh);dial.setAttribute('aria-label',frequency.value!==null?(fresh?'Observed dial frequency':'Last observed dial frequency, stale/unconfirmed'):'Nominal dial frequency, actual rig unconfirmed');
   const capabilities=document.querySelectorAll('#operating-capabilities dd');capabilities[1].textContent=!connected?'Unavailable · status stale':s.radio.state==='ready'?'Ready · IC-7300 readback':`Unavailable · ${s.radio.error??s.radio.state}`;
-  if(live)statusBar.children[1].textContent=`Audio ${live.audio.state} · ${live.job?live.job.mode.toUpperCase()+' '+live.job.state:'Receive stopped'} · CAT ${s.radio.state}`;
   const o=s.operation;
-  operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or Stop to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
+  operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or press Monitor to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
 }
 async function operatingSync(reconcile=false){
   if(connection.dataset.state!=='connected'||!profileData)return;
@@ -705,7 +768,6 @@ async function operatingSync(reconcile=false){
     if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
     const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
     operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
-    if(s.selection.confirmed_command_id&&s.selection.confirmed_command_id!==lastOperatingCommit){lastOperatingCommit=s.selection.confirmed_command_id;document.querySelector('#receive-mode').value=s.selection.mode;}
   }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
   finally{operatingReadPending=false;operatingShow();receiveShow();if(operatingReadAgain){operatingReadAgain=false;operatingSync(true);}}
 }
@@ -713,19 +775,19 @@ async function operatingSelect(action,value){
   if(!operatingState||mutationPending||uncertainMutation||operatingBlocked())return;
   const s=operatingState,command_id=crypto.randomUUID(),epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
   const body={v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id,action,profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,[action]:value};
-  operatingIntent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
+  operatingIntent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};receiveMutationEpoch++;ownReceiveMutationAt=performance.now();mutationPending=true;operatingFailure='';receiveShow();
   try{
     const response=await stationFetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
     if(epoch!==operatingEpoch)return;
     if(!stationContext(current,authEpoch))throw new Error('Stale selection completion');
     if(!response.ok){operatingFailure=`Selection refused · ${ack.error?.code??'request_failed'}`;operatingIntent=null;return;}
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||ack.command_id!==command_id||ack.accepted!==true||!operatingCounter(ack.operating_revision)||ack.operating_revision<=s.operating_revision||!['releasing','applying','restarting','applied','failed','release_blocked'].includes(ack.phase))throw new Error('Invalid admission receipt');
-  }catch(error){if(epoch===operatingEpoch){operatingUnknown=operatingIntent;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or Stop to cancel/fence`;}}
+  }catch(error){if(epoch===operatingEpoch){operatingUnknown=operatingIntent;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or press Monitor to cancel/fence`;}}
   finally{if(epoch===operatingEpoch){mutationPending=false;receiveShow();await operatingSync(true);await receiveSync();}}
 }
 async function operatingStop(){
   const s=operatingState,target=operatingUnknown??operatingIntent??(s?.operation?{command_id:s.operation.command_id,base_revision:s.operation.base_revision,boot_id:s.boot_id}:null);
-  if(!target||(!operatingUnknown&&!operatingIntent&&s?.operation?.result!=='pending')){document.querySelector('#receive-stop').click();return;}
+  if(!target||(!operatingUnknown&&!operatingIntent&&s?.operation?.result!=='pending')){receiveStop();return;}
   const epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;receiveMutationEpoch++;mutationPending=true;operatingFailure='';receiveShow();
   try{
     const command_id=crypto.randomUUID();
@@ -737,10 +799,21 @@ async function operatingStop(){
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=target;operatingFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}}
   finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);await receiveSync();receiveShow();}}
 }
-operatingMode.addEventListener('change',()=>operatingSelect('mode',operatingMode.value));
-operatingBand.addEventListener('change',()=>{if(operatingBand.value)operatingSelect('band',operatingBand.value);});
-document.querySelector('#operating-monitor').addEventListener('click',()=>{if(operatingState?.operation?.result==='pending'||operatingUnknown||operatingIntent)operatingStop();else if(live?.job&&['running','cancelling'].includes(live.job.state))document.querySelector('#receive-stop').click();else document.querySelector('#receive-start').click();});
-document.querySelector('#operating-stop').addEventListener('click',operatingStop);
+// Selects synchronously when nothing is in progress so the epoch moves within the change event.
+function restartBusy(){const s=window.wstxContact?.snapshot?.(),c=s?.contact;return (c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;}
+function restartSelect(what,action,value){if(!restartBusy())return operatingSelect(action,value);confirmAction(`${what} restarts receive and interrupts the QSO in progress. Continue?`,'Restart receive').then(ok=>ok?operatingSelect(action,value):operatingShow());}
+operatingMode.addEventListener('change',()=>restartSelect('Changing the mode','mode',operatingMode.value));
+operatingBand.addEventListener('change',()=>{if(operatingBand.value)restartSelect('Changing the band','band',operatingBand.value);});
+function receiveTarget(){const s=operatingState;return operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);}
+function receiveToggleAvailable(){
+  const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
+  return connected&&(!!receiveTarget()||(!!live&&!mutationPending&&!uncertainMutation&&(active?live.job.state!=='cancelling':(!!live.audio&&!!profileData?.settings.audio.input_device&&operatingState?.receive.owner_released!==false))));
+}
+function receiveToggle(){
+  if(!receiveToggleAvailable())return;
+  if(operatingState?.operation?.result==='pending'||operatingUnknown||operatingIntent)operatingStop();else if(live?.job&&['running','cancelling'].includes(live.job.state))receiveStop();else receiveStart();
+}
+receiveToggleButton.addEventListener('click',receiveToggle);
 document.querySelector('#operating-refresh').addEventListener('click',()=>operatingSync(true));
 refresh.addEventListener('click',()=>{if(operatingUnknown||operatingIntent||operatingFailure.startsWith('Operating state stale')||operatingFailure.startsWith('CAT '))operatingSync(true);});
 addEventListener('station-ready',event=>{
@@ -788,6 +861,9 @@ async function catSync(){
   finally{catPending=false;catShow();if(catAgain){catAgain=false;catSync();}}
 }
 function catModel(endpoint){return typeof endpoint==='string'&&(/^icom7300:\/\//.test(endpoint)||/^COM[0-9]{1,3}$/i.test(endpoint))?'Icom IC-7300 (CI-V)':'unsupported CAT model';}
+var chipsReady=false,restartedAt=-Infinity;
+function chipsShow(){if(chipsReady)window.wstxChipsShow?.();}
+addEventListener('station-stale',()=>chipsShow());
 function catShow(){
   const status=document.querySelector('#cat-status');if(!status)return;
   const connected=connection.dataset.state==='connected',v=connected?catStatus:null,confirm=document.querySelector('#cat-confirm');
@@ -797,7 +873,7 @@ function catShow(){
     retryWaiting:`CAT unavailable${reason} · automatic retry in ${Math.ceil((v?.retry_after_ms??0)/1000)} s`,closing:`CAT closing${reason}`,
     quarantined:'CAT quarantined · close failed; check the radio connection and restart the station'};
   status.textContent=!connected?'CAT status stale · station disconnected':profileData?.settings.control.mode!=='cat'?'CAT disabled':!authorization?`CAT ${operatingState?.radio.state??'status unavailable'} · automatic CAT requires the HTTPS station`:v?texts[v.condition]:'CAT status unavailable';
-  status.dataset.condition=v?.condition??'unknown';
+  status.dataset.condition=v?.condition??'unknown';chipsShow();
   const needed=!!v&&v.condition==='commissioningRequired'&&profileData?.settings.control.mode==='cat';
   confirm.hidden=!needed;
   if(needed){
@@ -827,9 +903,9 @@ addEventListener('station-stale',catShow);
 // CAT PTT; the browser renders server-confirmed transmit state and sends explicit
 // requests. It runs no transmit timer: the server plans, keys and halts.
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
-transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p><p id="transmit-result" role="status"></p>';addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='station.tick'&&[15000,7500].includes(m.data?.period_ms)){const ft4=m.data.period_ms===7500;transmitPanel.querySelector('#tx-mode').value=ft4?'ft4':'ft8';transmitPanel.querySelector('#tx-offset').max=ft4?'2916':'2950';}});
-const transmitDetails=secondary('transmit-details','Transmit',transmitPanel,connectionRegion);transmitDetails.hidden=true;
-let transmitView=null,transmitSequence=0,transmitTimer=null;
+transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><p id="transmit-result" role="status"></p>';
+const transmitDetails=secondary('transmit-details','Transmit test panel',transmitPanel,expertSection);transmitDetails.hidden=true;
+let transmitView=null,transmitTimer=null;
 const transmitConfigured=()=>profileData?.settings.control.ptt==='cat';
 function transmitBody(extra){return JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...extra});}
 async function transmitPost(path,extra){
@@ -838,13 +914,16 @@ async function transmitPost(path,extra){
   return JSON.parse(text);
 }
 function transmitShow(){
-  const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;
+  const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;const qsoHalt=document.querySelector('#qso-halt');if(qsoHalt)qsoHalt.disabled=!on;
   if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
   const v=transmitView,status=document.querySelector('#transmit-status');
+  const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement;
+  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${Math.round(m0.age_ms/1000)} s ago`:' · no SNTP measurement'}`;
+  chipsShow();
   if(!on||!v){status.textContent='Transmit unavailable';return;}
   const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${Math.round(m.age_ms/1000)} s ago`:'';
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_minutes} min`;
-  document.querySelector('#tx-tune').textContent=t.tune?'Tune off':'Tune';
+  const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
 async function transmitSync(){
   if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return;}
@@ -853,21 +932,6 @@ async function transmitSync(){
 }
 function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
 setInterval(transmitPoll,2000);
-async function transmitAction(extra,label){
-  const result=document.querySelector('#transmit-result');
-  try{const reply=await transmitPost('/transmit/command',extra),r=reply.result;result.textContent=`${label}: ${r.kind??(r.accepted?'accepted':'refused')}${r.refusal?' · '+r.refusal:''}${r.failure?' · '+r.failure:''}`;}
-  catch(error){result.textContent=`${label} not sent · ${error.message}`;}
-  transmitSync();
-}
-document.querySelector('#tx-arm').addEventListener('click',()=>{const revision=catStatus?.scope?.safety_revision;if(!revision){document.querySelector('#transmit-result').textContent='Arm needs the current setup revision (CAT status)';return;}transmitAction({action:'arm',safety_revision:revision},'Arm');});
-document.querySelector('#tx-disarm').addEventListener('click',()=>transmitAction({action:'disarm'},'Disarm'));
-document.querySelector('#tx-send').addEventListener('click',()=>{
-  const mode=document.querySelector('#tx-mode').value,period=mode==='ft4'?7500:15000,wanted=document.querySelector('#tx-parity').value==='even'?0:1;
-  let start=Math.floor(Date.now()/period)*period;if(Date.now()-start>=period*0.75-1000||(start/period)%2!==wanted)start+=period;if((start/period)%2!==wanted)start+=period;
-  transmitSequence=Math.max(transmitSequence+1,Date.now());
-  transmitAction({action:'request',request_sequence:transmitSequence,mode,period_start_utc_ms:start,message_text:document.querySelector('#tx-message').value,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Send');
-});
-document.querySelector('#tx-tune').addEventListener('click',()=>{const on=transmitView?.transmit.tune;transmitAction(on?{action:'tune',enabled:false}:{action:'tune',enabled:true,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Tune');});
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
@@ -889,3 +953,24 @@ addEventListener('keydown',event=>{
   const result=document.querySelector('#transmit-result');
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
 },true);
+new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
+document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
+// The log client (WstxContact OfferLogReview) and then the contact client load after this
+// browser's first recording and receive snapshots (or 20 s after the station is ready), so
+// their bytes never compete with the cold page, authorization or the first state reads on a
+// 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
+let clientLoader=null;
+function clientsLoad(){
+  if(clientLoader||document.querySelector('script[src="/logbook.js"]'))return;
+  const since=performance.now();
+  clientLoader=setInterval(()=>{
+    if(!(snapshot&&live!==undefined)&&performance.now()-since<20000)return;
+    clearInterval(clientLoader);
+    const load=src=>new Promise(resolve=>{const script=document.createElement('script');script.src=src;script.onload=script.onerror=resolve;document.head.append(script);});
+    const append=()=>load('/logbook.js').then(()=>load('/contact.js'));
+    if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
+  },250);
+}
+// app.js runs first and may already be connected when this script runs (as for sync above).
+addEventListener('station-ready',clientsLoad);if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')clientsLoad();
+chipsReady=true;chipsShow();

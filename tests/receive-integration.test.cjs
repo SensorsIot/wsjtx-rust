@@ -19,20 +19,31 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     const errors=[],pages=[];page.on('pageerror',e=>errors.push(e.message));
     page.on('request',request=>{if(request.url().includes('/receive/results'))pages.push({url:request.url(),at:performance.now()});});
     await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
-    await page.locator('[data-region=client-preferences]').first().click();
+    // #37: display preferences are in the Settings drawer (General > Display).
+    await page.locator('#open-server-settings').click();
     await page.selectOption('#display-profile','thin');
     await page.locator('.op-secondary:not([hidden]) .return-operate').click();
-    await page.selectOption('#receive-mode',mode);
-    // A refused request is a negative transport fixture, never decoder evidence.
+    // A refused request is a negative transport fixture, never decoder evidence. The stopped
+    // receive is an exception chip whose action is the strict start.
+    const chip=page.locator('#exception-chips [data-chip=receive]');
     await page.route('**/receive/start',route=>route.abort('failed'));
-    await page.getByRole('button',{name:'Start receive',exact:true}).click();
-    await page.locator('#receive-status').filter({hasText:'Start outcome unknown'}).waitFor();
-    assert.equal(await page.getByRole('button',{name:'Start receive',exact:true}).isDisabled(),true);
+    await chip.filter({hasText:'Receive stopped'}).click();
+    await chip.filter({hasText:'Start outcome unknown'}).waitFor();
+    assert.equal(await page.locator('#receive-toggle').isDisabled(),true);
     assert.equal((await (await fetch(origin+'/receive')).json()).job,null,'a refused browser mutation never activates the input');
     await page.unroute('**/receive/start');
-    await page.getByRole('button',{name:'Refresh status',exact:true}).click();
-    await page.waitForFunction(()=>!document.querySelector('#receive-start').disabled);
-    await page.getByRole('button',{name:'Start receive',exact:true}).click();
+    // #37: the explicit Refresh status is in Settings > Expert.
+    await page.locator('#open-server-settings').click();await page.locator('#refresh').click();await page.locator('#settings-drawer .return-operate').click();
+    await chip.filter({hasText:'Receive stopped'}).waitFor();
+    if(mode==='ft8')await chip.click();
+    else{
+      // FT4: choosing the band and the FT4 mode in the top bar starts receive in FT4
+      // (operating selection, contract 4.7.5); there is no separate receive mode control.
+      await page.locator('#operating-band:enabled').waitFor();await page.selectOption('#operating-band','20m');
+      await page.waitForFunction(()=>operatingState?.selection.band==='20m'&&operatingState.operation?.result!=='pending'&&!document.querySelector('#operating-mode').disabled,null,{timeout:30000});
+      await page.selectOption('#operating-mode','ft4');
+      await page.waitForFunction(()=>live?.job?.mode==='ft4'&&live.job.state==='running',null,{timeout:30000});
+    }
     const row=page.locator('#band-activity tbody tr[data-result-id]').filter({hasText:'CQ K1ABC FN42'});
     await row.waitFor({timeout:45000});
     assert.equal(await row.count(),1);
@@ -50,7 +61,8 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     await page.setViewportSize({width:1440,height:900});
     assert.match(await page.locator('#rx-focus').innerText(),/No contact selected/);
     assert.doesNotMatch(await page.locator('#rx-focus').innerText(),/Decoder unavailable/);
-    assert.match(await page.locator('#workspace-statusbar').innerText(),new RegExp(`Audio running.*${mode.toUpperCase()} running`));
+    assert.match(await page.locator('#receive-status').textContent(),new RegExp(`Audio running.*${mode.toUpperCase()} running`));
+    assert.equal(await page.locator('#exception-chips button').count(),0,'a healthy receiving station shows no exception chip');
     const snapshot=await (await fetch(origin+'/receive')).json();
     const invalidSnapshot=await fetch(origin+'/receive?unexpected=1');assert.equal(invalidSnapshot.status,400);
     const invalidDevices=await fetch(origin+'/audio/devices?unexpected=1');assert.equal(invalidDevices.status,400,'unknown query must fail before physical enumeration');
@@ -73,12 +85,13 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     const duplicate=await fetch(origin+'/receive/results?'+query+'&cursor=0');assert.equal(duplicate.status,400);
     const ahead=new URLSearchParams(query);ahead.set('cursor',String(result.next_sequence+1));assert.equal((await fetch(origin+'/receive/results?'+ahead)).status,400);
     const stale=new URLSearchParams(query);stale.set('source_id','00000000-0000-4000-8000-000000000001');assert.equal((await fetch(origin+'/receive/results?'+stale)).status,404);
-    await page.getByRole('button',{name:'Stop receive',exact:true}).click();
-    await page.locator('#receive-status').filter({hasText:'Partial results retained'}).waitFor();
+    // The explicit stop is Alt+M (or Settings > Expert); never a control on the operating screen.
+    await page.keyboard.press('Alt+m');
+    await page.waitForFunction(()=>document.querySelector('#receive-status').textContent.includes('Partial results retained'),null,{timeout:15000});
     assert.equal(await row.count(),1,'accepted partial records survive stop');
     assert.equal((await (await fetch(origin+'/receive/results?'+query)).json()).records[0].text,'CQ K1ABC FN42');
-    for(const name of ['Enable Tx','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
-    assert.equal(await page.getByRole('checkbox',{name:'Auto sequence unavailable',exact:true}).isDisabled(),true);
+    for(const name of ['CQ','Reply','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+    assert.equal(await page.locator('#contact-auto').isDisabled(),true);
     await fs.mkdir('test-results/receive-integration',{recursive:true});
     await row.scrollIntoViewIfNeeded();
     await page.screenshot({path:`test-results/receive-integration/real-${mode}-callsign.png`,fullPage:true});
