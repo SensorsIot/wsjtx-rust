@@ -579,12 +579,16 @@ package WstxContact {
              that contact now the same way with the times observed so far, without a
              form. One record per contactId: logging a contactId already stored with
              identical fields adds nothing (alreadySaved); with different fields (Log QSO
-             before completion and then completion, or a re-log after a correction) the
-             contact's record is replaced in place (replaced), keeping its index. A
-             second contact with the same station is a new contactId and a new record
-             (WSJT-X LogBook::add appends without a dupe check). A saved or replaced
-             record is sent to the WstxUdp targets as QSO Logged then Logged ADIF;
-             alreadySaved sends nothing. Idempotence: a retried command_id has no second
+             before completion, then completion) the contact's record is replaced in
+             place (replaced), keeping its index. Log QSO of a contact already logged at
+             its completion (stored or pending) changes nothing: the record keeps the
+             dial, Tx offset and location of completion. A second contact with the same
+             station is a new contactId and a new record (WSJT-X LogBook::add appends
+             without a dupe check). Only the first store of a contactId (saved) is sent
+             to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
+             reaches the external programs once; a replacement stays internal. They are
+             sent by the station step, never from inside a command, so a UDP Reply or
+             FreeText that reaches ContactCommand cannot re-enter the UDP owner. Idempotence: a retried command_id has no second
              effect, a repeated completion logs once, and a restart starts no contact,
              so it logs nothing again; stored records survive in contacts.adi.
              Storage failure: the record stays pending in the station process, at most 64

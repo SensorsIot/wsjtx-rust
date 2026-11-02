@@ -131,8 +131,8 @@ package WstxUdp {
              Clear (3): when the current live job changes or ends after at least one of its
              records produced a Decode.
              QSO Logged (5) then Logged ADIF (12): when SaveContact stores a new record
-             (outcome saved, not already_saved) and when WstxContact::DirectLog stores or
-             replaces a contact's record (not when it was already stored unchanged). QSO Logged: Date & Time Off and On from
+             (outcome saved, not already_saved) and when WstxContact::DirectLog first stores
+             a contact's record (not for a replacement or an unchanged record). QSO Logged: Date & Time Off and On from
              qso_date_off/time_off and qso_date/time_on (UTC), DX call, DX grid, Tx
              frequency = freq in Hz (else 0), mode FT8 or FT4, report sent/received, Tx
              power, comments, name "", operator call "", my call, my grid, exchange sent

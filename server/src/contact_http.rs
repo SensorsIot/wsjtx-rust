@@ -41,6 +41,9 @@ struct Inner {
     unlogged: VecDeque<logbook::Record>,
     retry_at: Option<Instant>,
     log: Option<LogView>,
+    /// Newly saved records for the UDP targets, sent by the station tick only, after the
+    /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
+    outbox: Vec<logbook::Record>,
 }
 /// The contact engine of one station (one per process, like the transmit owner).
 pub(crate) struct Station {
@@ -185,6 +188,7 @@ impl Station {
                 unlogged: VecDeque::new(),
                 retry_at: None,
                 log: None,
+                outbox: Vec::new(),
             }),
             revision: AtomicU64::new(0),
             started: Instant::now(),
@@ -294,9 +298,16 @@ impl Station {
                 mode,
             };
             inner.engine.step(core, &ctx, &rows);
-            Self::collect_logs(inner, r, now, ctx.call.as_deref(), ctx.locator.as_deref());
+            Self::collect_logs(
+                inner,
+                state,
+                now,
+                ctx.call.as_deref(),
+                ctx.locator.as_deref(),
+            );
         });
-        let sent = Self::store_logs(inner, state);
+        Self::store_logs(inner, state);
+        let sent = std::mem::take(&mut inner.outbox);
         self.revision
             .store(inner.engine.revision, Ordering::Release);
         drop(guard);
@@ -354,9 +365,11 @@ impl Station {
     /// Takes the engine's contacts due for the log into the pending records: a newer
     /// record of a pending contact id replaces it; over LOG_PENDING_MAX the oldest is
     /// dropped (log_queue_full); an invalid record is never stored (log_invalid_field).
+    /// A completed contact already logged at completion keeps that record (its dial, Tx
+    /// offset and location of completion): Log QSO on it changes nothing.
     fn collect_logs(
         inner: &mut Inner,
-        r: &recording::Recording,
+        state: &ProfileState,
         now: i64,
         call: Option<&str>,
         locator: Option<&str>,
@@ -365,9 +378,16 @@ impl Station {
         if contacts.is_empty() {
             return;
         }
-        let dial = confirmed_dial(r);
+        let dial = confirmed_dial(&state.recording);
         let tx_hz = inner.engine.settings.tx_hz;
-        for c in contacts {
+        for (kind, c) in contacts {
+            let held = inner.unlogged.iter().any(|p| p.contact_id == c.id);
+            if kind == contact::LogKind::LogQso
+                && c.logged_on_completion
+                && (held || state.logbook.saved(&c.id))
+            {
+                continue;
+            }
             let view = |error| LogView {
                 contact_id: c.id.clone(),
                 call: c.dx_call.clone().unwrap_or_default(),
@@ -400,12 +420,11 @@ impl Station {
         inner.engine.revision += 1;
     }
     /// Stores the pending records (now, or at the retry time after a failure) under the
-    /// station's authorization lock; returns the records to send to the UDP targets
-    /// (saved or replaced), to be sent after the station lock is released.
-    fn store_logs(inner: &mut Inner, state: &ProfileState) -> Vec<logbook::Record> {
-        let mut sent = Vec::new();
+    /// station's authorization lock. Only the first store of a contact id goes to the
+    /// UDP targets (outbox), so each contact reaches the external programs once.
+    fn store_logs(inner: &mut Inner, state: &ProfileState) {
         if inner.unlogged.is_empty() || inner.retry_at.is_some_and(|t| Instant::now() < t) {
-            return sent;
+            return;
         }
         let gate = |publish: &mut dyn FnMut() -> std::io::Result<()>| {
             let _owner = state
@@ -424,8 +443,8 @@ impl Station {
             match state.logbook.put(record.clone(), &gate) {
                 Ok(outcome) => {
                     inner.unlogged.pop_front();
-                    if outcome != logbook::LogOutcome::AlreadySaved {
-                        sent.push(record);
+                    if outcome == logbook::LogOutcome::Saved {
+                        inner.outbox.push(record);
                     }
                     inner.log = Some(view);
                 }
@@ -450,7 +469,6 @@ impl Station {
         }
         // The stored outcome (contact.saved, log) is a material change of the snapshot.
         inner.engine.revision += 1;
-        sent
     }
     /// ContactSnapshot: exact keys, at most SNAPSHOT_BYTES_MAX encoded bytes.
     pub(crate) fn snapshot(&self, state: &ProfileState) -> Result<Vec<u8>, &'static str> {
@@ -890,11 +908,18 @@ impl Station {
             // folds its own consequences (a new pending request) into the receipt.
             inner.engine.revision += 1;
             inner.engine.step(core, &ctx, &[]);
-            Self::collect_logs(inner, r, now, ctx.call.as_deref(), ctx.locator.as_deref());
+            Self::collect_logs(
+                inner,
+                state,
+                now,
+                ctx.call.as_deref(),
+                ctx.locator.as_deref(),
+            );
             Ok::<_, Refusal>(())
         })?;
-        // Log QSO is stored before its receipt (a failed write stays pending, retried).
-        let sent = Self::store_logs(inner, state);
+        // Log QSO is stored before its receipt (a failed write stays pending, retried);
+        // its UDP messages leave with the next station tick.
+        Self::store_logs(inner, state);
         let revision = inner.engine.revision;
         self.revision.store(revision, Ordering::Release);
         let receipt = json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"command_id":command_id,
@@ -905,10 +930,6 @@ impl Station {
         inner
             .receipts
             .push_back((command_id, body, receipt.clone()));
-        drop(guard);
-        for record in &sent {
-            crate::udp::logged(state, record);
-        }
         Ok((StatusCode::ACCEPTED, receipt))
     }
 }

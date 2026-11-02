@@ -101,10 +101,13 @@ struct Station {
     sent: Vec<(i64, String)>,
 }
 /// The one contact handed to the log since the last check (WstxContact::DirectLog).
-fn one_log(s: &mut Station) -> Contact {
+fn one_entry(s: &mut Station) -> (LogKind, Contact) {
     let mut logs = s.engine.take_logs();
     assert_eq!(logs.len(), 1, "exactly one contact for the log: {logs:?}");
     logs.pop().unwrap()
+}
+fn one_log(s: &mut Station) -> Contact {
+    one_entry(s).1
 }
 fn station() -> Station {
     let fake = Fake(Arc::new(Bench::default()));
@@ -325,11 +328,8 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
         s.core.view().last_disarm_cause,
         DisarmCause::ContactCompleted
     );
-    let logged = one_log(&mut s);
-    assert!(
-        logged.logged_on_completion,
-        "logged at completion, no review"
-    );
+    let (kind, logged) = one_entry(&mut s);
+    assert_eq!(kind, LogKind::Completion, "logged at completion, no review");
     let fields = logged.log_fields(s.now()).unwrap();
     assert_eq!(fields.call, "K1ABC");
     assert_eq!(fields.rst_sent.as_deref(), Some("-12"));
@@ -714,7 +714,7 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     );
     assert_eq!(s.command(Command::Tune(true)), Err("transmit_unavailable"));
     s.command(Command::OpenLog).unwrap();
-    assert!(!one_log(&mut s).logged_on_completion, "Log QSO logs now");
+    assert_eq!(one_entry(&mut s).0, LogKind::LogQso, "Log QSO logs now");
     // Without a CL-022 grant (plaintext profile) nothing arms.
     *s.fake.0.capability.lock().unwrap() = Some(Capability::Available);
     let ctx = Ctx {

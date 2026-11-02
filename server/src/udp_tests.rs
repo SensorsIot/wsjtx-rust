@@ -1107,14 +1107,17 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     // No radio: the dial is unconfirmed, so BAND and FREQ are absent (record_of with a
     // confirmed dial: contact_http_tests::direct_log_record_fields_from_the_confirmed_dial).
     f.state.recording.fixture_live_job("ft8");
-    let a = peer();
+    let (a, b) = (peer(), peer());
     let owner = install(
         &f,
-        vec![target_json(
-            a.local_addr().unwrap(),
-            &["qso_logged", "logged_adif"],
-            false,
-        )],
+        vec![
+            target_json(
+                a.local_addr().unwrap(),
+                &["qso_logged", "logged_adif"],
+                false,
+            ),
+            target_json(b.local_addr().unwrap(), &["heartbeat"], true),
+        ],
     );
     owner.step(&f.state);
     drain(&a);
@@ -1148,16 +1151,21 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
         log_view(&f),
         json!({"contact_id":id,"call":"K1ABC","outcome":"saved","error":null})
     );
-    // A repeated 73 and an unchanged Log QSO add no record and send nothing.
+    // A repeated 73 and a Log QSO of the completed contact add no record and send
+    // nothing; the record keeps what held at completion (a later location is not used).
     partner(&f, P1101 + 60_000, "HB9BLA K1ABC 73");
+    f.state.store.lock().unwrap().document.locator = "JN46AA".into();
     operate(&f, "open_log", json!({}), false);
-    assert_eq!(stored(&f).len(), 1);
+    f.tick();
+    assert_eq!(stored(&f), records, "the completion record is kept");
     assert!(drain(&a).is_empty(), "already stored: nothing sent again");
+    f.state.store.lock().unwrap().document.locator = "JN47AA".into();
 
     // W1AW: Log QSO before completion stores it now; completion replaces it in place.
     f.bench.frozen.store(P1101 + 80_000, Ordering::SeqCst);
     enter(&f, "W1AW", None);
     operate(&f, "open_log", json!({}), false);
+    f.tick();
     let early = stored(&f);
     assert_eq!(early.len(), 2);
     assert_eq!(
@@ -1182,7 +1190,10 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
         ),
         (Some("123645"), Some("-05"))
     );
-    assert_eq!(kinds(&drain(&a)), [5, 12], "the replaced record is sent");
+    assert!(
+        drain(&a).is_empty(),
+        "the replacement stays internal: each contact reaches the targets once"
+    );
 
     // Storage failure at completion: unsaved and visible, retried only after the backoff.
     f.state.logbook.inject_fault(Some("write"));
@@ -1200,10 +1211,28 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     f.tick();
     assert_eq!(stored(&f).len(), 2, "no retry before the backoff");
     assert!(drain(&a).is_empty());
+    // The due retry runs in a command reached from a UDP FreeText while the UDP owner
+    // holds its lock: the step returns (no re-entry) and the datagrams follow the tick.
     f.contact().retry_logs_now();
-    f.tick();
+    b.send_to(&free_text("K1ABC HB9BLA 73"), station_socket(&owner, 1))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    let (done, finished) = std::sync::mpsc::channel();
+    let (o, state) = (owner.clone(), f.state.clone());
+    std::thread::spawn(move || {
+        o.step(&state);
+        let _ = done.send(());
+    });
+    finished
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the UDP step returns");
+    assert_eq!(
+        owner.snapshot(&f.state.recording)["status"][1]["last_command"]["outcome"],
+        "applied"
+    );
     let after = stored(&f);
     assert_eq!(after.len(), 3, "the retry stores it");
+    f.tick();
     assert_eq!(
         (after[2]["contact_id"].as_str(), after[2]["call"].as_str()),
         (Some(third.as_str()), Some("K1ABC"))

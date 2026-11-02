@@ -367,6 +367,14 @@ impl Contact {
             .or(self.first_tx_period)
     }
 }
+/// Why a contact is handed to the log (WstxContact::DirectLog).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogKind {
+    /// The contact completed (once per contact).
+    Completion,
+    /// The operator's Log QSO.
+    LogQso,
+}
 /// Station facts the engine reads at each command and step.
 #[derive(Clone, Debug, Default)]
 pub struct Ctx {
@@ -438,7 +446,7 @@ pub struct Engine {
     pub settings: Settings,
     pub contact: Option<Contact>,
     /// Contacts due for the log (completed, or Log QSO), taken by the station.
-    to_log: Vec<Contact>,
+    to_log: Vec<(LogKind, Contact)>,
     /// The last request target refused without a disarm, never resubmitted as is.
     refused_target: Option<(i64, String, u32)>,
     /// The last visible refusal or failure of a transmit outcome (snake_case).
@@ -490,7 +498,7 @@ impl Engine {
         }
     }
     /// The contacts due for the log since the last call (WstxContact::DirectLog).
-    pub fn take_logs(&mut self) -> Vec<Contact> {
+    pub fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
         std::mem::take(&mut self.to_log)
     }
     /// The Tx offset domain: the transmitting contact's mode, else the station's.
@@ -921,7 +929,7 @@ impl Engine {
                 if c.dx_call.is_none() {
                     return Err("no_contact");
                 }
-                self.to_log.push(c.clone());
+                self.to_log.push((LogKind::LogQso, c.clone()));
             }
         }
         // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog).
@@ -941,7 +949,7 @@ impl Engine {
             }
             if !c.logged_on_completion {
                 c.logged_on_completion = true;
-                self.to_log.push(c.clone());
+                self.to_log.push((LogKind::Completion, c.clone()));
             }
         }
     }
