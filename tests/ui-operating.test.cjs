@@ -868,7 +868,8 @@ test('TC-007-002 populated Band Activity has dominant width and complete readabl
 
 // Proves: CL-010-09; TC-007-006. Explicit presentation/clock fixtures, never modem/RF truth.
 test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot restore old stations',{timeout:45000},async t=>{
-  let state,records,held=null,hold=false;const pending=deferred();
+  // Detailed fetches the next page at once (#57), so the second page waits for the first sort.
+  let state,records,held=null,hold=false;const pending=deferred(),secondPage=deferred();
   const makeRecord=(sequence,period,dt)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12.3,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`UI FIXTURE STATION ${sequence}`,fields:{},period_start_utc:period,dt_seconds:dt});
   const period='2026-10-27T12:00:15.0000000Z';
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
@@ -879,13 +880,14 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
     await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await page.route('**/receive/results?*',async route=>{
       const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),limit=Number(new URL(route.request().url()).searchParams.get('limit'));
+      if(cursor===17)await secondPage.promise;
       const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
       const response={...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)};
       if(hold&&cursor>=35){held={route,response};pending.resolve();}else await route.fulfill({json:response});
     });
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===16);
-  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);
+  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
   assert.equal(await page.locator('tr[data-period=latest]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
