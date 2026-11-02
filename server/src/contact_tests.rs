@@ -156,6 +156,7 @@ impl Station {
             now_utc_ms: self.now(),
             granted: true,
             mode: Some(self.mode),
+            automatic: false,
         }
     }
     fn row(&mut self, period: i64, text: &str, hz: f64, snr: Option<f64>) -> Row {

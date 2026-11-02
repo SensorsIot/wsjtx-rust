@@ -458,6 +458,10 @@ impl Recording {
     pub(crate) fn operating_mode(&self) -> &'static str {
         self.state.lock().unwrap().operating_mode
     }
+    /// The band of the operating selection (nominal), if any (#39 strategy band facts).
+    pub(crate) fn operating_band(&self) -> Option<&'static str> {
+        self.state.lock().unwrap().operating.nominal.band
+    }
     /// Gives the #9 owner the station's operating mode (WstxTransmit::StationModeGate).
     /// Called after every change, never under the station mutex.
     pub(crate) fn sync_transmit_mode(&self) {

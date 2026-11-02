@@ -7,7 +7,7 @@ const $=id=>document.getElementById(id);
 // #45 CL-045-01: a plain setting, saved on change; it acts at the next station start.
 block('settings-startup','Receive at startup',document.querySelector('#settings-general'),'<label class="op-check"><input type="checkbox" id="monitor-off-startup" disabled>Monitor off at startup</label><p id="startup-result" class="op-muted" role="status"></p><p class="op-muted">Saved at once; it takes effect at the next station start and does not restart receive.</p>');
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station (MCP). Its state shows beside the strategy element; HALT ends it. Strategies (Highlight/Auto) arrive with the strategy engine.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT and Esc end it. The Tx watchdog counts from your last action and is never reset by automation.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each logged QSO is saved in this station profile’s contacts.adi (ADIF). Log QSO opens the log review.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p id="udp-warning" class="op-warning">Accept commands lets that program select a QSO (like a click) and edit the Tx5 text. It can never key the transmitter; Halt Tx from any program always halts.</p><label>Instance name<input id="udp-instance" maxlength="64" autocomplete="off" disabled></label><h4 id="udp-targets-title">UDP targets</h4><div id="udp-targets" role="list" aria-labelledby="udp-targets-title"></div><p class="op-actions"><button type="button" id="udp-add" disabled>Add target</button><button type="button" id="udp-reload">Reload</button><button type="button" id="udp-save" class="op-primary" disabled>Save UDP settings</button></p><p id="udp-result" class="op-muted" role="status">Read when Settings opens</p><p class="op-muted">Applies on Save; it does not restart receive.</p>');
@@ -28,7 +28,7 @@ window.wstxConfirm=function(text,okLabel='Continue'){
 // The modal popup makes the page inert, so it carries HALT itself (same action and state).
 confirmDialog.querySelector('#op-confirm-halt').addEventListener('click',()=>{confirmDialog.close('cancel');halt.click();});
 main.append(confirmDialog);
-document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="The strategy engine is not available yet"><option>None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="The strategy engine is not available yet">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="The strategy engine is not available yet">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="The strategy engine is not available yet">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
+document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="Choose a strategy first">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="Choose a strategy first">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>DX call, messages Tx1&ndash;Tx6, report and period</summary><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div><p class="ct-more-row"><button type="button" id="rx-pane-erase">Erase dialogue</button></p><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
 <div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label><label>Tx period<select id="contact-parity" disabled><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-cancel" disabled>Cancel contact</button><button type="button" id="contact-discard" hidden>Discard log review</button><span id="contact-watchdog" class="op-muted"></span></div></details>`);
@@ -145,7 +145,8 @@ function loadAutomation(){
   automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
     automationNode.dataset.active=String(!!active);
-    automationNode.textContent=active?`Automation ${run.state==='waiting'?'waiting':'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:'Automation idle';
+    automationNode.textContent=active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
 }
@@ -587,20 +588,7 @@ for(const id of ['theme-choice','theme-switch','theme-day-start','theme-night-st
   try{localStorage.setItem(themeKey,JSON.stringify(value));}catch{}applyTheme();
 });
 setInterval(applyTheme,60000);addEventListener('station-ready',applyTheme);applyTheme();
-function continentOf(locator){
-  const p=maidenhead(locator);if(!p)return null;const [lat,lon]=p;
-  if(lat<-60)return 'AN';if(lon>=-170&&lon<-30)return lat>12||(lon<-77&&lat>7)?'NA':'SA';
-  if(lon>=-30&&lon<60&&lat>=35)return lon>40&&lat<42?'AS':'EU';if(lon>=-30&&lon<52&&lat<37)return lon>33&&lat>12?'AS':'AF';
-  if(lat>=-11&&lon>=60||lat>=35)return 'AS';return 'OC';
-}
-const continentKey=()=>`wstx.continent.v1:${profileData?.profile_id??''}`;
-function showContinent(){
-  const select=document.querySelector('#station-continent');let saved='';try{saved=localStorage.getItem(continentKey())??'';}catch{}
-  if(document.activeElement!==select)select.value=saved;
-  const derived=continentOf(profileData?.settings?.locator);document.querySelector('#continent-derived').textContent=`From locator: ${derived??'unknown'}${saved?` · using ${saved}`:''}`;
-}
-document.querySelector('#station-continent').addEventListener('change',event=>{try{if(event.target.value)localStorage.setItem(continentKey(),event.target.value);else localStorage.removeItem(continentKey());}catch{}showContinent();});
-addEventListener('station-ready',showContinent);showContinent();
+// The continent (Settings > General) is a station setting of WstxStrategy (#39), below.
 let applyConfirmed=false;
 serverForm.addEventListener('submit',async event=>{
   if(applyConfirmed){applyConfirmed=false;return;}
@@ -610,4 +598,251 @@ serverForm.addEventListener('submit',async event=>{
   if(await confirmAction('Applying these settings may restart receive and interrupt the QSO in progress. Apply now?','Apply')){applyConfirmed=true;serverForm.requestSubmit();}
 },true);
 window.wstxContact=Object.freeze({load,snapshot:()=>snap});
+})();
+// #39 WstxStrategy: the strategy element (name, editor, Highlight | Auto), Highlight in
+// Band Activity and the editor popup. The station evaluates every strategy (POST
+// /strategy/evaluate); this client only shows its verdicts and sends explicit requests.
+(()=>{
+const $=id=>document.getElementById(id);
+const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),highlightButton=$('strategy-highlight'),autoButton=$('strategy-auto'),statusNode=$('station-automation');
+if(!nameSelect)return;
+let view=null,viewLoading=null,run=null,autoConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,lastEvaluation=-Infinity;
+const config=()=>view?.configuration??null;
+const active=()=>{const c=config();return c?.strategies.find(s=>s.name===c.active)??null;};
+const runActive=()=>!!run&&run.state!=='stopped';
+const strategyRun=()=>runActive()&&run.strategy;
+function loadStrategy(){
+  if(viewLoading)return viewLoading;
+  viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();}}).catch(()=>{}).finally(()=>{viewLoading=null;});
+  return viewLoading;
+}
+async function saveConfiguration(configuration,label){
+  if(!view)return false;
+  try{
+    const response=await stationFetch('/strategy',{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:view.revision,configuration}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`${label} not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere, reloaded':''}`;if(e?.code==='stale_revision')await loadStrategy();return false;}
+    view=data;verdicts=new Map();evaluatedKey='';show();return true;
+  }catch(error){statusNode.textContent=`${label} not saved · ${error.message}`;return false;}
+}
+function show(){
+  const c=config(),locked=strategyRun();
+  const options=[['','None'],...(c?.strategies??[]).map(s=>[s.name,s.name])];
+  const key=options.map(o=>o[0]).join('\n');
+  if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
+  if(document.activeElement!==nameSelect)nameSelect.value=c?.active??'';
+  nameSelect.disabled=!c||locked;nameSelect.title=locked?'Auto runs with this strategy; stop Auto to change it':c?'Choose the strategy':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
+  editButton.disabled=!view;editButton.title='Edit strategies (the station keeps receiving)';
+  const on=!!c?.highlight&&!!active();
+  highlightButton.disabled=!active();highlightButton.setAttribute('aria-pressed',String(on));highlightButton.title=active()?'Colour matching decodes and sort them to the top':'Choose a strategy first';
+  const capable=window.wstxContact?.snapshot()?.transmit?.capability==='available';
+  autoButton.disabled=runActive()?false:!active()||!capable;
+  autoButton.setAttribute('aria-pressed',String(strategyRun()));
+  autoButton.title=runActive()?'Stop Auto':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
+  showContinent();
+  autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):'waiting'}`:'Auto';
+  decorate();
+}
+// ---------------------------------------------------------------- Highlight
+const tbody=document.querySelector('#band-activity tbody');
+const identity=()=>typeof live!=='undefined'&&live?.job?liveIdentity(live):'';
+function highlightOn(){const c=config();return !!c?.highlight&&!!active()&&!!identity();}
+let reordering=false;
+function decorate(){
+  if(!tbody)return;
+  const on=highlightOn(),rows=[...tbody.querySelectorAll('tr[data-sequence]')];
+  for(const tr of rows){
+    const v=on?verdicts.get(tr.dataset.resultId):null;
+    tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
+    if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
+    if(v?.grey)tr.title='Directed CQ not addressed to my continent: never answered';else if(v)tr.title=`Strategy ${config().active}: rule ${v.rank+1}`;else tr.removeAttribute('title');
+  }
+  if(!on)return;
+  // Matches go to the top of their period block in the station's order.
+  reordering=true;
+  let block=[];
+  const flush=()=>{
+    const matched=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).index-verdicts.get(b.dataset.resultId).index);
+    if(!matched.length)return;
+    const anchor=block.at(-1).nextSibling;
+    for(const tr of [...matched,...block.filter(r=>!matched.includes(r))])tbody.insertBefore(tr,anchor);
+  };
+  for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
+  flush();observer.takeRecords();reordering=false;
+}
+function wanted(){
+  // The sequences shown for the current receive identity, evaluated once each.
+  const id=identity();if(!highlightOn()||!id)return null;
+  const seqs=[...tbody.querySelectorAll('tr[data-sequence]')].filter(tr=>tr.dataset.resultId.startsWith(id+'/')).map(tr=>Number(tr.dataset.sequence)).filter(Number.isSafeInteger);
+  if(!seqs.length)return null;
+  const first=Math.min(...seqs),next=Math.max(...seqs)+1;
+  return {first:Math.max(first,next-2048),next,id};
+}
+async function evaluateShown(){
+  const w=wanted();if(!w||evaluating)return;
+  const key=`${view.revision}/${w.id}/${w.first}/${w.next}`;if(key===evaluatedKey)return;
+  // Once per complete period (or every 15 s while one loads): a Thin link stays light.
+  const loaded=typeof resultView!=='undefined'&&resultView&&resultCursor>=resultView.next_sequence;
+  if(!loaded&&performance.now()-lastEvaluation<15000)return;
+  evaluating=true;lastEvaluation=performance.now();
+  try{
+    const [,,source_id,job_id,generation]=w.id.split('/');
+    const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:w.first,next_sequence:w.next,strategy:null,explain:false}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(response.ok&&data?.v===1&&w.id===identity()){
+      const map=new Map();data.verdicts.forEach((v,index)=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey,index}));
+      verdicts=map;evaluatedKey=key;decorate();
+    }
+  }catch{}finally{evaluating=false;}
+}
+const observer=new MutationObserver(()=>{if(reordering)return;decorate();evaluateShown();});
+if(tbody)observer.observe(tbody,{childList:true});
+setInterval(evaluateShown,5000);
+nameSelect.addEventListener('change',()=>{const c=config();if(!c)return;const name=nameSelect.value||null;saveConfiguration({...c,active:name,highlight:name?c.highlight:false},'Strategy').then(ok=>{if(!ok)show();});});
+highlightButton.addEventListener('click',()=>{const c=config();if(!c||!active())return;saveConfiguration({...c,highlight:!c.highlight},'Highlight');});
+// ---------------------------------------------------------------- Auto
+addEventListener('wstx-automation',event=>{run=event.detail?.run??null;if(run)run.strategy=!!event.detail?.configuration?.strategy;show();});
+async function automationCommand(action,extra){
+  const s=window.wstxContact?.snapshot();if(!s)throw new Error('contact state unavailable');
+  const response=await stationFetch('/automation/command',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action,...extra}),signal:AbortSignal.timeout(10000)});
+  const data=await response.json().catch(()=>null);
+  if(response.status!==202&&response.status!==200)throw new Error(`${data?.error?.code??response.status}${data?.error?.field?` (${data.error.field})`:''}`);
+  return data;
+}
+async function readAutomation(){const r=await stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error(`automation ${r.status}`);return r.json();}
+autoButton.addEventListener('click',async()=>{
+  if(runActive()){try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Auto stop refused · ${error.message}`;}return;}
+  const s=active(),c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
+  if(!s||!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Auto needs a strategy and FT8/FT4 receive';return;}
+  // First use in this page session asks once; HALT and Esc stop Auto at any time.
+  if(!autoConfirmed){
+    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog (${c.settings.tx_minutes} min) counts from your last action and is never reset by Auto. HALT or Esc stops it.`,'Start Auto');
+    if(!ok)return;autoConfirmed=true;
+  }
+  autoButton.disabled=true;
+  try{
+    let a=await readAutomation();
+    await automationCommand('configure',{expected_policy_revision:a.policy_revision,configuration:{modes:[mode],ranking:'first_seen',min_snr_db:null,allowed_calls:[],blocked_calls:[],max_contacts:100,max_unanswered_periods:20,completion_action:'next_candidate',max_run_minutes:480,strategy:true}});
+    a=await readAutomation();
+    await automationCommand('start',{expected_policy_revision:a.policy_revision,expected_run_revision:a.run_revision,mode,safety_revision:window.wstxContact.snapshot()?.transmit?.safety_revision??null});
+  }catch(error){statusNode.textContent=`Auto not started · ${error.message}`;}
+  finally{show();}
+});
+addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='contact.state')show();});
+// ---------------------------------------------------------------- continent (Settings > General)
+const continentSelect=$('station-continent');
+function showContinent(){
+  if(!continentSelect)return;const c=config();continentSelect.disabled=!c;
+  if(document.activeElement!==continentSelect)continentSelect.value=c?.continent??'';
+  $('continent-derived').textContent=`From locator: ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
+}
+continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
+// ---------------------------------------------------------------- editor popup
+const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
+const KINDS=[['message','Message type'],['new_call','New call'],['new_grid','New grid'],['continent','Continent'],['distance_km','Distance (km)'],['azimuth_deg','Azimuth (deg)'],['snr_db','SNR (dB)'],['dt_s','DT (s)'],['audio_hz','Audio frequency (Hz)'],['call','Call or prefix'],['cq_target','CQ target (DX, TEST, POTA...)'],['band','Band']];
+const MESSAGES=[['cq','CQ (any)'],['directed_cq','Directed CQ'],['to_me','Calls me'],['signoff','RR73 / 73']];
+const fresh=kind=>({message:{value:'cq'},new_call:{value:'ever'},new_grid:{value:'ever'},continent:{values:['EU']},call:{values:['DL']},cq_target:{values:['DX']},band:{values:['40m']}}[kind]??{min:null,max:null});
+const newStrategy=name=>({name,rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3});
+const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
+editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx (Esc, Alt+H)">HALT</button></header>
+<div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-new">New</button><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
+<div id="se-body"></div>
+<section class="se-preview" aria-labelledby="se-preview-title"><h3 id="se-preview-title">Live preview · latest period</h3><p id="se-preview-status" class="op-muted" role="status"></p><div class="se-preview-wrap"><table><tbody id="se-preview"></tbody></table></div></section>
+<p id="se-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Close</button><button type="button" class="op-primary" id="se-save">Save</button></menu></form>`;
+document.querySelector('main').append(editor);
+let drafts=[],current=0,previewTimer=null,previewSeq=0;
+function editorOpen(){
+  const c=config();drafts=structuredClone(c?.strategies??[]);current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
+  if(!drafts.length)drafts.push(newStrategy('CQ'));
+  editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;
+  $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once`:'Saved strategies unreadable: Save replaces them';
+  renderEditor();editor.showModal();
+}
+editButton.addEventListener('click',editorOpen);
+// The modal popup makes the page inert, so it carries HALT itself (same action and state).
+editor.querySelector('#strategy-editor-halt').addEventListener('click',()=>{editor.close('cancel');document.querySelector('#halt-tx')?.click();});
+function option(value,label,selected){return `<option value="${value}"${selected?' selected':''}>${label}</option>`;}
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function conditionMarkup(c,ri,ci){
+  let value='';
+  if(c.kind==='message')value=`<select data-f="value" aria-label="Message type">${MESSAGES.map(([v,l])=>option(v,l,c.value===v)).join('')}</select>`;
+  else if(c.kind==='new_call'||c.kind==='new_grid')value=`<select data-f="value" aria-label="Scope">${option('ever','ever',c.value==='ever')}${option('band','on this band and mode',c.value==='band')}</select>`;
+  else if(c.kind==='continent')value=`<span class="se-continents" role="group" aria-label="Continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${c.values.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`;
+  else if(c.values)value=`<input data-f="values" value="${esc(c.values.join(' '))}" aria-label="Values, separated by spaces" spellcheck="false" autocomplete="off">`;
+  else value=`<input type="number" step="any" data-f="min" value="${c.min??''}" placeholder="min" aria-label="Minimum"><input type="number" step="any" data-f="max" value="${c.max??''}" placeholder="max" aria-label="Maximum">`;
+  return `<li class="se-condition" data-rule="${ri}" data-condition="${ci}"><label class="op-check"><input type="checkbox" data-f="negate"${c.negate?' checked':''}>not</label><select data-f="kind" aria-label="Condition">${KINDS.map(([v,l])=>option(v,l,c.kind===v)).join('')}</select>${value}<button type="button" data-act="remove-condition" aria-label="Remove condition">&times;</button></li>`;
+}
+function renderEditor(){
+  $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name),i===current)).join('');
+  const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
+  $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
+<p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. Directed CQs not for my continent never match.</p>
+<ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
+<p class="op-actions"><button type="button" data-act="add-rule"${s.rules.length>=8?' disabled':''}>Add rule</button></p>
+<div class="se-options"><label>Sort matches<select id="se-sort">${[['strongest','Strongest first'],['weakest','Weakest first'],['furthest','Furthest first'],['newest','Newest first']].map(([v,l])=>option(v,l,s.sort===v)).join('')}</select></label>
+<label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
+<label>Auto role<select id="se-role">${[['call','Auto Call: answer matching CQs'],['cq','Auto CQ: call CQ, answer callers'],['alternate','Alternate Call and CQ']].map(([v,l])=>option(v,l,s.auto_role===v)).join('')}</select></label>
+<label>Switch after (tries without a contact)<input id="se-switch" type="number" min="1" max="20" step="1" value="${s.switch_after}"></label>
+<label>Skip a station after (unanswered calls)<input id="se-skip" type="number" min="1" max="20" step="1" value="${s.skip_after}"></label>
+<label class="op-check"><input type="checkbox" id="se-callers"${s.apply_to_callers?' checked':''}>Auto CQ answers only callers that match</label></div>`;
+  preview();
+}
+function words(text,lower){return text.split(/[\s,]+/).map(w=>lower?w.toLowerCase():w.toUpperCase()).filter(Boolean);}
+editor.addEventListener('input',event=>{
+  const s=drafts[current];if(!s)return;const t=event.target,li=t.closest('.se-condition');
+  if(li){const c=s.rules[li.dataset.rule].conditions[li.dataset.condition],f=t.dataset.f;
+    if(f==='negate')c.negate=t.checked;
+    else if(f==='kind'){const n={kind:t.value,negate:c.negate,...fresh(t.value)};s.rules[li.dataset.rule].conditions[li.dataset.condition]=n;renderEditor();return;}
+    else if(f==='value')c.value=t.value;
+    else if(f==='values')c.values=words(t.value,c.kind==='band');
+    else if(f==='min'||f==='max')c[f]=t.value===''?null:Number(t.value);
+    else if(t.dataset.continent)c.values=[...li.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent);
+  }
+  else if(t.id==='se-name')s.name=t.value;
+  else if(t.id==='se-sort')s.sort=t.value;else if(t.id==='se-73')s.treat_73_as_cq=t.checked;else if(t.id==='se-role')s.auto_role=t.value;
+  else if(t.id==='se-switch')s.switch_after=Number(t.value);else if(t.id==='se-skip')s.skip_after=Number(t.value);else if(t.id==='se-callers')s.apply_to_callers=t.checked;
+  else if(t.id==='se-which'){current=Number(t.value);renderEditor();return;}
+  schedulePreview();
+});
+editor.addEventListener('click',event=>{
+  const b=event.target.closest('button[data-act],#se-new,#se-copy,#se-delete');if(!b)return;const s=drafts[current],ri=Number(b.dataset.rule);
+  if(b.id==='se-new'){let n=1;while(drafts.some(d=>d.name.toLowerCase()===`strategy ${n}`))n++;drafts.push(newStrategy(`Strategy ${n}`));current=drafts.length-1;}
+  else if(b.id==='se-copy'&&s){const copy=structuredClone(s);copy.name=`${s.name} copy`.slice(0,32);drafts.push(copy);current=drafts.length-1;}
+  else if(b.id==='se-delete'&&s){drafts.splice(current,1);current=Math.max(0,current-1);}
+  else if(!s)return;
+  else if(b.dataset.act==='add-condition'&&s.rules[ri].conditions.length<12)s.rules[ri].conditions.push({kind:'snr_db',negate:false,min:-15,max:null});
+  else if(b.dataset.act==='remove-condition'){const li=b.closest('.se-condition');s.rules[li.dataset.rule].conditions.splice(Number(li.dataset.condition),1);}
+  else if(b.dataset.act==='add-rule'&&s.rules.length<8)s.rules.push({conditions:[{kind:'message',negate:false,value:'cq'}]});
+  else if(b.dataset.act==='remove-rule')s.rules.splice(ri,1);
+  else if(b.dataset.act==='up'&&ri>0)[s.rules[ri-1],s.rules[ri]]=[s.rules[ri],s.rules[ri-1]];
+  renderEditor();
+});
+function schedulePreview(){clearTimeout(previewTimer);previewTimer=setTimeout(preview,400);}
+async function preview(){
+  const body=$('se-preview'),status=$('se-preview-status'),s=drafts[current],id=identity();
+  const latest=typeof resultView!=='undefined'&&resultView&&id?resultView:null;
+  if(!s||!latest||!view){body.replaceChildren();status.textContent=!latest?'No decoded period yet: the preview follows the latest period.':'';return;}
+  const seq=++previewSeq,[,,source_id,job_id,generation]=id.split('/');
+  try{
+    const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:latest.first_sequence,next_sequence:latest.next_sequence,strategy:s,explain:true}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);if(seq!==previewSeq)return;
+    if(!response.ok||data?.v!==1){status.textContent=`Preview unavailable · ${data?.error?.code??response.status}${data?.error?.field?` (${data.error.field})`:''}`;return;}
+    const text=new Map(resultRows.map(r=>[r.sequence,r.text]));
+    body.replaceChildren(...data.verdicts.map(v=>{const tr=document.createElement('tr');tr.className=v.rank!==null?'ba-strategy':v.grey?'ba-grey':'';
+      for(const t of [v.rank!==null?`#${v.rank+1}`:v.grey?'—':'',text.get(v.sequence)??`#${v.sequence}`,v.why]){const td=document.createElement('td');td.textContent=t;tr.append(td);}return tr;}));
+    status.textContent=`${data.verdicts.filter(v=>v.rank!==null).length} of ${data.verdicts.length} decodes match · ${periodLabel(latest.period_start_utc,live.job.mode)} UTC`;
+  }catch(error){if(seq===previewSeq)status.textContent=`Preview unavailable · ${error.message}`;}
+}
+$('se-save').addEventListener('click',async()=>{
+  const c=config()??{continent:null,active:null,highlight:false};
+  const names=drafts.map(d=>d.name);const keep=names.includes(c.active)?c.active:null;
+  // A strategy saved from the editor applies at once; the edited one becomes active if none was.
+  const activeName=keep??drafts[current]?.name??null;
+  const ok=await saveConfiguration({continent:c.continent??null,active:activeName,highlight:!!c.highlight&&!!activeName,strategies:drafts},'Strategies');
+  $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;
+  if(ok){drafts=structuredClone(config().strategies);renderEditor();}
+});
+addEventListener('station-ready',()=>{loadStrategy().then(showContinent);});
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')loadStrategy();
+show();
 })();

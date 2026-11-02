@@ -878,6 +878,40 @@ impl Logbook {
             .collect())
     }
 
+    /// #39 WstxStrategy new_grid: the same query over the 4-character grid square
+    /// (GRIDSQUARE), case-insensitive.
+    pub fn worked_grids(
+        &self,
+        grids: &[String],
+        band: &str,
+        mode: &str,
+    ) -> Result<Vec<&'static str>, StoreError> {
+        let inner = self.lock()?;
+        let square = |g: &str| g.get(..4).map(str::to_ascii_uppercase);
+        let mut status = vec![0u8; grids.len()];
+        let (band, mode) = (band.to_ascii_lowercase(), mode.to_ascii_uppercase());
+        for record in &inner.records {
+            let Some(grid) = record.values[GRID].as_deref().and_then(square) else {
+                continue;
+            };
+            let here = record.effective_band().as_deref() == Some(band.as_str())
+                && record.effective_mode() == mode;
+            for (i, g) in grids.iter().enumerate() {
+                if square(g).as_deref() == Some(grid.as_str()) {
+                    status[i] = status[i].max(if here { 2 } else { 1 });
+                }
+            }
+        }
+        Ok(status
+            .into_iter()
+            .map(|s| match s {
+                2 => "worked_this_band_and_mode",
+                1 => "worked_other_band_or_mode",
+                _ => "not_worked",
+            })
+            .collect())
+    }
+
     // -------------------------------------------------------------- imports
     /// Reserve (or retry) one import. Same id with identical total/sha256 returns the
     /// existing resource without a second effect; different values are state_conflict.

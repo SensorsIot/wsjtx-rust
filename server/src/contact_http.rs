@@ -34,6 +34,8 @@ pub(crate) struct Station {
     /// WstxMcp::OperatingAutomation of this station (drives this engine only through
     /// the ContactCommand path).
     pub(crate) automation: crate::automation::Owner,
+    /// WstxStrategy store of this station (#39), read on first use.
+    pub(crate) strategy: crate::strategy::Owner,
     /// Test seam only: stands in for the CL-022 grant a plaintext test router lacks.
     #[cfg(test)]
     pub(crate) grant: std::sync::atomic::AtomicBool,
@@ -64,7 +66,7 @@ fn refusal(code: &str, field: Option<&str>) -> Response {
 fn station_of(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
     r.contact.get().cloned().ok_or("not_found")
 }
-fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
+pub(crate) fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
     let store = state.store.lock().unwrap_or_else(|p| p.into_inner());
     let d = &store.document;
     (
@@ -170,6 +172,7 @@ impl Station {
             revision: AtomicU64::new(0),
             started: Instant::now(),
             automation: crate::automation::Owner::default(),
+            strategy: crate::strategy::Owner::default(),
             #[cfg(test)]
             grant: std::sync::atomic::AtomicBool::new(false),
         })
@@ -214,6 +217,17 @@ impl Station {
         body: Value,
         granted: bool,
     ) -> Result<(StatusCode, Value), Refusal> {
+        self.operate_as(state, body, granted, false)
+    }
+    /// The same ContactCommand path for station automation (`automatic`): it never
+    /// resets the Tx watchdog and arms only within the operator's watchdog time (#39).
+    pub(crate) fn operate_as(
+        &self,
+        state: &ProfileState,
+        body: Value,
+        granted: bool,
+        automatic: bool,
+    ) -> Result<(StatusCode, Value), Refusal> {
         let (command_id, revision, action) = envelope(&body)?;
         let parsed = parse_command(&body, &action)?;
         let r = &state.recording;
@@ -223,7 +237,9 @@ impl Station {
         if body["boot_id"] != r.boot.as_str() {
             return Err(("state_conflict", Some("boot_id")));
         }
-        self.execute(state, body, command_id, revision, &action, parsed, granted)
+        self.execute(
+            state, body, command_id, revision, &action, parsed, granted, automatic,
+        )
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
@@ -275,6 +291,7 @@ impl Station {
                 now_utc_ms: now,
                 granted: false,
                 mode,
+                automatic: false,
             };
             inner.engine.step(core, &ctx, &rows);
         });
@@ -663,6 +680,7 @@ impl Station {
         action: &str,
         parsed: Option<Command>,
         granted: bool,
+        automatic: bool,
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
@@ -729,6 +747,7 @@ impl Station {
                 now_utc_ms: now,
                 granted,
                 mode,
+                automatic,
             };
             inner
                 .engine
