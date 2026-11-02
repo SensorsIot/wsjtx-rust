@@ -2706,3 +2706,100 @@ fn late_window_republishes_its_period_view_with_late_starters() {
     r.publish_latest_decode(&job, late, 1, true, false).unwrap();
     assert_eq!(r.receive_snapshot()["job"]["latest_decode"], view);
 }
+
+/// A deterministic FT8 period: the independent "cq" vector at 1500 Hz from period +0.5 s
+/// over white noise, with 0.25 s of much louder noise at the period start (as a receiver's
+/// AGC releasing) and before it, so the SNR depends on where the period starts.
+fn ft8_period_audio(frames: usize, period: usize) -> Vec<f32> {
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../fixtures/decoder/independent-vectors/manifest.json"
+    ))
+    .unwrap();
+    let tones = vectors["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["mode"] == "ft8" && v["id"] == "cq")
+        .unwrap()["tones"]
+        .as_str()
+        .unwrap()
+        .bytes()
+        .map(|b| b - b'0')
+        .collect::<Vec<_>>();
+    let wave = decoder::quadratures(decoder::Mode::Ft8, &tones, 1500.).unwrap();
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut uniform = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+    };
+    (0..frames)
+        .map(|i| {
+            let noise = (0..4).map(|_| uniform()).sum::<f64>() * 0.02;
+            let loud = if i < period + 3000 { 10. } else { 1. };
+            let signal = i
+                .checked_sub(period + 6000)
+                .and_then(|k| wave.get(k))
+                .map_or(0., |w| 0.004 * f64::from(w[0]));
+            (noise * loud + signal) as f32
+        })
+        .collect()
+}
+
+// Proves: CL-007-02; TC-004-002. #52: the live worker with a correlated UTC clock names
+// the period start to the decoder, so the published FT8 SNR equals the file decode of the
+// same period-aligned audio.
+#[test]
+fn live_ft8_snr_measures_from_the_utc_period_start() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, _) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    // Prompt window of the 12:00:30 period (frame 360000): UTC -1.2 s .. +13.8 s.
+    let period = 360000usize;
+    let origin = period - 14400;
+    let audio = ft8_period_audio(origin + 180000, period);
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = (origin + 180000) as u64;
+    let file = decoder::Decoder::new()
+        .decode(&audio[period..period + 165600], decoder::Mode::Ft8, &|| {
+            false
+        })
+        .unwrap();
+    assert_eq!(file.len(), 1, "{file:?}");
+    let expected = file[0].snr_db.unwrap();
+    let context = {
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        source::SourceContext {
+            descriptor: l.source.as_ref().unwrap().clone(),
+            timing: Arc::new(l.timing.as_ref().unwrap().clone()),
+        }
+    };
+    let input = ClockInput {
+        context,
+        clock: Arc::new(Mutex::new(None)),
+    };
+    let mut worker = LiveWorker::new(r.clone(), job.clone(), Box::new(input), "ft8");
+    worker
+        .analyze(receive::AnalysisWindow {
+            origin: origin as u64,
+            samples: audio[origin..].to_vec(),
+            waits: false,
+        })
+        .unwrap();
+    let page = r
+        .receive_results(job.source_id.as_ref().unwrap(), &job.id, 1, 0, 16)
+        .unwrap();
+    let records = page["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1, "{page}");
+    assert_eq!(
+        records[0]["period_start_utc"],
+        "2026-10-27T12:00:30.0000000Z"
+    );
+    assert_eq!(records[0]["snr_db"].as_f64(), Some(expected), "{page}");
+    // The window's diagnostics name the same period start.
+    let w = &r.diagnostics_view()["windows"][0];
+    assert_eq!(w["period_start_frame"], period);
+    assert_eq!(w["window_offset_ms"], -1200);
+}

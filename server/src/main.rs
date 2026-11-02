@@ -421,6 +421,7 @@ fn router(state: App) -> Router {
         .route("/receive/results", get(receive_http::results))
         .route("/receive/clock", get(receive_http::clock))
         .route("/receive/startup", get(receive_http::startup).post(receive_http::startup_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/receive/diagnostics", get(receive_http::diagnostics).post(receive_http::diagnostics_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/selection", get(selection_http::snapshot))
         .route("/receive/select", post(selection_http::select).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio", get(radio_http::snapshot))

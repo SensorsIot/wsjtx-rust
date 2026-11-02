@@ -642,8 +642,19 @@ impl ClockCorrelation {
     }
 }
 
+/// A canonical-frame interval the engine delivered as silence (zero-filled) or flagged as
+/// a glitch on a continuous timeline (#52 window diagnostics).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureMark {
+    pub first_frame: u64,
+    pub frames: u64,
+    pub zero_filled: bool,
+}
+/// Marks retained for the window diagnostics: enough for several 15 s windows.
+const MAX_MARKS: usize = 512;
 pub struct LiveSource {
     queue: Arc<PacketQueue>,
+    marks: VecDeque<CaptureMark>,
     format: NativeFormat,
     converter: Converter,
     epochs: EpochLatch,
@@ -663,6 +674,7 @@ impl LiveSource {
         format.validate()?;
         Ok(Self {
             queue,
+            marks: VecDeque::new(),
             format,
             converter: Converter::new(format.rate)?,
             epochs: EpochLatch::default(),
@@ -680,6 +692,25 @@ impl LiveSource {
     /// timestamped packet and its converter-delay-centred QPC time.
     pub fn clock_sample(&self) -> Option<(u64, u64)> {
         self.clock
+    }
+    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)` (#52).
+    pub fn marked_frames(&self, from: u64, to: u64) -> (u64, u64) {
+        let mut out = (0, 0);
+        for m in &self.marks {
+            let overlap = (m.first_frame + m.frames)
+                .min(to)
+                .saturating_sub(m.first_frame.max(from));
+            if m.zero_filled {
+                out.0 += overlap;
+            } else {
+                out.1 += overlap;
+            }
+        }
+        out
+    }
+    /// The capture queue's cumulative loss and glitch counters.
+    pub fn capture_diagnostics(&self) -> CaptureDiagnostics {
+        self.queue.diagnostics()
     }
     pub fn stop(&mut self) {
         self.queue.cancel();
@@ -711,6 +742,8 @@ impl LiveSource {
                 .is_some_and(|q| packet.qpc_100ns.abs_diff(q) <= CONTIGUOUS_QPC_TOLERANCE_100NS);
         let unexplained_flag =
             flagged && self.expected == Some(packet.first_frame) && !timeline_continues;
+        // An accepted engine glitch: its samples stay on the timeline, so they are marked.
+        let glitch = flagged && self.expected == Some(packet.first_frame) && timeline_continues;
         let trigger = if loss {
             CaptureEvent::ALL
                 .get(usize::from(loss_event))
@@ -737,6 +770,7 @@ impl LiveSource {
             self.origin = Some(packet.first_frame);
             self.expected = None;
             self.ready.clear();
+            self.marks.clear();
             self.converter.reset_at(0)?;
             self.discontinuity = true;
         }
@@ -757,6 +791,30 @@ impl LiveSource {
         let samples =
             self.format
                 .channel_zero(&packet.bytes, packet.frames, packet.flags & SILENT != 0)?;
+        if packet.flags & SILENT != 0 || glitch {
+            let rate = u128::from(self.format.rate);
+            let mark = CaptureMark {
+                first_frame: u64::try_from(u128::from(relative) * 12000 / rate).unwrap_or(u64::MAX),
+                frames: u64::try_from(packet.frames as u128 * 12000 / rate).unwrap_or(0),
+                zero_filled: packet.flags & SILENT != 0,
+            };
+            // Consecutive packets of one kind extend one mark, so sustained silence stays
+            // counted in full however many packets it spans.
+            match self.marks.back_mut() {
+                Some(last)
+                    if last.zero_filled == mark.zero_filled
+                        && last.first_frame + last.frames == mark.first_frame =>
+                {
+                    last.frames += mark.frames;
+                }
+                _ => {
+                    if self.marks.len() == MAX_MARKS {
+                        self.marks.pop_front();
+                    }
+                    self.marks.push_back(mark);
+                }
+            }
+        }
         self.queue.record_native_levels(&samples);
         let (first, output) = self.converter.convert(&samples)?;
         for (i, chunk) in output.chunks(LIVE_BLOCK_FRAMES).enumerate() {
