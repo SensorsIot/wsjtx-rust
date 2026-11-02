@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-040-01, CL-040-02, CL-040-03, CL-040-04, TC-012-001, TC-012-002, TC-012-003, TC-012-004.
+// Proves: CL-040-01, CL-040-02, CL-040-03, CL-040-04, CL-040-06, TC-012-001, TC-012-002, TC-012-003,
+// TC-012-004, TC-012-006.
 // The actual router, UDP owner, contact engine and #9 transmit
 // owner on the recording hardware double (no audio, PTT or radio), hand-authored rows
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
@@ -766,7 +767,10 @@ async fn tc_012_004_target_configuration_and_persistence() {
         (duplicate, "targets[1].address"),
         (t("address", json!("127.0.0.1:0")), "targets[0].address"),
         (t("address", json!("0.0.0.0:2237")), "targets[0].address"),
-        (t("address", json!("[ff02::1]:2237")), "targets[0].address"),
+        (
+            t("address", json!("[ff02::1]:2237")),
+            "targets[0].multicast_interface",
+        ),
         (
             t("address", json!("255.255.255.255:2237")),
             "targets[0].address",
@@ -1064,5 +1068,402 @@ fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
         snap["ignored"].as_u64().unwrap(),
         before + 1,
         "the oversize datagram is counted"
+    );
+}
+
+/// 2026-11-01T12:34:30Z, an even FT8 period (Julian day 2461346, see tc_012_002).
+const P1101: i64 = 1_793_536_470_000;
+/// Publishes `text` from the partner in FT8 period `period` and runs one contact step
+/// with the station clock frozen 16 s into that period (after its decode).
+fn partner(f: &Fixture, period: i64, text: &str) {
+    f.state
+        .recording
+        .fixture_publish_period(&period_text(period), vec![record(text, 1500.0, Some(-9.0))]);
+    f.bench.frozen.store(period + 16_000, Ordering::SeqCst);
+    f.tick();
+}
+fn stored(f: &Fixture) -> Vec<Value> {
+    f.state.logbook.history(&f.id, 0, 10).unwrap()["records"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+fn log_view(f: &Fixture) -> Value {
+    let bytes = f.contact().snapshot(&f.state).unwrap();
+    serde_json::from_slice::<Value>(&bytes).unwrap()["log"].clone()
+}
+fn enter(f: &Fixture, call: &str, grid: Option<&str>) {
+    operate(
+        f,
+        "enter_dx",
+        json!({"dx_call":call,"dx_grid":grid,"replace":true}),
+        false,
+    );
+}
+// Proves: CL-010-04, CL-040-01, TC-011-001, TC-012-002. #41 WstxContact::DirectLog: the
+// completed contact logs itself (no review, no browser) and reaches the UDP target as QSO
+// Logged + Logged ADIF; exactly one record per contact identity. Expected fields are
+// hand-computed from the LogRecord rules: TIME_ON = preparation (nothing transmitted),
+// TIME_OFF = end of the partner's last counted period, MY_GRIDSQUARE the profile locator.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target() {
+    let f = fixture("http://127.0.0.1:18408", true);
+    // No radio: the dial is unconfirmed, so BAND and FREQ are absent (record_of with a
+    // confirmed dial: contact_http_tests::direct_log_record_fields_from_the_confirmed_dial).
+    f.state.recording.fixture_live_job("ft8");
+    let (a, b) = (peer(), peer());
+    let owner = install(
+        &f,
+        vec![
+            target_json(
+                a.local_addr().unwrap(),
+                &["qso_logged", "logged_adif"],
+                false,
+            ),
+            target_json(b.local_addr().unwrap(), &["heartbeat"], true),
+        ],
+    );
+    owner.step(&f.state);
+    drain(&a);
+
+    // K1ABC: prepared at 12:34:20, R-09 in 12:34:30, 73 in 12:35:00 (rogers -> completed).
+    f.bench.frozen.store(P1101 - 10_000, Ordering::SeqCst);
+    enter(&f, "K1ABC", Some("FN42"));
+    partner(&f, P1101, "HB9BLA K1ABC R-09");
+    assert!(stored(&f).is_empty(), "nothing is logged before completion");
+    partner(&f, P1101 + 30_000, "HB9BLA K1ABC 73");
+    let records = stored(&f);
+    assert_eq!(records.len(), 1, "{records:?}");
+    let id = f.contact().facts().1.unwrap().id;
+    assert_eq!(
+        records[0],
+        json!({"index":0,"contact_id":id,"call":"K1ABC","gridsquare":"FN42","mode":"FT8","submode":null,
+            "rst_sent":null,"rst_rcvd":"-09","qso_date":"20261101","time_on":"123420",
+            "qso_date_off":"20261101","time_off":"123515","band":null,"freq":null,
+            "station_callsign":"HB9BLA","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null,
+            "unknown_field_count":0})
+    );
+    let logged = drain(&a);
+    assert_eq!(kinds(&logged), [5, 12], "QSO Logged then Logged ADIF");
+    let (_, _, _, mut q) = head(&logged[0]);
+    let _time_off = (q.i64(), q.u32(), q.u8());
+    assert_eq!(
+        (q.s(), q.s(), q.u64(), q.s()),
+        ("K1ABC".into(), "FN42".into(), 0, "FT8".into())
+    );
+    assert_eq!(
+        log_view(&f),
+        json!({"contact_id":id,"call":"K1ABC","outcome":"saved","error":null})
+    );
+    // A repeated 73 and a Log QSO of the completed contact add no record and send
+    // nothing; the record keeps what held at completion (a later location is not used).
+    partner(&f, P1101 + 60_000, "HB9BLA K1ABC 73");
+    f.state.store.lock().unwrap().document.locator = "JN46AA".into();
+    operate(&f, "open_log", json!({}), false);
+    f.tick();
+    assert_eq!(stored(&f), records, "the completion record is kept");
+    assert!(drain(&a).is_empty(), "already stored: nothing sent again");
+    f.state.store.lock().unwrap().document.locator = "JN47AA".into();
+
+    // W1AW: Log QSO before completion stores it now; completion replaces it in place.
+    f.bench.frozen.store(P1101 + 80_000, Ordering::SeqCst);
+    enter(&f, "W1AW", None);
+    operate(&f, "open_log", json!({}), false);
+    f.tick();
+    let early = stored(&f);
+    assert_eq!(early.len(), 2);
+    assert_eq!(
+        (
+            early[1]["call"].as_str(),
+            early[1]["time_off"].as_str(),
+            early[1]["rst_rcvd"].clone()
+        ),
+        (Some("W1AW"), Some("123550"), Value::Null),
+        "logged now with the times so far"
+    );
+    assert_eq!(kinds(&drain(&a)), [5, 12]);
+    partner(&f, P1101 + 90_000, "HB9BLA W1AW R-05");
+    partner(&f, P1101 + 120_000, "HB9BLA W1AW 73");
+    let replaced = stored(&f);
+    assert_eq!(replaced.len(), 2, "one record per contact identity");
+    assert_eq!(replaced[1]["contact_id"], early[1]["contact_id"]);
+    assert_eq!(
+        (
+            replaced[1]["time_off"].as_str(),
+            replaced[1]["rst_rcvd"].as_str()
+        ),
+        (Some("123645"), Some("-05"))
+    );
+    assert!(
+        drain(&a).is_empty(),
+        "the replacement stays internal: each contact reaches the targets once"
+    );
+
+    // Storage failure at completion: unsaved and visible, retried only after the backoff.
+    f.state.logbook.inject_fault(Some("write"));
+    f.bench.frozen.store(P1101 + 140_000, Ordering::SeqCst);
+    enter(&f, "K1ABC", None);
+    partner(&f, P1101 + 150_000, "HB9BLA K1ABC R-03");
+    partner(&f, P1101 + 180_000, "HB9BLA K1ABC 73");
+    let third = f.contact().facts().1.unwrap().id;
+    assert_ne!(third, id, "the same call later is a new contact");
+    assert_eq!(
+        log_view(&f),
+        json!({"contact_id":third,"call":"K1ABC","outcome":"unsaved","error":"storage_unavailable"})
+    );
+    f.state.logbook.inject_fault(None);
+    f.tick();
+    assert_eq!(stored(&f).len(), 2, "no retry before the backoff");
+    assert!(drain(&a).is_empty());
+    // The due retry runs in a command reached from a UDP FreeText while the UDP owner
+    // holds its lock: the step returns (no re-entry) and the datagrams follow the tick.
+    f.contact().retry_logs_now();
+    b.send_to(&free_text("K1ABC HB9BLA 73"), station_socket(&owner, 1))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    let (done, finished) = std::sync::mpsc::channel();
+    let (o, state) = (owner.clone(), f.state.clone());
+    std::thread::spawn(move || {
+        o.step(&state);
+        let _ = done.send(());
+    });
+    finished
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the UDP step returns");
+    assert_eq!(
+        owner.snapshot(&f.state.recording)["status"][1]["last_command"]["outcome"],
+        "applied"
+    );
+    let after = stored(&f);
+    assert_eq!(after.len(), 3, "the retry stores it");
+    f.tick();
+    assert_eq!(
+        (after[2]["contact_id"].as_str(), after[2]["call"].as_str()),
+        (Some(third.as_str()), Some("K1ABC"))
+    );
+    assert_eq!(kinds(&drain(&a)), [5, 12]);
+    assert_eq!(log_view(&f)["outcome"], "saved");
+    // Records survive a restart (a fresh station starts no contact, so logs nothing again).
+    assert_eq!(crate::logbook::Logbook::open(&f.dir).total().unwrap(), 3);
+
+    // While storage fails at most LOG_PENDING_MAX records wait; the oldest is dropped.
+    f.state.logbook.inject_fault(Some("write"));
+    for i in 0..=contact_http::LOG_PENDING_MAX {
+        let suffix: String = [b'A' + (i / 26) as u8, b'A' + (i % 26) as u8]
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        enter(&f, &format!("DL1{suffix}"), None);
+        operate(&f, "open_log", json!({}), false);
+    }
+    assert_eq!(
+        (
+            log_view(&f)["call"].as_str(),
+            log_view(&f)["error"].as_str()
+        ),
+        (Some("DL1AA"), Some("log_queue_full")),
+        "the dropped record stays shown"
+    );
+    f.state.logbook.inject_fault(None);
+    f.contact().retry_logs_now();
+    f.tick();
+    assert_eq!(
+        f.state.logbook.total().unwrap(),
+        3 + contact_http::LOG_PENDING_MAX
+    );
+    let page = f.state.logbook.history(&f.id, 3, 1).unwrap();
+    assert_eq!(
+        page["records"][0]["call"], "DL1AB",
+        "DL1AA was dropped (log_queue_full)"
+    );
+    assert_eq!(kinds(&drain(&a)).len(), 2 * contact_http::LOG_PENDING_MAX);
+}
+
+/// The Windows loopback pseudo-interface ("Loopback Pseudo-Interface 1").
+const LOOPBACK_INDEX: u32 = 1;
+/// A transient link-local test group (flags 1, scope 2), never a well-known one.
+const GROUP: &str = "ff12::5754:5358";
+fn multicast_json(address: &str, hops: u32, interface: Value, accept: bool) -> Value {
+    json!({"address":address,"enabled":true,"multicast_ttl":hops,"multicast_interface":interface,
+        "messages":["heartbeat","status"],"accept_commands":accept})
+}
+
+// Proves: CL-040-06, TC-012-006
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_006_ipv6_multicast_targets() {
+    let f = fixture("http://127.0.0.1:18407", false);
+    let owner = install(&f, vec![]);
+    // A peer joined to the group on the loopback interface.
+    let group: Ipv6Addr = GROUP.parse().unwrap();
+    let joined = socket2::Socket::new(
+        socket2::Domain::IPV6,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )
+    .unwrap();
+    joined
+        .bind(&SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0)).into())
+        .unwrap();
+    joined.join_multicast_v6(&group, LOOPBACK_INDEX).unwrap();
+    let joined: UdpSocket = joined.into();
+    joined
+        .set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
+    let port = joined.local_addr().unwrap().port();
+    let address = format!("[{GROUP}]:{port}");
+
+    // Refusals: each with its field, nothing saved.
+    let good = multicast_json(&address, 2, json!("1"), false);
+    let with = |k: &str, value: Value| {
+        let mut t = good.clone();
+        t[k] = value;
+        t
+    };
+    let mut refused = vec![
+        (with("address", json!("[ff00::1]:2237")), "address"),
+        (with("address", json!("[ff0f::1]:2237")), "address"),
+        (with("address", json!("[ff1f::1]:2237")), "address"),
+        (
+            with("multicast_interface", Value::Null),
+            "multicast_interface",
+        ),
+        (
+            {
+                let mut t = with("address", json!("[ff01::1]:2237"));
+                t["multicast_interface"] = Value::Null;
+                t
+            },
+            "multicast_interface",
+        ),
+        (with("multicast_ttl", json!(0)), "multicast_ttl"),
+        (with("multicast_ttl", json!(256)), "multicast_ttl"),
+        (with("accept_commands", json!(true)), "accept_commands"),
+        (
+            {
+                let mut t = with("address", json!("239.255.0.1:2237"));
+                t["multicast_interface"] = json!("1");
+                t
+            },
+            "multicast_interface",
+        ),
+    ];
+    for interface in [
+        json!("0"),
+        json!("01"),
+        json!("-1"),
+        json!("+1"),
+        json!(" 1"),
+        json!("4294967296"),
+        json!("Ethernet"),
+        json!("127.0.0.1"),
+        json!("::1"),
+        json!(""),
+        json!(1),
+    ] {
+        refused.push((
+            with("multicast_interface", interface),
+            "multicast_interface",
+        ));
+    }
+    for (target, field) in refused {
+        let body = config_body(&f, 0, json!([target]));
+        let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+        assert_eq!(
+            (s, v["error"]["code"].as_str(), v["error"]["field"].clone()),
+            (
+                StatusCode::BAD_REQUEST,
+                Some("invalid_request"),
+                json!(format!("targets[0].{field}"))
+            ),
+            "{body}"
+        );
+    }
+    let (_, v) = call(&f, "GET", "/udp", None).await;
+    assert_eq!(
+        (v["revision"].clone(), v["configuration"]["targets"].clone()),
+        (json!(0), json!([])),
+        "nothing saved"
+    );
+
+    // Admitted: the link-local group on the loopback interface with hop limit 2, a
+    // site-local group with hop limit 255 (on loopback, so nothing leaves the machine),
+    // an index no interface has, and a disabled organization-local group without an
+    // interface (optional above link scope).
+    let mut org = multicast_json("[ff08::5754:5358]:2239", 1, Value::Null, false);
+    org["enabled"] = json!(false);
+    let targets = json!([
+        good,
+        multicast_json("[ff05::5754:5358]:2237", 255, json!("1"), false),
+        multicast_json("[ff15::5754:5358]:2238", 1, json!("4000000000"), false),
+        org,
+    ]);
+    let body = config_body(&f, 0, targets.clone());
+    let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["configuration"]["targets"], targets, "saved as given");
+    let reopened = Owner::open(&f.state, true).snapshot(&f.state.recording);
+    assert_eq!(reopened["configuration"]["targets"], targets);
+
+    // An IPv6 unicast target keeps the #40 IPv4 interface form (a saved file loads).
+    let mut unicast = multicast_json("[::1]:2240", 1, json!("127.0.0.1"), false);
+    unicast["enabled"] = json!(false);
+    let mut with_unicast = targets.as_array().unwrap().clone();
+    with_unicast.push(unicast.clone());
+    let body = config_body(&f, 1, Value::from(with_unicast.clone()));
+    let (s, v2) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(s, StatusCode::OK, "{v2}");
+    assert_eq!(v2["configuration"]["targets"][4], unicast);
+    let mut index = unicast.clone();
+    index["multicast_interface"] = json!("1");
+    let mut refused_list = targets.as_array().unwrap().clone();
+    refused_list.push(index);
+    let body = config_body(&f, 2, Value::from(refused_list));
+    let (s, v2) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(
+        (s, v2["error"]["field"].clone()),
+        (
+            StatusCode::BAD_REQUEST,
+            json!("targets[4].multicast_interface")
+        )
+    );
+
+    // The socket carries the hop limit and the interface.
+    {
+        let inner = owner.lock();
+        let socket = socket2::SockRef::from(inner.runtimes[0].socket.as_ref().unwrap());
+        assert_eq!(socket.multicast_hops_v6().unwrap(), 2);
+        assert_eq!(socket.multicast_if_v6().unwrap(), LOOPBACK_INDEX);
+        assert!(socket.multicast_loop_v6().unwrap());
+        let site = socket2::SockRef::from(inner.runtimes[1].socket.as_ref().unwrap());
+        assert_eq!(site.multicast_hops_v6().unwrap(), 255);
+    }
+    let status = &v["status"];
+    assert_eq!(
+        (&status[0]["active"], &status[0]["error"]),
+        (&json!(true), &Value::Null)
+    );
+    assert_eq!(
+        (&status[2]["active"], &status[2]["error"]),
+        (&json!(false), &json!("socket_unavailable")),
+        "an index no interface has"
+    );
+
+    // The joined peer receives Heartbeat and Status.
+    owner.step(&f.state);
+    let got = drain(&joined);
+    assert_eq!(kinds(&got), [0, 1], "Heartbeat then Status to the group");
+    let (schema, _, id, _) = head(&got[0]);
+    assert_eq!((schema, id.as_str()), (2, "WSTX-Rust"));
+
+    // A command sent to the multicast target's socket from a host is not accepted.
+    let host = UdpSocket::bind("[::1]:0").unwrap();
+    let to = SocketAddr::from((Ipv6Addr::LOCALHOST, station_socket(&owner, 0).port()));
+    host.send_to(&free_text("TNX 73 GL"), to).unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    owner.step(&f.state);
+    let last = owner.snapshot(&f.state.recording)["status"][0]["last_command"].clone();
+    assert_eq!(
+        (last["type"].as_str(), outcome(&last).0.as_str()),
+        (Some("free_text"), "not_accepted")
     );
 }

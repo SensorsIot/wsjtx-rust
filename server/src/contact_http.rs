@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! WstxContact::ContactWire for the contact engine: GET /contact (ContactSnapshot) and
 //! POST /contact/command (ContactCommand, CommandReceipt), the station step of the
-//! engine and the contact.state / station.tick WebSocket event payloads. Validation
+//! engine, its direct log (WstxContact::DirectLog, #41) and the contact.state /
+//! station.tick WebSocket event payloads. Validation
 //! order is WstxOperatingReceive S2: route, Origin, TLS/session, size/media/syntax,
 //! version/enums/UUIDs/safe integers, profile, boot/revision, capability, state.
 use crate::contact::{
@@ -19,12 +20,30 @@ use wstx_rust::transmit::service::{Core, HaltState, Hardware, View};
 pub const SNAPSHOT_BYTES_MAX: usize = 4096;
 pub const RECEIPTS: usize = 16;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
+/// DirectLog: records kept for retry after a failed write, and the retry interval.
+pub const LOG_PENDING_MAX: usize = 64;
+const LOG_RETRY: Duration = Duration::from_secs(5);
 
+/// The latest DirectLog attempt as ContactSnapshot log shows it.
+#[derive(Clone, Debug, PartialEq)]
+struct LogView {
+    contact_id: String,
+    call: String,
+    saved: bool,
+    error: Option<&'static str>,
+}
 struct Inner {
     engine: Engine,
     rows: Option<((String, String, u64), u64)>,
     receipts: VecDeque<(String, Value, Value)>,
     snapshot: (u64, Value),
+    /// Records not yet stored (oldest first; one per contact id).
+    unlogged: VecDeque<logbook::Record>,
+    retry_at: Option<Instant>,
+    log: Option<LogView>,
+    /// Newly saved records for the UDP targets, sent by the station tick only, after the
+    /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
+    outbox: Vec<logbook::Record>,
 }
 /// The contact engine of one station (one per process, like the transmit owner).
 pub(crate) struct Station {
@@ -166,6 +185,10 @@ impl Station {
                 rows: None,
                 receipts: VecDeque::new(),
                 snapshot: (0, Value::Null),
+                unlogged: VecDeque::new(),
+                retry_at: None,
+                log: None,
+                outbox: Vec::new(),
             }),
             revision: AtomicU64::new(0),
             started: Instant::now(),
@@ -241,7 +264,8 @@ impl Station {
     pub(crate) fn tick(&self, state: &ProfileState) {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
-        let mut inner = self.lock();
+        let mut guard = self.lock();
+        let inner = &mut *guard;
         let cursor = inner.rows.clone();
         let mut rows = Vec::new();
         let mode = Some(mode_of(r.operating_mode()));
@@ -261,9 +285,6 @@ impl Station {
             }
             inner.rows = Some((identity, next));
         }
-        let inner = &mut *inner;
-        // A review whose contact is durably saved leaves the offer queue.
-        inner.engine.prune_saved(|id| state.logbook.saved(id));
         Self::run(r, |mut core, now| {
             // Belt and braces for WstxTransmit::StationModeGate (set at every change).
             if let Some(c) = core.as_deref_mut() {
@@ -277,14 +298,181 @@ impl Station {
                 mode,
             };
             inner.engine.step(core, &ctx, &rows);
+            Self::collect_logs(
+                inner,
+                state,
+                now,
+                ctx.call.as_deref(),
+                ctx.locator.as_deref(),
+            );
         });
+        Self::store_logs(inner, state);
+        let sent = std::mem::take(&mut inner.outbox);
         self.revision
             .store(inner.engine.revision, Ordering::Release);
+        drop(guard);
+        for record in &sent {
+            crate::udp::logged(state, record);
+        }
+    }
+    /// Test seam: ends the retry backoff of failed log writes.
+    #[cfg(test)]
+    pub(crate) fn retry_logs_now(&self) {
+        self.lock().retry_at = None;
+    }
+    /// The LogRecord of a contact at `now` (WstxContact::DirectLog): FREQ = confirmed
+    /// dial + Tx offset, BAND from the dial, MY_GRIDSQUARE the effective locator.
+    pub(crate) fn record_of(
+        c: &contact::Contact,
+        now: i64,
+        dial: Option<u64>,
+        tx_hz: u32,
+        call: &str,
+        locator: Option<&str>,
+    ) -> Option<logbook::Record> {
+        let f = c.log_fields(now)?;
+        let (mode, submode) = match f.mode {
+            decoder::Mode::Ft8 => ("FT8", None),
+            decoder::Mode::Ft4 => ("MFSK", Some("FT4")),
+        };
+        let freq = dial.map(|d| {
+            let hz = d + u64::from(tx_hz);
+            format!("{}.{:06}", hz / 1_000_000, hz % 1_000_000)
+        });
+        Some(logbook::Record {
+            contact_id: c.id.clone(),
+            values: [
+                Some(f.call),
+                f.grid,
+                Some(mode.into()),
+                submode.map(String::from),
+                f.rst_sent,
+                f.rst_rcvd,
+                Some(contact::adif_date(f.start_utc_ms)),
+                Some(contact::adif_time(f.start_utc_ms)),
+                Some(contact::adif_date(f.end_utc_ms)),
+                Some(contact::adif_time(f.end_utc_ms)),
+                dial.and_then(logbook::band_of_hz).map(String::from),
+                freq,
+                Some(call.to_owned()),
+                locator.map(String::from),
+                None,
+                None,
+            ],
+            unknown: Vec::new(),
+        })
+    }
+    /// Takes the engine's contacts due for the log into the pending records: a newer
+    /// record of a pending contact id replaces it; over LOG_PENDING_MAX the oldest is
+    /// dropped (log_queue_full); an invalid record is never stored (log_invalid_field).
+    /// A completed contact already logged at completion keeps that record (its dial, Tx
+    /// offset and location of completion): Log QSO on it changes nothing.
+    fn collect_logs(
+        inner: &mut Inner,
+        state: &ProfileState,
+        now: i64,
+        call: Option<&str>,
+        locator: Option<&str>,
+    ) {
+        let contacts = inner.engine.take_logs();
+        if contacts.is_empty() {
+            return;
+        }
+        let dial = confirmed_dial(&state.recording);
+        let tx_hz = inner.engine.settings.tx_hz;
+        for (kind, c) in contacts {
+            let held = inner.unlogged.iter().any(|p| p.contact_id == c.id);
+            if kind == contact::LogKind::LogQso
+                && c.logged_on_completion
+                && (held || state.logbook.saved(&c.id))
+            {
+                continue;
+            }
+            let view = |error| LogView {
+                contact_id: c.id.clone(),
+                call: c.dx_call.clone().unwrap_or_default(),
+                saved: false,
+                error,
+            };
+            let station = call.unwrap_or("");
+            let record = Self::record_of(&c, now, dial, tx_hz, station, locator).filter(|record| {
+                logbook::validate_record(record, station, locator.unwrap_or("")).is_ok()
+            });
+            let Some(record) = record else {
+                inner.log = Some(view(Some("log_invalid_field")));
+                continue;
+            };
+            inner.log = Some(view(None));
+            inner.unlogged.retain(|p| p.contact_id != record.contact_id);
+            if inner.unlogged.len() == LOG_PENDING_MAX
+                && let Some(dropped) = inner.unlogged.pop_front()
+            {
+                inner.log = Some(LogView {
+                    call: dropped.get("call").unwrap_or("").to_owned(),
+                    contact_id: dropped.contact_id,
+                    saved: false,
+                    error: Some("log_queue_full"),
+                });
+            }
+            inner.unlogged.push_back(record);
+            inner.retry_at = None;
+        }
+        inner.engine.revision += 1;
+    }
+    /// Stores the pending records (now, or at the retry time after a failure) under the
+    /// station's authorization lock. Only the first store of a contact id goes to the
+    /// UDP targets (outbox), so each contact reaches the external programs once.
+    fn store_logs(inner: &mut Inner, state: &ProfileState) {
+        if inner.unlogged.is_empty() || inner.retry_at.is_some_and(|t| Instant::now() < t) {
+            return;
+        }
+        let gate = |publish: &mut dyn FnMut() -> std::io::Result<()>| {
+            let _owner = state
+                .authorization
+                .lock()
+                .map_err(|_| crate::authorization::Error::PersistenceFailed)?;
+            Ok(publish())
+        };
+        while let Some(record) = inner.unlogged.front().cloned() {
+            let mut view = LogView {
+                contact_id: record.contact_id.clone(),
+                call: record.get("call").unwrap_or("").to_owned(),
+                saved: true,
+                error: None,
+            };
+            match state.logbook.put(record.clone(), &gate) {
+                Ok(outcome) => {
+                    inner.unlogged.pop_front();
+                    if outcome == logbook::LogOutcome::Saved {
+                        inner.outbox.push(record);
+                    }
+                    inner.log = Some(view);
+                }
+                Err(_) => {
+                    view.saved = false;
+                    view.error = Some("storage_unavailable");
+                    // A dropped record (log_queue_full) stays shown until a store succeeds.
+                    if inner
+                        .log
+                        .as_ref()
+                        .is_none_or(|l| l.error != Some("log_queue_full"))
+                    {
+                        inner.log = Some(view);
+                    }
+                    inner.retry_at = Some(Instant::now() + LOG_RETRY);
+                    break;
+                }
+            }
+        }
+        if inner.unlogged.is_empty() {
+            inner.retry_at = None;
+        }
+        // The stored outcome (contact.saved, log) is a material change of the snapshot.
+        inner.engine.revision += 1;
     }
     /// ContactSnapshot: exact keys, at most SNAPSHOT_BYTES_MAX encoded bytes.
     pub(crate) fn snapshot(&self, state: &ProfileState) -> Result<Vec<u8>, &'static str> {
         let r = &state.recording;
-        let (call, locator) = profile_facts(state);
         let view = r.transmit.get().map(|t| t.service.view());
         let safety = r
             .transmit
@@ -297,32 +485,15 @@ impl Station {
                 .get()
                 .map_or_else(wall_ms, |t| t.service.with(|c| c.hardware().now_utc_ms()))
         });
-        let saved = |id: &str| state.logbook.saved(id);
         let contact = e.contact.as_ref().map(|c| {
             json!({"id":c.id,"origin":c.origin.name(),"dx_call":c.dx_call,"dx_grid":c.dx_grid,
                 "report_sent":c.report_sent.map(contact::render_report),"report_rcvd":c.report_rcvd.map(contact::render_report),
                 "state":c.state.name(),"next_slot":c.next.name(),"tx4":c.tx4.name(),"messages":c.messages,
                 "start_utc":c.start_utc_ms().map(contact::utc_text),"end_utc":c.last_counted_end.map(contact::utc_text),
-                "offered_for_log":c.offered_for_log,"saved":saved(&c.id)})
+                "saved":state.logbook.saved(&c.id)})
         });
-        let dial = confirmed_dial(r);
-        let review = e.review().and_then(|review| {
-            let f = review.fields(now)?;
-            let id = review.contact.id.clone();
-            let (mode, submode) = match f.mode {
-                decoder::Mode::Ft8 => ("FT8", None),
-                decoder::Mode::Ft4 => ("MFSK", Some("FT4")),
-            };
-            let freq = dial.map(|d| {
-                let hz = d + u64::from(e.settings.tx_hz);
-                format!("{}.{:06}", hz / 1_000_000, hz % 1_000_000)
-            });
-            let record = json!({"contact_id":id,"call":f.call,"gridsquare":f.grid,"mode":mode,"submode":submode,
-                "rst_sent":f.rst_sent,"rst_rcvd":f.rst_rcvd,"qso_date":contact::adif_date(f.start_utc_ms),
-                "time_on":contact::adif_time(f.start_utc_ms),"qso_date_off":contact::adif_date(f.end_utc_ms),
-                "time_off":contact::adif_time(f.end_utc_ms),"band":dial.and_then(logbook::band_of_hz),"freq":freq,
-                "station_callsign":call,"my_gridsquare":locator,"tx_pwr":null,"comment":null});
-            Some(json!({"contact_id":id,"record":record,"outcome":if saved(&id) {"saved"} else {"unsaved"},"error":null}))
+        let log = inner.log.as_ref().map(|l| {
+            json!({"contact_id":l.contact_id,"call":l.call,"outcome":if l.saved {"saved"} else {"unsaved"},"error":l.error})
         });
         let transmit = match &view {
             Some(v) => transmit_view(v, e.transmit_problem.as_deref(), safety),
@@ -338,11 +509,11 @@ impl Station {
         let watchdog = json!({"tx_remaining_minutes":view.as_ref().map_or(0,|v|v.tx_remaining_minutes),
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
-        let material = json!([transmit, settings, contact, review, watchdog]);
+        let material = json!([transmit, settings, contact, log, watchdog]);
         if inner.snapshot.1 != material {
             inner.snapshot = (inner.snapshot.0 + 1, material);
         }
-        let [transmit, settings, contact, review, watchdog] = inner
+        let [transmit, settings, contact, log, watchdog] = inner
             .snapshot
             .1
             .as_array()
@@ -352,7 +523,7 @@ impl Station {
             .unwrap_or_default();
         let value = json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"contact_revision":inner.engine.revision,
             "snapshot_sequence":inner.snapshot.0,"monotonic_ms":self.started.elapsed().as_millis() as u64,"utc_ms":now,
-            "transmit":transmit,"settings":settings,"contact":contact,"review":review,"watchdog":watchdog});
+            "transmit":transmit,"settings":settings,"contact":contact,"log":log,"watchdog":watchdog});
         admit(&value)
     }
 }
@@ -445,7 +616,6 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "set_frequency" => &["rx_hz", "tx_hz"],
         "set_parity" => &["parity"],
         "set_watchdogs" => &["tx_minutes", "tune_seconds"],
-        "discard_review" => &["contact_id"],
         _ => return None,
     })
 }
@@ -548,13 +718,6 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
                 tx_minutes: u32::try_from(m).unwrap_or(u32::MAX),
                 tune_seconds: u32::try_from(s).unwrap_or(u32::MAX),
             }
-        }
-        "discard_review" => {
-            let id = text(b, "contact_id")?;
-            if !profile::valid_uuid(id) {
-                return Err(("invalid_request", Some("contact_id")));
-            }
-            Command::DiscardReview(id.to_owned())
         }
         _ => return Err(("invalid_request", Some("action"))),
     }))
@@ -666,7 +829,8 @@ impl Station {
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
-        let mut inner = self.lock();
+        let mut guard = self.lock();
+        let inner = &mut *guard;
         if let Some((_, prior, receipt)) =
             inner.receipts.iter().find(|(id, _, _)| *id == command_id)
         {
@@ -721,7 +885,6 @@ impl Station {
             }
         };
         let mode = Some(mode_of(r.operating_mode()));
-        let inner = &mut *inner;
         Self::run(r, |mut core, now| {
             let ctx = Ctx {
                 call,
@@ -745,8 +908,18 @@ impl Station {
             // folds its own consequences (a new pending request) into the receipt.
             inner.engine.revision += 1;
             inner.engine.step(core, &ctx, &[]);
+            Self::collect_logs(
+                inner,
+                state,
+                now,
+                ctx.call.as_deref(),
+                ctx.locator.as_deref(),
+            );
             Ok::<_, Refusal>(())
         })?;
+        // Log QSO is stored before its receipt (a failed write stays pending, retried);
+        // its UDP messages leave with the next station tick.
+        Self::store_logs(inner, state);
         let revision = inner.engine.revision;
         self.revision.store(revision, Ordering::Release);
         let receipt = json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"command_id":command_id,

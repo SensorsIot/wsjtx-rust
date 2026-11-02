@@ -546,6 +546,13 @@ pub enum SaveOutcome {
     AlreadySaved,
     Conflict,
 }
+/// WstxContact::DirectLog outcome: one record per contact id, a changed one replaced.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LogOutcome {
+    Saved,
+    AlreadySaved,
+    Replaced,
+}
 #[derive(Debug, PartialEq, Eq)]
 pub enum StoreError {
     Unavailable,
@@ -784,6 +791,27 @@ impl Logbook {
         }
         self.append(&mut inner, vec![record], gate)?;
         Ok(SaveOutcome::Saved)
+    }
+    /// DirectLog: appends a new contact id; an identical stored record is AlreadySaved;
+    /// different fields replace the stored record in place (its index and any preserved
+    /// unknown fields are kept). Nothing changes in memory unless the replace succeeds.
+    pub fn put(&self, record: Record, gate: Gate) -> Result<LogOutcome, StoreError> {
+        let mut inner = self.lock()?;
+        let Some(&index) = inner.ids.get(&record.contact_id) else {
+            self.append(&mut inner, vec![record], gate)?;
+            return Ok(LogOutcome::Saved);
+        };
+        if first_difference(&inner.records[index], &record, false).is_none() {
+            return Ok(LogOutcome::AlreadySaved);
+        }
+        let mut next = inner.records.clone();
+        next[index] = Record {
+            unknown: next[index].unknown.clone(),
+            ..record
+        };
+        self.publish(&inner, &next, gate)?;
+        inner.records = next;
+        Ok(LogOutcome::Replaced)
     }
     pub fn receipt(&self, command_id: &str) -> Result<Option<(Value, u16, Value)>, StoreError> {
         let inner = self.lock()?;
@@ -1060,8 +1088,8 @@ impl Logbook {
     }
 }
 
-/// Save-domain validation of a reviewed record (log_invalid_field with the key).
-pub fn validate_review(record: &Record, callsign: &str, locator: &str) -> Result<(), &'static str> {
+/// Save-domain validation of a record to store (log_invalid_field with the key).
+pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result<(), &'static str> {
     let v = |i: usize| record.values[i].as_deref();
     if !crate::profile::valid_uuid(&record.contact_id) {
         return Err("record.contact_id");

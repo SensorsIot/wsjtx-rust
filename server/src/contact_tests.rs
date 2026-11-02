@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-10, CL-010-12; TC-007-001, TC-008-001.
+// Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10, CL-010-12; TC-007-001, TC-008-001, TC-011-001.
+// (#41 DirectLog: the contacts the engine hands to the log.)
 // The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
 // UTC clock with a recording hardware double (no audio, PTT or radio). Decoded rows are
 // hand-authored; expected states, next slots and texts are the independent table of
@@ -98,6 +99,15 @@ struct Station {
     mode: Mode,
     /// Texts whose audio started, with their period start.
     sent: Vec<(i64, String)>,
+}
+/// The one contact handed to the log since the last check (WstxContact::DirectLog).
+fn one_entry(s: &mut Station) -> (LogKind, Contact) {
+    let mut logs = s.engine.take_logs();
+    assert_eq!(logs.len(), 1, "exactly one contact for the log: {logs:?}");
+    logs.pop().unwrap()
+}
+fn one_log(s: &mut Station) -> Contact {
+    one_entry(s).1
 }
 fn station() -> Station {
     let fake = Fake(Arc::new(Bench::default()));
@@ -318,9 +328,9 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
         s.core.view().last_disarm_cause,
         DisarmCause::ContactCompleted
     );
-    let review = s.engine.review().cloned().expect("one log offer");
-    assert!(review.automatic);
-    let fields = review.fields(s.now()).unwrap();
+    let (kind, logged) = one_entry(&mut s);
+    assert_eq!(kind, LogKind::Completion, "logged at completion, no review");
+    let fields = logged.log_fields(s.now()).unwrap();
     assert_eq!(fields.call, "K1ABC");
     assert_eq!(fields.rst_sent.as_deref(), Some("-12"));
     assert_eq!(fields.rst_rcvd.as_deref(), Some("-05"));
@@ -328,12 +338,11 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
     assert_eq!(fields.start_utc_ms, period(2));
     // TIME_OFF: end of the last period with a counted message (my Tx5).
     assert_eq!(fields.end_utc_ms, period(6));
-    // A reply after completion changes nothing and never offers again.
-    s.engine.prune_saved(|_| true);
+    // A reply after completion changes nothing and never logs again.
     let late = s.row(period(6), "HB9BLA K1ABC 73", 1240.0, None);
     s.deliver(&[late]);
     assert_eq!(s.state(), (State::Completed, Slot::Tx6));
-    assert!(s.engine.review().is_none());
+    assert!(s.engine.take_logs().is_empty(), "completion logs once");
     s.run(period(9));
     assert_eq!(
         s.sent.len(),
@@ -401,7 +410,7 @@ fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73
         let sent = s.sent.len();
         s.run(period(9));
         assert_eq!(s.sent.len(), sent, "no further CQ after completion");
-        let fields = s.engine.review().unwrap().fields(s.now()).unwrap();
+        let fields = one_log(&mut s).log_fields(s.now()).unwrap();
         assert_eq!(
             fields.start_utc_ms,
             period(2),
@@ -705,7 +714,7 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     );
     assert_eq!(s.command(Command::Tune(true)), Err("transmit_unavailable"));
     s.command(Command::OpenLog).unwrap();
-    assert!(!s.engine.review().unwrap().automatic);
+    assert_eq!(one_entry(&mut s).0, LogKind::LogQso, "Log QSO logs now");
     // Without a CL-022 grant (plaintext profile) nothing arms.
     *s.fake.0.capability.lock().unwrap() = Some(Capability::Available);
     let ctx = Ctx {
@@ -864,42 +873,64 @@ fn tx_watchdog_counts_whole_minutes_from_the_last_reset_and_tune_ends_at_its_lim
     s.command(Command::Tune(false)).unwrap();
 }
 
-// Review findings P2-1, P3-3, P3-4 (independent review of 761b00fbf).
+// #41: no review queue. Every Log QSO and every completion is handed to the log at
+// once; nothing is held, so nothing blocks the next contact or CQ.
 #[test]
-fn an_unsaved_review_is_kept_when_another_contact_is_offered() {
+fn log_qso_and_completion_log_at_once_and_never_block_a_new_contact() {
     let mut s = station();
+    for i in 0..9 {
+        s.command(Command::EnterDx {
+            call: format!("DL{i}ABC"),
+            grid: None,
+            replace: true,
+        })
+        .unwrap();
+        s.command(Command::OpenLog).unwrap();
+        let logged = one_log(&mut s);
+        assert_eq!(logged.dx_call, Some(format!("DL{i}ABC")));
+        assert_eq!(logged.state, State::Replying, "Log QSO before completion");
+    }
+    // A contact completes on a received 73 in rogers (no transmission needed).
     s.command(Command::EnterDx {
-        call: "DL1ABC".into(),
-        grid: Some("JO62".into()),
-        replace: false,
+        call: "K1ABC".into(),
+        grid: Some("FN42".into()),
+        replace: true,
     })
     .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
+    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
+    s.deliver(std::slice::from_ref(&seventy_three));
+    assert_eq!(s.state().0, State::Completed);
+    let done = one_log(&mut s);
+    assert_eq!(
+        (done.dx_call.as_deref(), done.dx_grid.as_deref()),
+        (Some("K1ABC"), Some("FN42"))
+    );
+    s.deliver(&[seventy_three]);
+    assert!(
+        s.engine.take_logs().is_empty(),
+        "a repeated 73 logs nothing"
+    );
+    // Cancel (Esc) on the completed contact only selects Tx6; Log QSO re-logs it.
+    s.command(Command::Cancel).unwrap();
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!((c.state, c.next), (State::Completed, Slot::Tx6));
+    assert_eq!(c.messages[4].as_deref(), Some("K1ABC HB9BLA 73"));
     s.command(Command::OpenLog).unwrap();
-    let a = s.engine.contact.as_ref().unwrap().id.clone();
+    assert_eq!(one_log(&mut s).id, done.id, "the same contact identity");
+    // The next contact and a CQ are prepared at once.
     s.command(Command::EnterDx {
         call: "W1AW".into(),
         grid: None,
         replace: true,
     })
     .unwrap();
-    s.command(Command::OpenLog).unwrap();
-    let b = s.engine.contact.as_ref().unwrap().id.clone();
-    assert_ne!(a, b);
-    let offered: Vec<String> = s.engine.reviews().map(|r| r.contact.id.clone()).collect();
-    assert_eq!(
-        offered,
-        vec![a.clone(), b.clone()],
-        "A stays offered first until saved or discarded"
-    );
-    assert_eq!(s.engine.review().unwrap().contact.id, a);
-    // Repeated Log QSO for B does not add a second B; discarding A shows B.
-    s.command(Command::OpenLog).unwrap();
-    assert_eq!(s.engine.reviews().count(), 2);
-    s.command(Command::DiscardReview(a.clone())).unwrap();
-    assert_eq!(s.engine.review().unwrap().contact.id, b);
-    // A saved review leaves the queue.
-    s.engine.prune_saved(|id| id == b);
-    assert!(s.engine.review().is_none());
+    s.command(Command::Cancel).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.engine.contact.as_ref().unwrap().origin, Origin::OwnCq);
+    assert!(s.engine.take_logs().is_empty());
+    // An own CQ has no DX call: Log QSO refuses it.
+    assert_eq!(s.command(Command::OpenLog), Err("no_contact"));
 }
 
 #[test]
@@ -961,78 +992,6 @@ fn a_non_disarming_refusal_is_not_resubmitted_every_step() {
     );
 }
 
-// Re-review follow-ups (a) and (b).
-#[test]
-fn a_completed_contact_that_found_the_review_queue_full_is_never_dropped() {
-    let mut s = station();
-    for i in 0..8 {
-        s.command(Command::EnterDx {
-            call: format!("DL{i}ABC"),
-            grid: None,
-            replace: true,
-        })
-        .unwrap();
-        s.command(Command::OpenLog).unwrap();
-    }
-    assert_eq!(s.engine.reviews().count(), 8);
-    // A ninth contact completes on a received 73 in rogers (no transmission needed).
-    s.command(Command::EnterDx {
-        call: "K1ABC".into(),
-        grid: Some("FN42".into()),
-        replace: true,
-    })
-    .unwrap();
-    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
-    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
-    s.deliver(&[seventy_three]);
-    assert_eq!(s.state().0, State::Completed);
-    assert_eq!(s.engine.reviews().count(), 8, "the queue holds 8");
-    assert_eq!(
-        s.engine.transmit_problem.as_deref(),
-        Some("review_queue_full")
-    );
-    // While it waits for a queue place, no new contact or CQ may replace it.
-    assert_eq!(
-        s.command(Command::EnterDx {
-            call: "W1AW".into(),
-            grid: None,
-            replace: true
-        }),
-        Err("state_conflict")
-    );
-    let cq = s.row(P0, "CQ W2AW FN31", 900.0, None);
-    assert_eq!(
-        s.command(Command::SelectRow {
-            row: cq,
-            replace: true
-        }),
-        Err("state_conflict")
-    );
-    assert_eq!(
-        s.command(Command::EnableTx(true, Some(7))),
-        Err("state_conflict")
-    );
-    assert_eq!(
-        s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
-        Some("K1ABC")
-    );
-    // Freeing a place lets Log QSO queue it; then new contacts are prepared again.
-    let first = s.engine.review().unwrap().contact.id.clone();
-    s.command(Command::DiscardReview(first)).unwrap();
-    s.command(Command::OpenLog).unwrap();
-    assert!(
-        s.engine
-            .reviews()
-            .any(|r| r.contact.dx_call.as_deref() == Some("K1ABC"))
-    );
-    s.command(Command::EnterDx {
-        call: "W1AW".into(),
-        grid: None,
-        replace: true,
-    })
-    .unwrap();
-}
-
 #[test]
 fn enable_tx_arms_with_the_revision_the_operator_saw_and_9_refuses_a_changed_one() {
     let mut s = station();
@@ -1058,95 +1017,6 @@ fn enable_tx_arms_with_the_revision_the_operator_saw_and_9_refuses_a_changed_one
     assert!(s.armed());
 }
 
-// Re-check of b3fd3f312, item 1: Cancel never strands the held contact.
-#[test]
-fn cancel_keeps_a_held_completed_contact_loggable_and_discard_clears_the_hold() {
-    let mut s = station();
-    for i in 0..8 {
-        s.command(Command::EnterDx {
-            call: format!("DL{i}ABC"),
-            grid: None,
-            replace: true,
-        })
-        .unwrap();
-        s.command(Command::OpenLog).unwrap();
-    }
-    s.command(Command::EnterDx {
-        call: "K1ABC".into(),
-        grid: Some("FN42".into()),
-        replace: true,
-    })
-    .unwrap();
-    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
-    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
-    s.deliver(&[seventy_three]);
-    let held = s.engine.contact.as_ref().unwrap().id.clone();
-    assert_eq!(s.state().0, State::Completed);
-    // Cancel (Esc) on the completed contact only disarms and selects Tx6.
-    s.command(Command::Cancel).unwrap();
-    let c = s.engine.contact.clone().unwrap();
-    assert_eq!((c.state, c.next), (State::Completed, Slot::Tx6));
-    assert_eq!(
-        (c.dx_call.as_deref(), c.dx_grid.as_deref()),
-        (Some("K1ABC"), Some("FN42"))
-    );
-    assert_eq!(c.messages[4].as_deref(), Some("K1ABC HB9BLA 73"));
-    // A freed place lets Log QSO queue it.
-    let first = s.engine.review().unwrap().contact.id.clone();
-    s.command(Command::DiscardReview(first)).unwrap();
-    s.command(Command::OpenLog).unwrap();
-    assert!(s.engine.reviews().any(|r| r.contact.id == held));
-    s.command(Command::EnterDx {
-        call: "W1AW".into(),
-        grid: None,
-        replace: true,
-    })
-    .unwrap();
-
-    // Second path: discarding the held contact id itself clears the hold.
-    let mut s = station();
-    for i in 0..8 {
-        s.command(Command::EnterDx {
-            call: format!("DL{i}ABC"),
-            grid: None,
-            replace: true,
-        })
-        .unwrap();
-        s.command(Command::OpenLog).unwrap();
-    }
-    s.command(Command::EnterDx {
-        call: "K1ABC".into(),
-        grid: None,
-        replace: true,
-    })
-    .unwrap();
-    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
-    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
-    s.deliver(&[seventy_three]);
-    let held = s.engine.contact.as_ref().unwrap().id.clone();
-    s.command(Command::Cancel).unwrap();
-    assert_eq!(
-        s.command(Command::EnterDx {
-            call: "W1AW".into(),
-            grid: None,
-            replace: true
-        }),
-        Err("state_conflict")
-    );
-    s.command(Command::DiscardReview(held)).unwrap();
-    s.command(Command::EnterDx {
-        call: "W1AW".into(),
-        grid: None,
-        replace: true,
-    })
-    .unwrap();
-    assert_eq!(
-        s.engine.reviews().count(),
-        8,
-        "the queued reviews are untouched"
-    );
-}
-
 // Re-check of fd6c776d2, item 1: slot choices never reopen a finished contact.
 #[test]
 fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
@@ -1162,13 +1032,9 @@ fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
     s.deliver(&[seventy_three]);
     assert_eq!(s.state().0, State::Completed);
     let done = s.engine.contact.as_ref().unwrap().id.clone();
-    let end = s
-        .engine
-        .review()
-        .unwrap()
-        .fields(s.now())
-        .unwrap()
-        .end_utc_ms;
+    let logged = one_log(&mut s);
+    assert_eq!(logged.id, done);
+    let end = logged.log_fields(s.now()).unwrap().end_utc_ms;
     s.command(Command::ChooseNext(Slot::Tx5)).unwrap();
     s.command(Command::ChooseNext(Slot::Tx6)).unwrap();
     assert_eq!(
@@ -1176,60 +1042,17 @@ fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
         (State::Completed, Slot::Tx6),
         "the state never changes"
     );
-    // Enable Tx starts a fresh own-CQ contact; the completed one stays loggable.
+    // Enable Tx starts a fresh own-CQ contact; the completed one was logged already.
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     let cq = s.engine.contact.clone().unwrap();
     assert_ne!(cq.id, done);
     assert_eq!((cq.origin, cq.state), (Origin::OwnCq, State::Calling));
-    s.command(Command::Cancel).unwrap();
-    let review = s
-        .engine
-        .reviews()
-        .find(|r| r.contact.id == done)
-        .expect("still offered");
+    assert!(s.engine.take_logs().is_empty(), "slot choices log nothing");
     assert_eq!(
-        review.fields(s.now()).unwrap().end_utc_ms,
+        logged.log_fields(s.now()).unwrap().end_utc_ms,
         end,
-        "TIME_OFF unchanged"
+        "TIME_OFF fixed at completion"
     );
-    assert_eq!(review.contact.dx_call.as_deref(), Some("K1ABC"));
-
-    // A held contact (full queue) is not stranded by slot choices either.
-    let mut s = station();
-    for i in 0..8 {
-        s.command(Command::EnterDx {
-            call: format!("DL{i}ABC"),
-            grid: None,
-            replace: true,
-        })
-        .unwrap();
-        s.command(Command::OpenLog).unwrap();
-    }
-    s.command(Command::EnterDx {
-        call: "K1ABC".into(),
-        grid: None,
-        replace: true,
-    })
-    .unwrap();
-    s.command(Command::ChooseNext(Slot::Tx4)).unwrap();
-    let seventy_three = s.row(P0, "HB9BLA K1ABC 73", 1500.0, None);
-    s.deliver(&[seventy_three]);
-    s.command(Command::ChooseNext(Slot::Tx6)).unwrap();
-    assert_eq!(s.state().0, State::Completed);
-    assert_eq!(
-        s.command(Command::EnableTx(true, Some(7))),
-        Err("state_conflict")
-    );
-    assert!(!s.armed());
-    assert_eq!(
-        s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
-        Some("K1ABC")
-    );
-    let first = s.engine.review().unwrap().contact.id.clone();
-    s.command(Command::DiscardReview(first)).unwrap();
-    s.command(Command::OpenLog).unwrap();
-    s.command(Command::EnableTx(true, Some(7))).unwrap();
-    assert_eq!(s.engine.contact.as_ref().unwrap().origin, Origin::OwnCq);
 }
 
 // ---------------------------------------------------------------- FT4 (#11 slice B)
@@ -1294,8 +1117,7 @@ fn ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_of
             (P0 + 5 * FT4 + 300, FT4_SAMPLES_48K),
         ]
     );
-    let review = s.engine.review().cloned().expect("one log offer");
-    let fields = review.fields(s.now()).unwrap();
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
     assert_eq!(fields.mode, Mode::Ft4);
     assert_eq!(
         fields.start_utc_ms,
@@ -1360,7 +1182,7 @@ fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
         Some("K1ABC HB9BLA RR73")
     );
     assert_eq!(s.state(), (State::Completed, Slot::Tx6));
-    let fields = s.engine.review().unwrap().fields(s.now()).unwrap();
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
     assert_eq!(fields.start_utc_ms, P0 + 4 * FT4, "first transmitted Tx2");
     assert_eq!(fields.mode, Mode::Ft4);
 }
@@ -1437,7 +1259,7 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     assert_eq!(s.state().0, State::Idle);
     assert!(!s.armed());
 
-    // A completed, unsaved FT8 contact keeps its fields and its FT8 review.
+    // A completed FT8 contact keeps its fields and was logged in FT8.
     let mut s = station();
     s.command(Command::EnterDx {
         call: "K1ABC".into(),
@@ -1456,7 +1278,7 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
         (c.state, c.dx_call.as_deref()),
         (State::Completed, Some("K1ABC"))
     );
-    assert_eq!(s.engine.review().unwrap().contact.mode, Mode::Ft8);
+    assert_eq!(one_log(&mut s).mode, Mode::Ft8);
     // A manual entry now is an FT4 contact.
     s.command(Command::EnterDx {
         call: "DL1ABC".into(),

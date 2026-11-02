@@ -656,6 +656,9 @@ pub struct LiveSource {
     ready: VecDeque<(u64, Arc<[f32]>)>,
     discontinuity: bool,
     terminal: Option<SourceError>,
+    /// Latest (canonical frame, packet QPC centre in 100 ns) of a timestamped packet, on the
+    /// same anchor convention as the epoch proposal.
+    clock: Option<(u64, u64)>,
 }
 impl LiveSource {
     pub fn new(queue: Arc<PacketQueue>, format: NativeFormat) -> Result<Self, SourceError> {
@@ -672,7 +675,13 @@ impl LiveSource {
             ready: VecDeque::new(),
             discontinuity: true,
             terminal: None,
+            clock: None,
         })
+    }
+    /// The capture clock's latest position against QPC: canonical frame of the newest
+    /// timestamped packet and its converter-delay-centred QPC time.
+    pub fn clock_sample(&self) -> Option<(u64, u64)> {
+        self.clock
     }
     pub fn stop(&mut self) {
         self.queue.cancel();
@@ -757,6 +766,17 @@ impl LiveSource {
                 .push_back((first + (i * LIVE_BLOCK_FRAMES) as u64, Arc::from(chunk)));
         }
         self.expected = Some(end);
+        let rate = u128::from(self.format.rate);
+        let delay_100ns = (self.converter.delay_native_frames() * 10_000_000.0
+            / f64::from(self.format.rate))
+        .round();
+        self.clock = if timestamp_error || epoch || !delay_100ns.is_finite() || delay_100ns < 0.0 {
+            if epoch { None } else { self.clock }
+        } else {
+            u64::try_from(u128::from(relative) * 12000 / rate)
+                .ok()
+                .zip(packet.qpc_100ns.checked_add(delay_100ns as u64))
+        };
         self.expected_qpc = (!timestamp_error)
             .then(|| {
                 packet.qpc_100ns.checked_add(

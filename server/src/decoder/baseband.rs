@@ -30,6 +30,8 @@ pub(super) struct BandPlan {
     forward: Arc<dyn Fft<f64>>,
     inverse: Arc<dyn Fft<f64>>,
     symbol: Arc<dyn Fft<f64>>,
+    /// Known-word ranking transform: one bin per refinement frequency step (2*frame/down).
+    pub ranking: Arc<dyn Fft<f64>>,
     scratch_len: usize,
 }
 impl BandPlan {
@@ -49,6 +51,11 @@ impl BandPlan {
         let forward = fft_plan(long_len, false, scalar);
         let inverse = fft_plan(short_len, true, scalar);
         let symbol = fft_plan(32, false, scalar);
+        let ranking = fft_plan(
+            2 * mode.symbol_frames() * mode.symbol_count() / down,
+            false,
+            scalar,
+        );
         let scratch_len = forward
             .get_inplace_scratch_len()
             .max(inverse.get_inplace_scratch_len())
@@ -67,6 +74,7 @@ impl BandPlan {
             forward,
             inverse,
             symbol,
+            ranking,
             scratch_len,
         })
     }
@@ -89,10 +97,12 @@ impl BandPlan {
             spectrum,
             scratch,
             frames: samples.len(),
+            last: None,
         })
     }
 }
 
+#[derive(Clone)]
 pub(super) struct BandWindow {
     pub samples: Vec<Complex64>,
     pub center_hz: f64,
@@ -102,6 +112,8 @@ pub(super) struct PassBand<'a> {
     spectrum: Vec<Complex64>,
     scratch: Vec<Complex64>,
     pub frames: usize,
+    /// The last band of this immutable pass transform, keyed by its exact carrier.
+    last: Option<(u64, Option<BandWindow>)>,
 }
 impl PassBand<'_> {
     pub async fn window(
@@ -110,6 +122,17 @@ impl PassBand<'_> {
         budget: &mut CpuBudget<'_>,
     ) -> Result<Option<BandWindow>, DecodeError> {
         budget.checkpoint().await?;
+        if let Some((key, band)) = &self.last
+            && *key == carrier.to_bits()
+        {
+            return Ok(band.clone());
+        }
+        let band = self.compute_window(carrier);
+        self.last = Some((carrier.to_bits(), band.clone()));
+        budget.checkpoint().await?;
+        Ok(band)
+    }
+    fn compute_window(&mut self, carrier: f64) -> Option<BandWindow> {
         let n = self.plan.long_len;
         let m = self.plan.short_len;
         let df = 12000. / n as f64;
@@ -174,17 +197,16 @@ impl PassBand<'_> {
         } else {
             let rms = (out.iter().map(Complex64::norm_sqr).sum::<f64>() / m as f64).sqrt();
             if !rms.is_finite() || rms <= 0. {
-                return Ok(None);
+                return None;
             }
             for z in &mut out {
                 *z /= rms;
             }
         }
-        budget.checkpoint().await?;
-        Ok(Some(BandWindow {
+        Some(BandWindow {
             samples: out,
             center_hz: center as f64 * df,
-        }))
+        })
     }
     pub async fn rows(
         &mut self,

@@ -29,8 +29,8 @@ package WstxMcp {
          D5 Automation: station-owned, volatile (unconfigured, no run after every boot),
             driving the contact engine only through ContactCommand select_row and
             enable_tx with the starting request's grant; WstxContact::AutoSequence
-            progresses the contact and the #9 owner transmits. Logging stays the
-            operator's WstxContact log review (no automatic save).
+            progresses the contact and the #9 owner transmits. Each completed contact
+            is logged by WstxContact::DirectLog (#41), as for a browser-driven one.
          D6 Selection: only plain CQ from a resolved call of the latest completed receive
             publication; three explicit rankings; no worked-before filter, directed CQ,
             CQ calling or attempt counter in this CR (max_unanswered_periods and

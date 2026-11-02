@@ -20,6 +20,33 @@ pub(crate) fn gaussian_pulse(mode: Mode, t: f64) -> f64 {
     let k = PI * (2. / 2f64.ln()).sqrt() * mode.gaussian_bt();
     (erf(k * (t + 0.5)) - erf(k * (t - 0.5))) / 2.
 }
+/// `x % y` for |x| < 2y, without the library call: by Sterbenz's lemma the single
+/// subtraction is exact, so the result is bit-identical to the IEEE remainder `%`.
+fn remainder(x: f64, y: f64) -> f64 {
+    debug_assert!(x.abs() < 2. * y);
+    if x >= y {
+        x - y
+    } else if x <= -y {
+        // Keeps the dividend's sign, including the -0 of x == -y.
+        -(-x - y)
+    } else {
+        x
+    }
+}
+/// Frequency pulse samples of one mode; identical for every waveform, so computed once.
+fn pulse_table(mode: Mode) -> &'static [f64] {
+    static TABLES: [std::sync::OnceLock<Vec<f64>>; 2] =
+        [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+    TABLES[mode as usize].get_or_init(|| {
+        let n = mode.symbol_frames();
+        (0..4 * n)
+            .map(|j| {
+                let t = (j as f64 + 0.5 - 2. * n as f64) / n as f64;
+                mode.spacing() * gaussian_pulse(mode, t)
+            })
+            .collect()
+    })
+}
 /// Gaussian-smoothed continuous-phase unit quadratures, including pulse and amplitude ramps.
 /// The origin is the start of the first symbol; phase advances before the first sample.
 pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32; 2]>> {
@@ -32,12 +59,7 @@ pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32;
     }
     let n = mode.symbol_frames();
     let len = n * tones.len();
-    let pulse = (0..4 * n)
-        .map(|j| {
-            let t = (j as f64 + 0.5 - 2. * n as f64) / n as f64;
-            mode.spacing() * gaussian_pulse(mode, t)
-        })
-        .collect::<Vec<_>>();
+    let pulse = pulse_table(mode);
     let mut frequency_offset = vec![0.; len];
     for (j, &tone) in tones.iter().enumerate() {
         if tone == 0 {
@@ -54,7 +76,7 @@ pub fn quadratures(mode: Mode, tones: &[u8], frequency: f64) -> Option<Vec<[f32;
     let mut phase = 0.;
     let mut out = Vec::with_capacity(len);
     for (i, off) in frequency_offset.into_iter().enumerate() {
-        phase = (phase + 2. * PI * (frequency + off) / 12000.) % (2. * PI);
+        phase = remainder(phase + 2. * PI * (frequency + off) / 12000., 2. * PI);
         let amp = if i < ramp {
             (1. - (PI * i as f64 / ramp as f64).cos()) / 2.
         } else if i >= len - ramp {

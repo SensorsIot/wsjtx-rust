@@ -305,7 +305,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
             "transmit",
             "settings",
             "contact",
-            "review",
+            "log",
             "watchdog"
         ])
     );
@@ -347,7 +347,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         ])
     );
     assert_eq!(v["contact"], Value::Null);
-    assert_eq!(v["review"], Value::Null);
+    assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
         json!({"auto_seq":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
@@ -363,8 +363,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         (status, code(&v).0),
         (StatusCode::FORBIDDEN, "forbidden_origin")
     );
-    // The maximum shape (six 37-character messages, 13-character calls, a full review
-    // record without comment) fits; one byte over the cap is refused, never truncated.
+    // The maximum shape (six 37-character messages, 13-character calls, a log outcome)
+    // fits; one byte over the cap is refused, never truncated.
     let long = "A".repeat(37);
     let max = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"contact_revision":MAX_SAFE_TEST,"snapshot_sequence":MAX_SAFE_TEST,
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
@@ -373,11 +373,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
-            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","offered_for_log":false,"saved":false},
-        "review":{"contact_id":f.id,"record":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","gridsquare":"JN47AA","mode":"MFSK","submode":"FT4",
-            "rst_sent":"-50","rst_rcvd":"-50","qso_date":"20261031","time_on":"235959","qso_date_off":"20261031","time_off":"235959",
-            "band":"1.25cm","freq":"24249.999999","station_callsign":"PJ4/PA3XYZABC","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null},
-            "outcome":"unsaved","error":null},
+            "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false},
+        "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
         "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
     assert!(size <= contact_http::SNAPSHOT_BYTES_MAX, "{size}");
@@ -499,7 +496,8 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
         (f.body(current, "select_row", json!({"row":{"source_id":f.id,"job_id":f.id,"generation":1,"sequence":0},"replace":false})), "row_unavailable", Some("row")),
         (f.body(current, "redecode", json!({})), "redecode_unavailable", None),
         (f.body(current, "open_log", json!({})), "no_contact", None),
-        (f.body(current, "discard_review", json!({"contact_id":f.id})), "not_found", None),
+        // #41: the review queue and its discard action are retired.
+        (f.body(current, "discard_review", json!({"contact_id":f.id})), "invalid_request", Some("action")),
     ];
     for (body, expected, field) in cases {
         let (s, v, _, _) = f.call("POST", "/contact/command", Some(body.clone())).await;
@@ -638,7 +636,6 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "messages",
             "start_utc",
             "end_utc",
-            "offered_for_log",
             "saved"
         ])
     );
@@ -822,40 +819,99 @@ async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action
             "{action}"
         );
     }
+    // #41: Log QSO logs at once on a receive-only station, without a review form.
     let (s, _) = f.send("open_log", json!({})).await;
     assert_eq!(s, StatusCode::ACCEPTED);
-    let review = f.snapshot().await["review"].clone();
-    assert_eq!(
-        keys(&review),
-        sorted(&["contact_id", "record", "outcome", "error"])
-    );
-    let mut expected: Vec<String> = crate::logbook::FIELDS
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    expected.push("contact_id".into());
-    expected.sort();
-    assert_eq!(keys(&review["record"]), expected);
-    assert_eq!(review["outcome"], "unsaved");
-    assert_eq!(review["record"]["call"], "DL1ABC");
-    assert_eq!(review["record"]["station_callsign"], "HB9BLA");
-    assert_eq!(review["record"]["my_gridsquare"], "JN47AA");
-    assert_eq!(review["record"]["mode"], "FT8");
-    assert_eq!(
-        review["record"]["band"],
-        Value::Null,
-        "no confirmed dial: band absent"
-    );
-    // The review record is admissible to the existing SaveContact route as offered.
-    let (s, v, _, _) = f.call("POST", "/contacts", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"record":review["record"]}))).await;
-    assert_eq!(s, StatusCode::CREATED, "{v}");
     let snap = f.snapshot().await;
+    assert_eq!(snap["log"]["outcome"], "saved", "{snap}");
+    assert_eq!(snap["contact"]["saved"], true);
+    let page = f.state.logbook.history(&f.id, 0, 10).unwrap();
+    let record = &page["records"][0];
+    assert_eq!(page["total"], 1);
+    assert_eq!(record["contact_id"], snap["contact"]["id"]);
     assert_eq!(
         (
-            snap["review"]["outcome"].as_str(),
-            snap["contact"]["saved"].as_bool()
+            record["call"].as_str(),
+            record["gridsquare"].as_str(),
+            record["mode"].as_str(),
+            record["station_callsign"].as_str(),
+            record["my_gridsquare"].as_str()
         ),
-        (Some("saved"), Some(true))
+        (
+            Some("DL1ABC"),
+            Some("JO62"),
+            Some("FT8"),
+            Some("HB9BLA"),
+            Some("JN47AA")
+        )
+    );
+    assert_eq!(
+        (record["band"].clone(), record["freq"].clone()),
+        (Value::Null, Value::Null),
+        "no confirmed dial: band and frequency absent"
+    );
+    // The logged record is the one SaveContact would store: an identical save is
+    // already_saved (one record per contact identity).
+    let mut wire = record.clone();
+    let wire = wire.as_object_mut().unwrap();
+    wire.remove("index");
+    wire.remove("unknown_field_count");
+    let (s, v, _, _) = f.call("POST", "/contacts", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"record":wire}))).await;
+    assert_eq!(
+        (s, v["outcome"].as_str()),
+        (StatusCode::OK, Some("already_saved")),
+        "{v}"
+    );
+}
+
+// Proves: CL-010-04; TC-011-001. #41 DirectLog record of an FT4 contact with a confirmed
+// dial. Hand-computed: P = 2026-11-01T12:34:30Z; TIME_ON one FT4 period (7.5 s) before
+// the first transmitted Tx3 at P+22.5 s = 12:34:45; TIME_OFF P+45 s = 12:35:15; FREQ
+// 14.080000 MHz dial + 1234 Hz = 14.081234 (20m); FT4 is MODE MFSK, SUBMODE FT4.
+#[test]
+fn direct_log_record_fields_from_the_confirmed_dial() {
+    const P: i64 = 1_793_536_470_000;
+    let c = crate::contact::Contact {
+        id: "11111111-1111-4111-8111-111111111111".into(),
+        origin: crate::contact::Origin::DecodedRow,
+        mode: decoder::Mode::Ft4,
+        dx_call: Some("K1ABC".into()),
+        dx_grid: Some("FN42".into()),
+        report: -12,
+        report_rcvd: Some(-9),
+        report_sent: Some(-12),
+        state: crate::contact::State::Completed,
+        next: crate::contact::Slot::Tx6,
+        tx4: crate::contact::Tx4::Rr73,
+        messages: Default::default(),
+        started_tx1_skipped: false,
+        prepared_utc_ms: P,
+        first_tx_period: Some(P + 7_500),
+        first_tx2_period: None,
+        first_tx3_period: Some(P + 22_500),
+        last_counted_end: Some(P + 45_000),
+        logged_on_completion: true,
+    };
+    let record = contact_http::Station::record_of(
+        &c,
+        P + 50_000,
+        Some(14_080_000),
+        1234,
+        "HB9BLA",
+        Some("JN47"),
+    )
+    .unwrap();
+    assert_eq!(
+        record.history_json(0),
+        json!({"index":0,"contact_id":c.id,"call":"K1ABC","gridsquare":"FN42","mode":"MFSK","submode":"FT4",
+            "rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123445",
+            "qso_date_off":"20261101","time_off":"123515","band":"20m","freq":"14.081234",
+            "station_callsign":"HB9BLA","my_gridsquare":"JN47","tx_pwr":null,"comment":null,
+            "unknown_field_count":0})
+    );
+    assert_eq!(
+        crate::logbook::validate_record(&record, "HB9BLA", "JN47"),
+        Ok(())
     );
 }
 
@@ -1094,12 +1150,20 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
         assert_eq!(s, StatusCode::ACCEPTED, "{v}");
         rows.push(row);
     }
+    // #41: Log QSO stored each station's record in its own contacts.adi.
     let review = |snap: &Value| {
+        let f = if snap["profile_id"] == f4.id {
+            &f4
+        } else {
+            &f8
+        };
+        let page = f.state.logbook.history(&f.id, 0, 10).unwrap();
+        assert_eq!(page["total"], 1, "one record per station");
+        let record = &page["records"][0];
+        assert_eq!(record["contact_id"], snap["contact"]["id"]);
         (
-            snap["review"]["record"]["mode"].as_str().map(String::from),
-            snap["review"]["record"]["submode"]
-                .as_str()
-                .map(String::from),
+            record["mode"].as_str().map(String::from),
+            record["submode"].as_str().map(String::from),
         )
     };
     let s4 = f4.snapshot().await;
@@ -1119,7 +1183,7 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
     assert_eq!(f4.snapshot().await["transmit"]["arm_state"], "armed");
     assert_eq!(f8.snapshot().await["transmit"]["arm_state"], "disarmed");
     // The FT4 station switches to FT8: its contact is cancelled and Enable Tx is off;
-    // its review keeps MFSK/FT4. The FT8 station is untouched.
+    // its log record keeps MFSK/FT4. The FT8 station is untouched.
     f4.state.recording.fixture_live_job("ft8");
     f4.tick();
     let s4 = f4.snapshot().await;

@@ -271,7 +271,7 @@ pub async fn save(
             return error("profile_incomplete", Some("record.station_callsign"));
         }
         let record = record.record();
-        if let Err(field) = logbook::validate_review(&record, &callsign, &locator) {
+        if let Err(field) = logbook::validate_record(&record, &callsign, &locator) {
             return error("log_invalid_field", Some(field));
         }
         let id = record.contact_id.clone();

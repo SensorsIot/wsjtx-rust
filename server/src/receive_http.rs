@@ -56,6 +56,25 @@ pub async fn snapshot(
     }
     Json(r.receive_snapshot()).into_response()
 }
+/// #47 CL-007-05: the measured capture-clock drift, on demand (same rules as GET /receive).
+pub async fn clock(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, false).await {
+        Ok(r) => r,
+        Err(e) => return error(e),
+    };
+    if query.is_some() {
+        return error("invalid_request");
+    }
+    if let Err(e) = empty(body) {
+        return error(e);
+    }
+    Json(r.receive_clock()).into_response()
+}
 /// #45 CL-045-01: the persisted startup choice, Monitor-off setting and resume outcome.
 pub async fn startup(
     State(app): State<App>,

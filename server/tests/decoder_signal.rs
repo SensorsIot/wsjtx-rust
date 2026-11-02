@@ -2097,3 +2097,75 @@ fn physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
         "FT8 audio is not an FT4 frame: {actual:?}"
     );
 }
+
+// Proves: CL-007-04, CL-007-05; TC-004-004. A busy recorded period presented as the
+// UTC-aligned FT8 prompt window (15 s of audio completing at period start + 13.8 s)
+// publishes every decode within the 1.0 s modem share of the 1.2 s budget to +15.0 s.
+#[test]
+fn live_busy_period_publishes_every_decode_promptly() {
+    use std::task::{Context, Waker};
+    let manifest: Value =
+        serde_json::from_str(include_str!("../../fixtures/decoder/manifest.json")).unwrap();
+    let entry = manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["path"] == "test/wav/websdr_test7.wav")
+        .unwrap();
+    let file = PathBuf::from(
+        std::env::var_os("WSTX_SAMPLE_DIR").expect("WSTX_SAMPLE_DIR recording cache required"),
+    )
+    .join("websdr_test7.wav");
+    let check = Command::new(if cfg!(windows) { "python" } else { "python3" })
+        .args(["-c", "import hashlib,pathlib,sys;assert hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()==sys.argv[2]"])
+        .arg(&file)
+        .arg(entry["sha256"].as_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(check.status.success(), "busy recording hash changed");
+    let recording = wav(&file);
+    assert_eq!(recording.len(), 180000);
+    // Prompt window [-1.2 s, +13.8 s) of the period that starts with the recording.
+    let mut window = vec![0f32; 14400];
+    window.extend_from_slice(&recording[..165600]);
+    let decoder = Decoder::new();
+    let mut fastest = f64::INFINITY;
+    let mut counts = vec![];
+    for _ in 0..3 {
+        let mut state = DecodeState::new_live(Mode::Ft8);
+        let mut published = vec![];
+        let began = Instant::now();
+        let mut last = 0f64;
+        {
+            let mut publish = |d: &Decode| {
+                last = began.elapsed().as_secs_f64();
+                published.push((d.payload.payload77.clone(), d.start_frame));
+                Ok(())
+            };
+            let mut future = std::pin::pin!(decoder.decode_window_into_async(
+                window.clone(),
+                1_800_000 - 14400,
+                &mut state,
+                &|| false,
+                &mut publish,
+            ));
+            let mut cx = Context::from_waker(Waker::noop());
+            while future.as_mut().poll(&mut cx).is_pending() {}
+        }
+        eprintln!(
+            "LIVE_LATENCY last_result={last:.3}s complete={:.3}s decodes={}",
+            began.elapsed().as_secs_f64(),
+            published.len()
+        );
+        fastest = fastest.min(last);
+        counts.push(published.len());
+    }
+    assert!(
+        counts.iter().all(|&n| n >= 25),
+        "busy period decodes {counts:?}: no per-period cap below band activity"
+    );
+    assert!(
+        fastest <= 1.0,
+        "last decode {fastest:.3}s after window completion exceeds the 1.0 s modem budget"
+    );
+}
