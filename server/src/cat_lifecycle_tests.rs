@@ -222,7 +222,7 @@ fn bcd(hz: u64) -> [u8; 5] {
     let mut out = [0; 5];
     for (i, b) in out.iter_mut().enumerate() {
         let pair = hz / 100u64.pow(i as u32) % 100;
-        *b = ((pair / 10) << 4 | pair % 10) as u8;
+        *b = (((pair / 10) << 4) | (pair % 10)) as u8;
     }
     out
 }
@@ -689,7 +689,11 @@ fn station_port_released_by_other_program_reconnects_and_restores_selection() {
             "origin":"cat_readback","confirmed_command_id":null})
     );
     assert_eq!(after["operating_revision"], before["operating_revision"]);
-    assert_eq!(after["receive"]["job_id"], job.as_str(), "receive not restarted");
+    assert_eq!(
+        after["receive"]["job_id"],
+        job.as_str(),
+        "receive not restarted"
+    );
     assert_eq!(s.recording.operating_band(), Some("20m"));
     // Cable removal and return keep the known selection.
     s.set(Device::Removed);
@@ -749,6 +753,10 @@ fn station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band()
     assert_eq!(v["selection"]["band"], "40m");
     assert_eq!(v["selection"]["mode"], "ft8");
     assert_eq!(v["selection"]["nominal_hz"], 7_074_000);
-    assert_eq!(v["receive"]["job_id"], serde_json::Value::Null, "no receive started");
+    assert_eq!(
+        v["receive"]["job_id"],
+        serde_json::Value::Null,
+        "no receive started"
+    );
     s.assert_read_only();
 }

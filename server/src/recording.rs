@@ -1482,6 +1482,57 @@ impl Recording {
             }
         }
         self.refresh_radio_cache();
+        if observed == Observed::Ready
+            && let Gate::Eligible { key, .. } = gate
+        {
+            self.adopt_readback_selection(key.profile_revision);
+        }
+    }
+    /// WstxOperatingReceive S1 ReadbackSelectionAdoption (#22): while the selection band
+    /// is unknown, the lifecycle's Ready connection with a confirmed fresh dial that
+    /// exactly equals the station operating mode's preferred entry of one band becomes
+    /// the selection. Read-only: no CAT bytes, no receive restart, no revision advance,
+    /// never replaces a known selection and never infers the mode.
+    fn adopt_readback_selection(&self, profile_revision: u64) {
+        let mut s = self.state.lock().unwrap();
+        if s.operating.nominal.band.is_some()
+            || s.operating.active()
+            || s.operating.profile_revision != profile_revision
+        {
+            return;
+        }
+        let mode = s.operating_mode;
+        let o = &mut s.operating;
+        let dial = selection::bound_snapshot(o.radio.cached.as_ref(), profile_revision)
+            .filter(|v| {
+                v.state == wstx_rust::radio_control::State::Ready
+                    && v.authority.profile_id == self.profile
+                    && v.authority.boot_id == self.boot
+                    && v.authority.connection_generation == o.radio.generation
+            })
+            .and_then(|v| {
+                v.facts
+                    .frequency
+                    .confirmed
+                    .then_some(v.facts.frequency.value)
+            })
+            .flatten();
+        let Some(dial) = dial else {
+            return;
+        };
+        let mut bands = selection::BANDS
+            .into_iter()
+            .filter(|b| selection::frequency(mode, b) == Some(dial));
+        let (Some(band), None) = (bands.next(), bands.next()) else {
+            return;
+        };
+        o.nominal = selection::Nominal {
+            mode,
+            band: Some(band),
+            nominal_hz: Some(dial),
+            origin: "cat_readback",
+            confirmed_command_id: None,
+        };
     }
     /// Current automatic CAT condition for the additive authorization status.
     pub(crate) fn cat_status(

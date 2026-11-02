@@ -51,6 +51,16 @@ pub(crate) enum Action {
 }
 pub(crate) const DELAYS: [u64; 4] = [1, 2, 4, 8];
 
+/// CL-022-05 status reason of a released failed attempt: a port held by another
+/// program (access denied / sharing violation, or another station's ownership lock)
+/// is named port_in_use; every other cause keeps the common radio error code.
+pub(crate) fn reason(error: cat::Error) -> &'static str {
+    match error {
+        cat::Error::ResourceInUse => "port_in_use",
+        e => crate::selection::radio_error(e),
+    }
+}
+
 pub(crate) struct Lifecycle {
     key: Option<Key>,
     failures: usize,
@@ -120,7 +130,7 @@ impl Lifecycle {
             }
             Observed::FailedReleased(_) | Observed::Closed | Observed::Absent => {
                 if let Observed::FailedReleased(error) = observed {
-                    self.last_error = Some(crate::selection::radio_error(error));
+                    self.last_error = Some(reason(error));
                 }
                 let due = *self.next_at.get_or_insert_with(|| {
                     let delay = DELAYS[self.failures.min(DELAYS.len() - 1)];
