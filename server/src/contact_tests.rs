@@ -364,6 +364,8 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
 fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73() {
     for rr73 in [false, true] {
         let mut s = station();
+        // Call 1st off: the reply to my CQ waits for the operator's selection (#12).
+        s.command(Command::SetCallFirst(false)).unwrap();
         s.command(Command::SetParity(Parity::Even)).unwrap();
         s.command(Command::EnableTx(true, Some(7))).unwrap();
         assert_eq!(s.state(), (State::Calling, Slot::Tx6));
@@ -501,7 +503,7 @@ fn other_stations_wrong_period_and_previous_partner_rows_change_nothing() {
         replace: true,
     })
     .unwrap();
-    assert!(!s.armed(), "ChangeContact turns Enable Tx off");
+    assert!(s.armed(), "ChangeContact keeps Enable Tx (#50)");
     assert_eq!(
         s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
         Some("DL1ABC")
@@ -1736,4 +1738,150 @@ fn the_last_partner_message_counts_identical_repeats() {
     })
     .unwrap();
     assert_eq!(heard(&s), None, "a new contact starts without one");
+}
+
+// Proves: CL-050-04; TC-050-004 (a). #50 (operator 2026-11-02, US5WFL then YO3GNF): calling
+// another station while Enable Tx is on keeps it on, and the next own period calls the new
+// station; nothing more goes to the old partner.
+#[test]
+fn changing_the_contact_while_armed_keeps_enable_tx_and_the_next_period_calls_the_new_station() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    let cause = s.core.view().last_disarm_cause;
+    // K1ABC does not answer; the operator calls DL1ABC instead (an even-period CQ).
+    let other = s.row(period(2), "CQ DL1ABC JO62", 800.0, Some(-3.0));
+    s.command(Command::SelectRow {
+        row: other,
+        replace: true,
+    })
+    .unwrap();
+    assert!(s.armed(), "Enable Tx stays on");
+    assert_eq!(s.core.view().last_disarm_cause, cause, "no new disarm");
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
+        Some("DL1ABC")
+    );
+    s.run(period(5) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("DL1ABC HB9BLA JN47"));
+    assert!(
+        s.sent
+            .iter()
+            .filter(|(p, _)| *p > period(1))
+            .all(|(_, t)| t.starts_with("DL1ABC ")),
+        "nothing more to K1ABC: {:?}",
+        s.sent
+    );
+    // The same through a manual entry (enter_dx replace).
+    s.command(Command::EnterDx {
+        call: "W1AW".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert!(s.armed(), "a manual replacement keeps Enable Tx as well");
+}
+
+/// The 2026-11-02 22:48 CQ run (#10): four stations call my CQ in two periods, listed in
+/// decode order.
+fn callers(s: &mut Station, first: i64, second: i64) -> (Vec<Row>, Vec<Row>) {
+    let a = vec![
+        s.row(first, "HB9BLA EA4HTI IM69", 1678.0, Some(-8.0)),
+        s.row(first, "HB9BLA F1PBZ -13", 2144.0, Some(-10.0)),
+    ];
+    let b = vec![
+        s.row(second, "HB9BLA EA8BIA -11", 1595.0, Some(0.0)),
+        s.row(second, "HB9BLA SV1DZB KM18", 1678.0, Some(-8.0)),
+    ];
+    (a, b)
+}
+
+// Proves: CL-010-17; TC-010-010. WSJT-X Call 1st (cbFirst, on by default): my own CQ
+// answers the first caller of the period in decode order at once, with Enable Tx kept;
+// the later callers change nothing.
+#[test]
+fn call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period() {
+    let mut s = station();
+    s.command(Command::SetHoldTx(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+    // Default parity odd: my CQ goes in period 1, the callers answer in period 2.
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ HB9BLA JN47"));
+    let (first, second) = callers(&mut s, period(2), period(4));
+    // Delivered in reverse slice order: decode order (row sequence) decides.
+    let reversed: Vec<Row> = first.iter().rev().cloned().collect();
+    s.deliver(&reversed);
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!(
+        c.dx_call.as_deref(),
+        Some("EA4HTI"),
+        "the first caller in decode order"
+    );
+    assert_eq!(c.dx_grid.as_deref(), Some("IM69"));
+    assert_eq!(
+        s.state(),
+        (State::Report, Slot::Tx2),
+        "their grid: my report next"
+    );
+    assert_eq!(s.next_text(), "EA4HTI HB9BLA -08");
+    assert!(s.armed(), "Enable Tx stays on");
+    assert_eq!(s.engine.settings.tx_hz, 1500, "Hold Tx keeps my Tx offset");
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("EA4HTI HB9BLA -08"));
+    // Callers during a running QSO do not switch it.
+    s.deliver(&second);
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
+        Some("EA4HTI")
+    );
+}
+
+// Proves: CL-010-17; TC-010-010. With Call 1st off, Auto Seq off, or only continuing
+// exchanges to my call (R+report, RRR, RR73, 73: WSJT-X AutoRespondPeriod.cpp
+// continuingExchange), the CQ keeps running; set_call_first changes the setting.
+#[test]
+fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
+    assert!(
+        Settings::default().call_first,
+        "Call 1st is on by default (#10)"
+    );
+    for case in 0..3 {
+        let mut s = station();
+        match case {
+            0 => s.command(Command::SetCallFirst(false)).unwrap(),
+            1 => s.command(Command::SetAutoSeq(false)).unwrap(),
+            _ => {}
+        }
+        s.command(Command::EnableTx(true, Some(7))).unwrap();
+        s.run(period(2) + 14 * SECOND);
+        let rows = if case == 2 {
+            vec![
+                s.row(period(2), "HB9BLA DL1ABC RR73", 900.0, None),
+                s.row(period(2), "HB9BLA DL2ABC 73", 950.0, None),
+                s.row(period(2), "HB9BLA DL3ABC RRR", 990.0, None),
+                s.row(period(2), "HB9BLA DL4ABC R-10", 1010.0, None),
+            ]
+        } else {
+            callers(&mut s, period(2), period(4)).0
+        };
+        s.deliver(&rows);
+        assert_eq!(s.state(), (State::Calling, Slot::Tx6), "case {case}");
+        s.run(period(3) + 14 * SECOND);
+        assert_eq!(
+            s.sent_in(period(3)).as_deref(),
+            Some("CQ HB9BLA JN47"),
+            "case {case}"
+        );
+    }
+    let mut s = station();
+    s.command(Command::SetCallFirst(false)).unwrap();
+    assert!(!s.engine.settings.call_first);
 }

@@ -338,6 +338,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         keys(&v["settings"]),
         sorted(&[
             "auto_seq",
+            "call_first",
             "tx1_skip",
             "tx_minutes",
             "tune_seconds",
@@ -360,7 +361,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
-        json!({"auto_seq":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
+        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
@@ -380,7 +381,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
             "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
-        "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
+        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
             "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",

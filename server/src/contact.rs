@@ -315,6 +315,8 @@ pub fn generate(
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub auto_seq: bool,
+    /// WSJT-X Call 1st (cbFirst, #10): an own CQ answers its first caller.
+    pub call_first: bool,
     pub tx1_skip: bool,
     pub rx_hz: u32,
     pub tx_hz: u32,
@@ -326,6 +328,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             auto_seq: true,
+            // #10 (operator 2026-11-02): on by default, operator-changeable.
+            call_first: true,
             tx1_skip: false,
             rx_hz: 1500,
             tx_hz: 1500,
@@ -451,6 +455,7 @@ pub enum Command {
     SetHoldTx(bool),
     SetParity(Parity),
     SetAutoSeq(bool),
+    SetCallFirst(bool),
     SetWatchdogs {
         tx_minutes: u32,
         tune_seconds: u32,
@@ -493,6 +498,9 @@ pub struct Engine {
     counted_order: VecDeque<(RowKey, (i64, String))>,
     fingerprint: String,
     new_id: Box<dyn FnMut() -> Option<String> + Send>,
+    /// The own CQ that station automation started: its callers are chosen by the
+    /// automation strategy, never by Call 1st (WstxContact::CallFirst).
+    automatic_cq: Option<String>,
 }
 
 fn refusal_code(r: TransmitRefusal) -> &'static str {
@@ -526,6 +534,7 @@ impl Engine {
             counted_order: VecDeque::new(),
             fingerprint: String::new(),
             new_id,
+            automatic_cq: None,
         }
     }
     /// The contacts due for the log since the last call (WstxContact::DirectLog).
@@ -633,10 +642,9 @@ impl Engine {
             Some(c) => c.id.clone(),
             None => (self.new_id)().ok_or("storage_unavailable")?,
         };
-        if active && !same {
-            // ChangeContact: the old contact is cancelled and Enable Tx turns off.
-            Self::disarm(core, DisarmCause::ContactCancelled);
-        }
+        // ChangeContact (#50): the old contact is replaced and Enable Tx keeps its state;
+        // submit() replaces the old contact's pending request with the new one.
+        let _ = core;
         let tx1_skip = self.settings.tx1_skip;
         let first = if first == Slot::Tx1 && tx1_skip {
             Slot::Tx2
@@ -884,6 +892,7 @@ impl Engine {
             Command::SetHoldTx(enabled) => self.settings.hold_tx = enabled,
             Command::SetParity(parity) => self.settings.parity = parity,
             Command::SetAutoSeq(enabled) => self.settings.auto_seq = enabled,
+            Command::SetCallFirst(enabled) => self.settings.call_first = enabled,
             Command::SetWatchdogs {
                 tx_minutes,
                 tune_seconds,
@@ -946,6 +955,7 @@ impl Engine {
                 self.last_arm = ArmState::Armed;
                 self.transmit_problem = None;
                 if let Some((messages, id)) = cq {
+                    self.automatic_cq = ctx.automatic.then(|| id.clone());
                     // With no partner, Tx6 means calling CQ.
                     self.contact = Some(Contact {
                         id,
@@ -1204,6 +1214,7 @@ impl Engine {
                 _ => {}
             }
         }
+        self.call_first(core.as_deref_mut(), ctx, rows);
         // Arm transitions: halt and watchdog expiry end a CQ; other states are kept.
         if let Some(core) = core.as_deref_mut() {
             let view = core.view();
@@ -1230,6 +1241,51 @@ impl Engine {
             return true;
         }
         false
+    }
+    /// WstxContact::CallFirst (#10, MW readFromStdout cbFirst): while my own CQ runs
+    /// with Auto Seq and Call 1st on, the first row of this step in decode order that
+    /// calls me with a grid or a report (not R+report, RRR, RR73 or 73) is answered as a
+    /// selection of that row (Enable Tx unchanged, not operator activity).
+    fn call_first<H: Hardware>(&mut self, core: Option<&mut Core<H>>, ctx: &Ctx, rows: &[Row]) {
+        if !self.settings.call_first || !self.settings.auto_seq {
+            return;
+        }
+        let Some(c) = self.contact.as_ref() else {
+            return;
+        };
+        if c.state != State::Calling || self.automatic_cq.as_ref() == Some(&c.id) {
+            return;
+        }
+        let (Some(my), Some(mode)) = (ctx.call.as_deref(), ctx.mode) else {
+            return;
+        };
+        let parity = self.settings.parity;
+        let mut ordered: Vec<&Row> = rows.iter().collect();
+        ordered.sort_by_key(|r| r.key.sequence);
+        let caller = ordered.into_iter().find(|row| {
+            let Some(std) = row.standard.as_ref() else {
+                return false;
+            };
+            row.mode == mode
+                && std.to == Call::Sign(my.to_owned())
+                && matches!(std.from, Call::Sign(_))
+                // AutoRespondPeriod.cpp isDirectAutoRespondCandidate: an exchange that is
+                // not a continuing one (R+report, RRR, RR73, 73), i.e. a grid or a report.
+                && matches!(classify(std), Received::Grid | Received::SignalReport)
+                && row
+                    .period_start_ms
+                    .is_some_and(|p| transmit::parity(row.mode, p) != parity)
+                && !self.counted_rows.contains(&row.key)
+        });
+        let Some(row) = caller.cloned() else {
+            return;
+        };
+        let automatic = Ctx {
+            automatic: true,
+            ..ctx.clone()
+        };
+        // A refusal (e.g. an incomplete profile) leaves the CQ running.
+        let _ = self.command(Command::SelectRow { row, replace: false }, core, &automatic);
     }
     /// The material state a revision covers (sequence, transmit and watchdog view).
     pub fn fingerprint<H: Hardware>(&self, core: Option<&Core<H>>) -> String {

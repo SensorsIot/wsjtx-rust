@@ -35,7 +35,7 @@ main.append(confirmDialog);
 document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="Choose a strategy first">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="Choose a strategy first">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>DX call, messages Tx1&ndash;Tx6, report and period</summary><div class="ct-dx"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
-<div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label><label>Tx period<select id="contact-parity" disabled><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></details>`);
+<div class="op-frequency-fields ct-fields"><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label><label>Tx period<select id="contact-parity" disabled><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto sequence</label><label class="op-check" title="While calling CQ, answer the first station that calls me (WSJT-X Call 1st)"><input type="checkbox" id="contact-call-first" disabled>Call 1st</label><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></details>`);
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
 const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
@@ -119,9 +119,10 @@ function render(){
     row.classList.toggle('ct-next-row',c?.next_slot===slot);
   }
   $('contact-tx1-skip').checked=!!s?.tx1_skip;$('contact-rr73').checked=c?.tx4==='rr73';$('contact-rr73').disabled=!c?.dx_call;
-  if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;$('contact-auto').checked=s.auto_seq;
+  if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;$('contact-auto').checked=s.auto_seq;$('contact-call-first').checked=s.call_first!==false;
     setValue($('watchdog-tx'),s.tx_minutes);setValue($('watchdog-tune'),s.tune_seconds);}
   $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
+  $('contact-call-first').disabled=!capable;
   const auto=$('contact-auto');auto.disabled=!capable;auto.setAttribute('aria-label',capable?'Auto sequence':'Auto sequence unavailable');
   // WstxContact::SetEnableTx (#37): no Enable Tx control; the direct buttons start a QSO.
   const prepared=!!c?.dx_call&&transmitting(c);
@@ -264,6 +265,7 @@ $('contact-rr73').addEventListener('change',event=>send('set_tx4',{form:event.ta
 $('contact-report').addEventListener('change',event=>{const n=Number(event.target.value);if(Number.isInteger(n))send('set_report',{report:n},'Report');else resultText.textContent='Report must be a whole number of dB';});
 $('contact-parity').addEventListener('change',event=>send('set_parity',{parity:event.target.value},'Tx period'));
 $('contact-auto').addEventListener('change',event=>send('set_auto_seq',{enabled:event.target.checked},'Auto sequence'));
+$('contact-call-first').addEventListener('change',event=>send('set_call_first',{enabled:event.target.checked},'Call 1st'));
 $('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune},'Tune'));
 $('contact-cancel').addEventListener('click',()=>send('cancel',{},'Cancel contact'));
 for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',async()=>{
@@ -490,7 +492,14 @@ async function selectRow(tr){
   if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true},'Change contact'),text);
   return reply;
 }
-async function replyRow(tr){const reply=await selectRow(tr);if(reply&&!reply.refused&&transmitCapable())arm('Reply');}
+// A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
+// handleDecodeSelection with quick_call): replace true, no confirmation, then Enable Tx on;
+// the replacement itself keeps Enable Tx as it is.
+async function replyRow(tr){
+  const row=rowIdentity(tr);if(!row)return;
+  const reply=await send('select_row',{row,replace:true},'Reply');
+  if(reply&&!reply.refused&&transmitCapable())arm('Reply');
+}
 let clickTimer=null;
 activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>selectRow(tr),250);});
 activity?.addEventListener('dblclick',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);replyRow(tr);});

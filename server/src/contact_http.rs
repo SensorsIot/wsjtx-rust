@@ -527,7 +527,7 @@ impl Station {
             }
         };
         let s = &e.settings;
-        let settings = json!({"auto_seq":s.auto_seq,"tx1_skip":s.tx1_skip,
+        let settings = json!({"auto_seq":s.auto_seq,"call_first":s.call_first,"tx1_skip":s.tx1_skip,
             "tx_minutes":view.as_ref().map_or(6,|v|v.tx_minutes),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report});
         let watchdog = json!({"tx_remaining_minutes":view.as_ref().map_or(0,|v|v.tx_remaining_minutes),
@@ -634,7 +634,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "choose_next" => &["slot"],
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
-        "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "tune" => &["enabled"],
+        "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "set_call_first" | "tune" => &["enabled"],
         "enable_tx" => &["enabled", "safety_revision"],
         "set_tx4" => &["form"],
         "set_frequency" => &["rx_hz", "tx_hz"],
@@ -714,6 +714,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
         "set_tx1_skip" => Command::SetTx1Skip(boolean(b, "enabled")?),
         "set_hold_tx" => Command::SetHoldTx(boolean(b, "enabled")?),
         "set_auto_seq" => Command::SetAutoSeq(boolean(b, "enabled")?),
+        "set_call_first" => Command::SetCallFirst(boolean(b, "enabled")?),
         "enable_tx" => {
             if !b["safety_revision"].is_null() {
                 safe(b, "safety_revision")?;
