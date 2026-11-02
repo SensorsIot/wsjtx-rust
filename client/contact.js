@@ -22,7 +22,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 <p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p>
 <div id="qso-next" class="op-qso-next" hidden><span class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
-<p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable">Log QSO needs a contact with a DX call.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
+<p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 `);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
@@ -131,7 +131,8 @@ function render(){
   const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
   // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
-  const log=$('contact-log');log.disabled=!qso;$('contact-unavailable').hidden=qso;
+  // The reason stays the disabled button's description without taking a line.
+  const log=$('contact-log');log.disabled=!qso;$('contact-unavailable').hidden=true;
   if(qso)log.removeAttribute('aria-describedby');else log.setAttribute('aria-describedby','contact-unavailable');
   // NEXT only while Enable Tx is on for a CQ or a running QSO.
   $('qso-next').hidden=!(armed&&(qso||c?.state==='calling'));

@@ -356,5 +356,3 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #rx-focus .op-qso-buttons{gap:4px}
 #rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
 #controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}
-/* The Log QSO reason stays the button's description without taking a line. */
-#rx-focus #contact-unavailable{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
