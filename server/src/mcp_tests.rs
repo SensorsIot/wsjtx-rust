@@ -20,7 +20,10 @@ pub(crate) struct Mcp {
     pub(crate) boot: String,
     pub(crate) dir: std::path::PathBuf,
     pub(crate) bench: Bench,
+    /// The browser's grant transport (cookie).
     pub(crate) token: String,
+    /// The MCP client token (#58), created in Settings by that browser.
+    pub(crate) mcp: String,
     pub(crate) scope: authorization::WireScope,
     key: Option<ring::signature::EcdsaKeyPair>,
     gid: String,
@@ -83,6 +86,7 @@ pub(crate) async fn station(transmit: bool) -> Mcp {
         dir,
         bench,
         token: String::new(),
+        mcp: String::new(),
         scope: authorization::WireScope {
             profile_id: String::new(),
             radio_id: String::new(),
@@ -92,6 +96,7 @@ pub(crate) async fn station(transmit: bool) -> Mcp {
         gid: String::new(),
     };
     f.enroll().await;
+    f.mcp = f.new_mcp_client("fixture agent").await.1;
     f
 }
 impl Drop for Mcp {
@@ -141,6 +146,30 @@ impl Mcp {
             uri,
             &h,
             body.map(|b| serde_json::to_vec(&b).unwrap()),
+        )
+        .await
+    }
+    /// Settings > Access & grants > MCP clients: create one with the browser's grant;
+    /// returns (client_id, token).
+    pub(crate) async fn new_mcp_client(&self, name: &str) -> (String, String) {
+        let r = self
+            .browser(
+                "POST",
+                "/authorization/v1/mcp-clients/create",
+                Some(json!({"version":1,"name":name})),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+        (
+            r.json["client_id"].as_str().unwrap().to_owned(),
+            r.json["token"].as_str().unwrap().to_owned(),
+        )
+    }
+    pub(crate) async fn revoke_mcp_client(&self, client_id: &str) -> Reply {
+        self.browser(
+            "POST",
+            "/authorization/v1/mcp-clients/revoke",
+            Some(json!({"version":1,"client_id":client_id})),
         )
         .await
     }
@@ -272,7 +301,7 @@ impl Mcp {
         let mut h = vec![
             ("content-type", "application/json".to_string()),
             ("accept", "application/json, text/event-stream".into()),
-            ("authorization", format!("Bearer {}", self.token)),
+            ("authorization", format!("Bearer {}", self.mcp)),
             ("mcp-protocol-version", "2026-07-28".into()),
             ("mcp-method", method.into()),
         ];
@@ -449,7 +478,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     let legacy = |body: Value, version: Option<&str>| {
         let mut h = vec![
             ("content-type", "application/json".to_string()),
-            ("authorization", format!("Bearer {}", f.token)),
+            ("authorization", format!("Bearer {}", f.mcp)),
         ];
         if let Some(v) = version {
             h.push(("mcp-protocol-version", v.to_string()));
@@ -513,12 +542,12 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         h.extend(extra);
         h
     };
-    // Authorization: only this station's current grant transport as a bearer.
+    // Authorization: only one of this station's MCP client tokens as a bearer (#58).
     for (auth, extra, label) in [
         (None, vec![], "no credential"),
         (None, vec![("cookie", f.cookie())], "browser cookie alone"),
         (
-            Some(format!("bearer {}", f.token)),
+            Some(format!("bearer {}", f.mcp)),
             vec![],
             "scheme is case-exact",
         ),
@@ -529,9 +558,23 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
             "unknown token",
         ),
         (
-            Some(format!("Bearer {}", other.token)),
+            Some(format!(
+                "Bearer {}{}",
+                authorization::MCP_TOKEN_PREFIX,
+                URL_SAFE_NO_PAD.encode([7u8; 32])
+            )),
             vec![],
-            "another station's grant",
+            "unknown MCP client token",
+        ),
+        (
+            Some(format!("Bearer {}", other.mcp)),
+            vec![],
+            "another station's MCP client",
+        ),
+        (
+            Some(format!("Bearer {}", f.token)),
+            vec![],
+            "this station's own browser grant transport",
         ),
     ] {
         let r = f
@@ -546,8 +589,8 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         assert!(r.json.get("result").is_none(), "{label}");
     }
     // Two Authorization fields are ambiguous.
-    let mut h = legacy(Some(format!("Bearer {}", f.token)), vec![]);
-    h.push(("authorization", format!("Bearer {}", f.token)));
+    let mut h = legacy(Some(format!("Bearer {}", f.mcp)), vec![]);
+    h.push(("authorization", format!("Bearer {}", f.mcp)));
     assert_eq!(
         f.http("POST", "/mcp", &h, body(&list)).await.status,
         StatusCode::UNAUTHORIZED
@@ -558,7 +601,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         .method("POST")
         .uri("/mcp")
         .header("content-type", "application/json")
-        .header("authorization", format!("Bearer {}", f.token))
+        .header("authorization", format!("Bearer {}", f.mcp))
         .body(Body::from(serde_json::to_vec(&list).unwrap()))
         .unwrap();
     assert_eq!(
@@ -572,8 +615,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         StatusCode::UNAUTHORIZED
     );
     // Origin and transport shape.
-    let ok =
-        |extra: Vec<(&'static str, String)>| legacy(Some(format!("Bearer {}", f.token)), extra);
+    let ok = |extra: Vec<(&'static str, String)>| legacy(Some(format!("Bearer {}", f.mcp)), extra);
     assert_eq!(
         f.http(
             "POST",
@@ -633,7 +675,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         .http(
             "POST",
             "/mcp",
-            &legacy(Some(format!("Bearer {}", f.token)), vec![])
+            &legacy(Some(format!("Bearer {}", f.mcp)), vec![])
                 .into_iter()
                 .map(|(k, v)| {
                     if k == "mcp-protocol-version" {
@@ -656,7 +698,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
     for version in [None, Some("2025-03-26")] {
         let mut h = vec![
             ("content-type", "application/json".to_string()),
-            ("authorization", format!("Bearer {}", f.token)),
+            ("authorization", format!("Bearer {}", f.mcp)),
         ];
         if let Some(v) = version {
             h.push(("mcp-protocol-version", v.to_string()));
@@ -680,7 +722,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
             "io.modelcontextprotocol/clientInfo":{"name":"t","version":"1"}});
         let mut h = vec![
             ("content-type", "application/json".to_string()),
-            ("authorization", format!("Bearer {}", f.token)),
+            ("authorization", format!("Bearer {}", f.mcp)),
             ("mcp-protocol-version", "2026-07-28".to_string()),
             ("mcp-method", header_method.to_string()),
         ];
@@ -899,4 +941,398 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         202
     );
     assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
+}
+
+/// The internal MCP-principal station transport of an MCP client token: the handle the
+/// in-process dispatch presents. No client ever receives it; tests use it to send an
+/// MCP-principal request straight to a browser route.
+fn internal_transport(f: &Mcp, token: &str) -> String {
+    let mut owner = f.state.authorization.lock().unwrap();
+    let service = owner.as_mut().unwrap();
+    service
+        .authority
+        .mcp_transport(token, &f.app.origin, Instant::now())
+        .unwrap()
+        .0
+}
+/// A request presenting `value` as the station session cookie (with Origin).
+async fn with_cookie(f: &Mcp, method: &str, uri: &str, value: &str, body: Option<Value>) -> Reply {
+    let mut h = vec![
+        ("origin", f.app.origin.clone()),
+        ("cookie", format!("wstx_session_{}={value}", f.id)),
+    ];
+    if body.is_some() {
+        h.push(("content-type", "application/json".into()));
+    }
+    f.http(
+        method,
+        uri,
+        &h,
+        body.map(|b| serde_json::to_vec(&b).unwrap()),
+    )
+    .await
+}
+async fn mcp_clients(f: &Mcp) -> Value {
+    let r = f
+        .browser("GET", "/authorization/v1/mcp-clients", None)
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.headers[header::CACHE_CONTROL], "no-store");
+    r.json
+}
+
+// Proves: CL-012-03; TC-020-004. #58: the MCP client token is a credential of its own,
+// shown once and stored hashed; it never opens a browser route or becomes a browser
+// session, a browser credential never opens /mcp, every use is audited and revocation
+// is immediate.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_004_the_mcp_client_token_is_separate_from_the_browser_credential() {
+    let mut f = station(true).await;
+    let (id, token) = f.new_mcp_client("Claude Code").await;
+    assert!(
+        token.starts_with("wstx_mcp_") && token.len() == 9 + 43,
+        "{token}"
+    );
+    // Shown once: the listing has name, created and last used, never the token or hash.
+    let list = mcp_clients(&f).await;
+    let names: Vec<_> = list["clients"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].clone())
+        .collect();
+    assert_eq!(names, vec![json!("fixture agent"), json!("Claude Code")]);
+    let mine = &list["clients"][1];
+    assert_eq!(mine["client_id"], id.as_str());
+    assert!(mine["created_utc_ms"].as_u64().unwrap() > 1_700_000_000_000);
+    assert_eq!(mine["last_used_utc_ms"], Value::Null, "not used yet");
+    let digest = URL_SAFE_NO_PAD.encode(ring::digest::digest(
+        &ring::digest::SHA256,
+        token.as_bytes(),
+    ));
+    let text = list.to_string();
+    assert!(!text.contains(&token[9..]) && !text.contains(&digest));
+    // Stored hashed: the record holds the SHA-256 of the token, never the token.
+    let stored = std::fs::read_to_string(f.dir.join("authorization.json")).unwrap();
+    assert!(!stored.contains(&token[9..]), "no token at rest");
+    assert!(stored.contains(&digest), "its SHA-256 is kept");
+
+    // An MCP token on browser routes is refused, as a cookie and as a bearer.
+    let contact = f.browser("GET", "/contact", None).await.json;
+    let revision = contact["contact_revision"].as_u64().unwrap();
+    let cmd = f.command(
+        revision,
+        "set_frequency",
+        json!({"rx_hz":1300,"tx_hz":null}),
+    );
+    for (method, uri, body) in [
+        ("GET", "/contact", None),
+        ("GET", "/profile", None),
+        ("POST", "/contact/command", Some(cmd.clone())),
+        ("POST", "/automation/command", Some(json!({}))),
+    ] {
+        let r = with_cookie(&f, method, uri, &token, body.clone()).await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED, "cookie {uri}");
+        let mut h = vec![
+            ("origin", f.app.origin.clone()),
+            ("authorization", format!("Bearer {token}")),
+        ];
+        if body.is_some() {
+            h.push(("content-type", "application/json".into()));
+        }
+        let r = f
+            .http(
+                method,
+                uri,
+                &h,
+                body.map(|b| serde_json::to_vec(&b).unwrap()),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED, "bearer {uri}");
+    }
+    assert_eq!(
+        f.browser("GET", "/contact", None).await.json["contact_revision"],
+        revision,
+        "no effect"
+    );
+    // No exchange for a browser session or grant: /session, MCP client management and
+    // the auth-v1 status all refuse it.
+    let r = f
+        .http(
+            "POST",
+            "/session",
+            &[("origin", f.app.origin.clone())],
+            Some(token.clone().into_bytes()),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED, "/session");
+    assert!(r.headers.get(header::SET_COOKIE).is_none());
+    for (method, uri, body) in [
+        ("GET", "/authorization/v1/mcp-clients", None),
+        (
+            "POST",
+            "/authorization/v1/mcp-clients/create",
+            Some(json!({"version":1,"name":"x"})),
+        ),
+        (
+            "POST",
+            "/authorization/v1/status",
+            Some(json!({"version":1})),
+        ),
+    ] {
+        let r = with_cookie(&f, method, uri, &token, body).await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED, "{uri}");
+    }
+    // Even the internal MCP-principal transport is no browser credential for them.
+    let internal = internal_transport(&f, &token);
+    for (method, uri, body) in [
+        ("GET", "/authorization/v1/mcp-clients", None),
+        (
+            "POST",
+            "/authorization/v1/mcp-clients/create",
+            Some(json!({"version":1,"name":"x"})),
+        ),
+        (
+            "POST",
+            "/authorization/v1/mcp-clients/revoke",
+            Some(json!({"version":1,"client_id":id})),
+        ),
+        (
+            "POST",
+            "/authorization/v1/status",
+            Some(json!({"version":1})),
+        ),
+    ] {
+        let r = with_cookie(&f, method, uri, &internal, body).await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED, "internal {uri}");
+    }
+    assert_eq!(
+        mcp_clients(&f).await["clients"].as_array().unwrap().len(),
+        2
+    );
+
+    // A browser credential on /mcp: the cookie is never read; the grant transport or the
+    // station access token as a bearer is refused with the hint to the MCP client token.
+    let tools = |auth: Option<String>, cookie: Option<String>| {
+        let mut h = vec![
+            ("content-type", "application/json".to_string()),
+            ("mcp-protocol-version", "2025-11-25".to_string()),
+        ];
+        if let Some(a) = auth {
+            h.push(("authorization", a));
+        }
+        if let Some(c) = cookie {
+            h.push(("cookie", c));
+        }
+        h
+    };
+    let list_body =
+        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})).unwrap();
+    let r = f
+        .http(
+            "POST",
+            "/mcp",
+            &tools(None, Some(f.cookie())),
+            Some(list_body.clone()),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    for legacy in [
+        f.token.clone(),
+        "DisposableFixtureToken01234567890".to_string(),
+    ] {
+        let r = f
+            .http(
+                "POST",
+                "/mcp",
+                &tools(Some(format!("Bearer {legacy}")), None),
+                Some(list_body.clone()),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(r.json["error"]["data"]["reason"], "mcp_token_required");
+        let hint = r.json["error"]["data"]["hint"].as_str().unwrap();
+        assert!(
+            hint.contains("Settings") && hint.contains("MCP clients"),
+            "{hint}"
+        );
+    }
+    let bearer = tools(Some(format!("Bearer {token}")), None);
+    let r = f
+        .http("POST", "/mcp", &bearer, Some(list_body.clone()))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+
+    // Audit: each use with the token's name, action and time; last used is set.
+    let fixture = std::mem::replace(&mut f.mcp, token.clone());
+    let v = f.tool("wstx_read", json!({"view":"contact"})).await;
+    assert_eq!(v["status"], 200);
+    f.mcp = fixture;
+    let list = mcp_clients(&f).await;
+    let recent = &list["recent"][0];
+    assert_eq!(
+        (
+            recent["name"].clone(),
+            recent["action"].clone(),
+            recent["status"].clone()
+        ),
+        (
+            json!("Claude Code"),
+            json!("tools/call wstx_read contact"),
+            json!(200)
+        )
+    );
+    assert!(recent["utc_ms"].as_u64().unwrap() > 1_700_000_000_000);
+    assert_eq!(list["recent"][1]["action"], "tools/list");
+    assert!(list["clients"][1]["last_used_utc_ms"].as_u64().is_some());
+    let log = std::fs::read_to_string(f.dir.join("mcp-audit.log")).unwrap();
+    let last: Value = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+    assert_eq!(last["action"], "tools/call wstx_read contact");
+    assert_eq!(last["client_id"], id.as_str());
+    assert!(!log.contains(&token[9..]), "the audit log holds no token");
+
+    // Revocation takes effect at once: the token and its internal transport are refused.
+    let r = f.revoke_mcp_client(&id).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json["clients"].as_array().unwrap().len(), 1);
+    let r = f
+        .http("POST", "/mcp", &bearer, Some(list_body.clone()))
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(r.json["error"]["data"]["reason"], "mcp_token_invalid");
+    assert_eq!(
+        with_cookie(&f, "GET", "/contact", &internal, None)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(f.revoke_mcp_client(&id).await.status, StatusCode::CONFLICT);
+    // The other client and the browser are untouched.
+    assert_eq!(f.read("profile").await["profile_id"], f.id.as_str());
+    assert_eq!(
+        f.browser("GET", "/contact", None).await.status,
+        StatusCode::OK
+    );
+
+    // At most 8 clients; refused tokens are rate limited, a valid one never waits.
+    for n in 1..8 {
+        f.new_mcp_client(&format!("agent {n}")).await;
+    }
+    let r = f
+        .browser(
+            "POST",
+            "/authorization/v1/mcp-clients/create",
+            Some(json!({"version":1,"name":"ninth"})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
+    let mut statuses = Vec::new();
+    for _ in 0..10 {
+        let r = f
+            .http("POST", "/mcp", &bearer, Some(list_body.clone()))
+            .await;
+        statuses.push(r.status.as_u16());
+    }
+    // Two refusals above (the grant transport and the station access token), one after
+    // the revocation, then these: the 10/60 s budget is spent at the eleventh.
+    assert_eq!(statuses[..7], [401; 7]);
+    assert_eq!(statuses[7..], [429; 3]);
+    assert_eq!(f.read("profile").await["profile_id"], f.id.as_str());
+}
+
+// Proves: CL-039-06, CL-012-03; TC-020-004. #58: the principal comes from the
+// credential, whatever route carries it: an MCP request never resets the Tx watchdog,
+// also when its MCP-principal transport reaches /contact/command directly.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    crate::automation_tests::at_even(&f);
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    let spent = || service.with(|c| c.watchdog_spent());
+    let advance = |ms: i64| {
+        f.bench.offset.fetch_add(ms, Ordering::SeqCst);
+    };
+    let internal = internal_transport(&f, &f.mcp);
+    let direct = |action: &'static str, extra: Value| {
+        let f = &f;
+        let internal = internal.clone();
+        async move {
+            let revision = f.browser("GET", "/contact", None).await.json["contact_revision"]
+                .as_u64()
+                .unwrap();
+            with_cookie(
+                f,
+                "POST",
+                "/contact/command",
+                &internal,
+                Some(f.command(revision, action, extra)),
+            )
+            .await
+        }
+    };
+    // A browser action sets the Tx watchdog to 1 minute and starts it.
+    let c = f.browser("GET", "/contact", None).await.json;
+    let body = f.command(
+        c["contact_revision"].as_u64().unwrap(),
+        "set_watchdogs",
+        json!({"tx_minutes":1,"tune_seconds":90}),
+    );
+    assert_eq!(
+        f.browser("POST", "/contact/command", Some(body))
+            .await
+            .status,
+        StatusCode::ACCEPTED
+    );
+    // MCP-principal commands at 20 s and 40 s, through the tool and straight to the
+    // browser route, are accepted but never extend it.
+    advance(20_000);
+    let revision = f.read("contact").await["contact_revision"]
+        .as_u64()
+        .unwrap();
+    let v = f
+        .tool(
+            "wstx_contact_command",
+            json!({"command":f.command(revision, "set_frequency", json!({"rx_hz":1200,"tx_hz":null}))}),
+        )
+        .await;
+    assert_eq!(v["status"], 202, "{v}");
+    advance(20_000);
+    let r = direct("set_frequency", json!({"rx_hz":1250,"tx_hz":null})).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    // The MCP-principal transport may not change the watchdog on the browser route.
+    let r = direct("set_watchdogs", json!({"tx_minutes":99,"tune_seconds":90})).await;
+    assert_eq!(r.json["error"]["code"], "operator_required", "{}", r.json);
+    // The MCP token itself never reaches /contact/command (refused before any effect).
+    let revision = f.browser("GET", "/contact", None).await.json["contact_revision"]
+        .as_u64()
+        .unwrap();
+    let r = with_cookie(
+        &f,
+        "POST",
+        "/contact/command",
+        &f.mcp,
+        Some(f.command(
+            revision,
+            "set_frequency",
+            json!({"rx_hz":1300,"tx_hz":null}),
+        )),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    advance(21_000);
+    assert!(spent(), "61 s after the only browser action");
+    let r = direct("enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(r.json["error"]["code"], "tx_watchdog", "{}", r.json);
+    let revision = f.read("contact").await["contact_revision"]
+        .as_u64()
+        .unwrap();
+    let v = f
+        .tool(
+            "wstx_contact_command",
+            json!({"command":f.command(revision, "enable_tx", json!({"enabled":true,"safety_revision":3}))}),
+        )
+        .await;
+    assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
+    assert_eq!(f.keys(), 0);
 }

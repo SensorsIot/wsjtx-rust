@@ -847,6 +847,45 @@ package WstxProfiles {
         attribute scope : SelectedRadioAuthorizationScope;
         attribute receiveOnlyConfirmed : Boolean;
     }
+    enum def RequestPrincipal { enum browser; enum mcp; enum udp; enum automation; }
+    attribute def RequestPrincipalRule {
+        doc /* (#58) The station attaches a RequestPrincipal to every request at the auth
+             boundary from its credential, never from the route: a browser grant transport
+             (or the plaintext runtime token) is browser; an MCP client's internal transport
+             is mcp; a UDP target command is udp; commands of the station's own automation
+             run are automation. Only browser is an operator action (Tx watchdog,
+             set_watchdogs, WstxStrategy::WatchdogFromOperator); an unreadable credential is
+             never browser. The auth-v1 status/revoke/commission operations and MCP client
+             management accept only the browser principal. */
+    }
+    attribute maxMcpClients : Integer = 8;
+    attribute def McpClientCredential {
+        doc /* (#58) A durable MCP client credential in the private authorization record:
+             id (UUID), name (1..32 printable ASCII, no leading or trailing space),
+             created_utc_ms, last_used_utc_ms (null until used; written at most every
+             10 minutes, exact in memory) and token_sha256 (unpadded base64url SHA-256 of the
+             complete token); never the token. At most maxMcpClients, ids and digests unique;
+             the record field mcp_clients is omitted while empty (records before #58 read
+             unchanged). Browser-only routes, Origin exact, JSON body <= 1024 bytes:
+             GET /authorization/v1/mcp-clients (read-only, Cache-Control no-store; a
+             present Origin must be exact) lists {version, max_clients,
+             clients [{client_id, name, created_utc_ms, last_used_utc_ms}], recent (newest
+             first audit entries, WstxMcp::McpCredential)}; .../create {version:1, name}
+             returns 200 {version, client_id, name, created_utc_ms, token} with Cache-Control
+             no-store, the only time the token is shown (cap reached 429, invalid name 400);
+             .../revoke {version:1, client_id} removes it and every transport of it at once
+             and returns the listing (unknown 409). An auth-v1 revoke with all_for_radio
+             also removes every MCP client. An MCP token is never accepted as a browser
+             cookie, by /session or by these routes. Settings > General > Access & grants
+             shows the list with Revoke (after confirmation), the create field and the new
+             token once with Copy and Done, and the recent use; it reads them only when
+             Settings opens. */
+        attribute id : String;
+        attribute name : String;
+        attribute createdUtcMs : Integer;
+        attribute lastUsedUtcMs : Integer[0..1];
+        attribute tokenSha256 : String;
+    }
     attribute def PrivateAuthorizationRecord {
         doc /* Version1 private per-profile atomic record under existing OS-protected
              service data, one selected-profile writer. Contains public verifiers and
@@ -863,6 +902,7 @@ package WstxProfiles {
         attribute grants : BrowserPublicVerifier[0..64];
         attribute revocationGeneration : Integer;
         attribute operationReceipts : AuthOperationReceipt[0..64];
+        attribute mcpClients : McpClientCredential[0..8];
     }
     attribute def BootstrapScopeRequest {
         doc /* Delivered: exact POST /authorization/v1/bootstrap-scope request is

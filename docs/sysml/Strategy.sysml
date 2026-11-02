@@ -222,7 +222,9 @@ package WstxStrategy {
         doc /* The Tx watchdog counts from the last operator action and is never paused or
              reset by automation. Only a human action in the browser is an operator
              action: an Enable Tx, any accepted ContactCommand or an Auto start sent by
-             the browser (cookie session, not an MCP tool call). Never operator actions:
+             the browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
+             the credential at the auth boundary, so an MCP client is never one on any
+             route, #58). Never operator actions:
              commands of a run (select_row, set_frequency, enable_tx, cancel, disarm), any
              MCP request (also starting or restarting a run) and any UDP command (Reply,
              Free Text). Such an enable_tx arms with the watchdog already counting from

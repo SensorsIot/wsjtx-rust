@@ -17,6 +17,55 @@ pub(crate) mod authorization_tests;
 const CAP: usize = 64;
 const CHALLENGE_LIFE: Duration = Duration::from_secs(60);
 const TRANSPORT_LIFE: Duration = Duration::from_secs(28_800);
+/// MCP client credentials per station (#58).
+pub const MCP_CAP: usize = 8;
+/// Every MCP client token starts with this marker; anything else on POST /mcp is refused
+/// with the migration hint (the station access token and grant transports never qualify).
+pub const MCP_TOKEN_PREFIX: &str = "wstx_mcp_";
+/// last_used is written to disk at most this often per client (memory is exact).
+const MCP_LAST_USED_PERSIST_MS: u64 = 600_000;
+
+/// Who sent a request, fixed at the auth boundary from the credential (#58, CL-039-06):
+/// a browser grant transport (or the plaintext runtime token) is the human operator;
+/// an MCP client token, a UDP target and the station's own automation never are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Principal {
+    Browser,
+    Mcp,
+    Udp,
+    Automation,
+}
+impl Principal {
+    /// Only a human action in the browser counts as an operator action.
+    pub fn is_operator(self) -> bool {
+        self == Principal::Browser
+    }
+}
+
+/// A durable MCP client credential: only the SHA-256 of its token is kept (#58).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct McpClient {
+    pub id: String,
+    pub name: String,
+    pub created_utc_ms: u64,
+    #[serde(deserialize_with = "required_nullable")]
+    pub last_used_utc_ms: Option<u64>,
+    pub token_sha256: String,
+}
+/// Name shown in Settings: 1..=32 printable ASCII characters, no leading/trailing space.
+pub fn valid_mcp_name(name: &str) -> bool {
+    (1..=32).contains(&name.len())
+        && name.bytes().all(|b| (0x20..0x7f).contains(&b))
+        && name.trim() == name
+}
+/// Unpadded base64url SHA-256 of the complete token text.
+pub fn mcp_token_hash(token: &str) -> String {
+    URL_SAFE_NO_PAD.encode(ring::digest::digest(
+        &ring::digest::SHA256,
+        token.as_bytes(),
+    ))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -217,6 +266,9 @@ pub struct Record {
     pub grants: Vec<Verifier>,
     pub revocation_generation: u64,
     pub operation_receipts: VecDeque<JournalEntry>,
+    /// Absent in records written before #58; omitted while empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_clients: Vec<McpClient>,
 }
 
 impl Record {
@@ -234,6 +286,7 @@ impl Record {
             grants: Vec::new(),
             revocation_generation: 0,
             operation_receipts: VecDeque::new(),
+            mcp_clients: Vec::new(),
         })
     }
     pub fn validate(&self, profile_id: &str) -> Result<(), Error> {
@@ -257,9 +310,26 @@ impl Record {
         if let Some(scope) = &self.current_scope {
             check_scope(scope)?;
         }
-        if self.current_scope.is_none() && (!self.grants.is_empty() || self.commissioning.is_some())
+        if self.current_scope.is_none()
+            && (!self.grants.is_empty()
+                || self.commissioning.is_some()
+                || !self.mcp_clients.is_empty())
         {
             return Err(Error::Invalid);
+        }
+        if self.mcp_clients.len() > MCP_CAP {
+            return Err(Error::Invalid);
+        }
+        for (i, c) in self.mcp_clients.iter().enumerate() {
+            if !profile::valid_uuid(&c.id)
+                || !valid_mcp_name(&c.name)
+                || decode::<32>(&c.token_sha256).is_err()
+                || self.mcp_clients[..i]
+                    .iter()
+                    .any(|o| o.id == c.id || o.token_sha256 == c.token_sha256)
+            {
+                return Err(Error::Invalid);
+            }
         }
         for (i, grant) in self.grants.iter().enumerate() {
             validate_verifier(grant)?;
@@ -433,15 +503,19 @@ pub enum VerifiedProof {
 struct Transport {
     token: String,
     scope: Scope,
+    /// The browser grant id, or the MCP client id for an MCP transport.
     grant_id: String,
+    principal: Principal,
     deadline: Instant,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Access {
     pub scope: Scope,
+    /// The browser grant id, or the MCP client id when `principal` is Mcp.
     pub grant_id: String,
     pub generation: u64,
+    pub principal: Principal,
 }
 
 /// Caller serializes this owner with the existing profile Store before dispatch.
@@ -450,6 +524,8 @@ pub struct Authority {
     quarantined: bool,
     challenges: Vec<Challenge>,
     transports: Vec<Transport>,
+    /// Exact last use per MCP client since start (the record keeps a coarse copy).
+    mcp_last_used: Vec<(String, u64)>,
 }
 
 impl Authority {
@@ -481,6 +557,7 @@ impl Authority {
             quarantined: false,
             challenges: Vec::new(),
             transports: Vec::new(),
+            mcp_last_used: Vec::new(),
         };
         owner.reconcile_control(store)?;
         Ok(owner)
@@ -516,11 +593,7 @@ impl Authority {
     pub fn current_grant(&self, prior: &Access) -> Result<Access, Error> {
         self.available()?;
         if self.record.current_scope.as_ref() != Some(&prior.scope)
-            || !self
-                .record
-                .grants
-                .iter()
-                .any(|g| g.grant_id == prior.grant_id && g.scope.same_radio(&prior.scope))
+            || !self.holder_current(prior.principal, &prior.grant_id, &prior.scope)
         {
             return Err(Error::Unauthorized);
         }
@@ -528,6 +601,24 @@ impl Authority {
             generation: self.record.revocation_generation,
             ..prior.clone()
         })
+    }
+    /// The credential behind a transport or access still exists: an unrevoked browser
+    /// grant of this radio, or an unrevoked MCP client.
+    fn holder_current(&self, principal: Principal, id: &str, scope: &Scope) -> bool {
+        match principal {
+            Principal::Browser => self
+                .record
+                .grants
+                .iter()
+                .any(|g| g.grant_id == id && g.scope.same_radio(scope)),
+            Principal::Mcp => self.record.mcp_clients.iter().any(|c| c.id == id),
+            Principal::Udp | Principal::Automation => false,
+        }
+    }
+    fn transport_current(&self, t: &Transport, now: Instant) -> bool {
+        now < t.deadline
+            && self.record.current_scope.as_ref() == Some(&t.scope)
+            && self.holder_current(t.principal, &t.grant_id, &t.scope)
     }
     fn available(&self) -> Result<(), Error> {
         if self.quarantined {
@@ -730,16 +821,19 @@ impl Authority {
             .current_scope
             .clone()
             .ok_or(Error::Unauthorized)?;
-        self.transports.retain(|t| {
-            t.grant_id != request.grant_id
-                && now < t.deadline
-                && self.record.current_scope.as_ref() == Some(&t.scope)
-                && self.record.grants.iter().any(|g| g.grant_id == t.grant_id)
-        });
+        let transports = std::mem::take(&mut self.transports);
+        self.transports = transports
+            .into_iter()
+            .filter(|t| {
+                !(t.principal == Principal::Browser && t.grant_id == request.grant_id)
+                    && self.transport_current(t, now)
+            })
+            .collect();
         self.transports.push(Transport {
             token: token.clone(),
             scope,
             grant_id: request.grant_id.clone(),
+            principal: Principal::Browser,
             deadline: now + TRANSPORT_LIFE,
         });
         Ok(token)
@@ -775,21 +869,14 @@ impl Authority {
             .iter()
             .find(|t| bool::from(t.token.as_bytes().ct_eq(token.as_bytes())))
             .ok_or(Error::Unauthorized)?;
-        if now >= t.deadline
-            || t.scope.https_origin != origin
-            || self.record.current_scope.as_ref() != Some(&t.scope)
-            || !self
-                .record
-                .grants
-                .iter()
-                .any(|g| g.grant_id == t.grant_id && g.scope.same_radio(&t.scope))
-        {
+        if t.scope.https_origin != origin || !self.transport_current(t, now) {
             return Err(Error::Unauthorized);
         }
         Ok(Access {
             scope: t.scope.clone(),
             grant_id: t.grant_id.clone(),
             generation: self.record.revocation_generation,
+            principal: t.principal,
         })
     }
     /// Recheck at dispatch under the same authority transaction, never after queueing.
@@ -797,11 +884,7 @@ impl Authority {
         self.available()?;
         if self.record.current_scope.as_ref() != Some(&access.scope)
             || access.generation != self.record.revocation_generation
-            || !self
-                .record
-                .grants
-                .iter()
-                .any(|g| g.grant_id == access.grant_id && g.scope.same_radio(&access.scope))
+            || !self.holder_current(access.principal, &access.grant_id, &access.scope)
         {
             return Err(Error::Unauthorized);
         }
@@ -914,16 +997,170 @@ impl Authority {
             .filter(|n| *n <= profile::MAX_REVISION)
             .ok_or(Error::Conflict)?;
         if all {
+            // Revoking every grant of the radio also revokes its MCP clients (#58).
             next.grants.clear();
+            next.mcp_clients.clear();
         } else {
             next.grants.retain(|v| v.grant_id != grant_id);
         }
         next.receipt(receipt.clone());
         self.persist(store, next)?;
         self.challenges.clear();
-        self.transports
-            .retain(|t| self.record.grants.iter().any(|g| g.grant_id == t.grant_id));
+        self.drop_stale_transports();
         Ok(receipt)
+    }
+    fn drop_stale_transports(&mut self) {
+        let transports = std::mem::take(&mut self.transports);
+        self.transports = transports
+            .into_iter()
+            .filter(|t| self.holder_current(t.principal, &t.grant_id, &t.scope))
+            .collect();
+        let clients = &self.record.mcp_clients;
+        self.mcp_last_used
+            .retain(|(id, _)| clients.iter().any(|c| &c.id == id));
+    }
+
+    /// MCP clients with their exact last use (memory since start, else the record's).
+    pub fn mcp_clients(&self) -> Vec<McpClient> {
+        self.record
+            .mcp_clients
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                if let Some((_, t)) = self.mcp_last_used.iter().find(|(id, _)| *id == c.id) {
+                    c.last_used_utc_ms = Some(c.last_used_utc_ms.map_or(*t, |p| p.max(*t)));
+                }
+                c
+            })
+            .collect()
+    }
+    /// Creates an MCP client; the returned token is the only copy (only its hash is kept).
+    pub fn create_mcp_client(
+        &mut self,
+        store: &mut profile::Store,
+        name: &str,
+        now_utc_ms: u64,
+    ) -> Result<(McpClient, String), Error> {
+        self.available()?;
+        if !valid_mcp_name(name) {
+            return Err(Error::Invalid);
+        }
+        if self.record.current_scope.is_none() {
+            return Err(Error::Unauthorized);
+        }
+        if self.record.mcp_clients.len() >= MCP_CAP {
+            return Err(Error::Saturated);
+        }
+        let token = format!("{MCP_TOKEN_PREFIX}{}", random_token()?);
+        let client = McpClient {
+            id: profile::new_uuid().map_err(|_| Error::PersistenceFailed)?,
+            name: name.to_owned(),
+            created_utc_ms: now_utc_ms,
+            last_used_utc_ms: None,
+            token_sha256: mcp_token_hash(&token),
+        };
+        let mut next = self.record.clone();
+        next.mcp_clients.push(client.clone());
+        self.persist(store, next)?;
+        Ok((client, token))
+    }
+    /// Removes an MCP client; its transports end at once (#58: revocation is immediate).
+    pub fn revoke_mcp_client(
+        &mut self,
+        store: &mut profile::Store,
+        id: &str,
+    ) -> Result<McpClient, Error> {
+        self.available()?;
+        let client = self
+            .record
+            .mcp_clients
+            .iter()
+            .find(|c| c.id == id)
+            .cloned()
+            .ok_or(Error::Conflict)?;
+        let mut next = self.record.clone();
+        next.mcp_clients.retain(|c| c.id != id);
+        self.persist(store, next)?;
+        self.drop_stale_transports();
+        Ok(client)
+    }
+    /// Validates an MCP client token (constant-time comparison of SHA-256 digests) and
+    /// returns the station transport for its in-process dispatch: an MCP-principal
+    /// handle that is never sent to any client, reused until it expires.
+    pub fn mcp_transport(
+        &mut self,
+        token: &str,
+        origin: &str,
+        now: Instant,
+    ) -> Result<(String, McpClient), Error> {
+        self.available()?;
+        let secret = token
+            .strip_prefix(MCP_TOKEN_PREFIX)
+            .ok_or(Error::Unauthorized)?;
+        decode::<32>(secret).map_err(|_| Error::Unauthorized)?;
+        let digest = mcp_token_hash(token);
+        let mut found = None;
+        for c in &self.record.mcp_clients {
+            if bool::from(c.token_sha256.as_bytes().ct_eq(digest.as_bytes())) {
+                found = Some(c.clone());
+            }
+        }
+        let client = found.ok_or(Error::Unauthorized)?;
+        let scope = self
+            .record
+            .current_scope
+            .clone()
+            .ok_or(Error::Unauthorized)?;
+        if scope.https_origin != origin {
+            return Err(Error::Unauthorized);
+        }
+        if let Some(t) = self
+            .transports
+            .iter()
+            .find(|t| t.principal == Principal::Mcp && t.grant_id == client.id && t.scope == scope)
+            && now < t.deadline
+        {
+            return Ok((t.token.clone(), client));
+        }
+        let transports = std::mem::take(&mut self.transports);
+        self.transports = transports
+            .into_iter()
+            .filter(|t| {
+                !(t.principal == Principal::Mcp && t.grant_id == client.id)
+                    && self.transport_current(t, now)
+            })
+            .collect();
+        let handle = random_token()?;
+        self.transports.push(Transport {
+            token: handle.clone(),
+            scope,
+            grant_id: client.id.clone(),
+            principal: Principal::Mcp,
+            deadline: now + TRANSPORT_LIFE,
+        });
+        Ok((handle, client))
+    }
+    /// Records an MCP client's use: exact in memory, on disk at most every 10 minutes.
+    pub fn mcp_used(
+        &mut self,
+        store: &mut profile::Store,
+        id: &str,
+        now_utc_ms: u64,
+    ) -> Result<(), Error> {
+        match self.mcp_last_used.iter_mut().find(|(c, _)| c == id) {
+            Some(entry) => entry.1 = now_utc_ms,
+            None => self.mcp_last_used.push((id.to_owned(), now_utc_ms)),
+        }
+        let Some(index) = self.record.mcp_clients.iter().position(|c| c.id == id) else {
+            return Ok(());
+        };
+        let stored = self.record.mcp_clients[index].last_used_utc_ms;
+        if stored.is_some_and(|t| now_utc_ms.saturating_sub(t) < MCP_LAST_USED_PERSIST_MS) {
+            return Ok(());
+        }
+        let mut next = self.record.clone();
+        next.mcp_clients[index].last_used_utc_ms = Some(now_utc_ms);
+        self.persist(store, next)
     }
 }
 

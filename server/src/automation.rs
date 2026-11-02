@@ -14,6 +14,8 @@ use std::collections::VecDeque;
 use wstx_rust::transmit::service::DisarmCause;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
+/// Run commands are the station's own automation: never an operator action (#39, #58).
+const AUTOMATION: authorization::Principal = authorization::Principal::Automation;
 pub const RECEIPTS: usize = 16;
 pub const CALLS_MAX: usize = 16;
 
@@ -868,7 +870,7 @@ impl Owner {
                     "select_row",
                     json!({"row":row,"replace":false}),
                 );
-                if contact.operate_as(state, body, true, true).is_err() {
+                if contact.operate_as(state, body, true, AUTOMATION).is_err() {
                     return stop(&mut inner, "provider_error", true);
                 }
                 let (_, facts, _) = contact.facts();
@@ -953,7 +955,7 @@ impl Owner {
                         json!({"row":row,"replace":false}),
                     ),
                     true,
-                    true,
+                    AUTOMATION,
                 );
                 let Ok((_, receipt)) = selected else {
                     return stop(&mut inner, "provider_error", false);
@@ -968,7 +970,7 @@ impl Owner {
                         "set_frequency",
                         json!({"rx_hz":null,"tx_hz":held_tx}),
                     );
-                    match contact.operate_as(state, body, true, true) {
+                    match contact.operate_as(state, body, true, AUTOMATION) {
                         Ok((_, receipt)) => {
                             revision = receipt["contact_revision"].as_u64().unwrap_or(revision)
                         }
@@ -988,7 +990,7 @@ impl Owner {
                         json!({"enabled":true,"safety_revision":run.safety_revision}),
                     ),
                     true,
-                    true,
+                    AUTOMATION,
                 );
                 if let Err((code, _)) = enabled {
                     // No unarmed selected contact is left behind.
@@ -1041,7 +1043,7 @@ impl Owner {
             "enable_tx",
             json!({"enabled":true,"safety_revision":run.safety_revision}),
         );
-        if let Err((code, _)) = contact.operate_as(state, body, true, true) {
+        if let Err((code, _)) = contact.operate_as(state, body, true, AUTOMATION) {
             return Self::finish(inner, refused(code));
         }
         if Self::raced_halt(inner, r) {
@@ -1125,7 +1127,7 @@ fn contact_body(r: &recording::Recording, revision: u64, action: &str, extra: Va
 fn cancel(contact: &contact_http::Station, state: &ProfileState) {
     let (revision, _, _) = contact.facts();
     let body = contact_body(&state.recording, revision, "cancel", json!({}));
-    let _ = contact.operate_as(state, body, false, true);
+    let _ = contact.operate_as(state, body, false, AUTOMATION);
 }
 /// Enable Tx off through the same contact command path (never a Halt; automatic).
 fn disarm(contact: &contact_http::Station, state: &ProfileState) {
@@ -1136,7 +1138,7 @@ fn disarm(contact: &contact_http::Station, state: &ProfileState) {
         "enable_tx",
         json!({"enabled":false,"safety_revision":null}),
     );
-    let _ = contact.operate_as(state, body, false, true);
+    let _ = contact.operate_as(state, body, false, AUTOMATION);
 }
 /// The starting transport is still this grant's current, unexpired transport (a
 /// revocation, safety edit, expiry or a newer proof of the grant ends it).
@@ -1175,7 +1177,6 @@ pub async fn snapshot(
 }
 pub async fn command(
     State(app): State<App>,
-    mcp: Option<axum::Extension<crate::mcp::Dispatched>>,
     headers: HeaderMap,
     RawQuery(query): RawQuery,
     body: Result<Bytes, BytesRejection>,
@@ -1191,15 +1192,21 @@ pub async fn command(
         Ok(v) => v,
         Err(e) => return refusal(e, None),
     };
-    let access = authorization_http::operating_access_async(&headers, &app)
-        .await
+    let checked = authorization_http::operating_access_async(&headers, &app).await;
+    // A start from the browser is the operator action the Tx watchdog counts from; an
+    // MCP client's start never is (#58: the principal comes from the credential).
+    let operator = match &checked {
+        Ok(Some(a)) => a.principal.is_operator(),
+        Ok(None) => true,
+        Err(_) => false,
+    };
+    let access = checked
         .ok()
         .flatten()
         .zip(authorization_http::transport_token(&headers, &app));
     let (Ok(contact), Some(state)) = (owner(&r), app.profile.clone()) else {
         return refusal("not_found", None);
     };
-    let operator = mcp.is_none();
     match tokio::task::spawn_blocking(move || {
         contact.automation.command(&state, body, access, operator)
     })

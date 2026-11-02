@@ -1223,3 +1223,41 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
   assert.deepEqual(errors,[]);
 });
+
+// Proves: CL-012-03; TC-020-004 MCP clients in Settings > General > Access & grants (#58):
+// listed when Settings opens, a new token shown once and cleared, revoke after confirmation.
+test('TC-020-004 Settings lists MCP clients, shows a new token once and revokes after confirmation',{timeout:60000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  const posts=[],token='wstx_mcp_'+'A'.repeat(43);
+  let clients=[{client_id:'00000000-0000-4000-8000-000000000001',name:'Claude <Code>',created_utc_ms:Date.UTC(2026,10,2,8,0),last_used_utc_ms:null}];
+  const listing=()=>({version:1,max_clients:8,clients,recent:[{utc_ms:Date.UTC(2026,10,2,8,5),client_id:clients[0]?.client_id,name:'Claude <Code>',action:'tools/call wstx_read contact',status:200}]});
+  await page.route('**/authorization/v1/mcp-clients**',route=>{
+    const p=new URL(route.request().url()).pathname,body=route.request().method()==='GET'?null:JSON.parse(route.request().postData());posts.push([route.request().method()+' '+p,body]);
+    if(p.endsWith('/create')){clients=[...clients,{client_id:'00000000-0000-4000-8000-000000000002',name:body.name,created_utc_ms:Date.UTC(2026,10,2,9,0),last_used_utc_ms:null}];return route.fulfill({json:{version:1,client_id:'00000000-0000-4000-8000-000000000002',name:body.name,created_utc_ms:Date.UTC(2026,10,2,9,0),token}});}
+    if(p.endsWith('/revoke'))clients=clients.filter(c=>c.client_id!==body.client_id);
+    return route.fulfill({json:listing()});
+  });
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});await page.waitForTimeout(300);
+  assert.deepEqual(posts,[],'nothing is read before Settings opens');
+  await page.locator('#open-server-settings').click();
+  const items=page.locator('#mcp-clients li');await items.first().waitFor();
+  assert.equal(await page.locator('#settings-general #settings-browsers #mcp-clients').count(),1,'in Settings > General > Access & grants');
+  assert.match(await items.first().textContent(),/^Claude <Code> · created 2026-11-02 08:00 UTC · last used never/,'the name is text, not markup');
+  assert.match(await page.locator('#mcp-recent li').first().textContent(),/2026-11-02 08:05 UTC · Claude <Code> · tools\/call wstx_read contact · 200/);
+  await page.locator('#mcp-name').fill('Codex');await page.locator('#mcp-create').click();
+  await page.locator('#mcp-token:not([hidden])').waitFor();
+  assert.equal(await page.locator('#mcp-token-value').textContent(),token,'the new token is shown');
+  assert.match(await page.locator('#mcp-token').textContent(),/shown only once/);
+  await items.nth(1).waitFor();assert.match(await items.nth(1).textContent(),/^Codex · created/);
+  await page.locator('#mcp-token-done').click();
+  assert.equal(await page.locator('#mcp-token-value').textContent(),'','Done clears the token from the page');
+  assert.equal(await page.locator('#mcp-token').isHidden(),true);
+  await items.first().locator('button').click();await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Revoke MCP client "Claude <Code>"\? Its token stops working at once/);
+  await page.locator('#op-confirm-ok').click();
+  await page.locator('#mcp-result',{hasText:'Revoked'}).filter({hasText:'Revoked'}).waitFor();
+  assert.equal(await items.count(),1);assert.match(await items.first().textContent(),/^Codex/);
+  assert.deepEqual(posts.map(([p,b])=>[p.replace('/authorization/v1/mcp-clients',''),b]),[
+    ['GET ',null],['POST /create',{version:1,name:'Codex'}],['GET ',null],['POST /revoke',{version:1,client_id:'00000000-0000-4000-8000-000000000001'}]],'exact requests');
+  assert.deepEqual(errors,[]);
+});

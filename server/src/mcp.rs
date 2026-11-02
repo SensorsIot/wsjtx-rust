@@ -4,10 +4,11 @@
 //! 2025-11-25/2025-06-18 (`initialize`, stateless: no Mcp-Session-Id). 2025-03-26 is not
 //! offered: it requires JSON-RPC batches, which this endpoint refuses.
 //! Every tool is one existing versioned station operation, dispatched in-process
-//! through the station router with the caller's validated auth-v1 grant transport;
-//! the adapter keeps no station state, modem, QSO engine or transmit authority.
-//! Authorization is `Authorization: Bearer <grant transport>` only: cookies sent to
-//! /mcp are never read, so a browser session cannot authorize MCP by accident.
+//! through the station router with an internal MCP-principal transport of the caller's
+//! validated MCP client token; the adapter keeps no station state, modem, QSO engine or
+//! transmit authority. Authorization is `Authorization: Bearer <MCP client token>` only
+//! (#58): cookies sent to /mcp are never read, and a browser grant transport or the
+//! station access token is refused, so MCP never acts as the browser operator.
 use crate::*;
 use axum::extract::RawQuery;
 use axum::http::Method;
@@ -38,7 +39,7 @@ fn rpc_error(
 pub async fn not_allowed() -> Response {
     (StatusCode::METHOD_NOT_ALLOWED, [(header::ALLOW, "POST")]).into_response()
 }
-/// The bearer of exactly one `Authorization: Bearer <43-character token>` field.
+/// The bearer text of exactly one `Authorization: Bearer <token>` field (1..=128 bytes).
 fn bearer(headers: &HeaderMap) -> Option<String> {
     let mut fields = headers.get_all(header::AUTHORIZATION).iter();
     let value = fields.next()?.to_str().ok()?;
@@ -46,16 +47,51 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
         return None;
     }
     let token = value.strip_prefix("Bearer ")?;
-    authorization::decode::<32>(token).ok()?;
-    Some(token.to_owned())
+    (1..=128).contains(&token.len()).then(|| token.to_owned())
 }
-/// Marks a station request dispatched in-process for an MCP tool call (a request
-/// extension, which no network client can set). It is never an operator action for the
-/// Tx watchdog (#39, WstxStrategy::WatchdogFromOperator).
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Dispatched;
-/// The station credential the in-process dispatch presents: exactly the validated grant
-/// transport, under the station's own cookie name, and nothing from the MCP request.
+/// The migration hint for a bearer that is not an MCP client token (#58).
+pub const TOKEN_HINT: &str = "POST /mcp accepts only an MCP client token (wstx_mcp_...). \
+Create one in Settings > General > Access & grants > MCP clients and configure it as \
+Authorization: Bearer <token>; the station access token and browser grants are not accepted.";
+/// The station status of a tools/call, carried to the audit entry.
+#[derive(Clone, Copy)]
+struct ToolStatus(u16);
+/// The audited action of an MCP request: method, tool and its view or command action.
+fn audit_action(body: &Result<Bytes, BytesRejection>) -> String {
+    let Some(v) = body
+        .as_ref()
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(b).ok())
+    else {
+        return "invalid_request".into();
+    };
+    let p = &v["params"];
+    let a = &p["arguments"];
+    let parts = [
+        &v["method"],
+        &p["name"],
+        &a["view"],
+        &a["command"]["action"],
+    ];
+    let text = parts
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text: String = text
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || " _/.-".contains(*c))
+        .take(80)
+        .collect();
+    if text.is_empty() {
+        "invalid_request".into()
+    } else {
+        text
+    }
+}
+/// The station credential the in-process dispatch presents: exactly the internal
+/// MCP-principal transport, under the station's own cookie name, and nothing from the
+/// MCP request.
 fn station_headers(app: &App, token: &str) -> HeaderMap {
     let mut h = HeaderMap::new();
     if let Ok(v) = app.origin.parse() {
@@ -247,10 +283,9 @@ async fn call_tool(
         503,
         json!({"error":{"code":"storage_unavailable","field":null}}),
     );
-    let Ok(mut request) = request else {
+    let Ok(request) = request else {
         return unavailable;
     };
-    request.extensions_mut().insert(Dispatched);
     let Ok(response) = crate::router(app.clone()).oneshot(request).await;
     let status = response.status().as_u16();
     match axum::body::to_bytes(response.into_body(), STATION_BYTES_MAX).await {
@@ -282,13 +317,13 @@ pub async fn endpoint(
             None,
         );
     }
-    let unauthorized = || {
+    let unauthorized = |data: Option<Value>| {
         let mut r = rpc_error(
             StatusCode::UNAUTHORIZED,
             Value::Null,
             -32001,
             "unauthorized",
-            None,
+            data,
         );
         r.headers_mut().insert(
             header::WWW_AUTHENTICATE,
@@ -297,14 +332,35 @@ pub async fn endpoint(
         r
     };
     let Some(token) = bearer(&headers) else {
-        return unauthorized();
+        return unauthorized(None);
     };
-    // Same auth-v1 owner and check as every browser operation; a plaintext profile has
-    // no grant authority and therefore no MCP access.
-    match authorization_http::operating_access_async(&station_headers(&app, &token), &app).await {
-        Ok(Some(_)) => {}
-        Ok(None) | Err(authorization::Error::Unauthorized) => return unauthorized(),
-        Err(_) => {
+    // Only an MCP client token (#58), checked by the station's authority owner; a
+    // plaintext profile has no grant authority and therefore no MCP access.
+    let checked = {
+        let app = app.clone();
+        tokio::task::spawn_blocking(move || authorization_http::mcp_access(&app, &token)).await
+    };
+    use authorization_http::McpRefusal;
+    let caller = match checked {
+        Ok(Ok(caller)) => caller,
+        Ok(Err(McpRefusal::NotMcpToken)) => {
+            return unauthorized(Some(
+                json!({"reason":"mcp_token_required","hint":TOKEN_HINT}),
+            ));
+        }
+        Ok(Err(McpRefusal::Unknown)) => {
+            return unauthorized(Some(json!({"reason":"mcp_token_invalid"})));
+        }
+        Ok(Err(McpRefusal::RateLimited)) => {
+            return rpc_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                Value::Null,
+                -32001,
+                "rate_limited",
+                None,
+            );
+        }
+        Ok(Err(McpRefusal::Unavailable)) | Err(_) => {
             return rpc_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 Value::Null,
@@ -313,7 +369,29 @@ pub async fn endpoint(
                 None,
             );
         }
-    }
+    };
+    let action = audit_action(&body);
+    let response = dispatch(&app, &caller.transport, &headers, query, body).await;
+    let status = response
+        .extensions()
+        .get::<ToolStatus>()
+        .map_or(response.status().as_u16(), |s| s.0);
+    let audited = app.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        authorization_http::mcp_audit(&audited, &caller, &action, status)
+    })
+    .await;
+    response
+}
+
+/// One authorized MCP request (after Origin and credential).
+async fn dispatch(
+    app: &App,
+    token: &str,
+    headers: &HeaderMap,
+    query: Option<String>,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
     if query.is_some() {
         return rpc_error(
             StatusCode::BAD_REQUEST,
@@ -323,7 +401,7 @@ pub async fn endpoint(
             None,
         );
     }
-    if !json_media_type(&headers) {
+    if !json_media_type(headers) {
         return rpc_error(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Value::Null,
@@ -380,7 +458,7 @@ pub async fn endpoint(
             invalid(Value::Null)
         };
     };
-    let header_version = header_text(&headers, "mcp-protocol-version");
+    let header_version = header_text(headers, "mcp-protocol-version");
     let modern = match params["_meta"].get("io.modelcontextprotocol/protocolVersion") {
         Some(version) => {
             let Some(version) = version.as_str() else {
@@ -396,9 +474,9 @@ pub async fn endpoint(
                 );
             }
             let mismatch = header_version != Some(version)
-                || header_text(&headers, "mcp-method") != Some(method)
+                || header_text(headers, "mcp-method") != Some(method)
                 || (method == "tools/call"
-                    && mcp_name(&headers).as_deref() != params["name"].as_str());
+                    && mcp_name(headers).as_deref() != params["name"].as_str());
             if mismatch {
                 return rpc_error(StatusCode::BAD_REQUEST, id, -32020, "Header mismatch", None);
             }
@@ -477,12 +555,14 @@ pub async fn endpoint(
                     return rpc_error(status, id, -32602, "Invalid params", None);
                 }
             };
-            let (status, result) = call_tool(&app, &token, name, &args).await;
+            let (status, result) = call_tool(app, token, name, &args).await;
             let structured = json!({"v":1,"tool":name,"status":status,"result":result});
-            ok(
+            let mut response = ok(
                 json!({"content":[{"type":"text","text":structured.to_string()}],
                 "structuredContent":structured,"isError":status >= 400}),
-            )
+            );
+            response.extensions_mut().insert(ToolStatus(status));
+            response
         }
         _ => {
             let status = if modern {

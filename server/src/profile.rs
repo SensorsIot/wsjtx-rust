@@ -414,6 +414,26 @@ impl Store {
     ) -> std::io::Result<()> {
         atomic_json(&self.directory, filename, document)
     }
+    /// Appends one line to a log file of this profile directory (the caller holds this
+    /// Store); at `rotate_bytes` the file first moves to `<stem>.1.<ext>`, replacing the
+    /// older one, so the log keeps at most about twice that size.
+    pub fn append_log_line(
+        &mut self,
+        filename: &str,
+        line: &str,
+        rotate_bytes: u64,
+    ) -> std::io::Result<()> {
+        let path = self.directory.join(filename);
+        if fs::metadata(&path).is_ok_and(|m| m.len() >= rotate_bytes) {
+            let older = match filename.rsplit_once('.') {
+                Some((stem, ext)) => format!("{stem}.1.{ext}"),
+                None => format!("{filename}.1"),
+            };
+            fs::rename(&path, self.directory.join(older))?;
+        }
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+        file.write_all(format!("{line}\n").as_bytes())
+    }
     pub fn save(&mut self, settings: Settings) -> std::io::Result<()> {
         let mut next = self.document.clone();
         next.revision = next

@@ -238,6 +238,7 @@ fn valid_proof_is_one_use_and_expiry_wrong_origin_and_wrong_purpose_do_not_consu
         record,
         quarantined: false,
         transports: Vec::new(),
+        mcp_last_used: Vec::new(),
         challenges: vec![Challenge {
             nonce: NONCE.into(),
             scope: selected.clone(),
