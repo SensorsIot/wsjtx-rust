@@ -784,12 +784,10 @@ package WstxRequirements {
              grid JM68; (i) every counted message keeps the state, TIME_OFF follows each
              counted RR73, suggested_slot tx3 after the report and tx5 after each RR73,
              choose_next clears it, 73 is sent in period 9 and the contact completes;
-             (j) the "Auto Seq off" line (warning style) and status suffix, then "Send 73
+             (j) the "Auto Seq off" line (warning style), then "Send 73
              next" (title "Send IW9FRA HB9BLA 73 next") sending choose_next tx5 and
-             enable_tx; at 1366x768 no page scroll, the line fully visible in the Last
-             row's place (Last hidden), the dialogue with a received row still shown and
-             not shorter, and the QSO buttons no lower than for the same contact without
-             the line; no horizontal
+             enable_tx; at 1366x768 no page scroll and, in the compact QSO pane (#37, no
+             dialogue or Last row), the line, the 73 and Log QSO buttons fully visible; no horizontal
              overflow at 360 px; Auto Seq on sending set_auto_seq true; the line hidden
              with Auto Seq on and nothing offered. (j) runs in headless Chromium against
              the actual server binary with a stubbed contact snapshot. A manual entry of
@@ -997,7 +995,7 @@ package WstxRequirements {
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
     requirement 'CL-010-06' {
-        doc /* Present bounded Band Activity and the Rx Frequency pane routed as WSJT-X (within +/-10 Hz of the confirmed Rx offset, messages to my call, my call with the DX call, own transmissions labelled Tx); local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxContact::RoutesToRxFrequencyPane. */
+        doc /* Present bounded Band Activity and, since #37, the compact QSO pane (WstxOperatingLayout::QsoPane: the running QSO's last partner message and at most two other stations near my Rx frequency or calling me, each with message and SNR only) in place of the Rx Frequency pane; local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxOperatingLayout::QsoPane, QsoPaneCrowding. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.js";
     }
@@ -1059,8 +1057,8 @@ package WstxRequirements {
         doc /* TC-007-003 — Received views, Rx Frequency pane and partner selection
              CL-010-01, CL-010-06
              Setup: actual server/browser with an independently scripted result source and request recorder; rows with distinct UTC/DT/SNR/frequency/text including literal markup, unresolved hashes, duplicate/old tuples, 2047/2048/2049 retained records and expired cursors; Rx offset 1500 Hz; profile call HB9BLA, DX call K1ABC.
-             Steps: filter/sort/clear Band Activity; read the Rx Frequency pane over several periods with rows at 1489.9, 1490.0, 1510.0, 1510.1 Hz, "HB9BLA W1XYZ -10" at 400 Hz, "K1ABC HB9BLA R-05" at 2500 Hz, "HB9BLAX K1ABC" and own transmissions; change Rx; exceed 500 pane rows; select rows by click/Enter and by manual DX entry; switch profile.
-             Expected (fixed input catalogue): pane contains exactly 1490.0, 1510.0, the HB9BLA and HB9BLA-plus-K1ABC rows and Tx-labelled own messages, not 1489.9, 1510.1 or HB9BLAX; Rx change affects later rows only; at most 500 rows with unread count; clearing the pane or Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
+             Steps: filter/sort Band Activity; with no contact, read the QSO pane Others lines for one period with rows at 1449.9, 1450.0, 1489.9, 1510.1, 1550.0 Hz, "HB9BLA W1XYZ -10" at 400 Hz and "HB9BL K1ABC -01" at 2600 Hz (#37); select rows by click/Enter and by manual DX entry; switch profile.
+             Expected (fixed input catalogue): the Others lines are exactly the two newest candidates among 1450.0, 1489.9, 1510.1, 1550.0 Hz and the HB9BLA row, plain (no warning sign), each message and SNR only, and not 1449.9 Hz or HB9BL; sorting Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and independent result source. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1160,8 +1158,8 @@ package WstxRequirements {
         doc /* TC-011-001 — Direct logging, exactly once per contact
              CL-010-04
              Setup: actual server/browser, disposable profile directories, a UDP target socket bound on 127.0.0.1, independent failure injection (failed write, failed atomic replace), contacts with known identities and fields, transmit double.
-             Steps: complete a contact (transmitted Tx5 73 after the partner's report; received 73 in rogers); repeat the completion events; manual Log QSO before completion, then completion; Log QSO again unchanged; storage failure at completion, then recovery; restart; the same call again as a new contact; SaveContact with power 10 and comment, invalid power -1, comment with CR/LF or 1025 characters, repeat save; second profile; the browser Log QSO button.
-             Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; completion after an early Log QSO replaces that record in place (one record, end time of completion) and sends no second datagram pair; Log QSO of a completed contact keeps its completion record even after a location change; a UDP FreeText command arriving while a retry is due returns (no lock re-entry) and the datagrams follow; a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
+             Steps: complete a contact (transmitted Tx5 73 after the partner's report; received 73 in rogers); repeat the completion events; manual Log QSO before completion, then the partner's later messages; Log QSO again unchanged; storage failure at completion, then recovery; restart; the same call again as a new contact; SaveContact with power 10 and comment, invalid power -1, comment with CR/LF or 1025 characters, repeat save; second profile; the browser Log QSO button.
+             Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; an early Log QSO closes the contact (completed, Enable Tx off, nothing queued), so the partner's later messages neither replace its record nor send a second datagram pair (#37); Log QSO of a completed contact keeps its completion record even after a location change; a UDP FreeText command arriving while a retry is due returns (no lock re-entry) and the datagrams follow; a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2093,6 +2091,19 @@ package WstxRequirements {
              accept_commands, shows the hop-limit/interface-index hint naming the link-local
              need, and saves with the TTL field as hop limit 2 and interface "1"; the same group
              without an interface is refused with targets[0].multicast_interface.
+             Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
+             header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", at most two
+             Others lines "⚠ <message>  <SNR>" newest first (a station within +/-50 Hz of Rx
+             and a station calling me, not the partner, no time/DT/frequency), NEXT "▸ next:
+             <message>" while armed, and the buttons, all inside the pane (not clipped), the
+             pane at most 250 px high (the earlier pane needed about 380 px for the same
+             contact) and shorter than Band Activity; there is no dialogue, LAST row or
+             crowding badge; double-clicking an Others line sends select_row with replace true
+             then enable_tx. Idle, a station on my Rx frequency is a plain line "◂ <message>
+             <SNR>" whose double-click sends select_row then enable_tx. When the contact is
+             completed (Log QSO or completion) the pane shows "✓ Logged <call>", no NEXT and
+             no partner lines, and after loggedNoticeSeconds only the idle pane; a cancelled
+             contact is gone at once. At 360x800 nothing overflows horizontally.
              Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
         attribute automation : AutomationState = AutomationState::partial;
