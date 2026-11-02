@@ -2024,7 +2024,11 @@ package WstxRequirements {
              /udp {v 1, profile_id, boot_id, expected_revision, configuration} whose configuration
              is the edited list, and no receive start, stop or selection; accept_commands is not
              offered for a multicast address; a refusal shows its code and field and keeps the
-             edits; the accept_commands warning and each target's status are shown.
+             edits; the accept_commands warning and each target's status are shown. An IPv6
+             group target [ff12::5754:5358]:2237 (#46, CL-040-06) is not offered
+             accept_commands, shows the hop-limit/interface-index hint naming the link-local
+             need, and saves with the TTL field as hop limit 2 and interface "1"; the same group
+             without an interface is refused with targets[0].multicast_interface.
              Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
         attribute automation : AutomationState = AutomationState::partial;

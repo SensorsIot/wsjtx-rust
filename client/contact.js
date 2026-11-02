@@ -211,7 +211,9 @@ for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',
 const UDP_MESSAGES=[['heartbeat','Heartbeat'],['status','Status'],['decode','Decode'],['clear','Clear'],['qso_logged','QSO Logged'],['close','Close'],['logged_adif','Logged ADIF']];
 const UDP_DEFAULT={instance_name:'WSTX-Rust',targets:[{address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:UDP_MESSAGES.map(m=>m[0]),accept_commands:false}]};
 let udpView=null,udpDirty=false,udpRead=-Infinity,udpLoading=null;
-const udpMulticast=address=>{const m=/^(\d+)\./.exec(address.trim());return !!m&&Number(m[1])>=224&&Number(m[1])<=239;};
+// An IPv6 group [ffXY::...]: Y is its scope (WstxUdp D6); scope 1 and 2 need an interface index.
+const udpIpv6Group=address=>{const m=/^\[\s*ff[0-9a-f]([0-9a-f])(:|\])/i.exec(address.trim());return m?{scope:parseInt(m[1],16)}:null;};
+const udpMulticast=address=>{const m=/^(\d+)\./.exec(address.trim());return (!!m&&Number(m[1])>=224&&Number(m[1])<=239)||!!udpIpv6Group(address);};
 const utcTime=ms=>new Date(ms).toISOString().slice(11,19)+' UTC';
 function udpStatusText(s){
   if(!s)return 'Not saved yet';
@@ -222,12 +224,14 @@ function udpStatusText(s){
 }
 function udpRow(t,status){
   const row=document.createElement('fieldset');row.className='udp-target';row.setAttribute('role','listitem');
-  row.innerHTML=`<legend>Target</legend><label>Address:port<input data-f="address" autocomplete="off" spellcheck="false"></label><label class="op-check"><input type="checkbox" data-f="enabled">Enabled</label><label>Multicast TTL<input type="number" data-f="ttl" min="1" max="255" step="1"></label><label>Multicast interface<input data-f="iface" placeholder="default" autocomplete="off" spellcheck="false"></label><fieldset class="udp-messages"><legend>Messages sent</legend>${UDP_MESSAGES.map(([k,l])=>`<label class="op-check"><input type="checkbox" data-m="${k}">${l}</label>`).join('')}</fieldset><label class="op-check"><input type="checkbox" data-f="accept">Accept commands</label><span class="op-muted" data-f="accept-note"></span><button type="button" data-f="remove">Remove target</button><p class="op-muted" data-f="status" role="status"></p>`;
+  row.innerHTML=`<legend>Target</legend><label>Address:port<input data-f="address" autocomplete="off" spellcheck="false"></label><label class="op-check"><input type="checkbox" data-f="enabled">Enabled</label><label>Multicast TTL / hop limit<input type="number" data-f="ttl" min="1" max="255" step="1"></label><label>Multicast interface<input data-f="iface" placeholder="default" autocomplete="off" spellcheck="false"></label><span class="op-muted" data-f="iface-note"></span><fieldset class="udp-messages"><legend>Messages sent</legend>${UDP_MESSAGES.map(([k,l])=>`<label class="op-check"><input type="checkbox" data-m="${k}">${l}</label>`).join('')}</fieldset><label class="op-check"><input type="checkbox" data-f="accept">Accept commands</label><span class="op-muted" data-f="accept-note"></span><button type="button" data-f="remove">Remove target</button><p class="op-muted" data-f="status" role="status"></p>`;
   const f=k=>row.querySelector(`[data-f=${k}]`);
   f('address').value=t.address;f('enabled').checked=t.enabled;f('ttl').value=t.multicast_ttl;f('iface').value=t.multicast_interface??'';f('accept').checked=t.accept_commands;
   for(const box of row.querySelectorAll('[data-m]'))box.checked=t.messages.includes(box.dataset.m);
   f('status').textContent=udpStatusText(status);
-  const multicast=()=>{const on=udpMulticast(f('address').value);f('accept').disabled=on;if(on)f('accept').checked=false;f('accept-note').textContent=on?'Not for a multicast group: commands come from a host.':'';};
+  const multicast=()=>{const address=f('address').value,on=udpMulticast(address),v6=udpIpv6Group(address);f('accept').disabled=on;if(on)f('accept').checked=false;f('accept-note').textContent=on?'Not for a multicast group: commands come from a host.':'';
+    f('iface').placeholder=v6?'interface index':'default';
+    f('iface-note').textContent=v6?`IPv6 group: TTL is the hop limit; the interface is its index (netsh interface ipv6 show interfaces)${v6.scope===1||v6.scope===2?'; this interface- or link-local group needs one':''}.`:'';};
   f('address').addEventListener('input',multicast);multicast();
   f('remove').addEventListener('click',()=>{row.remove();udpDirty=true;udpButtons();});
   return row;

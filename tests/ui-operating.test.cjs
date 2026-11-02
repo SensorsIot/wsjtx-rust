@@ -507,6 +507,39 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-040-02, CL-040-06, CL-010-16; TC-007-009 the UDP editor takes an IPv6 multicast group (#46).
+test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
+  const puts=[];
+  page.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/udp')puts.push(JSON.parse(r.postData()));});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  const initial=await (await fetch(app.origin+'/udp')).json();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
+  const row=rows.nth(0);
+  await row.locator('[data-f=accept]').check();
+  await row.locator('[data-f=address]').fill('[ff12::5754:5358]:2237');
+  assert.equal(await row.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for an IPv6 group');
+  assert.equal(await row.locator('[data-f=accept]').isChecked(),false);
+  assert.match(await row.locator('[data-f=iface-note]').textContent(),/hop limit.*index.*link-local group needs one/s);
+  assert.equal(await row.locator('[data-f=iface]').getAttribute('placeholder'),'interface index');
+  // Without an interface the station refuses the link-local group and names the field.
+  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Not saved'}).waitFor();
+  assert.match(await page.locator('#udp-result').textContent(),/invalid_request \(targets\[0\]\.multicast_interface\)/);
+  await row.locator('[data-f=ttl]').fill('2');await row.locator('[data-f=iface]').fill('1');
+  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
+  const target={address:'[ff12::5754:5358]:2237',enabled:true,multicast_ttl:2,multicast_interface:'1',
+    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif'],accept_commands:false};
+  assert.equal(puts.length,2);
+  assert.deepEqual(puts[1].configuration,{instance_name:'WSTX-Rust',targets:[target]},'the TTL field is the hop limit, the interface its index');
+  const saved=await (await fetch(app.origin+'/udp')).json();
+  assert.deepEqual(saved.configuration.targets,[target]);assert.equal(saved.revision,initial.revision+1);
+  // A wider-scope group drops the link-local hint.
+  await row.locator('[data-f=address]').fill('[ff05::5754:5358]:2237');
+  assert.doesNotMatch(await row.locator('[data-f=iface-note]').textContent(),/needs one/);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-010-16; TC-007-009 restart changes ask first during a QSO.
 test('TC-007-009 band, mode and Apply ask before restarting receive during a QSO',{timeout:40000},async t=>{
   let contact=null;const selects=[],puts=[];
