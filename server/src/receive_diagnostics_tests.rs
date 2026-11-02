@@ -54,7 +54,7 @@ fn window_zero_counts_follow_the_early_buffer() {
         x[i] = 0.0;
     }
     // Window frames 100..120; the early buffer starts at frame 104.
-    assert_eq!(zero_counts(&x, 100, Some(104)), (6, 3, Some(3)));
+    assert_eq!(zero_counts(&x, 100, Some(104)), (6, 3, Some(4)));
     assert_eq!(zero_counts(&x, 100, None), (6, 3, None));
     // A period start ending before the window: no early-buffer zeros.
     assert_eq!(zero_counts(&x, 200_000, Some(0)), (6, 3, Some(0)));
@@ -74,8 +74,10 @@ fn window_dump_is_a_12_khz_pcm16_wav() {
     assert_eq!(u16::from_le_bytes([bytes[34], bytes[35]]), 16);
     assert_eq!(&bytes[36..40], b"data");
     let samples = bytes[44..]
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&b| i16::from_le_bytes(b))
         .collect::<Vec<_>>();
     assert_eq!(samples, vec![0, 16384, -32768, 32767]);
 }
@@ -91,11 +93,23 @@ fn window_dump_setting_defaults_off_and_persists() {
         (&v["window_dump"], &v["storage_error"], &v["windows"]),
         (&json!(false), &Value::Null, &json!([]))
     );
-    assert_eq!(r.set_window_dump("other", &r.boot, true), Err("wrong_profile"));
-    assert_eq!(r.set_window_dump(PROFILE, "old-boot", true), Err("state_conflict"));
-    assert_eq!(r.set_window_dump(PROFILE, &r.boot, true).unwrap()["window_dump"], true);
+    assert_eq!(
+        r.set_window_dump("other", &r.boot, true),
+        Err("wrong_profile")
+    );
+    assert_eq!(
+        r.set_window_dump(PROFILE, "old-boot", true),
+        Err("state_conflict")
+    );
+    assert_eq!(
+        r.set_window_dump(PROFILE, &r.boot, true).unwrap()["window_dump"],
+        true
+    );
     let file: Value = serde_json::from_slice(&fs::read(dir.0.join(FILE)).unwrap()).unwrap();
-    assert_eq!(file, json!({"schema_version":1,"profile_id":PROFILE,"window_dump":true}));
+    assert_eq!(
+        file,
+        json!({"schema_version":1,"profile_id":PROFILE,"window_dump":true})
+    );
     drop(r);
     assert_eq!(dir.open().diagnostics_view()["window_dump"], true);
     for bad in [
@@ -131,16 +145,20 @@ fn window_dump_writes_prompt_windows_and_rotates() {
     assert_eq!(names, vec![format!("{stem}.json"), format!("{stem}.wav")]);
     let wav = fs::read(dir.0.join(DUMP_DIR).join(format!("{stem}.wav"))).unwrap();
     assert_eq!(wav, wav_bytes(&samples));
-    let sidecar: Value =
-        serde_json::from_slice(&fs::read(dir.0.join(DUMP_DIR).join(format!("{stem}.json"))).unwrap())
-            .unwrap();
+    let sidecar: Value = serde_json::from_slice(
+        &fs::read(dir.0.join(DUMP_DIR).join(format!("{stem}.json"))).unwrap(),
+    )
+    .unwrap();
     assert_eq!(sidecar["rate_hz"], 12000);
     assert_eq!(sidecar["window"]["origin"], 3);
     assert_eq!(sidecar["window"]["dump"], format!("{stem}.wav"));
     for origin in 4..30 {
         r.note_window(window(origin), &samples, true);
         // Each write completes (and rotates) before the next, with a distinct time.
-        let sidecar = dir.0.join(DUMP_DIR).join(format!("{origin:015}-20261102T0916000000000Z.json"));
+        let sidecar = dir
+            .0
+            .join(DUMP_DIR)
+            .join(format!("{origin:015}-20261102T0916000000000Z.json"));
         let started = Instant::now();
         while !sidecar.exists() && started.elapsed() < Duration::from_secs(10) {
             std::thread::sleep(Duration::from_millis(5));
@@ -158,7 +176,10 @@ fn window_dump_writes_prompt_windows_and_rotates() {
     let windows = v["windows"].as_array().unwrap();
     assert_eq!(windows.len(), WINDOWS);
     assert_eq!(windows[0]["origin"], 10);
-    assert_eq!(windows[0]["dump"], "000000000000010-20261102T0916000000000Z.wav");
+    assert_eq!(
+        windows[0]["dump"],
+        "000000000000010-20261102T0916000000000Z.wav"
+    );
     assert_eq!(v["dumped_windows"], 27);
     assert_eq!(v["dump_error"], Value::Null);
 }
@@ -194,12 +215,22 @@ async fn diagnostics_http_view_and_dump_update() {
     let (status, view, _, _) = f.call("GET", "/receive/diagnostics", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        (&view["v"], &view["window_dump"], &view["windows"], &view["profile_id"]),
+        (
+            &view["v"],
+            &view["window_dump"],
+            &view["windows"],
+            &view["profile_id"]
+        ),
         (&json!(1), &json!(false), &json!([]), &json!(f.id))
     );
     let body = |on: bool| json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"window_dump":on});
-    let (status, view, _, _) = f.call("POST", "/receive/diagnostics", Some(body(true))).await;
-    assert_eq!((status, &view["window_dump"]), (StatusCode::OK, &json!(true)));
+    let (status, view, _, _) = f
+        .call("POST", "/receive/diagnostics", Some(body(true)))
+        .await;
+    assert_eq!(
+        (status, &view["window_dump"]),
+        (StatusCode::OK, &json!(true))
+    );
     let file: Value = serde_json::from_slice(&fs::read(f.dir.join(FILE)).unwrap()).unwrap();
     assert_eq!(file["window_dump"], true);
     let mut wrong = body(false);

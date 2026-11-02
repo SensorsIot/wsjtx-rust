@@ -2731,7 +2731,9 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
     let audio = ft8_period_audio(origin + 180000, period);
     r.state.lock().unwrap().live.as_mut().unwrap().next_frame = (origin + 180000) as u64;
     let file = decoder::Decoder::new()
-        .decode(&audio[period..period + 165600], decoder::Mode::Ft8, &|| false)
+        .decode(&audio[period..period + 165600], decoder::Mode::Ft8, &|| {
+            false
+        })
         .unwrap();
     assert_eq!(file.len(), 1, "{file:?}");
     let expected = file[0].snr_db.unwrap();
@@ -2760,7 +2762,10 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
         .unwrap();
     let records = page["records"].as_array().unwrap();
     assert_eq!(records.len(), 1, "{page}");
-    assert_eq!(records[0]["period_start_utc"], "2026-10-27T12:00:30.0000000Z");
+    assert_eq!(
+        records[0]["period_start_utc"],
+        "2026-10-27T12:00:30.0000000Z"
+    );
     assert_eq!(records[0]["snr_db"].as_f64(), Some(expected), "{page}");
     // The window's diagnostics name the same period start.
     let w = &r.diagnostics_view()["windows"][0];
