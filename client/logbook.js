@@ -145,7 +145,7 @@ function annotate(body,records){
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
   const complete=resultView?.complete&&resultCursor>=resultView.next_sequence;
   const from=r=>r.status==='decoded'&&r.fields?.type==='standard'&&r.fields.from?.kind==='call'&&typeof r.fields.from.text==='string'?r.fields.from.text.toUpperCase():null;
-  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);const cell=row.lastElementChild;if(!cell||!status||cell.querySelector('.log-worked'))continue;const mark=document.createElement('span');mark.className='log-worked';mark.dataset.worked=status;mark.title=statusText[status];mark.textContent=` \u00b7 ${statusMark[status]}`;mark.style.color=statusColor[status];cell.append(mark);}};
+  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);const cell=row.querySelector('td[data-col=message]')??row.lastElementChild;if(!cell||!status||cell.querySelector('.log-worked'))continue;const mark=document.createElement('span');mark.className='log-worked';mark.dataset.worked=status;mark.title=statusText[status];mark.textContent=` \u00b7 ${statusMark[status]}`;mark.style.color=statusColor[status];cell.append(mark);}};
   if(!period||!band||!['ft8','ft4'].includes(mode))return;
   if(period===askedPeriod){decorate();return;}
   if(!complete)return;
@@ -157,20 +157,6 @@ function annotate(body,records){
 const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
 window.wstxLogbook=Object.freeze({openReview,annotate,loadHistory});
-// The contact client (WstxContact) loads after this browser's first recording and
-// receive snapshots (or 20 s after the station is ready), when the link is idle, so its
-// bytes never compete with the cold page, authorization or the first state reads on a
-// 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
-let contactLoader=null;
-addEventListener('station-ready',()=>{
-  if(contactLoader||document.querySelector('script[src="/contact.js"]'))return;
-  const since=performance.now();
-  contactLoader=setInterval(()=>{
-    const ready=typeof snapshot!=='undefined'&&snapshot&&typeof live!=='undefined'&&live!==undefined;
-    if(!ready&&performance.now()-since<20000)return;
-    clearInterval(contactLoader);
-    const append=()=>{const script=document.createElement('script');script.src='/contact.js';document.head.append(script);};
-    if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
-  },250);
-});
+// Annotate rows already shown when this client arrives.
+if(activity)annotate(activity,resultRows);
 })();

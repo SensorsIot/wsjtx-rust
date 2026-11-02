@@ -20,9 +20,15 @@ pub(crate) struct Bench {
     pub(crate) keys: Arc<Mutex<Vec<(i64, bool)>>>,
     playing: Arc<Mutex<Option<(i64, usize)>>>,
     pub(crate) offset: Arc<AtomicI64>,
+    /// When nonzero, the station's UTC stands still at this value (offset ignored).
+    pub(crate) frozen: Arc<AtomicI64>,
 }
 impl Hardware for Bench {
     fn now_utc_ms(&self) -> i64 {
+        let frozen = self.frozen.load(Ordering::SeqCst);
+        if frozen != 0 {
+            return frozen;
+        }
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -1056,11 +1062,19 @@ async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mo
 
 // Proves: CL-011-03, CL-011-04; TC-007-008. An FT4 and an FT8 station at once, each
 // with its own router, engine, #9 owner and log; then the FT4 station switches mode.
+// Station time stands still 3 s before the FT4 station's first own (odd) period at
+// even + 7.5 s, so its Tx1 request is still unstarted when the mode switches, however
+// slowly the test runs: the switch, not the #9 owner's period start, ends it. (On wall
+// time a slow run let that period start first; the owner then refused the request as
+// stale_request, last_disarm_cause "refused", before the contact step saw the switch.)
 #[tokio::test]
 async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own() {
     let f4 = fixture("http://127.0.0.1:18012", true);
     let f8 = fixture("http://127.0.0.1:18013", true);
     let even = now_ms().div_euclid(30_000) * 30_000;
+    for f in [&f4, &f8] {
+        f.bench.frozen.store(even + 4_500, Ordering::SeqCst);
+    }
     let mut rows = Vec::new();
     for (f, mode) in [(&f4, "ft4"), (&f8, "ft8")] {
         let r = &f.state.recording;

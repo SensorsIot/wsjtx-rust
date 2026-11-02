@@ -67,7 +67,9 @@ function wav(seconds=1,amplitude=.5,frequency=750){
   const count=Math.round(seconds*12000),b=Buffer.alloc(44+count*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(count*2,40);
   for(let n=0;n<count;n++)b.writeInt16LE(Math.max(-32768,Math.min(32767,Math.round(amplitude*32768*Math.sin(2*Math.PI*frequency*n/12000)))),44+n*2);return b;
 }
-async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});if(await p.locator('#open-recordings').count())await p.locator('#open-recordings').click();const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
+async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});if(await p.locator('#open-server-settings').count()){await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();}await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
+// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
 // Proves: CL-003-04, CL-010-07; TC-009-005. Only a current accepted snapshot clears disconnected presentation.
@@ -184,9 +186,9 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
   await p.route('**/recording/imports',async route=>{const response=await route.fetch();resource=await response.json();observed();await held;await route.fulfill({response});});
   await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
   assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
-  await p.locator('#open-client-preferences').click();
-  // Escape closes no panel (WstxContact::HaltTx D5); the Back control returns.
-  await p.keyboard.press('Escape');await p.locator('.op-secondary:not([hidden]) .return-operate').click();await p.locator('#open-recordings').click();
+  await p.locator('#tab-general').click();
+  // Escape closes no panel (WstxContact::HaltTx D5); the Close control returns.
+  await p.keyboard.press('Escape');await p.locator('.op-secondary:not([hidden]) .return-operate').click();await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();
   assert.equal(await p.locator('#recording-file').evaluate(el=>el.files[0].name),'pending.wav');
   assert.equal(await p.evaluate(()=>uploading&&!uploadId),true,'navigation preserves pending reservation state');
   await p.locator('#recording-cancel').click();release();
@@ -225,6 +227,8 @@ test('TC-010-003 late recording asset bootstraps an already connected station on
   await p.route('**/recording.js',async route=>{await held;await route.continue();});
   const navigation=p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:5000});
   assert.equal(snapshots,0,'status/profile is ready while the recording module is still unavailable');release();await navigation;
+  // #37: recordings and the receive status are in Settings > Expert.
+  await p.locator('#open-server-settings').click({timeout:2000});await p.locator('#tab-expert').click();
   await p.locator('#signal-status').filter({hasText:'No recording imported'}).waitFor({timeout:2000});assert.equal(await p.locator('#recording-import').isEnabled(),true);
   await p.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});
   await p.waitForTimeout(100);assert.equal(snapshots,1);assert.equal(subscriptions,1);
@@ -240,15 +244,17 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>0,{timeout:8000});
   assert.ok(await p.locator('#signal').innerText().then(s=>s.includes('Hz')&&s.includes('dBFS')));
   assert.match(await p.locator('#signal-status').innerText(),/Recording ready \u00b7 (running|completed)/,'receive status preserves its actual Unicode separator');
-  const separator=p.getByRole('separator',{name:'Resize spectrum and controls'});await separator.focus();await p.keyboard.press('Home');assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);await p.keyboard.press('ArrowDown');assert.equal(Number(await separator.getAttribute('aria-valuenow')),176);await p.keyboard.press('End');const expectedMaximum=await p.evaluate(()=>document.querySelector('main').clientHeight-['#station-bar','#radio-toolbar','#band-strip','#workspace-statusbar','#splitter'].reduce((height,id)=>height+document.querySelector(id).offsetHeight,0)-200);assert.equal(Number(await separator.getAttribute('aria-valuenow')),expectedMaximum);
+  const separator=p.getByRole('separator',{name:'Resize spectrum and controls'});await separator.focus();await p.keyboard.press('Home');assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);await p.keyboard.press('ArrowDown');assert.equal(Number(await separator.getAttribute('aria-valuenow')),176);await p.keyboard.press('End');const expectedMaximum=await p.evaluate(()=>document.querySelector('main').clientHeight-['#station-bar','#rxtx-strip','#splitter'].reduce((height,id)=>height+document.querySelector(id).offsetHeight,0)-200);assert.equal(Number(await separator.getAttribute('aria-valuenow')),expectedMaximum);
   const box=await separator.boundingBox();await p.mouse.move(box.x+10,box.y+6);await p.mouse.down();await p.mouse.move(box.x+10,0);await p.mouse.up();assert.equal(Number(await separator.getAttribute('aria-valuenow')),160);
   await fs.mkdir('test-results',{recursive:true});await p.screenshot({path:'test-results/recording-desktop.png',fullPage:true});
   await p.setViewportSize({width:360,height:640});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.ok((await p.locator('#signal').boundingBox()).height>=160);assert.ok((await p.locator('#controls').boundingBox()).height>=200);assert.equal((await separator.boundingBox()).height,7);
   await p.screenshot({path:'test-results/recording-mobile.png',fullPage:true});
-  await separator.scrollIntoViewIfNeeded();const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox(),targetY=await p.evaluate(()=>document.querySelector('#signal').getBoundingClientRect().top+Math.min(Number(document.querySelector("#splitter").getAttribute("aria-valuemin"))+16,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))));
+  // The Settings drawer spans a phone-width screen; close it before touching the separator.
+  await p.locator('#settings-drawer .return-operate').click();
+  await separator.scrollIntoViewIfNeeded();const touch=await f.context.newCDPSession(p),handle=await separator.boundingBox(),targetY=await p.evaluate(()=>document.querySelector('#signal').getBoundingClientRect().top+document.querySelector('#rxtx-strip').offsetHeight+Math.min(Number(document.querySelector("#splitter").getAttribute("aria-valuemin"))+16,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))));
   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:180,y:handle.y+3}]});
   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:180,y:targetY}]});
-  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});const resizedSignal=await p.locator('#signal').boundingBox();assert.ok(Math.abs(resizedSignal.y+resizedSignal.height-targetY)<=10,'touch drag follows its viewport coordinate below the station bar');
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});const resizedSignal=await p.locator('#signal').boundingBox(),strip=(await p.locator('#rxtx-strip').boundingBox()).height;assert.ok(Math.abs(resizedSignal.y+resizedSignal.height+strip-targetY)<=10,'touch drag follows its viewport coordinate below the station bar');
   await p.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
 
@@ -303,6 +309,8 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const began=performance.now(),coldBefore={...f.proxy.counters};
       pages=await Promise.all([page(f),page({...f,context:second})]);
       for(const p of pages)await p.selectOption('#display-profile','thin'); // Explicit32kbit/s mode; default Detailed has no such promise.
+      // The cold load ends with the contact client, which loads after the first snapshots (#37).
+      for(const p of pages)await p.waitForFunction(()=>!!window.wstxContact,null,{timeout:150000});
       const cold={ms:performance.now()-began,up:f.proxy.counters.up-coldBefore.up,down:f.proxy.counters.down-coldBefore.down};
       await progress('cold',{step:'pages connected'}, {cold});
     });
@@ -331,7 +339,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const stillPlaying=await f.snapshot();assert.equal(stillPlaying.generation,playback.generation);assert.ok(stillPlaying.job,'refused selection retains the recording job');assert.equal(stillPlaying.job.id,playback.id);assert.equal(stillPlaying.job.state,'running');
       for(let n=0;n<10;n++){
         const due=start+(n+1)*5500;await sleep(Math.max(0,due-performance.now()));
-        await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
+        await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await refreshStatus(p);await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
       }
       await waitUntil(start+60000);const seconds=(performance.now()-start)/1000;
       assert.ok(seconds>=60,'Thin measurement covers at least60 complete seconds');
@@ -350,7 +358,7 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const uploadBefore={...f.proxy.counters},uploadStart=performance.now(),uploadStatus=[];
       await progress('connected',{step:'Upload and status measurement started'});
       await pages[0].setInputFiles('#recording-file',{name:'paced.wav',mimeType:'audio/wav',buffer:wav(.5)});await pages[0].locator('#recording-import').click();
-      for(let n=0;n<6;n++){await sleep(700);await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await p.locator('#refresh').click();await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000);uploadStatus.push(ms);}));}
+      for(let n=0;n<6;n++){await sleep(700);await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await refreshStatus(p);await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000);uploadStatus.push(ms);}));}
       await pages[0].locator('#recording-replay:enabled').waitFor({timeout:30000});
       const upload={ms:performance.now()-uploadStart,up:f.proxy.counters.up-uploadBefore.up,down:f.proxy.counters.down-uploadBefore.down,statusMs:uploadStatus};
       await progress('connected',{step:'Upload and status measurement complete'},{upload});
@@ -427,7 +435,7 @@ test('TC-010-005 HTTPS defaults to native Detailed and honors saved Thin or Off'
   await p.locator('#recording-replay').click();await p.waitForFunction(()=>window.__fineFrames.length>0);
   const native=await p.evaluate(()=>window.__fineFrames[0].data);assert.equal(Buffer.from(native.levels_b64,'base64').length,1024);assert.equal(native.end_frame-native.first_frame,2400);
   for(const choice of ['thin','off']){
-    await p.locator('[data-region=client-preferences]').first().click();await p.selectOption('#display-profile',choice);await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+    if(!await p.locator('#settings-drawer').isVisible())await p.locator('#open-server-settings').click();await p.selectOption('#display-profile',choice);await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
     assert.equal(await p.inputValue('#display-profile'),choice,'explicit saved reduced-bandwidth/Off choice is honored');
   }
   await p.evaluate(()=>localStorage.setItem(`wstx.display-profile.v1:${profileData.profile_id}`,'invalid'));await p.reload();await p.waitForFunction(()=>profileData&&snapshot&&!syncPending);
@@ -544,6 +552,8 @@ test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f,{width:1100,height:1400});await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
   // Three Thin rows at80px/s need a tall plot; default workspace is intentionally compact.
   const movementSeparator=p.getByRole('separator');await movementSeparator.focus();await p.keyboard.press('End');
+  // The 120 s source holds at most 600 Detailed rows: keep the plot tall but short enough for the slowest speed to exit.
+  for(let n=0;n<80&&(await p.locator('#waterfall').boundingBox()).height>560;n++)await p.keyboard.press('ArrowUp');
   assert.ok((await p.locator('#waterfall').boundingBox()).height>=240,'fixture observes all three row positions before testing exit');
   const result=await p.evaluate(async s=>{
     profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;autoBlack=false;

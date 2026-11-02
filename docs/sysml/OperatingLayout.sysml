@@ -38,10 +38,12 @@ package WstxOperatingLayout {
              A connected link does not imply audio/CAT/decoder/TX availability.
              Unknown frequency/mode are visible unavailable text, never defaults.
              Profile identity uses literal text, never HTML interpretation.
-             With liveResultInterfaceAvailable,12.8 explicit Start/Stop and next-job
-             spectrum/FT4/FT8 selection use the saved endpoint/current revision.
-             Device enumeration requires an operator action; viewing settings or
-             choosing Next receive mode never opens audio. Separate operating mode/band
+             With liveResultInterfaceAvailable, receive runs from the operating band/mode
+             selection (contract 4.7.5); the explicit receive start/stop (12.8 routes,
+             saved endpoint/current revision) is an Expert action (OperatingScreen, #37):
+             the legacy Start/Stop receive and Next receive mode controls are not shown.
+             Device enumeration requires an operator action; viewing settings never
+             opens audio. Separate operating mode/band
              behavior is WstxOperatingReceive/contract 4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
              no fabricated UTC/DT, message text or resolved hash. Full source/job/
@@ -165,7 +167,8 @@ attribute def ActivityOrdering {
             mayUpdateLiveProgress == (otherwiseValid and matchingLiveOwner) and
             not updatesRecordedProgress
         }
-        doc /* contract 4.7.1 and TC009004 legacy Start/Stop only. Coordinated
+        doc /* contract 4.7.1 and TC009004 explicit receive start/stop (Expert receive
+             control and the Receive stopped chip action, #37) only. Coordinated
              selection unknown outcomes use contract 12.8.1 fencing, not this legacy guard.
              Intervening events are relative to request
              initiation. Otherwise-valid includes existing station/source/job/
@@ -274,25 +277,30 @@ attribute def ActivityOrdering {
              The unsupported/no-input TC-007-002 baseline remains separate. */
     }
     dependency livePresentationCase from livePresentation004 to WstxRequirements::'TC-009-004';
-    enum def WorkspaceCard { enum bandActivity; enum currentQso; enum strategy; }
-    enum def WorkspaceRegion { enum operate; enum recordings; enum logbook; enum strategies; enum serverSettings; enum clientPreferences; enum help; }
+    // #37: Band Activity (with the strategy element above it) and the QSO pane; the
+    // Strategy card, Rx Frequency card and separate regions for settings, preferences,
+    // recordings, connection and strategies are retired.
+    enum def WorkspaceCard { enum bandActivity; enum qsoPane; }
+    enum def WorkspaceRegion { enum operate; enum logbook; enum help; }
     attribute def AgreedOperatingDesign {
         attribute designComponent : String = "465528304540209152";
         attribute designRevision : String = "465570890965458944";
         attribute defaultDesktopSignalHeightPx : Integer = 210;
         attribute minimumSignalHeightPx : Integer = 160;
         attribute hasRadioToolbar : Boolean = true;
-        attribute hasBandStrip : Boolean = true;
+        attribute hasBandStrip : Boolean = false;
         attribute hasPersistentHalt : Boolean = true;
         attribute usesActualStationState : Boolean = true;
         attribute substitutesPrototypeData : Boolean = false;
         attribute browserExecutesStrategy : Boolean = false;
         attribute unavailableRfActionsEnabled : Boolean = false;
         attribute unavailableStrategyActionsEnabled : Boolean = false;
-        attribute serverSettingsOwnsProfileForm : Boolean = true;
-        attribute clientPreferencesOwnsDisplayControls : Boolean = true;
-        doc /* Desktop order: station/nav header, radio toolbar, actual signal canvas,
-             keyboard/pointer separator, band strip, Band Activity / Current QSO / Strategy.
+        attribute settingsDrawerOwnsProfileForm : Boolean = true;
+        attribute settingsDrawerOwnsDisplayControls : Boolean = true;
+        doc /* Superseded in layout by OperatingScreen (#37, operator design interview
+             2026-11-01); the facts below still hold. Desktop order: top bar, actual signal
+             canvas with the Rx/Tx strip, keyboard/pointer separator, Band Activity (with the
+             strategy element) / QSO pane.
              Narrow cards stack with no page overflow. Reuse native bins0..3000Hz,
              calibrated palette, sensitivity/speed and profile/import guards unchanged.
              Unknown dial/period/level/contact/strategy state stays unknown.
@@ -300,10 +308,11 @@ attribute def ActivityOrdering {
     }
     action def OpenRegion {
         in region : WorkspaceRegion;
-        doc /* Visible keyboard route for each region. Server settings uses actual
-             revision-aware profile/connection; Client preferences uses existing
-             browser display controls; Recordings uses real import/replay/cancel.
-             Persistent Halt stays reachable; F2 opens server settings.
+        doc /* Visible keyboard route for each region: Logbook (full page, top-bar
+             Logbook button) and Help ("?", F1/F3/F5). Setup and diagnostics are the
+             Settings drawer (SettingsDrawer), not a region; it opens with the top-bar
+             Settings button or F2 and keeps the waterfall running.
+             Persistent Halt stays reachable.
              A secondary region closes with its labelled close control (keyboard
              reachable) or a pointer action outside it, returning to operation and
              restoring opener focus. Escape never closes a region: it is Halt Tx plus
@@ -320,7 +329,7 @@ attribute def ActivityOrdering {
             verify WstxRequirements::'CL-010-08';
         }
         doc /* TC007002: actual browser/server at360/720/1200/1440/1499/1500/1600;
-             desktop three-card order, compact header/toolbars/bands, no overflow,
+             desktop two-pane order (#37 OperatingScreen), compact top bar, no overflow,
              typography/breakpoint/native canvas/full-space/splitter assertions,
              pointer/keyboard region routes,F2/close-control/outside-click/focus (Escape
              halts, CL-010-03), real profile/recording
@@ -332,7 +341,7 @@ attribute def ActivityOrdering {
         to WstxRequirements::'TC-007-002';
     attribute def ContactWorkspace {
         attribute hasStationBarHalt : Boolean = true;
-        attribute hasEnableTx : Boolean = true;
+        attribute hasEnableTx : Boolean = false;
         attribute hasAutoSequence : Boolean = true;
         attribute hasTune : Boolean = true;
         attribute hasDxCallGridEntry : Boolean = true;
@@ -343,20 +352,26 @@ attribute def ActivityOrdering {
         attribute hasRxTxInputs : Boolean = true;
         attribute hasHoldTx : Boolean = true;
         attribute hasPeriodChoice : Boolean = true;
-        attribute hasRxFrequencyPane : Boolean = true;
+        attribute hasRxFrequencyPane : Boolean = false;
+        attribute hasQsoPane : Boolean = true;
+        attribute hasDirectButtons : Boolean = true;
         attribute hasLogQso : Boolean = true;
         attribute hasNowButtons : Boolean = false;
         attribute hasFrequencyStepKeys : Boolean = false;
         attribute escapeClosesRegion : Boolean = false;
         attribute workspaceCardsChangeSignalArea : Boolean = false;
         assert constraint adoptedControls {
-            hasStationBarHalt and hasEnableTx and hasAutoSequence and hasDxCallGridEntry and
+            hasStationBarHalt and not hasEnableTx and hasDirectButtons and hasAutoSequence and hasDxCallGridEntry and
             hasStandardMessageRows == 6 and hasReportOverride and hasTx1Skip and hasTx4Toggle and
-            hasRxTxInputs and hasHoldTx and hasPeriodChoice and hasRxFrequencyPane and hasLogQso and
+            hasRxTxInputs and hasHoldTx and hasPeriodChoice and hasQsoPane and not hasRxFrequencyPane and hasLogQso and
             not hasNowButtons and not hasFrequencyStepKeys and not escapeClosesRegion and
             not workspaceCardsChangeSignalArea
         }
-        doc /* Browser regions for WstxContact, inside the existing AgreedOperatingDesign
+        doc /* #37 (operator design interview 2026-11-01) replaces the Enable Tx control,
+             the Current QSO card and the Rx Frequency pane by the QSO pane (QsoPane) with
+             direct buttons, and moves the Rx/Tx inputs and Hold Tx to the Rx/Tx strip
+             (RxTxStrip); where the text below names those controls, QsoPane, RxTxStrip and
+             WstxContact::SetEnableTx apply. Earlier text: Browser regions for WstxContact, inside the existing AgreedOperatingDesign
              order (station bar, toolbar, signal canvas, separator, band strip, cards);
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
@@ -394,6 +409,221 @@ attribute def ActivityOrdering {
              values, pending and unknown outcomes explicitly. */
     }
     dependency contactWorkspaceClauses from ContactWorkspace to WstxRequirements::'CL-010-03';
+
+    // ---------------------------------------------------------------- #37 operating screen
+    // Operator design interview 2026-11-01 (issue #37 comments). Laptop first (minimum
+    // 1366x768, mouse and keyboard); tablet adaptation is a later CR; a phone must not break.
+    enum def TopBarItem {
+        enum band; enum mode; enum dialFrequency; enum utcPeriod; enum exceptionChips;
+        enum logbook; enum settings; enum halt;
+    }
+    enum def ExceptionChip {
+        enum linkStale; enum catLost; enum catSetupUnconfirmed; enum audioUnavailable;
+        enum audioLevelLow; enum audioLevelHigh; enum clockOff; enum receiveStopped;
+        enum receiveRestarted; enum receiveOutcomeUnknown;
+    }
+    enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
+    enum def ChangeKind { enum operative; enum restart; }
+    enum def Theme { enum day; enum dark; enum night; }
+    enum def ThemeSwitch { enum manual; enum byTime; enum bySun; }
+    attribute def OperatingScreen {
+        attribute minimumWidthPx : Integer = 1366;
+        attribute minimumHeightPx : Integer = 768;
+        attribute pageScrolls : Boolean = false;
+        attribute listsScrollInside : Boolean = true;
+        attribute hasMonitorControl : Boolean = false;
+        attribute hasEnableTxControl : Boolean = false;
+        attribute hasLegacyStartStop : Boolean = false;
+        attribute hasNextReceiveMode : Boolean = false;
+        attribute healthyStatusShown : Boolean = false;
+        attribute hasStrategyElement : Boolean = true;
+        attribute strategyEngineInScope : Boolean = false;
+        attribute hasRxTxStrip : Boolean = true;
+        attribute hasQsoPane : Boolean = true;
+        attribute haltAlwaysVisible : Boolean = true;
+        attribute fixedWidthListsAndFrequencies : Boolean = true;
+        assert constraint operatingOnly {
+            not pageScrolls and listsScrollInside and not hasMonitorControl and
+            not hasEnableTxControl and not hasLegacyStartStop and not hasNextReceiveMode and
+            not healthyStatusShown and hasStrategyElement and not strategyEngineInScope and
+            hasRxTxStrip and hasQsoPane and haltAlwaysVisible and fixedWidthListsAndFrequencies
+        }
+        doc /* CL-010-16. One fixed full screen at 1366x768 and larger: no page scroll, only
+             lists scroll inside. Top to bottom:
+             Top bar (TopBarItem, only these): band select and FT8/FT4 select, both marked
+             restart (ChangeKind restart: a change restarts receive through the operating
+             selection, contract 4.7.5, and asks first while a QSO or transmission is
+             active); dial frequency (display, CAT readback or nominal); UTC with a compact
+             period progress; exception chips (ExceptionChip, shown only while the
+             condition holds, nothing when all is well; each names its cause, opens its
+             detail in the Settings drawer, and receiveStopped offers the explicit receive
+             start); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
+             HALT stays reachable by pointer too: a confirmation popup (the only popup kind)
+             carries its own HALT with the same action and enabled state as the top-bar one,
+             because a modal popup makes the rest of the page inert. A
+             link that is connected shows no chip; the accessible status stays. There is no
+             refresh control: the status refreshes itself (an explicit Refresh status is in
+             Settings > Expert).
+             Waterfall full width with the Rx/Tx strip (RxTxStrip) directly below it; its corner
+             holds Sensitivity and Waterfall speed (operative, immediate; the speed is a
+             per-browser preference).
+             Workspace: Band Activity (BandActivityView) on the left with the strategy
+             element above it, the QSO pane (QsoPane) on the right; at most 75em wide the
+             QSO pane goes below Band Activity, at most 48em everything stacks (a phone
+             scrolls the workspace, never horizontally).
+             Strategy element: `Strategy [name] [edit] [Highlight | Auto]`. The strategy
+             engine (rules, Highlight/Auto, editor, directed-CQ rule) is a later CR; in
+             #37 the element shows the existing WstxMcp automation run state and its
+             controls stay disabled with that reason; it filters and arms nothing.
+             There is no Monitor and no Enable Tx control on the screen: receive follows
+             the band/mode selection; transmission follows SetEnableTx (#37). The legacy
+             receive start/stop is an Expert action. Status texts of a healthy station
+             (CAT/audio/clock/link) are not shown; their detail is in Settings > Expert.
+             Lists, frequencies and messages use a fixed-width font; colours keep the
+             WSJT-X meanings (CQ, my call, own transmission, worked before). */
+    }
+    attribute def RxTxStrip {
+        attribute stepHz : Integer = 1;
+        attribute shiftStepHz : Integer = 10;
+        attribute hasHoldTx : Boolean = true;
+        attribute hasTxFromRx : Boolean = true;
+        attribute hasRxFromTx : Boolean = true;
+        attribute markersDraggable : Boolean = true;
+        doc /* `Rx [Hz] [-][+]  Tx [Hz] [-][+]  Hold Tx  [Tx=Rx] [Rx=Tx]` under the waterfall.
+             Exact Hz can be typed; the buttons, the mouse wheel and the arrow keys step
+             1 Hz, with Shift 10 Hz. Each change is one WstxContact set_frequency or
+             set_hold_tx request; the fields show only server-confirmed values (a typed
+             value is not shown as applied until confirmed). Waterfall pointer: click Rx,
+             Shift+click Tx, Ctrl+click both (WstxContact::PointerEffect); the Rx and Tx
+             markers can be dragged and the release sends one set_frequency. No strip or
+             pointer action enables transmission. */
+    }
+    attribute def BandActivityView {
+        attribute newestFirst : Boolean = true;
+        attribute periodDividers : Boolean = true;
+        attribute columns : Integer = 7;
+        attribute retainedPeriods : Integer = 20;
+        attribute maximumRows : Integer = 2048;
+        doc /* CL-010-09/CL-010-16. Columns UTC, dB, DT, Freq, Message, DXCC, Distance.
+             The latest published period (LatestBandActivity rules unchanged) is shown
+             first; earlier periods of the same live receive identity follow below a
+             divider with their period UTC, newest first, at most retainedPeriods periods
+             and maximumRows rows; a new receive identity (band/mode change, restart)
+             clears the history. Within a period the ActivityOrdering applies (column
+             header click). DXCC needs the cty.dat prefix table, which the station does not
+             yet provide: the column shows an explicit unavailable mark. Distance is the
+             great-circle distance from the profile locator to a grid carried in the
+             message, unavailable otherwise. Colours keep the WSJT-X meanings: CQ, a
+             message addressed to my call, worked-before marks (WstxContact::
+             WorkedBeforeQuery). Pointer: click selects (SelectDecodedRow, prepares, never
+             transmits); double-click replies (select, then SetEnableTx on); right-click
+             opens a menu: Reply, Select, Set Rx here. Enter selects; the menu is also
+             reachable with the keyboard (context-menu key / Shift+F10). */
+    }
+    calc def QsoPaneCrowding {
+        in rowFrequencyHz : Real;
+        in rxOffsetHz : Integer;
+        in fromPartner : Boolean;
+        return crowding : Boolean = not fromPartner and
+            rowFrequencyHz >= rxOffsetHz - 50.0 and rowFrequencyHz <= rxOffsetHz + 50.0;
+        doc /* Another station within +/-50 Hz of my Rx frequency in the latest period:
+             shown in the QSO pane marked with a warning sign and counted in its header
+             badge. Presentation only. */
+    }
+    attribute def QsoPane {
+        attribute crowdingWindowHz : Integer = 50;
+        attribute hasPartnerHeader : Boolean = true;
+        attribute hasDialogue : Boolean = true;
+        attribute hasNextWithCountdown : Boolean = true;
+        attribute hasEnableTx : Boolean = false;
+        attribute hasNowButtons : Boolean = false;
+        doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. Header:
+             partner call, grid, last SNR and distance; a badge counts
+             crowding stations (QsoPaneCrowding). Dialogue: the station's transmitted
+             messages (sent) and the rows routed by WstxContact::RoutesToRxFrequencyPane
+             (received), newest last; crowding rows marked; a call to my callsign from
+             another station during a QSO highlighted. "Next" shows the next message with
+             a progress bar and countdown to the next period of the contact's parity.
+             Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
+             Log QSO keeps the existing OfferLogReview behaviour until direct logging).
+             Always visible: partner header, dialogue, Next/Last with progress, direct buttons.
+             A fold-out shows the DX Call/Grid entry with Generate, Erase (dialogue), Tx1-Tx6
+             with their Next choice and editable text, Skip Tx1, RRR/RR73, report, Tx period
+             and Auto Seq in place. On a station without
+             transmit capability the transmit buttons are disabled with the reason. */
+    }
+    attribute def SettingsDrawer {
+        attribute sections : Integer = 4;
+        attribute waterfallKeepsRunning : Boolean = true;
+        attribute restartChangesApplyOnly : Boolean = true;
+        attribute confirmRestartDuringQso : Boolean = true;
+        assert constraint drawerRules { sections == 4 and waterfallKeepsRunning and restartChangesApplyOnly and confirmRestartDuringQso }
+        doc /* Side drawer over the workspace (the waterfall keeps running; HALT stays
+             reachable), opened by the top-bar Settings button or F2, closed by its close
+             control or a pointer action outside it. Exactly four sections
+             (SettingsSection):
+             General: station (display name, callsign, locator, continent), clock/NTP
+             state, display (theme Day/Dark/Night and its switch, waterfall display
+             preferences), access and grants (log out, forget credential), MCP/automation,
+             and "Monitor off at startup" (#45 CL-045-01: read with GET /receive/startup,
+             saved on change with POST /receive/startup; it acts at the next station start
+             and restarts nothing, so it carries no restart mark).
+             Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
+             audio (input, output, input listing, Rx level meter), transmit (Tx watchdog
+             minutes and Tune seconds as WSJT-X, power is set on the transceiver).
+             Logging & Reporting: the existing log (Logbook page, ADIF), the WSJT-X UDP
+             interface (WstxUdp, CL-040-02): instance name and up to 16 targets, each
+             address:port, enabled, multicast TTL and interface, the outbound message
+             selection and accept_commands (not offered for a multicast address), with each
+             target's status (active, schema, last send, error, last inbound command) and a
+             standing warning that accept_commands lets that program select a QSO and edit
+             Tx5 but never key the transmitter. GET /udp is read when the drawer opens (at
+             most every 30 s, so routine drawer use stays inside the Thin budget), on the
+             Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
+             is a setting that restarts nothing (no restart mark). PSK Reporter remains a
+             placeholder (later CR).
+             Expert: raw CAT readback, receive job/generation, timing, the explicit receive
+             start/stop, the startup resume state of #45 (resume state and last receive
+             choice from GET /receive/startup), selection refresh, connection details,
+             recordings/replay and the
+             raw transmit test panel (WstxTransmit, #9).
+             Operative changes (display, theme, watchdogs) apply immediately and never
+             interrupt decoding. Restart changes (the saved profile: station, CAT, audio,
+             PTT) take effect only on Apply (the existing revision-aware profile save) and,
+             while a QSO is active or the station transmits, only after a confirmation. */
+    }
+    attribute def ThemeChoice {
+        attribute theme : Theme = Theme::dark;
+        attribute switchMode : ThemeSwitch = ThemeSwitch::manual;
+        doc /* Browser-local view preference (per browser, never a station setting). Day,
+             Dark and Night (dim warm/red for dark adaptation). byTime switches Day/Night at
+             two local times; bySun at sunrise and sunset computed for the profile locator.
+             The continent (General) is likewise browser-local until the strategy engine
+             needs it at the station; its default derives from the locator. */
+    }
+    attribute def UnauthorizedView {
+        attribute showsOnlyTokenForm : Boolean = true;
+        attribute showsLinkStatus : Boolean = true;
+        doc /* While the station token form is shown (no retained authorization), the page
+             shows only that form and the link status line: no station data, settings,
+             signal or controls. HALT is not shown there because an unauthorized browser
+             cannot halt (the station refuses it). A retained authorization that is
+             reconnecting keeps the full screen. */
+    }
+    action def KeyboardShortcuts {
+        doc /* WSJT-X keys 1:1 where the function exists: Esc and Alt+H halt (Esc also
+             cancels the contact, WstxContact::HaltTx); F1/F3/F5 and "?" open the overview;
+             F2 Settings; F4 clears the DX call (contact cancel); Alt+1..Alt+6 choose the
+             next message Tx1-Tx6 (no Now buttons); Alt+M receive start/stop; Alt+T Tune;
+             Alt+Q Log QSO; F11/F12 Rx -/+1 Hz; Shift+F11/F12 Tx -/+60 Hz FT8 (90 Hz FT4);
+             Ctrl+F11/F12 Rx and Tx -/+1 Hz. Letter and "?" keys are inactive while a text
+             field has focus; Esc and Alt+H always act. Alt+N (Enable Tx) has no function. */
+    }
+    verification def operatingScreen009 {
+        objective { verify WstxRequirements::'CL-010-16'; }
+        doc /* TC-007-009 cost2 isolated real server and Chromium. */
+    }
+    dependency operatingScreenCase from operatingScreen009 to WstxRequirements::'TC-007-009';
     doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
          WstxOperatingReceive. This companion retains the unchanged legacy strict
          receive/radio/result shapes and owner/cancellation/source contracts.
