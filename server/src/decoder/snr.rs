@@ -8,7 +8,7 @@ use std::{collections::HashMap, f64::consts::PI, sync::Arc};
 const N: usize = 3840;
 const SYMBOL: usize = 1920;
 const DF: f64 = 12000. / N as f64;
-/// The fitted band of the decode search, 200..3500 Hz.
+/// The sync8 baseline band: jt9's default 200..4000 Hz search range.
 const IA: usize = 64;
 const IB: usize = 1280;
 /// get_spectrum_baseline's 92 half-overlapped transforms of a 15 s period.
@@ -21,20 +21,27 @@ const PERIOD: i128 = 180000;
 const EARLY: isize = 41 * 3456;
 
 /// Window-relative start of the period of a frame starting at window frame `start`: the
-/// period grid of `period_start` nearest to a DT=0 start, or that DT=0 start when unknown.
+/// period grid of `period_start` nearest to a DT=0 start or, when unknown, that DT=0
+/// start rounded to 0.5 s so that the frames of one period share their baseline.
 pub(super) fn period_of(origin: u64, start: usize, period_start: Option<u64>) -> isize {
     let nominal = i128::from(origin) + start as i128 - LEAD;
-    let period = period_start.map_or(nominal, |p| {
-        let p = i128::from(p);
-        p + (nominal - p + PERIOD / 2).div_euclid(PERIOD) * PERIOD
-    });
+    let period = match period_start {
+        Some(p) => {
+            let p = i128::from(p);
+            p + (nominal - p + PERIOD / 2).div_euclid(PERIOD) * PERIOD
+        }
+        None => {
+            let relative = nominal - i128::from(origin);
+            i128::from(origin) + (relative + LEAD / 2).div_euclid(LEAD) * LEAD
+        }
+    };
     (period - i128::from(origin)) as isize
 }
-/// One pass's FT8 SNR state: the residual samples' Nuttall power rows by start frame.
+/// One pass's FT8 SNR state: the residual's sync8 baseline per period start.
 pub(super) struct Ft8Snr {
     fft: Arc<dyn Fft<f64>>,
     taper: Vec<f64>,
-    rows: HashMap<isize, Vec<f64>>,
+    baselines: HashMap<isize, Option<Vec<f64>>>,
 }
 impl Ft8Snr {
     pub(super) fn new(scalar: bool) -> Self {
@@ -44,40 +51,46 @@ impl Ft8Snr {
             taper: (0..N)
                 .map(|j| window(j, N) * 2. * SYMBOL as f64 / 300. / sum)
                 .collect(),
-            rows: HashMap::new(),
+            baselines: HashMap::new(),
         }
     }
-    /// Power of the transform starting at `begin`, with samples outside the window or at
-    /// or after `limit` taken as zero (as in ft8_decode's early period buffer).
-    fn row(&mut self, samples: &[f32], begin: isize, limit: isize) -> Option<Vec<f64>> {
-        let end = begin + N as isize;
-        let cached = begin >= 0 && end <= limit && end as usize <= samples.len();
-        if cached && let Some(row) = self.rows.get(&begin) {
-            return Some(row.clone());
+    /// sync8's baseline of the early period buffer starting at window frame `period`:
+    /// samples outside the window or after its first EARLY frames are zero.
+    async fn baseline(
+        &mut self,
+        samples: &[f32],
+        period: isize,
+        budget: &mut CpuBudget<'_>,
+    ) -> Result<Option<&Vec<f64>>, DecodeError> {
+        if !self.baselines.contains_key(&period) {
+            let limit = (period + EARLY).min(samples.len() as isize);
+            let mut power = vec![0.; IB + 1];
+            let mut buffer = vec![Complex64::new(0., 0.); N];
+            for j in 0..TRANSFORMS as isize {
+                budget.checkpoint().await?;
+                let begin = period + j * SYMBOL as isize;
+                if begin + N as isize <= 0 || begin >= limit {
+                    continue;
+                }
+                for (i, z) in buffer.iter_mut().enumerate() {
+                    let k = begin + i as isize;
+                    let x = if k >= 0 && k < limit {
+                        samples[k as usize]
+                    } else {
+                        0.
+                    };
+                    *z = Complex64::new(x as f64 * self.taper[i], 0.);
+                }
+                self.fft.process(&mut buffer);
+                power
+                    .iter_mut()
+                    .zip(&buffer)
+                    .for_each(|(p, z)| *p += z.norm_sqr());
+            }
+            self.baselines
+                .insert(period, fitted_baseline(&power, IA, IB));
         }
-        if end <= 0 || begin >= limit.min(samples.len() as isize) {
-            return None;
-        }
-        let mut buffer = (0..N as isize)
-            .map(|j| {
-                let k = begin + j;
-                let x = if k >= 0 && k < limit {
-                    samples.get(k as usize).copied().unwrap_or(0.)
-                } else {
-                    0.
-                };
-                Complex64::new(x as f64 * self.taper[j as usize], 0.)
-            })
-            .collect::<Vec<_>>();
-        self.fft.process(&mut buffer);
-        let row = buffer[..=IB]
-            .iter()
-            .map(|z| z.norm_sqr())
-            .collect::<Vec<_>>();
-        if cached {
-            self.rows.insert(begin, row.clone());
-        }
-        Some(row)
+        Ok(self.baselines[&period].as_ref())
     }
     /// ft8b's xsnr2 from the early period buffer: the decoded tones' symbol power over the
     /// sync8 baseline at the lowest tone, 10*log10(xsig/xbase/3e6-1)-27 dB, floored at -25
@@ -96,14 +109,7 @@ impl Ft8Snr {
         if !(IA..=IB).contains(&bin) {
             return Ok(None);
         }
-        let mut power = vec![0.; IB + 1];
-        for j in 0..TRANSFORMS as isize {
-            budget.checkpoint().await?;
-            if let Some(row) = self.row(samples, period + j * SYMBOL as isize, period + EARLY) {
-                power.iter_mut().zip(&row).for_each(|(p, r)| *p += r);
-            }
-        }
-        let Some(base) = fitted_baseline(&power, IA, IB) else {
+        let Some(base) = self.baseline(samples, period, budget).await? else {
             return Ok(None);
         };
         let xbase = base[bin] * 1e-4;

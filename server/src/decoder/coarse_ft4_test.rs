@@ -136,4 +136,8 @@ fn ft4_snr_follows_the_candidate_contrast_scale() {
     weak[198] = 1.001;
     assert_eq!(Contrast(weak).snr_db(1000.), Some(-21.));
     assert_eq!(Contrast(vec![]).snr_db(1000.), None);
+    // The wire ceiling: 10*log10(1e8)-14.8 = 65.2 dB is reported as 60.
+    let mut strong = vec![1.; N / 2 + 1];
+    strong[198] = 1e8;
+    assert_eq!(Contrast(strong).snr_db(1000.), Some(60.));
 }

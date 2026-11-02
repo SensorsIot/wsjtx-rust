@@ -142,7 +142,7 @@ impl Contrast {
         peaks(&self.0).into_iter().map(|p| p.0).collect()
     }
     /// ft4_decode's SNR: the candidate peak contrast at the decoded lowest tone,
-    /// 10*log10(peak-1)-14.8 dB, floored at -21 and rounded to whole dB.
+    /// 10*log10(peak-1)-14.8 dB, within -21..60 and rounded to whole dB.
     pub(super) fn snr_db(&self, frequency: f64) -> Option<f64> {
         let ratio = &self.0;
         if ratio.is_empty() {
@@ -166,7 +166,7 @@ impl Contrast {
         } else {
             -21.
         };
-        db.is_finite().then(|| db.max(-21.).round())
+        db.is_finite().then(|| db.clamp(-21., 60.).round())
     }
 }
 fn peaks(ratio: &[f64]) -> Vec<(f64, f64)> {

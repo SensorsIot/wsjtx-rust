@@ -765,7 +765,8 @@ package WstxOfflineDecode {
              FT8 = ft8b xsnr2 as WSJT-X first reports it, from its early period buffer: the
              frame's period starts at the UTC period start when the receive clock
              establishes it (finite decodes: frame 0 + k*180000), else 0.5 s before the
-             frame; only that period's first 41*3456 frames are seen, later ones as zero.
+             frame on a 0.5 s window grid; only that period's first 41*3456 frames are
+             seen, later ones as zero. One baseline per period and pass serves its frames.
              xsig = sum over the 79 symbols of |1920-frame DFT at the decoded tone|^2/60
              (ft8_downsample's 32-point power); xbase = 1e-4 * the sync8 baseline at bin
              round(f/3.125 Hz): sum of the 92 Nuttall 3840-frame power spectra stepped 1920
@@ -792,7 +793,7 @@ package WstxOfflineDecode {
              aliased), and scores only the 6/3/2 best-ranked points of stages 1/2/3 with
              the full-rate Gram above; the result is the full-rate maximum among them under
              the same tie rule. Without a candidate band every grid point is scored.
-             finalamplitude/SNR/subtractionallsamples. No whole-frame phase rejection,
+             finalamplitude/subtractionallsamples. No whole-frame phase rejection,
              ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
              No dBFS/noiseless/crowded reference-SNR inference. */
     }

@@ -11,6 +11,8 @@ fn ft8_period_follows_the_receive_period_grid() {
     assert_eq!(period_of(0, 6000 + 9000, Some(0)), 0);
     // A window that starts after its period start sees it at a negative offset.
     assert_eq!(period_of(194400 + 8400, 0, Some(14400)), -8400);
-    // Unknown: the period begins 0.5 s before the frame.
-    assert_eq!(period_of(360000, 22000, None), 16000);
+    // Unknown: the period begins 0.5 s before the frame, on a 0.5 s grid.
+    assert_eq!(period_of(360000, 22000, None), 18000);
+    assert_eq!(period_of(360000, 8900, None), 0);
+    assert_eq!(period_of(360000, 9100, None), 6000);
 }
