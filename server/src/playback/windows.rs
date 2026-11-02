@@ -223,7 +223,8 @@ fn render(
             .Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
                 AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                200_000,
+                // 100-ns units.
+                i64::from(super::RENDER_BUFFER_MS) * 10_000,
                 0,
                 mix.0,
                 None,
@@ -238,15 +239,16 @@ fn render(
             .GetBufferSize()
             .map_err(|_| OutputError::Unavailable)?;
         let silent = AUDCLNT_BUFFERFLAGS_SILENT.0 as u32;
-        writer.GetBuffer(capacity).map_err(lost)?;
-        writer.ReleaseBuffer(capacity, silent).map_err(lost)?;
+        let primed = capacity.min(super::SILENCE_FRAMES);
+        writer.GetBuffer(primed).map_err(lost)?;
+        writer.ReleaseBuffer(primed, silent).map_err(lost)?;
         client.Start().map_err(|_| OutputError::Unavailable)?;
         *shared.state.lock().map_err(|_| OutputError::Unavailable)? = OutputState::Ready;
         let _ = opened.try_send(Ok(()));
         let frame_bytes = format.frame_bytes();
         let now = || shared.origin.elapsed().as_millis() as u64;
         let mut progress = super::Progress::new(now());
-        progress.wrote(capacity);
+        progress.wrote(primed);
         let result = (|| {
             while !shared.stop.load(Ordering::Acquire) {
                 if WaitForSingleObject(event.0, 10) == WAIT_FAILED {

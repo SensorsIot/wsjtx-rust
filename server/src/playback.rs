@@ -117,8 +117,16 @@ pub fn write_sample(encoding: Encoding, value: f32, out: &mut [u8]) {
     }
 }
 
+/// Requested shared-mode render buffer (WstxTransmit::AudioPlayback renderBufferMs). The
+/// program keeps up to this much queued, so a render thread delayed by CPU load does
+/// not underrun the device and stretch the transmission (#49).
+pub const RENDER_BUFFER_MS: u32 = 100;
+/// Silence kept queued while no program plays (silencePrefillMs, 20 ms at 48 kHz): the
+/// first program sample is never queued behind a full buffer of silence.
+pub const SILENCE_FRAMES: u32 = 960;
 /// What the render loop does with the device buffer (WstxTransmit::AudioPlayback drain
-/// rule): after the program is exhausted nothing more is written, so the device padding
+/// rule): silence is topped up to SILENCE_FRAMES, a program fills the whole buffer;
+/// after the program is exhausted nothing more is written, so the device padding
 /// drains to zero and the end is reported once every program frame was consumed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fill {
@@ -139,7 +147,8 @@ pub fn plan_fill(program: Option<&Renderer>, padding: u32, capacity: u32) -> Fil
         }
         _ if available == 0 => Fill::Nothing,
         Some(_) => Fill::Program(available),
-        None => Fill::Silence(available),
+        None if padding >= SILENCE_FRAMES => Fill::Nothing,
+        None => Fill::Silence(available.min(SILENCE_FRAMES - padding)),
     }
 }
 /// Render progress watchdog: frames the device actually consumed (written minus padding)
