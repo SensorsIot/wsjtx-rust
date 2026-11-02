@@ -656,9 +656,9 @@ package WstxContact {
         doc /* D11 adopted. UTC clock HH:MM:SS (MW labUTC) from the server's UTC
              observation in the status stream, advanced locally between observations
              for display only; marked stale with the link; never a scheduling input.
-             Tx progress (MW ~8388): elapsed whole seconds of the current period over
-             the period, "v/15" (FT4-NOTE 7.5), with a Transmitting label (and colour)
-             while #9 reports an active transmission. Rx level meter (widgets/
+             Tx progress (MW ~8388): #50, one period bar only, the QSO pane's NEXT bar
+             (its width the elapsed part of the period, FT4-NOTE 7.5) with the countdown or
+             "Transmitting" while #9 reports an active transmission; the top bar shows UTC only. Rx level meter (widgets/
              signalmeter.cpp, meterwidget.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
              the canonical receive samples scaled to 16-bit full scale (32768), over the
              last status interval, at most one value per second on the status link;

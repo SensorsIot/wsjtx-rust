@@ -537,7 +537,9 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
   const stamps=[];ws.on('message',raw=>{const m=JSON.parse(String(raw));if(m.type==='spectrum.detail.frame')stamps.push(performance.now());});
   let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.detail',id:1}));assert.equal((await pending).data.profile,'detail');await f.replay();
   await sleep(1700);const started=performance.now();pending=receive(ws);ws.send(JSON.stringify({v:1,type:'station.get',id:2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-started<2000);
-  assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=195,JSON.stringify(stamps));
+  // #54: 200 ms steady, 170 ms while retained rows wait: at least 165 ms apart and at most 5.9 rows/s.
+  assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=165,JSON.stringify(stamps));
+  assert.ok((stamps.length-1)*1000/(stamps.at(-1)-stamps[0])<=5.9,JSON.stringify(stamps));
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
 

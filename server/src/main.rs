@@ -899,6 +899,16 @@ fn arm_detail(
     tick.reset_at(next);
     next
 }
+/// #54: the next Thin pacing anchor is the previous one plus the period, so 100 ms ticks do
+/// not drift against the 1 row/s source; after a pause (more than one period late) it restarts now.
+fn next_thin_anchor(previous: Instant, period: Duration, now: Instant) -> Instant {
+    let next = previous + period;
+    if now.saturating_duration_since(next) > period {
+        now
+    } else {
+        next
+    }
+}
 /// #54: the oldest retained Detailed row after the one this socket sent last (rows of
 /// another job all count as new), and whether more rows wait behind it.
 fn detail_after(
@@ -1101,7 +1111,7 @@ async fn connection(
                         if text.len()>if display_profile=="detail" {2048} else {1024} { continue; }
                         match optional_write(&mut socket,Message::Text(text.into())) {
                             Ok(None)=>{},
-                            Ok(Some(flushed))=>{seen=Some(identity);last_display=Instant::now();if display_profile=="detail" {next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),behind);}
+                            Ok(Some(flushed))=>{seen=Some(identity);last_display=next_thin_anchor(last_display,Duration::from_secs(if live {2}else{1}),Instant::now());if display_profile=="detail" {next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),behind);}
                             if !flushed {optional_since=Some(Instant::now());}},
                             Err(_)=>break,
                         }

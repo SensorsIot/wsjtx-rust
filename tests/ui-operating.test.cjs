@@ -609,6 +609,8 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='redecode'),false,'no strip, pointer or key action enables Tx or re-decodes');
   // The waterfall speed in the corner applies at once and is remembered by this browser.
   await page.locator('#display-speed').fill('4');await page.locator('#display-speed').dispatchEvent('input');assert.equal(await page.locator('#speed-value').textContent(),'40 px/s');
+  // The control shows the remembered value at load, before any station snapshot (held here).
+  await page.route('**/recording',()=>{});
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();assert.equal(await page.locator('#display-speed').inputValue(),'4');assert.equal(await page.evaluate(()=>speed),4);
   assert.deepEqual(errors,[]);
 });
@@ -1091,26 +1093,27 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
  const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
- const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1}));
+ const reply={type:'standard',to:{kind:'call',text:'K9XX',hash_bits:null,hash_value:null},from:{kind:'call',text:'W2AB',hash_bits:null,hash_value:null},ack:false,exchange:{kind:'report',value:-5}};
+ const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
   assert.equal(saved.status,201);
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-  Object.assign(state.job,{first_sequence:0,next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
+  Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
-  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:3,available_count:3,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
  // #50: no text marks; worked-before feeds the WSJT-X "New call" slots, which are off by default (WSJT-X).
  const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
  const [cq,newCall,none]=['rgba(102, 255, 102, 0.24)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- assert.deepEqual(await rowsNow(),[['CQ K1ABC FN42','worked_this_band_and_mode','cq',cq],['CQ W1XYZ FN42','not_worked','cq new_call',cq],['FREE TEXT',null,null,none]],'CQ green; worked before has no colour');
+ assert.deepEqual(await rowsNow(),[['CQ K1ABC FN42','worked_this_band_and_mode','cq',cq],['CQ W1XYZ FN42','not_worked','cq new_call new_call_band',cq],['FREE TEXT',null,null,none],['K9XX W2AB R-05','not_worked',null,none]],'CQ green; worked before has no colour; New slots only on CQ lines (WSJT-X)');
  await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await rowsNow()).map(r=>r[3]),[cq,newCall,none],'an enabled New call outranks CQ');
+ assert.deepEqual((await rowsNow()).map(r=>r[3]),[cq,newCall,none,none],'an enabled New call outranks CQ');
  assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,true,'the choice is per browser');
  // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC over CQ.
  const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['cq new_dxcc','cq new_dxcc new_continent','cq new_dxcc new_continent mycall','new_grid','cq new_itu_zone'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
@@ -1118,7 +1121,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
- assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
+ assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ','W2AB']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
  assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode] td[data-col=message]').getAttribute('title'),'Worked before on this band and mode','the status stays readable as a tooltip');
  assert.deepEqual(errors,[]);
 });
@@ -1382,11 +1385,11 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-054-01; TC-054-001 browser part: only real gaps are grey.
-test('TC-054-001 a live Thin row the station paced out is held; only a longer run is a gap',{timeout:60000},async t=>{
+test('TC-054-001 one or two live Thin rows the station paced out are held; only a longer run is a gap',{timeout:60000},async t=>{
   const {page,errors}=await liveDisplayFixture(t);
   await chooseDisplay(page,'thin');
   const row=q=>Array.from({length:128},()=>q);
-  await liveFrames(page,[{sequence:0,levels:row(10),thin:true},{sequence:2,levels:row(20),thin:true},{sequence:3,levels:row(30),thin:true},{sequence:7,levels:row(40),thin:true}]);
-  assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,null],[5,null],[6,null],[7,40]]);
+  await liveFrames(page,[{sequence:0,levels:row(10),thin:true},{sequence:2,levels:row(20),thin:true},{sequence:5,levels:row(30),thin:true},{sequence:6,levels:row(40),thin:true},{sequence:10,levels:row(50),thin:true}]);
+  assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,30],[5,30],[6,40],[7,null],[8,null],[9,null],[10,50]]);
   assert.deepEqual(errors,[]);
 });

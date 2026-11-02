@@ -194,3 +194,21 @@ async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
         Duration::from_millis(200)
     );
 }
+
+// Proves: CL-054-01; TC-054-001 Thin sends keep a 2 s grid instead of drifting by the tick delay.
+#[test]
+fn thin_sends_are_anchored_to_the_previous_deadline() {
+    use std::time::{Duration, Instant};
+    let start = Instant::now();
+    let period = Duration::from_secs(2);
+    // Sends land up to 100 ms after each due time; the anchors stay on the 2 s grid.
+    let mut anchor = start;
+    for n in 1..=10u32 {
+        let sent = start + period * n + Duration::from_millis(100);
+        anchor = super::next_thin_anchor(anchor, period, sent);
+        assert_eq!(anchor - start, period * n);
+    }
+    // After a pause of more than a period the grid restarts at the send.
+    let late = anchor + Duration::from_secs(5);
+    assert_eq!(super::next_thin_anchor(anchor, period, late), late);
+}

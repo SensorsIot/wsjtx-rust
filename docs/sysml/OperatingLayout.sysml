@@ -520,10 +520,11 @@ attribute def ActivityOrdering {
              #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 on. A row takes
              the highest-priority enabled slot it matches. Matches: mycall, a decoded message to the
              profile callsign; cq, a decoded message starting CQ; new_call, the worked-before status
-             not_worked of the sending call; new_call_band, worked_other_band_or_mode; every new_*
+             not_worked of the sending call; new_call_band, not_worked or worked_other_band_or_mode; every new_*
              slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
-             zone flags from cty.dat; a slot without data stays inactive). Worked before on this
-             band and mode has no colour. Settings > General > Display lists the slots with their
+             zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
+             new_* slot applies only to CQ/QRZ lines, and a never-worked call matches new_call and
+             new_call_band. Worked before on this band and mode has no colour. Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
              accent (a left bar and the message text), never a row background. */
     }

@@ -194,6 +194,8 @@ for(const id of ['display-sensitivity','display-range','display-speed'])document
 
 function resetLevels(){selectedBin=0;selectedRow=0;pointerColumn=null;pointerTime=null;updateLevels();}
 function updateLevels(){updateSliders();}
+// The controls show the restored per-browser values at once, not only after the first snapshot.
+updateSliders();
 // Flatten (WSJT-X flat4 equivalent): per row, the lower envelope across frequency (20th
 // percentile of 32 blocks, linearly interpolated) is subtracted and its median added back, so
 // the passband shape evens out while the overall level stays; it never follows time.
@@ -417,8 +419,8 @@ addEventListener('station-message',event => {
   }
   if((!detail&&!Array.isArray(values))||values.length!==B||!values.every(q=>Number.isInteger(q)&&q>=0&&q<=120))return;
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
-  // #54: live Thin is paced to one row per 2 s, so a single missing sequence is drawn with the next row (held); longer runs are real gaps.
-  const held=!detail&&currentLive&&previous>=0&&f.sequence-previous===2;
+  // #54: live Thin is paced to one row per 2 s, so one or two missing sequences are drawn with the next row (held); longer runs are real gaps.
+  const held=!detail&&currentLive&&previous>=0&&f.sequence-previous<=3;
   for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held});
   const row={...f,levels:Uint8Array.from(values)};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);paint();
 
@@ -613,8 +615,9 @@ function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
   const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  // #50 BandActivityColours: the slots this row matches (#55 supplies the new_* flags of a record).
-  const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];
+  // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
+  // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
+  const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
   if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
