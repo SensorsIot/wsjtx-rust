@@ -162,10 +162,24 @@ async fn https_log_routes_require_current_grant_and_revocation_refuses_without_e
             chunk(&f, CONTACT, 0, 4, b"abcd", cookie).await.status,
             StatusCode::UNAUTHORIZED
         );
+        let cty = json!({"v":1,"profile_id":profile,"boot_id":boot,"text":null});
+        assert_eq!(
+            raw(
+                &f,
+                Method::PUT,
+                "/dxcc",
+                serde_json::to_vec(&cty).unwrap(),
+                f.headers(cookie)
+            )
+            .await
+            .status,
+            StatusCode::UNAUTHORIZED
+        );
         for path in [
             "/contacts",
             "/contacts/export.adi",
             format!("/contacts/imports/{CONTACT}").as_str(),
+            "/dxcc",
         ] {
             assert_eq!(
                 get(&f, path, cookie).await.status,
@@ -300,6 +314,8 @@ async fn environment_only_mode_answers_not_found() {
         (Method::GET, "/contacts/export.adi"),
         (Method::POST, "/contact/worked"),
         (Method::POST, "/contacts/imports"),
+        (Method::GET, "/dxcc"),
+        (Method::PUT, "/dxcc"),
     ] {
         let mut request = axum::http::Request::builder()
             .method(method)
@@ -838,4 +854,124 @@ async fn unreadable_contacts_file_makes_save_storage_unavailable() {
     );
     assert!(path.is_dir(), "the unreadable path is not replaced");
     assert_eq!(std::fs::read_dir(&path).unwrap().count(), 0);
+}
+
+// Proves: CL-055-03; TC-055-003 the station's cty.dat: bundled by default, replaced by an
+// upload that parses (and kept across a restart), refused uploads change nothing, null
+// returns to the bundled file, an unreadable stored upload falls back without touching it.
+#[tokio::test]
+async fn cty_upload_replaces_the_country_table_and_refusals_change_nothing() {
+    let mut f = HttpFixture::new("http://localhost:8099");
+    ready(&f);
+    let path = f.directory.join("cty.dat");
+    async fn put(f: &HttpFixture, text: Value) -> HttpReply {
+        let (profile, boot) = ids(f);
+        let body = json!({"v":1,"profile_id":profile,"boot_id":boot,"text":text});
+        raw(
+            f,
+            Method::PUT,
+            "/dxcc",
+            serde_json::to_vec(&body).unwrap(),
+            f.headers(None),
+        )
+        .await
+    }
+    async fn entity(f: &HttpFixture) -> Value {
+        let (profile, boot) = ids(f);
+        let _ = (profile, boot);
+        get(f, "/dxcc?call=HB9BLA", None).await.json()["entity"]["name"].clone()
+    }
+    let view = |f: &HttpFixture, source: &str, version: Value, entities: u64, unreadable: bool| {
+        let (profile, boot) = ids(f);
+        json!({"v":1,"profile_id":profile,"boot_id":boot,"source":source,"version":version,
+            "entities":entities,"upload_unreadable":unreadable})
+    };
+    assert_eq!(
+        get(&f, "/dxcc", None).await.json(),
+        view(&f, "bundled", json!("VER20250115"), 346, false)
+    );
+    assert_eq!(entity(&f).await, "Switzerland");
+
+    let text = "Testland:  14:  28:  EU:  1.00:  -2.00:  -1.0:  TT:\n    TT,HB,=VER20991231;\n";
+    let reply = put(&f, json!(text)).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::OK,
+        "{}",
+        String::from_utf8_lossy(&reply.body)
+    );
+    assert_eq!(
+        reply.json(),
+        view(&f, "uploaded", json!("VER20991231"), 1, false)
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    assert_eq!(entity(&f).await, "Testland");
+
+    let invalid = json!({"error":{"code":"invalid_cty","field":"text","line":1}});
+    let request = json!({"error":{"code":"invalid_request","field":"text"}});
+    for (bad, expected) in [
+        (
+            json!("Nowhere: 1: 2: XX: 0: 0: 0: NW:\n NW;\n"),
+            invalid.clone(),
+        ),
+        (json!(""), invalid),
+        (json!(7), request.clone()),
+        (json!("x".repeat(1_048_577)), request),
+    ] {
+        let reply = put(&f, bad).await;
+        assert_eq!(
+            (reply.status, reply.json()),
+            (StatusCode::BAD_REQUEST, expected)
+        );
+    }
+    let (profile, boot) = ids(&f);
+    let stale =
+        json!({"v":1,"profile_id":profile,"boot_id":profile::new_uuid().unwrap(),"text":null});
+    let stale = raw(
+        &f,
+        Method::PUT,
+        "/dxcc",
+        serde_json::to_vec(&stale).unwrap(),
+        f.headers(None),
+    )
+    .await;
+    assert_eq!(code(&stale).1, "state_conflict");
+    let mut evil = f.headers(None);
+    evil.insert(header::ORIGIN, "https://evil.example".parse().unwrap());
+    let body = json!({"v":1,"profile_id":profile,"boot_id":boot,"text":null});
+    let wrong = raw(
+        &f,
+        Method::PUT,
+        "/dxcc",
+        serde_json::to_vec(&body).unwrap(),
+        evil,
+    )
+    .await;
+    assert_eq!(code(&wrong).1, "forbidden_origin");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        text,
+        "refusals leave the upload"
+    );
+
+    f.reopen();
+    assert_eq!(
+        get(&f, "/dxcc", None).await.json()["source"],
+        "uploaded",
+        "kept across restart"
+    );
+    assert_eq!(entity(&f).await, "Testland");
+    let reply = put(&f, Value::Null).await;
+    assert_eq!(reply.json()["source"], "bundled");
+    assert!(!path.exists());
+    assert_eq!(entity(&f).await, "Switzerland");
+
+    std::fs::write(&path, b"not a country file").unwrap();
+    f.reopen();
+    let reply = get(&f, "/dxcc", None).await.json();
+    assert_eq!(
+        (reply["source"].clone(), reply["upload_unreadable"].clone()),
+        (json!("bundled"), json!(true))
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"not a country file");
 }

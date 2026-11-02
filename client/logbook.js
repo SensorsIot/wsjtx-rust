@@ -117,6 +117,34 @@ function annotate(body,records){
 const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
 window.wstxLogbook=Object.freeze({annotate,loadHistory});
+
+// ---------------------------------------------------------------- country file (#55)
+// WstxDxcc::CountryFile in Settings > General: the cty.dat in use, an upload replaces it
+// (the station validates it), "Use bundled file" removes the upload. No automatic download.
+const general=document.querySelector('#settings-general');
+if(general&&typeof block==='function'){
+  block('settings-cty','Country file (cty.dat)',general,'<p id="cty-status" class="op-muted" role="status">Country file not loaded</p><label>cty.dat file<input id="cty-file" type="file" accept=".dat,text/plain"></label><p class="op-actions"><button type="button" id="cty-upload">Upload cty.dat</button> <button type="button" id="cty-bundled">Use bundled file</button></p><p id="cty-result" class="op-muted" role="status"></p><p class="op-muted">DXCC country, continent and CQ/ITU zones come from AD1C\u2019s cty.dat (country-files.com), resolved as in WSJT-X. Update it here with a newer file; nothing is downloaded automatically.</p>');
+  const show=v=>{const date=/^VER(\d{4})(\d{2})(\d{2})$/.exec(v.version??'');$('cty-status').textContent=`cty.dat ${date?`${date[1]}-${date[2]}-${date[3]}`:'version unknown'} \u00b7 ${v.source==='uploaded'?'uploaded':'bundled with this station'} \u00b7 ${v.entities} entities${v.upload_unreadable?' \u00b7 the uploaded file is unreadable, the bundled file is used':''}`;$('cty-bundled').disabled=v.source!=='uploaded';};
+  const loadCty=()=>call('/dxcc').then(({response,data})=>{if(response.ok&&data?.v===1)show(data);}).catch(()=>{});
+  const replace=async(text,label)=>{
+    const s=station(),result=$('cty-result');if(!s){result.textContent='Station profile unavailable';return;}
+    for(const id of ['cty-upload','cty-bundled'])$(id).disabled=true;
+    try{
+      const {response,data}=await call('/dxcc',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...s,text}),timeout:30000});
+      if(response.ok&&data?.v===1){show(data);result.textContent=label;}
+      else result.textContent=data?.error?.code==='invalid_cty'?`Refused \u00b7 not a valid cty.dat (line ${data.error.line}); nothing changed`:`Refused \u00b7 ${data?.error?.code??response.status}; nothing changed`;
+    }catch(error){result.textContent=`Outcome unknown \u00b7 ${error.message}`;}
+    finally{$('cty-upload').disabled=false;loadCty();}
+  };
+  $('cty-upload').addEventListener('click',async()=>{
+    const file=$('cty-file').files[0];
+    if(!file){$('cty-result').textContent='Choose a cty.dat file first';return;}
+    if(file.size===0||file.size>1048576){$('cty-result').textContent='Refused \u00b7 the file must hold 1 byte to 1 MiB';return;}
+    replace(await file.text(),`Uploaded ${file.name}`);
+  });
+  $('cty-bundled').addEventListener('click',()=>replace(null,'Using the bundled cty.dat'));
+  loadCty();
+}
 // Annotate rows already shown when this client arrives.
 if(activity)annotate(activity,resultRows);
 })();

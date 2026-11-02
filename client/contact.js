@@ -35,7 +35,7 @@ focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
 const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
-let snap=null,sending=false,tick=null,lastTx=null,changeTarget=null,lastLog=null;
+let dxLookup={call:null,entity:null},snap=null,sending=false,tick=null,lastTx=null,changeTarget=null,lastLog=null;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
@@ -89,8 +89,9 @@ function render(){
   const strong=identity.querySelector('strong'),detail=identity.querySelector('div > span');
   if(c?.dx_call){
     const km=c.dx_grid&&typeof distanceKm==='function'?distanceKm(profileData?.settings?.locator,c.dx_grid):null;
-    strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}`;
-    detail.textContent=`Report sent ${c.report_sent} · received ${c.report_rcvd??'none'}${km!==null?` · ${km} km`:''}${c.saved?' · logged':''}`;
+    strong.textContent=`${c.dx_call}${c.dx_grid?' · '+c.dx_grid:''}${dxEntity(c.dx_call)}`;
+    const approx=km===null&&Number.isInteger(dxLookup.entity?.km)&&dxLookup.call===c.dx_call?`~${dxLookup.entity.km} km`:null;
+    detail.textContent=`Report sent ${c.report_sent} · received ${c.report_rcvd??'none'}${km!==null?` · ${km} km`:approx?` · ${approx}`:''}${c.saved?' · logged':''}`;
   }
   else if(c){strong.textContent=c.state==='calling'?'Calling CQ':'No contact selected';detail.textContent='Select a decoded station or enter a DX call.';}
   for(const id of ['dx-call','dx-grid','dx-generate','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
@@ -131,6 +132,15 @@ function render(){
   stationTx();countdown();
   paneUpdate();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   logShow();
+}
+// #55 WstxDxcc: the partner's country and continent in the QSO pane header, looked up
+// once per DX call (GET /dxcc?call=).
+function dxEntity(call){
+  if(dxLookup.call!==call){
+    dxLookup={call,entity:null};
+    stationFetch(`/dxcc?call=${encodeURIComponent(call)}`,{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(dxLookup.call===call&&v?.entity){dxLookup.entity=v.entity;render();}}).catch(()=>{});
+  }
+  const e=dxLookup.entity;return e?` · ${e.name} (${e.cont})`:'';
 }
 // WstxContact::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
@@ -511,7 +521,7 @@ $('tx-send').addEventListener('click',()=>{
   transmitAction({action:'request',request_sequence:transmitSequence,mode,period_start_utc_ms:start,message_text:document.querySelector('#tx-message').value,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Send');
 });
 $('tx-tune').addEventListener('click',()=>{const on=transmitView?.transmit.tune;transmitAction(on?{action:'tune',enabled:false}:{action:'tune',enabled:true,tx_offset_hz:Number(document.querySelector('#tx-offset').value)},'Tune');});
-document.querySelector('#server-fields-general .op-apply-row').insertAdjacentHTML('beforebegin','<label>Continent<select id="station-continent"><option value="">From locator</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label>');
+document.querySelector('#server-fields-general .op-apply-row').insertAdjacentHTML('beforebegin','<label>Continent<select id="station-continent"><option value="">From callsign</option><option value="AF">Africa</option><option value="AN">Antarctica</option><option value="AS">Asia</option><option value="EU">Europe</option><option value="NA">North America</option><option value="OC">Oceania</option><option value="SA">South America</option></select><small id="continent-derived"></small></label>');
 document.querySelector('#settings-display h3').insertAdjacentHTML('afterend','<label>Theme<select id="theme-choice"><option value="dark">Dark</option><option value="day">Day</option><option value="night">Night (dim red)</option></select></label><label>Switch<select id="theme-switch"><option value="manual">Manually</option><option value="time">By time</option><option value="sun">By sunrise and sunset at my locator</option></select></label><span id="theme-times"><label>Day from<input id="theme-day-start" type="time" value="07:00"></label><label>Night from<input id="theme-night-start" type="time" value="20:00"></label></span><p id="theme-status" class="op-muted"></p>');
 const maidenhead=grid=>{
   if(typeof grid!=='string'||!/^[A-R]{2}[0-9]{2}([A-X]{2})?$/i.test(grid))return null;
@@ -740,7 +750,7 @@ const continentSelect=$('station-continent');
 function showContinent(){
   if(!continentSelect)return;const c=config();continentSelect.disabled=!c;
   if(document.activeElement!==continentSelect)continentSelect.value=c?.continent??'';
-  $('continent-derived').textContent=`From locator: ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
+  $('continent-derived').textContent=`From callsign (cty.dat): ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
 // ---------------------------------------------------------------- editor popup

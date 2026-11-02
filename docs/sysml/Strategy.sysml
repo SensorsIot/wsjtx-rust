@@ -14,9 +14,10 @@ package WstxStrategy {
             Auto uses the same verdicts.
          D2 Data in this slice: worked status from the internal log (call and 4-character
             grid, ever or on this band and mode, WstxContact::WorkedBeforeQuery); the
-            continent, distance and azimuth of a station come from the grid in its
-            message (ContinentOfGrid; none without a grid). cty.dat (DXCC, CQ/ITU zone,
-            new DXCC, rarest) is not available yet (CL-039-07).
+            continent of a station is its cty.dat entity's (ContinentOfCall, #55, also
+            without a grid); distance and azimuth come from the grid in its message
+            (none without a grid). DXCC, CQ/ITU zone and new-DXCC conditions and the
+            rarest sort are not offered yet (CL-039-07).
          D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as
             calling for message type cq, in Highlight and Auto; Auto then keeps my Tx
             frequency (Hold Tx) so the answer never lands on the final 73.
@@ -59,8 +60,8 @@ package WstxStrategy {
              to a call other than mine; directed_cq: "CQ x"; to_me: to my call; signoff:
              exchange RR73 or 73. new_call ever: the sender is not in the log; band: not
              worked on this band and mode. new_grid: as new_call for the message's grid
-             square (no grid: false). continent: ContinentOfGrid of the message grid is
-             listed (no grid: false). distance_km/azimuth_deg: great circle from my locator
+             square (no grid: false). continent: ContinentOfCall of the sender is listed
+             (no entity: false). distance_km/azimuth_deg: great circle from my locator
              to the message grid in whole km / whole degrees (no grid: false). snr_db,
              dt_s, audio_hz: the record's value (unknown: false). call: a listed prefix
              starts the sender's call. cq_target: a CQ whose target is listed. band: the
@@ -87,7 +88,7 @@ package WstxStrategy {
         attribute active : String[0..1];
         attribute highlight : Boolean;
         attribute strategiesMax : Integer = 16;
-        doc /* Wire keys exactly continent (null: derived from the locator, else one of
+        doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
              the seven codes: my continent for the directed-CQ rule), active (null or the
              name of a listed strategy), highlight, strategies (0..16 Strategy). Persisted
              as strategy.json beside profile.json: {schema_version 1, profile_id, revision,
@@ -96,15 +97,14 @@ package WstxStrategy {
              262144 bytes: configuration null with configuration_error
              invalid_configuration until a PUT replaces it. */
     }
-    calc def ContinentOfGrid {
-        in grid : String;
+    calc def ContinentOfCall {
+        in call : String;
         return continent : String[0..1];
-        doc /* The centre of a 4- or 6-character locator (lat, lon) as the browser computes
-             it, then: lat < -60 AN; -170 <= lon < -30: NA when lat > 12 or (lon < -77 and
-             lat > 7), else SA; -30 <= lon < 60 and lat >= 35: AS when lon > 40 and
-             lat < 42, else EU; -30 <= lon < 52 and lat < 37: AS when lon > 33 and
-             lat > 12, else AF; (lat >= -11 and lon >= 60) or lat >= 35: AS; else OC.
-             A coarse rectangle rule until cty.dat is available. */
+        doc /* #55: the continent of WstxContact::EntityOfCall for the call (with a {cont}
+             override of the matching cty.dat entry applied); none when the call has no
+             entity (/MM, /AM, unknown prefix). It replaces the earlier locator-rectangle
+             approximation: the message grid no longer decides a station's continent.
+             The snapshot's derived_continent is ContinentOfCall of my callsign. */
     }
     calc def DirectedCqRule {
         in target : String;

@@ -1215,11 +1215,32 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
-  assert.equal(await page.locator('#continent-derived').textContent(),'From locator: EU');
+  assert.equal(await page.locator('#continent-derived').textContent(),'From callsign (cty.dat): EU');
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
   await page.selectOption('#station-continent','AS');const reply=await (await saved).json();
   assert.deepEqual([reply.revision,reply.configuration.continent,reply.my_continent],[1,'AS','AS']);
   await page.locator('#continent-derived').filter({hasText:'using AS'}).waitFor();
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
+// uploads a replacement to the actual isolated station and returns to the bundled file;
+// a file that is no cty.dat is refused with its line and changes nothing.
+test('TC-055-003 Settings > General country file shows its date, uploads and restores',{timeout:40000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  const status=page.locator('#cty-status');
+  await status.filter({hasText:'cty.dat 2025-01-15 \u00b7 bundled with this station \u00b7 346 entities'}).waitFor({timeout:20000});
+  assert.equal(await page.locator('#cty-bundled').isDisabled(),true);
+  await page.locator('#cty-file').setInputFiles({name:'bad.dat',mimeType:'text/plain',buffer:Buffer.from('Nowhere: 1: 2: XX: 0: 0: 0: NW:\n NW;\n')});
+  await page.locator('#cty-upload').click();
+  await page.locator('#cty-result').filter({hasText:'Refused \u00b7 not a valid cty.dat (line 1); nothing changed'}).waitFor();
+  await page.locator('#cty-file').setInputFiles({name:'cty.dat',mimeType:'text/plain',buffer:Buffer.from('Testland:  14:  28:  EU:  1.00:  -2.00:  -1.0:  TT:\n    TT,HB,=VER20991231;\n')});
+  await page.locator('#cty-upload').click();
+  await status.filter({hasText:'cty.dat 2099-12-31 \u00b7 uploaded \u00b7 1 entities'}).waitFor();
+  assert.equal(await page.locator('#cty-result').textContent(),'Uploaded cty.dat');
+  assert.equal((await page.evaluate(async()=>(await (await stationFetch('/dxcc?call=HB9BLA')).json()).entity.name)),'Testland');
+  await page.locator('#cty-bundled').click();
+  await status.filter({hasText:'cty.dat 2025-01-15 \u00b7 bundled with this station'}).waitFor();
   assert.deepEqual(errors,[]);
 });

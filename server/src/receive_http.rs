@@ -328,7 +328,15 @@ pub async fn results(
         Ok(v) if v["error"]["code"] == "cursor_expired" => {
             (StatusCode::GONE, Json(v)).into_response()
         }
-        Ok(v) => Json(v).into_response(),
+        Ok(mut v) => {
+            // #55 DecodedEntity: the entity and new-* flags of each decoded sender.
+            if let (Some(state), Some(records)) =
+                (app.profile.as_ref(), v["records"].as_array_mut())
+            {
+                crate::dxcc::annotate(state, records);
+            }
+            Json(v).into_response()
+        }
         Err(e) => error(e),
     }
 }

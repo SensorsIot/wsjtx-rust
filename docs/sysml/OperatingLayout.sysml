@@ -512,10 +512,14 @@ attribute def ActivityOrdering {
              divider with their period UTC, newest first, at most retainedPeriods periods
              and maximumRows rows; a new receive identity (band/mode change, restart)
              clears the history. Within a period the ActivityOrdering applies (column
-             header click). DXCC needs the cty.dat prefix table, which the station does not
-             yet provide: the column shows an explicit unavailable mark. Distance is the
-             great-circle distance from the profile locator to a grid carried in the
-             message, unavailable otherwise. Colours keep the WSJT-X meanings: CQ, a
+             header click). DXCC shows the shown name of the sender's entity
+             (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
+             an explicit unavailable mark without one. Distance is the great-circle
+             distance from the profile locator to a grid carried in the message; without
+             a grid the entity distance marked approximate ("~n km"); unavailable
+             otherwise. The QSO pane header shows the partner's shown name and continent
+             after the call and grid (GET /dxcc?call=, once per DX call), and the
+             entity distance marked approximate when the contact has no grid. Colours keep the WSJT-X meanings: CQ, a
              message addressed to my call, worked-before marks (WstxContact::
              WorkedBeforeQuery), and with Highlight on the strategy marks of
              WstxStrategy::HighlightView (matches first in their period, greyed directed

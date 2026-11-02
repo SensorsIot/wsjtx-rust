@@ -550,6 +550,11 @@ impl Recording {
             .get((sequence - l.first_sequence) as usize)
             .map(|(r, _)| (r.clone(), mode))
     }
+    /// #55 test fixture: the operating selection band (no radio command).
+    #[cfg(test)]
+    pub(crate) fn fixture_band(&self, band: &'static str) {
+        self.state.lock().unwrap().operating.nominal.band = Some(band);
+    }
     /// Test seam: an injected running live job whose result records the test publishes
     /// itself (hand-authored rows; no decoder). Returns (source, job, generation).
     #[cfg(test)]
