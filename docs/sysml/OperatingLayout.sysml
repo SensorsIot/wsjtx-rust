@@ -597,7 +597,8 @@ attribute def ActivityOrdering {
              counted N > 1 times in a row; a new text replaces it.
              3. Others, at most maximumOtherLines lines, newest first (period, then decode
              order), from the decoded rows of the latest two published periods that are not
-             from the partner: while a QSO runs, the stations within +/-50 Hz of my Rx
+             from the partner (the partner of the last QSO stays excluded after it ended,
+             until another contact runs): while a QSO runs, the stations within +/-50 Hz of my Rx
              frequency (QsoPaneCrowding) and the stations calling my call, each marked with a
              warning sign ("⚠ HB9BLA DL1ABC JO31  −8 dB");
              double-click (or Enter) switches the contact to that station and replies
@@ -609,7 +610,7 @@ attribute def ActivityOrdering {
              the next period of the contact's parity, only while Enable Tx is on and the
              contact is calling or a QSO runs.
              5. Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
-             Log QSO, offered while a QSO runs, logs the contact now, WstxContact::DirectLog
+             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result
              line goes when the QSO ends.
              6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not

@@ -39,7 +39,7 @@ focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
 const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
-let snap=null,sending=false,tick=null,changeTarget=null,lastLog=null,loggedTimer=null,wasRunning=false;
+let snap=null,sending=false,tick=null,changeTarget=null,lastLog=null,loggedTimer=null,wasRunning=false,lastPartner=null;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
@@ -64,7 +64,7 @@ let sendChain=Promise.resolve();
 function send(...args){const run=sendChain.then(()=>sendNow(...args));sendChain=run.catch(()=>{});return run;}
 async function sendNow(action,params={},label=action){
   if(!snap){resultText.textContent='Contact state unavailable';return null;}
-  const body={...ids(),command_id:crypto.randomUUID(),contact_revision:snap.contact_revision,action,...params};
+  const body={...ids(),command_id:crypto.randomUUID(),contact_revision:snap.contact_revision,action,...params},before=running(snap.contact);
   resultText.textContent=`${label}: pending · waiting for the station`;sending=true;
   try{
     const response=await stationFetch('/contact/command',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -74,7 +74,8 @@ async function sendNow(action,params={},label=action){
     resultText.textContent=`${label}: refused · ${code}${code==='stale_revision'?' · station state changed, review and retry':''}`;
     return {refused:code};
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
-  finally{sending=false;await load();}
+  // A command that ended the QSO (Log QSO) leaves no accepted result in the idle pane.
+  finally{sending=false;await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
 }
 // The keyboard halt itself (Esc, Alt+H) is sent by recording.js, which is loaded at
 // once; this client only shows its outcome and adds the Esc contact cancellation.
@@ -98,6 +99,8 @@ function render(){
   // Nothing of a finished contact stays: an accepted command's result goes with it.
   if(wasRunning&&!qso&&/: accepted$/.test(resultText.textContent))resultText.textContent='';
   wasRunning=qso;
+  // The partner of the last running QSO stays out of the Others until another contact runs.
+  if(qso||(c?.state==='completed'&&c.dx_call))lastPartner=c.dx_call;
   const strong=identity.querySelector('strong'),detail=identity.querySelector('div > span');
   if(qso){
     const km=c.dx_grid&&typeof distanceKm==='function'?distanceKm(profileData?.settings?.locator,c.dx_grid):null;
@@ -366,7 +369,7 @@ $('window-dump').addEventListener('change',async event=>{
   diagnosticsShow();
 });
 // Log QSO: log the current contact now, without a form (DirectLog).
-async function logQso(){if(snap?.contact?.dx_call)await send('open_log',{},'Log QSO');}
+async function logQso(){if(running(snap?.contact))await send('open_log',{},'Log QSO');}
 $('contact-log').addEventListener('click',logQso);
 // WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc and
 const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select,[contenteditable=true]');
@@ -433,7 +436,7 @@ function recentRows(){
   return rows;
 }
 function othersShow(){
-  const rx=snap?.settings?.rx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:null,my=myCall();
+  const rx=snap?.settings?.rx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:lastPartner,my=myCall();
   const lines=typeof rx!=='number'?[]:recentRows().filter(({record})=>{
     if(record.status!=='decoded')return false;
     const from=record.fields?.from?.text,to=record.fields?.to?.kind==='call'?record.fields.to.text:null;

@@ -409,7 +409,8 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     // Rx is 1500 Hz: 1449.9 Hz is outside +/-50 Hz; the partner IW9FRA at 1505 Hz is never an Other.
-    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA IW9FRA RR73',1505,17),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA DL1ABC JO31',400,-8)];
+    // The partner's RR73 is the newest row, so it would lead the Others if it were not excluded.
+    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA DL1ABC JO31',400,-8),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA IW9FRA RR73',1505,17)];
     Object.assign(state.job,{first_sequence:0,next_sequence:5,available_count:5,latest_decode:{id:1,first_sequence:0,next_sequence:5,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
@@ -426,7 +427,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   // Item 7, idle: the stations on my Rx frequency (and a station calling me) are plain
   // candidates, at most two, newest first, message and SNR only (no time, DT or Hz).
   await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
-  assert.deepEqual(await others(),[['candidate','◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','◂ CQ YO3GNF KN34  +12 dB']]);
+  assert.deepEqual(await others(),[['candidate','◂ HB9BLA IW9FRA RR73  +17 dB'],['candidate','◂ CQ YO3GNF KN34  +12 dB']]);
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'no Log QSO without a running QSO');
@@ -446,7 +447,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
-  assert.deepEqual(await others(),[['warn','⚠ HB9BLA DL1ABC JO31  −8 dB'],['warn','⚠ CQ YO3GNF KN34  +12 dB']]);
+  assert.deepEqual(await others(),[['warn','⚠ CQ YO3GNF KN34  +12 dB'],['warn','⚠ HB9BLA DL1ABC JO31  −8 dB']]);
   assert.equal(await shown(page,'#qso-next'),true,'NEXT while armed');
   assert.deepEqual([await page.locator('#qso-next .op-eyebrow').textContent(),await page.locator('#contact-next').textContent()],['▸ next:','IW9FRA HB9BLA 73']);
   assert.equal(await shown(page,'#contact-state'),false,'no status line without an exception');
@@ -464,7 +465,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.ok(heights.pane<=250&&heights.pane<heights.activity-40,`compact pane ${heights.pane} px of ${heights.activity} px`);
   // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
   m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
-  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',4,true],['enable_tx',true,undefined]]);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,true],['enable_tx',true,undefined]]);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
   // Auto Seq off (#11) stays visible in the compact pane.
@@ -474,16 +475,26 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-360x800.png'});
   await page.setViewportSize({width:1366,height:768});
 
-  // Items 5, 6 and 9: completed by Log QSO, the contact is gone: "✓ Logged IW9FRA", no
-  // NEXT, no partner lines, Others back to plain candidates; the notice goes after a few seconds.
+  // Items 5, 6 and 9: Log QSO completes the contact; it is gone: "✓ Logged IW9FRA", no
+  // NEXT, no partner lines (the finished partner's RR73 is not offered again), Others back to
+  // plain candidates; the notice goes after a few seconds. The station's completed snapshot is
+  // loaded before the 202 arrives: no "accepted" result of the ended QSO stays.
   const done={...running,state:'completed',next_slot:'tx6',saved:true};
-  await show(done,{arm_state:'disarmed'},{contact_id:running.id,call:'IW9FRA',outcome:'saved',error:null});
+  const logged={contact_id:running.id,call:'IW9FRA',outcome:'saved',error:null};
+  const early=async route=>{commands.push(JSON.parse(route.request().postData()));contact=done;transmit={arm_state:'disarmed'};log=logged;await page.evaluate(()=>window.wstxContact.load());await new Promise(r=>setTimeout(r,300));await route.fulfill({status:202,json:{v:1,accepted:true}});};
+  await page.route('**/contact/command',early);
+  m=commands.length;await page.locator('#contact-log').click();await waitCommands(m+1);
+  assert.deepEqual(commands.slice(m).map(c=>c.action),['open_log']);
   await page.locator('#contact-logged').filter({hasText:'✓ Logged IW9FRA'}).waitFor();
+  await page.waitForTimeout(800);await page.unroute('**/contact/command',early);
+  assert.equal(await page.locator('#contact-result').textContent(),'','no accepted result of the ended QSO');
   assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
-  assert.deepEqual((await others()).map(o=>o[0]),['candidate','candidate']);
+  assert.deepEqual(await others(),[['candidate','◂ CQ YO3GNF KN34  +12 dB'],['candidate','◂ HB9BLA DL1ABC JO31  −8 dB']],'the finished partner is not a candidate');
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
+  m=commands.length;await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('Alt+q');await page.waitForTimeout(400);
+  assert.deepEqual(commands.slice(m),[],'nor by Alt+Q');
   await page.screenshot({path:'test-results/ui-operating/qso-pane-logged-1366x768.png'});
   await page.waitForFunction(()=>document.querySelector('#contact-logged').textContent==='',null,{timeout:12000});
   assert.equal(await shown(page,'#contact-logged'),false,'the notice goes');

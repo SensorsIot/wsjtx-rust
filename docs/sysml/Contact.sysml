@@ -601,7 +601,9 @@ package WstxContact {
              and FREQ from the dial confirmed at completion plus the Tx offset (absent when
              unconfirmed), STATION_CALLSIGN and MY_GRIDSQUARE; it is stored without any
              browser, whether or not one is connected. Manual Log QSO (button, Alt+Q,
-             open_log): available whenever a contact has a DX call, in any state; logs
+             open_log): the station accepts it whenever a contact has a DX call, in any
+             state; the QSO pane offers the button and Alt+Q only while a QSO runs
+             (WstxOperatingLayout::QsoPane, #37); it logs
              that contact now the same way with the times observed so far, without a
              form. Log QSO of an unfinished contact (replying..signoff) also closes it
              (#37, 2026-11-02): it becomes completed with Tx6 selected, Enable Tx turns off
