@@ -626,8 +626,20 @@ function liveSelectionFixture(){
     try{await Promise.all(pages.map(async(page,index)=>{
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
       // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
-      await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
-      await page.locator('#connection[data-state=connected]').waitFor({timeout:coldRemaining()});seen.connectedObserved=performance.now();
+      // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
+      // queued, this browser's 10 s authorization requests can time out ("Could not authenticate").
+      // The operator then presses Connect securely again; each retry is kept as evidence (#55).
+      seen.loginRetries=[];
+      for(;;){
+        await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
+        const outcome=await Promise.race([page.locator('#connection[data-state=connected]').waitFor({timeout:coldRemaining()}).then(()=>'connected'),
+          page.locator('#login-error').filter({hasText:'Could not authenticate'}).waitFor({timeout:coldRemaining()}).then(()=>'refused',()=>new Promise(()=>{}))]);
+        if(outcome==='connected')break;
+        seen.loginRetries.push(performance.now());assert.ok(seen.loginRetries.length<=5,'at most five operator login retries');
+        // The page clears the message only on success; clear it so the next attempt's outcome is its own.
+        await page.locator('#login-error').evaluate(e=>{e.textContent='';});
+      }
+      seen.connectedObserved=performance.now();
       await page.locator('#operating-band:enabled').waitFor({timeout:coldRemaining()});seen.operatingObserved=performance.now();
       await page.locator('#open-server-settings').click({timeout:coldRemaining()});await page.selectOption('#display-profile','thin',{timeout:coldRemaining()});await page.locator('#tab-expert').click({timeout:coldRemaining()});
       assert.equal(await page.locator('#display-profile').inputValue({timeout:coldRemaining()}),'thin');seen.thinConfigured=performance.now();
@@ -654,7 +666,7 @@ function liveSelectionFixture(){
         window.__cadenceAcceptanceCheckpoint=()=>{snapshot(false);return events;};return events;
       })};
     }
-    report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),countedBytes:{...proxy.counters},pages:observations.map(seen=>({navigations:seen.navigations,abortedProfileBodies:seen.profileBodies.filter(p=>!p.body).map(p=>({at:p.at,error:p.bodyError,finished:p.finished,failure:p.failure})),navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
+    report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),countedBytes:{...proxy.counters},pages:observations.map(seen=>({navigations:seen.navigations,abortedProfileBodies:seen.profileBodies.filter(p=>!p.body).map(p=>({at:p.at,error:p.bodyError,finished:p.finished,failure:p.failure})),navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,loginRetries:seen.loginRetries,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}

@@ -77,6 +77,43 @@ fn canonical_payload_boundaries() {
         );
     }
 }
+// Proves: CL-055-02 (#55 live defect: RR73 packed as the grid square RR73 is the roger).
+#[test]
+fn rr73_packed_as_a_grid_square_is_the_roger() {
+    let with_exchange = |text: &str, raw: Option<u32>| {
+        let mut p = wstx_rust::transmit::pack(text).unwrap().bits;
+        if let Some(raw) = raw {
+            for (i, bit) in p[59..74].iter_mut().enumerate() {
+                *bit = ((raw >> (14 - i)) & 1) as u8;
+            }
+        }
+        let d = unpack(&p);
+        (
+            serde_json::to_value(d.text).unwrap(),
+            serde_json::to_value(d.fields).unwrap()["exchange"].clone(),
+        )
+    };
+    // 32373 = ((17*18+17)*10+7)*10+3, the square RR73; 32403 is WSJT-X's RR73 roger.
+    let roger = serde_json::json!({"kind":"roger","value":"RR73"});
+    for raw in [Some(32373), None] {
+        assert_eq!(
+            with_exchange("KW8CW K1WY RR73", raw),
+            (serde_json::json!("KW8CW K1WY RR73"), roger.clone()),
+            "{raw:?}"
+        );
+    }
+    assert_eq!(
+        with_exchange("CQ K1WY FN31", None).1,
+        serde_json::json!({"kind":"grid","value":"FN31"})
+    );
+    // The neighbouring squares stay grids.
+    for (raw, sq) in [(32372, "RR72"), (32374, "RR74"), (32363, "RR63")] {
+        assert_eq!(
+            with_exchange("KW8CW K1WY FN31", Some(raw)).1,
+            serde_json::json!({"kind":"grid","value":sq})
+        );
+    }
+}
 // Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn fec_repairs_corruption_and_respects_cancellation() {

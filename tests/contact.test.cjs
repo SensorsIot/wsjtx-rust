@@ -257,3 +257,21 @@ test('TC-007-004 Esc halts once before and once after the contact client loads',
   assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'contact.js sends no second halt');
   assert.deepEqual(page.errors,[]);
 });
+
+// #55 live defect 2026-11-02: K1WY's RR73 arrived packed as the grid square RR73 (32373) and
+// showed an exact 5435 km (JN37VL to RR73). RR73 is the roger, never a grid: that row shows
+// the entity distance marked approximate like the report row; only the CQ grid is exact.
+// JN47AA to FN31 is 6188 km by hand haversine; U.S.A. is ~7706 km (see TC-007-003 above).
+test('TC-055-004 RR73 sent as a grid square is no grid for the distance, in either order',{timeout:60000},async()=>{
+  const rows3=[{text:'KW8CW K1WY RR73',hz:1620.6,snr:-14,exchange_raw:32373},{text:'CQ K1WY FN31',hz:1620.6,snr:-19},{text:'SP6E K1WY +00',hz:1620.6,snr:-14}];
+  const expected={'KW8CW K1WY RR73':'~7706 km','CQ K1WY FN31':'6188 km','SP6E K1WY +00':'~7706 km'};
+  for(const [offset,order] of [[0,rows3],[15000,[...rows3].reverse()]]){
+    const {sequences}=await publish(evenNow()+offset,order);
+    for(const [i,row] of order.entries()){
+      const tr=page.locator(`#band-activity tbody tr[data-sequence="${sequences[i]}"]`);
+      await tr.waitFor({timeout:30000});
+      assert.deepEqual(await tr.evaluate(t=>[t.children[4].textContent,t.children[5].textContent,t.children[6].textContent]),[row.text,'U.S.A.',expected[row.text]],JSON.stringify(order.map(r=>r.text)));
+    }
+  }
+  assert.deepEqual(page.errors,[]);
+});
