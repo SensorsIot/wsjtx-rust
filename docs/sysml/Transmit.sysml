@@ -368,6 +368,8 @@ package WstxTransmit {
         attribute minConfidencePct : Integer = 60;
         attribute hysteresisMs : Integer = 50;
         attribute maxSlewMs : Integer = 1000;
+        attribute huntWindows : Integer = 4;
+        attribute huntMs : Integer = 1000;
         attribute maxAgeS : Integer = 60;
         attribute maxResidualMs : Integer = 500;
         attribute maxDisagreementMs : Integer = 200;
@@ -382,7 +384,10 @@ package WstxTransmit {
              trimmed; offset = -median of the rest; confident with minStations and
              minConfidencePct. Each completed decode window re-estimates and moves the
              applied correction toward a confident estimate beyond hysteresisMs by at
-             most maxSlewMs. synchronized: confident, at most maxAgeS old, unstepped,
+             most maxSlewMs; until the first confident estimate, every huntWindows windows
+             without one alternate it between 0 and +huntMs (acquisition of a slow clock).
+             A system clock step is subtracted from it (station UTC continuous).
+             synchronized: confident, at most maxAgeS old, unstepped,
              |estimate - applied| <= maxResidualMs. The applied correction is added to
              station UTC on the air basis (air, or both while SNTP is not synchronized)
              for receive windows, period/DT, transmit planning and audio start; the

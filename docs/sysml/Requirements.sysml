@@ -3130,7 +3130,10 @@ package WstxRequirements {
              is confident with at least 4 stations and confidence_pct at least 60. Medians
              of an even count are the floor of the mean of the middle pair. A system clock
              step of more than 100 ms between observations (system time elapsed minus
-             monotonic time elapsed) discards all observations and the estimate. */
+             monotonic time elapsed) discards all observations and the estimate and
+             subtracts the step from the applied correction (CL-043-03), so station UTC
+             stays continuous (a step that corrected the system clock leaves 0); a
+             correction beyond 3000 ms after that restarts at 0 with acquisition. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/air.rs; server/src/recording.rs; server/src/transmit_http.rs";
     }
@@ -3154,9 +3157,13 @@ package WstxRequirements {
              is taken from raw DT, applying the correction never changes the estimate's
              input: the correction converges without oscillating, and with the live window
              coverage of corrected DT (-1.7 s to +2.56 s) acquires offsets (true minus
-             system UTC) of about -2.5 s to +1.7 s, depending on the crowd's DT spread;
-             outside it too few stations decode and the state stays unknown (transmit
-             refused). When a current SNTP measurement (state not
+             system UTC) of about -2.5 s to +1.7 s directly. Acquisition: until the first
+             confident estimate since start (or since a restart at 0), every 4 completed
+             windows without one alternate the applied correction between 0 and +1000 ms,
+             which moves the coverage to raw DT -2.7 s to +1.56 s, so a system clock up to
+             about 2.7 s slow is acquired too; after the first confident estimate there is
+             no alternation. Outside about -2.5 s to +2.7 s too few stations decode and the
+             state stays unknown (transmit refused). When a current SNTP measurement (state not
              unknown) and a confident air estimate both exist, disagreement_ms = |SNTP
              offset - air offset|; with source both a disagreement above 200 ms is the
              warning ntp_air_disagree. Exception chips (CL-010-16 layout): a clock chip
@@ -3180,7 +3187,8 @@ package WstxRequirements {
              three stations; four agreeing; five agreeing among nine scattered; a crowd
              split 1 s; observe the own call (any case), SNR -20.5/None/NaN, |DT| 3001 and
              3000; run windows through the rate limit, hysteresis, age 60 s / 60 s + 1 ms,
-             a 100/101 ms system clock step, residuals 500/501 ms and a quiet band; the
+             a 100/101 ms system clock step, the 2 s fast system clock stepped back to
+             UTC, a +5 s step, residuals 500/501 ms and a quiet band; the
              source combination table; Both with SNTP +12 ms, -1900 ms, -2226 ms and
              -2225 ms against the air.
              Oracles (hand-computed): -2025 ms 12/12 100 %; +1475 ms; with the bad clock
@@ -3188,7 +3196,8 @@ package WstxRequirements {
              from two, -1850 ms not confident from three; four confident; 5 of 9 (55 %) not
              confident; the split crowd 0 stations; only the two in-range observations
              admitted; applied -1000 (unsynchronized) then -2000 (synchronized) and kept;
-             unknown after 60 s + 1 ms or a 101 ms step (which also clears the window);
+             unknown after 60 s + 1 ms or a 101 ms step; stepping back clears the window
+             and leaves correction 0, the +5 s step restarts at 0;
              500 ms synchronized, 501 ms unsynchronized; quiet unknown with nothing
              applied; only synchronized plans a transmit start; ntp source uncorrected
              and unknown without SNTP, air corrected -2000 ms and synchronized; Both on
@@ -3215,14 +3224,16 @@ package WstxRequirements {
              lies in the live window coverage -1.7 s to +2.56 s, both windows completing
              each period; (b) the actual live worker, window buffer and ClockTracker with
              a scripted capture clock 300 ppm slow (actual Recording, clock source air).
-             Steps: (a) station clock errors -2 s, +1.5 s, +0.6 s, 0 and +2 s; the negative
+             Steps: (a) station clock errors -2 s, +1.5 s, +0.6 s, 0, +2 s and +3 s; the negative
              control replaces the correction in full by an estimate from corrected DT;
              (b) 301 s of capture, the air correction becoming -2000 ms at 150 s; then
              publish one CQ K1ABC decode 17.0 s after the anchor with 0.5 s drift at
              correction -2000 ms and 0.
              Oracles: (a) the applied correction settles within 50 ms of error - 25 ms
-             within two periods, never moves again and approaches monotonically; +2 s
-             never synchronizes and applies nothing; the negative control alternates
+             within two periods, never moves again and approaches monotonically (+2 s
+             through the +1000 ms acquisition shift after four windows, settling at
+             +1975 ms); +3 s never synchronizes over 20 periods, the correction only 0 or
+             +1000 ms; the negative control alternates
              -2025, 0, -2025, ...; (b) 20 prompt windows (none lost or repeated), each after
              the first completing within 100 ms of +13.8 s of corrected UTC across the
              drift and the correction; the decode at period 00:00:15 with DT 0.0 s at
@@ -3288,16 +3299,20 @@ package WstxRequirements {
         doc /* TC-043-004 — Live clock from the air on HB9BLA
              CL-043-01, CL-043-02, CL-043-03, CL-009-05
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3, USB Audio
-             CODEC, FT8 receive on a band with at least ten stations heard; the PC clock
-             disciplined by NTP (setting the Windows clock needs administrator rights,
-             which the agents do not have, so the live check does not offset the PC
-             clock); the deliberately offset clock is proven by TC-043-001/002.
+             CODEC, FT8 receive on a band with at least ten stations heard. Steps (1)-(4)
+             keep the PC clock disciplined by NTP and need no administrator rights (agents
+             have none); step (5), the issue's offset-clock check, is performed by the
+             operator with administrator rights.
              Steps: (1) source ntp: read GET /clock for three periods (SNTP offset, air
              estimate). (2) choose From the air in Settings > General > Clock; read GET
              /clock and GET /transmit for three periods; read Band Activity DT. (3) choose
              Both, then ntp again. (4) with the operator's consent for transmit, with From
              the air synchronized, arm and send one CQ; check PSK Reporter spots of
-             HB9BLA and a partner's DT.
+             HB9BLA and a partner's DT. (5) operator, administrator: stop Windows Time
+             (w32time) and any clock tool, set source From the air, set the PC clock
+             1.5 s fast, wait four FT8 periods, read GET /clock, GET /transmit and Band
+             Activity DT; repeat with the PC clock 1.5 s slow and 2.0 s slow; restore the
+             clock and its service and source ntp.
              Expected: (1) state synchronized by NTP with |SNTP offset| at most 500 ms,
              the air estimate confident and within 200 ms of the SNTP offset (the Both
              disagreement bound; the crowd's own mean DT bias, typically +0.1 to +0.2 s,
@@ -3307,8 +3322,13 @@ package WstxRequirements {
              clock synchronized and clock_source air; no clock chip; (3) Both on the ntp
              basis with no warning while they agree within 200 ms; (4) the transmission is
              admitted, starts at the period start + 0.5 s of station UTC, and PSK Reporter
-             spots and the partner's DT (within +-0.5 s) confirm the transmitted timing.
-             Steps (1)-(3) are receive-only, cost 4; step (4) transmits.
+             spots and the partner's DT (within +-0.5 s) confirm the transmitted timing;
+             (5) within four periods state synchronized by the air with correction_ms
+             within 200 ms of -1500, +1500 and +2000 ms respectively, Band Activity median
+             DT within +-0.2 s, GET /transmit clock synchronized (transmit admitted); a
+             transmission under step (4)'s consent is spotted on time.
+             Steps (1)-(3) and (5) without transmit are receive-only, cost 4; transmit
+             steps are cost 5.
              5 — Live with transmit and external effects; explicit operator consent;
              HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;

@@ -58,6 +58,13 @@ pub const HYSTERESIS_MS: i64 = 50;
 /// ... by at most this much per completed decode window (rate limit): a burst of wrong
 /// decodes cannot throw the correction by seconds at once.
 pub const MAX_SLEW_MS: i64 = 1000;
+/// Until a first confident estimate, a slow station clock beyond the late edge of the
+/// live windows (corrected DT below -1.7 s) decodes too few stations to be estimated:
+/// after this many completed windows without one the correction alternates between 0
+/// and +HUNT_MS (acquisition) ...
+pub const HUNT_WINDOWS: u32 = 4;
+/// ... which moves the window coverage 1 s earlier (raw DT -2.7 s to +1.56 s).
+pub const HUNT_MS: i64 = 1000;
 /// An estimate not renewed for this long (receive stopped) no longer counts.
 pub const MAX_AGE_MS: i64 = 60_000;
 /// In Both, NTP and air disagreeing by more than this is a warning.
@@ -157,16 +164,30 @@ pub struct AirClock {
     reference: Option<(i64, i64)>,
     latest: Option<(Estimate, i64)>,
     applied_ms: i64,
+    /// Completed windows without a confident estimate, while none was ever confident.
+    hunt: u32,
+    /// Whether an estimate was confident since start (acquisition is over).
+    acquired: bool,
 }
 impl AirClock {
     /// Forgets everything observed when the system clock stepped since the last
-    /// observation (the raw DT before and after no longer describe the same clock).
+    /// observation (the raw DT before and after no longer describe the same clock) and
+    /// moves the applied correction by the opposite of the step, so station UTC stays
+    /// continuous: a step that corrected the system clock leaves the correction at 0. A
+    /// correction beyond MAX_DT_MS after that restarts from 0 with acquisition.
     fn check_step(&mut self, mono_ms: i64, system_ms: i64) {
-        if let Some((mono, system)) = self.reference
-            && ((system_ms - system) - (mono_ms - mono)).abs() > MAX_STEP_MS
-        {
-            self.samples.clear();
-            self.latest = None;
+        if let Some((mono, system)) = self.reference {
+            let step = (system_ms - system) - (mono_ms - mono);
+            if step.abs() > MAX_STEP_MS {
+                self.samples.clear();
+                self.latest = None;
+                self.applied_ms -= step;
+                if self.applied_ms.abs() > MAX_DT_MS {
+                    self.applied_ms = 0;
+                    self.acquired = false;
+                    self.hunt = 0;
+                }
+            }
         }
         self.reference = Some((mono_ms, system_ms));
     }
@@ -195,8 +216,9 @@ impl AirClock {
     }
     /// A decode window completed: re-estimate over the window and, when the estimate is
     /// confident and differs from the applied correction by more than HYSTERESIS_MS,
-    /// move the correction toward it by at most MAX_SLEW_MS. Returns whether the applied
-    /// correction changed.
+    /// move the correction toward it by at most MAX_SLEW_MS; before the first confident
+    /// estimate, every HUNT_WINDOWS windows without one alternate the correction between
+    /// 0 and +HUNT_MS. Returns whether the applied correction changed.
     pub fn period_done(&mut self, mono_ms: i64, system_ms: i64) -> bool {
         self.check_step(mono_ms, system_ms);
         while self
@@ -209,8 +231,23 @@ impl AirClock {
         let e = estimate(self.samples.iter().map(|s| (s.call.as_str(), s.dt_ms)));
         self.latest = e.map(|e| (e, mono_ms));
         match e {
-            Some(e) if e.confident() && (e.offset_ms - self.applied_ms).abs() > HYSTERESIS_MS => {
-                self.applied_ms += (e.offset_ms - self.applied_ms).clamp(-MAX_SLEW_MS, MAX_SLEW_MS);
+            Some(e) if e.confident() => {
+                self.acquired = true;
+                self.hunt = 0;
+                let difference = e.offset_ms - self.applied_ms;
+                if difference.abs() <= HYSTERESIS_MS {
+                    return false;
+                }
+                self.applied_ms += difference.clamp(-MAX_SLEW_MS, MAX_SLEW_MS);
+                true
+            }
+            _ if !self.acquired => {
+                self.hunt += 1;
+                if self.hunt < HUNT_WINDOWS {
+                    return false;
+                }
+                self.hunt = 0;
+                self.applied_ms = if self.applied_ms == 0 { HUNT_MS } else { 0 };
                 true
             }
             _ => false,

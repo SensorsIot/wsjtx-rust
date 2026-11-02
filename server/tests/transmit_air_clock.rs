@@ -174,14 +174,24 @@ fn admission_follows_confidence_residual_age_and_steps() {
         air.state(4 + MAX_AGE_MS, 4 + MAX_AGE_MS),
         ClockState::Unknown
     );
-    // A system clock step of 101 ms since the last observation: unknown; the next
-    // window forgets the observations from before the step.
+    // A system clock step of 101 ms since the last observation: unknown.
     assert_eq!(air.state(10, 111), ClockState::Unknown);
     assert_eq!(air.state(10, 110), ClockState::Synchronized);
-    air.period_done(10, 2010);
+    // The operator steps the 2 s fast system clock back to UTC: the next window forgets
+    // the observations from before the step and takes the step out of the correction,
+    // so station UTC is continuous (correction 0 for the now correct clock).
+    air.period_done(10, 10 - 2000);
     assert!(air.observed().is_empty());
     assert_eq!(air.latest(10), None);
-    assert_eq!(air.state(10, 2010), ClockState::Unknown);
+    assert_eq!(air.applied_ms(), 0);
+    assert_eq!(air.state(10, 10 - 2000), ClockState::Unknown);
+    // A step leaving a correction beyond 3 s restarts from 0.
+    let mut far = AirClock::default();
+    period(&mut far, 0, &ahead);
+    far.period_done(1, 1);
+    far.period_done(2, 2);
+    far.period_done(3, 3 + 5000);
+    assert_eq!(far.applied_ms(), 0);
     // Residual bound 500 ms: offsets -1500 / -1501 after the first 1000 ms step.
     for (offset, expected) in [
         (-1500, ClockState::Synchronized),
@@ -345,7 +355,15 @@ fn applied_correction_converges_without_oscillation() {
     // -2 s: everything is decodable at once; 2 x 1000 ms then the 25 ms hysteresis.
     // +1.5 s: at first only stations with true DT >= -200 ms (and the bad clock) are
     // decodable, a truncated crowd (+1450), then the full crowd (+1475).
-    for (offset, expected) in [(-2000, -2025), (1500, 1475), (600, 575), (0, -25)] {
+    // +2 s (slow clock beyond the late window edge): too few stations decode until the
+    // acquisition shift of +1000 ms after four windows, then the full crowd (+1975).
+    for (offset, expected) in [
+        (-2000, -2025),
+        (1500, 1475),
+        (600, 575),
+        (0, -25),
+        (2000, 1975),
+    ] {
         let applied = closed_loop(offset, 40);
         let last = *applied.last().unwrap();
         assert!(
@@ -365,19 +383,21 @@ fn applied_correction_converges_without_oscillation() {
         let distance: Vec<i64> = applied.iter().map(|a| (a - last).abs()).collect();
         assert!(distance.windows(2).all(|w| w[1] <= w[0]), "{applied:?}");
     }
-    // Outside the capture range (+2 s: only DT >= +300 ms decodable at first, two
-    // stations) the station never synchronizes and transmit stays refused.
+    // Outside the capture range (+3 s: at most three stations decodable at 0 or +1000 ms)
+    // the station never synchronizes and transmit stays refused.
     let mut air = AirClock::default();
-    for (call, d) in calls(12).iter().zip(CROWD) {
-        if DECODABLE.contains(&(d - 2000)) {
-            air.observe(0, 0, call, "HB9BLA", d - 2000, Some(-8.0));
+    for p in 0..20 {
+        let t = p * 15_000;
+        for (call, d) in calls(13).iter().zip(CROWD.iter().chain([1200].iter())) {
+            if DECODABLE.contains(&(d - 3000 + air.applied_ms())) {
+                air.observe(t, t, call, "HB9BLA", d - 3000, Some(-8.0));
+            }
         }
+        air.period_done(t + 1, t + 1);
+        air.period_done(t + 2, t + 2);
+        assert_eq!(air.state(t + 2, t + 2), ClockState::Unknown, "period {p}");
+        assert!([0, 1000].contains(&air.applied_ms()));
     }
-    air.period_done(1, 1);
-    assert_eq!(
-        (air.state(1, 1), air.applied_ms()),
-        (ClockState::Unknown, 0)
-    );
     // Negative control: estimating from DT that already includes the correction and
     // applying it in full alternates between the error and zero every window.
     let raw: Vec<(String, i64)> = samples(&calls(12), &CROWD.map(|d| d + 2000));
