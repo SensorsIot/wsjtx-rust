@@ -1215,7 +1215,7 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
-  assert.equal(await page.locator('#continent-derived').textContent(),'From callsign (cty.dat): EU');
+  assert.equal(await page.locator('#continent-derived').textContent(),'From callsign: EU');
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
   await page.selectOption('#station-continent','AS');const reply=await (await saved).json();
   assert.deepEqual([reply.revision,reply.configuration.continent,reply.my_continent],[1,'AS','AS']);

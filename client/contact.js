@@ -750,7 +750,7 @@ const continentSelect=$('station-continent');
 function showContinent(){
   if(!continentSelect)return;const c=config();continentSelect.disabled=!c;
   if(document.activeElement!==continentSelect)continentSelect.value=c?.continent??'';
-  $('continent-derived').textContent=`From callsign (cty.dat): ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
+  $('continent-derived').textContent=`From callsign: ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
 // ---------------------------------------------------------------- editor popup
