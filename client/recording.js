@@ -529,7 +529,7 @@ async function receiveSync(current=socket){
   try{
     const data=await request('/receive');
     if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
-    if(!validLiveSnapshot(data))throw new Error('Invalid receive snapshot');
+    if(!validLiveSnapshot(data)){stationData('receive',false);throw new Error('Invalid receive snapshot');}stationData('receive',true);
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
       if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
@@ -641,8 +641,8 @@ async function receiveResults(){
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
-    live.job.state=page.state;live.job.error=page.error;renderResults();receiveShow();
-  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch)receiveStatus.textContent=`Result state unavailable · ${error.message}`;}
+    live.job.state=page.state;live.job.error=page.error;stationData('results',true);renderResults();receiveShow();
+  }catch(error){if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch){receiveStatus.textContent=`Result state unavailable · ${error.message}`;if(/^Invalid|descriptor/.test(error.message))stationData('results',false);}}
   finally{resultPending=false;}
 }
 async function receiveStart(){
@@ -770,7 +770,7 @@ async function operatingSync(reconcile=false){
     let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
     if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
     if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
-    if(new TextEncoder().encode(text).length>3072||!validOperatingState(s))throw new Error('Invalid operating snapshot');
+    if(new TextEncoder().encode(text).length>3072||!validOperatingState(s)){stationData('selection',false);throw new Error('Invalid operating snapshot');}stationData('selection',true);
     if(s.profile_id!==profileData.profile_id||s.boot_id!==profileData.boot_id||s.profile_revision!==profileData.revision)throw new Error('Operating identity is stale');
     if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
     const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
@@ -984,3 +984,20 @@ function clientsLoad(){
 // app.js runs first and may already be connected when this script runs (as for sync above).
 addEventListener('station-ready',clientsLoad);if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')clientsLoad();
 chipsReady=true;chipsShow();
+
+// WstxStationProtocol::PageUpdate (#51). app.js reloads a page whose client build differs
+// from the station's, unless this screen holds the reload: a QSO or transmission in
+// progress, an open dialog or unsaved settings. A held update and a station snapshot this
+// page cannot validate are never silent: one chip names it and reloads on a click.
+const stationNotice=document.createElement('button');stationNotice.type='button';stationNotice.id='station-notice';stationNotice.className='op-chip';stationNotice.hidden=true;chips.before(stationNotice);
+stationNotice.addEventListener('click',()=>location.reload());
+const rejectedData=new Set();let stationUpdate=null;
+window.wstxReloadHeld=()=>!!restartBusy()||!!document.querySelector('dialog[open]')||dirty;
+function stationNoticeShow(){
+  const text=stationUpdate?'Station updated \u00b7 reload':rejectedData.size?`Station data not understood (${[...rejectedData].join(', ')}) \u00b7 reload`:'';
+  stationNotice.hidden=!text;stationNotice.dataset.severity=stationUpdate?'warn':'error';
+  stationNotice.textContent=text&&`${stationUpdate?'\u26A0':'\u2716'} ${text}`;stationNotice.title=stationUpdate?'The station runs a newer client; reload this page to use it':'This page rejected a station snapshot; reload to load the station\u2019s current client';
+}
+function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
+addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
+window.wstxStationData=stationData;

@@ -25,7 +25,7 @@ async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
   await beforeNavigate?.(page,app,doc);
   await page.goto(app.origin);await page.locator('#connection[data-state=connected]').waitFor();
   assert.equal(await page.locator('#operating-workspace').count(),1,'operating workspace is rendered');
-  return {page,app,errors,sent};
+  return {page,app,errors,sent,dir};
 }
 
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
@@ -1221,5 +1221,82 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.deepEqual([reply.revision,reply.configuration.continent,reply.my_continent],[1,'AS','AS']);
   await page.locator('#continent-derived').filter({hasText:'using AS'}).waitFor();
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
+  assert.deepEqual(errors,[]);
+});
+
+// #51 PageUpdate: the station is restarted on the same profile and its station.status carries
+// another client build (a WebSocket proxy stands for the updated station, whose real build is
+// this candidate's). Restart, boot id and every other message are real.
+async function updatedStation(page,app,dir,t){
+  const state={build:null,rewritten:0,navigations:0};
+  page.on('framenavigated',frame=>{if(frame===page.mainFrame()){state.navigations++;state.build=null;}});
+  await page.routeWebSocket(/\/ws$/,ws=>{
+    const station=ws.connectToServer();
+    station.onMessage(text=>{const m=JSON.parse(text);if(state.build&&m.type==='station.status'){m.data.build=state.build;state.rewritten++;}ws.send(JSON.stringify(m));});
+  });
+  // The route serves sockets opened from now on: reconnect once so the proxy carries the link.
+  await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=connected]').waitFor();
+  return {state,async restart(build){
+    const before=await page.evaluate(()=>profileData.boot_id);
+    await app.close();state.build=build;state.navigations=0;
+    const next=await server({},['--profile',dir]);t.after(()=>next.close());
+    return {before,next};
+  }};
+}
+// Proves: CL-051-01, CL-051-02; TC-051-001 an open page reloads itself once after a station update and receives again.
+test('TC-051-001 an open page reloads after the station restarts with another client build and receives again',{timeout:60000},async t=>{
+  const {page,app,errors,dir}=await fixture(t,{width:1366,height:768});
+  await page.evaluate(()=>{localStorage.setItem('wstx.theme.v1',JSON.stringify({theme:'day',mode:'manual',day:'07:00',night:'20:00'}));localStorage.setItem('wstx.waterfall-speed.v1','4');});
+  const served=await page.evaluate(()=>document.body.dataset.build);assert.match(served,/^[0-9a-f]{16}$/);
+  const {state,restart}=await updatedStation(page,app,dir,t);
+  assert.equal(state.navigations,0,'the same build never reloads');
+  const {before}=await restart('0123456789abcdef');
+  await page.waitForFunction(()=>connection.dataset.state==='connected'&&profileData&&live!==undefined,null,{timeout:30000});
+  assert.equal(state.navigations,1,'exactly one reload');assert.equal(state.rewritten,1,'one status of the updated station');
+  const after=await page.evaluate(()=>({build:document.body.dataset.build,boot:profileData.boot_id,live:live?.boot_id,theme:document.documentElement.dataset.theme,speed:localStorage.getItem('wstx.waterfall-speed.v1'),reloaded:sessionStorage.getItem('wstx.reloaded-build.v1'),notice:document.querySelector('#station-notice').hidden}));
+  assert.notEqual(after.boot,before,'a restarted station');
+  assert.deepEqual(after,{build:served,boot:after.boot,live:after.boot,theme:'day',speed:'4',reloaded:'0123456789abcdef',notice:true},'reloaded page receives the new station and keeps its browser settings');
+  // A second status for the same reloaded build does not loop: it shows the chip instead.
+  state.build='0123456789abcdef';state.navigations=0;await page.evaluate(()=>socket.close());
+  await page.locator('#station-notice:not([hidden])').filter({hasText:'Station updated · reload'}).waitFor();
+  assert.equal(state.navigations,0,'no second reload for the same build');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-051-02, CL-051-03; TC-051-002 an update held by a QSO, a rejected snapshot and the reload chip.
+test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot shows an error chip instead of a frozen screen',{timeout:60000},async t=>{
+  let contact=partner('calling'),reject=false;
+  const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
+    await p.route('**/receive',async route=>{const response=await route.fetch(),json=await response.json();await route.fulfill({json:reject?{...json,dxcc:null}:json});});
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='calling');
+  // A receive snapshot of an unknown shape: visible error chip with the reload action.
+  reject=true;await page.evaluate(()=>receiveSync());
+  const notice=page.locator('#station-notice:not([hidden])');
+  await notice.filter({hasText:'Station data not understood (receive) · reload'}).waitFor();
+  assert.equal(await notice.getAttribute('data-severity'),'error');assert.equal(await notice.locator('xpath=..').getAttribute('id'),'station-bar');
+  reject=false;await page.evaluate(()=>receiveSync());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
+  // A malformed contact snapshot (an unknown key) is named too and clears with a valid one.
+  await page.route('**/contact',route=>route.fulfill({json:{...contactSnapshot({profile_id:'x',boot_id:'y'}),extra:1}}));
+  await page.evaluate(()=>window.wstxContact.load());await notice.filter({hasText:'(contact)'}).waitFor();
+  const base=await page.evaluate(()=>({profile_id:profileData.profile_id,boot_id:profileData.boot_id}));
+  await page.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
+  await page.evaluate(()=>window.wstxContact.load());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
+  // The station is updated while calling CQ: no reload, the chip; its click reloads.
+  const {state,restart}=await updatedStation(page,app,dir,t);
+  await restart('fedcba9876543210');
+  await notice.filter({hasText:'Station updated · reload'}).waitFor({timeout:30000});
+  await page.waitForTimeout(1500);assert.equal(state.navigations,0,'a QSO in progress holds the reload');
+  assert.equal(await notice.getAttribute('data-severity'),'warn');
+  contact=null;await notice.click();
+  await page.waitForFunction(()=>connection.dataset.state==='connected'&&live!==undefined,null,{timeout:30000});
+  assert.equal(state.navigations,1,'the chip reloads the page');
+  assert.equal(await page.locator('#station-notice').isHidden(),true);
+  // An open dialog also holds the reload.
+  await page.waitForFunction(()=>typeof window.wstxConfirm==='function');
+  await page.evaluate(()=>{window.wstxConfirm('Test dialog');});
+  state.build='0011223344556677';state.navigations=0;await page.evaluate(()=>socket.close());
+  await notice.filter({hasText:'Station updated'}).waitFor({timeout:20000});assert.equal(state.navigations,0,'an open dialog holds the reload');
   assert.deepEqual(errors,[]);
 });

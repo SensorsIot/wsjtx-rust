@@ -90,12 +90,24 @@ fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
     );
 }
 
-// Proves: FR-021; TC-021-005. Level 2: isolated tests on Windows PC/CI.
+// Proves: FR-021; TC-021-005, TC-051-001. Level 2: isolated tests on Windows PC/CI.
 #[test]
 fn protocol_returns_specified_response_and_errors() {
+    let status = reply(r#"{"v":1,"type":"station.get","id":12}"#);
+    let build = status["data"]["build"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        build.len() == 16
+            && build
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "#51 client build is 16 lower-case hex digits: {build}"
+    );
     assert_eq!(
-        reply(r#"{"v":1,"type":"station.get","id":12}"#),
-        json!({"v":1,"type":"station.status","id":12,"data":{"version":"0.1.0","radio":"unconfigured"}})
+        status,
+        json!({"v":1,"type":"station.status","id":12,"data":{"version":"0.1.0","radio":"unconfigured","build":build}})
     );
     for (input, code) in [
         ("{", "invalid_json"),

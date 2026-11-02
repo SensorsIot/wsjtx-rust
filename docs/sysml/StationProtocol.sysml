@@ -97,16 +97,50 @@ package WstxStationProtocol {
     item def StatusData {
         attribute version : String;
         attribute radio : String = "unconfigured";
+        attribute build : String;
         doc /* version is the candidate package version. This legacy status field stays
              unconfigured; authoritative native CAT/receive state uses WstxRadioIO's
-             separate schema and is never inferred from this placeholder. */
+             separate schema and is never inferred from this placeholder. build is the
+             station's ClientBuild (#51, CL-051-01). */
+    }
+    attribute def ClientBuild {
+        attribute hexDigits : Integer = 16;
+        doc /* CL-051-01 (#51). The identity of the browser client a station serves: the
+             first 16 lower-case hex digits of the SHA-256 over the served client files
+             index.html, authorization.js, app.js, recording.js, recording.css, contact.js,
+             logbook.js and style.css, concatenated in that order. The page carries the
+             build it was served with (body data-build); every station.status carries the
+             station's (StatusData::build). Equal builds mean the page's client is the
+             station's; a station update that changes the client changes the build. */
+    }
+    attribute def PageUpdate {
+        attribute reloadsAtMostOncePerBuild : Boolean = true;
+        attribute keepsBrowserSettings : Boolean = true;
+        attribute heldByQsoDialogOrUnsavedSettings : Boolean = true;
+        attribute rejectedSnapshotSilent : Boolean = false;
+        doc /* CL-051-02/03 (#51). On every station.status (each connect and reconnect,
+             and Refresh) the page compares StatusData::build with its own ClientBuild.
+             Different: the page reloads itself, once per station build (the build it
+             reloaded for is kept in this tab's session storage; a later mismatch for
+             that same build shows the chip instead of reloading again). Browser storage
+             (theme, display and speed preferences) is kept. The operating screen holds
+             the reload while a contact or transmission is in progress (contact not idle,
+             completed or cancelled; Tx armed; Tune on), a confirmation or editor popup is
+             open or the Settings form has unsaved edits; it then shows the
+             ExceptionChip stationUpdated "Station updated · reload", whose click
+             reloads. A held page keeps working with its old client.
+             A station snapshot the page rejects by its exact validation (the receive
+             snapshot, a result page, the operating selection snapshot, the contact
+             snapshot) shows the ExceptionChip stationDataRejected "Station data not
+             understood (<which>) · reload" with the same reload action; a later valid
+             snapshot of that kind clears it. Neither chip opens the Settings drawer. */
     }
     item def StatusReply {
         attribute v : Integer = 1;
         attribute 'type' : String = "station.status";
         attribute id : Integer;
         item data : StatusData;
-        doc /* Exact envelope{v,type,id,data}; data exactly{version,radio}. */
+        doc /* Exact envelope{v,type,id,data}; data exactly{version,radio,build}. */
     }
     item def ErrorData { attribute code : RequestError; }
     item def ErrorReply {
@@ -227,4 +261,8 @@ package WstxStationProtocol {
     dependency reconnectVerification from BrowserLinkLifecycle to WstxRequirements::'TC-021-007';
     dependency linkVerification from ThinLinkBudget to WstxRequirements::'TC-021-008';
     dependency tlsVerification from SessionSecurity to WstxRequirements::'TC-021-009';
+    dependency buildPromise from ClientBuild to WstxRequirements::'CL-051-01';
+    dependency pageUpdatePromise from PageUpdate to WstxRequirements::'CL-051-02';
+    dependency rejectedSnapshotPromise from PageUpdate to WstxRequirements::'CL-051-03';
+    dependency buildPresentationOwner from PageUpdate to WstxArchitecture::physicalStation::frontend::browsers;
 }

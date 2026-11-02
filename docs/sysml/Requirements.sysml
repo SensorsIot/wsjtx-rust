@@ -1194,7 +1194,9 @@ package WstxRequirements {
              **Inputs/actions and expected results:**
 
              1. Send the contract's valid station.get example. Expect the specified station.status
-                envelope, matching ID, candidate package version and radio state unconfigured.
+                envelope, matching ID, candidate package version, radio state unconfigured and
+                the ClientBuild (#51) computed independently from the client files; the page
+                carries the same build.
              2. Send different request IDs through two concurrent connections. Expect each response
                 on its originating connection with its own ID and authoritative state.
              3. Send malformed JSON, a non-object, unknown command, unsupported version, missing ID,
@@ -3250,5 +3252,73 @@ package WstxRequirements {
     dependency CL_039_04_verified_by_TC_039_007 from 'CL-039-04' to 'TC-039-007';
     dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
     dependency CL_039_06_verified_by_TC_039_007 from 'CL-039-06' to 'TC-039-007';
+
+    // #51 An open page recovers after a station update (defaults recorded on issue #51).
+    requirement 'CL-051-01' {
+        doc /* The station identifies the browser client it serves with WstxStationProtocol::ClientBuild: the first 16 lower-case hex digits of the SHA-256 over its served client files in route order. The served page carries it as body data-build and every station.status reply carries it as data.build (data exactly {version, radio, build}). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/main.rs";
+    }
+    dependency CL_051_01_to_FR_021 from 'CL-051-01' to 'FR-021';
+    requirement 'CL-051-02' {
+        doc /* A page whose build differs from the build in a station.status reloads itself once for that station build, keeping its browser storage (WstxStationProtocol::PageUpdate). The operating screen holds the reload while a contact or transmission is in progress, a popup is open or the Settings form has unsaved edits, and shows the "Station updated · reload" chip instead; the chip's click reloads. A second mismatch for a build the tab already reloaded for shows the chip and never loops. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/app.js; client/recording.js";
+    }
+    dependency CL_051_02_to_FR_021 from 'CL-051-02' to 'FR-021';
+    requirement 'CL-051-03' {
+        doc /* A receive snapshot, result page, operating selection snapshot or contact snapshot that the page rejects by its validation is never silent: the top bar shows the error chip "Station data not understood (<which>) · reload", whose click reloads the page; a later valid snapshot of that kind clears it. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/contact.js";
+    }
+    dependency CL_051_03_to_FR_021 from 'CL-051-03' to 'FR-021';
+    verification 'TC-051-001' {
+        doc /* TC-051-001 — An open page reloads after a station update and receives again
+             CL-051-01, CL-051-02
+             Setup: actual candidate server on a disposable profile and Chromium at 1366x768; browser storage theme day and waterfall speed 4; a WebSocket proxy (Playwright routeWebSocket) forwards every message and, after the restart, rewrites the build of one station.status to 0123456789abcdef, standing for the updated station. The communication suite computes the build independently (Node SHA-256 over the client files on disk).
+             Steps: read the page's data-build; reconnect; stop the server and start it again on the same profile; wait for the page; let a later status of the same rewritten build arrive.
+             Expected: the page build is 16 hex digits and equals the status build of the unchanged station (no reload); after the restart exactly one reload, a new boot id, the receive snapshot of the new station accepted, theme day and speed 4 kept, the tab's session storage names the build; the second mismatch for the same build shows "Station updated · reload" with no second reload. The status envelope is {version 0.1.0, radio unconfigured, build}.
+             2 — Isolated automated functional tests; Windows development PC, loopback only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-051-01';
+            verify 'CL-051-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs; tests/communication.test.cjs; server/src/protocol_tests.rs";
+    }
+    dependency CL_051_01_verified_by_TC_051_001 from 'CL-051-01' to 'TC-051-001';
+    dependency CL_051_02_verified_by_TC_051_001 from 'CL-051-02' to 'TC-051-001';
+    verification 'TC-051-002' {
+        doc /* TC-051-002 — A held update and a rejected snapshot show the reload chip
+             CL-051-02, CL-051-03
+             Setup: actual candidate server and Chromium at 1366x768; routed contact snapshot with a contact calling CQ; the receive snapshot routed through, optionally with an unknown key dxcc; the proxy of TC-051-001.
+             Steps: read receive with the unknown key, then without; route a contact snapshot with an unknown key, then a valid one; restart the station with build fedcba9876543210 while calling CQ; wait 1.5 s; click the chip; open a confirmation popup and reconnect to a status with another build.
+             Expected: the error chip "Station data not understood (receive) · reload" in the top bar, hidden again after the valid read; the same with (contact); while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
+             2 — Isolated automated functional tests; Windows development PC, loopback only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-051-02';
+            verify 'CL-051-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_051_02_verified_by_TC_051_002 from 'CL-051-02' to 'TC-051-002';
+    dependency CL_051_03_verified_by_TC_051_002 from 'CL-051-03' to 'TC-051-002';
+    verification 'TC-051-003' {
+        doc /* TC-051-003 — Live update with the operating page open
+             CL-051-01, CL-051-02
+             Setup: HB9BLA running a build of this CR or later, the operator's page open and receiving, no QSO in progress.
+             Steps: install a later candidate whose client differs, with the page open.
+             Expected: the page reloads by itself and the waterfall moves again within about 10 s of the station's restart; browser settings kept.
+             3 — Live, read-only on the station; run at CR acceptance with the operator. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-051-01';
+            verify 'CL-051-02';
+        }
+    }
+    dependency CL_051_01_verified_by_TC_051_003 from 'CL-051-01' to 'TC-051-003';
+    dependency CL_051_02_verified_by_TC_051_003 from 'CL-051-02' to 'TC-051-003';
 
 }

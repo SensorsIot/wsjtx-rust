@@ -422,6 +422,7 @@ attribute def ActivityOrdering {
         enum linkStale; enum catLost; enum catSetupUnconfirmed; enum audioUnavailable;
         enum audioLevelLow; enum audioLevelHigh; enum clockOff; enum receiveStopped;
         enum receiveRestarted; enum receiveOutcomeUnknown;
+        enum stationUpdated; enum stationDataRejected;
     }
     enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
     enum def ChangeKind { enum operative; enum restart; }
@@ -458,7 +459,8 @@ attribute def ActivityOrdering {
              period progress; exception chips (ExceptionChip, shown only while the
              condition holds, nothing when all is well; each names its cause, opens its
              detail in the Settings drawer, and receiveStopped offers the explicit receive
-             start); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
+             start; stationUpdated and stationDataRejected reload the page instead,
+             WstxStationProtocol::PageUpdate, #51); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
              HALT stays reachable by pointer too: a confirmation popup (the only popup kind)
              carries its own HALT with the same action and enabled state as the top-bar one,
              because a modal popup makes the rest of the page inert. A

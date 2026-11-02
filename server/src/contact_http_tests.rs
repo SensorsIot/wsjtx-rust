@@ -579,7 +579,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
     // StatusReply is unchanged by the contact events.
     assert_eq!(
         keys(&reply(r#"{"v":1,"type":"station.get","id":1}"#)["data"]),
-        sorted(&["version", "radio"])
+        sorted(&["version", "radio", "build"])
     );
 }
 

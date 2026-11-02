@@ -477,11 +477,11 @@ async fn index(State(app): State<App>) -> Html<String> {
         if app.profile.is_some() { "<script src=\"/authorization.js\" defer></script><script src=\"/app.js\" defer></script>" } else { "<script src=\"/app.js\" defer></script>" }
     ).replace(
         "data-profile=\"false\"",
-        if app.profile.is_some() {
-            "data-profile=\"true\""
-        } else {
-            "data-profile=\"false\""
-        },
+        &format!(
+            "data-profile=\"{}\" data-build=\"{}\"",
+            app.profile.is_some(),
+            client_build()
+        ),
     ))
 }
 fn cookie_name(app: &App) -> String {
@@ -765,6 +765,31 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         })
 }
 
+/// WstxStationProtocol::ClientBuild (#51): the identity of the embedded browser client, the
+/// first 16 hex digits of the SHA-256 over every served client file in route order. The page
+/// carries the build it was served with; station.status carries the station's.
+fn client_build() -> &'static str {
+    static BUILD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BUILD.get_or_init(|| {
+        let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
+        for asset in [
+            include_str!("../../client/index.html"),
+            include_str!("../../client/authorization.js"),
+            include_str!("../../client/app.js"),
+            include_str!("../../client/recording.js"),
+            include_str!("../../client/recording.css"),
+            include_str!("../../client/contact.js"),
+            include_str!("../../client/logbook.js"),
+            include_str!("../../client/style.css"),
+        ] {
+            digest.update(asset.as_bytes());
+        }
+        digest.finish().as_ref()[..8]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    })
+}
 fn reply(text: &str) -> Value {
     let error = |id: Value, code: &str| json!({"v":1,"type":"error","id":id,"data":{"code":code}});
     let Ok(value) = serde_json::from_str::<Value>(text) else {
@@ -791,7 +816,7 @@ fn reply(text: &str) -> Value {
     }
     match value["type"].as_str() {
         Some("station.get") => {
-            json!({"v":1,"type":"station.status","id":id,"data":{"version":env!("CARGO_PKG_VERSION"),"radio":"unconfigured"}})
+            json!({"v":1,"type":"station.status","id":id,"data":{"version":env!("CARGO_PKG_VERSION"),"radio":"unconfigured","build":client_build()}})
         }
         Some(_) => error(id, "unknown_command"),
         None => error(id, "invalid_request"),
