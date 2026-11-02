@@ -14,7 +14,9 @@ spec.loader.exec_module(tool)
 # Each case is a full, independent Pilot validation (its own JVM and, for a mutation, its
 # own temporary Architecture.sysml), so setUpClass runs them in a bounded pool. Every test
 # still asserts its own result; only the order of the validations changes.
-WORKERS = max(1, min(8, os.cpu_count() or 1))
+# Six, not more: the JVMs contend, so 8 workers finished no sooner (~240 s) but stretched the
+# slowest validation to ~80 s of tool.validate's 120 s timeout; 6 kept it at ~55 s (#59).
+WORKERS = max(1, min(6, os.cpu_count() or 1))
 PACKAGE = "package WstxArchitecture {"
 COMPANION_PROBE = PACKAGE + "\n    attribute propertyOwnerProbe : WstxProfiles::Settings;"
 UNDEFINED_PROBE = PACKAGE + "\n    attribute propertyOwnerProbe : WstxProfiles::UndefinedPropertyType;"
