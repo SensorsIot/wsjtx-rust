@@ -973,7 +973,7 @@ test('TC-057-004 three consecutive periods leave only the latest even and odd pe
     });
   }});
   const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory);// contact.js renders the replaced period
   publish(2,periods[1],2);await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&resultView.id===2);
   assert.deepEqual(await shown(),['latest:3','latest:4','|FT8 period 12:00:00 UTC','history:0','history:1','history:2']);
