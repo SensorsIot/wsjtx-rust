@@ -148,7 +148,8 @@ package WstxUdp {
              decoder is processing an analysis window: true from the start of a window's
              decode until it returns, completed, abandoned, failed or cancelled), Rx DF and Tx DF (Hz), DE call and DE grid
              (profile), DX grid, Tx watchdog (expired), sub-mode "", fast mode false,
-             special operation 0, frequency tolerance 4294967295, T/R period 15 (FT8) or 7
+             special operation the WSJT-X value of the contact settings' activity (none 0,
+             na_vhf 1, field_day 3, rtty 4, ww_digi 5, hound 7, arrl_digi 8, WstxContact::GridExchangeContest, HoundOperation), frequency tolerance 4294967295, T/R period 15 (FT8) or 7
              (FT4), configuration name (profile display name), Tx message (the contact's
              next message, else "").
              Decode (2), New true, once per decoded record (decoded status with text and a
@@ -157,7 +158,9 @@ package WstxUdp {
              zero (unknown: 0), Delta time = dt_seconds (unknown: 0) as single precision,
              Delta frequency = frequency_hz rounded, Mode "~" (FT8) or "+" (FT4), Message =
              the WSJT-X text form (D4: a standard message with R and a signal report
-             renders "R-09"), Low confidence false, Off air false.
+             renders "R-09"; a hashed call as the record gives it, <CALL> once
+             WstxOfflineDecode::HashResolution filled it in, else <...>), Low confidence
+             false, Off air false.
              Clear (3): when the current live job changes or ends after at least one of its
              records produced a Decode.
              QSO Logged (5) then Logged ADIF (12): when SaveContact stores a new record
@@ -204,8 +207,9 @@ package WstxUdp {
              Free Text: refused tx_enabled while Enable Tx is on; an empty text is ignored;
              else ContactCommand edit_message {slot tx5, text}, as the browser's Tx5 edit:
              without a prepared contact it is refused no_contact, and a text that does not
-             pack as a standard message is refused invalid_message; the Send flag is
-             ignored.
+             pack unaltered as a standard, nonstandard or free-text (at most 13
+             characters) message is refused invalid_message (WstxContact::
+             StandardMessageSet, #24 S1b); the Send flag is ignored.
              Replay: the retained decodes (as for Reply) are sent to that target only, New
              false, in sequence order, at most replayPerStep per station step, then Status.
              Clear: window 0 (also when missing) or 2 sets the Reply/Replay floor to the

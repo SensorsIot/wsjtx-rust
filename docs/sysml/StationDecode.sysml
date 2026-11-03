@@ -170,9 +170,15 @@ package WstxOfflineDecode {
              type4=12,58,1,2,1,3; currenttype5=12,22,1,3,11,25,3.
              Free-text alphabet is blank,0..9,A..Z,+-./?; trim trailing padding only,
              allblank invalid. Telemetry is71bits,18uppercasehex,firstdigit0..7,zero valid.
-             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based84
-             sections includeDX;0/>84 invalid. RTTY report529..599 step10, serial0..7999;
-            8001..8065 map published state/province tokens;8000/>8065 invalid.
+             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based86
+             sections includeDX (sectionTable: the WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS,
+             #24 S2b, which jt9 and ft8code use; it replaces the QEX 2020 84-entry table,
+             whose entries 16/25/44 GTA/MAR/NT are GH/NS/TER there and which lacks PE and NB);
+             0/>86 invalid. RTTY report529..599 step10, serial0..7999;
+            8001..8171 map the stateProvinceTable (WSJT-X 3.3.0-beta5
+             PACK77_RTTY_MULTIPLIERS: the QEX 65 states/provinces/DC plus the Dutch provinces
+             DR FR GD GR OV ZH ZL and X01..X99); 8000/>8171 invalid. The transmit packer
+             reads the same two tables (WstxTransmit::PackMessage).
              DXpedition report is even-30..32; nonstandard fullcall<=11base38characters;
              VHF report52..59,serial0..2047,gridAA00AA..RR99XX.
              Standard c28:DE0/QRZ1/CQ2; numericCQ3..1002=>CQ000..999;
@@ -187,8 +193,10 @@ package WstxOfflineDecode {
              Grid/report0..32399 aregrids,32400reserved,32401blank,32402RRR,
             32403RR73,32404'73'. ReportCode below is exact,>32505invalid. Invalid
              structured content never falls back to free text. Hashes keep10/12/22-bit
-             numeric identity and display<...>; no configured/prior-job/station inverse.
-             A concrete type4full call stays concrete; no cross-profile/source/job cache.
+             numeric identity. The pure unpack has no hash table and displays<...>; only a
+             station's live publication fills a hash in, from its HashResolution table of
+             calls heard and sent (CL-024-01, #24), never by inverse guessing. A concrete
+             type4full call stays concrete; no cross-profile cache.
              CRC14 polynomial0x6757,zero state, operates on payload zero-extended82bits;
              append14CRCbits to77payload bits then published GF(2) parity=>174bits.
              FT4 XORs the exact77-bit mask beforeCRC/FEC and reverses onlyafter validation.
@@ -233,7 +241,9 @@ package WstxOfflineDecode {
              SNRnullorfinite[-60,60]. Record<=2048UTF8bytes, numericalcharge<=1024;
              oversizedpublication=>decode_limit with acceptedpartials. CallValue exactly
              {kind,text,hash_bits,hash_value}; concretecall uppercase1..13(nonstandard<=11),
-             tokenCQ/DE/QRZ/modifier bothnullhashfields; hashnulltext with exactwidth/value.
+             tokenCQ/DE/QRZ/modifier bothnullhashfields; hash exactwidth/value with text null,
+             or the call without brackets when HashResolution filled it in (the message text
+             then shows<CALL>).
              Every supported PayloadFields variant has all its defined keys, no extras:
              free_text/telemetry{type,value};standard{type,to,from,ack,exchange};
              rtty{type,tu,to,from,ack,report,exchange};dxpedition{type,first,second,hashed,report};
@@ -253,9 +263,57 @@ package WstxOfflineDecode {
         attribute text : String[0..1];
         attribute hash_bits : Integer[0..1];
         attribute hash_value : Integer[0..1];
-        doc /* Exact wire keys. call/token have text and null hash fields; hash has null
-             text, width10/12/22 and unsigned value below2^width. Display hash as<...>.
-             No inverse guessing/configured call/cache across profile/source/job. */
+        doc /* Exact wire keys. call/token have text and null hash fields; hash has
+             width10/12/22 and unsigned value below2^width, and text null (displayed<...>)
+             or, in a station's live publication, the call HashResolution filled in, without
+             brackets (displayed<CALL>; kind stays hash). No inverse guessing; no cache across
+             profiles. */
+    }
+    requirement def HashResolution {
+        doc /* CL-024-01 (#24 S1, reversing the earlier "display<...>, no station inverse"
+             rule at the operator's approval of 2026-11-03): WSJT-X shows a hashed call as
+             <CALL> once the full call is known (packjt77.f90 save_hash_call, hash10/12/22,
+             hashmy10/12/22; one session-persistent table shared by receive and transmit),
+             and so does the station. One table per station instance (profile process), kept
+             for the process lifetime across jobs, bands and modes, never shared between
+             profiles, never saved.
+             Hash: ihashcall, the top m bits (10/12/22) of the low 64 bits of
+             47055833459 * the base-38 value of the call's first 11 characters, blank
+             padded (WstxTransmit::PackMessage uses the same function).
+             Learning (save_hash_call): a call of at least 3 characters, brackets removed,
+             sets calls10[h10] and calls12[h12] unless it is my call, and in the 22-bit list
+             of at most 1000 entries replaces the call of an existing h22 entry, else is put
+             first (the oldest entry falls out). Calls learned: my profile callsign at
+             startup and whenever it changes; from each decoded record as it is published
+             (after its own fill-in), the concrete 'from' call of a standard i3=1/2 message
+             (with its /R or /P) and the full call of a nonstandard i3=4 message whose hash
+             is the 'to' call (including CQ); a 'to' call or other families teach nothing
+             (unpack77 nrx=1, not configured); from each transmit request the transmit owner
+             accepts, every concrete call of a standard (its base call without /R or /P, as
+             pack77_parse_type12_call stages it)/Field Day/RTTY message, the full call of a
+             nonstandard CQ and every bracketed <CALL> (pack28/pack77_hash_index).
+             Deliberate deviations: WSJT-X packs transmitted texts in its GUI process and
+             feeds the decoder's table the DX call instead (ft8apset/dxcall13); the station
+             learns from accepted requests. unpack77's DX-call rules (a 0.1 h10 equal to the
+             DX call's hash shows the DX call; a nonstandard 'to' h12 equal to my h12 is my
+             call when the full call is the DX call, even if calls12 holds another call)
+             need the contact's DX call: the station sets the current contact's DX call
+             on the table at each contact step (#24 S1b) and applies the nonstandard rule
+             and the 0.1 rule (#24 S4a): a received 0.1 h10 equal to the 10-bit hash of that
+             DX call (at least 3 characters) shows <DXCALL>, before and instead of the calls10
+             entry of that hash (unpack77 n3=1, nrx=1, hashdx10).
+             Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
+             22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
+             from calls12, and when that is empty and the hash is the 'to' call equal to my
+             h12, my call (a nonstandard CQ shows no hash); DXpedition h10 from calls10;
+             EU VHF 'to' h12 is my call when equal to my h12, else calls12, 'from' h22 from
+             the list. A slot not found stays<...> with text null. Records published before
+             a call was learned keep their text (no rewriting of history). The filled-in text
+             reaches Band Activity, the QSO pane, MCP reads and the UDP Decode message
+             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash. Contact
+             selection and sequencing read a filled-in hash as its call (WstxContact::
+             SelectDecodedRow, #24 S1b); the strategy, Call 1st, DXCC/worked-before and
+             Pounce, which need a plain concrete call, keep treating it as no call. */
     }
     attribute def StandardExchange {
         attribute kind : ExchangeKind;
@@ -296,7 +354,7 @@ package WstxOfflineDecode {
         attribute serial : Integer[0..1];
         attribute stateToken : String[0..1];
         doc /* type=rtty; exact wire exchange{kind,value} chooses serial0..7999 or
-             states8001..8065, reserved8000 invalid. report529..599 step10. Semantic
+             exchanges8001..8171 (stateProvinceTable), reserved8000 invalid. report529..599 step10. Semantic
              union arm names are not extra JSON fields. */
     }
     attribute def DxpeditionFields :> PayloadFields {
@@ -315,8 +373,8 @@ package WstxOfflineDecode {
         attribute transmitters : Integer;
         attribute 'class' : String;
         attribute section : String;
-        doc /* type=field_day,0.3=>1..16,0.4=>17..32; classA..F, section1..84 inclusiveDX.
-             S7=75WCF,76WI,0/>84 invalid; current83-line external file omitsDX. */
+        doc /* type=field_day,0.3=>1..16,0.4=>17..32; classA..F, section1..86 inclusiveDX
+             (sectionTable). S7=75WCF,76WI,84DX,85PE,86NB; 0/>86 invalid. */
     }
     attribute def NonstandardFields :> PayloadFields {
         attribute 'type' : String = "nonstandard";

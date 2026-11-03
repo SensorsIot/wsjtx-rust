@@ -20,13 +20,13 @@ package WstxTransmit {
          generator, Gray map and Costas arrays of WstxOfflineDecode; it adds no
          second codebook. */
 
-    enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; }
+    enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; enum fieldDay; enum rttyRoundup; }
     enum def PackRefusal {
         enum empty;              // nothing to send after normalization
         enum tooLong;            // message over 37 characters, or free text over 13
         enum invalidText;        // a character no supported family can represent
-        enum unsupportedFamily;  // WSJT-X would choose DXpedition, Field Day, WSPR, RTTY or EU VHF type 5
-        enum notExact;           // WSJT-X would transmit an altered rendering (zero-padded telemetry)
+        enum unsupportedFamily;  // WSJT-X would choose DXpedition, WSPR or EU VHF type 5
+        enum notExact;           // WSJT-X would transmit an altered rendering (zero-padded telemetry; a Field Day or RTTY Roundup call it would hash)
         enum roundTripMismatch;  // the packed bits do not unpack to the normalized message
     }
     attribute def PackedMessage {
@@ -47,8 +47,15 @@ package WstxTransmit {
         out refusal : PackRefusal[0..1];
         doc /* Exactly one of packed/refusal. Family selection follows WSJT-X
              pack77_encode_core order. Messages that do not start with CQ/DE/QRZ are
-             first checked for the unsupported DXpedition (any ';') and ARRL Field
-             Day (4-5 words ending in an ARRL/RAC section) shapes, then telemetry
+             first checked for the unsupported DXpedition shape (any ';' except one
+             leading "TU;" word), then ARRL Field Day (#24 S2b, CL-024-03,
+             pack77_parse_field_day_source): CALL1 CALL2 [R] EXCH SECTION with
+             SECTION exactly one of the 86 PACK77_ARRL_SECTIONS, EXCH the transmitter
+             count 1-32 (no leading zero) followed by the class A-F, and each call a
+             c28 call slot (3-13 characters of A-Z, 0-9 and '/': a standard call, or
+             one '/' neither first nor last). A count 1-16 is i3=0 n3=3, 17-32 n3=4
+             (bit fields: n28 28, n28 28, R 1, count-1 or count-17 4, class 3, section index 1-86
+             7, n3 3, i3 3). Then telemetry
              (one word): exactly 18 hexadecimal digits below 2^71 is i3=0 n3=5;
              a shorter hexadecimal word is notExact (WSJT-X would zero-pad it).
              Then the WSPR shapes (call grid4 digits; slash-call digits) are
@@ -61,7 +68,17 @@ package WstxTransmit {
              73 (CQ takes only none or grid4). A standard call has 3-6 letters/digits,
              its call-area digit at position 2 or 3, a prefix with a letter, at most
              three suffix letters and no leading Q; a <hashed call> slot carries the
-             22-bit WSJT-X ihashcall. Nonstandard i3=4: CQ plus a 5-11 character
+             22-bit WSJT-X ihashcall. RTTY Roundup i3=3 (#24 S2b, CL-024-03,
+             pack77_parse_type3_source): [TU;] CALL1 CALL2 [R] RST EXCH, RST 5n9 with
+             n 2-9, EXCH a four-digit serial 0001-7999 or exactly one of the 171
+             PACK77_RTTY_MULTIPLIERS (US states, Canadian provinces, DC, the Dutch
+             provinces, X01-X99), the calls c28 call slots as for Field Day (bit fields: TU 1,
+             n28 28, n28 28, R 1, n-2 3, serial or 8000 plus multiplier index 13, i3 3).
+             In both contest families WSJT-X sends a c28 slot that is not a standard
+             call (e.g. PJ4/K1ABC, K1ABC/R) as its 22-bit hash and renders it
+             <CALL>, an altered message: such a message is notExact; a slot of more
+             than 11 characters is not this family, and an explicit <CALL> token is
+             never a contest call slot. Nonstandard i3=4: CQ plus a 5-11 character
              base-38 nonstandard call, or one nonstandard call of at most 11 base-38 characters and one
              <hashed call> (12-bit hash) with optional RRR/RR73/73. Free text i3=0
              n3=0: at most 13 characters from " 0-9A-Z+-./?", right-justified base 42.

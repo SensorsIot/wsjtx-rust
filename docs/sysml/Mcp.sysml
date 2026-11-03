@@ -291,7 +291,9 @@ package WstxMcp {
              policy_revision + 1. start: stale_revision on either revision, state_conflict
              run, not_configured, not_ready mode (configuration), not_ready receive,
              not_ready mode (live job or operating mode), not_ready auto_seq, not_ready
-             band (a pounce without a known station band),
+             call (a nonstandard profile callsign: automation stays standard-only, #24
+             CL-024-01), not_ready activity (a contest activity other than none, or hound, is set:
+             automation only observes in contests and as a Hound, #24 CL-024-02, CL-024-04), not_ready band (a pounce without a known station band),
              state_conflict contact, not_configured strategy (strategy true without an
              active strategy), transmit_unavailable (no grant transport, no transmit
              owner or no current safety revision), stale_revision safety_revision; then

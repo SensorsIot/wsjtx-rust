@@ -46,7 +46,8 @@ package WstxOperatingLayout {
              opens audio. Separate operating mode/band
              behavior is WstxOperatingReceive/contract 4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
-             no fabricated UTC/DT, message text or resolved hash. Full source/job/
+             no fabricated UTC/DT or message text; a hashed call shows as the station's
+             publication gives it (<CALL> or <...>, WstxOfflineDecode::HashResolution). Full source/job/
              generation/sequence binds each row; new identity clears rows (an unknown-loss
              source epoch of the same receive keeps them, CL-061-01), stale
              pages cannot append. At most2048 rows, explicit cursor-expiry history
@@ -536,20 +537,27 @@ attribute def ActivityOrdering {
     enum def BandActivitySlot {
         enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;
         enum new_itu_zone; enum new_itu_zone_band; enum new_dxcc; enum new_dxcc_band; enum new_grid;
-        enum new_grid_band; enum new_call; enum new_call_band; enum lotw; enum cq;
+        enum new_grid_band; enum new_call; enum new_call_band; enum lotw;
     }
     attribute def BandActivityColours {
-        attribute slots : Integer = 15;
+        attribute slots : Integer = 14;
         doc /* CL-050-02 (#50). The WSJT-X 3.3 DecodeHighlightingModel slots in its priority order
-             (BandActivitySlot order, highest first) with its default on/off and colours (row
+             (BandActivitySlot order, highest first) with its colours and default on/off except as
+             stated below (row
              background; dark theme as the same colour at 0.2-0.35 alpha; the Day and Night themes
              transform the whole page): mycall #ff6666 on; new_continent #ff0063 on;
              new_continent_band #ff99c2 on; new_cq_zone #ffbf00 on; new_cq_zone_band #ffe499 on;
              new_itu_zone #a6ff00 off; new_itu_zone_band #ddff99 off; new_dxcc #ff00ff on;
              new_dxcc_band #ffaaff on; new_grid #ff8000 off; new_grid_band #ffcc99 off; new_call
-             #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 off (#55; WSJT-X default on). A row takes
-             the highest-priority enabled slot it matches. Matches: mycall, a decoded message to the
-             profile callsign; cq, a decoded message starting CQ; new_call, the worked-before status
+             #00ffff on; new_call_band #99ffff on; lotw off (no source). Only stations of interest are
+             coloured (operator 2026-11-03, a deliberate difference from WSJT-X): there is no cq slot
+             (WSJT-X 'CQ in message' #66ff66), so a row that matches no slot, among them a CQ/QRZ line
+             from a sender worked before on this band and mode, has no background, and New call and
+             New call on band are on by default (WSJT-X: off). A row takes the highest-priority
+             enabled slot it matches. Matches: mycall, a decoded message to the profile callsign
+             (also from a sender worked before), also as a filled-in hash <MYCALL> or the 'to' call
+             of a nonstandard i3=4 message (WSJT-X matches "[ <]MYCALL[ >]", #24 S1b); new_call,
+             the worked-before status
              not_worked of the sending call; new_call_band, not_worked or worked_other_band_or_mode; every new_*
              slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
              zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
@@ -559,7 +567,7 @@ attribute def ActivityOrdering {
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
              standard message (CQ, replies to others, reports, R-reports, RR73, 73), and they match
              only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
-             adds slots). A row without a flag has no colour: the cq slot is off by default. A row
+             adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. Every row with a flag, my call, a strategy verdict or
              a worked-before status carries hover text (BandActivityHover). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
@@ -568,7 +576,8 @@ attribute def ActivityOrdering {
     attribute def BandActivityValue {
         attribute levels : Integer = 8;
         doc /* #55 (operator 2026-11-03, CL-055-04). The value of a Band Activity row, best
-             first: 1 calling me (a decoded message to the profile callsign); 2 a strategy
+             first: 1 calling me (a decoded message to the profile callsign, matched as for the
+             mycall slot, also a filled-in hash <MYCALL> or a nonstandard i3=4 'to', #24); 2 a strategy
              hit (Highlight on, WstxStrategy::HighlightView rank not null); 3 new DXCC or new
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
@@ -606,6 +615,8 @@ attribute def ActivityOrdering {
              same-parity successor (a skipped period) or an uncorrelated period leaves only
              the latest; a new receive identity (band/mode change, restart) clears it,
              an unknown-loss source epoch of the same receive does not (CL-061-01).
+             A period in which this station transmitted adds no block: the receive
+             period below it stays on top under the header and is kept (CL-061-03).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
@@ -763,14 +774,15 @@ attribute def ActivityOrdering {
              ContactSnapshot
              dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
              the earlier line and arrow formats) with the header row "UTC | Direction |
-             Exchange | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
-             bottom, "×N" after the exchange for N > 1 repeats, no frequency and no other
+             Exchange | Rep | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
+             bottom, "×N" in Rep for N > 1 repeats (empty for one), no frequency and no other
              station; below a thin separator the Others (item 3) as rows of the same table
              and columns, a ⚠ after the time while a QSO runs. The area scrolls inside the
              card, kept at its newest row, with the header row staying visible, at most the
              header row and qsoAreaRows (6) rows high (item 8), and never grows the page
              (TC-007-009); at 360 CSS px the table fits the pane width and the
-             titles may be abbreviated (UTC, Dir, Exch, Rx, Tx).
+             titles may be abbreviated (UTC, Dir, Exch, Rep, Rx, Tx) and the Direction calls
+             may wrap at their spaces.
              It is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.
              Columns: UTC is HH:MM:SS, the UTC period start, with no ◂/▸ direction mark.
@@ -781,14 +793,18 @@ attribute def ActivityOrdering {
              or "CQ DX <call>" (the words before the grid) without an arrow, its grid in
              Exchange. Exchange is the message after the two calls ("IM59", "+08", "R-02",
              "RR73", "73"); a message that does not start with two calls or a CQ (free text)
-             is all Exchange with an empty Direction. Rx SNR is our measured SNR of a
-             received message, signed ("+8", "−12", "0"), on received rows only (dialogue rx
-             entries and Others), empty on sent rows. Tx SNR is the partner's report on us,
-             only on the received row that carries it: an Exchange "R-02" gives "−2", a plain
-             report "-05" gives "−5"; empty otherwise. Example (operator, #60):
-             "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |", "22:51:30 | CT1BFP ◂ HB9BLA | +08 | |",
-             "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | +7 | −2", "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | |",
-             "22:52:15 | HB9BLA ◂ CT1BFP | 73 | +9 |". Sent rows keep their own colour.
+             is all Exchange with an empty Direction. Rx SNR and Tx SNR are on every dialogue
+             row, received and sent alike (operator #60, 2026-11-03: "the RX and TX dB wherever
+             possible on each line, always the one from the last transmission"): Rx SNR is our
+             measured SNR of the latest received dialogue entry at or before that row, signed
+             ("+8", "−12", "0"); Tx SNR is the latest report the partner sent us in a received
+             dialogue entry at or before that row (an Exchange "R-02" gives "−2", a plain report
+             "-05" gives "−5"); each is empty only while no such value exists yet. An Others row
+             shows its own decode's SNR and, when it carries one, its own report. Example
+             (operator, #60): "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | | +8 |",
+             "22:51:30 | CT1BFP ◂ HB9BLA | +08 | | +8 |", "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | | +7 | −2",
+             "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | | +7 | −2", "22:52:15 | HB9BLA ◂ CT1BFP | 73 | ×2 | +9 | −2".
+             Sent rows keep their own colour.
              Messages between two other stations are not QSO pane lines.
              There is no LAST row, no crowding badge and no status line
              for a finished contact. A status line under the header is shown only for an
@@ -808,9 +824,18 @@ attribute def ActivityOrdering {
              (choose_next), a Now button (#37: choose_next, then SetEnableTx on when it is
              off, so the message goes from the next own period; disabled without a message,
              without transmit capability or on a completed contact) and its editable
-             text, Skip Tx1, RRR/RR73 and Cancel contact in place; the DX Call/Grid entry,
-             report, Tx period, Auto Seq, Call 1st and Hold Tx are the ControlPanel below the
-             pane (#37, operator 2026-11-03). On a station without transmit capability the transmit
+             text (Tx5 is editable whenever a contact exists, also without a message, for
+             WSJT-X Tx5 free text, #24 S1b; the others once they have a message), Skip Tx1,
+             RRR/RR73 and Cancel contact in place, and above them the Activity choice (None,
+             NA VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup, Hound; set_activity,
+             WstxContact::GridExchangeContest, #24 S2a, HoundOperation, #24 S4b) that shows the
+             station's setting, with an Exchange entry beside it (ContestExchange, #24 S2b:
+             shows settings.exchange; choosing Field Day or RTTY Roundup sends set_activity
+             with the entered exchange, and changing the exchange while one of them is chosen
+             sends it again; the next serial is shown while RTTY uses DX or #); the DX
+             Call/Grid entry, report, Tx period, Auto Seq, Call 1st and Hold Tx are the
+             ControlPanel below the pane (#37, operator 2026-11-03). On a station without
+             transmit capability the transmit
              buttons are disabled with the reason. */
     }
     attribute def LowerPanel {

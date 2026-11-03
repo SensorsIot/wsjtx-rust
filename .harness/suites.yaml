@@ -6,10 +6,21 @@
 # and build serve the parallel gate (gate.parallel). See Project-Specifics.md.
 - suite: wstx-rust
   cost: 2
-  run: cargo test --workspace --locked --all-targets
+  # Its own Cargo output directory: `cargo test` links target/debug/wstx-rust.exe with the
+  # dev-dependency features, which would replace the executable the browser groups run
+  # (Windows refuses to replace a running executable). The decoder unit tests run in
+  # wstx-rust-decoder.
+  # --bins --test '*' plus --lib is --all-targets of this workspace (no bench or example
+  # targets; --benches would also select the lib and bins). A new bench or example target
+  # needs its own --bench/--example here.
+  run: >-
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
+    cargo test --workspace --locked --bins --test '*' &&
+    cargo test --workspace --locked --lib -- --skip decoder::
   paths:
   - server/
   - fixtures/transmit/
+  - fixtures/decoder/
   - src/
   - tests/
   - benches/
@@ -22,6 +33,7 @@
   select:
   - server/
   - fixtures/transmit/
+  - fixtures/decoder/
   - src/
   - benches/
   - examples/
@@ -29,9 +41,40 @@
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
-  build: cargo test --workspace --locked --all-targets --no-run
-  exclusive: [debug-exe]
-  needs: Pinned Rust toolchain. Windows PC; no radio or live station.
+  build: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" cargo test --workspace --locked --all-targets --no-run
+  needs: "Pinned Rust toolchain. Windows PC; no radio or live station. Every unit and integration test of the workspace except the library's decoder:: unit tests (wstx-rust-decoder), in a separate Cargo output directory so that it runs beside the browser groups."
+
+- suite: wstx-rust-decoder
+  cost: 2
+  # The decoder unit tests, optimized (debug assertions and overflow checks kept, as in the
+  # test profile): wrong_dx_call_never_yields_a_false_word takes about 610 s unoptimized
+  # and 27 s optimized (#56, harness#28). A separate profile directory (target/unit-opt).
+  run: >-
+    cargo test --locked -p wstx-rust --lib
+    --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
+    --config profile.unit-opt.overflow-checks=true --profile unit-opt
+    decoder::
+  paths:
+  - server/
+  - fixtures/decoder/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  select:
+  - server/src/decoder/
+  - server/src/transmit/pack.rs
+  - server/src/transmit/mod.rs
+  - server/src/lib.rs
+  - server/Cargo.toml
+  - fixtures/decoder/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  build: >-
+    cargo test --locked -p wstx-rust --lib
+    --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
+    --config profile.unit-opt.overflow-checks=true --profile unit-opt --no-run
+  needs: "Pinned Rust toolchain. Windows PC; no radio or live station. The library's decoder:: unit tests (the complement of wstx-rust's --skip decoder::), selected by the decoder, the transmit packer its tests encode with (transmit/pack.rs and its module root), the library root, the decoder fixtures they include and the Cargo pins."
 
 - suite: protocol
   cost: 2
@@ -64,7 +107,6 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: "Node 24, npm ci, Playwright Chromium. Windows PC; disposable server/browser/TLS. Functional status, session, reconnect and TLS cases; the TC-021-007 silence bounds and TC-021-008 link budget and stall timing run in protocol-thin."
 
 - suite: protocol-thin
@@ -88,7 +130,6 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: "Node 24, npm ci, Playwright Chromium. Windows PC; timing suite (#28): TC-021-007 silence detection and recovery bounds, TC-021-008 32 kbit/s shared TLS link, 60-second idle budget and stalled-reader liveness, plus the link simulator self-check. Runs only when the router with the status websocket and its thin pacing (main.rs), compression, the status client loaded over the link (app.js, index.html, style.css), its test file, the link simulator or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: profiles
@@ -116,7 +157,6 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: Node 24, npm ci, Playwright Chromium. Windows PC; four disposable station profiles and real browser windows.
 
 - suite: recording-storage
@@ -145,7 +185,6 @@
   - client/index.html
   - client/authorization.js
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR with verified original recordings. Windows PC; isolated import/job/storage tests.
 
 - suite: recording-display
@@ -175,7 +214,6 @@
   - client/style.css
   - client/authorization.js
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; actual server/browser, spectrum/waterfall and desktop/mobile geometry.
 
 - suite: recording-thin
@@ -203,7 +241,6 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): actual TLS/browser and calibrated 32 kbit/s simulator, including full 60-second measurements, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds. Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients loaded cold over the link (app.js, index.html, recording.js, recording.css), its test file, the link simulator or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: recording-fixtures
@@ -520,7 +557,6 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated server and browser, unsupported/no-input baseline, disabled TX/QSO/log, literal station identity, desktop/mobile/zoom layout and separator accessibility. No transceiver, audio activation or network service.
 
 - suite: contact-browser
@@ -627,7 +663,6 @@
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run
   exclusive: [radio-selection-evidence]
-  shared: [debug-exe]
   needs: "Windows PC, pinned Rust/Python/Node/Chromium. Functional: H1 compression negotiation, commissioning with zero native effects and the browser selection cases of tests/radio-selection.test.cjs. The 75 s Thin/Off workload runs in radio-selection-thin."
 
 - suite: radio-selection-thin
@@ -665,7 +700,6 @@
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run
   exclusive: [radio-selection-evidence]
-  shared: [debug-exe]
   needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite (#28): actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on the existing32kbit TLS link. Both75s Thin/Off windows, all five known-answer contexts and observed pending polls are mandatory; no physical radio, device or production fault switch. Runs only when the router, compression, the selection/CAT/receive/source/audio/spectrum code that sets the real-time load, the status and receive/selection clients loaded over the link (app.js, index.html, recording.js, recording.css), its test files, the link simulator or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: mcp
@@ -697,5 +731,4 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  shared: [debug-exe]
   needs: Pinned Rust and Node 24 (npm ci for selfsigned). Windows PC; the compiled candidate on a disposable selected HTTPS profile with a throwaway certificate, a browser-style grant that creates an MCP client token and an independent JSON-RPC client. No transceiver, audio device, PTT or network service.

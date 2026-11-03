@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: TC-005-001, TC-006-001, CL-009-01, CL-009-02
+// Proves: TC-005-001, TC-006-001, TC-024-007, CL-009-01, CL-009-02, CL-024-03
 use serde_json::Value;
 use std::sync::OnceLock;
 use wstx_rust::decoder::{Decoder, Mode};
@@ -41,7 +41,7 @@ fn wav(name: &str) -> Vec<f64> {
 
 #[test]
 fn tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly() {
-    let supported = ["1.", "2.", "4.", "0.0", "0.5"];
+    let supported = ["1.", "2.", "3.", "4.", "0.0", "0.3", "0.4", "0.5"];
     let (mut encoded, mut refused) = (0, 0);
     for v in vectors()["vectors"].as_array().unwrap() {
         let message = v["message"].as_str().unwrap();
@@ -76,10 +76,9 @@ fn tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly() {
                     "{message}"
                 );
                 let ty = v["type"].as_str().unwrap();
-                let (i3, n3) = match ty {
-                    "0.0" => (0, Some(0)),
-                    "0.5" => (0, Some(5)),
-                    _ => (ty[..1].parse().unwrap(), None),
+                let (i3, n3) = match ty.strip_prefix("0.") {
+                    Some(n3) => (0, Some(n3.parse().unwrap())),
+                    None => (ty[..1].parse().unwrap(), None),
                 };
                 assert_eq!((frame.packed.i3, frame.packed.n3), (i3, n3), "{message}");
             }
@@ -88,7 +87,7 @@ fn tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly() {
         }
     }
     assert!(
-        encoded >= 60 && refused >= 13,
+        encoded >= 80 && refused >= 30,
         "{encoded} encoded, {refused} refused"
     );
 }
@@ -128,10 +127,7 @@ fn tc_005_001_families_and_explicit_refusals() {
     for m in [
         "K1ABC FN42 37",
         "PJ4/K1ABC 37",
-        "K1A K2B 6A WI",
-        "K1ABC W9XYZ R 17B EMA",
         "K1ABC RR73; W9XYZ <KH1/KH7Z> -08",
-        "TU; K1ABC W9XYZ 579 WI",
     ] {
         assert_eq!(refusal(m), PackError::UnsupportedFamily, "{m}");
     }
@@ -144,6 +140,83 @@ fn tc_005_001_families_and_explicit_refusals() {
         encode("cq  k1abc   fn42").unwrap().packed.bits,
         encode("CQ K1ABC FN42").unwrap().packed.bits
     );
+}
+
+/// Field Day and RTTY Roundup (#24 S2b): every oracle vector of the two families packs
+/// exactly, and every contest shape WSJT-X alters or rejects is refused.
+// Proves: TC-024-007, CL-024-03
+#[test]
+fn tc_024_007_field_day_and_rtty_roundup_pack_exactly() {
+    let mut exact = 0;
+    for v in vectors()["vectors"].as_array().unwrap() {
+        let message = v["message"].as_str().unwrap();
+        let ty = v["type"].as_str().unwrap_or("");
+        if v["altered"] == false && ["0.3", "0.4", "3."].contains(&ty) {
+            exact += 1;
+            let frame = encode(message).unwrap_or_else(|e| panic!("{message}: {e:?}"));
+            assert_eq!(
+                frame.packed.bits.to_vec(),
+                bits(v["bits77"].as_str().unwrap()),
+                "{message}"
+            );
+            assert_eq!(
+                frame.tones.to_vec(),
+                bits(v["tones79"].as_str().unwrap()),
+                "{message}"
+            );
+            assert_eq!(frame.packed.text, v["decoded"].as_str().unwrap());
+            let family = if ty == "3." {
+                Family::RttyRoundup
+            } else {
+                Family::FieldDay
+            };
+            assert_eq!(frame.packed.family, family, "{message}");
+        }
+    }
+    assert!(exact >= 20, "{exact} contest vectors");
+    let n3 = |m: &str| {
+        let p = encode(m).unwrap().packed;
+        (p.i3, p.n3)
+    };
+    assert_eq!(n3("K1ABC W9XYZ 10A WI"), (0, Some(3)));
+    assert_eq!(n3("W9XYZ K1ABC 16D NB"), (0, Some(3)));
+    assert_eq!(n3("K1ABC W9XYZ R 17B EMA"), (0, Some(4)));
+    assert_eq!(n3("W9XYZ K1ABC 32F DX"), (0, Some(4)));
+    assert_eq!(n3("TU; W9XYZ G8ABC R 559 0013").0, 3);
+    assert_eq!(
+        encode("tu;  k1abc w9xyz 579 ma").unwrap().packed.text,
+        "TU; K1ABC W9XYZ 579 MA"
+    );
+    // WSJT-X would send these call slots as hashes and render them <CALL>.
+    for m in [
+        "PJ4/K1ABC W9XYZ 6A WI",
+        "K1ABC/R W9XYZ 6A WI",
+        "PJ4/K1ABC W9XYZ 579 MA",
+        "W9XYZ K1ABC/R 579 MA",
+    ] {
+        assert_eq!(encode(m).unwrap_err(), PackError::NotExact, "{m}");
+    }
+    // Shapes WSJT-X alters (truncated free text) or rejects are refused, never sent.
+    for m in [
+        "<PJ4/K1ABC> W9XYZ 6A WI",
+        "K1ABC W9XYZ 33A WI",
+        "K1ABC W9XYZ 06A WI",
+        "K1ABC W9XYZ 6G WI",
+        "K1ABC W9XYZ 0A WI",
+        "Q1ABC W9XYZ 6A WI",
+        "TU; <PJ4/K1ABC> W9XYZ R 579 MA",
+        "W9XYZ G8ABC 529 8000",
+        "W9XYZ G8ABC 529 0000",
+        "W9XYZ G8ABC 519 0001",
+        "W9XYZ G8ABC 599 13",
+        "W9XYZ G8ABC 599 DX",
+        "TU; K1ABC W9XYZ RR73",
+        "TU; TU; K1ABC W9XYZ 579 MA",
+        "K1ABC W9XYZ 579",
+    ] {
+        assert!(fixture(m)["altered"] == true, "{m}");
+        assert!(encode(m).is_err(), "{m}");
+    }
 }
 
 fn peak_normalized(x: &[f32]) -> Vec<f64> {

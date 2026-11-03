@@ -14,7 +14,7 @@ Numerics: 12000 Hz; symbol lengths 1920/576; Gaussian BT 2/1; pulse support ±2T
 
 Noise uses the source's exact unsigned 64-bit SplitMix64 transitions, top53 midpoint uniforms and two fresh uniforms per Box-Muller sample. No library RNG defaults/cache. Python/libm may differ at final rounding; allow at most 1 PCM LSB between independently computed mathematical waveforms, record runtime/source hashes, and use pinned generated data hashes for byte identity. SNR2500 uses steady signal power A²/2 and one-sided noise PSD 2*variance/12000.
 
-`../independent-vectors/manifest.json` contains 38 frozen channel/waveform vectors, 19 per mode. `../payload-boundary-cases.json` contains 103 fixed field-boundary cases for both modes. `../protocol-data/provenance.json` pins these inputs, the composer and all published tables with their source terms. No external runtime log or machine-specific path defines an expected decoder result.
+`../independent-vectors/manifest.json` contains 38 frozen channel/waveform vectors, 19 per mode. `../payload-boundary-cases.json` contains 109 fixed field-boundary cases for both modes. `../protocol-data/provenance.json` pins these inputs, the composer and all published tables with their source terms. No external runtime log or machine-specific path defines an expected decoder result.
 
 `../quality-cases.json` specifies 2286 cases: 2000 noise-only, 160 AWGN, 80 overlap, 40 offset, and six silence/wrong-mode/CRC cases. Modes, payloads, seeds, timing, amplitude/noise and aggregate acceptance counts are fixed. These are expected inputs, not successful candidate outcomes. Generated audio belongs in an ignored cache, never beside the frozen corpus; the utility opens no audio device or transmitter.
 

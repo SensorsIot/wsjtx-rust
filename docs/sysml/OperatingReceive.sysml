@@ -897,7 +897,7 @@ package WstxOperatingReceive {
              last accepted state at dispatch does. Match station/profile/boot, saved
              profile/operating revision and command. The same command may create its
              expected fresh receive job/generation; unrelated context changes refuse.
-             CDP initiator + frozen caller mapping, not gesture-time erasure.
+             CDP initiator + caller mapping derived from the served source, not gesture-time erasure.
              50ms observation tolerance; <7950 is coverage, not product max latency. */
     }
     part def BrowserWindowCadenceCoverage {

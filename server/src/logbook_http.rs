@@ -175,6 +175,30 @@ struct WireRecord {
     tx_pwr: Option<String>,
     #[serde(deserialize_with = "nullable")]
     comment: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    stx: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    stx_string: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    srx: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    contest_id: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    srx_string: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default, rename = "class")]
+    class_: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    arrl_sect: Option<String>,
+    /// Contest exchange field (#24 S2b), optional.
+    #[serde(default)]
+    state: Option<String>,
 }
 fn nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     Option::<String>::deserialize(d)
@@ -200,6 +224,14 @@ impl WireRecord {
                 self.my_gridsquare,
                 self.tx_pwr,
                 self.comment,
+                self.stx,
+                self.stx_string,
+                self.srx,
+                self.contest_id,
+                self.srx_string,
+                self.class_,
+                self.arrl_sect,
+                self.state,
             ],
             source: None,
             unknown: Vec::new(),

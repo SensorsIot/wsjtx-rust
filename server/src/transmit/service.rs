@@ -301,6 +301,9 @@ pub struct Core<H: Hardware> {
     faulted: bool,
     /// WstxTransmit::StationModeGate: the station's operating mode (None: not gated).
     station_mode: Option<Mode>,
+    /// The station's call hash table (WstxOfflineDecode::HashResolution): every
+    /// accepted request teaches it its calls.
+    hashes: Option<Arc<Mutex<crate::decoder::HashTable>>>,
 }
 
 fn schedule_refusal(error: ScheduleError) -> TransmitRefusal {
@@ -385,7 +388,16 @@ impl<H: Hardware> Core<H> {
             abort: Arc::new(AtomicBool::new(false)),
             faulted: false,
             station_mode: None,
+            hashes: None,
         }
+    }
+    /// Shares the station's call hash table (CL-024-01): accepted requests feed it.
+    pub fn attach_hashes(&mut self, hashes: Arc<Mutex<crate::decoder::HashTable>>) {
+        self.hashes = Some(hashes);
+    }
+    /// The attached call hash table, if any.
+    pub fn hash_table(&self) -> Option<&Arc<Mutex<crate::decoder::HashTable>>> {
+        self.hashes.as_ref()
     }
     /// WstxTransmit::StationModeGate: the station's operating mode. A request of
     /// another mode is refused staleRequest at admission and never keyed or started.
@@ -599,6 +611,14 @@ impl<H: Hardware> Core<H> {
             Err(refusal) => return self.refuse(sequence, refusal, true),
         };
         self.refusal = None;
+        if let Some(hashes) = &self.hashes
+            && let Ok(packed) = super::pack(&request.message_text)
+        {
+            hashes
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .learn_sent(&crate::decoder::unpack(&packed.bits), &packed.text);
+        }
         if slot == 1 {
             if let Some(old) = self.next.replace(prepared) {
                 self.emit(old.request.request_sequence, OutcomeKind::Replaced);

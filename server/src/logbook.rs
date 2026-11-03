@@ -38,7 +38,7 @@ const RECEIPTS: usize = 16;
 const IMPORT_IDLE: Duration = Duration::from_secs(60);
 
 /// Supported LogRecord fields in WSJT-X to_adif order (contact id follows them).
-pub const FIELDS: [&str; 16] = [
+pub const FIELDS: [&str; 24] = [
     "call",
     "gridsquare",
     "mode",
@@ -55,6 +55,15 @@ pub const FIELDS: [&str; 16] = [
     "my_gridsquare",
     "tx_pwr",
     "comment",
+    // Contest exchanges in AdifQso::to_adif order (#24 S2b, LogRecord).
+    "stx",
+    "stx_string",
+    "srx",
+    "contest_id",
+    "srx_string",
+    "class",
+    "arrl_sect",
+    "state",
 ];
 const CALL: usize = 0;
 const GRID: usize = 1;
@@ -113,7 +122,7 @@ pub struct Unknown {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Record {
     pub contact_id: String,
-    pub values: [Option<String>; 16],
+    pub values: [Option<String>; 24],
     /// APP_WSTXRUST_SOURCE: the program a record added by UpdateLogbook came from.
     pub source: Option<String>,
     pub unknown: Vec<Unknown>,
@@ -122,6 +131,14 @@ impl Record {
     pub fn get(&self, name: &str) -> Option<&str> {
         let index = FIELDS.iter().position(|f| *f == name)?;
         self.values[index].as_deref()
+    }
+    /// Sets a supported field (a name outside FIELDS is a programming error).
+    pub fn set(&mut self, name: &str, value: String) {
+        let index = FIELDS
+            .iter()
+            .position(|f| *f == name)
+            .expect("supported field");
+        self.values[index] = Some(value);
     }
     fn effective_mode(&self) -> String {
         let mode = self.values[MODE]
@@ -325,9 +342,13 @@ fn token(value: &str) -> bool {
 fn printable(value: &str) -> bool {
     value.bytes().all(|b| (0x20..=0x7e).contains(&b))
 }
-/// Report rendering of WstxContact::ReportRange, "%+2.2d" in -50..+49.
+/// Report rendering of WstxContact::ReportRange, "%+2.2d" in -50..+49, or an RTTY
+/// Roundup 5n9 RST (#24 S2b, LogRecord).
 pub fn valid_report(value: &str) -> bool {
     let b = value.as_bytes();
+    if b.len() == 3 && b[0] == b'5' && (b'2'..=b'9').contains(&b[1]) && b[2] == b'9' {
+        return true;
+    }
     b.len() == 3
         && (b[0] == b'+' || b[0] == b'-')
         && b[1..].iter().all(u8::is_ascii_digit)
@@ -1509,6 +1530,29 @@ pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result
         c.is_empty() || c.len() > FIELD_CHARACTERS_MAX || !printable(c) || c.contains(['<', '>'])
     }) {
         return Err("record.comment");
+    }
+    // Contest exchange fields (#24 S2b, LogRecord): STX/SRX 1-4 digits, the others at
+    // most 32 printable characters without '<' and '>'.
+    for (i, name) in FIELDS.iter().enumerate().skip(16) {
+        let Some(value) = v(i) else { continue };
+        let ok = match *name {
+            "stx" | "srx" => {
+                (1..=4).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_digit())
+            }
+            _ => (1..=32).contains(&value.len()) && printable(value) && !value.contains(['<', '>']),
+        };
+        if !ok {
+            return Err(match *name {
+                "stx" => "record.stx",
+                "stx_string" => "record.stx_string",
+                "srx" => "record.srx",
+                "contest_id" => "record.contest_id",
+                "srx_string" => "record.srx_string",
+                "class" => "record.class",
+                "arrl_sect" => "record.arrl_sect",
+                _ => "record.state",
+            });
+        }
     }
     Ok(())
 }

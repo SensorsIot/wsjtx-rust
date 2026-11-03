@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10, CL-010-12; TC-007-001, TC-008-001, TC-011-001.
+// (#24 S4b: CL-024-04; TC-024-011, TC-024-014, the classic Hound.)
 // (#41 DirectLog: the contacts the engine hands to the log.)
 // The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
 // UTC clock with a recording hardware double (no audio, PTT or radio). Decoded rows are
@@ -20,6 +21,8 @@ use wstx_rust::transmit::{ClockState, Parity};
 const P0: i64 = 1_800_000_000_000; // an even FT8 period (multiple of 30 s)
 const SECOND: i64 = 1000;
 
+/// Waveform plays: (UTC start, 48 kHz samples, first sample played).
+type Plays = Vec<(i64, Arc<[f32]>, usize)>;
 #[derive(Default)]
 struct Bench {
     now: AtomicI64,
@@ -30,6 +33,8 @@ struct Bench {
     plays: Mutex<Vec<(i64, usize)>>,
     /// The device reports the end this long after the last sample was due (#49).
     late_ms: AtomicI64,
+    /// Every waveform play's audio: (UTC start, 48 kHz samples, first sample played).
+    audio: Mutex<Plays>,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -63,6 +68,14 @@ impl Hardware for Fake {
     }
     fn play(&mut self, program: Program) -> Result<(), AudioError> {
         let waveform = matches!(program, Program::Waveform { .. });
+        if let Program::Waveform { samples, skip } = &program {
+            let at = self.now_utc_ms();
+            self.0
+                .audio
+                .lock()
+                .unwrap()
+                .push((at, samples.clone(), *skip));
+        }
         let remaining = match program {
             Program::Waveform { samples, skip } => samples.len() - skip,
             Program::Tone { .. } => usize::MAX / 2,
@@ -106,6 +119,10 @@ struct Station {
     mode: Mode,
     /// Texts whose audio started, with their period start.
     sent: Vec<(i64, String)>,
+    /// The Tx offset of each started transmission (the engine's setting at its start).
+    sent_hz: Vec<(i64, u32)>,
+    /// The profile callsign (Ctx.call).
+    call: String,
 }
 /// The one contact handed to the log since the last check (WstxContact::DirectLog).
 fn one_entry(s: &mut Station) -> (LogKind, Contact) {
@@ -130,6 +147,8 @@ fn station() -> Station {
         sequence: 0,
         mode: Mode::Ft8,
         sent: Vec::new(),
+        sent_hz: Vec::new(),
+        call: "HB9BLA".into(),
     }
 }
 /// Hand-authored standard row "TO FROM EXCHANGE" decoded at `hz` in `period`.
@@ -168,7 +187,7 @@ impl Station {
     }
     fn ctx(&self) -> Ctx {
         Ctx {
-            call: Some("HB9BLA".into()),
+            call: Some(self.call.clone()),
             locator: Some("JN47AA".into()),
             now_utc_ms: self.now(),
             granted: true,
@@ -191,6 +210,7 @@ impl Station {
             snr_db: snr,
             text: text.into(),
             standard: Some(parse(text)),
+            dxpedition: None,
         }
     }
     fn command(&mut self, command: Command) -> Result<(), &'static str> {
@@ -221,6 +241,8 @@ impl Station {
                     view.last_period_utc_ms.unwrap(),
                     view.last_text.clone().unwrap(),
                 ));
+                self.sent_hz
+                    .push((view.last_period_utc_ms.unwrap(), self.engine.settings.tx_hz));
             }
             if t % 50 == 0 {
                 self.step(&[]);
@@ -2065,9 +2087,1526 @@ fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
     let c = s.engine.contact.as_ref().unwrap();
     assert_eq!(c.dialogue.len(), DIALOGUE_MAX);
     assert_eq!(c.dialogue.back().unwrap().text, "HB9BLA W1AW -20");
+    // #60: a repeated message keeps its first period and takes the latest non-null SNR.
+    for (p, snr) in [
+        (period(48), Some(-12.0)),
+        (period(50), Some(-3.0)),
+        (period(52), None),
+    ] {
+        let r = s.row(p, "HB9BLA W1AW -07", 700.0, snr);
+        s.deliver(&[r]);
+    }
+    let last = s.engine.contact.as_ref().unwrap().dialogue.back().unwrap();
+    assert_eq!(
+        (last.text.as_str(), last.snr, last.period_ms, last.count),
+        ("HB9BLA W1AW -07", Some(-3), period(48), 3)
+    );
     s.command(Command::Cancel).unwrap();
     assert!(
         s.engine.contact.as_ref().unwrap().dialogue.is_empty(),
         "cancel empties it"
+    );
+}
+
+// ---------------------------------------------------------------- #24 S1b
+/// A decoded row as the station builds it (WstxOfflineDecode::HashResolution, then the
+/// station's row reader): packed, unpacked, filled in from `table`, which then learns it.
+fn decoded(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    text: &str,
+    hz: f64,
+    snr: f64,
+) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    let payload = table.resolve(&unpack(&wstx_rust::transmit::pack(text).unwrap().bits));
+    table.learn(&payload);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: hz,
+        snr_db: Some(snr),
+        a_priori: None,
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, "ft8").unwrap()
+}
+fn set(s: &Station) -> Vec<String> {
+    s.engine
+        .contact
+        .as_ref()
+        .unwrap()
+        .messages
+        .iter()
+        .map(|m| m.clone().unwrap_or_default())
+        .collect()
+}
+
+// Proves: CL-024-01; TC-024-003 (a). A standard station works a nonstandard CQ caller
+// with WSJT-X's compound message set and sequences it to the log.
+#[test]
+fn a_standard_call_works_a_nonstandard_partner_to_the_log() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    let cq = decoded(&mut s, &mut table, P0, "CQ PJ4/K1ABC", 1234.6, -12.4);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "<PJ4/K1ABC> HB9BLA JN47",
+            "<PJ4/K1ABC> HB9BLA -12",
+            "<PJ4/K1ABC> HB9BLA R-12",
+            "PJ4/K1ABC <HB9BLA> RRR",
+            "PJ4/K1ABC <HB9BLA> 73",
+            "CQ HB9BLA JN47"
+        ]
+    );
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(1)).as_deref(),
+        Some("<PJ4/K1ABC> HB9BLA JN47")
+    );
+    let report = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA <PJ4/K1ABC> -12",
+        1240.0,
+        -7.0,
+    );
+    assert_eq!(report.text, "HB9BLA <PJ4/K1ABC> -12");
+    s.deliver(&[report]);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("<PJ4/K1ABC> HB9BLA R-12")
+    );
+    let rr73 = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "<HB9BLA> PJ4/K1ABC RR73",
+        1240.0,
+        -7.0,
+    );
+    assert_eq!(rr73.text, "<HB9BLA> PJ4/K1ABC RR73");
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(6));
+    assert_eq!(
+        s.sent_in(period(5)).as_deref(),
+        Some("PJ4/K1ABC <HB9BLA> 73")
+    );
+    assert_eq!(s.state().0, State::Completed);
+    let logged = one_log(&mut s);
+    assert_eq!(logged.dx_call.as_deref(), Some("PJ4/K1ABC"));
+    assert_eq!(logged.report_rcvd, Some(-12));
+}
+
+// Proves: CL-024-01; TC-024-003 (b). A nonstandard own call calls CQ without a grid and
+// answers a standard caller with its hashed own call.
+#[test]
+fn a_nonstandard_own_call_answers_a_standard_caller_to_the_log() {
+    let mut s = station();
+    s.call = "DL/HB9BLA".into();
+    s.engine.settings.call_first = false;
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("DL/HB9BLA"));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ DL/HB9BLA");
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ DL/HB9BLA"));
+    let call = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "<DL/HB9BLA> K1ABC FN42",
+        1240.0,
+        -9.0,
+    );
+    assert_eq!(call.text, "<DL/HB9BLA> K1ABC FN42");
+    s.command(Command::SelectRow {
+        row: call,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "<K1ABC> DL/HB9BLA",
+            "K1ABC <DL/HB9BLA> -09",
+            "K1ABC <DL/HB9BLA> R-09",
+            "<K1ABC> DL/HB9BLA RRR",
+            "<K1ABC> DL/HB9BLA 73",
+            "CQ DL/HB9BLA"
+        ]
+    );
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("K1ABC <DL/HB9BLA> -09")
+    );
+    let rr = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "<DL/HB9BLA> K1ABC R-07",
+        1240.0,
+        -9.0,
+    );
+    s.deliver(&[rr]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(6) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(5)).as_deref(),
+        Some("<K1ABC> DL/HB9BLA RRR")
+    );
+    let bye = decoded(
+        &mut s,
+        &mut table,
+        period(6),
+        "DL/HB9BLA <K1ABC> 73",
+        1240.0,
+        -9.0,
+    );
+    assert_eq!(bye.text, "DL/HB9BLA <K1ABC> 73");
+    s.deliver(&[bye]);
+    assert_eq!(s.state().0, State::Completed);
+    let logged = one_log(&mut s);
+    assert_eq!(
+        (
+            logged.dx_call.as_deref(),
+            logged.dx_grid.as_deref(),
+            logged.report_rcvd
+        ),
+        (Some("K1ABC"), Some("FN42"), Some(-7))
+    );
+}
+
+// Proves: CL-024-01; TC-024-003 (c, d). Nonstandard entries, two nonstandard calls,
+// unresolved hashes and Tx5 free text.
+#[test]
+fn nonstandard_entries_and_free_text_are_validated() {
+    let mut s = station();
+    let enter = |s: &mut Station, call: &str| {
+        s.command(Command::EnterDx {
+            call: call.into(),
+            grid: None,
+            replace: true,
+        })
+    };
+    enter(&mut s, "YW18FIFA").unwrap();
+    assert_eq!(set(&s)[0], "<YW18FIFA> HB9BLA JN47");
+    enter(&mut s, "PJ4/K1ABC/P").unwrap();
+    assert_eq!(set(&s)[3], "PJ4/K1ABC/P <HB9BLA> RRR");
+    assert_eq!(enter(&mut s, "PJ4/K1ABCDEF"), Err("invalid_call"));
+    let mut table = wstx_rust::decoder::HashTable::new();
+    let row = decoded(
+        &mut s,
+        &mut table,
+        P0,
+        "W9XYZ <PJ4/K9XX> -10",
+        1500.0,
+        -10.0,
+    );
+    assert_eq!(
+        s.command(Command::SelectRow { row, replace: true }),
+        Err("row_not_standard")
+    );
+    // An i3=4 row whose hashed 'from' is unresolved names no partner either.
+    let row = decoded(
+        &mut s,
+        &mut table,
+        P0,
+        "PJ4/K9YY <W8ZZZ> RR73",
+        1500.0,
+        -10.0,
+    );
+    assert_eq!(row.text, "PJ4/K9YY <...> RR73");
+    assert_eq!(
+        s.command(Command::SelectRow { row, replace: true }),
+        Err("row_not_standard")
+    );
+    let row = decoded(
+        &mut s,
+        &mut table,
+        P0,
+        "<PJ4/K9XX> W9XYZ RR73",
+        1500.0,
+        -10.0,
+    );
+    s.command(Command::SelectRow { row, replace: true })
+        .unwrap();
+    for (text, expected) in [
+        ("tnx 73 gl", Ok("TNX 73 GL")),
+        ("TNX FER QSO 73 GL", Err("invalid_message")),
+        ("HI, 73", Err("invalid_message")),
+        ("<W9XYZ> PA/K1XX 73", Ok("<W9XYZ> PA/K1XX 73")),
+    ] {
+        let r = s.command(Command::EditMessage(Slot::Tx5, text.into()));
+        assert_eq!(
+            r.map(|_| set(&s)[4].clone()),
+            expected.map(String::from),
+            "{text}"
+        );
+    }
+    s.call = "DL/HB9BLA".into();
+    assert_eq!(
+        enter(&mut s, "PA/K1XX"),
+        Err("invalid_call"),
+        "two nonstandard calls"
+    );
+    enter(&mut s, "K1ABC").unwrap();
+    assert_eq!(set(&s)[1], "K1ABC <DL/HB9BLA> -10");
+}
+
+// Proves: CL-024-01; TC-024-003 (e). Call 1st answers only plain standard callers.
+#[test]
+fn call_first_skips_hashed_and_nonstandard_callers() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    decoded(&mut s, &mut table, P0, "CQ PJ4/K1ABC", 1000.0, -10.0);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+    let rows = [
+        decoded(
+            &mut s,
+            &mut table,
+            period(2),
+            "<HB9BLA> PA/K1XX",
+            1100.0,
+            -10.0,
+        ),
+        decoded(
+            &mut s,
+            &mut table,
+            period(2),
+            "HB9BLA <PJ4/K1ABC> -12",
+            1200.0,
+            -10.0,
+        ),
+        decoded(
+            &mut s,
+            &mut table,
+            period(2),
+            "HB9BLA W9XYZ -10",
+            1300.0,
+            -10.0,
+        ),
+    ];
+    assert_eq!(rows[1].text, "HB9BLA <PJ4/K1ABC> -12");
+    s.deliver(&rows);
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.dx_call.as_deref(), Some("W9XYZ"));
+}
+
+// Proves: CL-024-01; TC-024-003 (d). A free-text Tx5 on an own CQ is sent once like a 73:
+// the contact completes and, without a partner, nothing goes to the log.
+#[test]
+fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
+    let mut s = station();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.command(Command::EditMessage(Slot::Tx5, "tnx 73 gl".into()))
+        .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx5)).unwrap();
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(4));
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("TNX 73 GL"));
+    assert_eq!(s.sent.len(), 1, "sent once: {:?}", s.sent);
+    assert_eq!(s.state().0, State::Completed);
+    assert!(!s.armed());
+    assert!(s.engine.take_logs().is_empty());
+}
+
+// ---------------------------------------------------------------- #24 S2a
+// Proves: CL-024-02; TC-024-005 (a). WW Digi: CQ WW, a caller's grid answered with R+grid,
+// RR73 answered with 73 and the contact logged with the grid and no reports.
+#[test]
+fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
+    s.engine.settings.call_first = false;
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ WW HB9BLA JN47"));
+    let caller = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA S52XYZ JN76",
+        1300.0,
+        -8.0,
+    );
+    s.command(Command::SelectRow {
+        row: caller,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "S52XYZ HB9BLA JN47",
+            "S52XYZ HB9BLA JN47",
+            "S52XYZ HB9BLA R JN47",
+            "S52XYZ HB9BLA RRR",
+            "S52XYZ HB9BLA 73",
+            "CQ WW HB9BLA JN47"
+        ]
+    );
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(period(3) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("S52XYZ HB9BLA R JN47")
+    );
+    let rr73 = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "HB9BLA S52XYZ RR73",
+        1300.0,
+        -8.0,
+    );
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(6));
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("S52XYZ HB9BLA 73"));
+    let logged = one_log(&mut s);
+    assert_eq!(
+        (
+            logged.dx_call.as_deref(),
+            logged.dx_grid.as_deref(),
+            logged.report_sent,
+            logged.report_rcvd
+        ),
+        (Some("S52XYZ"), Some("JN76"), None, None)
+    );
+}
+
+// Proves: CL-024-02; TC-024-005 (b). NA VHF: answering a CQ TEST, the CQer's R+grid
+// moves to Tx4 and the partner's 73 completes the contact.
+#[test]
+fn na_vhf_moves_to_rogers_on_r_grid() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    s.command(Command::SetContest {
+        activity: Activity::NaVhf,
+        exchange: None,
+    })
+    .unwrap();
+    let cq = decoded(&mut s, &mut table, P0, "CQ TEST K1ABC FN42", 1200.0, -10.0);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[5], "CQ TEST HB9BLA JN47");
+    assert_eq!(set(&s)[2], "K1ABC HB9BLA R JN47");
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    let r = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA K1ABC R FN42",
+        1200.0,
+        -10.0,
+    );
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("K1ABC HB9BLA RRR"));
+    let bye = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "HB9BLA K1ABC 73",
+        1200.0,
+        -10.0,
+    );
+    s.deliver(&[bye]);
+    assert_eq!(s.state().0, State::Completed);
+    assert_eq!(one_log(&mut s).dx_grid.as_deref(), Some("FN42"));
+}
+
+// Proves: CL-024-02; TC-024-005 (c, d). ARRL Digi with a nonstandard own call, and none.
+#[test]
+fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
+    let mut s = station();
+    s.call = "DL/HB9BLA".into();
+    s.command(Command::SetContest {
+        activity: Activity::ArrlDigi,
+        exchange: None,
+    })
+    .unwrap();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[5], "CQ DL/HB9BLA");
+    assert_eq!(set(&s)[1], "K1ABC <DL/HB9BLA> JN47");
+    assert_eq!(set(&s)[2], "K1ABC <DL/HB9BLA> R JN47");
+    s.call = "HB9BLA".into();
+    s.command(Command::SetContest {
+        activity: Activity::None,
+        exchange: None,
+    })
+    .unwrap();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1], "K1ABC HB9BLA -15");
+    assert_eq!(set(&s)[5], "CQ HB9BLA JN47");
+    for (a, name, udp) in [
+        (Activity::None, "none", 0),
+        (Activity::NaVhf, "na_vhf", 1),
+        (Activity::WwDigi, "ww_digi", 5),
+        (Activity::ArrlDigi, "arrl_digi", 8),
+    ] {
+        assert_eq!((a.name(), a.special_operation()), (name, udp));
+        assert_eq!(Activity::parse(name), Some(a));
+    }
+    assert_eq!(Activity::parse("eu_vhf"), None);
+}
+
+// Proves: CL-024-02; TC-024-005 (e). The activity regenerates a running CQ's Tx6 and an
+// active contact's exchange at once; a report change keeps Tx6.
+#[test]
+fn set_activity_regenerates_the_running_contact() {
+    let mut s = station();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.command(Command::EditMessage(Slot::Tx6, "CQ DX HB9BLA JN47".into()))
+        .unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
+    s.command(Command::EditMessage(Slot::Tx6, "CQ DX HB9BLA JN47".into()))
+        .unwrap();
+    s.command(Command::SetReport(-10)).unwrap();
+    assert_eq!(set(&s)[5], "CQ DX HB9BLA JN47", "a report change keeps Tx6");
+    s.command(Command::SetContest {
+        activity: Activity::None,
+        exchange: None,
+    })
+    .unwrap();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA -10", "K1ABC HB9BLA R-10"]);
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA JN47", "K1ABC HB9BLA R JN47"]);
+    s.command(Command::SetContest {
+        activity: Activity::None,
+        exchange: None,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA -10", "K1ABC HB9BLA R-10"]);
+    assert_eq!(set(&s)[5], "CQ HB9BLA JN47");
+}
+
+// ---------------------------------------------------------------- #24 S2b
+fn decoded_in(s: &mut Station, period: i64, text: &str, snr: f64, mode: &str) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    let payload = unpack(&wstx_rust::transmit::pack(text).unwrap().bits);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: 1300.0,
+        snr_db: Some(snr),
+        a_priori: None,
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, mode).unwrap()
+}
+fn contest(s: &mut Station, activity: Activity, exchange: &str) {
+    s.command(Command::SetContest {
+        activity,
+        exchange: Some(exchange.into()),
+    })
+    .unwrap();
+}
+fn adif_of(c: &Contact) -> String {
+    let record = crate::contact_http::Station::record_of(
+        c,
+        P0 + 300 * SECOND,
+        Some(7_074_000),
+        1500,
+        "HB9BLA",
+        Some("JN47AA"),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::logbook::validate_record(&record, "HB9BLA", "JN47AA"),
+        Ok(())
+    );
+    record.adi_fields()
+}
+
+// Proves: CL-024-03; TC-024-008 (a). Field Day as the CQer: CQ FD, the caller's exchange
+// answered with R + my exchange, RR73 answered with 73, logged with the ADIF contest fields.
+#[test]
+fn field_day_cq_answers_the_exchange_and_logs_the_contest_fields() {
+    let mut s = station();
+    contest(&mut s, Activity::FieldDay, "1a  ema");
+    assert_eq!(s.engine.settings.exchange.as_deref(), Some("1A EMA"));
+    s.engine.settings.call_first = false;
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ FD HB9BLA JN47");
+    s.run(period(1) + 14 * SECOND);
+    let caller = decoded_in(&mut s, period(2), "HB9BLA K1ABC 2A WI", -8.0, "ft8");
+    s.command(Command::SelectRow {
+        row: caller,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "K1ABC HB9BLA JN47",
+            "K1ABC HB9BLA 1A EMA",
+            "K1ABC HB9BLA R 1A EMA",
+            "K1ABC HB9BLA RRR",
+            "K1ABC HB9BLA 73",
+            "CQ FD HB9BLA JN47"
+        ]
+    );
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(period(3) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("K1ABC HB9BLA R 1A EMA")
+    );
+    let rr73 = decoded_in(&mut s, period(4), "HB9BLA K1ABC RR73", -8.0, "ft8");
+    s.deliver(&[rr73]);
+    s.run(period(6));
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("K1ABC HB9BLA 73"));
+    let c = one_log(&mut s);
+    assert_eq!(
+        (c.exchange_sent.as_deref(), c.exchange_rcvd.as_deref()),
+        (Some("1A EMA"), Some("2A WI"))
+    );
+    assert_eq!(s.engine.settings.serial, 2);
+    let adif = adif_of(&c);
+    for field in [
+        "<stx_string:6>1A EMA",
+        "<contest_id:14>ARRL-FIELD-DAY",
+        "<srx_string:5>2A WI",
+        "<class:2>2A",
+        "<arrl_sect:2>WI",
+    ] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+    assert!(!adif.contains("rst_"), "{adif}");
+}
+
+// Proves: CL-024-03; TC-024-008 (b). RTTY Roundup with a DX serial: answering CQ RU
+// starts with Tx2 (Tx1 disabled), "5n9 serial", the TU; R exchange moves to Tx4, the log
+// has the 5n9 RSTs, STX and STATE, and the next contact sends the next serial.
+#[test]
+fn rtty_roundup_answers_cq_ru_with_tx2_and_logs_rst_stx_and_state() {
+    let mut s = station();
+    contest(&mut s, Activity::Rtty, "DX");
+    let cq = decoded_in(&mut s, P0, "CQ RU W9XYZ EN37", -3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1], "W9XYZ HB9BLA 559 0001");
+    assert_eq!(set(&s)[5], "CQ RU HB9BLA JN47");
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(1)).as_deref(),
+        Some("W9XYZ HB9BLA 559 0001")
+    );
+    let r = decoded_in(&mut s, period(2), "TU; HB9BLA W9XYZ R 579 MA", -3.0, "ft8");
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("W9XYZ HB9BLA RRR"));
+    let bye = decoded_in(&mut s, period(4), "HB9BLA W9XYZ 73", -3.0, "ft8");
+    s.deliver(&[bye]);
+    let c = one_log(&mut s);
+    assert_eq!(
+        (c.exchange_sent.as_deref(), c.exchange_rcvd.as_deref()),
+        (Some("559 0001"), Some("579 MA"))
+    );
+    let adif = adif_of(&c);
+    for field in [
+        "<rst_sent:3>559",
+        "<rst_rcvd:3>579",
+        "<stx:4>0001",
+        "<state:2>MA",
+    ] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+    assert!(!adif.contains("contest_id"), "{adif}");
+    let next = decoded_in(&mut s, period(6), "CQ RU K9AN EN50", -3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: next,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1], "K9AN HB9BLA 559 0002");
+}
+
+fn ft4_period(n: i64) -> i64 {
+    P0 + n * 7_500
+}
+/// FT4 RTTY: Tx3 to K1ABC in period 1, their RR73 counted 3 s into period 2 (my Tx3
+/// started 10.5 s before), then a new caller selected `after` ms later; returns its Tx3.
+fn ft4_next_caller_tx3(after: i64) -> String {
+    let mut s = ft4_station();
+    contest(&mut s, Activity::Rtty, "MA");
+    let caller = decoded_in(&mut s, ft4_period(0), "HB9BLA K1ABC 579 NY", -3.0, "ft4");
+    s.command(Command::SelectRow {
+        row: caller,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(ft4_period(2) + 3_000);
+    assert_eq!(
+        s.sent_in(ft4_period(1)).as_deref(),
+        Some("K1ABC HB9BLA R 559 MA")
+    );
+    let rr73 = decoded_in(&mut s, ft4_period(2), "HB9BLA K1ABC RR73", -3.0, "ft4");
+    s.deliver(&[rr73]);
+    s.fake
+        .0
+        .now
+        .store(ft4_period(2) + 3_000 + after, Ordering::SeqCst);
+    let next = decoded_in(&mut s, ft4_period(2), "HB9BLA W9XYZ 579 OH", -3.0, "ft4");
+    s.command(Command::SelectRow {
+        row: next,
+        replace: true,
+    })
+    .unwrap();
+    set(&s)[2].clone()
+}
+// Proves: CL-024-03; TC-024-008 (c). FT4 TU;: the operator's selection right after an
+// RR73 thanks the previous partner in Tx3; three whole seconds later it does not.
+#[test]
+fn ft4_rtty_selection_right_after_rr73_prefixes_tu() {
+    assert_eq!(ft4_next_caller_tx3(500), "TU; W9XYZ HB9BLA R 559 MA");
+    assert_eq!(ft4_next_caller_tx3(3_000), "W9XYZ HB9BLA R 559 MA");
+}
+
+// Proves: CL-024-03; TC-024-008 (d), (e). Exchange validation, a nonstandard DX call, a
+// Field Day row in RTTY, the UDP values, and the slots accept a contest text.
+#[test]
+fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
+    let fd = |x: Option<&str>| contest_exchange(Activity::FieldDay, x);
+    assert_eq!(fd(Some(" 32f  wwa ")), Some(Some("32F WWA".into())));
+    for bad in [
+        None,
+        Some("0A EMA"),
+        Some("33A EMA"),
+        Some("1G EMA"),
+        Some("1A XX"),
+        Some("1AEMA"),
+    ] {
+        assert_eq!(fd(bad), None, "{bad:?}");
+    }
+    let rtty = |x: Option<&str>| contest_exchange(Activity::Rtty, x);
+    for good in ["MA", "#", "dx", "PEI", "X99", "DR"] {
+        assert!(rtty(Some(good)).is_some(), "{good}");
+    }
+    assert_eq!(rtty(Some("DXX")), None);
+    assert_eq!(rtty(Some("0013")), Some(Some("0013".into())));
+    assert_eq!(rtty(Some("8000")), None);
+    // Non-ASCII is refused, never a panic (review S2b2 finding 1).
+    assert_eq!(fd(Some("1\u{e9} EMA")), None);
+    assert_eq!(rtty(Some("\u{e9}")), None);
+    assert_eq!(contest_exchange(Activity::WwDigi, Some("MA")), None);
+    assert_eq!(contest_exchange(Activity::None, None), Some(None));
+    let mut s = station();
+    assert_eq!(
+        s.command(Command::SetContest {
+            activity: Activity::FieldDay,
+            exchange: None
+        }),
+        Err("invalid_exchange")
+    );
+    contest(&mut s, Activity::FieldDay, "1A EMA");
+    assert_eq!(
+        s.command(Command::EnterDx {
+            call: "PJ4/K1ABC".into(),
+            grid: None,
+            replace: false
+        }),
+        Err("invalid_call")
+    );
+    let fd_row = decoded_in(&mut s, P0, "HB9BLA K1ABC 2A WI", -3.0, "ft8");
+    let fd_msg = fd_row.standard.clone().unwrap();
+    assert_eq!(
+        classify_in(&fd_msg, Activity::FieldDay),
+        Received::SignalReport
+    );
+    assert_eq!(classify_in(&fd_msg, Activity::Rtty), Received::Other);
+    assert_eq!(classify_in(&fd_msg, Activity::None), Received::Other);
+    assert_eq!(
+        (
+            Activity::FieldDay.special_operation(),
+            Activity::Rtty.special_operation()
+        ),
+        (3, 4)
+    );
+    assert_eq!(
+        slot_text("k1abc hb9bla 3a wi").as_deref(),
+        Some("K1ABC HB9BLA 3A WI")
+    );
+    assert_eq!(
+        slot_text("TU; K1ABC HB9BLA R 579 MA").as_deref(),
+        Some("TU; K1ABC HB9BLA R 579 MA")
+    );
+    // A contact prepared before the activity changes follows it (review S2b2 finding 2).
+    let mut s = station();
+    let cq = decoded_in(&mut s, P0, "CQ K1ABC FN42", -3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    contest(&mut s, Activity::FieldDay, "1A EMA");
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().activity,
+        Activity::FieldDay
+    );
+    assert_eq!(set(&s)[1], "K1ABC HB9BLA 1A EMA");
+}
+
+// ---------------------------------------------------------------- #24 S4b Hound
+const FOX: &str = "KH7Z";
+/// The c28 of a standard call, as packed in the first call slot of i3=1.
+fn c28(call: &str) -> u128 {
+    let bits = wstx_rust::transmit::pack(&format!("{call} K1ABC RR73"))
+        .unwrap()
+        .bits;
+    bits[..28]
+        .iter()
+        .fold(0u128, |v, b| (v << 1) | u128::from(*b))
+}
+/// A 0.1 DXpedition payload "FIRST RR73; SECOND <FOX> RPT" built from its fields (the
+/// packer refuses 0.1): c28 c28 h10 r5 n3=1 i3=0.
+pub(crate) fn dxpedition_bits(first: &str, second: &str, fox: &str, report: i32) -> [u8; 77] {
+    let fields = [
+        (c28(first), 28),
+        (c28(second), 28),
+        (
+            u128::from(wstx_rust::decoder::ihashcall(fox, 10).unwrap()),
+            10,
+        ),
+        (u128::try_from((report + 30) / 2).unwrap(), 5),
+        (1, 3),
+        (0, 3),
+    ];
+    let mut out = [0u8; 77];
+    let mut at = 0;
+    for (v, w) in fields {
+        for i in (0..w).rev() {
+            out[at] = ((v >> i) & 1) as u8;
+            at += 1;
+        }
+    }
+    assert_eq!(at, 77);
+    out
+}
+/// A published record of `bits` as the station builds it: the DX call of the current
+/// contact is set on the table first (the contact step), then fill-in and learning.
+fn record_of_bits(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    bits: &[u8; 77],
+    hz: f64,
+    snr: f64,
+) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    table.set_dx_call(s.engine.contact.as_ref().and_then(|c| c.dx_call.as_deref()));
+    let payload = table.resolve(&unpack(bits));
+    table.learn(&payload);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: hz,
+        snr_db: Some(snr),
+        a_priori: None,
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, "ft8").unwrap()
+}
+fn fox_says(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    text: &str,
+    hz: f64,
+    snr: f64,
+) -> Row {
+    let bits = wstx_rust::transmit::pack(text).unwrap().bits;
+    record_of_bits(s, table, period, &bits, hz, snr)
+}
+fn hound_table() -> wstx_rust::decoder::HashTable {
+    let mut t = wstx_rust::decoder::HashTable::new();
+    t.set_my_call(Some("HB9BLA"));
+    t
+}
+/// A Hound station whose random calling offset is 1717 Hz (asserting WSJT-X's range).
+fn hound_station() -> Station {
+    let mut s = station();
+    s.engine.random_hz = Box::new(|lo, hi| {
+        assert_eq!(
+            (lo, hi),
+            (1000, 2999),
+            "QRandomGenerator bounded(1000, 2999)"
+        );
+        1717
+    });
+    s.command(Command::SetContest {
+        activity: Activity::Hound,
+        exchange: None,
+    })
+    .unwrap();
+    s
+}
+fn select(s: &mut Station, row: Row) {
+    s.command(Command::SelectRow {
+        row,
+        replace: false,
+    })
+    .unwrap();
+}
+impl Station {
+    /// The Tx offset of the transmission that started in `period`.
+    fn hz_in(&self, period: i64) -> Option<u32> {
+        self.sent_hz
+            .iter()
+            .find(|(p, _)| *p == period)
+            .map(|(_, hz)| *hz)
+    }
+}
+
+// Proves: CL-024-04; TC-024-011 (a), (f). The Hound transmits in the second period, calls
+// at a random 1000..2998 Hz offset when its offset is below 999 Hz, answers the Fox's
+// report with Tx3 on the Fox's frequency, repeats it on Fox-300 Hz and logs on RR73.
+#[test]
+fn a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency() {
+    let mut s = station();
+    s.engine.random_hz = Box::new(|lo, hi| {
+        assert_eq!((lo, hi), (1000, 2999));
+        1717
+    });
+    let mut t = hound_table();
+    s.command(Command::SetParity(Parity::Even)).unwrap();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(800),
+    })
+    .unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::Hound,
+        exchange: None,
+    })
+    .unwrap();
+    assert_eq!(
+        (
+            s.engine.settings.parity,
+            s.engine.settings.hold_tx,
+            s.engine.settings.activity.special_operation()
+        ),
+        (Parity::Odd, true, 7),
+        "Tx even/1st off, Hold Tx on, UDP special operation 7"
+    );
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.4, -9.0);
+    select(&mut s, cq);
+    assert_eq!(
+        s.engine.settings.tx_hz, 800,
+        "a Hound selection keeps the Tx offset"
+    );
+    assert_eq!(s.engine.settings.rx_hz, 812);
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    assert_eq!(s.next_text(), "KH7Z HB9BLA JN47");
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(1) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("KH7Z HB9BLA JN47"));
+    assert_eq!(s.hz_in(period(1)), Some(1717), "random calling offset");
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.4, -7.2);
+    s.deliver(&[report]);
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.report_rcvd, Some(-12));
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    assert_eq!(
+        s.next_text(),
+        "KH7Z HB9BLA R-07",
+        "Tx3 carries the Fox's SNR"
+    );
+    assert_eq!(s.engine.settings.tx_hz, 812, "Tx3 on the Fox's frequency");
+    assert_eq!(s.engine.hound.fox_hz, Some(812));
+    s.run(period(5) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("KH7Z HB9BLA R-07"));
+    assert_eq!(s.hz_in(period(3)), Some(812));
+    assert_eq!(s.sent_in(period(4)), None, "never in the Fox's period");
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("KH7Z HB9BLA R-07"));
+    assert_eq!(s.hz_in(period(5)), Some(512), "a repeat goes to Fox-300 Hz");
+    s.run(period(6) + 13_500);
+    let rr73 = fox_says(&mut s, &mut t, period(6), "HB9BLA KH7Z RR73", 812.4, -6.0);
+    s.deliver(&[rr73]);
+    assert!(!s.armed());
+    assert_eq!(
+        s.core.view().last_disarm_cause,
+        DisarmCause::ContactCompleted
+    );
+    assert_eq!(s.state().0, State::Completed);
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
+    assert_eq!(
+        (
+            fields.call.as_str(),
+            fields.rst_sent.as_deref(),
+            fields.rst_rcvd.as_deref()
+        ),
+        ("KH7Z", Some("-07"), Some("-12"))
+    );
+    // (f) Calling the next Fox with a Tx offset of 1500 Hz keeps it.
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(1500),
+    })
+    .unwrap();
+    let cq = fox_says(&mut s, &mut t, period(8), "CQ KH7Z BL01", 812.4, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(9) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(9)).as_deref(), Some("KH7Z HB9BLA JN47"));
+    assert_eq!(s.hz_in(period(9)), Some(1500));
+    assert!(
+        s.sent
+            .iter()
+            .all(|(p, _)| wstx_rust::transmit::parity(Mode::Ft8, *p) == Parity::Odd),
+        "every transmission in the second period: {:?}",
+        s.sent
+    );
+}
+
+// Proves: CL-024-04; TC-024-011 (b). The Fox's report inside a 0.1 multi-message is answered
+// on its frequency, the repeat goes to Fox+300 Hz (Fox at or below 600 Hz), a repeated Fox
+// report returns to the Fox's frequency, and the 0.1 RR73 to my call completes and logs.
+#[test]
+fn a_hound_answers_a_0_1_report_moves_300_hz_on_a_repeat_and_logs_the_0_1_rr73() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 450.3, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    assert_eq!(s.hz_in(period(1)), Some(1500), "1500 Hz is kept");
+    let multi = record_of_bits(
+        &mut s,
+        &mut t,
+        period(2),
+        &dxpedition_bits("W9XYZ", "HB9BLA", FOX, -12),
+        450.3,
+        -5.0,
+    );
+    assert_eq!(multi.text, "W9XYZ RR73; HB9BLA <KH7Z> -12");
+    assert!(multi.standard.is_none());
+    s.deliver(&[multi]);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    assert_eq!(s.next_text(), "KH7Z HB9BLA R-05");
+    assert_eq!(s.engine.contact.as_ref().unwrap().report_rcvd, Some(-12));
+    s.run(period(6) + 13_500);
+    assert_eq!(s.hz_in(period(3)), Some(450));
+    assert_eq!(s.hz_in(period(5)), Some(750), "Fox+300 Hz");
+    let again = fox_says(&mut s, &mut t, period(6), "HB9BLA KH7Z -10", 450.3, -4.0);
+    s.deliver(&[again]);
+    assert_eq!(s.next_text(), "KH7Z HB9BLA R-04");
+    s.run(period(10) + 13_500);
+    assert_eq!(
+        s.hz_in(period(7)),
+        Some(450),
+        "a repeated report: the Fox's frequency"
+    );
+    assert_eq!(s.hz_in(period(9)), Some(750));
+    assert_eq!(s.sent_in(period(9)).as_deref(), Some("KH7Z HB9BLA R-04"));
+    let done = record_of_bits(
+        &mut s,
+        &mut t,
+        period(10),
+        &dxpedition_bits("HB9BLA", "K1ABC", FOX, -8),
+        450.3,
+        -5.0,
+    );
+    assert_eq!(done.text, "HB9BLA RR73; K1ABC <KH7Z> -08");
+    s.deliver(&[done]);
+    assert!(!s.armed());
+    assert_eq!(s.state().0, State::Completed);
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
+    assert_eq!(
+        (fields.call.as_str(), fields.rst_rcvd.as_deref()),
+        ("KH7Z", Some("-10"))
+    );
+}
+
+// Proves: CL-024-04; TC-024-011 (c). A Hound selects only Fox rows of :00/:30 that are not
+// another Hound's R+report, transmits only Tx1/Tx3 in the second period, never calls CQ and
+// exists only in FT8.
+#[test]
+fn a_hound_refuses_wrong_period_rows_other_hounds_other_slots_and_ft4() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    assert_eq!(
+        s.command(Command::EnableTx(true, Some(7))),
+        Err("no_contact"),
+        "a Hound never calls CQ"
+    );
+    let late = fox_says(&mut s, &mut t, period(1), "CQ KH7Z BL01", 812.0, -9.0);
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: late,
+            replace: false
+        }),
+        Err("state_conflict"),
+        "a row decoded at :15"
+    );
+    let hound = fox_says(&mut s, &mut t, P0, "KH7Z W9XYZ R-05", 1900.0, -9.0);
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: hound,
+            replace: false
+        }),
+        Err("state_conflict"),
+        "another Hound's Tx3"
+    );
+    let multi = record_of_bits(
+        &mut s,
+        &mut t,
+        P0,
+        &dxpedition_bits("W9XYZ", "K1ABC", FOX, -12),
+        812.0,
+        -9.0,
+    );
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: multi,
+            replace: false
+        }),
+        Err("row_not_standard")
+    );
+    assert!(s.engine.contact.is_none(), "nothing prepared");
+    let cq = fox_says(&mut s, &mut t, period(2), "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    assert_eq!(
+        s.command(Command::SetParity(Parity::Even)),
+        Err("state_conflict")
+    );
+    for slot in [Slot::Tx2, Slot::Tx4, Slot::Tx5, Slot::Tx6] {
+        assert_eq!(
+            s.command(Command::ChooseNext(slot)),
+            Err("state_conflict"),
+            "{slot:?}"
+        );
+    }
+    s.command(Command::SetTx1Skip(true)).unwrap();
+    s.command(Command::ChooseNext(Slot::Tx3)).unwrap();
+    s.command(Command::ChooseNext(Slot::Tx1)).unwrap();
+    assert_eq!(
+        s.state(),
+        (State::Replying, Slot::Tx1),
+        "Tx1 is never skipped"
+    );
+    // FT4: the station mode change ends the Hound activity; hound is FT8 only.
+    s.mode = Mode::Ft4;
+    s.step(&[]);
+    assert_eq!(s.engine.settings.activity, Activity::None);
+    assert_eq!(
+        s.command(Command::SetContest {
+            activity: Activity::Hound,
+            exchange: None
+        }),
+        Err("state_conflict")
+    );
+}
+
+// Proves: CL-024-04; TC-024-011 (d). Not the Fox's report or RR73: an RR73 from another
+// station, a 0.1 RR73 with another hashed call; during Tune only the Fox frequency is noted.
+#[test]
+fn a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 5 * SECOND);
+    let other = fox_says(&mut s, &mut t, period(2), "HB9BLA K1ABC RR73", 812.0, -9.0);
+    let foreign = record_of_bits(
+        &mut s,
+        &mut t,
+        period(2),
+        &dxpedition_bits("HB9BLA", "W9XYZ", "VP8PJ", -8),
+        900.0,
+        -9.0,
+    );
+    let foreign_report = record_of_bits(
+        &mut s,
+        &mut t,
+        period(2),
+        &dxpedition_bits("W9XYZ", "HB9BLA", "VP8PJ", -8),
+        900.0,
+        -9.0,
+    );
+    s.deliver(&[other, foreign, foreign_report]);
+    assert!(s.armed());
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    assert_eq!(s.engine.hound.fox_hz, None);
+    // Tune needs the transmit owner armed without a request: arm it directly and tune.
+    s.command(Command::EnableTx(false, None)).unwrap();
+    s.core.arm(7).unwrap();
+    s.core.set_tune(true, 1500).unwrap();
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    s.deliver(&[report]);
+    assert_eq!(
+        s.engine.hound.fox_hz,
+        Some(812),
+        "the Fox frequency is noted"
+    );
+    assert_eq!(
+        s.state(),
+        (State::Replying, Slot::Tx1),
+        "no reply while Tune"
+    );
+    assert_eq!(s.engine.settings.tx_hz, 1500);
+    s.core.set_tune(false, 1500).unwrap();
+}
+
+// Proves: CL-024-04; TC-024-011 (e). The reply timeout (11 T/R) and the Hound watchdog (300 s
+// of Tx1) turn Enable Tx off; the station's Tx watchdog returns a Hound to Tx1.
+#[test]
+fn hound_reply_timeout_hound_watchdog_and_tx_watchdog() {
+    // Reply timeout: 165 s after the Fox's report.
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    let t0 = s.now();
+    s.deliver(&[report]);
+    s.run(t0 + 165 * SECOND - 100);
+    assert!(s.armed(), "not before 11 T/R");
+    s.run(t0 + 165 * SECOND + 100);
+    assert!(!s.armed());
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    assert_eq!(
+        s.state(),
+        (State::RogerReport, Slot::Tx3),
+        "the slot stays Tx3"
+    );
+
+    // The operator turning Enable Tx off and on again ends the reply timeout (MW
+    // on_autoButton_clicked stopWRTimer.stop(); review S4b finding 1).
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    let t0 = s.now();
+    s.deliver(&[report]);
+    s.run(t0 + 20 * SECOND);
+    s.command(Command::EnableTx(false, None)).unwrap();
+    s.run(t0 + 150 * SECOND);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(t0 + 165 * SECOND + 100);
+    assert!(s.armed(), "a re-arm ends the reply timeout");
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+
+    // Hound watchdog: 300 s of Tx1 since the operator turned Enable Tx on.
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    let on = s.now();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(on + 300 * SECOND - 100);
+    assert!(s.armed());
+    s.run(on + 300 * SECOND + 100);
+    assert!(!s.armed());
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    assert!(
+        !s.core.view().tx_expired,
+        "the Hound watchdog, not the Tx watchdog"
+    );
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+
+    // The station's Tx watchdog (1 min) while Tx3 repeats: back to Tx1.
+    let mut s = hound_station();
+    let mut t = hound_table();
+    s.command(Command::SetWatchdogs {
+        tx_minutes: 1,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    s.deliver(&[report]);
+    s.run(period(3) + 100 * SECOND);
+    assert!(!s.armed());
+    assert!(s.core.view().tx_expired);
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+}
+
+// ---------------------------------------------------------------- TC-024-014
+/// The 12 kHz samples of the Hound's own waveforms that started in `period` (decimated
+/// from the 48 kHz the transmit owner played), at their offset from the period start.
+fn hound_audio(s: &Station, period: i64, into: &mut [f32]) {
+    for (at, samples, skip) in s.fake.0.audio.lock().unwrap().iter() {
+        if *at < period || *at >= period + 15 * SECOND {
+            continue;
+        }
+        let peak = samples.iter().fold(0f32, |m, x| m.max(x.abs())).max(1e-9);
+        let offset = usize::try_from((at - period) * 12).unwrap();
+        for (k, x) in samples[*skip..].iter().step_by(4).enumerate() {
+            if let Some(slot) = into.get_mut(offset + k) {
+                *slot += 0.1 * x / peak;
+            }
+        }
+    }
+}
+/// One 15 s FT8 period at 12 kHz: uniform noise plus Fox frames (77 bits, tone-0 Hz)
+/// starting 0.5 s after the period start, with the station's waveform generator.
+fn fox_audio(frames: &[([u8; 77], f64)], seed: u64) -> Vec<f32> {
+    use wstx_rust::decoder::{Channel, quadratures};
+    let channel = Channel::new();
+    let mut state = seed;
+    let mut audio: Vec<f32> = (0..180_000)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (((state >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.6) as f32
+        })
+        .collect();
+    for (bits, hz) in frames {
+        let tones = channel.tones(&channel.encode(bits, Mode::Ft8), Mode::Ft8);
+        let wave = quadratures(Mode::Ft8, &tones, *hz).unwrap();
+        for (k, w) in wave.iter().enumerate() {
+            if let Some(slot) = audio.get_mut(6000 + k) {
+                *slot += 0.1 * w[0];
+            }
+        }
+    }
+    audio
+}
+fn decode_period(audio: &[f32]) -> Vec<wstx_rust::decoder::Decode> {
+    wstx_rust::decoder::Decoder::new()
+        .decode(audio, Mode::Ft8, &|| false)
+        .unwrap()
+}
+/// The Hound's rows of one decoded period, through its hash table and row reader.
+fn hound_rows(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    audio: &[f32],
+) -> Vec<Row> {
+    decode_period(audio)
+        .into_iter()
+        .map(|d| {
+            let bits: [u8; 77] = std::array::from_fn(|i| d.payload.payload77.as_bytes()[i] - b'0');
+            record_of_bits(
+                s,
+                table,
+                period,
+                &bits,
+                d.frequency_hz,
+                d.snr_db.unwrap_or(-10.0),
+            )
+        })
+        .collect()
+}
+fn noise(seed: u64) -> Vec<f32> {
+    fox_audio(&[], seed)
+}
+
+// Proves: CL-024-04; TC-024-014. A Hound QSO with a scripted Fox over an audio loopback with
+// no RF: the Fox decodes the waveforms the transmit owner played and the Hound decodes the
+// Fox's synthesized frames with the station's decoder, hash table and row reader.
+#[test]
+fn a_hound_works_a_scripted_fox_over_an_audio_loopback() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(700),
+    })
+    .unwrap();
+    let packed = |text: &str| wstx_rust::transmit::pack(text).unwrap().bits;
+    let fox_heard = |audio: &[f32]| {
+        decode_period(audio)
+            .into_iter()
+            // The station renders R+report as "R -04" (decoder_signal canonical()).
+            .map(|d| {
+                let text = d.payload.text.unwrap_or_default();
+                (
+                    text.replace(" R -", " R-").replace(" R +", " R+"),
+                    d.frequency_hz,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // Period 0: the Fox calls CQ at 800 Hz; the operator selects it and enables Tx.
+    s.run(P0 + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        P0,
+        &fox_audio(&[(packed("CQ KH7Z BL01"), 800.0)], 1),
+    );
+    let cq = rows
+        .iter()
+        .find(|r| r.text == "CQ KH7Z BL01")
+        .cloned()
+        .unwrap_or_else(|| panic!("the Fox's CQ decodes: {rows:?}"));
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    // Period 1: the Fox decodes my Tx1 at the random calling offset.
+    s.run(period(2));
+    let mut audio = noise(2);
+    hound_audio(&s, period(1), &mut audio);
+    let heard = fox_heard(&audio);
+    assert!(
+        heard
+            .iter()
+            .any(|(text, hz)| text == "KH7Z HB9BLA JN47" && (hz - 1717.0).abs() <= 3.0),
+        "the Fox hears Tx1 at 1717 Hz: {heard:?}"
+    );
+    // Period 2: the Fox's 0.1 multi-message carries my report.
+    s.run(period(2) + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        period(2),
+        &fox_audio(&[(dxpedition_bits("W9XYZ", "HB9BLA", FOX, -12), 800.0)], 3),
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.text == "W9XYZ RR73; HB9BLA <KH7Z> -12"),
+        "the 0.1 report with the Fox filled in: {rows:?}"
+    );
+    s.deliver(&rows);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    let tx3 = s.next_text();
+    assert!(tx3.starts_with("KH7Z HB9BLA R-"), "{tx3}");
+    // Period 3: my Tx3 on the Fox's frequency; the Fox misses it (works K1ABC in period 4).
+    s.run(period(4));
+    let mut audio = noise(4);
+    hound_audio(&s, period(3), &mut audio);
+    let heard = fox_heard(&audio);
+    assert!(
+        heard
+            .iter()
+            .any(|(text, hz)| *text == tx3 && (hz - 800.0).abs() <= 3.0),
+        "Tx3 at 800 Hz: {heard:?}"
+    );
+    s.run(period(4) + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        period(4),
+        &fox_audio(&[(packed("K1ABC KH7Z -15"), 800.0)], 5),
+    );
+    s.deliver(&rows);
+    // Period 5: the repeat on Fox-300 Hz; the Fox answers with RR73 in a 0.1 message.
+    s.run(period(6));
+    let mut audio = noise(6);
+    hound_audio(&s, period(5), &mut audio);
+    let heard = fox_heard(&audio);
+    assert!(
+        heard
+            .iter()
+            .any(|(text, hz)| *text == tx3 && (hz - 500.0).abs() <= 3.0),
+        "the repeat at 500 Hz: {heard:?}"
+    );
+    s.run(period(6) + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        period(6),
+        &fox_audio(&[(dxpedition_bits("HB9BLA", "K1ABC", FOX, -8), 800.0)], 7),
+    );
+    s.deliver(&rows);
+    assert!(!s.armed());
+    assert_eq!(s.state().0, State::Completed);
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
+    assert_eq!(
+        (fields.call.as_str(), fields.rst_rcvd.as_deref()),
+        ("KH7Z", Some("-12"))
+    );
+    assert!(
+        s.fake
+            .0
+            .audio
+            .lock()
+            .unwrap()
+            .iter()
+            .all(
+                |(at, ..)| wstx_rust::transmit::parity(Mode::Ft8, (at / 15_000) * 15_000)
+                    == Parity::Odd
+            ),
+        "the Hound never transmitted in the Fox's period"
     );
 }

@@ -15,6 +15,18 @@ rules around it. Agent memory only points here.
   branch through the queue (the single exception the merge queue document names aside).
 - **Heavy runs wait for the gate.** Before a long build or test run outside the gate, a
   session runs `merge_queue.py busy --wait`, so that it does not compete with a gate.
+- **CR agents never push.** A CR agent never runs `git push`, not even of its own branch;
+  only the merge queue pushes CRs, and harness and pin bumps are pushed by the coordinator
+  or a dedicated harness agent from the main checkout or another clone (the agent guard
+  refuses any push from a `.git/harness-parallel/worktrees/cr*` or `issue-*` worktree).
+- **Hand in at once, do not duplicate the gate.** A CR agent ends its work with red on the
+  parent and the fast checks (build, clippy and fmt, the new and changed tests, the cheap
+  contract check `python tools/sysml.py traces`); the full suite selection runs once, in
+  the queue's gate. A reviewed CR, and each reviewed slice of a multi-slice CR, is handed
+  in to the queue at once; the next slice starts from master, never stacked on a
+  long-lived branch. Master is merged into a CR only on a `bounced:conflict`, resolving
+  only the listed files, and that merge is re-reviewed on its resolution only
+  (`harness/core/tools/resolution_diff.py <merge>`).
 - **Per approved issue.** A session changes the main branch or the running installation
   only for an issue the operator has approved for it, each issue on its own; the approval
   is recorded on that issue. Without it the session writes the change text (outcome,
