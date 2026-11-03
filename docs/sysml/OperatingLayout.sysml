@@ -635,12 +635,12 @@ attribute def ActivityOrdering {
              are standard messages to my call from another station than the partner (the
              partner of the last QSO stays excluded after it ended, until another contact
              runs): while a QSO runs, those within +/-50 Hz of my Rx or Tx offset
-             (QsoPaneCrowding), each "HH:MM:SS ⚠ <message>  <SNR>" ("22:48:15 ⚠ HB9BLA ◂ DL1ABC
-             JO31  −8 dB"); double-click (or Enter) switches the contact to that station and
+             (QsoPaneCrowding), each a ⚠ row of the QSO table (item 7, #60) ("22:48:15 ⚠ |
+             HB9BLA ◂ DL1ABC | JO31 | −8 |"); double-click (or Enter) switches the contact to that station and
              replies (SelectDecodedRow with replace, then SetEnableTx on; ChangeContact keeps
              Enable Tx on). When no QSO runs (idle, finished, or an own CQ), every station
              calling my call on any frequency, as soon as its row is decoded, each
-             "HH:MM:SS  <message>  <SNR>" ("22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB");
+             a row of the QSO table ("22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |");
              double-click (or Enter) answers (select, then
              SetEnableTx on). Stations that do not call me are not listed (Band Activity
              shows them). When no row qualifies, one muted line says so instead of an empty
@@ -670,32 +670,34 @@ attribute def ActivityOrdering {
              7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
              area below the controls, in the free height of the card (item 8), holds the
              ContactSnapshot
-             dialogue of the running QSO only: one line per entry, oldest first and newest
-             at the bottom, "HH:MM:SS  <message>  <SNR>" for a message received from the
-             partner and "HH:MM:SS  <message>" for one we transmitted (HH:MM:SS the UTC period
-             start; "22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB", "22:51:30  HB9BLA ▸ CT1BFP +08"),
-             "×N" for N > 1 repeats, no frequency and no other station, then the
-             Others (item 3); the area scrolls inside the card, kept at its newest line, and
-             never grows the page (TC-007-009);
-             it is gone with the QSO (completed, logged or cancelled), as the rest of the
+             dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
+             the earlier line and arrow formats) with the header row "UTC | Direction |
+             Exchange | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
+             bottom, "×N" after the exchange for N > 1 repeats, no frequency and no other
+             station; below a thin separator the Others (item 3) as rows of the same table
+             and columns, a ⚠ after the time while a QSO runs. The area scrolls inside the
+             card, kept at its newest row, with the header row staying visible, and never
+             grows the page (TC-007-009); at 360 CSS px the table fits the pane width and the
+             titles may be abbreviated (UTC, Dir, Exch, Rx, Tx).
+             It is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.
-             <message> in the QSO area (items 3 and 7; #60, operator 2026-11-03), in fixed
-             columns: my call always left, the partner (or the other caller) always right,
-             then the exchange, with an arrow between the two calls pointing to the
-             receiver: "<my call> ◂ <other call> <exchange>" for a message the other station
-             sent to me ("HB9BLA ◂ CT1BFP IM59": CT1BFP sends to HB9BLA; every Others line)
-             and "<my call> ▸ <other call> <exchange>" for one I sent ("HB9BLA ▸ CT1BFP +08",
-             the on-air "CT1BFP HB9BLA +08"), in the line's own colour; there is no ◂/▸
-             direction mark after the time, the arrow between the calls shows the direction.
-             The arrow is there only when both calls are known: for a decoded row (Others)
-             the decoded fields to is my call and from has a call text (a hashed call
-             counting when its call is known, shown as decoded, "<PJ4/K1ABC>"); for a
-             dialogue entry the first two words of the text are, for a received message, my
-             call and the partner's call, for a sent one the partner's call and my call (a
-             hashed form "<CALL>" counting as CALL). A CQ (mine or another station's), a
-             message with an unknown hashed call ("<...>") or free text is shown as sent
-             without an arrow ("22:51:00  CQ HB9BLA JN37"). Messages between two other
-             stations are not QSO pane lines.
+             Columns: UTC is HH:MM:SS, the UTC period start, with no ◂/▸ direction mark.
+             Direction is the two calls in the Band Activity (on-air) order, the recipient
+             first and the sender second, with "◂" between them pointing to the recipient
+             ("HB9BLA ◂ CT1BFP": CT1BFP sends to HB9BLA; "CT1BFP ◂ HB9BLA": I send to
+             CT1BFP), a hashed call as decoded ("<PJ4/K1ABC>", "<...>"); a CQ is "CQ <call>"
+             or "CQ DX <call>" (the words before the grid) without an arrow, its grid in
+             Exchange. Exchange is the message after the two calls ("IM59", "+08", "R-02",
+             "RR73", "73"); a message that does not start with two calls or a CQ (free text)
+             is all Exchange with an empty Direction. Rx SNR is our measured SNR of a
+             received message, signed ("+8", "−12", "0"), on received rows only (dialogue rx
+             entries and Others), empty on sent rows. Tx SNR is the partner's report on us,
+             only on the received row that carries it: an Exchange "R-02" gives "−2", a plain
+             report "-05" gives "−5"; empty otherwise. Example (operator, #60):
+             "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |", "22:51:30 | CT1BFP ◂ HB9BLA | +08 | |",
+             "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | +7 | −2", "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | |",
+             "22:52:15 | HB9BLA ◂ CT1BFP | 73 | +9 |". Sent rows keep their own colour.
+             Messages between two other stations are not QSO pane lines.
              There is no LAST row, no crowding badge and no status line
              for a finished contact. A status line under the header is shown only for an
              exception: a refused transmission, a halt pending, an unknown contact state.

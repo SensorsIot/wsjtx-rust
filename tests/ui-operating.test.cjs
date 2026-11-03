@@ -423,7 +423,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     await contactCommands(p,commands);
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot(),null,{timeout:25000});
-  const others=()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
+  const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
   const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
   // Removed: the old dialogue history pane, LAST row and crowding badge.
@@ -431,15 +431,15 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
 
   // Idle: every station calling my call, on any frequency, oldest first, with its period
   // start and SNR (no DT or Hz); no CQ, even near Rx.
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===5);
-  assert.deepEqual(await others(),[['candidate','12:00:15  HB9BLA ◂ DL1ABC JO31  −8 dB'],['candidate','12:00:15  HB9BLA ◂ IW9FRA RR73  +17 dB'],['candidate','12:00:15  HB9BLA ◂ SV1DZB KM18  −8 dB'],
-    ['candidate','12:00:15  HB9BLA ◂ EA8BIA IL18  0 dB'],['candidate','12:00:15  HB9BLA ◂ F1PBZ JN18  −10 dB']]);
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===5);
+  assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','−8','']],['candidate',['12:00:15','HB9BLA ◂ IW9FRA','RR73','+17','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','−8','']],
+    ['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','−10','']]]);
   assert.equal(await shown(page,'#qso-others-none'),false,'no "nobody calling" with callers');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'no Log QSO without a running QSO');
   // Double-click answers: select (no replace), then enable_tx.
-  let m=commands.length;await page.locator('#qso-others li').nth(1).dblclick();await waitCommands(m+2);
+  let m=commands.length;await page.locator('#qso-others tr').nth(1).dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',4,false],['enable_tx',true,undefined]]);
 
   // Items 1-4 and 10, a running QSO with Enable Tx on: header, the last partner message with
@@ -452,7 +452,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     entry(6,'rx','HB9BLA IW9FRA RR73',17),entry(7,'tx','IW9FRA HB9BLA 73'),entry(8,'rx','HB9BLA IW9FRA RR73',15),entry(9,'tx','IW9FRA HB9BLA 73'),entry(10,'rx','HB9BLA IW9FRA RR73',17,3)];
   const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3},dialogue});
   settings={tx_hz:2100};await show(running,{arm_state:'armed'});
-  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others li').length===2);
+  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others tr')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others tr').length===2);
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
@@ -461,9 +461,9 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
-  assert.deepEqual(await others(),[['warn','12:00:15 ⚠ HB9BLA ◂ SV1DZB KM18  −8 dB'],['warn','12:00:15 ⚠ HB9BLA ◂ EA8BIA IL18  0 dB']],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
-  const lines=await page.locator('#qso-dialogue li').allTextContents();
-  assert.deepEqual([lines.length,lines[0],lines[1],lines.at(-1)],[10,'11:58:15  HB9BLA ▸ IW9FRA JN47 ×2','11:58:30  HB9BLA ◂ IW9FRA -05  −5 dB','12:00:30  HB9BLA ◂ IW9FRA RR73  +17 dB ×3']);
+  assert.deepEqual(await others(),[['warn',['12:00:15 ⚠','HB9BLA ◂ SV1DZB','KM18','−8','']],['warn',['12:00:15 ⚠','HB9BLA ◂ EA8BIA','IL18','0','']]],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
+  const lines=await page.locator('#qso-dialogue tr').evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
+  assert.deepEqual([lines.length,lines[0],lines[1],lines.at(-1)],[10,['11:58:15','IW9FRA ◂ HB9BLA','JN47 ×2','',''],['11:58:30','HB9BLA ◂ IW9FRA','-05','−5','−5'],['12:00:30','HB9BLA ◂ IW9FRA','RR73 ×3','+17','']]);
   // The QSO area scrolls inside the card, kept at its newest line, and grows nothing.
   const area=await page.locator('#qso-area').evaluate(a=>({scrolls:a.scrollHeight>a.clientHeight,bottom:Math.abs(a.scrollTop+a.clientHeight-a.scrollHeight)<=2,overflow:getComputedStyle(a).overflowY}));
   assert.equal(area.overflow,'auto');assert.equal(area.bottom,true,`kept at the newest line ${JSON.stringify(area)}`);
@@ -476,7 +476,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
   assert.deepEqual(metrics,{x:false,y:false});
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
-  for(const selector of ['#qso-heard','#qso-others li:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
+  for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
   // Content height: the header plus the lines, buttons and fold-out of the pane body.
   const heights=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect(),body=document.querySelector('#rx-focus .op-contact-body'),cs=getComputedStyle(body);
@@ -493,13 +493,13 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   // empty band lies under the pane.
   assert.ok(Math.abs(heights.pane.bottom-heights.activity.bottom)<=1&&Math.abs(heights.pane.top-heights.activity.top)<=1,`pane ${heights.pane.top}-${heights.pane.bottom}, Band Activity ${heights.activity.top}-${heights.activity.bottom}`);
   // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
-  m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
+  m=commands.length;await page.locator('#qso-others tr').first().dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',5,true],['enable_tx',true,undefined]]);
   // Nobody else near my frequencies: one muted line says so.
   settings={rx_hz:2800,tx_hz:2800};await show(running,{arm_state:'armed'});
   await page.locator('#qso-others-none').filter({hasText:'nobody else calling'}).waitFor();
   assert.deepEqual(await others(),[]);
-  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===2);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
   // Auto Seq off (#11) stays visible in the compact pane.
@@ -525,7 +525,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
-  assert.deepEqual(await others(),[['candidate','12:00:15  HB9BLA ◂ DL1ABC JO31  −8 dB'],['candidate','12:00:15  HB9BLA ◂ SV1DZB KM18  −8 dB'],['candidate','12:00:15  HB9BLA ◂ EA8BIA IL18  0 dB'],['candidate','12:00:15  HB9BLA ◂ F1PBZ JN18  −10 dB']],'the finished partner is not a candidate');
+  assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','−8','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','−8','']],['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','−10','']]],'the finished partner is not a candidate');
   assert.equal(await shown(page,'#qso-dialogue'),false,'the dialogue goes with the QSO');
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
   m=commands.length;await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('Alt+q');await page.waitForTimeout(400);
@@ -542,17 +542,18 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-060-01; TC-060-001 (#60, operator 2026-11-03): every QSO dialogue and Others line
-// reads "HH:MM:SS  <my call> ◂|▸ <other call> <exchange>", my call left, the arrow pointing
-// to the receiver, with no ◂/▸ after the time; a CQ or an unknown hashed call gets no arrow.
-test('TC-060-001 the QSO pane shows my call left and an arrow to the receiver between the calls',{timeout:60000},async t=>{
+// Proves: CL-060-01; TC-060-001 (#60, operator 2026-11-03): the QSO dialogue and the Others
+// are one table, UTC | Direction | Exchange | Rx SNR | Tx SNR; Direction is the two calls as on
+// the air, recipient first, with "◂" pointing to the recipient; a CQ is "CQ <call>" with its
+// grid; free text is all Exchange; Rx SNR (ours) and Tx SNR (the partner's report on us) only on received lines.
+test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the recipient, Exchange, Rx SNR and Tx SNR',{timeout:60000},async t=>{
   let state,contact=null;const period='2026-10-27T12:00:15.0000000Z';
   const call=text=>({kind:text===null?'hash':'call',text,hash_bits:text===null?22:null,hash_value:text===null?12345:null});
   const record=(sequence,text,from,hz,snr)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,
     fields:{type:'standard',to:call('HB9BLA'),from,ack:false,exchange:{kind:'grid',value:'JO31'}},period_start_utc:period});
   // Callers of my call: known calls, an unknown hashed call and a known hashed call.
   const records=[record(0,'HB9BLA DL1ABC JO31',call('DL1ABC'),400,-8),record(1,'HB9BLA <...> RR73',call(null),700,-12),
-    record(2,'HB9BLA <PJ4/K1ABC> 73',{kind:'hash',text:'PJ4/K1ABC',hash_bits:22,hash_value:777},900,-5),record(3,'HB9BLA EA8BIA IL18',call('EA8BIA'),1520,0)];
+    record(2,'HB9BLA <PJ4/K1ABC> -05',{kind:'hash',text:'PJ4/K1ABC',hash_bits:22,hash_value:777},900,-5),record(3,'HB9BLA EA8BIA IL18',call('EA8BIA'),1520,0)];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
@@ -563,30 +564,39 @@ test('TC-060-001 the QSO pane shows my call left and an arrow to the receiver be
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit:{arm_state:'armed'}})}));
     await contactCommands(p,[]);
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
-  const texts=selector=>page.locator(selector).allTextContents();
-  // Idle: every caller; the arrow only where both calls are known.
-  assert.deepEqual(await texts('#qso-others li'),['12:00:15  HB9BLA ◂ DL1ABC JO31  −8 dB','12:00:15  HB9BLA <...> RR73  −12 dB',
-    '12:00:15  HB9BLA ◂ <PJ4/K1ABC> 73  −5 dB','12:00:15  HB9BLA ◂ EA8BIA IL18  0 dB']);
-  // A running QSO with CT1BFP: a sent CQ, a received grid, a sent report, a received RR73
-  // with my call hashed and unknown.
-  const p0=Date.parse('2026-11-03T22:51:00Z'),entry=(i,dir,text,snr=null)=>({dir,text,snr,period_utc_ms:p0+i*15000,count:1});
-  const dialogue=[entry(0,'tx','CQ HB9BLA JN37'),entry(1,'rx','HB9BLA CT1BFP IM59',8),entry(2,'tx','CT1BFP HB9BLA +08'),entry(3,'rx','<...> CT1BFP RR73',-3)];
-  contact=partner('report',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:null,messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
-    suggested_slot:null,last_rcvd:{text:'<...> CT1BFP RR73',snr:-3,period_utc_ms:p0+45000,count:1},dialogue});
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  const cells=selector=>page.locator(selector).evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
+  assert.deepEqual((await cells('#qso-table thead tr'))[0],['UTC','Direction','Exchange','Rx SNR','Tx SNR']);
+  // Idle: every caller, a hashed call as decoded; a report is the Tx SNR.
+  assert.deepEqual(await cells('#qso-others tr'),[['12:00:15','HB9BLA ◂ DL1ABC','JO31','−8',''],['12:00:15','HB9BLA ◂ <...>','RR73','−12',''],
+    ['12:00:15','HB9BLA ◂ <PJ4/K1ABC>','-05','−5','−5'],['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']]);
+  assert.equal(await shown(page,'#qso-dialogue'),false,'no dialogue rows idle');
+  // A running QSO with CT1BFP (the operator's #60 example), with my CQ before it, a repeated
+  // 73 with my call hashed and unknown, and a free-text message.
+  const p0=Date.parse('2026-11-03T22:51:00Z'),entry=(i,dir,text,snr=null,count=1)=>({dir,text,snr,period_utc_ms:p0+i*15000,count});
+  const dialogue=[entry(0,'tx','CQ HB9BLA JN37'),entry(1,'rx','HB9BLA CT1BFP IM59',8),entry(2,'tx','CT1BFP HB9BLA +08'),entry(3,'rx','HB9BLA CT1BFP R-02',7),
+    entry(4,'tx','CT1BFP HB9BLA RR73'),entry(5,'rx','<...> CT1BFP 73',9,2),entry(6,'tx','TNX 73 GL')];
+  contact=partner('signoff',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:'-02',messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
+    suggested_slot:null,last_rcvd:{text:'<...> CT1BFP 73',snr:9,period_utc_ms:p0+75000,count:2},dialogue});
   await page.evaluate(()=>window.wstxContact.load());
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue li').length===4);
-  assert.deepEqual(await texts('#qso-dialogue li'),['22:51:00  CQ HB9BLA JN37','22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB','22:51:30  HB9BLA ▸ CT1BFP +08','22:51:45  <...> CT1BFP RR73  −3 dB']);
-  // During the QSO the caller near my Rx keeps its warning mark; the arrow stays between the calls.
-  await page.waitForFunction(()=>document.querySelector('#qso-others li')?.dataset.kind==='warn');
-  assert.deepEqual(await texts('#qso-others li'),['12:00:15 ⚠ HB9BLA ◂ EA8BIA IL18  0 dB']);
-  for(const line of [...await texts('#qso-dialogue li'),...await texts('#qso-others li')])assert.doesNotMatch(line,/^\S+ [◂▸]/,`no direction mark after the time: ${line}`);
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===7&&document.querySelector('#qso-others tr')?.dataset.kind==='warn');
+  assert.deepEqual(await cells('#qso-dialogue tr'),[['22:51:00','CQ HB9BLA','JN37','',''],['22:51:15','HB9BLA ◂ CT1BFP','IM59','+8',''],['22:51:30','CT1BFP ◂ HB9BLA','+08','',''],
+    ['22:51:45','HB9BLA ◂ CT1BFP','R-02','+7','−2'],['22:52:00','CT1BFP ◂ HB9BLA','RR73','',''],['22:52:15','<...> ◂ CT1BFP','73 ×2','+9',''],['22:52:30','','TNX 73 GL','','']]);
+  // During the QSO the caller near my Rx is a ⚠ row below a thin separator, same columns.
+  assert.deepEqual(await cells('#qso-others tr'),[['12:00:15 ⚠','HB9BLA ◂ EA8BIA','IL18','0','']]);
+  assert.equal(await page.locator('#qso-others tr td').first().evaluate(td=>getComputedStyle(td).borderTopWidth),'1px','separator above the callers');
   assert.deepEqual(await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight})),{x:false,y:false},'one fixed screen at 1366x768');
-  await page.screenshot({path:'test-results/ui-operating/qso-arrows-1366x768.png'});
+  // The header row stays visible while the area is kept at its newest row.
+  const headerShown=()=>page.evaluate(()=>{const a=document.querySelector('#qso-area').getBoundingClientRect(),h=document.querySelector('#qso-table th').getBoundingClientRect();return h.top>=a.top-1&&h.bottom<=a.bottom+1;});
+  assert.equal(await page.locator('#qso-area').evaluate(a=>a.scrollTop>0),true,'the area is scrolled to its newest row');
+  assert.equal(await headerShown(),true,'header row visible');
+  await page.screenshot({path:'test-results/ui-operating/qso-table-1366x768.png'});
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  const fit=await page.locator('#qso-table').evaluate(t=>({table:t.scrollWidth,pane:t.parentElement.clientWidth,cols:[...t.rows[0].cells].map(c=>Math.round(c.getBoundingClientRect().width))}));
+  assert.ok(fit.table<=fit.pane+1,`the table fits the pane at 360 px ${JSON.stringify(fit)}`);
   await page.locator('#qso-area').scrollIntoViewIfNeeded();
-  await page.screenshot({path:'test-results/ui-operating/qso-arrows-360x800.png'});
+  await page.screenshot({path:'test-results/ui-operating/qso-table-360x800.png'});
   assert.deepEqual(errors,[]);
 });
 
@@ -1098,7 +1108,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // QSO pane (#37, operator 2026-11-02): a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
   // nobody calls me yet.
   await page.locator('#qso-others-none').filter({hasText:'nobody calling'}).waitFor();
-  assert.deepEqual(await page.locator('#qso-others li').allTextContents(),[]);
+  assert.deepEqual(await page.locator('#qso-others tr').allTextContents(),[]);
   // A new period keeps the previous one below a divider, newest first.
   records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
   Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:2,first_sequence:2,next_sequence:3,period_start_utc:period[1],complete:true}});
