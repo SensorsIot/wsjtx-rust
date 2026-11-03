@@ -592,6 +592,7 @@ attribute def ActivityOrdering {
         attribute hasPartnerHeader : Boolean = true;
         attribute hasLastPartnerMessage : Boolean = true;
         attribute maximumOtherLines : Integer = 8;
+        attribute qsoAreaRows : Integer = 6;
         attribute hasNextWithCountdown : Boolean = true;
         attribute hasDialogue : Boolean = true;
         attribute hasLastSentRow : Boolean = false;
@@ -607,13 +608,18 @@ attribute def ActivityOrdering {
         doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
              compact QSO pane (operator decisions 2026-11-02): it shows only the running QSO
              and nothing else, and its content takes about half the height the earlier pane
-             needed. Item 8 (operator-changeable default, coordinator choice 2026-11-02): at
-             most 75em wide, where the pane sits below Band Activity, the pane is content high
-             and Band Activity takes the freed height; side by side, where Band Activity
-             already fills the column height, the pane card fills its column with the free
-             height at its bottom, so there is no empty band under it; the waterfall/workspace
-             split is unchanged; the QSO area (dialogue and Others, items 7 and 3) scrolls
-             inside the card.
+             needed. Item 8 (operator 2026-11-03 on #37, "The QSO part is way too long. It
+             should be much smaller. Then we can add a lot of different things below it.",
+             replacing the earlier option C where the card filled its column): the pane is
+             content high at the top of its column, side by side as when it sits below Band
+             Activity (at most 75em wide, where Band Activity takes the freed height); side
+             by side the height below the pane stays free, empty for now, for future panels
+             the operator will choose; the waterfall/workspace split is unchanged. The QSO
+             area (the #60 table of the dialogue and the Others, items 7 and 3) shows its
+             header row and at most qsoAreaRows (6) rows and scrolls inside, kept at its
+             newest row; where the workspace is lower than the pane's content (1366x768) the
+             area gives up height first, so the pane stays within the column and the screen
+             (TC-007-009), at most 300 px high at 1366x768.
              A running QSO is a contact with a DX call in replying..signoff
              (WstxContact::ContactState); a contact that is completed, logged or cancelled is
              gone from the pane, which then shows idle.
@@ -668,7 +674,7 @@ attribute def ActivityOrdering {
              6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
              be stored shows "Not logged <call> · <reason>" while that outcome holds.
              7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
-             area below the controls, in the free height of the card (item 8), holds the
+             area below the controls (bounded, item 8), holds the
              ContactSnapshot
              dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
              the earlier line and arrow formats) with the header row "UTC | Direction |
@@ -676,8 +682,9 @@ attribute def ActivityOrdering {
              bottom, "×N" after the exchange for N > 1 repeats, no frequency and no other
              station; below a thin separator the Others (item 3) as rows of the same table
              and columns, a ⚠ after the time while a QSO runs. The area scrolls inside the
-             card, kept at its newest row, with the header row staying visible, and never
-             grows the page (TC-007-009); at 360 CSS px the table fits the pane width and the
+             card, kept at its newest row, with the header row staying visible, at most the
+             header row and qsoAreaRows (6) rows high (item 8), and never grows the page
+             (TC-007-009); at 360 CSS px the table fits the pane width and the
              titles may be abbreviated (UTC, Dir, Exch, Rx, Tx).
              It is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.

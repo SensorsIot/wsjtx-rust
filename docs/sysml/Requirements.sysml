@@ -2107,18 +2107,21 @@ package WstxRequirements {
              without an interface is refused with targets[0].multicast_interface.
              Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
              header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", the QSO
-             dialogue (ten entries, oldest first, scrolling inside the card at its newest
-             line) and below it the Others "HH:MM:SS ⚠ <message>  <SNR>" oldest first (only
+             dialogue as the #60 table (ten entries, oldest first, scrolling inside the card at its newest
+             row) and below it the Others as ⚠ rows of the same table oldest first (only
              stations calling me within +/-50 Hz of Rx 1500 Hz or Tx 2100 Hz, not the partner,
              not a station near neither, no DT/frequency; "nobody else calling" when none),
              NEXT "▸ next:
              <message>" while armed, and the buttons, all inside the pane (not clipped), the
              pane content without the QSO area at most 250 px high (the earlier pane needed about 380 px for the
-             same contact), and side by side the pane card ends level with Band Activity (no
-             empty band under it, item 8); there is no LAST row or
+             same contact); item 8 (#60, operator 2026-11-03): the pane height equals its content
+             height (within 3 px), at most 300 px at 1366x768, at the top of its column, the QSO
+             area at most its header row and 6 rows; at 1920x1080 the area is the header row and
+             6 rows, the pane at most 340 px and at least 100 px of free height lie below it
+             down to Band Activity's bottom; there is no LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
-             then enable_tx. Idle, every station calling me is a plain line "HH:MM:SS ◂ <message>
-             <SNR>" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
+             then enable_tx. Idle, every station calling me is a table row "HH:MM:SS | <my call> ◂ <caller> | <exchange> |
+             <SNR> |" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
              completed (Log QSO or completion) the pane shows "✓ Logged <call>", no NEXT and
              no partner lines, and after loggedNoticeSeconds only the idle pane; a cancelled
              contact is gone at once. At 360x800 nothing overflows horizontally.
@@ -4292,7 +4295,7 @@ package WstxRequirements {
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
     // #60 QSO pane dialogue as a table (operator 2026-11-03, final spec).
     requirement 'CL-060-01' {
-        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rx SNR | Tx SNR", and the stations calling me (Others, ⚠ after the time while a QSO runs) as rows of the same table and columns below a thin separator. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rx SNR is our measured SNR, signed, on received rows only. Tx SNR is the partner's report on us, only on the received row that carries it ("R-02" gives "−2", a plain report "-05" gives "−5"). The pane does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated there. Details: WstxOperatingLayout::QsoPane items 3 and 7. */
+        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rx SNR | Tx SNR", and the stations calling me (Others, ⚠ after the time while a QSO runs) as rows of the same table and columns below a thin separator. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rx SNR is our measured SNR, signed, on received rows only. Tx SNR is the partner's report on us, only on the received row that carries it ("R-02" gives "−2", a plain report "-05" gives "−5"). The pane is content high at the top of its column, its table area at most the header row and 6 rows, scrolling inside at its newest row, so the height below the pane stays free (#37 item 8, operator 2026-11-03: "The QSO part is way too long"); it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated there. Details: WstxOperatingLayout::QsoPane items 3 and 7. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js";
     }
