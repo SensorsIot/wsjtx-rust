@@ -537,21 +537,27 @@ attribute def ActivityOrdering {
     enum def BandActivitySlot {
         enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;
         enum new_itu_zone; enum new_itu_zone_band; enum new_dxcc; enum new_dxcc_band; enum new_grid;
-        enum new_grid_band; enum new_call; enum new_call_band; enum lotw; enum cq;
+        enum new_grid_band; enum new_call; enum new_call_band; enum lotw;
     }
     attribute def BandActivityColours {
-        attribute slots : Integer = 15;
+        attribute slots : Integer = 14;
         doc /* CL-050-02 (#50). The WSJT-X 3.3 DecodeHighlightingModel slots in its priority order
-             (BandActivitySlot order, highest first) with its default on/off and colours (row
+             (BandActivitySlot order, highest first) with its colours and default on/off except as
+             stated below (row
              background; dark theme as the same colour at 0.2-0.35 alpha; the Day and Night themes
              transform the whole page): mycall #ff6666 on; new_continent #ff0063 on;
              new_continent_band #ff99c2 on; new_cq_zone #ffbf00 on; new_cq_zone_band #ffe499 on;
              new_itu_zone #a6ff00 off; new_itu_zone_band #ddff99 off; new_dxcc #ff00ff on;
              new_dxcc_band #ffaaff on; new_grid #ff8000 off; new_grid_band #ffcc99 off; new_call
-             #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 off (#55; WSJT-X default on). A row takes
-             the highest-priority enabled slot it matches. Matches: mycall, a decoded message to the
-             profile callsign, also as a filled-in hash <MYCALL> or the 'to' call of a nonstandard
-             i3=4 message (WSJT-X matches "[ <]MYCALL[ >]", #24 S1b); cq, a decoded message starting CQ; new_call, the worked-before status
+             #00ffff on; new_call_band #99ffff on; lotw off (no source). Only stations of interest are
+             coloured (operator 2026-11-03, a deliberate difference from WSJT-X): there is no cq slot
+             (WSJT-X 'CQ in message' #66ff66), so a row that matches no slot, among them a CQ/QRZ line
+             from a sender worked before on this band and mode, has no background, and New call and
+             New call on band are on by default (WSJT-X: off). A row takes the highest-priority
+             enabled slot it matches. Matches: mycall, a decoded message to the profile callsign
+             (also from a sender worked before), also as a filled-in hash <MYCALL> or the 'to' call
+             of a nonstandard i3=4 message (WSJT-X matches "[ <]MYCALL[ >]", #24 S1b); new_call,
+             the worked-before status
              not_worked of the sending call; new_call_band, not_worked or worked_other_band_or_mode; every new_*
              slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
              zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
@@ -561,7 +567,7 @@ attribute def ActivityOrdering {
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
              standard message (CQ, replies to others, reports, R-reports, RR73, 73), and they match
              only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
-             adds slots). A row without a flag has no colour: the cq slot is off by default. A row
+             adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. Every row with a flag, my call, a strategy verdict or
              a worked-before status carries hover text (BandActivityHover). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an

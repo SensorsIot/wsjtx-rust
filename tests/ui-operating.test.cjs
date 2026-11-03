@@ -1721,17 +1721,20 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
- // #50: no text marks; the New call slots (off by default, WSJT-X) come from the #55 flags of every
- // sender (CL-055-04); worked before and CQ alone have no colour; rows in value order.
+ // #50: no text marks; the New call slots come from the #55 flags of every sender (CL-055-04) and are on
+ // by default. Only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X): no CQ slot, so
+ // the CQ of a station worked on this band and mode has no colour; rows in value order.
  const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
- const [cq,newCall,none]=['rgba(102, 255, 102, 0.24)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band cq',none],['K9XX W2AB R-05','not_worked','new_call new_call_band',none],['CQ K1ABC FN42','worked_this_band_and_mode','cq',none],['FREE TEXT',null,null,none]],'no flag, no colour (CQ off, #55); New slots on non-CQ senders too (CL-055-04)');
- await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await rowsNow()).map(r=>r[3]),[newCall,newCall,none,none],'an enabled New call colours CQ and non-CQ senders');
- assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,true,'the choice is per browser');
- // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC over CQ.
- const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['cq new_dxcc','cq new_dxcc new_continent','cq new_dxcc new_continent mycall','new_grid','cq new_itu_zone'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
- assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none],'WSJT-X priority; New grid, ITU zone and (#55) CQ are off by default');
+ const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
+ assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band',newCall],['K9XX W2AB R-05','not_worked','new_call new_call_band',newCall],['CQ K1ABC FN42','worked_this_band_and_mode',null,none],['FREE TEXT',null,null,none]],'no CQ colour; worked before has no colour; New slots on non-CQ senders too (CL-055-04)');
+ await page.locator('#open-server-settings').click();
+ assert.equal(await page.locator('#band-colours [data-hl-slot=cq]').count(),0,'Settings lists no CQ slot');
+ await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
+ assert.deepEqual((await rowsNow()).map(r=>r[3]),[newCallBand,newCallBand,none,none],'with New call off, New call on band remains');
+ assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,false,'the choice is per browser');
+ // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC; no CQ colour.
+ const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['new_dxcc','new_dxcc new_continent','new_dxcc new_continent mycall','new_grid','new_itu_zone','cq'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
+ assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none,none],'WSJT-X priority; New grid and ITU zone are off by default; no CQ colour');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
@@ -1787,8 +1790,8 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   ['K9XX YO3ABC -07','New DXCC: Romania\nNew DXCC on 20m\nNew call\nNew call on 20m','rgba(255, 0, 255, 0.26)'],
   ['CQ JA1AAA PM95','New CQ zone 25\nNew CQ zone on 20m','rgba(255, 191, 0, 0.26)'],
   ['CQ G4XYZ IO91','New grid IO91\nNew grid on 20m',none],
-  ['K1ZZ W3EF RR73','New call\nNew call on 20m',none],
-  ['K9XX W2AB R-05','New call\nNew call on 20m',none],
+  ['K1ZZ W3EF RR73','New call\nNew call on 20m','rgba(0, 255, 255, 0.24)'],
+  ['K9XX W2AB R-05','New call\nNew call on 20m','rgba(0, 255, 255, 0.24)'],
   ['FREE TEXT','',none],
   ['CQ K1ABC FN42','Worked before on 20m FT8',none],
  ];
@@ -1798,8 +1801,8 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  assert.equal(await page.locator('#band-activity th[data-sort=value]').textContent(),'DXCC');
  assert.deepEqual(await sortState(page),['value','desc']);
  await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
- // Enabled New grid / New call colour the non-CQ senders as well (operator decision, not WSJT-X).
- await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
+ // New call (on by default, #50) and an enabled New grid colour the non-CQ senders as well (operator decision, not WSJT-X).
+ await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
  assert.deepEqual((await shown()).map(r=>r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
  await page.screenshot({path:'test-results/ui-operating/band-activity-colours-all-senders-1440.png'});
  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
@@ -1833,6 +1836,37 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
  assert.ok(dense.visible>=8,`at least 8 rows visible at 1366x768, 5 before #55 (${dense.visible})`);
  // Touch: a coarse pointer keeps taller rows (CSS rule under pointer:coarse).
  assert.ok(await page.evaluate(()=>[...document.styleSheets].some(sheet=>{try{return [...sheet.cssRules].some(r=>r.media&&/pointer:\s*coarse/.test(r.media.mediaText)&&[...r.cssRules].some(c=>c.selectorText==='#band-activity td'&&parseFloat(c.style.paddingTop)>=8));}catch{return false;}})),'a coarse pointer keeps tappable rows');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-050-02; TC-050-002 (b). Operator 2026-11-03: only interesting stations are coloured. The
+// /contact/worked statuses and receive pages (with the #55 flags a station derives from its log,
+// CL-055-04) are routed fixtures; the colours are the served client's CSS.
+test('TC-050-002 a CQ from a station worked on this band and mode has no colour; My call still applies',{timeout:30000},async t=>{
+ let state;const queries=[];
+ const period='2026-10-27T12:00:15.0000000Z';
+ const call=text=>({kind:'call',text,hash_bits:null,hash_value:null});
+ const cq=from=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:call(from),ack:false,exchange:{kind:'grid',value:'FN42'}});
+ const rows=[['CQ K1AA FN42',cq('K1AA'),null],['CQ K2BB FN42',cq('K2BB'),{new_call_band:true}],['CQ K3CC FN42',cq('K3CC'),{new_call:true,new_call_band:true}],['HB9BLA K1AA R-05',{type:'standard',to:call('HB9BLA'),from:call('K1AA'),ack:false,exchange:{kind:'report',value:-5}},null]];
+ const records=rows.map(([text,fields,flags],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{})}));
+ const statuses={K1AA:'worked_this_band_and_mode',K2BB:'worked_other_band_or_mode',K3CC:'not_worked'};
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/contact/worked',async route=>{const q=JSON.parse(route.request().postData());queries.push(q);await route.fulfill({json:{v:1,statuses:q.calls.map(c=>({call:c,status:statuses[c]}))}});});
+ }});
+ await page.locator('tr[data-result-id][data-worked]').first().waitFor();
+ const seen=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
+ assert.deepEqual(seen,[
+  ['HB9BLA K1AA R-05','worked_this_band_and_mode','mycall','rgba(255, 102, 102, 0.32)'],
+  ['CQ K2BB FN42','worked_other_band_or_mode','new_call_band','rgba(153, 255, 255, 0.2)'],
+  ['CQ K3CC FN42','not_worked','new_call new_call_band','rgba(0, 255, 255, 0.24)'],
+  ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order (#55)');
+ assert.deepEqual(queries.map(q=>q.calls),[['K1AA','K2BB','K3CC']]);
  assert.deepEqual(errors,[]);
 });
 
