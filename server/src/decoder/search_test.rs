@@ -1434,9 +1434,15 @@ fn failed_fine_point_retries_at_the_data_point() {
             if at(displaced).is_some() || at(truth).is_none() {
                 continue;
             }
-            let verified =
-                complete(decoder.verify(&samples, displaced, &cancel, &mut pass, &mut budget))
-                    .unwrap();
+            let verified = complete(decoder.verify(
+                &samples,
+                displaced,
+                &cancel,
+                &|_: &[f32], _, _: &[u8]| None,
+                &mut pass,
+                &mut budget,
+            ))
+            .unwrap();
             checked = Some((seed, amplitude, verified.map(|(_, t, _)| t == tones)));
             break 'search;
         }

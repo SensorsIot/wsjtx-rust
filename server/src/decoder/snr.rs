@@ -94,51 +94,68 @@ impl Ft8Snr {
     }
     /// ft8b's xsnr2 from the early period buffer: the decoded tones' symbol power over the
     /// sync8 baseline at the lowest tone, 10*log10(xsig/xbase/3e6-1)-27 dB, before ft8b's
-    /// floor; [`reported`] floors and rounds it.
-    /// `period` is the window-relative start of the frame's period.
+    /// floor; [`reported`] floors and rounds it. The symbol power is measured beforehand
+    /// ([`signal`]); only the baseline is per period and cached here.
     pub(super) async fn snr_db(
         &mut self,
         samples: &[f32],
-        period: isize,
-        start: usize,
-        frequency: f64,
-        tones: &[u8],
+        signal: &Signal,
         budget: &mut CpuBudget<'_>,
     ) -> Result<Option<f64>, DecodeError> {
-        let bin = (frequency / DF).round() as usize;
-        if !(IA..=IB).contains(&bin) {
-            return Ok(None);
-        }
-        let Some(base) = self.baseline(samples, period, budget).await? else {
+        let Some(base) = self.baseline(samples, signal.period, budget).await? else {
             return Ok(None);
         };
-        let xbase = base[bin] * 1e-4;
-        let limit = period + EARLY;
-        let mut xsig = 0.;
-        for (k, &tone) in tones.iter().enumerate() {
-            let step = Complex64::from_polar(
-                1.,
-                -2. * PI * (frequency + tone as f64 * 12000. / SYMBOL as f64) / 12000.,
-            );
-            let mut phasor = Complex64::new(1., 0.);
-            let mut sum = Complex64::new(0., 0.);
-            let first = (start + k * SYMBOL) as isize;
-            for n in first..first + SYMBOL as isize {
-                if n < limit
-                    && let Some(&x) = samples.get(n as usize)
-                {
-                    sum += phasor * x as f64;
-                }
-                phasor *= step;
-            }
-            // The 32-point transform of ft8_downsample's 200 Hz baseband is 1/sqrt(60) of
-            // the full-rate symbol transform.
-            xsig += sum.norm_sqr() / 60.;
-        }
-        let arg = xsig / xbase / 3e6 - 1.;
+        let xbase = base[signal.bin] * 1e-4;
+        let arg = signal.xsig / xbase / 3e6 - 1.;
         let db = 10. * (if arg > 0.1 { arg } else { 0.001 }).log10() - 27.;
         Ok(db.is_finite().then_some(db))
     }
+}
+/// A frame's decoded-tone symbol power in the early period buffer (xsig) and the baseline
+/// bin of its lowest tone. It depends only on the residual and the frame, so the
+/// verifications measure it in parallel (#57 CL-057-02).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Signal {
+    period: isize,
+    bin: usize,
+    xsig: f64,
+}
+/// [`Signal`] of the frame at window frame `start`; `period` is the window-relative start of
+/// its period. `None` when the lowest tone lies outside the baseline band.
+pub(super) fn signal(
+    samples: &[f32],
+    period: isize,
+    start: usize,
+    frequency: f64,
+    tones: &[u8],
+) -> Option<Signal> {
+    let bin = (frequency / DF).round() as usize;
+    if !(IA..=IB).contains(&bin) {
+        return None;
+    }
+    let limit = period + EARLY;
+    let mut xsig = 0.;
+    for (k, &tone) in tones.iter().enumerate() {
+        let step = Complex64::from_polar(
+            1.,
+            -2. * PI * (frequency + tone as f64 * 12000. / SYMBOL as f64) / 12000.,
+        );
+        let mut phasor = Complex64::new(1., 0.);
+        let mut sum = Complex64::new(0., 0.);
+        let first = (start + k * SYMBOL) as isize;
+        for n in first..first + SYMBOL as isize {
+            if n < limit
+                && let Some(&x) = samples.get(n as usize)
+            {
+                sum += phasor * x as f64;
+            }
+            phasor *= step;
+        }
+        // The 32-point transform of ft8_downsample's 200 Hz baseband is 1/sqrt(60) of
+        // the full-rate symbol transform.
+        xsig += sum.norm_sqr() / 60.;
+    }
+    Some(Signal { period, bin, xsig })
 }
 /// The published FT8 SNR: whole dB, floored at -25, ceiling +60.
 pub(super) fn reported(db: f64) -> f64 {

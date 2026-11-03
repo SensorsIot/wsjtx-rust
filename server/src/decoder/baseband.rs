@@ -114,7 +114,7 @@ pub(super) struct PassBand<'a> {
     scratch: Vec<Complex64>,
     pub frames: usize,
     /// The last band of this immutable pass transform, keyed by its exact carrier.
-    last: Option<(u64, Option<BandWindow>)>,
+    last: Option<(u64, Option<Arc<BandWindow>>)>,
 }
 impl<'a> PassBand<'a> {
     /// A view of the same pass transform for another worker: shared spectrum, its own band
@@ -134,14 +134,15 @@ impl<'a> PassBand<'a> {
         &mut self,
         carrier: f64,
         budget: &mut CpuBudget<'_>,
-    ) -> Result<Option<BandWindow>, DecodeError> {
+    ) -> Result<Option<Arc<BandWindow>>, DecodeError> {
         budget.checkpoint().await?;
         if let Some((key, band)) = &self.last
             && *key == carrier.to_bits()
         {
             return Ok(band.clone());
         }
-        let band = self.compute_window(carrier);
+        // Shared, not copied: a band is immutable once computed.
+        let band = self.compute_window(carrier).map(Arc::new);
         self.last = Some((carrier.to_bits(), band.clone()));
         budget.checkpoint().await?;
         Ok(band)
