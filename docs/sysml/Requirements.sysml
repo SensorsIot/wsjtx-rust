@@ -4170,7 +4170,7 @@ package WstxRequirements {
     dependency CL_050_01_to_FR_007 from 'CL-050-01' to 'FR-007';
     dependency CL_050_01_to_FR_019 from 'CL-050-01' to 'FR-019';
     requirement 'CL-050-02' {
-        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks other than the a-priori marker aN after an a-priori word's message (#56 slice 5): My call and CQ from the message, New call / New call on band from the station's worked-before status (a never-worked call is both), the DXCC, continent, zone and grid slots from record flags when a station supplies them, every New slot on CQ/QRZ lines only as in WSJT-X; worked before has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
+        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks other than the a-priori marker aN after an a-priori word's message (#56 slice 5): My call from the message, New call / New call on band from the station's worked-before status (a never-worked call is both; both on by default), the DXCC, continent, zone and grid slots from record flags when a station supplies them, every New slot on CQ/QRZ lines only as in WSJT-X. Only stations of interest are coloured (operator 2026-11-03, deliberately unlike WSJT-X): there is no CQ slot, so a CQ from a station worked before on this band and mode, and every other row that matches no slot, has no colour, while My call still applies. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/logbook.js; client/recording.css";
     }
@@ -4205,9 +4205,9 @@ package WstxRequirements {
     verification 'TC-050-002' {
         doc /* TC-050-002 — WSJT-X Band Activity colours
              CL-050-02
-             Setup: actual candidate server with a logged K1ABC on 20m FT8; routed live job with CQ K1ABC, CQ W1XYZ and a free-text row; Chromium.
-             Steps: wait for the worked-before query; read row backgrounds; enable New call in Settings; append synthetic rows with slot sets for the #55 flags.
-             Expected: no text marks; CQ rows rgba(102,255,102,0.24) with New call off (WSJT-X default); W1XYZ (not worked) slots new_call and new_call_band, rgba(0,255,255,0.24) once enabled, K1ABC (worked) stays CQ; a not-worked caller on a non-CQ line gets no New slot; the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
+             Setup: (a) actual candidate server with a logged K1ABC on 20m FT8; routed live job with CQ K1ABC, CQ W1XYZ and a free-text row; (b) the same server with routed /contact/worked statuses for CQ K1AA (worked_this_band_and_mode), CQ K2BB (worked_other_band_or_mode), CQ K3CC (not_worked) and HB9BLA K1AA R-05 to my call; Chromium.
+             Steps: wait for the worked-before query; read row slots and backgrounds; turn New call off in Settings; append synthetic rows with slot sets for the #55 flags.
+             Expected: no text marks; no CQ slot in Settings and no row slot cq; (a) K1ABC (worked on this band and mode) no slot, background rgba(0,0,0,0); W1XYZ (not worked) slots new_call and new_call_band, rgba(0,255,255,0.24), rgba(153,255,255,0.2) with New call off; the free-text row and a not-worked caller on a non-CQ line no slot; the choice saved in browser storage; priority My call > New continent > New DXCC, New grid and ITU zone off by default; (b) K1AA no slot and rgba(0,0,0,0); K2BB new_call_band, rgba(153,255,255,0.2); K3CC new_call and new_call_band, rgba(0,255,255,0.24); the row to my call from K1AA mycall only, rgba(255,102,102,0.32).
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
