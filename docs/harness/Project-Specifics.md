@@ -113,7 +113,8 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
 | `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the model/tool tests `test_[!a]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
 | `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the toolchain pin and the test file |
-| `decoder-quality` | Timing: the release decoder quality/latency passes and the owned-Job resource matrix (runs alone) | Timing inputs: decoder sources, `decoder_signal.rs`, decoder fixtures, its resource-job tools and the Rust toolchain/dependency pins |
+| `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures and the library root (a production decoder source selects `decoder-quality`, which runs the same passes) |
+| `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
 | `live-station-latency` | Timing: the #57 busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files and toolchain |
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
@@ -145,8 +146,13 @@ because those assets cross the 32 kbit/s link cold (the #55 cold-load red came f
 client-only change); the recording/spectrum producers for `recording-thin`; the
 selection, CAT, receive, source, audio and spectrum owners for `radio-selection-thin`;
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
-the rows for `live-station-latency`; decoder sources, `decoder_signal.rs`, decoder
-fixtures and the resource-job tools for `decoder-quality`. Each suite's own test files
+the rows for `live-station-latency`; the production decoder sources (every one sets the
+checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
+`decoder_signal.rs`, the fixtures and vector tool its timed passes decode, the protocol tables compiled into it and the
+resource-job tools for `decoder-quality`. A decoder fixture change that none of them
+times (the jt9 parity corpus, baselines, vectors) runs only the functional
+`decoder-correctness`, beside other groups: the same passes except the 50 ms quantum and
+the busy-period latency. Each suite's own test files
 and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs, and so
 are the Rust toolchain and dependency pins (and the Node pins for the browser suites).
 The contact, logbook, authorization, MCP, strategy, profile and UDP code, the SysML

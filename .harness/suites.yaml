@@ -347,6 +347,38 @@
   - fixtures/decoder/simulator-cases.json
   needs: Python 3.12 standard library. Windows PC; 25 reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.
 
+- suite: decoder-correctness
+  cost: 2
+  # The decode correctness, thread-parity and jt9-parity passes of decoder_signal: the
+  # ordinary named passes minus the two that assert a wall-clock bound (the 50 ms
+  # cooperative quantum, with its partial-cancellation case, and the busy-period latency).
+  # decoder-quality runs all seventeen, bound to its artifact, and the resource matrix when
+  # a timing input changes (every production decoder source).
+  run: >-
+    cargo test --release --locked --test decoder_signal -- --test-threads=1
+    --skip release_runtime_and_overlapping_window_history
+    --skip cooperative_quanta_and_partial_cancellation
+    --skip live_busy_period_publishes_every_decode_promptly
+  paths:
+  - server/src/decoder/
+  - server/src/lib.rs
+  - server/tests/decoder_signal.rs
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  # Selected by what decoder-quality does not time but these passes read: the decoder
+  # fixtures (the jt9 parity corpus, baselines, vectors) and the library root. A production
+  # decoder source, decoder_signal.rs or a Cargo pin selects decoder-quality, which runs
+  # these passes too (bound to its artifact). The decoder's *_test.rs files are not in this
+  # binary (wstx-rust-decoder runs them).
+  select:
+  - fixtures/decoder/
+  - server/src/lib.rs
+  build: cargo test --release --locked --test decoder_signal --no-run
+  needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the #56 jt9 deep-decode parity corpus, same-frequency frames, physical noise, the #57 thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; missing inputs fail closed. Not a measurement: it runs beside other groups."
+
 - suite: decoder-quality
   cost: 2
   run: |
@@ -370,10 +402,36 @@
   - tools/windows_process_metrics.py
   - tools/test_windows_process_metrics.py
   timing: true
+  # Every production decoder source sets the measured time (checkpoint spacing, per-item
+  # work, passes and budgets); the decoder's *_test.rs files and resource_observer.rs
+  # (cfg(test)) are not in the measured binary, so unit-test-only and parity-fixture-only
+  # changes run decoder-correctness alone. A new decoder module is declared in mod.rs,
+  # which is listed.
   timing_inputs:
-  - server/src/decoder/
+  - server/src/decoder/apriori.rs
+  - server/src/decoder/baseband.rs
+  - server/src/decoder/bitmetrics.rs
+  - server/src/decoder/channel.rs
+  - server/src/decoder/coarse_ft4.rs
+  - server/src/decoder/fit.rs
+  - server/src/decoder/history.rs
+  - server/src/decoder/mod.rs
+  - server/src/decoder/parallel.rs
+  - server/src/decoder/payload.rs
+  - server/src/decoder/physical_ft4.rs
+  - server/src/decoder/physical_sync.rs
+  - server/src/decoder/search.rs
+  - server/src/decoder/snr.rs
+  - server/src/decoder/subtraction.rs
+  - server/src/decoder/synchronization.rs
+  - server/src/decoder/waveform.rs
   - server/tests/decoder_signal.rs
-  - fixtures/decoder/
+  - fixtures/decoder/quality-cases.json
+  - fixtures/decoder/manifest.json
+  - fixtures/decoder/resource-cases.json
+  - fixtures/decoder/quality-audio-hashes.json
+  - fixtures/decoder/independent-vector-tool/
+  - fixtures/decoder/protocol-data/
   - tools/windows_resource_job.py
   - tools/test_windows_resource_job.py
   - tools/windows_process_metrics.py
