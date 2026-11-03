@@ -44,7 +44,14 @@ struct Inner {
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
     /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
     outbox: Vec<logbook::Record>,
+    /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
+    a_priori: decoder::APriori,
+    /// The last tick (UTC ms) at which the station transmitted, tuned or had Enable Tx on
+    /// (WSJT-X m_dateTimeLastTX, refreshed while m_transmitting, m_auto or m_tune).
+    last_tx: Option<i64>,
 }
+/// lapcqonly: without a transmission for this long only the CQ a-priori type runs.
+const CQ_ONLY_AFTER_MS: i64 = 300_000;
 /// The contact engine of one station (one per process, like the transmit owner).
 pub(crate) struct Station {
     inner: Mutex<Inner>,
@@ -275,6 +282,8 @@ impl Station {
                 retry_at: None,
                 log: None,
                 outbox: Vec::new(),
+                a_priori: decoder::APriori::default(),
+                last_tx: None,
             }),
             revision: AtomicU64::new(0),
             started: Instant::now(),
@@ -300,6 +309,39 @@ impl Station {
             parity: e.settings.parity,
         });
         (e.revision, facts, e.settings.auto_seq)
+    }
+    /// WstxStationDecode::APrioriContext for the next live decode window (#56 slice 5).
+    pub(crate) fn a_priori(&self) -> decoder::APriori {
+        self.lock().a_priori.clone()
+    }
+    /// The context from the profile callsign, the current contact and the transmit owner
+    /// (lapcqonly after CQ_ONLY_AFTER_MS without transmitting, tuning or Enable Tx).
+    fn refresh_a_priori(inner: &mut Inner, call: Option<&str>, active: bool, now: i64) {
+        use decoder::QsoProgress as P;
+        if active {
+            inner.last_tx = Some(now);
+        }
+        let e = &inner.engine;
+        let c = e.contact.as_ref();
+        let progress = match c.map(|c| c.state) {
+            Some(contact::State::Replying) => P::Replying,
+            Some(contact::State::Report) => P::Report,
+            Some(contact::State::RogerReport) => P::RogerReport,
+            Some(contact::State::Rogers) => P::Rogers,
+            Some(contact::State::Signoff | contact::State::Completed) => P::Signoff,
+            _ => P::Calling,
+        };
+        let (my_call, dx_call) = call.map_or((None, None), |call| {
+            wstx_rust::transmit::a_priori_calls(call, c.and_then(|c| c.dx_call.as_deref()))
+        });
+        inner.a_priori = decoder::APriori {
+            my_call,
+            dx_call,
+            progress,
+            rx_hz: f64::from(e.settings.rx_hz),
+            tx_hz: f64::from(e.settings.tx_hz),
+            cq_only: inner.last_tx.is_none_or(|at| now - at > CQ_ONLY_AFTER_MS),
+        };
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
     /// the contact's next message).
@@ -403,7 +445,7 @@ impl Station {
                 mode,
                 automatic: false,
             };
-            inner.engine.step(core, &ctx, &rows);
+            inner.engine.step(core.as_deref_mut(), &ctx, &rows);
             // HashResolution's DX-call rule reads the current contact's DX call (#24 S1b).
             r.hashes
                 .lock()
@@ -415,6 +457,13 @@ impl Station {
                         .as_ref()
                         .and_then(|c| c.dx_call.as_deref()),
                 );
+            let active = core.as_deref().is_some_and(|c| {
+                let v = c.view();
+                v.transmitting
+                    || v.tune
+                    || v.arm_state == wstx_rust::transmit::service::ArmState::Armed
+            });
+            Self::refresh_a_priori(inner, ctx.call.as_deref(), active, now);
             Self::collect_logs(
                 inner,
                 state,
@@ -1113,6 +1162,8 @@ pub(crate) fn station_tick(state: &ProfileState) {
         // #42 IgnoreLists: a station band change empties the session list before Auto.
         s.strategy
             .observe_band(crate::strategy::station_band(&state.recording));
+        // #42 Alert: every new live decode once, whether or not a browser is connected.
+        s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
     }

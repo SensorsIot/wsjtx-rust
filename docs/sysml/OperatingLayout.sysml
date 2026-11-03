@@ -48,7 +48,8 @@ package WstxOperatingLayout {
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
              no fabricated UTC/DT or message text; a hashed call shows as the station's
              publication gives it (<CALL> or <...>, WstxOfflineDecode::HashResolution). Full source/job/
-             generation/sequence binds each row; new identity clears rows, stale
+             generation/sequence binds each row; new identity clears rows (an unknown-loss
+             source epoch of the same receive keeps them, CL-061-01), stale
              pages cannot append. At most2048 rows, explicit cursor-expiry history
              warning and partial stop/failure output; unsupported payloads display
              their status. One pending page, Thin limit1/4s and status priority
@@ -63,10 +64,10 @@ package WstxOperatingLayout {
              ContactWorkspace and WstxContact (CL-010-01..04, -06, -10..-14). */
     }
 
-    enum def ActivitySortField { enum frequency; enum signalStrength; enum dt; enum 'message'; }
+    enum def ActivitySortField { enum 'value'; enum frequency; enum signalStrength; enum dt; enum 'message'; }
 enum def ActivitySortDirection { enum ascending; enum descending; }
 attribute def ActivityOrdering {
-    attribute field : ActivitySortField = ActivitySortField::frequency;
+    attribute field : ActivitySortField = ActivitySortField::'value';
     attribute direction : ActivitySortDirection = ActivitySortDirection::ascending;
     attribute unavailableLast : Boolean = true;
     attribute sequenceTieAscending : Boolean = true;
@@ -86,7 +87,13 @@ attribute def ActivityOrdering {
          change defaults signalStrengthDESC, othersASC; explicitdirection retained
          within same field. Re-sort the whole latest view after each arriving page. Reset
          only for a different VALIDATED profile UUID. No newstore/backend/modem
-         filtering, station selection, arming or automation. Keyboard/360px/2x. */
+         filtering, station selection, arming or automation. Keyboard/360px/2x.
+         #55 (operator 2026-11-03, CL-055-04): the default field is value, chosen again
+         by the DXCC column header (one direction only): within each period first by
+         BandActivityValue, then by SNR descending (unavailable last), ties by
+         publication sequence ascending; with Highlight on the strategy hits (value 2)
+         keep the station's verdict order among themselves. A different validated
+         profile resets to value. */
 }
 
     attribute def LatestBandActivity {
@@ -504,7 +511,17 @@ attribute def ActivityOrdering {
              double-click Rx and Tx (WstxContact::PointerEffect). The Rx and Tx markers are 3 px
              green (Rx) and red (Tx) lines over the full waterfall height, without text, and can be
              dragged; the release sends one set_frequency. No strip or
-             pointer action enables transmission. */
+             pointer action enables transmission.
+             Frequency mapping (#50, CL-050-07): the waterfall canvas's own box carries the fixed
+             0..3000 Hz span, 0 Hz at its left edge and 3000 Hz at its right edge (the time ruler
+             beside it is outside the span). The pointer frequency, the Rx and Tx lines, their
+             brackets and the frequency axis ticks all use this one mapping, so a line and an
+             axis tick of a frequency lie within 1 px of the pointer position that selects it, at
+             every width, display option and devicePixelRatio. Each line marks the signal's
+             lowest tone and carries a WSJT-X bracket (goalpost) of the line's colour at the top
+             of the waterfall over the occupied width to its right: FT8 8 x 6.25 = 50 Hz, FT4
+             4 x 20.833 = 83.3 Hz, following the station's operating mode (station.tick period,
+             15 s FT8, 7.5 s FT4). The bracket takes no pointer input. */
     }
     enum def BandActivitySlot {
         enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;
@@ -520,7 +537,7 @@ attribute def ActivityOrdering {
              new_continent_band #ff99c2 on; new_cq_zone #ffbf00 on; new_cq_zone_band #ffe499 on;
              new_itu_zone #a6ff00 off; new_itu_zone_band #ddff99 off; new_dxcc #ff00ff on;
              new_dxcc_band #ffaaff on; new_grid #ff8000 off; new_grid_band #ffcc99 off; new_call
-             #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 on. A row takes
+             #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 off (#55; WSJT-X default on). A row takes
              the highest-priority enabled slot it matches. Matches: mycall, a decoded message to the
              profile callsign, also as a filled-in hash <MYCALL> or the 'to' call of a nonstandard
              i3=4 message (WSJT-X matches "[ <]MYCALL[ >]", #24 S1b); cq, a decoded message starting CQ; new_call, the worked-before status
@@ -528,9 +545,43 @@ attribute def ActivityOrdering {
              slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
              zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
              new_* slot applies only to CQ/QRZ lines, and a never-worked call matches new_call and
-             new_call_band. Worked before on this band and mode has no colour. Settings > General > Display lists the slots with their
+             new_call_band. Worked before on this band and mode has no colour.
+             Operator decision (#55, 2026-11-03, CL-055-04), deviating from WSJT-X, which colours
+             only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
+             standard message (CQ, replies to others, reports, R-reports, RR73, 73), and they match
+             only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
+             adds slots). A row without a flag has no colour: the cq slot is off by default. A row
+             to my call keeps mycall on top. Every row with a flag, my call, a strategy verdict or
+             a worked-before status carries hover text (BandActivityHover). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
              accent (a left bar and the message text), never a row background. */
+    }
+    attribute def BandActivityValue {
+        attribute levels : Integer = 8;
+        doc /* #55 (operator 2026-11-03, CL-055-04). The value of a Band Activity row, best
+             first: 1 calling me (a decoded message to the profile callsign); 2 a strategy
+             hit (Highlight on, WstxStrategy::HighlightView rank not null); 3 new DXCC or new
+             continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
+             (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
+             6 new grid, ever or on this band; 7 new call, ever or on this band; 8 no flag.
+             The flags are those of WstxContact::DecodedEntity for any decoded standard
+             sender, CQ or not. */
+    }
+    attribute def BandActivityHover {
+        doc /* #55 (operator 2026-11-03, CL-055-04). A row with any reason below carries it as
+             its title (shown on hover over the row and its colour mark, the first cell's
+             strategy bar included; the DXCC and Distance cells keep their own titles) and as
+             aria-description, one reason per line in this order (value order first, so the
+             first line names the row's value): "Calling me"; the strategy verdict "Strategy
+             <name>: rule <n>" or "Directed CQ not addressed to my continent: never
+             answered"; "New continent <cont>", "New continent on <band>", "New DXCC:
+             <shown name>", "New DXCC on <band>", "New CQ zone <cq>", "New CQ zone on
+             <band>", "New ITU zone <itu>", "New ITU zone on <band>", "New grid <square>",
+             "New grid on <band>", "New call", "New call on <band>" for each flag present;
+             then the worked-before status of the sender (WstxContact::WorkedBeforeQuery):
+             "Worked before on <band> <MODE>" or "Worked before on another band or mode".
+             <band> is the operating selection band ("this band" when none). A row with no
+             reason has no title. */
     }
     attribute def BandActivityView {
         attribute newestFirst : Boolean = true;
@@ -544,7 +595,8 @@ attribute def ActivityOrdering {
              CL-057-03): the period it replaced follows below a divider with its period UTC
              when it has the other parity, and no older period is kept, paged or fetched; a
              same-parity successor (a skipped period) or an uncorrelated period leaves only
-             the latest; a new receive identity (band/mode change, restart) clears it.
+             the latest; a new receive identity (band/mode change, restart) clears it,
+             an unknown-loss source epoch of the same receive does not (CL-061-01).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
@@ -555,8 +607,16 @@ attribute def ActivityOrdering {
              otherwise. The QSO pane header shows the partner's shown name and continent
              first on its detail line under the call and grid (GET /dxcc?call=, once per DX call), and the
              entity distance marked approximate when the contact has no grid. Colours (#50, BandActivityColours) are the WSJT-X
-             row backgrounds; there are no text marks; worked before (WstxContact::
-             WorkedBeforeQuery) feeds only the New call slots; with Highlight on the strategy accent of
+             row backgrounds; the only text mark is WSJT-X's a-priori marker: a record with
+             a_priori N shows a small "aN" after its message, outside the message text
+             (#56 slice 5, WstxStationDecode::APrioriHypotheses); worked before (WstxContact::
+             WorkedBeforeQuery) feeds only the hover text (BandActivityHover); rows are ordered
+             by value (BandActivityValue, ActivityOrdering); row density (#55, operator 2026-11-03,
+             CL-055-05): table rows with a fine pointer have 1 px vertical cell padding and line
+             height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
+             so more stations fit; with a coarse pointer (touch) rows keep 8 px padding, and the
+             stacked narrow layout keeps its card rows, so rows stay tappable at 360 px and 200 %
+             zoom; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; another station while a contact is active only offers "Change
@@ -601,6 +661,7 @@ attribute def ActivityOrdering {
         attribute hasPartnerHeader : Boolean = true;
         attribute hasLastPartnerMessage : Boolean = true;
         attribute maximumOtherLines : Integer = 8;
+        attribute qsoAreaRows : Integer = 6;
         attribute hasNextWithCountdown : Boolean = true;
         attribute hasDialogue : Boolean = true;
         attribute hasLastSentRow : Boolean = false;
@@ -616,13 +677,18 @@ attribute def ActivityOrdering {
         doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
              compact QSO pane (operator decisions 2026-11-02): it shows only the running QSO
              and nothing else, and its content takes about half the height the earlier pane
-             needed. Item 8 (operator-changeable default, coordinator choice 2026-11-02): at
-             most 75em wide, where the pane sits below Band Activity, the pane is content high
-             and Band Activity takes the freed height; side by side, where Band Activity
-             already fills the column height, the pane card fills its column with the free
-             height at its bottom, so there is no empty band under it; the waterfall/workspace
-             split is unchanged; the QSO area (dialogue and Others, items 7 and 3) scrolls
-             inside the card.
+             needed. Item 8 (operator 2026-11-03 on #37, "The QSO part is way too long. It
+             should be much smaller. Then we can add a lot of different things below it.",
+             replacing the earlier option C where the card filled its column): the pane is
+             content high at the top of its column, side by side as when it sits below Band
+             Activity (at most 75em wide, where Band Activity takes the freed height); side
+             by side the height below the pane stays free, empty for now, for future panels
+             the operator will choose; the waterfall/workspace split is unchanged. The QSO
+             area (the #60 table of the dialogue and the Others, items 7 and 3) shows its
+             header row and at most qsoAreaRows (6) rows and scrolls inside, kept at its
+             newest row; where the workspace is lower than the pane's content (1366x768) the
+             area gives up height first, so the pane stays within the column and the screen
+             (TC-007-009), at most 300 px high at 1366x768.
              A running QSO is a contact with a DX call in replying..signoff
              (WstxContact::ContactState); a contact that is completed, logged or cancelled is
              gone from the pane, which then shows idle.
@@ -644,12 +710,13 @@ attribute def ActivityOrdering {
              are standard messages to my call from another station than the partner (the
              partner of the last QSO stays excluded after it ended, until another contact
              runs): while a QSO runs, those within +/-50 Hz of my Rx or Tx offset
-             (QsoPaneCrowding), each "HH:MM:SS ⚠ <text>  <SNR>" ("22:48:15 ⚠ HB9BLA DL1ABC
-             JO31  −8 dB"); double-click (or Enter) switches the contact to that station and
+             (QsoPaneCrowding), each a ⚠ row of the QSO table (item 7, #60) ("22:48:15 ⚠ |
+             HB9BLA ◂ DL1ABC | JO31 | −8 |"); double-click (or Enter) switches the contact to that station and
              replies (SelectDecodedRow with replace, then SetEnableTx on; ChangeContact keeps
              Enable Tx on). When no QSO runs (idle, finished, or an own CQ), every station
              calling my call on any frequency, as soon as its row is decoded, each
-             "HH:MM:SS ◂ <text>  <SNR>"; double-click (or Enter) answers (select, then
+             a row of the QSO table ("22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |");
+             double-click (or Enter) answers (select, then
              SetEnableTx on). Stations that do not call me are not listed (Band Activity
              shows them). When no row qualifies, one muted line says so instead of an empty
              list: "nobody calling" when no QSO runs, "nobody else calling" while one runs.
@@ -676,16 +743,37 @@ attribute def ActivityOrdering {
              6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
              be stored shows "Not logged <call> · <reason>" while that outcome holds.
              7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
-             area below the controls, in the free height of the card (item 8), holds the
+             area below the controls (bounded, item 8), holds the
              ContactSnapshot
-             dialogue of the running QSO only: one line per entry, oldest first and newest
-             at the bottom, "HH:MM:SS ◂ <text>  <SNR>" for a message received from the
-             partner and "HH:MM:SS ▸ <text>" for one we transmitted (HH:MM:SS the UTC period
-             start), "×N" for N > 1 repeats, no frequency and no other station, then the
-             Others (item 3); the area scrolls inside the card, kept at its newest line, and
-             never grows the page (TC-007-009);
-             it is gone with the QSO (completed, logged or cancelled), as the rest of the
+             dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
+             the earlier line and arrow formats) with the header row "UTC | Direction |
+             Exchange | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
+             bottom, "×N" after the exchange for N > 1 repeats, no frequency and no other
+             station; below a thin separator the Others (item 3) as rows of the same table
+             and columns, a ⚠ after the time while a QSO runs. The area scrolls inside the
+             card, kept at its newest row, with the header row staying visible, at most the
+             header row and qsoAreaRows (6) rows high (item 8), and never grows the page
+             (TC-007-009); at 360 CSS px the table fits the pane width and the
+             titles may be abbreviated (UTC, Dir, Exch, Rx, Tx).
+             It is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.
+             Columns: UTC is HH:MM:SS, the UTC period start, with no ◂/▸ direction mark.
+             Direction is the two calls in the Band Activity (on-air) order, the recipient
+             first and the sender second, with "◂" between them pointing to the recipient
+             ("HB9BLA ◂ CT1BFP": CT1BFP sends to HB9BLA; "CT1BFP ◂ HB9BLA": I send to
+             CT1BFP), a hashed call as decoded ("<PJ4/K1ABC>", "<...>"); a CQ is "CQ <call>"
+             or "CQ DX <call>" (the words before the grid) without an arrow, its grid in
+             Exchange. Exchange is the message after the two calls ("IM59", "+08", "R-02",
+             "RR73", "73"); a message that does not start with two calls or a CQ (free text)
+             is all Exchange with an empty Direction. Rx SNR is our measured SNR of a
+             received message, signed ("+8", "−12", "0"), on received rows only (dialogue rx
+             entries and Others), empty on sent rows. Tx SNR is the partner's report on us,
+             only on the received row that carries it: an Exchange "R-02" gives "−2", a plain
+             report "-05" gives "−5"; empty otherwise. Example (operator, #60):
+             "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |", "22:51:30 | CT1BFP ◂ HB9BLA | +08 | |",
+             "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | +7 | −2", "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | |",
+             "22:52:15 | HB9BLA ◂ CT1BFP | 73 | +9 |". Sent rows keep their own colour.
+             Messages between two other stations are not QSO pane lines.
              There is no LAST row, no crowding badge and no status line
              for a finished contact. A status line under the header is shown only for an
              exception: a refused transmission, a halt pending, an unknown contact state.
@@ -725,7 +813,9 @@ attribute def ActivityOrdering {
              (SettingsSection):
              General: station (display name, callsign, locator, continent, #42 the
              ignore lists of WstxStrategy::IgnoreLists: permanent calls, session expiry
-             minutes, the session list with remove controls), clock
+             minutes, the session list with remove controls; #42 the Alerts section of
+             WstxStrategy::Alert: Sound and Browser notification checkboxes, both off by
+             default, and the alert history newest first with Clear), clock
              (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
              Both with the air estimate, read with GET /clock when the drawer opens,
              saved on change with POST /clock, a plain setting without restart mark),

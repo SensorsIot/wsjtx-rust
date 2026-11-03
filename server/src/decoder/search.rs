@@ -6,7 +6,7 @@ use super::physical_sync;
 use super::snr::{Ft8Snr, Signal};
 use super::subtraction::Subtractor;
 use super::synchronization::{Candidate, Spectrum};
-use super::{Channel, Mode, Payload, quadratures, unpack};
+use super::{APriori, Channel, Mode, Payload, quadratures, unpack};
 use rustfft::num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -65,6 +65,9 @@ pub struct Decode {
     pub start_frame: u64,
     pub frequency_hz: f64,
     pub snr_db: Option<f64>,
+    /// The WSJT-X a-priori type (1..6) of an a-priori word (#56 slice 5); absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub a_priori: Option<u8>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DecodeError {
@@ -255,6 +258,8 @@ impl Decoder {
         // FT8 candidates of the last pass whose verification found no word and which a frame
         // subtracted in that pass overlaps (Ft8RetryOverlapped).
         let mut retry = Vec::<Candidate>::new();
+        // The window's a-priori context is fixed for all its candidates (CL-057-02).
+        let a_priori = state.a_priori().clone();
         for pass in 0..PASSES {
             let spectrum =
                 Spectrum::new(&samples, mode, self.scalar, self.threads, &mut budget).await?;
@@ -338,7 +343,7 @@ impl Decoder {
                 &mut budget,
                 || physical.fork(),
                 |&c, pass, budget| {
-                    complete(self.verify(&samples, c, &stop, &measure, pass, budget))
+                    complete(self.verify(&samples, c, &a_priori, &stop, &measure, pass, budget))
                 },
             )
             .await?;
@@ -349,7 +354,7 @@ impl Decoder {
             let mut verified = 0;
             for (c, verification) in candidates.iter().zip(verifications) {
                 budget.checkpoint().await?;
-                let Some((payload, tones, fitted)) = verification? else {
+                let Some((payload, tones, kind, fitted)) = verification? else {
                     if mode == Mode::Ft8 {
                         failed.push(*c);
                     }
@@ -398,6 +403,7 @@ impl Decoder {
                         start_frame: (origin + fitted.start as u64).saturating_sub(front as u64),
                         frequency_hz: fitted.frequency,
                         snr_db: snr.map(|(_, reported)| reported),
+                        a_priori: kind,
                     };
                     state.publish_if_new(&record, publish)?;
                 }
@@ -506,35 +512,46 @@ impl Decoder {
     /// earlier records. The refined frame and its physical check are computed even where
     /// the caller's duplicate checks will skip them; the caller surfaces their errors only
     /// where its loop reaches them.
+    #[allow(clippy::too_many_arguments)]
     async fn verify(
         &self,
         samples: &[f32],
         c: Candidate,
+        a_priori: &APriori,
         cancel: &(impl Fn() -> bool + Sync),
         measure: &impl Fn(&[f32], Candidate, &[u8]) -> Option<Signal>,
         physical: &mut PassBand<'_>,
         budget: &mut CpuBudget<'_>,
     ) -> Verification {
         let mode = physical.plan.mode;
-        let (c, word) = match bitmetrics::observe(physical, c, &self.channel, budget).await? {
-            Some(word) => (c, word),
-            // Ft8DataPoint: an FT8 word that fails at the fine point is tried once more at
-            // the nearby point holding the most frame energy, when that point differs.
-            None if mode == Mode::Ft8 => {
-                let Some(alternative) = physical_sync::data_point(physical, c, budget).await?
-                else {
-                    return Ok(None);
-                };
-                if (alternative.start, alternative.frequency) == (c.start, c.frequency) {
-                    return Ok(None);
+        let (c, (word, kind)) =
+            match bitmetrics::observe(physical, c, &self.channel, a_priori, budget).await? {
+                Some(word) => (c, word),
+                // Ft8DataPoint: an FT8 word that fails at the fine point is tried once more at
+                // the nearby point holding the most frame energy, when that point differs.
+                None if mode == Mode::Ft8 => {
+                    let Some(alternative) = physical_sync::data_point(physical, c, budget).await?
+                    else {
+                        return Ok(None);
+                    };
+                    if (alternative.start, alternative.frequency) == (c.start, c.frequency) {
+                        return Ok(None);
+                    }
+                    match bitmetrics::observe(
+                        physical,
+                        alternative,
+                        &self.channel,
+                        a_priori,
+                        budget,
+                    )
+                    .await?
+                    {
+                        Some(word) => (alternative, word),
+                        None => return Ok(None),
+                    }
                 }
-                match bitmetrics::observe(physical, alternative, &self.channel, budget).await? {
-                    Some(word) => (alternative, word),
-                    None => return Ok(None),
-                }
-            }
-            None => return Ok(None),
-        };
+                None => return Ok(None),
+            };
         let Some(payload) = self.channel.payload(&word, mode) else {
             return Ok(None);
         };
@@ -557,17 +574,19 @@ impl Decoder {
             Ok((fitted, supported))
         }
         .await;
-        Ok(Some((payload, tones, fitted)))
+        Ok(Some((payload, tones, kind, fitted)))
     }
 }
 
 /// [`Decoder::verify`] staged as the in-order replay consumes it: the payload and tones,
 /// then the refined frame, then whether its physical check supports it (with its hard
-/// Costas hits and, for a supported complete FT8 frame, its SNR signal power).
+/// Costas hits and, for a supported complete FT8 frame, its SNR signal power). The a-priori
+/// type follows the tones.
 type Verification = Result<
     Option<(
         Payload,
         Vec<u8>,
+        Option<u8>,
         Result<
             (
                 Candidate,

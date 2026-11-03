@@ -206,6 +206,25 @@ Screenshots and the thin-link measurement report are written to ignored `test-re
 The portable link simulator uses modelled network overhead, not packet capture;
 see the [measurement limits](../sysml/Requirements.sysml).
 
+## Merge queue
+
+A reviewed CR reaches master through the harness
+[merge queue](https://github.com/SensorsIot/harness/blob/main/core/docs/Merge-Queue.md),
+whose worker runs on HB9BLA only: the supervisor hands in the reviewed tip
+(`python harness/core/tools/merge_queue.py submit <issue> <tip>`) and builds no merge
+itself. Andreas pushes its reviewed tip to the issue branch and hands it in on HB9BLA.
+The `queue:` section of `.harness/config.yaml` names the tools the gate needs (Node 24
+or later, npm, Cargo, rustc, `gh`, the MSVC linker), 20 GB free on every drive the gate uses, the
+input environment of the [HB9BLA handover](HB9BLA-HANDOFF.md) and the `npm ci` setup of
+the queue's worktree. Before a long build or test run outside the gate, an agent runs
+`python harness/core/tools/merge_queue.py busy --wait`.
+
+Priorities on HB9BLA ([harness#28](https://github.com/SensorsIot/harness/issues/28)): the
+station task `WSTX Rust Station HB9BLA` runs at High, above the gate; the gate runs at
+ABOVE_NORMAL with unbounded build parallelism; agent builds and tests outside the gate
+run at BelowNormal with a bounded `CARGO_BUILD_JOBS` (2, as the
+[HB9BLA handover](HB9BLA-HANDOFF.md) sets it).
+
 ## Same-machine development
 
 Both applications can be developed on one Windows computer: the station-server process runs locally and the operator client opens in a browser on that computer. The interface between them remains the same when the server is later placed beside a remote radio. The current page reports server version, connection status and an unconfigured radio; it reconnects after connection loss.

@@ -143,8 +143,9 @@ package WstxMcp {
         doc /* Fixed order as above, identical in both eras; each inputSchema has
              additionalProperties false and an outputSchema for ToolResult.
              wstx_read {view: profile|receive|selection|radio|transmit|contact|automation|
-             strategy} -> GET /profile, /receive, /receive/selection, /radio, /transmit,
-             /contact, /automation, /strategy. wstx_results {source_id, job_id: UUID; generation, cursor: safe
+             strategy|alerts} -> GET /profile, /receive, /receive/selection, /radio,
+             /transmit, /contact, /automation, /strategy, /strategy/alerts (#42
+             WstxStrategy::Alert, read-only; clearing stays in the browser). wstx_results {source_id, job_id: UUID; generation, cursor: safe
              integer; limit optional 1..16} -> GET /receive/results. wstx_contact_command
              {command: WstxContact::ContactCommand} -> POST /contact/command.
              wstx_transmit_halt {halt: HaltTransmit body} -> POST /transmit/halt.

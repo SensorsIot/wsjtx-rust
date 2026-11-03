@@ -22,7 +22,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('qso-rr73','RR73','Send RR73 next')}${qsoButton('qso-73','73','Send 73 next')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
-<div id="qso-area" class="ct-qso-area"><ol id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></ol><ul id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></ul><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
+<div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="Our measured SNR of a received message" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's report on us, on the line that carries it" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></tbody><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
 `);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
@@ -175,12 +175,28 @@ function render(){
 // #37 QsoPane item 7: the server-owned dialogue of the running QSO, oldest first, kept at
 // its newest line; it scrolls inside the card (#qso-area) and goes with the QSO.
 const hhmmss=ms=>Number.isFinite(ms)?new Date(ms).toISOString().slice(11,19):'--:--:--';
+// #60 QsoPane QSO table: UTC | Direction | Exchange | Rx SNR | Tx SNR. Direction is the two
+// calls as on the air, recipient first, with "◂" pointing to the recipient (a hashed call
+// as decoded, "<...>" too); a CQ is "CQ [DX] <call>" with its grid as the exchange; another
+// message is all exchange. Rx SNR (ours) and Tx SNR (the partner's report on us, R-02 → −2)
+// only on received lines.
+const signedDb=n=>typeof n==='number'?(n=Math.round(n),n>0?`+${n}`:n<0?`−${-n}`:'0'):'';
+const isCall=w=>/^<[^>]+>$/.test(w)||/^(?=.*[A-Z])(?=.*\d)[A-Z0-9/]+$/.test(w);
+function qsoRow(utc,text,rx,snr,count){
+  const w=(text??'').trim().split(/\s+/).filter(Boolean);let direction='',exchange=text??'';
+  if(w[0]==='CQ'){const grid=w.length>2&&/^[A-R]{2}\d{2}$/.test(w.at(-1));direction=(grid?w.slice(0,-1):w).join(' ');exchange=grid?w.at(-1):'';}
+  else if(w.length>=2&&isCall(w[0])&&isCall(w[1])){direction=`${w[0]} ◂ ${w[1]}`;exchange=w.slice(2).join(' ');}
+  const report=rx?/^R?([+-]\d{2})$/.exec(exchange):null;
+  const tr=document.createElement('tr');
+  for(const cell of [utc,direction,`${exchange}${count>1?` ×${count}`:''}`.trim(),rx?signedDb(snr):'',report?signedDb(Number(report[1])):'']){const td=document.createElement('td');td.textContent=cell;tr.append(td);}
+  return tr;
+}
+const qsoTableShow=()=>{$('qso-table').hidden=!$('qso-dialogue').children.length&&!othersList.children.length;};
 function dialogueShow(c){
   const list=$('qso-dialogue'),entries=Array.isArray(c?.dialogue)?c.dialogue:[];
   const key=JSON.stringify(entries);if(list.dataset.key===key)return;list.dataset.key=key;
-  list.replaceChildren(...entries.map(e=>{const li=document.createElement('li');li.dataset.dir=e.dir;
-    li.textContent=`${hhmmss(e.period_utc_ms)} ${e.dir==='tx'?'\u25B8':'\u25C2'} ${e.text}${e.dir==='rx'?`  ${snrText(e.snr)}`:''}${e.count>1?` \u00D7${e.count}`:''}`.trimEnd();return li;}));
-  list.hidden=!entries.length;
+  list.replaceChildren(...entries.map(e=>{const tr=qsoRow(hhmmss(e.period_utc_ms),e.text,e.dir==='rx',e.snr,e.count);tr.dataset.dir=e.dir;return tr;}));
+  list.hidden=!entries.length;qsoTableShow();
   const area=$('qso-area');area.scrollTop=area.scrollHeight;
 }
 // #55 WstxDxcc: the partner's country and continent in the QSO pane header (first on its
@@ -273,9 +289,10 @@ $('qso-cq').addEventListener('click',async()=>{
     if(!await confirmAction(`Abandon the QSO with ${c.dx_call} and call CQ?`,'Call CQ'))return;
     const reply=await send('cancel',{},'Cancel contact');if(!reply||reply.refused)return;
   }
-  arm('CQ');
+  // #61 CL-061-02: an explicit choice, retried after stale_revision like the double-click.
+  sendExplicit(()=>arm('CQ'));
 });
-$('qso-reply').addEventListener('click',()=>arm('Reply'));
+$('qso-reply').addEventListener('click',()=>sendExplicit(()=>arm('Reply')));
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 async function finalMessage(slot,label){
   const c=snap?.contact;if(!c?.dx_call||!transmitting(c))return;
@@ -590,23 +607,22 @@ function othersShow(){
   const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}`)]);
   if(othersList.dataset.key===key)return;othersList.dataset.key=key;
   othersList.replaceChildren(...lines.map(({record,context})=>{
-    const li=document.createElement('li');li.tabIndex=0;li.dataset.kind=qso?'warn':'candidate';
-    li.dataset.row=JSON.stringify(rowOf(context,record.sequence));
-    li.textContent=`${hhmmss(Date.parse(record.period_start_utc??''))} ${qso?'⚠':'◂'} ${record.text}  ${snrText(record.snr_db)}`.trimEnd();
-    li.title=qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station';
-    return li;
-  }));
+    const tr=qsoRow(`${hhmmss(Date.parse(record.period_start_utc??''))}${qso?' ⚠':''}`,record.text,true,record.snr_db,1);tr.tabIndex=0;tr.dataset.kind=qso?'warn':'candidate';
+    tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;
+    tr.title=qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station';
+    return tr;
+  }));qsoTableShow();
   const area=$('qso-area');area.scrollTop=area.scrollHeight;
 }
 function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.split('/');return {source_id,job_id,generation:Number(generation),sequence};}
 async function answerOther(li){
   const row=JSON.parse(li.dataset.row),qso=li.dataset.kind==='warn';
   const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.textContent);return;}
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.text);return;}
   if(reply&&!reply.refused&&transmitCapable())arm('Reply');
 }
-othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'li[data-row]');if(li)answerOther(li);});
-othersList.addEventListener('keydown',event=>{const li=event.target.closest('li[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});
+othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
+othersList.addEventListener('keydown',event=>{const li=event.target.closest('tr[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});
 if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;othersShow();}).observe(activity,{childList:true});
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
@@ -630,17 +646,25 @@ const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
 rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.dataset.key='rx';txMarker.dataset.key='tx';
 for(const m of [rxMarker,txMarker]){m.setAttribute('role','slider');m.setAttribute('aria-valuemin','0');m.setAttribute('aria-valuemax','3000');m.setAttribute('aria-label',m===rxMarker?'Rx marker, drag to set the Rx frequency':'Tx marker, drag to set the Tx frequency');}
+for(const m of [rxMarker,txMarker]){const goal=document.createElement('span');goal.className='ct-goal';m.append(goal);}
 wrap?.append(rxMarker,txMarker);
 // #50: 3 px green Rx and red Tx lines without text; the Rx/Tx strip below shows the values.
+// CL-050-07: the lines, their brackets and the pointer use the waterfall's one frequency
+// mapping (recording.js wstxWaterfallAxis, the canvas box), as the frequency axis does. Each
+// line is the lowest tone; its WSJT-X bracket spans the occupied width of the station's mode.
 let dragging=null;
+const occupiedHz=()=>(tick?tick.period===7500:typeof live!=='undefined'&&live?.job?.mode==='ft4')?4*12000/576:8*12000/1920;
+function place(m,hz){const axis=window.wstxWaterfallAxis,x=axis.x(hz,wrap);m.style.left=`${x}px`;m.firstChild.style.width=`${axis.x(hz+occupiedHz(),wrap)-x}px`;}
 function markers(){
   const s=snap?.settings;
-  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
+  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){place(m,hz);m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
 }
-const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
+const pointerHz=event=>window.wstxWaterfallAxis.hz(event.clientX);
+if(waterfall)new ResizeObserver(()=>markers()).observe(waterfall);
+addEventListener('station-message',event=>{if(event.detail?.message?.type==='station.tick')queueMicrotask(markers);});
 for(const m of [rxMarker,txMarker]){
   m.addEventListener('pointerdown',event=>{if(event.button!==0||!snap)return;event.preventDefault();event.stopPropagation();dragging=m;m.setPointerCapture(event.pointerId);m.classList.add('ct-dragging');});
-  m.addEventListener('pointermove',event=>{if(dragging!==m)return;m.style.left=`${pointerHz(event)/30}%`;m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
+  m.addEventListener('pointermove',event=>{if(dragging!==m)return;place(m,pointerHz(event));m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
   m.addEventListener('pointerup',event=>{if(dragging!==m)return;dragging=null;m.classList.remove('ct-dragging');const hz=pointerHz(event);if(String(hz)!==m.dataset.hz)send('set_frequency',{rx_hz:m.dataset.key==='rx'?hz:null,tx_hz:m.dataset.key==='tx'?hz:null},m.dataset.key==='rx'?'Rx frequency':'Tx frequency');else markers();});
   m.addEventListener('click',event=>event.stopPropagation());
 }
@@ -887,7 +911,8 @@ function decorate(){
     const v=on?verdicts.get(tr.dataset.resultId):null;
     tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
-    if(v?.grey)tr.title='Directed CQ not addressed to my continent: never answered';else if(v)tr.title=`Strategy ${config().active}: rule ${v.rank+1}`;else tr.removeAttribute('title');
+    // #55 BandActivityHover: the verdict joins the row's other reasons.
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ not addressed to my continent: never answered';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   if(!on)return;
   // Matches go to the top of their period block in the station's order.
@@ -897,7 +922,9 @@ function decorate(){
     const matched=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).index-verdicts.get(b.dataset.resultId).index);
     if(!matched.length)return;
     const anchor=block.at(-1).nextSibling;
-    for(const tr of [...matched,...block.filter(r=>!matched.includes(r))])tbody.insertBefore(tr,anchor);
+    // #55 BandActivityValue: in the value order rows calling me stay above the strategy hits (value 2).
+    const first=typeof activitySortField!=='undefined'&&activitySortField==='value'?block.filter(r=>r.classList.contains('ba-tome')):[];
+    for(const tr of [...first,...matched.filter(r=>!first.includes(r)),...block.filter(r=>!matched.includes(r)&&!first.includes(r))])tbody.insertBefore(tr,anchor);
   };
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
@@ -1027,6 +1054,74 @@ addEventListener('wstx-row-menu',event=>{
     pounceItem.title=on?'Stop waiting for this station':runActive()?'Another automation run is active':!capable?'Transmission unavailable':!['ft8','ft4'].includes(mode)?'Pounce needs FT8/FT4 receive':`Answer ${call} when it calls CQ or ends a QSO with 73 (transmits)`;}
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
+// ---------------------------------------------------------------- #42 Alert
+// WstxStrategy::Alert: the station records the alerts of rules marked alert; this client
+// lists the history and announces new alerts as the operator chose (both off by default):
+// a short tone while the page is visible, a browser notification also while it is hidden.
+ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>A strategy rule marked Alert (strategy editor) records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
+const alertSound=$('alert-sound'),alertNotify=$('alert-notify'),alertList=$('alert-history'),alertNote=$('alert-note');
+let alertView=null,alertSeen=null,alertSocket=null,alertSeq=0,audio=null;
+const alertKey=()=>`wstx.alerts.v1:${alertView?.profile_id??view?.profile_id??''}`;
+function alertPrefs(){try{const p=JSON.parse(localStorage.getItem(alertKey())??'null');return {sound:p?.sound===true,notify:p?.notify===true};}catch{return {sound:false,notify:false};}}
+function saveAlertPrefs(p){try{localStorage.setItem(alertKey(),JSON.stringify({sound:p.sound,notify:p.notify}));}catch{}}
+const notifyGranted=()=>typeof Notification!=='undefined'&&Notification.permission==='granted';
+function showAlertPrefs(){if(!alertSound)return;const p=alertPrefs();alertSound.checked=p.sound;alertNotify.checked=p.notify&&notifyGranted();alertNotify.disabled=typeof Notification==='undefined';if(alertNotify.disabled)alertNote.textContent='This browser offers no notifications here';}
+function alertLine(a){
+  return [`${String(a.utc??'').slice(11,19)} ${a.call} ${a.message}`,a.rule,[a.band,a.mode?String(a.mode).toUpperCase():null].filter(Boolean).join(' '),Number.isFinite(a.snr_db)?`${Math.round(a.snr_db)} dB`:null,a.dxcc].filter(Boolean).join(' \u00b7 ');
+}
+function showAlerts(){
+  if(!alertList)return;const list=[...(alertView?.alerts??[])].reverse(),key=list.map(a=>a.id).join(',');
+  alertClear.disabled=!list.length;if(alertList.dataset.key===key)return;alertList.dataset.key=key;
+  alertList.replaceChildren(...list.map(a=>{const li=document.createElement('li'),span=document.createElement('span');span.className='al-text';span.textContent=alertLine(a);li.append(span);return li;}));
+}
+function alertAudio(){try{audio??=new AudioContext();if(audio.state==='suspended')audio.resume?.();}catch{audio=null;}return audio;}
+function tone(){const a=alertAudio();if(!a)return;try{const o=a.createOscillator(),g=a.createGain(),t=a.currentTime;o.frequency.value=880;g.gain.setValueAtTime(0.15,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);o.connect(g).connect(a.destination);o.start(t);o.stop(t+0.16);}catch{}}
+function announce(a){
+  const p=alertPrefs();
+  if(p.sound&&document.visibilityState==='visible')tone();
+  if(p.notify&&notifyGranted()){try{new Notification(`Alert ${a.call}`,{body:`${a.message} \u00b7 ${a.rule}`,tag:`wstx-alert-${a.id}`});}catch{}}
+}
+// quiet: the history read at page load or on a new socket announces nothing.
+async function loadAlerts(quiet){
+  const seq=++alertSeq;
+  try{
+    const response=await stationFetch('/strategy/alerts',{cache:'no-store',signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(seq!==alertSeq||!response.ok||data?.v!==1||!Array.isArray(data.alerts))return;
+    const known=alertSeen!==null&&alertView?.boot_id===data.boot_id&&!quiet;
+    const fresh=known?data.alerts.filter(a=>a.id>alertSeen):[];
+    alertView=data;alertSeen=Math.max(known?alertSeen:0,...data.alerts.map(a=>a.id));
+    showAlertPrefs();showAlerts();for(const a of fresh)announce(a);
+  }catch{}
+}
+const alertClear=$('alert-clear');
+alertClear?.addEventListener('click',async()=>{
+  if(!alertView)return;
+  try{
+    const response=await stationFetch('/strategy/alerts/clear',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:alertView.profile_id,boot_id:alertView.boot_id}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1){alertNote.textContent=`Not cleared \u00b7 ${data?.error?.code??response.status}`;return;}
+    alertSeq++;alertView=data;showAlerts();
+  }catch(error){alertNote.textContent=`Not cleared \u00b7 ${error.message}`;}
+});
+alertSound?.addEventListener('change',()=>{saveAlertPrefs({...alertPrefs(),sound:alertSound.checked});if(alertSound.checked)alertAudio();});
+// The notification permission is asked only here, on the operator's click.
+alertNotify?.addEventListener('change',async()=>{
+  const p=alertPrefs();alertNote.textContent='';
+  if(!alertNotify.checked){saveAlertPrefs({...p,notify:false});return;}
+  let permission=typeof Notification==='undefined'?'unavailable':Notification.permission;
+  if(permission==='default'){try{permission=await Notification.requestPermission();}catch{permission='denied';}}
+  if(permission!=='granted'){alertNotify.checked=false;saveAlertPrefs({...p,notify:false});alertNote.textContent=`Notifications not allowed (${permission}); allow them in the browser's site settings`;return;}
+  saveAlertPrefs({...p,notify:true});
+});
+// Station settings, not profile fields: they never mark the profile form unsaved.
+for(const el of [alertSound,alertNotify])for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
+// A suspended audio context (autoplay rules) resumes with the operator's next action.
+addEventListener('pointerdown',()=>{if(audio?.state==='suspended')audio.resume?.();},true);
+addEventListener('station-message',event=>{const {message,current}=event.detail;if(current===socket&&message?.type==='alert.state')loadAlerts(false);});
+addEventListener('station-ready',event=>{if(event.detail===alertSocket)return;alertSocket=event.detail;loadAlerts(true);});
+if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadAlerts(false);}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){alertSocket=socket;loadAlerts(true);}
 // ---------------------------------------------------------------- #42 Pounce
 // WstxStrategy::Pounce: the station runs it as an automation run with pounce <call>; this
 // client only starts and stops it and shows it (QSO pane line, strategy element status).
@@ -1098,7 +1193,7 @@ function renderEditor(){
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
 <p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. Directed CQs not for my continent never match.</p>
-<ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
+<ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><label class="op-check se-alert" title="Sound or browser notification when a decode matches this rule (Settings &gt; General); never transmits"><input type="checkbox" data-alert="${ri}"${r.alert?' checked':''}>Alert</label><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
 <p class="op-actions"><button type="button" data-act="add-rule"${s.rules.length>=8?' disabled':''}>Add rule</button></p>
 <div class="se-options"><label>Sort matches<select id="se-sort">${[['strongest','Strongest first'],['weakest','Weakest first'],['furthest','Furthest first'],['newest','Newest first']].map(([v,l])=>option(v,l,s.sort===v)).join('')}</select></label>
 <label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
@@ -1119,6 +1214,7 @@ editor.addEventListener('input',event=>{
     else if(f==='min'||f==='max')c[f]=t.value===''?null:Number(t.value);
     else if(t.dataset.continent)c.values=[...li.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent);
   }
+  else if(t.dataset.alert!==undefined){const r=s.rules[Number(t.dataset.alert)];if(t.checked)r.alert=true;else delete r.alert;}
   else if(t.id==='se-name')s.name=t.value;
   else if(t.id==='se-sort')s.sort=t.value;else if(t.id==='se-73')s.treat_73_as_cq=t.checked;else if(t.id==='se-role')s.auto_role=t.value;
   else if(t.id==='se-switch')s.switch_after=Number(t.value);else if(t.id==='se-skip')s.skip_after=Number(t.value);else if(t.id==='se-callers')s.apply_to_callers=t.checked;

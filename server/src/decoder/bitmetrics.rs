@@ -2,8 +2,8 @@
 // Copyright the WSJT-X contributors. GPL-3.0-only; see the project LICENSE.
 // Reference: WSJTX/wsjtx 0f7d5928449ec747c3d1f6da1306f8c94404c3a9.
 use super::{
-    Channel, ChannelWord, DecodeError, Mode, baseband::PassBand, search::CpuBudget,
-    synchronization::Candidate,
+    APriori, Channel, ChannelWord, DecodeError, Mode, apriori, baseband::PassBand,
+    search::CpuBudget, synchronization::Candidate,
 };
 use rustfft::num_complex::Complex64;
 
@@ -175,63 +175,53 @@ async fn ft4(
         })
         .collect())
 }
+/// The word of one fine point and, for an a-priori word, its WSJT-X AP type (1..6).
 pub(super) async fn observe(
     pass: &mut PassBand<'_>,
     c: Candidate,
     channel: &Channel,
+    ap: &APriori,
     budget: &mut CpuBudget<'_>,
-) -> Result<Option<ChannelWord>, DecodeError> {
+) -> Result<Option<(ChannelWord, Option<u8>)>, DecodeError> {
     let Some(rows) = pass.rows(c.start, c.frequency, budget).await? else {
         return Ok(None);
     };
-    if !physical_accepts(pass.plan.mode, &rows) {
+    let mode = pass.plan.mode;
+    if !physical_accepts(mode, &rows) {
         return Ok(None);
     }
-    let families = match pass.plan.mode {
+    let families = match mode {
         Mode::Ft8 => ft8(&rows, budget).await?,
         Mode::Ft4 => ft4(&rows, budget).await?,
     };
-    let assisted = if pass.plan.mode == Mode::Ft8 && families.len() == 5 {
-        cq_assisted(&families)
-    } else {
-        vec![]
-    };
-    if let Some(word) = decode_families(pass.plan.mode, families, channel, budget).await? {
-        return Ok(Some(word));
+    let assisted = apriori::hypotheses(mode, &families, ap, c.frequency);
+    if let Some(word) = decode_families(mode, families, channel, budget).await? {
+        return Ok(Some((word, None)));
     }
-    decode_assisted_families(assisted, channel, budget).await
+    Ok(decode_assisted_families(mode, assisted, channel, budget)
+        .await?
+        .map(|(word, kind)| (word, Some(kind))))
 }
-/// ft8b a-priori type 1 (CQ ??? ???) for the 77-bit standard message: payload bits 0..28 are
-/// the CQ token (c28 = 2) with ipa = 0 and bits 74..76 are i3 = 1. They are fixed at 1.1 times
-/// the family's largest |LLR|. WSJT-X uses the single and triple families (passes 6, 7).
-pub(super) fn cq_assisted(families: &[[f32; 174]]) -> Vec<([f32; 174], [bool; 174])> {
-    [0, 2]
-        .into_iter()
-        .map(|family| {
-            let mut llr = families[family];
-            let magnitude = llr.iter().fold(0f32, |m, x| m.max(x.abs())) * 1.1;
-            let mut fixed = [false; 174];
-            let cq = (0..29).map(|bit| (bit, bit == 26));
-            for (bit, one) in cq.chain([(74, false), (75, false), (76, true)]) {
-                llr[bit] = if one { -magnitude } else { magnitude };
-                fixed[bit] = true;
-            }
-            (llr, fixed)
-        })
-        .collect()
-}
-/// The CQ a-priori passes, tried only after every unassisted FT8 family failed.
+/// The a-priori passes (WstxStationDecode::APrioriHypotheses), tried in order only after
+/// every unassisted family failed. A word needs at most 36 hard disagreements in both modes,
+/// a decoded payload (WSJT-X drops an a-priori word that does not unpack and tries the next
+/// pass) and, except for FT8's CQ type 1, WSJT-X's confidence (not marked '?').
 async fn decode_assisted_families(
-    families: Vec<([f32; 174], [bool; 174])>,
+    mode: Mode,
+    hypotheses: Vec<(u8, [f32; 174], [bool; 174])>,
     channel: &Channel,
     budget: &mut CpuBudget<'_>,
-) -> Result<Option<ChannelWord>, DecodeError> {
-    for (llr, fixed) in families {
+) -> Result<Option<(ChannelWord, u8)>, DecodeError> {
+    for (kind, llr, fixed) in hypotheses {
         budget.checkpoint().await?;
         if let Some((word, errors)) = channel.decode_assisted(&llr, &fixed, &|| (budget.cancel)())
             && accepted(Mode::Ft8, &word, errors)
+            && (mode == Mode::Ft8 && kind == 1 || apriori::confident(&word, &llr, errors))
+            && channel
+                .payload(&word, mode)
+                .is_some_and(|p| super::unpack(&p).status == super::PayloadStatus::Decoded)
         {
-            return Ok(Some(word));
+            return Ok(Some((word, kind)));
         }
     }
     Ok(None)

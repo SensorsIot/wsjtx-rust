@@ -56,6 +56,7 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
         start_frame: 6000,
         frequency_hz: 1000.0,
         snr_db: None,
+        a_priori: None,
     };
     (job, decoded)
 }

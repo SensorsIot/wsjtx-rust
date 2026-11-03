@@ -69,9 +69,9 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:797},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(872),origin,mapping),'automatic');for(const line of [811,825,839,856,857,865,874])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(871),origin,mapping),/unknown/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(872).stack.callFrames]}};
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:799},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.equal(cadenceCaller(initiator(874),origin,mapping),'automatic');for(const line of [813,827,841,858,859,867,876])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(873),origin,mapping),/unknown/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(874).stack.callFrames]}};
     assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
@@ -131,7 +131,7 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   // (net::ERR_ABORTED) before the baseline and failed the join, though the page superseded it.
   await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:797},{url:origin+'/recording.js',lineNumber:872}]}};
+    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:799},{url:origin+'/recording.js',lineNumber:874}]}};
     const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
     const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
     const seen=(abort={})=>{
@@ -409,6 +409,40 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
   assert.deepEqual(manual,[],'the browser never calls the deprecated manual lifecycle routes');
   assert.deepEqual(errors,[]);
 });
+
+// #8: the live Thin/Off workload failed when the page's own request timeout abandoned a /receive
+// body after its headers. The real Chromium page here abandons one the same way, and the same
+// evidence reader must keep it aside only until the route is read complete again, while a
+// completed malformed body, and an abandoned body never read again, stay refused.
+test('TC-009-005 evidence reader tolerates only a page-abandoned receive body that is read again',{timeout:30000},async t=>{
+  const {chromium}=require('playwright'),http=require('node:http');
+  const fixture=http.createServer((request,response)=>{
+    if(request.url==='/'){response.end('<!doctype html><title>x</title>');return;}
+    response.writeHead(200,{'content-type':'application/json','cache-control':'no-store'});
+    if(request.url.startsWith('/receive?stall'))response.write('{"v":');
+    else if(request.url.startsWith('/receive/results?malformed'))response.end('{"v":');
+    else response.end('{"v":1}');
+  });
+  await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));t.after(()=>{fixture.closeAllConnections();fixture.close();});
+  const browser=await chromium.launch();t.after(()=>browser.close());
+  const page=await browser.newPage(),seen={http:[],abandonedBodies:[],receive:null,results:[],active:0},errors=[],pending=[];
+  page.on('response',response=>{const route=new URL(response.url()).pathname;if(route==='/')return;
+    const entry={route,status:response.status(),at:performance.now(),bodyBytes:null};seen.http.push(entry);pending.push(observeReceiveResponse(response,entry,seen,new Map(),errors));});
+  await page.goto(`http://127.0.0.1:${fixture.address().port}/`);
+  // recording.js request(): one AbortSignal.timeout covers the headers and the body.
+  const read=path=>page.evaluate(async path=>{try{return await (await fetch(path,{signal:AbortSignal.timeout(400)})).json();}catch(error){return error.name;}},path);
+  const settle=async count=>{for(const deadline=performance.now()+5000;seen.http.length<count;)assert.ok(performance.now()<deadline,'response observed'),await new Promise(r=>setTimeout(r,20));await Promise.all(pending);};
+  assert.equal(await read('/receive?stall'),'TimeoutError','the page abandons the body after the headers');await settle(1);
+  assert.deepEqual(errors,[],'an abandoned body is not an evidence error');
+  assert.equal(seen.abandonedBodies.length,1);assert.equal(seen.abandonedBodies[0].failure,'net::ERR_ABORTED');
+  assert.deepEqual(abandonedBodiesNotReRead(seen).map(a=>a.route),['/receive'],'until it is read again it is refused');
+  assert.deepEqual(await read('/receive?again'),{v:1});await settle(2);
+  assert.deepEqual(abandonedBodiesNotReRead(seen),[],'a later complete read of the route clears it');assert.deepEqual(seen.receive,{v:1});
+  assert.deepEqual(await read('/receive/results?ok'),{v:1});await settle(3);
+  assert.equal(await read('/receive/results?malformed'),'SyntaxError');await settle(4);
+  assert.equal(errors.length,1,'a completed malformed body stays an evidence error');assert.match(errors[0],/^actual \/receive\/results response: /);
+  assert.equal(seen.abandonedBodies.length,1,'a malformed body is never kept aside as abandoned');
+});
 }else{
   assert.equal(process.env.WSTX_SELECTION_FIXTURE,'1','unknown fixture mode is not a skipped positive');
   liveSelectionFixture();
@@ -446,10 +480,10 @@ function cadenceSource(bytes){
   // (autocrlf CRLF or LF). Pin the LF-normalized text, the same as git's content (#8).
   const source=Buffer.from(bytes).toString('utf8').replace(/\r\n/g,'\n');
   const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
-  assert.equal(sha256,'a689b6f05ac2a6dfc7069e64b84ae2757acb6d37e09f7ba10d48e702de69edca','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'881c99104a90ada204dc96f1aacf3c869c092cdbb874f9a1348bcdc2ad2a4192','review caller/acceptance mapping when recording.js changes');
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  const mapping={sha256,valid,fetchLine:797,timerLine:872},lines=source.split('\n');
+  const mapping={sha256,valid,fetchLine:799,timerLine:874},lines=source.split('\n');
   // CDP line numbers are 0-based: they must still name the selection fetch and the timer caller.
   assert.ok(lines[mapping.fetchLine].includes("stationFetch('/receive/selection'"),'fetchLine names the selection read');
   assert.ok(lines[mapping.timerLine].includes('operatingSync(false)')&&lines[mapping.timerLine-3].startsWith('setInterval('),'timerLine names the automatic timer caller');
@@ -468,7 +502,7 @@ function cadenceCaller(initiator,origin,mapping){
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
   // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
   // Reviewed for CL-022-03: Connect/Disconnect CAT callers removed; catSync never reads selection.
-  const explicitLines=[811,825,839,856,857,865,874];
+  const explicitLines=[813,827,841,858,859,867,876];
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
   return 'explicit/reconciliation';
@@ -576,6 +610,26 @@ function correlatedOffAck(requests,acks,after){
 }
 function assertOffAckDeadline(ack){const elapsed=ack.ackAt-ack.requestedAt;assert.ok(Number.isFinite(elapsed)&&elapsed>=0&&elapsed<=2000,`actual Off acknowledgement ${elapsed}ms exceeds2000ms`);return elapsed;}
 function optionalAfterOff(frames,ack){return frames.filter(frame=>frame.socket===ack.socket&&frame.at>ack.ackAt&&['spectrum.frame','spectrum.detail.frame'].includes(frame.type));}
+// Reads the body of one /receive, /receive/selection or /receive/results response into the
+// evidence (#8). On the starved link the page's own 10 s request timeout (AbortSignal.timeout in
+// recording.js request()) can fire after the headers arrived but before the body did: the request
+// ends net::ERR_ABORTED, the client drops that read and reads again, and Chromium holds no body
+// (Network.getResponseBody "No data found ..."; Playwright's hint about navigation is generic).
+// Only that page-abandoned body is kept aside, as evidence; abandonedBodiesNotReRead then requires
+// a later complete read of the same route. A completed response whose body is unreadable or not
+// JSON, or a body failure of any other kind, stays an evidence error.
+async function observeReceiveResponse(response,entry,seen,reads,errors){
+  const route=entry.route;
+  try{let text;
+    try{text=await response.text();}
+    catch(error){const failure=response.request().failure()?.errorText??null;if(failure!=='net::ERR_ABORTED')throw error;seen.abandonedBodies.push({route,status:entry.status,responseAt:entry.at,at:performance.now(),error:error.message,failure});return;}
+    entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);entry.parsed=true;
+    if(route==='/receive/selection'){const r=reads.get(response.request());if(r){r.body=body;r.status=response.status();if(r.ended===null){r.ended=performance.now();seen.active--;}}}
+    if(route==='/receive')seen.receive=body;
+    if(route==='/receive/results')seen.results.push(body);
+  }catch(error){errors.push(`actual ${route} response: ${error.message}`);}
+}
+function abandonedBodiesNotReRead(seen){return seen.abandonedBodies.filter(a=>!seen.http.some(e=>e.route===a.route&&e.parsed&&e.at>a.at));}
 
 function liveSelectionFixture(){
   test('TC-009-005 actual native/CAT/TLS two-browser Thin and Off selection workload',{timeout:510000},async t=>{
@@ -596,7 +650,7 @@ function liveSelectionFixture(){
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
-      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[]};observations.push(seen);
+      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[]};observations.push(seen);
       page.on('framenavigated',frame=>{if(frame===page.mainFrame())seen.navigations.push({url:frame.url(),at:performance.now()});});
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
       cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,wallStarted:event.wallTime*1000,wallEnded:null,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
@@ -619,11 +673,7 @@ function liveSelectionFixture(){
         if(route==='/profile'&&response.status()===200){const entry={at:performance.now(),body:null};try{entry.body=await response.json();}catch(error){entry.bodyError=error.message;entry.finished=await response.finished().then(e=>e?String(e):'finished',e=>String(e));entry.failure=response.request().failure()?.errorText??null;}seen.profileBodies.push(entry);}
         const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
-        try{const text=await response.text();entry.bodyBytes=Buffer.byteLength(text);const body=JSON.parse(text);
-          if(route==='/receive/selection'){const r=reads.get(response.request());if(r){r.body=body;r.status=response.status();if(r.ended===null){r.ended=performance.now();seen.active--;}}}
-          if(route==='/receive')seen.receive=body;
-          if(route==='/receive/results')seen.results.push(body);
-        }catch(error){errors.push(`actual ${route} response: ${error.message}`);}
+        await observeReceiveResponse(response,entry,seen,reads,errors);
       });
       page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
     }
@@ -634,8 +684,9 @@ function liveSelectionFixture(){
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
       // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
       // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
-      // queued, this browser's 10 s authorization requests can time out ("Could not authenticate").
-      // The operator then presses Connect securely again; each retry is kept as evidence (#55).
+      // queued, this browser's 10 s authorization attempts can time out. The client retries a
+      // timed-out step itself (CL-022-01, #22); only if every attempt fails ("Could not authenticate")
+      // does the operator press Connect securely again. Each such press is kept as evidence (#55).
       seen.loginRetries=[];
       for(;;){
         await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
@@ -661,6 +712,12 @@ function liveSelectionFixture(){
     for(const [index,page]of pages.entries()){
       const authoritative=observations[index].profileBodies.filter(p=>p.body).at(-1)?.body;assert.ok(authoritative,'authoritative setup profile observed');
       assert.deepEqual(observations[index].navigations.map(n=>n.url),[origin+'/'],'one main-frame navigation (the goto): the client never navigates or reloads');
+      // The qualified segment starts once the page has no Cold-load selection read in flight. On the
+      // starved cold link both browsers' cold loads can overlap (e.g. after the client retried a
+      // timed-out login step itself, #22), so a read can still be queued behind contact.js when the
+      // clients arrive; its page timeout would then end just inside the segment. The baseline still
+      // refuses every abort that ends after it (#8, supersededColdRead).
+      await page.waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:coldRemaining()});
       const socketBaseline={index:observations[index].sockets.length-1,count:observations[index].sockets.length,at:performance.now(),end:null};
       observations[index].acceptance={socketBaseline,expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
         const initialSocket=socket,events=[];
@@ -770,6 +827,8 @@ function liveSelectionFixture(){
     }
     await measure('thin',[['mode','ft4','ft4',7047500],['band','20m','ft4',14080000]]);
     await measure('off',[['mode','ft8','ft8',14074000],['band','40m','ft8',7074000]]);
+    report.abandonedBodies=observations.map(seen=>seen.abandonedBodies);await save();
+    for(const [index,seen]of observations.entries())assert.deepEqual(abandonedBodiesNotReRead(seen),[],`browser${index}: every body the page abandoned is read again complete afterwards`);
     assert.equal(identities.length,5);assert.deepEqual(errors,[]);assert.equal(contexts.length,2);assert.equal(Object.values(report.phases).filter(p=>p.state==='passed').length,2);
     await pages[0].setViewportSize({width:1440,height:900});await pages[0].screenshot({path:'test-results/radio-selection/actual-native-cat-desktop.png',fullPage:true});
     await pages[0].setViewportSize({width:360,height:800});assert.equal(await pages[0].evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await pages[0].screenshot({path:'test-results/radio-selection/actual-native-cat-360.png',fullPage:true});

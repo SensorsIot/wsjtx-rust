@@ -236,18 +236,81 @@ fn cq_a_priori_bits_recover_a_buried_cq_word() {
     ))
     .unwrap();
     assert_ne!(plain.map(|w| w.to_vec()), Some(bits.clone()));
-    let assisted = cq_assisted(&families);
+    let assisted = apriori::hypotheses(Mode::Ft8, &families, &APriori::default(), 1500.);
     assert_eq!(assisted.len(), 2);
     assert!(
         assisted
             .iter()
-            .all(|(_, fixed)| fixed.iter().filter(|&&f| f).count() == 32)
+            .all(|(kind, _, fixed)| *kind == 1 && fixed.iter().filter(|&&f| f).count() == 32)
     );
     let word = complete(decode_assisted_families(
+        Mode::Ft8,
         assisted,
         &channel,
         &mut CpuBudget::new(&never),
     ))
-    .unwrap();
+    .unwrap()
+    .map(|(word, kind)| {
+        assert_eq!(kind, 1);
+        word
+    });
     assert_eq!(word.map(|w| w.to_vec()), Some(bits));
+}
+
+// Proves: CL-007-03 (#56 slice 5 APrioriHypotheses acceptance). An a-priori word is published
+// only with a decoded payload, and (except FT8's CQ type 1) at WSJT-X confidence
+// qual >= 0.17: 24 hard errors of |LLR| 1 pass (24 + 24 = 48), 25 do not (50 > 49.8).
+#[test]
+fn a_priori_words_need_a_decoded_payload_and_confidence() {
+    let channel = Channel::new();
+    let never = || false;
+    let decode = |mode: Mode, kind: u8, bits: [u8; 77], wrong: usize| {
+        let word = channel.encode(&bits, mode);
+        let mut llr: [f32; 174] = std::array::from_fn(|i| if word[i] == 0 { 4. } else { -4. });
+        for bit in (100..174).step_by(3).take(wrong) {
+            llr[bit] = if word[bit] == 0 { -1. } else { 1. };
+        }
+        let fixed = [false; 174];
+        let found = complete(decode_assisted_families(
+            mode,
+            vec![(kind, llr, fixed)],
+            &channel,
+            &mut CpuBudget::new(&never),
+        ))
+        .unwrap();
+        found.map(|(w, k)| {
+            assert_eq!((w, k), (word, kind));
+        })
+    };
+    let cq = crate::transmit::pack("CQ K1ABC FN42").unwrap().bits;
+    let qso = crate::transmit::pack("HB9BLA K1ABC RR73").unwrap().bits;
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        for kind in 2..=6 {
+            assert!(
+                decode(mode, kind, qso, 24).is_some(),
+                "{mode:?} type {kind}"
+            );
+            assert!(
+                decode(mode, kind, qso, 25).is_none(),
+                "{mode:?} type {kind}"
+            );
+        }
+    }
+    assert!(
+        decode(Mode::Ft4, 1, cq, 25).is_none(),
+        "FT4 CQ needs confidence"
+    );
+    assert!(
+        decode(Mode::Ft8, 1, cq, 25).is_some(),
+        "FT8 CQ keeps slice 2's rule"
+    );
+    // A CRC-valid word whose payload is unsupported (i3=7) is never an a-priori word.
+    let mut unsupported = qso;
+    unsupported[74..77].copy_from_slice(&[1, 1, 1]);
+    for (mode, kind) in [(Mode::Ft8, 1), (Mode::Ft8, 3), (Mode::Ft4, 1)] {
+        assert!(
+            decode(mode, kind, unsupported, 0).is_none(),
+            "{mode:?} type {kind}"
+        );
+    }
 }

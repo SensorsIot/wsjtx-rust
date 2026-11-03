@@ -1,13 +1,14 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02, CL-042-03;
-// TC-039-001..005, TC-042-001, TC-042-002, TC-042-004 (each test names its case below). Hand-authored records and strategies; the expected ranks,
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02, CL-042-03,
+// CL-042-04; TC-039-001..005, TC-042-001, TC-042-002, TC-042-004, TC-042-006 (each test names its
+// case below). Hand-authored records and strategies; the expected ranks,
 // grey marks, orders, stop reasons and requests are the WstxStrategy tables written in
 // these tests (geography from the locator square centres), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
 use crate::automation_tests::{at_even, publish, run_state, transmit_own_period};
-use crate::contact_http_tests::record;
+use crate::contact_http_tests::{period_text, record};
 use crate::mcp_tests::{Mcp, station};
 use std::sync::atomic::Ordering;
 use wstx_rust::transmit::service::Hardware;
@@ -47,6 +48,7 @@ fn strat(rules: Vec<Vec<Value>>, sort: Sort, treat_73: bool) -> Strategy {
         skip_after: 3,
         role: Role::Call,
         switch_after: 2,
+        alerts: Vec::new(),
     }
 }
 fn cq() -> Value {
@@ -2038,4 +2040,265 @@ async fn automation_does_not_start_as_a_hound() {
         ),
         (json!("not_ready"), json!("activity"))
     );
+}
+
+// ------------------------------------------------------------------ #42 Alert
+/// The strategy "Alerts": rule 1 (call prefix K, no alert), rule 2 (any CQ, alert).
+fn alerts_strategy() -> Value {
+    json!({"name":"Alerts","rules":[{"conditions":[{"kind":"call","negate":false,"values":["K"]}]},
+        {"conditions":[{"kind":"message","negate":false,"value":"cq"}],"alert":true}],
+        "sort":"strongest","treat_73_as_cq":false,"apply_to_callers":false,"skip_after":2,"auto_role":"call","switch_after":2})
+}
+
+// Proves: TC-042-006 (WstxStrategy::Strategy rule key alert, WstxStrategy::Alert; the
+// expected alert rules are written here from the contract, not evaluator output).
+#[test]
+fn tc_042_006_alert_rule_key_is_exact_and_names_the_first_alert_rule() {
+    let mut c = config(Some("NA first"), "call");
+    c["strategies"][0]["rules"][1]["alert"] = json!(true);
+    let ok = parse_config(&c).unwrap();
+    assert_eq!(ok.json(), c, "alert true reads back on its rule");
+    assert_eq!(ok.strategies[0].alerts, vec![1]);
+    let mut off = config(Some("NA first"), "call");
+    off["strategies"][0]["rules"][0]["alert"] = json!(false);
+    assert_eq!(
+        parse_config(&off).unwrap().json(),
+        config(Some("NA first"), "call"),
+        "alert false reads back without the key"
+    );
+    let mut bad = config(Some("NA first"), "call");
+    bad["strategies"][0]["rules"][0]["alert"] = json!("yes");
+    assert_eq!(
+        parse_config(&bad),
+        Err("strategies[0].rules[0].alert".to_owned())
+    );
+    let mut extra = config(Some("NA first"), "call");
+    extra["strategies"][0]["rules"][0]["sound"] = json!(true);
+    assert_eq!(
+        parse_config(&extra),
+        Err("strategies[0].rules[0]".to_owned())
+    );
+    // Rule 1 (call K, no alert) and rule 2 (CQ, alert): K1ABC ranks by rule 1 and alerts
+    // by rule 2; DL1XYZ ranks and alerts by rule 2; the CQ NA (greyed), the ignored
+    // G4ABC and the message to me never alert.
+    let s = Strategy {
+        alerts: vec![1],
+        ..strat(
+            vec![
+                vec![json!({"kind":"call","negate":false,"values":["K"]})],
+                vec![cq()],
+            ],
+            Sort::Newest,
+            false,
+        )
+    };
+    let records = rows(&[
+        ("CQ K1ABC FN42", Some(-12.0)),
+        ("CQ DL1XYZ JO62", Some(-3.0)),
+        ("CQ NA W1AW FN31", Some(-5.0)),
+        ("CQ G4ABC IO91", Some(-8.0)),
+        ("HB9BLA VK2ABC QF56", Some(-20.0)),
+    ]);
+    let mut st = me();
+    st.ignored.insert("G4ABC".into(), Tier::Session);
+    assert_eq!(
+        evaluate(&s, &records, &st)
+            .iter()
+            .map(|v| (v.facts.sequence, v.rank, v.alert))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, Some(0), Some(1)),
+            (1, Some(1), Some(1)),
+            (2, None, None),
+            (3, None, None),
+            (4, None, None),
+        ]
+    );
+}
+
+async fn alerts(f: &Mcp) -> Value {
+    let g = f.browser("GET", "/strategy/alerts", None).await;
+    assert_eq!(g.status, StatusCode::OK, "{}", g.json);
+    g.json
+}
+fn calls_of(v: &Value) -> Vec<String> {
+    v["alerts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["call"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+// Proves: TC-042-006
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_006_alert_records_one_alert_per_call_and_band_and_never_transmits() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let empty = alerts(&f).await;
+    assert_eq!(
+        empty,
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"revision":0,"alerts":[]})
+    );
+    // Before any rule is marked alert: the cursor passes JA1XYZ, which never alerts later.
+    publish(&f, e, &[("CQ JA1XYZ PM95", 1100.0, Some(-15.0))]);
+    let mut c = config(Some("Alerts"), "call");
+    c["strategies"] = json!([alerts_strategy()]);
+    save(&f, c).await;
+    assert_eq!(
+        ignore(&f, json!("G4ABC"), json!(true)).await.status,
+        StatusCode::OK
+    );
+    let p1 = e + 30_000;
+    publish(
+        &f,
+        p1,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-12.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-3.0)),
+            ("CQ NA W1AW FN31", 900.0, Some(-5.0)),
+            ("CQ G4ABC IO91", 700.0, Some(-8.0)),
+            ("HB9BLA VK2ABC QF56", 1800.0, Some(-20.0)),
+        ],
+    );
+    let utc = period_text(p1);
+    let a = alerts(&f).await;
+    assert_eq!(
+        a,
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"revision":2,"alerts":[
+            {"id":1,"utc":utc,"call":"K1ABC","message":"CQ K1ABC FN42","rule":"Alerts rule 2",
+                "band":"40m","mode":"ft8","snr_db":-12.0,"dxcc":"United States"},
+            {"id":2,"utc":utc,"call":"DL1XYZ","message":"CQ DL1XYZ JO62","rule":"Alerts rule 2",
+                "band":"40m","mode":"ft8","snr_db":-3.0,"dxcc":"Fed. Rep. of Germany"}]})
+    );
+    // Dedupe: K1ABC 30 s later is no new alert; exactly 10 minutes after the first it is.
+    publish(&f, p1 + 30_000, &[("CQ K1ABC FN42", 1500.0, Some(-11.0))]);
+    assert_eq!(alerts(&f).await["revision"], 2);
+    publish(&f, p1 + 600_000, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    let a = alerts(&f).await;
+    assert_eq!(
+        (
+            a["revision"].clone(),
+            a["alerts"][2]["id"].clone(),
+            a["alerts"][2]["snr_db"].clone()
+        ),
+        (json!(3), json!(3), json!(-10.0))
+    );
+    // Another band is another dedupe key.
+    f.state.recording.fixture_band("20m");
+    f.tick();
+    publish(&f, p1 + 630_000, &[("CQ K1ABC FN42", 1500.0, Some(-9.0))]);
+    let a = alerts(&f).await;
+    assert_eq!(
+        (
+            a["revision"].clone(),
+            calls_of(&a),
+            a["alerts"][3]["band"].clone()
+        ),
+        (
+            json!(4),
+            vec!["K1ABC", "DL1XYZ", "K1ABC", "K1ABC"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>(),
+            json!("20m")
+        )
+    );
+    // The MCP client reads exactly the browser's history; its principal may not clear.
+    assert_eq!(f.read("alerts").await, a);
+    let internal = crate::mcp_tests::internal_transport(&f, &f.mcp);
+    let mcp_get =
+        crate::mcp_tests::with_cookie(&f, "GET", "/strategy/alerts", &internal, None).await;
+    assert_eq!(mcp_get.status, StatusCode::OK);
+    let mcp_clear = crate::mcp_tests::with_cookie(
+        &f,
+        "POST",
+        "/strategy/alerts/clear",
+        &internal,
+        Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot})),
+    )
+    .await;
+    assert_eq!(mcp_clear.status, StatusCode::UNAUTHORIZED);
+    for (body, status, code, field) in [
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"x":1}),
+            400,
+            "invalid_request",
+            Value::Null,
+        ),
+        (
+            json!({"v":2,"profile_id":f.id,"boot_id":f.boot}),
+            400,
+            "unsupported_version",
+            json!("v"),
+        ),
+        (
+            json!({"v":1,"profile_id":profile::new_uuid().unwrap(),"boot_id":f.boot}),
+            403,
+            "wrong_profile",
+            json!("profile_id"),
+        ),
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":profile::new_uuid().unwrap()}),
+            409,
+            "state_conflict",
+            json!("boot_id"),
+        ),
+    ] {
+        let r = f
+            .browser("POST", "/strategy/alerts/clear", Some(body))
+            .await;
+        assert_eq!(
+            (
+                r.status.as_u16(),
+                r.json["error"]["code"].clone(),
+                r.json["error"]["field"].clone()
+            ),
+            (status, json!(code), field)
+        );
+    }
+    assert_eq!(alerts(&f).await, a, "refusals leave the history");
+    let cleared = f
+        .browser(
+            "POST",
+            "/strategy/alerts/clear",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot})),
+        )
+        .await;
+    assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.json);
+    assert_eq!(
+        cleared.json,
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"revision":5,"alerts":[]})
+    );
+    // Clear keeps the dedupe memory: K1ABC on 20m one period later is still no alert.
+    publish(&f, p1 + 660_000, &[("CQ K1ABC FN42", 1500.0, Some(-9.0))]);
+    assert_eq!(alerts(&f).await["revision"], 5);
+    // The history keeps the last 100: 101 CQs from different calls in one period.
+    let calls: Vec<String> = (0..101)
+        .map(|i| format!("K{}{}Q", i % 10, (b'A' + (i / 10) as u8) as char))
+        .collect();
+    let texts: Vec<String> = calls.iter().map(|c| format!("CQ {c} FN42")).collect();
+    let list: Vec<(&str, f64, Option<f64>)> = texts
+        .iter()
+        .map(|t| (t.as_str(), 1000.0, Some(-10.0)))
+        .collect();
+    publish(&f, p1 + 690_000, &list);
+    let a = alerts(&f).await;
+    assert_eq!(
+        (a["revision"].clone(), calls_of(&a)),
+        (json!(106), calls[1..].to_vec())
+    );
+    assert_eq!(a["alerts"][0]["id"], 6);
+    // Alerts never select, arm or key.
+    let contact = f.read("contact").await;
+    assert_eq!(
+        (
+            contact["contact"].clone(),
+            contact["transmit"]["arm_state"].clone()
+        ),
+        (Value::Null, json!("disarmed"))
+    );
+    assert_eq!(f.keys(), 0);
 }

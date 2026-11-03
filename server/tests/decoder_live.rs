@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 use std::cell::Cell;
 use wstx_rust::decoder::{
-    Call, Decode, DecodeError, Exchange, Fields, Mode, PayloadStatus, unpack,
+    APriori, Call, Decode, DecodeError, Exchange, Fields, Mode, PayloadStatus, unpack,
 };
+// The station sets the a-priori context; this history test does not.
+#[allow(dead_code)]
 #[path = "../src/decoder/history.rs"]
 mod history;
 use history::DecodeState;
@@ -29,6 +31,7 @@ fn record(start: u64, id: &str) -> Decode {
         start_frame: start,
         frequency_hz: 1000.,
         snr_db: None,
+        a_priori: None,
     }
 }
 

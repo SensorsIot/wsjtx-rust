@@ -31,8 +31,11 @@ function disconnect(current) {
   login.hidden = location.protocol !== 'https:' || retained;
   clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
 }
+let loginRetry = null;
+const loginRetryText = () => `Slow link · Retrying authorization (attempt ${loginRetry.attempt} of ${loginRetry.attempts})…`;
 function showAuthorizationUnavailable(error) {
   const condition = error?.authorizationCondition;
+  if (condition === 'explicit-in-progress' && loginRetry) {stale(); connection.textContent = loginRetryText() + ' · station data stale'; login.hidden = true; return;}
   const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
     'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
     'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
@@ -130,7 +133,16 @@ function stationUpdated(build) {
   window.dispatchEvent(new CustomEvent('station-updated', {detail: build}));
   return false;
 }
-setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > 12000) disconnect(socket); }, 1000);
+// WstxStationProtocol::BrowserLinkLifecycle (#8): the page's own deferred client download shares
+// the one station-to-browser bottleneck, so on a 32 kbit/s link the station's messages can queue
+// behind it for more than 12 s. While one is pending the silence bound is 30 s; its completion
+// or failure counts as a message. No other request extends the bound.
+let deferredDownloads = 0;
+function deferredDownload(promise) {
+  deferredDownloads++;
+  return promise.finally(() => {deferredDownloads--; lastMessage = Date.now();});
+}
+setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : 12000)) disconnect(socket); }, 1000);
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
@@ -157,8 +169,15 @@ login.addEventListener('submit', async event => {
   finally {secret = null;}
 });
 const logoutButton = document.querySelector('#logout'), forgetButton = document.querySelector('#forget');
+// CL-022-01 slow-link setup retry: the token login stays in progress; say so instead of failing.
+addEventListener('station-authorization-retry', event => {
+  if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
+  loginRetry = event.detail; document.querySelector('#login-error').textContent = loginRetryText();
+  if (authorization.snapshot().state === 'authorizing') {stale(); connection.textContent = loginRetryText() + ' · station data stale';}
+});
 addEventListener('station-authorization', event => {
   if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
+  if (event.detail.state !== 'authorizing') loginRetry = null;
   logoutButton.hidden = !event.detail.ready;
   forgetButton.hidden = !['retained-rejected', 'credential-invalid'].includes(event.detail.authorizationCondition);
   if (event.detail.ready) return;

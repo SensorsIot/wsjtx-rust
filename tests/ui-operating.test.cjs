@@ -13,12 +13,12 @@ const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
-async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
+async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1}={}){
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport}),page=await context.newPage();
+  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
   const errors=[],sent=[];page.on('pageerror',e=>errors.push(e.message));
   page.on('websocket',ws=>ws.on('framesent',frame=>sent.push(JSON.parse(frame.payload))));
@@ -423,7 +423,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     await contactCommands(p,commands);
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot(),null,{timeout:25000});
-  const others=()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
+  const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
   const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
   // Removed: the old dialogue history pane, LAST row and crowding badge.
@@ -431,15 +431,15 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
 
   // Idle: every station calling my call, on any frequency, oldest first, with its period
   // start and SNR (no DT or Hz); no CQ, even near Rx.
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===5);
-  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA IW9FRA RR73  +17 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB'],
-    ['candidate','12:00:15 ◂ HB9BLA EA8BIA IL18  0 dB'],['candidate','12:00:15 ◂ HB9BLA F1PBZ JN18  −10 dB']]);
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===5);
+  assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','−8','']],['candidate',['12:00:15','HB9BLA ◂ IW9FRA','RR73','+17','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','−8','']],
+    ['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','−10','']]]);
   assert.equal(await shown(page,'#qso-others-none'),false,'no "nobody calling" with callers');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'no Log QSO without a running QSO');
   // Double-click answers: select (no replace), then enable_tx.
-  let m=commands.length;await page.locator('#qso-others li').nth(1).dblclick();await waitCommands(m+2);
+  let m=commands.length;await page.locator('#qso-others tr').nth(1).dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',4,false],['enable_tx',true,undefined]]);
 
   // Items 1-4 and 10, a running QSO with Enable Tx on: header, the last partner message with
@@ -452,7 +452,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     entry(6,'rx','HB9BLA IW9FRA RR73',17),entry(7,'tx','IW9FRA HB9BLA 73'),entry(8,'rx','HB9BLA IW9FRA RR73',15),entry(9,'tx','IW9FRA HB9BLA 73'),entry(10,'rx','HB9BLA IW9FRA RR73',17,3)];
   const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3},dialogue});
   settings={tx_hz:2100};await show(running,{arm_state:'armed'});
-  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others li').length===2);
+  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others tr')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others tr').length===2);
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
@@ -461,9 +461,9 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
-  assert.deepEqual(await others(),[['warn','12:00:15 ⚠ HB9BLA SV1DZB KM18  −8 dB'],['warn','12:00:15 ⚠ HB9BLA EA8BIA IL18  0 dB']],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
-  const lines=await page.locator('#qso-dialogue li').allTextContents();
-  assert.deepEqual([lines.length,lines[0],lines[1],lines.at(-1)],[10,'11:58:15 ▸ IW9FRA HB9BLA JN47 ×2','11:58:30 ◂ HB9BLA IW9FRA -05  −5 dB','12:00:30 ◂ HB9BLA IW9FRA RR73  +17 dB ×3']);
+  assert.deepEqual(await others(),[['warn',['12:00:15 ⚠','HB9BLA ◂ SV1DZB','KM18','−8','']],['warn',['12:00:15 ⚠','HB9BLA ◂ EA8BIA','IL18','0','']]],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
+  const lines=await page.locator('#qso-dialogue tr').evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
+  assert.deepEqual([lines.length,lines[0],lines[1],lines.at(-1)],[10,['11:58:15','IW9FRA ◂ HB9BLA','JN47 ×2','',''],['11:58:30','HB9BLA ◂ IW9FRA','-05','−5','−5'],['12:00:30','HB9BLA ◂ IW9FRA','RR73 ×3','+17','']]);
   // The QSO area scrolls inside the card, kept at its newest line, and grows nothing.
   const area=await page.locator('#qso-area').evaluate(a=>({scrolls:a.scrollHeight>a.clientHeight,bottom:Math.abs(a.scrollTop+a.clientHeight-a.scrollHeight)<=2,overflow:getComputedStyle(a).overflowY}));
   assert.equal(area.overflow,'auto');assert.equal(area.bottom,true,`kept at the newest line ${JSON.stringify(area)}`);
@@ -476,30 +476,42 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
   assert.deepEqual(metrics,{x:false,y:false});
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
-  for(const selector of ['#qso-heard','#qso-others li:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
+  for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
-  // Content height: the header plus the lines, buttons and fold-out of the pane body.
+  // Content height: the header plus the lines, the QSO area, buttons and fold-out of the pane body.
   const heights=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect(),body=document.querySelector('#rx-focus .op-contact-body'),cs=getComputedStyle(body);
-    // The QSO area (#37 dialogue and Others) takes the free height by design: it is not
-    // counted; the other lines are summed with their gaps.
-    const kids=[...body.children].filter(e=>e.getClientRects().length&&e.id!=='qso-area'&&getComputedStyle(e).display!=='none');
-    const content=box('#rx-focus .op-qso-head').height+kids.reduce((h,e)=>h+e.getBoundingClientRect().height,0)+parseFloat(cs.rowGap||cs.gap||0)*(kids.length-1)+parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom);
-    return {content,pane:box('#rx-focus'),activity:box('#band-activity')};});
+    const kids=[...body.children].filter(e=>e.getClientRects().length&&getComputedStyle(e).display!=='none'),sum=list=>list.reduce((h,e)=>h+e.getBoundingClientRect().height,0);
+    const gaps=parseFloat(cs.rowGap||cs.gap||0)*(kids.length-1)+parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom);
+    const head=box('#rx-focus .op-qso-head').height,row=box('#qso-dialogue tr').height;
+    return {content:head+sum(kids)+gaps,withoutArea:head+sum(kids.filter(e=>e.id!=='qso-area'))+gaps-parseFloat(cs.rowGap||cs.gap||0),
+      area:box('#qso-area').height,row,pane:box('#rx-focus'),activity:box('#band-activity')};});
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1366x768.png'});
-  // The earlier pane needed about 380 px for this contact (at ad2f48bda it filled the 297 px
-  // workspace and still clipped the buttons, the result line and the fold-out).
-  assert.ok(heights.content<=250&&heights.content<heights.activity.height-40,`compact pane content ${heights.content} px of ${heights.activity.height} px`);
-  // Item 8 default: side by side the card fills its column, level with Band Activity, so no
-  // empty band lies under the pane.
-  assert.ok(Math.abs(heights.pane.bottom-heights.activity.bottom)<=1&&Math.abs(heights.pane.top-heights.activity.top)<=1,`pane ${heights.pane.top}-${heights.pane.bottom}, Band Activity ${heights.activity.top}-${heights.activity.bottom}`);
+  // The earlier pane needed about 380 px for this contact without the dialogue (at ad2f48bda it
+  // filled the 297 px workspace and still clipped the buttons, the result line and the fold-out).
+  assert.ok(heights.withoutArea<=250,`compact pane content ${heights.withoutArea} px without the QSO area`);
+  // Item 8 (#60, operator 2026-11-03, replacing option C): the pane is its content high at the
+  // top of its column, at 1366x768 at most 300 px; the QSO area shows the header row and at
+  // most 6 rows (12 entries here, scrolling inside).
+  assert.ok(heights.area<=7*heights.row+3,`QSO area ${heights.area} px for rows of ${heights.row} px`);
+  assert.ok(Math.abs(heights.pane.height-heights.content)<=3,`pane ${heights.pane.height} px, content ${heights.content} px`);
+  assert.ok(heights.pane.height<=300,`pane ${heights.pane.height} px at 1366x768`);
+  assert.ok(Math.abs(heights.pane.top-heights.activity.top)<=1,'top of its column');
+  // A taller screen: the area is header plus 6 rows, the pane stays content high and the
+  // height below it is free (future panels), no longer filled by the card.
+  await page.setViewportSize({width:1920,height:1080});
+  const tall=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();return {area:box('#qso-area').height,row:box('#qso-dialogue tr').height,pane:box('#rx-focus'),activity:box('#band-activity')};});
+  assert.ok(Math.abs(tall.area-(7*tall.row+2))<=3,`QSO area ${tall.area} px is the header and 6 rows of ${tall.row} px`);
+  assert.ok(tall.pane.height<=340&&tall.activity.bottom-tall.pane.bottom>=100,`pane ${tall.pane.top}-${tall.pane.bottom}, Band Activity ${tall.activity.top}-${tall.activity.bottom}: free height below`);
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1920x1080.png'});
+  await page.setViewportSize({width:1366,height:768});
   // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
-  m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
+  m=commands.length;await page.locator('#qso-others tr').first().dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',5,true],['enable_tx',true,undefined]]);
   // Nobody else near my frequencies: one muted line says so.
   settings={rx_hz:2800,tx_hz:2800};await show(running,{arm_state:'armed'});
   await page.locator('#qso-others-none').filter({hasText:'nobody else calling'}).waitFor();
   assert.deepEqual(await others(),[]);
-  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===2);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
   // Auto Seq off (#11) stays visible in the compact pane.
@@ -525,7 +537,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
-  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB'],['candidate','12:00:15 ◂ HB9BLA EA8BIA IL18  0 dB'],['candidate','12:00:15 ◂ HB9BLA F1PBZ JN18  −10 dB']],'the finished partner is not a candidate');
+  assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','−8','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','−8','']],['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','−10','']]],'the finished partner is not a candidate');
   assert.equal(await shown(page,'#qso-dialogue'),false,'the dialogue goes with the QSO');
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
   m=commands.length;await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('Alt+q');await page.waitForTimeout(400);
@@ -539,6 +551,64 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.waitForFunction(()=>document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-next').hidden);
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   assert.equal(await page.locator('#contact-logged').textContent(),'','an earlier save is not shown again');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-060-01; TC-060-001 (#60, operator 2026-11-03): the QSO dialogue and the Others
+// are one table, UTC | Direction | Exchange | Rx SNR | Tx SNR; Direction is the two calls as on
+// the air, recipient first, with "◂" pointing to the recipient; a CQ is "CQ <call>" with its
+// grid; free text is all Exchange; Rx SNR (ours) and Tx SNR (the partner's report on us) only on received lines.
+test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the recipient, Exchange, Rx SNR and Tx SNR',{timeout:60000},async t=>{
+  let state,contact=null;const period='2026-10-27T12:00:15.0000000Z';
+  const call=text=>({kind:text===null?'hash':'call',text,hash_bits:text===null?22:null,hash_value:text===null?12345:null});
+  const record=(sequence,text,from,hz,snr)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,
+    fields:{type:'standard',to:call('HB9BLA'),from,ack:false,exchange:{kind:'grid',value:'JO31'}},period_start_utc:period});
+  // Callers of my call: known calls, an unknown hashed call and a known hashed call.
+  const records=[record(0,'HB9BLA DL1ABC JO31',call('DL1ABC'),400,-8),record(1,'HB9BLA <...> RR73',call(null),700,-12),
+    record(2,'HB9BLA <PJ4/K1ABC> -05',{kind:'hash',text:'PJ4/K1ABC',hash_bits:22,hash_value:777},900,-5),record(3,'HB9BLA EA8BIA IL18',call('EA8BIA'),1520,0)];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id:1,first_sequence:0,next_sequence:records.length,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit:{arm_state:'armed'}})}));
+    await contactCommands(p,[]);
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  const cells=selector=>page.locator(selector).evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
+  assert.deepEqual((await cells('#qso-table thead tr'))[0],['UTC','Direction','Exchange','Rx SNR','Tx SNR']);
+  // Idle: every caller, a hashed call as decoded; a report is the Tx SNR.
+  assert.deepEqual(await cells('#qso-others tr'),[['12:00:15','HB9BLA ◂ DL1ABC','JO31','−8',''],['12:00:15','HB9BLA ◂ <...>','RR73','−12',''],
+    ['12:00:15','HB9BLA ◂ <PJ4/K1ABC>','-05','−5','−5'],['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']]);
+  assert.equal(await shown(page,'#qso-dialogue'),false,'no dialogue rows idle');
+  // A running QSO with CT1BFP (the operator's #60 example), with my CQ before it, a repeated
+  // 73 with my call hashed and unknown, and a free-text message.
+  const p0=Date.parse('2026-11-03T22:51:00Z'),entry=(i,dir,text,snr=null,count=1)=>({dir,text,snr,period_utc_ms:p0+i*15000,count});
+  const dialogue=[entry(0,'tx','CQ HB9BLA JN37'),entry(1,'rx','HB9BLA CT1BFP IM59',8),entry(2,'tx','CT1BFP HB9BLA +08'),entry(3,'rx','HB9BLA CT1BFP R-02',7),
+    entry(4,'tx','CT1BFP HB9BLA RR73'),entry(5,'rx','<...> CT1BFP 73',9,2),entry(6,'tx','TNX 73 GL')];
+  contact=partner('signoff',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:'-02',messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
+    suggested_slot:null,last_rcvd:{text:'<...> CT1BFP 73',snr:9,period_utc_ms:p0+75000,count:2},dialogue});
+  await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===7&&document.querySelector('#qso-others tr')?.dataset.kind==='warn');
+  assert.deepEqual(await cells('#qso-dialogue tr'),[['22:51:00','CQ HB9BLA','JN37','',''],['22:51:15','HB9BLA ◂ CT1BFP','IM59','+8',''],['22:51:30','CT1BFP ◂ HB9BLA','+08','',''],
+    ['22:51:45','HB9BLA ◂ CT1BFP','R-02','+7','−2'],['22:52:00','CT1BFP ◂ HB9BLA','RR73','',''],['22:52:15','<...> ◂ CT1BFP','73 ×2','+9',''],['22:52:30','','TNX 73 GL','','']]);
+  // During the QSO the caller near my Rx is a ⚠ row below a thin separator, same columns.
+  assert.deepEqual(await cells('#qso-others tr'),[['12:00:15 ⚠','HB9BLA ◂ EA8BIA','IL18','0','']]);
+  assert.equal(await page.locator('#qso-others tr td').first().evaluate(td=>getComputedStyle(td).borderTopWidth),'1px','separator above the callers');
+  assert.deepEqual(await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight})),{x:false,y:false},'one fixed screen at 1366x768');
+  // The header row stays visible while the area is kept at its newest row.
+  const headerShown=()=>page.evaluate(()=>{const a=document.querySelector('#qso-area').getBoundingClientRect(),h=document.querySelector('#qso-table th').getBoundingClientRect();return h.top>=a.top-1&&h.bottom<=a.bottom+1;});
+  assert.equal(await page.locator('#qso-area').evaluate(a=>a.scrollTop>0),true,'the area is scrolled to its newest row');
+  assert.equal(await headerShown(),true,'header row visible');
+  await page.screenshot({path:'test-results/ui-operating/qso-table-1366x768.png'});
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  const fit=await page.locator('#qso-table').evaluate(t=>({table:t.scrollWidth,pane:t.parentElement.clientWidth,cols:[...t.rows[0].cells].map(c=>Math.round(c.getBoundingClientRect().width))}));
+  assert.ok(fit.table<=fit.pane+1,`the table fits the pane at 360 px ${JSON.stringify(fit)}`);
+  await page.locator('#qso-area').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/qso-table-360x800.png'});
   assert.deepEqual(errors,[]);
 });
 
@@ -1027,6 +1097,73 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-050-07; TC-050-007 one frequency mapping for the waterfall pointer, the Rx/Tx lines
+// and the axis ticks, and the WSJT-X brackets of the lines following the mode.
+async function waterfallMappingPass(page,commands,settings,label){
+  const wait=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);assert.equal(commands.length,n,`${label} command ${n}: ${JSON.stringify(commands.slice(-3))}`);return commands.at(-1);};
+  // The oracle: the waterfall canvas's own box carries 0..3000 Hz.
+  const axis=async()=>{const b=await page.evaluate(()=>{const r=document.querySelector('#waterfall').getBoundingClientRect();return {x:r.left,w:r.width};});return hz=>b.x+hz*b.w/3000;};
+  const tickX=f=>page.evaluate(f=>{const s=document.querySelectorAll('#frequency-ruler > span')[f/100],r=s.getBoundingClientRect();return r.left+.5;},f);
+  const centre=key=>page.evaluate(key=>{const r=document.querySelector(`#waterfall-wrap .ct-${key}`).getBoundingClientRect();return r.left+r.width/2;},key);
+  const confirm=async(rx,tx)=>{settings.rx_hz=rx;settings.tx_hz=tx;await page.evaluate(()=>window.wstxContact.load());
+    await page.waitForFunction(([rx,tx])=>document.querySelector('#waterfall-wrap .ct-rx').dataset.hz===String(rx)&&document.querySelector('#waterfall-wrap .ct-txm').dataset.hz===String(tx),[rx,tx]);};
+  await page.waitForTimeout(150);
+  let x=await axis();
+  for(let f=0;f<=3000;f+=100)assert.ok(Math.abs(await tickX(f)-x(f))<=1,`${label}: axis tick ${f} Hz at ${await tickX(f)}, mapping ${x(f)}`);
+  const wf=await page.locator('#waterfall').boundingBox(),y=wf.y+wf.height*.6;
+  for(const f of [500,2500,1500]){
+    const px=await tickX(f),n=commands.length;await page.mouse.dblclick(px,y);
+    const c=await wait(n+1);assert.equal(c.action,'set_frequency');
+    assert.ok(Math.abs(c.rx_hz-f)<=2&&Math.abs(c.tx_hz-f)<=2,`${label}: double-click at the ${f} Hz tick sent Rx ${c.rx_hz} Tx ${c.tx_hz}`);
+    await confirm(c.rx_hz,c.tx_hz);
+    for(const key of ['rx','txm'])assert.ok(Math.abs(await centre(key)-px)<=1,`${label}: ${key} line at ${await centre(key)} for the pointer at ${px} (${f} Hz)`);
+  }
+  {const px=await tickX(1000),n=commands.length;await page.mouse.click(px,y);const c=await wait(n+1);
+    assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-1000)<=2,`${label}: click at the 1000 Hz tick sent Tx ${c.tx_hz}`);
+    await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-px)<=1,`${label}: Tx line at ${await centre('txm')} for ${px}`);}
+  {const from=await centre('txm'),to=await tickX(2000),n=commands.length;
+    await page.mouse.move(from,y);await page.mouse.down();await page.mouse.move(to,y,{steps:6});
+    assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: the dragged Tx line follows the pointer`);await page.mouse.up();
+    const c=await wait(n+1);assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-2000)<=2,`${label}: drag to the 2000 Hz tick sent Tx ${c.tx_hz}`);
+    await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: confirmed Tx line at the drop point`);}
+  x=await axis();
+  // The brackets: from the line over the occupied width to its right, in the line's colour.
+  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents};}));
+  for(const [period,width] of [[15000,50],[7500,4*12000/576],[15000,50]]){
+    await page.evaluate(period=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:period,transmitting:false,rx_level_db:null}}}})),period);
+    await page.waitForTimeout(50);
+    const got=await brackets();
+    for(const [i,colour] of [[0,'rgb(48, 208, 80)'],[1,'rgb(255, 64, 64)']]){const b=got[i];
+      assert.ok(b?.visible,`${label}: bracket ${i} shown (${JSON.stringify(b)})`);assert.equal(b.colour,colour);assert.equal(b.pointer,'none');
+      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
+      assert.ok(Math.abs(b.top-wf.y)<=1,`${label}: bracket at the top of the waterfall`);}
+  }
+  // A click inside a bracket still reaches the waterfall (within 1 px: a click's clientX is whole px).
+  {const b=(await brackets())[0],n=commands.length;await page.mouse.click((b.left+b.right)/2,b.top+b.height/2);const c=await wait(n+1);
+    assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-(b.hz+25))<=Math.max(2,3000/wf.width),`${label}: click in the Rx bracket sent Tx ${c.tx_hz}`);await confirm(settings.rx_hz,c.tx_hz);}
+}
+test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency mapping; the brackets follow the mode',{timeout:150000},async t=>{
+  for(const scale of [1,2]){
+    const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false};
+    const {page,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
+      const base=await (await fetch(app.origin+'/profile')).json();
+      await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{settings})}));
+      await contactCommands(p,commands);
+    }});
+    await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled,null,{timeout:45000});
+    // The station's own ticks are held back; the test's ticks set the mode.
+    await page.evaluate(()=>addEventListener('station-message',e=>{if(e.detail?.message?.type==='station.tick'&&!e.detail.test)e.stopImmediatePropagation();},true));
+    await waterfallMappingPass(page,commands,settings,`1366x768 dpr ${scale}`);
+    if(scale===2){assert.deepEqual(errors,[]);continue;}
+    await page.evaluate(()=>{for(const id of ['display-flatten','display-spectrum']){const box=document.querySelector('#'+id);box.checked=true;box.dispatchEvent(new Event('change'));}});
+    await page.locator('#display-speed').fill('4');await page.locator('#display-speed').dispatchEvent('input');
+    await waterfallMappingPass(page,commands,settings,'1366x768 Flatten, spectrum line, speed 4');
+    for(const [width,height] of [[900,700],[360,800]]){await page.setViewportSize({width,height});await waterfallMappingPass(page,commands,settings,`${width}x${height}`);}
+    assert.equal(commands.some(c=>c.action==='enable_tx'),false,'no pointer action enables Tx');
+    assert.deepEqual(errors,[]);
+  }
+});
+
 // Proves: CL-010-16, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
 test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
@@ -1036,7 +1173,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
     const base=await (await fetch(app.origin+'/profile')).json();
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-    records=[record(0,'CQ K1ABC FN42','K1ABC',1000,period[0]),record(1,'CQ W1XYZ FN42','W1XYZ',1480,period[0])];
+    records=[record(0,'CQ K1ABC FN42','K1ABC',1000,period[0]),{...record(1,'CQ W1XYZ FN42','W1XYZ',1480,period[0]),a_priori:1}];
     Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period[0],complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
@@ -1047,10 +1184,12 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // Independent great-circle distance between the JN47AA and FN42 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
+  // #56: an a-priori word (a_priori 1) carries the WSJT-X a1 marker outside the message text.
+  assert.deepEqual(await page.locator('tr[data-result-id] td[data-col=message]').evaluateAll(cells=>cells.map(c=>[c.dataset.ap??null,getComputedStyle(c,'::after').content])),[[null,'none'],['a1','" a1"']],'a-priori marker');
   // QSO pane (#37, operator 2026-11-02): a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
   // nobody calls me yet.
   await page.locator('#qso-others-none').filter({hasText:'nobody calling'}).waitFor();
-  assert.deepEqual(await page.locator('#qso-others li').allTextContents(),[]);
+  assert.deepEqual(await page.locator('#qso-others tr').allTextContents(),[]);
   // A new period keeps the previous one below a divider, newest first.
   records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
   Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:2,first_sequence:2,next_sequence:3,period_start_utc:period[1],complete:true}});
@@ -1310,7 +1449,8 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
     });
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===16);
-  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
+  // #55: the default is the value order; Freq once ascending, twice descending.
+  await clickSort(page,'frequency');await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
   assert.equal(await page.locator('tr[data-period=latest]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
@@ -1449,6 +1589,9 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   }});
   const order=()=>page.locator('tr[data-period=latest]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
+  // #55 CL-055-04: by default the value order (all without a flag here), strongest SNR first, unknown last.
+  assert.deepEqual(await order(),[1,4,3,0,2]);assert.deepEqual(await sortState(page),['value','desc']);
+  await clickSort(page,'frequency');
   assert.deepEqual(await order(),[1,4,0,3,2],'frequency200 precedes1000, numeric ties retain sequence');
   assert.deepEqual(await sortState(page),['frequency','asc']);
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);assert.deepEqual(await order(),[2,0,3,4,1]);
@@ -1464,7 +1607,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,1,2,3,4]);await clickSort(page,'dt');assert.deepEqual(await order(),[0,1,2,3,4],'all unknown DT stays in sequence order');
   for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
   await page.evaluate(()=>{profileData.profile_id='not-a-valid-uuid';renderResults();});assert.deepEqual(await sortState(page),['dt','desc'],'invalid profile cannot reset preference');
-  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.deepEqual(await sortState(page),['frequency','asc']);
+  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.deepEqual(await sortState(page),['value','desc'],'a different profile resets to the value order');
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });
 
@@ -1547,7 +1690,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  const period='2026-10-27T12:00:15.0000000Z';
  const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
  const reply={type:'standard',to:{kind:'call',text:'K9XX',hash_bits:null,hash_value:null},from:{kind:'call',text:'W2AB',hash_bits:null,hash_value:null},ack:false,exchange:{kind:'report',value:-5}};
- const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1}));
+ const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1,...(['W1XYZ','W2AB'].includes(call)?{flags:{new_call:true,new_call_band:true}}:{})}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
@@ -1561,21 +1704,118 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
- // #50: no text marks; worked-before feeds the WSJT-X "New call" slots, which are off by default (WSJT-X).
+ // #50: no text marks; the New call slots (off by default, WSJT-X) come from the #55 flags of every
+ // sender (CL-055-04); worked before and CQ alone have no colour; rows in value order.
  const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
  const [cq,newCall,none]=['rgba(102, 255, 102, 0.24)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- assert.deepEqual(await rowsNow(),[['CQ K1ABC FN42','worked_this_band_and_mode','cq',cq],['CQ W1XYZ FN42','not_worked','cq new_call new_call_band',cq],['FREE TEXT',null,null,none],['K9XX W2AB R-05','not_worked',null,none]],'CQ green; worked before has no colour; New slots only on CQ lines (WSJT-X)');
+ assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band cq',none],['K9XX W2AB R-05','not_worked','new_call new_call_band',none],['CQ K1ABC FN42','worked_this_band_and_mode','cq',none],['FREE TEXT',null,null,none]],'no flag, no colour (CQ off, #55); New slots on non-CQ senders too (CL-055-04)');
  await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await rowsNow()).map(r=>r[3]),[cq,newCall,none,none],'an enabled New call outranks CQ');
+ assert.deepEqual((await rowsNow()).map(r=>r[3]),[newCall,newCall,none,none],'an enabled New call colours CQ and non-CQ senders');
  assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,true,'the choice is per browser');
  // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC over CQ.
  const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['cq new_dxcc','cq new_dxcc new_continent','cq new_dxcc new_continent mycall','new_grid','cq new_itu_zone'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
- assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,cq],'WSJT-X priority; New grid and ITU zone are off by default');
+ assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none],'WSJT-X priority; New grid, ITU zone and (#55) CQ are off by default');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ','W2AB']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
- assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode] td[data-col=message]').getAttribute('title'),'Worked before on this band and mode','the status stays readable as a tooltip');
+ assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on 20m FT8','the status stays readable as the row tooltip (#55 BandActivityHover)');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-055-04; TC-055-006 browser subset. Actual server log and worked-before query;
+// the result records (with #55 dxcc and flags), the strategy verdict and the selection band
+// are presentation fixtures.
+test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
+ const period='2026-10-27T12:00:15.0000000Z';
+ const fields=(from,to,exchange)=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
+ const F=(...names)=>Object.fromEntries(names.map(n=>[n,true]));
+ const ro={name:'Romania',cont:'EU',cq:20,itu:28},ja={name:'Japan',cont:'AS',cq:25,itu:45},us={name:'U.S.A.',cont:'NA',cq:5,itu:8},en={name:'England',cont:'EU',cq:14,itu:27};
+ // [text, from, to, exchange, snr, flags, dxcc]
+ const rows=[
+  ['CQ K1ABC FN42','K1ABC','CQ',{kind:'grid',value:'FN42'},-10,null,us],
+  ['K9XX YO3ABC -07','YO3ABC','K9XX',{kind:'report',value:-7},-15,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),ro],
+  ['HB9BLA W1XYZ -12','W1XYZ','HB9BLA',{kind:'report',value:-12},-18,F('new_call','new_call_band'),us],
+  ['CQ JA1AAA PM95','JA1AAA','CQ',{kind:'grid',value:'PM95'},-5,F('new_cq_zone','new_cq_zone_band'),ja],
+  ['CQ G4XYZ IO91','G4XYZ','CQ',{kind:'grid',value:'IO91'},-8,F('new_grid','new_grid_band'),en],
+  ['K9XX W2AB R-05','W2AB','K9XX',{kind:'report',value:-5},-20,F('new_call','new_call_band'),us],
+  ['K1ZZ W3EF RR73','W3EF','K1ZZ',{kind:'roger',value:'RR73'},-4,F('new_call','new_call_band'),us],
+  ['FREE TEXT',null,null,null,0,null,null],
+  ['W9AA W2CD 73','W2CD','W9AA',{kind:'roger',value:'73'},-12,null,us],
+ ];
+ const records=rows.map(([text,from,to,exchange,snr,flags,dxcc],i)=>({sequence:i,start_frame:186000+i,frequency_hz:2400-i*150,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:from?fields(from,to,exchange):{},period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})}));
+ const n=records.length;let state,view;
+ const strategy={name:'Hover test',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  const profile=await(await fetch(app.origin+'/profile')).json();
+  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
+  assert.equal(saved.status,201);
+  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',highlight:true,strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/strategy',route=>route.fulfill({json:view}));
+  // The strategy hits the 73 from W2CD (no flag): value 2, under the row to my call.
+  await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',sort:'strongest',verdicts:[{sequence:8,rank:0,grey:false}]}}));
+ }});
+ await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
+ const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.title,getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description')]));
+ const none='rgba(0, 0, 0, 0)';
+ const expected=[
+  ['HB9BLA W1XYZ -12','Calling me\nNew call\nNew call on 20m','rgba(255, 102, 102, 0.32)'],
+  ['W9AA W2CD 73','Strategy Hover test: rule 1',none],
+  ['K9XX YO3ABC -07','New DXCC: Romania\nNew DXCC on 20m\nNew call\nNew call on 20m','rgba(255, 0, 255, 0.26)'],
+  ['CQ JA1AAA PM95','New CQ zone 25\nNew CQ zone on 20m','rgba(255, 191, 0, 0.26)'],
+  ['CQ G4XYZ IO91','New grid IO91\nNew grid on 20m',none],
+  ['K1ZZ W3EF RR73','New call\nNew call on 20m',none],
+  ['K9XX W2AB R-05','New call\nNew call on 20m',none],
+  ['FREE TEXT','',none],
+  ['CQ K1ABC FN42','Worked before on 20m FT8',none],
+ ];
+ const got=await shown();
+ assert.deepEqual(got.map(r=>r.slice(0,3)),expected,'value order, equal values strongest first; a report from a new DXCC is coloured; no flag, no colour');
+ assert.deepEqual(got.map(r=>r[3]),expected.map(r=>r[1]?r[1].replaceAll('\n','; '):null),'the same reasons for assistive technology');
+ assert.equal(await page.locator('#band-activity th[data-sort=value]').textContent(),'DXCC');
+ assert.deepEqual(await sortState(page),['value','desc']);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
+ // Enabled New grid / New call colour the non-CQ senders as well (operator decision, not WSJT-X).
+ await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
+ assert.deepEqual((await shown()).map(r=>r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-colours-all-senders-1440.png'});
+ await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
+ assert.deepEqual((await shown()).map(r=>r[0]),[...rows].reverse().map(r=>r[0]),'a column header still sorts by its column');
+ await clickSort(page,'value');assert.deepEqual(await sortState(page),['value','desc']);
+ assert.deepEqual((await shown()).map(r=>r[0]),expected.map(r=>r[0]),'the DXCC header returns to the value order');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-055-05; TC-055-007. Band Activity row density at 1366x768: the result records
+// are presentation fixtures; the layout is the actual client.
+test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:30000},async t=>{
+ const period='2026-10-27T12:00:15.0000000Z',n=30;
+ const records=Array.from({length:n},(_,i)=>{const call=`K${i%10}A${String.fromCharCode(65+i%26)}${String.fromCharCode(65+(i*7)%26)}`;return {sequence:i,start_frame:186000+i,frequency_hz:300+i*90,snr_db:-20+i%15,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1};});
+ let state;
+ const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(page,app)=>{
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor,cursor+16),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:next<n,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+ }});
+ await page.waitForFunction(n=>document.querySelectorAll('#band-activity tr[data-sequence]').length===n,n,{timeout:25000});
+ const measure=()=>page.evaluate(()=>{const wrap=document.querySelector('#band-activity .op-table-wrap').getBoundingClientRect(),rows=[...document.querySelectorAll('#band-activity tr[data-sequence]')],td=rows[0].children[4];
+  return {height:rows[0].getBoundingClientRect().height,visible:rows.filter(r=>{const b=r.getBoundingClientRect();return b.top>=wrap.top&&b.bottom<=wrap.bottom;}).length,font:getComputedStyle(td).fontSize};});
+ await page.screenshot({path:'test-results/ui-operating/band-activity-density-1366.png'});
+ const dense=await measure();
+ t.diagnostic(`row ${dense.height}px, ${dense.visible} rows visible, font ${dense.font}`);
+ assert.ok(dense.height<=24,`a desktop row is at most 24 px high (${dense.height})`);
+ assert.equal(dense.font,'16px','the font size is unchanged (the 16 px operating font, TC-007-002)');
+ assert.ok(dense.visible>=8,`at least 8 rows visible at 1366x768, 5 before #55 (${dense.visible})`);
+ // Touch: a coarse pointer keeps taller rows (CSS rule under pointer:coarse).
+ assert.ok(await page.evaluate(()=>[...document.styleSheets].some(sheet=>{try{return [...sheet.cssRules].some(r=>r.media&&/pointer:\s*coarse/.test(r.media.mediaText)&&[...r.cssRules].some(c=>c.selectorText==='#band-activity td'&&parseFloat(c.style.paddingTop)>=8));}catch{return false;}})),'a coarse pointer keeps tappable rows');
  assert.deepEqual(errors,[]);
 });
 
@@ -1814,7 +2054,10 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
   await page.locator('#ignore-session li').first().waitFor();
   assert.deepEqual(await page.locator('#ignore-session li').evaluateAll(l=>l.map(x=>[x.querySelector('.ig-call').textContent,x.querySelector('.ig-left').textContent])),[['K1ABC','30 min']]);
-  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').dispatchEvent('change');
+  // One change: leaving the field is the change (a dispatched change plus the blur would be two);
+  // the saved list is shown once the station's answer is applied, before the next field (#61 gate race).
+  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').blur();
+  await page.waitForFunction(()=>document.querySelector('#ignore-calls').value==='DL1XYZ W1AW');
   for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[2,{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:['DL1XYZ','W1AW'],session_ignore_minutes:30}]]);
   await page.fill('#ignore-minutes','45');await page.locator('#ignore-minutes').dispatchEvent('change');
@@ -1881,6 +2124,86 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:2}}}})));
   await page.locator('#qso-pounce[hidden]').waitFor({state:'attached'});
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='select_row'),false,'the station run answers; the browser never arms for it');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-042-04; TC-042-007 the editor's per-rule Alert checkbox, the Settings > General
+// alert history, Sound and Browser notification (off by default; permission asked only on
+// the click). The station's alert snapshots are hand-written fixtures; the page's
+// Notification and AudioContext are recording doubles; the expected lines, tones and
+// notifications are written here from WstxStrategy::Alert.
+test('TC-042-007 Alert checkbox, alert history, sound and browser notification',{timeout:60000},async t=>{
+  let view;const puts=[],clears=[];let history=[],revision=1;
+  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const alert=(id,call,message,snr,dxcc)=>({id,utc:'2026-10-27T12:00:00.0000000Z',call,message,rule:'CQ rule 1',band:'40m',mode:'ft8',snr_db:snr,dxcc});
+  history=[alert(1,'K1ABC','CQ K1ABC FN42',-12,'United States')];
+  const doubles=()=>{
+    window.__tones=0;window.__notes=[];window.__asks=0;window.__hidden=false;
+    class FakeNotification{constructor(title,options){window.__notes.push({title,body:options?.body});}
+      static get permission(){return sessionStorage.getItem('fake-permission')??'default';}
+      static async requestPermission(){window.__asks++;sessionStorage.setItem('fake-permission','granted');return 'granted';}}
+    window.Notification=FakeNotification;
+    const param=()=>({value:0,setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}});
+    window.AudioContext=class{constructor(){this.currentTime=0;this.destination={};this.state='running';}
+      createOscillator(){return {frequency:param(),type:'sine',connect(){return this;},start(){window.__tones++;},stop(){}};}
+      createGain(){return {gain:param(),connect(){return this;}};}resume(){return Promise.resolve();}};
+    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.__hidden?'hidden':'visible'});
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.__hidden});
+  };
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:false,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    await p.addInitScript(doubles);
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
+    await p.route('**/strategy/alerts',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:history}}));
+    await p.route('**/strategy/alerts/clear',async route=>{clears.push(JSON.parse(route.request().postData()));history=[];revision++;
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:[]}});});
+  }});
+  const announce=async(next)=>{history.push(next);revision++;
+    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'alert.state',data:{profile_id:'p',boot_id:'b',alert_revision:r}}}})),revision);
+    await page.waitForFunction(n=>document.querySelectorAll('#alert-history li').length===n,history.length,{timeout:10000});};
+  const counters=()=>page.evaluate(()=>({tones:window.__tones,notes:window.__notes,asks:window.__asks}));
+  // The editor: rule 1 marked Alert is saved with alert true.
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  await page.locator('#strategy-editor [data-alert="0"]').check();
+  await page.locator('#se-save').click();for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(puts[0].configuration.strategies[0].rules,[{conditions:[{kind:'message',negate:false,value:'cq'}],alert:true}]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  await page.locator('#strategy-editor button[value=cancel]').click();
+  // Settings > General: the history, both announcements off by default.
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.locator('#alert-history li').first().waitFor();
+  const lines=()=>page.locator('#alert-history li .al-text').evaluateAll(l=>l.map(x=>x.textContent));
+  assert.deepEqual(await lines(),['12:00:00 K1ABC CQ K1ABC FN42 · CQ rule 1 · 40m FT8 · -12 dB · United States']);
+  assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[false,false]);
+  await announce(alert(2,'DL1XYZ','CQ DL1XYZ JO62',-3,'Fed. Rep. of Germany'));
+  assert.deepEqual((await lines())[0],'12:00:00 DL1XYZ CQ DL1XYZ JO62 · CQ rule 1 · 40m FT8 · -3 dB · Fed. Rep. of Germany','newest first');
+  assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'both off: nothing announced, no permission asked');
+  await page.locator('#alert-sound').check();
+  await announce(alert(3,'W1AW','CQ W1AW FN31',-5,'United States'));
+  assert.deepEqual(await counters(),{tones:1,notes:[],asks:0});
+  await page.locator('#alert-notify').check();
+  for(let i=0;i<40&&(await counters()).asks<1;i++)await page.waitForTimeout(50);
+  assert.equal(await page.locator('#alert-notify').isChecked(),true,'granted on the click');
+  await announce(alert(4,'JA1XYZ','CQ JA1XYZ PM95',-15,'Japan'));
+  for(let i=0;i<40&&!(await counters()).notes.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(await counters(),{tones:2,notes:[{title:'Alert JA1XYZ',body:'CQ JA1XYZ PM95 · CQ rule 1'}],asks:1});
+  // A hidden page plays no tone; the notification still shows.
+  await page.evaluate(()=>{window.__hidden=true;});
+  await announce(alert(5,'VK2ABC','CQ VK2ABC QF56',-20,'Australia'));
+  for(let i=0;i<40&&(await counters()).notes.length<2;i++)await page.waitForTimeout(50);
+  const c=await counters();assert.deepEqual([c.tones,c.notes.length,c.notes[1].title],[2,2,'Alert VK2ABC']);
+  // A reload keeps both choices and announces nothing from the history.
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#alert-history li').length===5,null,{timeout:20000});
+  assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[true,true]);
+  await page.waitForTimeout(300);
+  assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'the history read at load announces nothing');
+  await page.locator('#alert-clear').click();
+  for(let i=0;i<60&&!clears.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(clears,[{v:1,profile_id:view.profile_id,boot_id:view.boot_id}]);
+  await page.waitForFunction(()=>!document.querySelector('#alert-history li'));
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
@@ -2213,5 +2536,76 @@ test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>
   assert.equal(sent.activity,'hound');
   assert.equal('exchange' in sent,false,'Hound takes no exchange');
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-061-01; TC-061-001. Scripted receive identities, periods and waterfall rows (presentation fixtures, never modem truth).
+test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a Stop/Start clears them',{timeout:45000},async t=>{
+  let state,records=[];const reads=[];
+  const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z'];
+  const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`EPOCH FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
+  const publish=(id,period,count)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  // A new receive identity as the station allocates it: fresh source, job and generation, results from sequence 0.
+  const renew=lossEpochs=>{records=[];state={...state,generation:state.generation+1,audio:{...state.audio,loss_epochs:lossEpochs,last_loss:lossEpochs?'queue_full':null},source:{...state.source,id:crypto.randomUUID()},job:{...state.job,id:crypto.randomUUID(),first_sequence:0,next_sequence:0,available_count:0,latest_decode:null}};};
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    publish(1,periods[0],2);
+    await page.route('**/recording',async route=>{const json=await(await route.fetch()).json();await route.fulfill({json:{...json,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));reads.push([query.get('job_id'),Number(query.get('generation')),cursor]);
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr[data-period], #band-activity tbody tr.ba-divider')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
+  const waterfall=()=>page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null]));
+  const level=q=>Array.from({length:1024},()=>q);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxRenderHistory);
+  publish(2,periods[1],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.id===2&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  await liveFrames(page,[0,1,2,3].map(sequence=>({sequence,levels:level(10*(sequence+1))})));
+  assert.deepEqual(await waterfall(),[[0,10],[1,20],[2,30],[3,40]]);
+  // The audio loss epoch: the recording.state and receive.state readers both see the new identity.
+  renew(1);const generation=state.generation,job=state.job.id;
+  await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,generation);
+  assert.deepEqual(await shown(),['|FT8 period 12:00:15 UTC','history:2','|FT8 period 12:00:00 UTC','history:0','history:1'],'Band Activity keeps the decoded periods');
+  await liveFrames(page,[{sequence:0,levels:level(50)},{sequence:1,levels:level(60)}]);
+  assert.deepEqual(await waterfall(),[[-5,10],[-4,20],[-3,30],[-2,40],[-1,null],[0,50],[1,60]],'old rows kept, one gap row, then the new epoch');
+  await page.locator('#exception-chips [data-chip=restart]').waitFor();
+  publish(1,periods[2],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.period_start_utc==='2026-10-27T12:00:30.0000000Z'&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  assert.deepEqual(await shown(),['latest:0','|FT8 period 12:00:15 UTC','history:2'],'the new period on top, the one before it kept');
+  assert.deepEqual(reads.find(([id])=>id===job),[job,generation,0],'the new identity is read from cursor 0');
+  // A Stop/Start (loss_epochs restarts at 0) is a new receive: both clear.
+  renew(0);await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,state.generation);
+  assert.deepEqual([await shown(),await waterfall()],[[],[]],'a new receive clears Band Activity and the waterfall');
+  await liveFrames(page,[{sequence:0,levels:level(70)}]);assert.deepEqual(await waterfall(),[[0,70]]);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
+// and Reply buttons retry a stale_revision refusal of their enable_tx with the reloaded revision, at most twice.
+test('TC-061-003 CQ and Reply retry a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
+  const commands=[];let contact=null,revision=3,stale=0;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact})}));
+    // The station refuses the next `stale` commands (its revision moved: the last 73 period ended) and moves it on.
+    await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
+      if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
+  const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
+  stale=1;let m=commands.length;await page.locator('#qso-cq').click();
+  assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
+  await page.locator('#contact-result').filter({hasText:'CQ: accepted'}).waitFor();
+  // At most two retries: a third refusal stays shown.
+  stale=3;m=commands.length;await page.locator('#qso-cq').click();
+  assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
+  await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  contact=partner('replying');stale=1;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-reply').disabled);
+  m=commands.length;await page.locator('#qso-reply').click();
+  assert.deepEqual(await sent(m,2),[['enable_tx',true,7],['enable_tx',true,8]],'Reply: refused once, sent again with the reloaded revision');
   assert.deepEqual(errors,[]);
 });

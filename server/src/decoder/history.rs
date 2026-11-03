@@ -260,6 +260,7 @@ pub(super) fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_jso
             start_frame: 0,
             frequency_hz: 1000.,
             snr_db: Some(-20.),
+            a_priori: None,
         };
         assert_eq!(record.payload.status, super::PayloadStatus::Decoded);
         assert!(matches!(
@@ -368,6 +369,7 @@ fn resource_history_capacity_counts_reserved_key_storage() {
             start_frame: 1000,
             frequency_hz: 1000.,
             snr_db: Some(-20.),
+            a_priori: None,
         };
         history
             .publish_if_new(&record, &mut |_| {
@@ -400,6 +402,7 @@ fn resource_history_capacity_counts_reserved_key_storage() {
         start_frame: 1000,
         frequency_hz: 1000.,
         snr_db: None,
+        a_priori: None,
     };
     assert_eq!(
         history.publish_if_new(&extra, &mut |_| panic!("over-cap record cannot publish")),
@@ -415,6 +418,8 @@ pub struct DecodeState {
     live_history: bool,
     last_window_origin: Option<u64>,
     period_start: Option<u64>,
+    /// The station's a-priori context of the next window (#56 slice 5).
+    a_priori: super::APriori,
 }
 impl DecodeState {
     /// Finite numerical-test context with lifetime publication limits.
@@ -427,6 +432,7 @@ impl DecodeState {
             last_window_origin: None,
             // Finite decodes take their windows from frame 0 at a period start.
             period_start: Some(0),
+            a_priori: super::APriori::default(),
         }
     }
     /// Continuous receive context. The caller resets it on a job/source/gap/history reset.
@@ -444,6 +450,14 @@ impl DecodeState {
     /// None when the receive clock does not establish it.
     pub fn set_period_start(&mut self, frame: Option<u64>) {
         self.period_start = frame;
+    }
+    /// WstxStationDecode::APrioriContext of the next window; the default allows only the CQ
+    /// hypothesis.
+    pub fn set_a_priori(&mut self, a_priori: super::APriori) {
+        self.a_priori = a_priori;
+    }
+    pub fn a_priori(&self) -> &super::APriori {
+        &self.a_priori
     }
     pub fn period_start(&self) -> Option<u64> {
         self.period_start

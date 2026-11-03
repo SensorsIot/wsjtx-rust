@@ -484,6 +484,8 @@ fn router(state: App) -> Router {
         .route("/strategy", get(strategy::snapshot).put(strategy::put).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/evaluate", post(strategy::evaluate_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/ignore", post(strategy::ignore_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
+        .route("/strategy/alerts", get(strategy::alerts_route))
+        .route("/strategy/alerts/clear", post(strategy::clear_alerts_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))
@@ -1060,6 +1062,8 @@ async fn connection(
     let mut contact_seen: Option<u64> = None;
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
+    // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
+    let mut alert_seen: Option<u64> = None;
     let mut last_station_tick: Option<Instant> = None;
     let mut tick_transmitting: Option<bool> = None;
     // Events pace by the peer's display subscription; a peer that never chose one
@@ -1121,6 +1125,15 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(automation::state_event(r,automation.unwrap_or_default()).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{automation_seen=automation;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                let alert=r.contact.get().map_or(0,|c|c.strategy.alert_revision());
+                if alert_seen.is_none() { alert_seen=Some(alert); }
+                if alert_seen!=Some(alert) {
+                    match optional_write(&mut socket,Message::Text(strategy::alert_event(r,alert).into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{alert_seen=Some(alert);if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }
