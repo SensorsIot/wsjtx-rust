@@ -4561,10 +4561,10 @@ package WstxRequirements {
     }
     dependency CL_024_02_verified_by_TC_024_005 from 'CL-024-02' to 'TC-024-005';
     verification 'TC-024-006' {
-        doc /* TC-024-006 — The Activity choice in the Control panel
+        doc /* TC-024-006 — The Activity choice in the QSO fold-out
              CL-024-02
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
-             Steps: read the Activity choice in the Control panel below the QSO pane (#37 ControlPanel) with settings.activity ww_digi; choose ARRL Digi.
+             Steps: open the fold-out; read the Activity choice with settings.activity ww_digi; choose ARRL Digi.
              Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009, since #24 S4b also Hound, TC-024-013) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
@@ -4614,7 +4614,7 @@ package WstxRequirements {
         doc /* TC-024-009 — The Field Day / RTTY Roundup choice and its Exchange entry
              CL-024-03
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
-             Steps: in the Control panel with settings activity rtty, exchange DX, serial 7; enter "1A EMA" in the Exchange entry and choose Field Day; change the exchange to "2B WI".
+             Steps: open the fold-out with settings activity rtty, exchange DX, serial 7; enter "1A EMA" in the Exchange entry and choose Field Day; change the exchange to "2B WI".
              Expected: the choice offers None, NA VHF, WW Digi, ARRL Digi, Field Day and RTTY Roundup; it shows RTTY Roundup, the entry DX and the next serial 0007; choosing sends set_activity {activity field_day, exchange "1A EMA"}, the change sends {field_day, "2B WI"}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
@@ -4659,10 +4659,10 @@ package WstxRequirements {
     }
     dependency CL_024_04_verified_by_TC_024_012 from 'CL-024-04' to 'TC-024-012';
     verification 'TC-024-013' {
-        doc /* TC-024-013 — The Hound choice in the Control panel
+        doc /* TC-024-013 — The Hound choice in the QSO fold-out
              CL-024-04
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
-             Steps: in the Control panel with settings activity hound; choose Hound from None.
+             Steps: open the fold-out with settings activity hound; choose Hound from None.
              Expected: the choice offers Hound after RTTY Roundup and shows it; choosing sends set_activity {activity hound} without an exchange; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;

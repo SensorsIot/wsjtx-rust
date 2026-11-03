@@ -819,9 +819,15 @@ attribute def ActivityOrdering {
              without transmit capability or on a completed contact) and its editable
              text (Tx5 is editable whenever a contact exists, also without a message, for
              WSJT-X Tx5 free text, #24 S1b; the others once they have a message), Skip Tx1,
-             RRR/RR73 and Cancel contact in place; the DX Call/Grid entry, report, Tx period,
-             Auto Seq, Call 1st, Hold Tx and the Activity choice with its Exchange entry are
-             the ControlPanel below the pane (#37, operator 2026-11-03). On a station without
+             RRR/RR73 and Cancel contact in place, and above them the Activity choice (None,
+             NA VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup, Hound; set_activity,
+             WstxContact::GridExchangeContest, #24 S2a, HoundOperation, #24 S4b) that shows the
+             station's setting, with an Exchange entry beside it (ContestExchange, #24 S2b:
+             shows settings.exchange; choosing Field Day or RTTY Roundup sends set_activity
+             with the entered exchange, and changing the exchange while one of them is chosen
+             sends it again; the next serial is shown while RTTY uses DX or #); the DX
+             Call/Grid entry, report, Tx period, Auto Seq, Call 1st and Hold Tx are the
+             ControlPanel below the pane (#37, operator 2026-11-03). On a station without
              transmit capability the transmit
              buttons are disabled with the reason. */
     }
@@ -860,14 +866,7 @@ attribute def ActivityOrdering {
              sends the same single WstxContact request as before (enter_dx, set_report,
              set_auto_seq, set_call_first, set_hold_tx, set_parity) and shows only the
              server-confirmed value. They are laid out across the full width of the block in
-             rows (wrapping at narrow widths), not as one narrow column. Its third row (#24)
-             is the Activity choice (None, NA VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup,
-             Hound; set_activity, WstxContact::GridExchangeContest, #24 S2a, HoundOperation,
-             #24 S4b) that shows the station's setting, with an Exchange entry beside it
-             (ContestExchange, #24 S2b: shows settings.exchange; choosing Field Day or RTTY
-             Roundup sends set_activity with the entered exchange, and changing the exchange
-             while one of them is chosen sends it again; the next serial is shown while RTTY
-             uses DX or #). */
+             rows (wrapping at narrow widths), not as one narrow column. */
     }
     attribute def ErrorField {
         attribute hasHistory : Boolean = false;
