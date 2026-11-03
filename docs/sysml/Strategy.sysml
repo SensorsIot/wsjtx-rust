@@ -1,7 +1,8 @@
 package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
-         WstxRequirements; verification TC-039-001..007): named strategies, the
+         WstxRequirements; verification TC-039-001..007; the complete New matrix of
+         issue #42, CL-042-01 and TC-042-001): named strategies, the
          directed-CQ rule, Highlight in Band Activity, the strategy editor popup and Auto
          strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
          result.
@@ -16,8 +17,10 @@ package WstxStrategy {
             grid, ever or on this band and mode, WstxContact::WorkedBeforeQuery); the
             continent of a station is its cty.dat entity's (ContinentOfCall, #55, also
             without a grid); distance and azimuth come from the grid in its message
-            (none without a grid). DXCC, CQ/ITU zone and new-DXCC conditions and the
-            rarest sort are not offered yet (CL-039-07).
+            (none without a grid). #42 completes the New matrix: new DXCC entity,
+            continent, CQ zone and ITU zone of the sender's entity, ever or on this band
+            and mode (NewEntity). DXCC and CQ/ITU zone list conditions and the rarest
+            sort are not offered yet (CL-039-07).
          D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as
             calling for message type cq, in Highlight and Auto; Auto then keeps my Tx
             frequency (Hold Tx) so the answer never lands on the final 73.
@@ -40,7 +43,7 @@ package WstxStrategy {
     enum def ConditionKind {
         enum 'message'; enum new_call; enum new_grid; enum continent; enum distance_km;
         enum azimuth_deg; enum snr_db; enum dt_s; enum audio_hz; enum call; enum cq_target;
-        enum band;
+        enum band; enum new_dxcc; enum new_continent; enum new_cq_zone; enum new_itu_zone;
     }
     enum def SortOrder { enum strongest; enum weakest; enum furthest; enum newest; }
     enum def AutoRole { enum call; enum cq; enum alternate; }
@@ -48,7 +51,7 @@ package WstxStrategy {
         attribute kind : ConditionKind;
         attribute negate : Boolean;
         doc /* Wire keys: {kind, negate} plus value (message: MessageType; new_call,
-             new_grid: NewScope), or values (continent: unique AF AN AS EU NA OC SA; call:
+             new_grid, new_dxcc, new_continent, new_cq_zone, new_itu_zone: NewScope), or values (continent: unique AF AN AS EU NA OC SA; call:
              unique 1..13 of A-Z 0-9 /, a prefix match on the sender's call; cq_target:
              unique 1..4 of A-Z 0-9, the word after "CQ "; band: unique ADIF band names,
              stored lower case), 1..32 entries; or min and max (null or a number, at least
@@ -60,7 +63,8 @@ package WstxStrategy {
              to a call other than mine; directed_cq: "CQ x"; to_me: to my call; signoff:
              exchange RR73 or 73. new_call ever: the sender is not in the log; band: not
              worked on this band and mode. new_grid: as new_call for the message's grid
-             square (no grid: false). continent: ContinentOfCall of the sender is listed
+             square (no grid: false). new_dxcc, new_continent, new_cq_zone,
+             new_itu_zone: NewEntity of the sender. continent: ContinentOfCall of the sender is listed
              (no entity: false). distance_km/azimuth_deg: great circle from my locator
              to the message grid in whole km / whole degrees (no grid: false). snr_db,
              dt_s, audio_hz: the record's value (unknown: false). call: a listed prefix
@@ -105,6 +109,26 @@ package WstxStrategy {
              entity (/MM, /AM, unknown prefix). It replaces the earlier locator-rectangle
              approximation: the message grid no longer decides a station's continent.
              The snapshot's derived_continent is ContinentOfCall of my callsign. */
+    }
+    calc def NewEntity {
+        in call : String;
+        in scope : NewScope;
+        return isNew : Boolean;
+        doc /* #42 (CL-042-01), the entity part of the New matrix. The category key of a
+             call comes from its WstxContact::EntityOfCall (with the entry's overrides):
+             new_dxcc the entity full name (WAE entities by their own name, as
+             WstxContact::DecodedEntity new_dxcc), new_continent its continent,
+             new_cq_zone its CQ zone, new_itu_zone its ITU zone. The condition holds when
+             no logged contact has the sender's key: ever, among all logged contacts;
+             band, among the logged contacts on the station band (CAT dial band, else the
+             operating selection band) in the operating mode (ADIF MODE, an MFSK record by
+             its SUBMODE), the same scope as new_call and new_grid (the #55 decode colours
+             keep the WSJT-X band-only rule). A logged call without an entity counts for
+             nothing; a logged contact without a band counts only for ever. False when
+             the sender has no entity (/MM, /AM, unknown prefix), for band when the
+             station band is unknown, and when the log is unreadable (no claim of new).
+             The worked set is the log's cached one, rebuilt when the log or the country
+             table changes. */
     }
     calc def DirectedCqRule {
         in target : String;
@@ -238,6 +262,7 @@ package WstxStrategy {
 
     dependency storeClause from StrategyConfiguration to WstxRequirements::'CL-039-01';
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
+    dependency newEntityClause from NewEntity to WstxRequirements::'CL-042-01';
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';

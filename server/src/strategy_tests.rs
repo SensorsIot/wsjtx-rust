@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06; TC-039-001..005 (each
-// test names its case below). Hand-authored records and strategies; the expected ranks,
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01;
+// TC-039-001..005, TC-042-001 (each test names its case below). Hand-authored records and strategies; the expected ranks,
 // grey marks, orders, stop reasons and requests are the WstxStrategy tables written in
 // these tests (geography from the locator square centres), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
@@ -342,6 +342,106 @@ fn tc_039_002_each_condition_and_its_negation() {
         "CQ EU for my continent stays answerable"
     );
     assert!(sane_call("K1ABC") && !sane_call("K1") && !sane_call("ABCDE") && !sane_call("W1AW/R"));
+}
+
+// Proves: TC-042-001
+#[test]
+fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
+    use crate::dxcc::{Logged, Worked};
+    // The hand log (entity columns of the cited cty.dat lines): DL1ABC 40m FT8 (Fed.
+    // Rep. of Germany, EU, CQ 14, ITU 28, line 669), JA1XYZ 20m FT8 (Japan, AS, 25, 45,
+    // line 1223), F1ABC 40m FT4 (France, EU, 14, 27, line 797), K2ABC without a band
+    // (United States, NA, 5, 8, line 1251), Q1ABC 40m FT8 (no entity).
+    let log = |call: &str, band: Option<&str>, mode: &str| Logged {
+        call: call.into(),
+        grid: None,
+        band: band.map(Into::into),
+        mode: Some(mode.into()),
+    };
+    let mut st = me();
+    st.mode = "FT8".into();
+    st.worked = Some(std::sync::Arc::new(Worked::from_log(
+        &st.dxcc,
+        &[
+            log("DL1ABC", Some("40m"), "FT8"),
+            log("JA1XYZ", Some("20m"), "FT8"),
+            log("F1ABC", Some("40m"), "FT4"),
+            log("K2ABC", None, "FT8"),
+            log("Q1ABC", Some("40m"), "FT8"),
+        ],
+    )));
+    // Rows: 0 Germany, 1 France, 2 Japan, 3 Australia (OC, 30, 59, line 3977),
+    // 4 United States, 5 no entity.
+    let records = rows(&[
+        ("CQ DL2XYZ JO62", Some(-5.0)),
+        ("CQ F5ABC JN18", Some(-5.0)),
+        ("CQ JA2ABC PM84", Some(-5.0)),
+        ("CQ VK2ABC QF56", Some(-5.0)),
+        ("CQ K1ABC FN42", Some(-5.0)),
+        ("CQ Q1ABC FN42", Some(-5.0)),
+    ]);
+    let all: Vec<u64> = (0..6).collect();
+    let matching = |st: &Station, c: &Value| -> Vec<u64> {
+        let s = strat(vec![vec![cq(), c.clone()]], Sort::Newest, false);
+        let mut m: Vec<u64> = ranks(&s, &records, st)
+            .into_iter()
+            .filter(|r| r.1.is_some())
+            .map(|r| r.0)
+            .collect();
+        m.sort();
+        m
+    };
+    let c = |kind: &str, value: &str, negate: bool| json!({"kind":kind,"negate":negate,"value":value});
+    for (kind, ever, band) in [
+        ("new_dxcc", vec![3], vec![1, 2, 3, 4]),
+        ("new_continent", vec![3], vec![2, 3, 4]),
+        ("new_cq_zone", vec![3], vec![2, 3, 4]),
+        ("new_itu_zone", vec![3], vec![1, 2, 3, 4]),
+    ] {
+        for (scope, expected) in [("ever", &ever), ("band", &band)] {
+            // The wire form round-trips exactly.
+            assert_eq!(cond(c(kind, scope, false)).json(), c(kind, scope, false));
+            assert_eq!(matching(&st, &c(kind, scope, false)), *expected, "{kind} {scope}");
+            let complement: Vec<u64> = all.iter().copied().filter(|s| !expected.contains(s)).collect();
+            assert_eq!(matching(&st, &c(kind, scope, true)), complement, "not {kind} {scope}");
+        }
+        // Exact keys and values.
+        assert_eq!(
+            condition(&c(kind, "any", false), "c").unwrap_err(),
+            "c.value",
+            "{kind}"
+        );
+        assert_eq!(
+            condition(&json!({"kind":kind,"negate":false,"values":["ever"]}), "c").unwrap_err(),
+            "c"
+        );
+        assert_eq!(
+            condition(&json!({"kind":kind,"negate":false}), "c").unwrap_err(),
+            "c"
+        );
+        // Station band unknown: the band form never holds; ever is unchanged.
+        let lost = Station {
+            band: None,
+            ..st.clone()
+        };
+        assert_eq!(matching(&lost, &c(kind, "band", false)), Vec::<u64>::new(), "{kind}");
+        assert_eq!(matching(&lost, &c(kind, "ever", false)), ever, "{kind}");
+        // Log unreadable: no claim of new.
+        let unread = Station {
+            worked: None,
+            ..st.clone()
+        };
+        for scope in ["ever", "band"] {
+            assert_eq!(matching(&unread, &c(kind, scope, false)), Vec::<u64>::new(), "{kind}");
+        }
+    }
+    let s = strat(vec![vec![cq(), c("new_dxcc", "band", false)]], Sort::Newest, false);
+    assert_eq!(
+        evaluate(&s, &records, &st)[0].why,
+        "no match (rule 1: new DXCC on band)"
+    );
+    let s = strat(vec![vec![c("new_itu_zone", "ever", true)]], Sort::Newest, false);
+    assert_eq!(evaluate(&s, &records, &st)[3].why, "no match (rule 1: not new ITU zone)");
 }
 
 pub(crate) fn strategy_json(name: &str, role: &str) -> Value {
