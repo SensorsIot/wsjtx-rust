@@ -152,6 +152,59 @@ test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t 
   assert.ok(Date.now() - silentRestore < 10000); assert.equal(requests, 3, 'snapshot after silent failure');
 });
 
+// #8: on the shared 32 kbit/s bottleneck the page's own deferred contact client download holds
+// the station's WebSocket messages behind it for more than 12 s. Deterministic model: hold
+// (delay, never drop) every station-to-page message while /contact.js is pending, then deliver.
+async function deferredDownloadHold(t, holdMs) {
+  const dir = await fs.mkdtemp(path.join(temporary, 'deferred-')), port = await browserPort();
+  const document = {schema_version: 1, profile_id: require('node:crypto').randomUUID(), revision: 0, display_name: 'Deferred', callsign: 'HB9BLA', locator: 'JN37VL',
+    endpoint: {bind: `127.0.0.1:${port}`, origin: null}, connection_type: 'standard', audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}};
+  await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
+  const app = await server({}, ['--profile', dir]); t.after(() => app.close());
+  const context = await contextFor(app.origin); t.after(() => context.close());
+  const page = await context.newPage(), state = {held: false, queue: [], lastDelivered: 0, sockets: 0, release: null, heldAt: null};
+  await page.addInitScript(() => {
+    window.__states = [];
+    addEventListener('DOMContentLoaded', () => {const c = document.querySelector('#connection'); new MutationObserver(() => window.__states.push({at: Date.now(), state: c.dataset.state})).observe(c, {attributes: true, attributeFilter: ['data-state']});});
+  });
+  page.on('websocket', () => state.sockets++);
+  await page.routeWebSocket(/\/ws$/, ws => {
+    const station = ws.connectToServer();
+    station.onMessage(message => {const deliver = () => {state.lastDelivered = Date.now(); try {ws.send(message);} catch {}}; if (state.held) state.queue.push(deliver); else deliver();});
+  });
+  await page.route('**/contact.js', async route => {
+    state.held = true; state.heldAt = Date.now();
+    await new Promise(resolve => {state.release = resolve; setTimeout(resolve, holdMs);});
+    await route.continue(); state.held = false; for (const deliver of state.queue.splice(0)) deliver();
+  });
+  await page.goto(app.origin);
+  await page.locator('#connection[data-state=connected]').waitFor({timeout: 10000});
+  return {page, state};
+}
+
+// Proves: FR-021; CL-003-04; TC-021-007 case 5 (#8); level 2, profile station, real Chromium.
+test('TC-021-007: a deferred client download that holds station messages 16 s is not a lost link', {timeout: 60000}, async t => {
+  const {page, state} = await deferredDownloadHold(t, 16000);
+  await page.waitForFunction(() => !!window.wstxContact, null, {timeout: 45000});
+  assert.ok(state.heldAt !== null && state.lastDelivered - state.heldAt >= 15000, 'the station messages were held behind the download');
+  await sleep(2000);
+  assert.deepEqual((await page.evaluate(() => window.__states)).filter(s => s.state !== 'connected'), [], 'never stale or reconnecting');
+  assert.equal(state.sockets, 1, 'the same socket throughout');
+});
+
+// Proves: FR-021; CL-003-04; TC-021-007 case 5 (#8); level 2. A download that never completes
+// still bounds silent loss: stale after more than 30 s without a message, within 31 s + 1 s.
+test('TC-021-007: a pending deferred client download bounds silent loss at 31 s', {timeout: 90000}, async t => {
+  const {page, state} = await deferredDownloadHold(t, 60000);
+  const deadline = Date.now() + 45000;
+  while (!state.held) {assert.ok(Date.now() < deadline, 'deferred download requested'); await sleep(50);}
+  await page.locator('#connection[data-state=stale]').waitFor({timeout: 40000});
+  const stale = (await page.evaluate(() => window.__states)).find(s => s.state === 'stale').at, silent = stale - state.lastDelivered;
+  assert.ok(silent >= 29900 && silent <= 32000, `stale after ${silent} ms without a message`);
+  state.release();
+  await page.locator('#connection[data-state=connected]').waitFor({timeout: 10000});
+});
+
 // Proves: FR-021; CL-003-05, CL-003-08; level 2, TLS byte-stream link model, not packet capture.
 test('TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget', {timeout: 110000}, async t => {
   const proxy = await link({host: '127.0.0.1', port: 1}); t.after(() => proxy.close());
