@@ -78,13 +78,30 @@ package WstxContact {
              (WstxProfiles::Settings); without a profile callsign, or a locator for
              Tx1/Tx6, no message set is generated and transmit stays unavailable with
              that reason. Without a DX call only Tx6 exists. Directed CQ (CQ DX/nnn)
-             is not offered. Every generated text must pack unaltered with
-             WstxTransmit::PackMessage (standard i3=1/2 family); a DX call that does
-             not is refused at entry. Hashed calls (filled in or not, CL-024-01)
-             and nonstandard calls and contest forms belong to #24 (S1b, S2). Regenerating after a report, DX call or tx4 change
+             is not offered.
+             Nonstandard and compound calls (#24 S1b, CL-024-01; MW genStdMsgs ~9690-9850,
+             77-bit branch): a call is standard when it matches Radio::is_standard_callsign
+             (prefix [A-Z]{0,2}|[A-Z][0-9]|[0-9][A-Z], then a digit and at most 3
+             letters, optionally /R or /P), else nonstandard (e.g. PJ4/K1ABC, DL/HB9BLA,
+             YW18FIFA). With a nonstandard DX call and a standard MYCALL: Tx1
+             "<DX> MYCALL GRID4", Tx2 "<DX> MYCALL R", Tx3 "<DX> MYCALL RR" (R prefixed by R),
+             Tx4 "DX <MYCALL> RRR|RR73", Tx5 "DX <MYCALL> 73". With a nonstandard MYCALL
+             and a standard DX call: Tx1 "<DX> MYCALL", Tx2 "DX <MYCALL> R", Tx3
+             "DX <MYCALL> RR", Tx4 "<DX> MYCALL RRR|RR73", Tx5 "<DX> MYCALL 73", and Tx6
+             "CQ MYCALL" (no grid; genCQMsg). Two nonstandard calls have no message set: such
+             a DX call is refused invalid_call (make-qso.adoc: no QSO between two nonstandard
+             calls). Every generated text must pack unaltered with
+             WstxTransmit::PackMessage as the standard i3=1/2 or the nonstandard i3=4
+             family; a DX call that does not is refused at entry. Contest forms belong to
+             #24 S2. Regenerating after a report, DX call or tx4 change
              replaces Tx2-Tx4 (and Tx1/Tx5 on a DX-call change); operator-edited text
              of a slot is kept until the next regeneration and requires server
-             validation through PackMessage before it can be chosen as next.
+             validation through PackMessage before it can be chosen as next: it must
+             pack unaltered as a standard i3=1/2, a nonstandard i3=4 or a free-text 0.0
+             message (at most 13 characters of the free-text alphabet, WSJT-X Tx5 free
+             text such as "TNX 73 GL", #24 S1b), else invalid_message. A free-text Tx5
+             is sent like a 73: once sent in signoff the contact completes (logged only
+             when it has a DX call).
              Tx4 default is rrr in FT8: m_send_RR73 starts false and is not saved
              (MW ~580, ~9661; Rr73Policy.cpp tx4AllowsRr73). FT4-NOTE: rr73, and
              always rr73 (MW send_rr73_for_tx4 ~9661 is true for FT4 whatever
@@ -227,8 +244,13 @@ package WstxContact {
         in rowIdentity : String;
         out prepared : Contact[0..1];
         doc /* CL-010-01. rowIdentity is the full validated profile/boot/source/job/
-             generation/sequence tuple of a live result row with a concrete standard
-             'from' call (WstxOfflineDecode::StandardFields). Effects, after server
+             generation/sequence tuple of a live result row with a concrete 'from' call:
+             a standard i3=1/2 message (WstxOfflineDecode::StandardFields) whose 'from'
+             is a concrete call or a hash the station filled in (HashResolution), or a
+             nonstandard i3=4 message (#24 S1b), whose 'from' and 'to' are the full call
+             and the filled-in hash in their hash_second order, a CQ having 'to' CQ and
+             an RRR/RR73/73 its roger exchange (none: blank). A 'to' hash filled in with
+             my call is my call. Effects, after server
              acknowledgement only (DMR handleDecodeSelection ~320-360, D-adopted):
              dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any
              (a row without a grid of the same partner and mode keeps the known dxGrid,
@@ -237,9 +259,11 @@ package WstxContact {
              to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
              txParity = opposite of the row's period parity; message set generated;
-             nextSlot and state per FirstSlotOnSelection. Hashed calls (filled in or not,
-             until #24 S1b), rows without a concrete call, old/wrong-profile tuples and non-standard
-             families are refused with a reason. Never sets enableTx (DIFFERENT from
+             nextSlot and state per FirstSlotOnSelection. Unresolved hashes (<...>), rows
+             without a concrete call, a DX call that would pair two nonstandard calls,
+             old/wrong-profile tuples and other families are refused with a reason.
+             Received partner messages count by the same row reading, so a compound QSO
+             sequences as a standard one (AutoSequence). Never sets enableTx (DIFFERENT from
              CFG quick_call "double-click sets Tx enable": #10 safety rule; the browser's
              double-click sends SetEnableTx on after it, OperatingLayout BandActivity) and
              never clears it: a replacement while Enable Tx is on keeps it on
@@ -264,9 +288,10 @@ package WstxContact {
         in dxGridText : String[0..1];
         out prepared : Contact[0..1];
         doc /* D1 adopted (MW dxCallEntry/dxGridEntry, on_dxCallEntry_returnPressed): call a
-             station that was not decoded. The call is upper-cased; it must be a call
-             WstxTransmit::PackMessage accepts as the 'to' call of the standard family
-             (optionally /R or /P), else refused (no message set, no contact). Grid is
+             station that was not decoded. The call is upper-cased; it must give a
+             StandardMessageSet (a standard call, optionally /R or /P, or a nonstandard
+             call with my standard call, #24 S1b), else refused invalid_call (no message
+             set, no contact). Grid is
              optional, 4 or 6 Maidenhead characters (AA00..RR99[AA..XX]) else refused.
              Enter or Generate creates the contact with origin manualEntry, state
              replying, nextSlot tx1 (tx2/report when Tx1 skipped), the current report
@@ -309,7 +334,8 @@ package WstxContact {
              Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
              the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the
-             station's mode, decoded in a period of the parity opposite to my Tx parity,
+             station's mode (neither call a filled-in hash nor an i3=4 message: WSJT-X's
+             recipient and sender words must be plain calls), decoded in a period of the parity opposite to my Tx parity,
              whose exchange is a grid or a report, is answered at once as SelectDecodedRow
              of that row (prepareReply: report Tx2 after their grid, roger report Tx3
              after their report, as FirstSlotOnSelection; Hold Tx and the to-my-call rule

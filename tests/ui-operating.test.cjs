@@ -2093,3 +2093,44 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
   assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,30],[5,30],[6,40],[7,null],[8,null],[9,null],[10,50]]);
   assert.deepEqual(errors,[]);
 });
+
+// Proves: CL-024-01; TC-024-004 (#24 S1b). Tx5 takes free text with no message yet (WSJT-X Tx5
+// free text), and Band Activity marks rows to <MYCALL> and nonstandard rows to my call as mine.
+test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeout:45000},async t=>{
+  let state,records=[];const commands=[],period='2026-10-27T12:00:00.0000000Z';
+  const call=(kind,text,bits=null)=>({kind,text,hash_bits:bits,hash_value:bits===null?null:1});
+  const standard=(to,from)=>({type:'standard',to,from,ack:false,exchange:{kind:'report',value:-12}});
+  const nonstandard=(hashed,full,hash_second)=>({type:'nonstandard',full_call:call('call',full),hashed_call:hashed,hash_second,cq:false,roger:''});
+  const record=(sequence,text,fields,hz,i3)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3,n3:null,status:'decoded',text,fields,period_start_utc:period});
+  const cq={id:crypto.randomUUID(),origin:'own_cq',dx_call:null,dx_grid:null,report_sent:null,report_rcvd:null,state:'calling',next_slot:'tx6',tx4:'rrr',messages:[null,null,null,null,null,'CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    records=[
+      record(0,'<HB9BLA> PJ4/K1ABC',nonstandard(call('hash','HB9BLA',12),'PJ4/K1ABC',false),1000,4),
+      record(1,'HB9BLA <PJ4/K1ABC> -12',standard(call('call','HB9BLA'),call('hash','PJ4/K1ABC',22)),1100,1),
+      record(2,'<...> PJ4/K1ABC',nonstandard(call('hash',null,12),'PJ4/K1ABC',false),1200,4),
+      record(3,'<HB9BLA> K1ABC -12',standard(call('hash','HB9BLA',22),call('call','K1ABC')),1300,1),
+    ];
+    Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:cq})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.classList.contains('ba-tome')]));
+  assert.deepEqual(marks,[['<HB9BLA> PJ4/K1ABC',true],['HB9BLA <PJ4/K1ABC> -12',true],['<...> PJ4/K1ABC',false],['<HB9BLA> K1ABC -12',true]]);
+  await page.locator('#qso-more summary').click();
+  const tx5=page.locator('#contact-messages .ct-text[data-slot=tx5]');
+  assert.equal(await tx5.isEnabled(),true,'Tx5 takes free text without a message');
+  assert.equal(await page.locator('#contact-messages .ct-text[data-slot=tx4]').isEnabled(),false,'the other empty slots stay disabled');
+  assert.equal(await page.locator('#contact-messages li[data-slot=tx5] input[type=radio]').isEnabled(),false,'nothing to choose yet');
+  await tx5.fill('tnx 73 gl');await tx5.press('Tab');
+  for(let i=0;i<40&&!commands.some(c=>c.action==='edit_message');i++)await page.waitForTimeout(50);
+  const edit=commands.find(c=>c.action==='edit_message');
+  assert.deepEqual([edit.slot,edit.text],['tx5','tnx 73 gl']);
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'editing never transmits');
+  assert.deepEqual(errors,[]);
+});

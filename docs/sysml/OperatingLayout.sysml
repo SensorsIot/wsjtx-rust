@@ -522,7 +522,8 @@ attribute def ActivityOrdering {
              new_dxcc_band #ffaaff on; new_grid #ff8000 off; new_grid_band #ffcc99 off; new_call
              #00ffff off; new_call_band #99ffff off; lotw off (no source); cq #66ff66 on. A row takes
              the highest-priority enabled slot it matches. Matches: mycall, a decoded message to the
-             profile callsign; cq, a decoded message starting CQ; new_call, the worked-before status
+             profile callsign, also as a filled-in hash <MYCALL> or the 'to' call of a nonstandard
+             i3=4 message (WSJT-X matches "[ <]MYCALL[ >]", #24 S1b); cq, a decoded message starting CQ; new_call, the worked-before status
              not_worked of the sending call; new_call_band, not_worked or worked_other_band_or_mode; every new_*
              slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
              zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
@@ -700,7 +701,9 @@ attribute def ActivityOrdering {
              contact "· in QSO") with a "Stop pounce" button that stops the run; hidden
              otherwise and never clipped on the 1366x768 screen.
              A fold-out shows the DX Call/Grid entry with Generate, Tx1-Tx6 with their Next
-             choice and editable text, Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
+             choice and editable text (Tx5 is editable whenever a contact exists, also
+             without a message, for WSJT-X Tx5 free text, #24 S1b; the others once they have
+             a message), Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
              Cancel contact in place. On a station without transmit capability the transmit
              buttons are disabled with the reason. */
     }

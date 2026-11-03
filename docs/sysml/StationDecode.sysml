@@ -288,7 +288,9 @@ package WstxOfflineDecode {
              learns from accepted requests. unpack77's DX-call rules (a 0.1 h10 equal to the
              DX call's hash shows the DX call; a nonstandard 'to' h12 equal to my h12 is my
              call when the full call is the DX call, even if calls12 holds another call)
-             need the contact's DX call and are delivered with #24 S1b.
+             need the contact's DX call: the station sets the current contact's DX call
+             on the table at each contact step (#24 S1b) and applies the nonstandard rule;
+             the 0.1 DXpedition rule belongs to the Hound slices (#24 S4).
              Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
              22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
              from calls12, and when that is empty and the hash is the 'to' call equal to my
@@ -297,9 +299,10 @@ package WstxOfflineDecode {
              the list. A slot not found stays<...> with text null. Records published before
              a call was learned keep their text (no rewriting of history). The filled-in text
              reaches Band Activity, the QSO pane, MCP reads and the UDP Decode message
-             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash, so contact
-             selection, the strategy, DXCC/worked-before and Pounce, which need a concrete
-             call, treat it as before until #24 S1b (compound/nonstandard QSOs). */
+             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash. Contact
+             selection and sequencing read a filled-in hash as its call (WstxContact::
+             SelectDecodedRow, #24 S1b); the strategy, Call 1st, DXCC/worked-before and
+             Pounce, which need a plain concrete call, keep treating it as no call. */
     }
     attribute def StandardExchange {
         attribute kind : ExchangeKind;

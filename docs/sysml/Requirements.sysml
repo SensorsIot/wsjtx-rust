@@ -142,7 +142,7 @@ package WstxRequirements {
         doc /* Contest, special-activity and DXpedition operation — phase three
              Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound; S5 SuperFox Hound. Fox (S6) is out of scope; EU VHF (S3) is backlog. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs";
+        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs";
     }
     requirement 'CL-003-01' {
         doc /* The Rust server MUST serve the HTML/CSS/JavaScript operator client. The browser MUST visibly show server version, connection state and an unconfigured radio. Refresh status MUST request a fresh snapshot and update the displayed last-update time. */
@@ -4368,9 +4368,9 @@ package WstxRequirements {
     dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
     requirement 'CL-024-01' {
-        doc /* #24 S1. The station keeps one session hash table per station instance, fed by every concrete call decoded or sent and by my own call, and shows a hashed call as <CALL> once it resolves, otherwise <...>, as packjt77 does (this reverses the earlier StationDecode rule that a hash is never filled in). It generates and accepts the WSJT-X message sets for exactly one nonstandard or compound call with the bracket rules of genStdMsgs and refuses two nonstandard calls. It accepts free text of at most 13 characters (0.0) in an operator-edited slot. Every transmitted text packs unaltered. Delivered: the hash table and fill-in (slice S1a, WstxOfflineDecode::HashResolution); outstanding (slice S1b): compound/nonstandard QSOs through the contact engine and free text from the operating screen; until delivered, hashed and nonstandard rows are refused on selection as before. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs";
+        doc /* #24 S1. The station keeps one session hash table per station instance, fed by every concrete call decoded or sent and by my own call, and shows a hashed call as <CALL> once it resolves, otherwise <...>, as packjt77 does (this reverses the earlier StationDecode rule that a hash is never filled in). It generates and accepts the WSJT-X message sets for exactly one nonstandard or compound call with the bracket rules of genStdMsgs and refuses two nonstandard calls. It accepts free text of at most 13 characters (0.0) in an operator-edited slot. Every transmitted text packs unaltered. Slice S1a: the hash table and fill-in (WstxOfflineDecode::HashResolution); slice S1b: compound/nonstandard QSOs through the contact engine (WstxContact::StandardMessageSet, SelectDecodedRow, EnterDxStation), the nonstandard DX-call fill-in rule, free text in an operator-edited slot with Tx5 editable from the operating screen, and Band Activity marking <MYCALL> rows as to me. The 0.1 DXpedition DX-call rule belongs to S4 (Hound). Station automation (Auto Call, Auto CQ, Pounce, the strategy) and Call 1st stay standard-only. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.js";
     }
     dependency CL_024_01_to_FR_024 from 'CL-024-01' to 'FR-024';
     dependency CL_024_01_to_FR_004 from 'CL-024-01' to 'FR-004';
@@ -4402,5 +4402,33 @@ package WstxRequirements {
         attribute executable : String = "server/src/recording_tests.rs; server/src/contact_http_tests.rs; server/src/auth_tests.rs";
     }
     dependency CL_024_01_verified_by_TC_024_002 from 'CL-024-01' to 'TC-024-002';
+    verification 'TC-024-003' {
+        doc /* TC-024-003 — Compound and nonstandard QSOs through the contact engine
+             CL-024-01
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); rows built as the station builds them: packed, unpacked, filled in by a HashTable with my call set, and read by the station's row reader; HB9BLA JN47AA, or DL/HB9BLA.
+             Steps: (a) HB9BLA selects "CQ PJ4/K1ABC" (i3=4), Enable Tx; the partner sends "HB9BLA <PJ4/K1ABC> -12", then "<HB9BLA> PJ4/K1ABC RR73"; (b) as DL/HB9BLA, Enable Tx with no partner; the partner sends "<DL/HB9BLA> K1ABC FN42", which is selected, then "<DL/HB9BLA> K1ABC R-07", then "DL/HB9BLA <K1ABC> 73"; (c) enter the DX calls YW18FIFA, PJ4/K1ABC/P, a 12-character call and, as DL/HB9BLA, PA/K1XX, and select "W9XYZ <...> -10" and a row from "<...>"; (d) edit Tx5 to "tnx 73 gl", "TNX FER QSO 73 GL" (17 characters) and "HI, 73" (outside the free-text alphabet); (e) Call 1st on while calling CQ as HB9BLA: "<HB9BLA> PA/K1XX" and "HB9BLA <PJ4/K1ABC> -12" then "HB9BLA W9XYZ -10"; (f) the station's contact step with the manual entry PJ4/K1ABC over POST /contact/command; a table with a 12-bit collision X of HB9BLA in calls12, DX call PJ4/K1ABC, then "<HB9BLA> PJ4/K1ABC" filled in.
+             Expected: (a) the message set "<PJ4/K1ABC> HB9BLA JN47", "<PJ4/K1ABC> HB9BLA -NN", "<PJ4/K1ABC> HB9BLA R-NN", "PJ4/K1ABC <HB9BLA> RRR", "PJ4/K1ABC <HB9BLA> 73", "CQ HB9BLA JN47"; the station sends Tx1, Tx3, Tx5, completes and logs PJ4/K1ABC with rcvd -12; (b) Tx6 "CQ DL/HB9BLA", then Tx2 "K1ABC <DL/HB9BLA> -NN", Tx4 "<K1ABC> DL/HB9BLA RRR", completed after the partner's 73, logged K1ABC grid FN42; (c) YW18FIFA and PJ4/K1ABC/P accepted with their nonstandard sets, the 12-character call and PA/K1XX as DL/HB9BLA (two nonstandard calls) invalid_call, the unresolved rows refused row_not_standard; (d) Tx5 "TNX 73 GL" stored, the long text and a text that would not pack unaltered invalid_message; (e) Call 1st skips the nonstandard and the hashed caller and answers W9XYZ; (f) the entry is accepted with Tx1 "<PJ4/K1ABC> HB9BLA JN47" and after the step the station's table holds DX call PJ4/K1ABC; the filled-in 'to' is <HB9BLA>, not <X> (and <X> without the DX call).
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-01';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/decoder/hashes_test.rs";
+    }
+    dependency CL_024_01_verified_by_TC_024_003 from 'CL-024-01' to 'TC-024-003';
+    verification 'TC-024-004' {
+        doc /* TC-024-004 — Tx5 free text and <MYCALL> rows in the operating screen
+             CL-024-01
+             Setup: the browser fixture of the operating screen with the actual isolated station, hand-written live records and a hand-written contact snapshot of an own CQ (no partner, only Tx6), the profile call HB9BLA; contact commands are recorded (the station's validation of the text is TC-024-003).
+             Steps: publish rows "<HB9BLA> PJ4/K1ABC" (nonstandard, 'to' filled in), "HB9BLA <PJ4/K1ABC> -12" (standard, 'from' filled in), "<...> PJ4/K1ABC" and "<HB9BLA> K1ABC -12" (standard, 'to' filled in); open the message fold-out and type "tnx 73 gl" into Tx5.
+             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome), the unresolved one does not; Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_024_01_verified_by_TC_024_004 from 'CL-024-01' to 'TC-024-004';
 
 }

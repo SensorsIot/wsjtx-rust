@@ -1520,3 +1520,27 @@ fn startup_shares_the_hash_table_with_the_transmit_owner() {
     assert!(Arc::ptr_eq(&shared, &r.hashes));
     assert_eq!(r.hashes.lock().unwrap().my_call(), Some("HB9BLA"));
 }
+
+// Proves: CL-024-01; TC-024-003 (f). A nonstandard manual entry over POST /contact/command
+// gets its compound message set, and the station's contact step hands its DX call to the
+// call hash table.
+#[tokio::test]
+async fn the_contact_step_gives_the_hash_table_the_dx_call() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    let (s, v) = f
+        .send(
+            "enter_dx",
+            json!({"dx_call":"PJ4/K1ABC","dx_grid":null,"replace":false}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["messages"][0], "<PJ4/K1ABC> HB9BLA JN47");
+    r.contact.get().unwrap().tick(&f.state);
+    assert_eq!(r.hashes.lock().unwrap().dx_call(), Some("PJ4/K1ABC"));
+    let (s, v) = f.send("cancel", json!({})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    r.contact.get().unwrap().tick(&f.state);
+    assert_eq!(r.hashes.lock().unwrap().dx_call(), None);
+}

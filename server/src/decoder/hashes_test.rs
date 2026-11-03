@@ -220,3 +220,30 @@ fn sent_messages_teach_their_calls() {
         Some(Fields::Standard { ref to, .. }) if to.kind == CallKind::Hash && to.text.is_none()
     ));
 }
+
+// Proves: CL-024-01; TC-024-003 (f). unpack77's nonstandard DX-call rule: a 'to' hash equal
+// to my 12-bit hash is my call when the full call is the contact's DX call, even when
+// calls12 holds another call with that hash.
+#[test]
+fn the_dx_call_rule_prefers_my_call_over_a_colliding_call() {
+    let mine = ihashcall("HB9BLA", 12).unwrap();
+    let x = (0..)
+        .map(|i| format!("C{i}X"))
+        .find(|c| ihashcall(c, 12) == Some(mine))
+        .unwrap();
+    let mut t = HashTable::new();
+    t.set_my_call(Some("HB9BLA"));
+    t.save(&x);
+    let to_me = packed("<HB9BLA> PJ4/K1ABC");
+    assert_eq!(shown(&t, &to_me), format!("<{x}> PJ4/K1ABC"));
+    t.set_dx_call(Some("PJ4/K1ABC"));
+    assert_eq!(t.dx_call(), Some("PJ4/K1ABC"));
+    assert_eq!(shown(&t, &to_me), "<HB9BLA> PJ4/K1ABC");
+    assert_eq!(
+        shown(&t, &packed("<HB9BLA> PA/K1XX")),
+        format!("<{x}> PA/K1XX"),
+        "only from the DX call"
+    );
+    t.set_dx_call(None);
+    assert_eq!(shown(&t, &to_me), format!("<{x}> PJ4/K1ABC"));
+}

@@ -106,6 +106,8 @@ struct Station {
     mode: Mode,
     /// Texts whose audio started, with their period start.
     sent: Vec<(i64, String)>,
+    /// The profile callsign (Ctx.call).
+    call: String,
 }
 /// The one contact handed to the log since the last check (WstxContact::DirectLog).
 fn one_entry(s: &mut Station) -> (LogKind, Contact) {
@@ -130,6 +132,7 @@ fn station() -> Station {
         sequence: 0,
         mode: Mode::Ft8,
         sent: Vec::new(),
+        call: "HB9BLA".into(),
     }
 }
 /// Hand-authored standard row "TO FROM EXCHANGE" decoded at `hz` in `period`.
@@ -168,7 +171,7 @@ impl Station {
     }
     fn ctx(&self) -> Ctx {
         Ctx {
-            call: Some("HB9BLA".into()),
+            call: Some(self.call.clone()),
             locator: Some("JN47AA".into()),
             now_utc_ms: self.now(),
             granted: true,
@@ -2070,4 +2073,269 @@ fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
         s.engine.contact.as_ref().unwrap().dialogue.is_empty(),
         "cancel empties it"
     );
+}
+
+// ---------------------------------------------------------------- #24 S1b
+/// A decoded row as the station builds it (WstxOfflineDecode::HashResolution, then the
+/// station's row reader): packed, unpacked, filled in from `table`, which then learns it.
+fn decoded(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    text: &str,
+    hz: f64,
+    snr: f64,
+) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    let payload = table.resolve(&unpack(&wstx_rust::transmit::pack(text).unwrap().bits));
+    table.learn(&payload);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: hz,
+        snr_db: Some(snr),
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, "ft8").unwrap()
+}
+fn set(s: &Station) -> Vec<String> {
+    s.engine
+        .contact
+        .as_ref()
+        .unwrap()
+        .messages
+        .iter()
+        .map(|m| m.clone().unwrap_or_default())
+        .collect()
+}
+
+// Proves: CL-024-01; TC-024-003 (a). A standard station works a nonstandard CQ caller
+// with WSJT-X's compound message set and sequences it to the log.
+#[test]
+fn a_standard_call_works_a_nonstandard_partner_to_the_log() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    let cq = decoded(&mut s, &mut table, P0, "CQ PJ4/K1ABC", 1234.6, -12.4);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "<PJ4/K1ABC> HB9BLA JN47",
+            "<PJ4/K1ABC> HB9BLA -12",
+            "<PJ4/K1ABC> HB9BLA R-12",
+            "PJ4/K1ABC <HB9BLA> RRR",
+            "PJ4/K1ABC <HB9BLA> 73",
+            "CQ HB9BLA JN47"
+        ]
+    );
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(1)).as_deref(),
+        Some("<PJ4/K1ABC> HB9BLA JN47")
+    );
+    let report = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA <PJ4/K1ABC> -12",
+        1240.0,
+        -7.0,
+    );
+    assert_eq!(report.text, "HB9BLA <PJ4/K1ABC> -12");
+    s.deliver(&[report]);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("<PJ4/K1ABC> HB9BLA R-12")
+    );
+    let rr73 = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "<HB9BLA> PJ4/K1ABC RR73",
+        1240.0,
+        -7.0,
+    );
+    assert_eq!(rr73.text, "<HB9BLA> PJ4/K1ABC RR73");
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(6));
+    assert_eq!(
+        s.sent_in(period(5)).as_deref(),
+        Some("PJ4/K1ABC <HB9BLA> 73")
+    );
+    assert_eq!(s.state().0, State::Completed);
+    let logged = one_log(&mut s);
+    assert_eq!(logged.dx_call.as_deref(), Some("PJ4/K1ABC"));
+    assert_eq!(logged.report_rcvd, Some(-12));
+}
+
+// Proves: CL-024-01; TC-024-003 (b). A nonstandard own call calls CQ without a grid and
+// answers a standard caller with its hashed own call.
+#[test]
+fn a_nonstandard_own_call_answers_a_standard_caller_to_the_log() {
+    let mut s = station();
+    s.call = "DL/HB9BLA".into();
+    s.engine.settings.call_first = false;
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("DL/HB9BLA"));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ DL/HB9BLA");
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ DL/HB9BLA"));
+    let call = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "<DL/HB9BLA> K1ABC FN42",
+        1240.0,
+        -9.0,
+    );
+    assert_eq!(call.text, "<DL/HB9BLA> K1ABC FN42");
+    s.command(Command::SelectRow {
+        row: call,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "<K1ABC> DL/HB9BLA",
+            "K1ABC <DL/HB9BLA> -09",
+            "K1ABC <DL/HB9BLA> R-09",
+            "<K1ABC> DL/HB9BLA RRR",
+            "<K1ABC> DL/HB9BLA 73",
+            "CQ DL/HB9BLA"
+        ]
+    );
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("K1ABC <DL/HB9BLA> -09")
+    );
+    let rr = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "<DL/HB9BLA> K1ABC R-07",
+        1240.0,
+        -9.0,
+    );
+    s.deliver(&[rr]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(6) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(5)).as_deref(),
+        Some("<K1ABC> DL/HB9BLA RRR")
+    );
+    let bye = decoded(
+        &mut s,
+        &mut table,
+        period(6),
+        "DL/HB9BLA <K1ABC> 73",
+        1240.0,
+        -9.0,
+    );
+    assert_eq!(bye.text, "DL/HB9BLA <K1ABC> 73");
+    s.deliver(&[bye]);
+    assert_eq!(s.state().0, State::Completed);
+    let logged = one_log(&mut s);
+    assert_eq!(
+        (
+            logged.dx_call.as_deref(),
+            logged.dx_grid.as_deref(),
+            logged.report_rcvd
+        ),
+        (Some("K1ABC"), Some("FN42"), Some(-7))
+    );
+}
+
+// Proves: CL-024-01; TC-024-003 (c, d). Nonstandard entries, two nonstandard calls,
+// unresolved hashes and Tx5 free text.
+#[test]
+fn nonstandard_entries_and_free_text_are_validated() {
+    let mut s = station();
+    let enter = |s: &mut Station, call: &str| {
+        s.command(Command::EnterDx {
+            call: call.into(),
+            grid: None,
+            replace: true,
+        })
+    };
+    enter(&mut s, "YW18FIFA").unwrap();
+    assert_eq!(set(&s)[0], "<YW18FIFA> HB9BLA JN47");
+    enter(&mut s, "PJ4/K1ABC/P").unwrap();
+    assert_eq!(set(&s)[3], "PJ4/K1ABC/P <HB9BLA> RRR");
+    assert_eq!(enter(&mut s, "PJ4/K1ABCDEF"), Err("invalid_call"));
+    let mut table = wstx_rust::decoder::HashTable::new();
+    let row = decoded(&mut s, &mut table, P0, "W9XYZ <PJ4/K9XX> -10", 1500.0, -10.0);
+    assert_eq!(
+        s.command(Command::SelectRow { row, replace: true }),
+        Err("row_not_standard")
+    );
+    let row = decoded(&mut s, &mut table, P0, "<PJ4/K9XX> W9XYZ RR73", 1500.0, -10.0);
+    s.command(Command::SelectRow { row, replace: true })
+        .unwrap();
+    for (text, expected) in [
+        ("tnx 73 gl", Ok("TNX 73 GL")),
+        ("TNX FER QSO 73 GL", Err("invalid_message")),
+        ("HI, 73", Err("invalid_message")),
+        ("<W9XYZ> PA/K1XX 73", Ok("<W9XYZ> PA/K1XX 73")),
+    ] {
+        let r = s.command(Command::EditMessage(Slot::Tx5, text.into()));
+        assert_eq!(
+            r.map(|_| set(&s)[4].clone()),
+            expected.map(String::from),
+            "{text}"
+        );
+    }
+    s.call = "DL/HB9BLA".into();
+    assert_eq!(
+        enter(&mut s, "PA/K1XX"),
+        Err("invalid_call"),
+        "two nonstandard calls"
+    );
+    enter(&mut s, "K1ABC").unwrap();
+    assert_eq!(set(&s)[1], "K1ABC <DL/HB9BLA> -10");
+}
+
+// Proves: CL-024-01; TC-024-003 (e). Call 1st answers only plain standard callers.
+#[test]
+fn call_first_skips_hashed_and_nonstandard_callers() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    decoded(&mut s, &mut table, P0, "CQ PJ4/K1ABC", 1000.0, -10.0);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+    let rows = [
+        decoded(&mut s, &mut table, period(2), "<HB9BLA> PA/K1XX", 1100.0, -10.0),
+        decoded(
+            &mut s,
+            &mut table,
+            period(2),
+            "HB9BLA <PJ4/K1ABC> -12",
+            1200.0,
+            -10.0,
+        ),
+        decoded(&mut s, &mut table, period(2), "HB9BLA W9XYZ -10", 1300.0, -10.0),
+    ];
+    assert_eq!(rows[1].text, "HB9BLA <PJ4/K1ABC> -12");
+    s.deliver(&rows);
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.dx_call.as_deref(), Some("W9XYZ"));
 }
