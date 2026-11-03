@@ -2000,3 +2000,23 @@ async fn automation_does_not_start_with_a_nonstandard_own_call() {
         (json!("not_configured"), json!("strategy"))
     );
 }
+
+// Proves: CL-024-02; TC-024-005 (e) (#24 S2a). Station automation only observes in a contest
+// activity: a run does not start.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automation_does_not_start_in_a_contest_activity() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let contact = f.state.recording.contact.get().unwrap();
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "contact_revision":contact.revision(),"action":"set_activity","activity":"ww_digi"});
+    contact.operate(&f.state, body, true).unwrap();
+    let r = auto(&f).await;
+    assert_eq!(
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (json!("not_ready"), json!("activity"))
+    );
+}

@@ -116,8 +116,10 @@ package WstxContact {
              operator chooses the station's activity with set_activity {activity}: none
              (default), na_vhf (NA VHF), ww_digi (WW Digi) or arrl_digi (ARRL Digi). It is
              a station setting of this boot like Call 1st (not saved; a restart starts with
-             none) and applies to the next message generation; the current contact is
-             regenerated at once. With an activity other than none:
+             none) and applies to the next message generation; the current contact's
+             Tx2-Tx4 and Tx6 are regenerated at once (a report or tx4 change still
+             replaces only Tx2-Tx4). Station automation does not start while an activity
+             other than none is set (WstxMcp, not_ready activity): it only observes. With an activity other than none:
              Tx6 is "CQ TEST MYCALL GRID4" (na_vhf, arrl_digi) or "CQ WW MYCALL GRID4"
              (ww_digi) when MYCALL is standard (a nonstandard MYCALL keeps "CQ MYCALL");
              the exchange is my grid instead of the report: Tx2 is the Tx1-Tx3 stem of

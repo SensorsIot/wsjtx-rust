@@ -2546,3 +2546,32 @@ fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
     }
     assert_eq!(Activity::parse("field_day"), None);
 }
+
+// Proves: CL-024-02; TC-024-005 (e). The activity regenerates a running CQ's Tx6 and an
+// active contact's exchange at once; a report change keeps Tx6.
+#[test]
+fn set_activity_regenerates_the_running_contact() {
+    let mut s = station();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.command(Command::EditMessage(Slot::Tx6, "CQ DX HB9BLA JN47".into()))
+        .unwrap();
+    s.command(Command::SetActivity(Activity::WwDigi)).unwrap();
+    assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
+    s.command(Command::EditMessage(Slot::Tx6, "CQ DX HB9BLA JN47".into()))
+        .unwrap();
+    s.command(Command::SetReport(-10)).unwrap();
+    assert_eq!(set(&s)[5], "CQ DX HB9BLA JN47", "a report change keeps Tx6");
+    s.command(Command::SetActivity(Activity::None)).unwrap();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA -10", "K1ABC HB9BLA R-10"]);
+    s.command(Command::SetActivity(Activity::WwDigi)).unwrap();
+    assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA JN47", "K1ABC HB9BLA R JN47"]);
+    s.command(Command::SetActivity(Activity::None)).unwrap();
+    assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA -10", "K1ABC HB9BLA R-10"]);
+    assert_eq!(set(&s)[5], "CQ HB9BLA JN47");
+}

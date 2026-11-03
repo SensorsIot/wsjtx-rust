@@ -884,7 +884,6 @@ impl Engine {
             )
         {
             c.messages[1..4].clone_from_slice(&set[1..4]);
-            c.messages[5].clone_from(&set[5]);
         }
     }
     /// Applies one accepted-or-refused operating command. Ok means accepted (the caller
@@ -1094,6 +1093,13 @@ impl Engine {
             Command::SetActivity(activity) => {
                 self.settings.activity = activity;
                 self.regenerate(ctx);
+                // The CQ message follows the activity (genCQMsg m_cqStr).
+                if let (Some(call), Some(grid4), Some(c)) =
+                    (ctx.call.as_deref(), ctx.grid4(), self.contact.as_mut())
+                    && let Some(set) = generate_with(call, &grid4, None, c.report, c.tx4, activity)
+                {
+                    c.messages[5].clone_from(&set[5]);
+                }
             }
             Command::SetWatchdogs {
                 tx_minutes,
