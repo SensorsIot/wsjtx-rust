@@ -1572,6 +1572,25 @@ async fn a_priori_context_follows_profile_and_contact() {
         .send("enable_tx", json!({"enabled":false,"safety_revision":null}))
         .await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    // The 300 s count from the last step that was still transmitting, tuning or armed: a
+    // transmission already keyed when Enable Tx went off runs to its end on the real clock,
+    // so step on the real clock until the transmitter is idle before moving the time. The
+    // PTT is keyed a few ms before the audio starts, so "not transmitting" alone is not idle.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        f.tick();
+        let (_, t, _, _) = f.call("GET", "/transmit", None).await;
+        if t["transmitting"] == false
+            && t["ptt"] == "released"
+            && t["transmit"]["pending_sequence"].is_null()
+            && t["transmit"]["tune"] == false
+            && t["transmit"]["arm_state"] == "disarmed"
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "transmitter never idle: {t}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     f.bench.offset.store(299_000, Ordering::SeqCst);
     f.tick();
     assert!(
