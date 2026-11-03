@@ -76,7 +76,7 @@ test('TC-020-001 an MCP client with its own MCP client token observes the browse
   const headers = {Authorization: 'Bearer ' + created.body.token};
   const list = await modern(headers.Authorization, 'tools/list');
   assert.equal(list.status, 200, JSON.stringify(list.body));
-  assert.deepEqual(list.body.result.tools.map(t => t.name), ['wstx_read', 'wstx_results', 'wstx_contact_command', 'wstx_transmit_halt', 'wstx_automation_command']);
+  assert.deepEqual(list.body.result.tools.map(t => t.name), ['wstx_read', 'wstx_results', 'wstx_contact_command', 'wstx_transmit_halt', 'wstx_automation_command', 'wstx_strategy_evaluate']);
   // The browser (its own grant) and the MCP client read the same profile representation.
   const page = await send('/profile', 'GET', undefined, {Cookie: browser.cookie});
   assert.equal(page.status, 200);
@@ -88,6 +88,13 @@ test('TC-020-001 an MCP client with its own MCP client token observes the browse
   const contact = await modern(headers.Authorization, 'tools/call', {name: 'wstx_read', arguments: {view: 'contact'}});
   assert.equal(contact.body.result.structuredContent.result.profile_id, document.profile_id);
   assert.equal(contact.body.result.structuredContent.result.transmit.arm_state, 'disarmed');
+  // The strategy view (#39) the browser reads, unchanged through MCP.
+  const strategyPage = await send('/strategy', 'GET', undefined, {Cookie: browser.cookie});
+  assert.equal(strategyPage.status, 200);
+  const strategy = await modern(headers.Authorization, 'tools/call', {name: 'wstx_read', arguments: {view: 'strategy'}});
+  assert.equal(strategy.body.result.isError, false, JSON.stringify(strategy.body));
+  assert.deepEqual(strategy.body.result.structuredContent.result, strategyPage.body);
+  assert.equal(strategy.body.result.structuredContent.result.profile_id, document.profile_id);
   // A legacy-era client of the same endpoint.
   const init = await send('/mcp', 'POST', {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'legacy', version: '1'}}}, {Authorization: headers.Authorization});
   assert.equal(init.body.result.protocolVersion, '2025-11-25');

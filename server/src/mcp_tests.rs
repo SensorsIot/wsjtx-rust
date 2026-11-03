@@ -386,6 +386,19 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ],
     );
     f.tick();
+    // The browser saves an active strategy (#39): rule 1 CQ from NA, rule 2 any CQ.
+    let na_first = json!({"name":"NA first","rules":[{"conditions":[{"kind":"message","negate":false,"value":"cq"},
+        {"kind":"continent","negate":false,"values":["NA"]}]},{"conditions":[{"kind":"message","negate":false,"value":"cq"}]}],
+        "sort":"strongest","treat_73_as_cq":true,"apply_to_callers":false,"skip_after":2,"auto_role":"call","switch_after":2});
+    let saved = f
+        .browser(
+            "PUT",
+            "/strategy",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
+                "configuration":{"continent":null,"active":"NA first","highlight":true,"strategies":[na_first]}})),
+        )
+        .await;
+    assert_eq!(saved.status, StatusCode::OK, "{}", saved.json);
     // Modern discovery and the fixed WstxMcp::ToolCatalog.
     let d = f.modern("server/discover", json!({})).await;
     assert_eq!(d.status, StatusCode::OK);
@@ -411,9 +424,43 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
             "wstx_results",
             "wstx_contact_command",
             "wstx_transmit_halt",
-            "wstx_automation_command"
+            "wstx_automation_command",
+            "wstx_strategy_evaluate"
         ]
     );
+    let catalog = &list.json["result"]["tools"];
+    assert_eq!(
+        catalog[0]["inputSchema"]["properties"]["view"]["enum"],
+        json!([
+            "profile",
+            "receive",
+            "selection",
+            "radio",
+            "transmit",
+            "contact",
+            "automation",
+            "strategy"
+        ])
+    );
+    assert_eq!(catalog[5]["annotations"]["readOnlyHint"], true);
+    let described = catalog[4]["description"].as_str().unwrap();
+    for key in [
+        "modes",
+        "ranking",
+        "min_snr_db",
+        "allowed_calls",
+        "blocked_calls",
+        "max_contacts",
+        "max_unanswered_periods",
+        "completion_action",
+        "max_run_minutes",
+        "strategy",
+    ] {
+        assert!(
+            described.contains(&format!("{key}:")),
+            "wstx_automation_command names {key}"
+        );
+    }
     // Every view equals the browser's response for the same station.
     for (view, path) in [
         ("profile", "/profile"),
@@ -422,6 +469,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ("transmit", "/transmit"),
         ("contact", "/contact"),
         ("automation", "/automation"),
+        ("strategy", "/strategy"),
     ] {
         let browser = f.browser("GET", path, None).await;
         assert_eq!(browser.status, StatusCode::OK, "{path}: {}", browser.json);
@@ -445,6 +493,31 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ),
         (Value::Null, Value::Null),
         "unconfigured, no run"
+    );
+    let strategy = f.read("strategy").await;
+    assert_eq!(
+        (
+            strategy["configuration"]["active"].clone(),
+            strategy["my_continent"].clone()
+        ),
+        (json!("NA first"), json!("EU")),
+        "the browser's saved strategy; continent from JN47AA"
+    );
+    // The browser's verdicts (Highlight): both CQs from NA match rule 1, strongest first.
+    let evaluate = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":sequences[0],"next_sequence":sequences[1] + 1,
+        "strategy":null,"explain":false});
+    let verdicts = f
+        .tool("wstx_strategy_evaluate", json!({"request":evaluate}))
+        .await;
+    assert_eq!(verdicts["status"], 200, "{verdicts}");
+    assert_eq!(
+        verdicts["result"]["verdicts"],
+        json!([{"sequence":sequences[1],"rank":0,"grey":false},{"sequence":sequences[0],"rank":0,"grey":false}])
+    );
+    assert_eq!(
+        verdicts["result"],
+        f.browser("POST", "/strategy/evaluate", Some(evaluate)).await.json
     );
     // Decoded results: the hand-authored rows, literally, and the browser's page.
     let args =
@@ -809,6 +882,12 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
     assert_eq!(refused(&v), (400, "invalid_request".into(), json!("extra")));
     let v = f.tool("wstx_read", json!({"view":"secrets"})).await;
     assert_eq!(refused(&v), (400, "invalid_request".into(), json!("view")));
+    let v = f.tool("wstx_strategy_evaluate", json!({})).await;
+    assert_eq!(refused(&v), (400, "invalid_request".into(), json!("request")));
+    let v = f
+        .tool("wstx_strategy_evaluate", json!({"request":"all"}))
+        .await;
+    assert_eq!(refused(&v), (400, "invalid_request".into(), json!("request")));
     let v = f
         .tool(
             "wstx_results",
@@ -1304,12 +1383,13 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
     let r = direct("set_watchdogs", json!({"tx_minutes":99,"tune_seconds":90})).await;
     assert_eq!(r.json["error"]["code"], "operator_required", "{}", r.json);
     // Every route no MCP tool dispatches to refuses the MCP principal at the boundary:
-    // the transmit watchdog setting, the profile, the logbook and the WebSocket.
+    // the transmit watchdog setting, the profile, the strategy, the logbook and the WebSocket.
     let tx = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
         "action":"set_watchdogs","tx_minutes":99,"tune_seconds":90});
     for (method, uri, body) in [
         ("POST", "/transmit/command", Some(tx)),
         ("PUT", "/profile", Some(json!({}))),
+        ("PUT", "/strategy", Some(json!({}))),
         ("GET", "/contacts", None),
         ("GET", "/ws", None),
     ] {

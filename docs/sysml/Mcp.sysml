@@ -29,9 +29,14 @@ package WstxMcp {
             whichever route a request takes, MCP is never counted as the browser operator.
             No OAuth server or MCP-only permission; the safety-revision and transmit grant
             rules apply to its in-process requests as they do to browsers.
-         D4 Surface: five tools, each exactly one existing station route; no receive
-            start/stop, radio, profile edit or log save tool in this CR (the browser keeps
-            them); reads cover every operating view.
+         D4 Surface: six tools, each exactly one existing station route; no receive
+            start/stop, radio, profile edit, strategy edit or log save tool (the browser
+            keeps them); reads cover every operating view. Since #39 the browser also
+            shows the strategy (GET /strategy) and its verdicts (POST /strategy/evaluate,
+            Highlight rank and greyed directed CQs); #12 CR 2026-11-03 adds the view
+            strategy and the read-only tool wstx_strategy_evaluate, so an MCP client sees
+            the strategy a strategy run uses and the directed-CQ verdicts before it
+            selects; PUT /strategy stays browser-only.
          D5 Automation: station-owned, volatile (unconfigured, no run after every boot),
             driving the contact engine only through ContactCommand select_row and
             enable_tx with the starting request's grant; WstxContact::AutoSequence
@@ -118,7 +123,7 @@ package WstxMcp {
              station Origin; every station route reads principal mcp from it, and a
              boundary guard in front of every route refuses 401 a session credential of
              principal mcp on any route that no tool dispatches to (POST /transmit/command,
-             PUT /profile, logbook, WS, settings, receive and radio control).
+             PUT /profile, PUT /strategy, logbook, WS, settings, receive and radio control).
              Audit: every authenticated MCP request appends one JSON line {utc_ms,
              client_id, name, action (method, tool and its view or command action), status
              (the station status of a tools/call, else the HTTP status)} to auditFile in the
@@ -131,19 +136,25 @@ package WstxMcp {
         enum wstx_contact_command;
         enum wstx_transmit_halt;
         enum wstx_automation_command;
+        enum wstx_strategy_evaluate;
     }
     attribute def ToolCatalog {
-        attribute tools : ToolName[5];
+        attribute tools : ToolName[6];
         doc /* Fixed order as above, identical in both eras; each inputSchema has
              additionalProperties false and an outputSchema for ToolResult.
-             wstx_read {view: profile|receive|selection|radio|transmit|contact|automation}
-             -> GET /profile, /receive, /receive/selection, /radio, /transmit, /contact,
-             /automation. wstx_results {source_id, job_id: UUID; generation, cursor: safe
+             wstx_read {view: profile|receive|selection|radio|transmit|contact|automation|
+             strategy} -> GET /profile, /receive, /receive/selection, /radio, /transmit,
+             /contact, /automation, /strategy. wstx_results {source_id, job_id: UUID; generation, cursor: safe
              integer; limit optional 1..16} -> GET /receive/results. wstx_contact_command
              {command: WstxContact::ContactCommand} -> POST /contact/command.
              wstx_transmit_halt {halt: HaltTransmit body} -> POST /transmit/halt.
              wstx_automation_command {command: AutomationCommand} -> POST
-             /automation/command. Missing, extra or mistyped arguments, an unknown view or a
+             /automation/command; its description names every AutomationConfiguration
+             wire key (max_run_minutes and strategy included).
+             wstx_strategy_evaluate {request: the StrategyEvaluate body of
+             WstxStrategy::StrategyHttp} -> POST /strategy/evaluate (readOnlyHint; it never
+             changes station state; the browser's refusals, e.g. 409 not_configured
+             strategy, are its tool errors). Missing, extra or mistyped arguments, an unknown view or a
              non-UUID id are a tool error {status 400, error invalid_request with the field}
              without a station call. */
     }
