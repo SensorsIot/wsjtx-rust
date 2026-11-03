@@ -122,38 +122,132 @@ fn physical_sync_boundaries_are_independent_tone_and_bit_barriers() {
     assert!(!physical_accepts(Mode::Ft4, &sync_rows(Mode::Ft4, 7, 9)));
 }
 
-// Proves: FR-003, FR-004, CL-007-03.
-#[test]
-fn a_failed_hard_gate_does_not_erase_later_metric_family() {
+fn vector_word() -> Vec<u8> {
+    vector_codeword(0)
+}
+fn vector_codeword(index: usize) -> Vec<u8> {
     let manifest: serde_json::Value = serde_json::from_str(include_str!(
         "../../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
-    let bits = manifest["vectors"][0]["codeword174"]
+    manifest["vectors"][index]["codeword174"]
         .as_str()
         .unwrap()
         .bytes()
         .map(|b| b - b'0')
-        .collect::<Vec<_>>();
-    let good = std::array::from_fn(|i| if bits[i] == 0 { 8f32 } else { -8f32 });
-    let mut earlier = good;
-    for x in &mut earlier[..25] {
+        .collect()
+}
+/// Channel LLRs of the word with the first `errors` bits weak and of the wrong sign.
+fn weak_errors(bits: &[u8], errors: usize) -> [f32; 174] {
+    let mut llr = std::array::from_fn(|i| if bits[i] == 0 { 8f32 } else { -8f32 });
+    for x in &mut llr[..errors] {
         *x = -x.signum() * 0.001;
     }
+    llr
+}
+// Proves: FR-003, FR-004, CL-007-03.
+#[test]
+fn a_rejected_word_does_not_erase_later_metric_family() {
+    let bits = vector_word();
+    let good = weak_errors(&bits, 0);
+    let earlier = weak_errors(&bits, MAX_HARD_ERRORS + 1);
     let channel = Channel::new();
-    let word = channel
-        .decode(&earlier, &|| false)
-        .expect("fixed weak25-bit errors must be corrected");
+    let (word, errors) = channel
+        .decode_counted(&earlier, &|| false)
+        .expect("fixed weak 37-bit errors must be corrected");
     assert_eq!(word.as_slice(), bits.as_slice());
-    assert!(!channel_gates(&word, &earlier));
-    assert!(channel_gates(&word, &good));
+    assert_eq!(errors, MAX_HARD_ERRORS + 1);
+    assert!(!accepted(Mode::Ft8, &word, errors));
+    assert!(accepted(Mode::Ft8, &word, 0));
+    assert!(
+        accepted(Mode::Ft4, &word, errors),
+        "ft4_decode has no hard-error cap"
+    );
     let never = || false;
+    let alone = complete(decode_families(
+        Mode::Ft8,
+        vec![earlier],
+        &channel,
+        &mut CpuBudget::new(&never),
+    ))
+    .unwrap();
+    assert_eq!(alone, None);
     let result = complete(decode_families(
+        Mode::Ft8,
         vec![earlier, good],
         &channel,
         &mut CpuBudget::new(&never),
     ))
     .unwrap();
-    assert_eq!(result.word.unwrap().as_slice(), bits.as_slice());
-    assert_eq!(result.llr, good);
+    assert_eq!(result.unwrap().as_slice(), bits.as_slice());
+}
+// Proves: FR-003, FR-004, CL-007-03 (#56). ft8b accepts a word with up to 36 hard
+// disagreements; the former 24-disagreement gate refused 25..36.
+#[test]
+fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
+    let bits = vector_word();
+    let channel = Channel::new();
+    let never = || false;
+    for errors in [25, 30, MAX_HARD_ERRORS] {
+        let llr = weak_errors(&bits, errors);
+        let word = complete(decode_families(
+            Mode::Ft8,
+            vec![llr],
+            &channel,
+            &mut CpuBudget::new(&never),
+        ))
+        .unwrap();
+        assert_eq!(
+            word.map(|w| w.to_vec()),
+            Some(bits.clone()),
+            "{errors} weak hard errors"
+        );
+    }
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        assert!(
+            !accepted(mode, &[0; 174], 0),
+            "the all-zero codeword is refused"
+        );
+    }
+}
+// Proves: FR-003, FR-004, CL-007-03 (#56). ft8b a-priori type 1: a CQ frame whose CQ and i3
+// bits are buried (strongly wrong) decodes once those 32 bits are fixed, and only then.
+#[test]
+fn cq_a_priori_bits_recover_a_buried_cq_word() {
+    let bits = vector_codeword(4); // CQ K1ABC FN42, i3=1
+    let mut cq = vec![0u8; 29];
+    cq[26] = 1;
+    assert_eq!(&bits[..29], cq.as_slice());
+    let mut llr: [f32; 174] = std::array::from_fn(|i| if bits[i] == 0 { 3f32 } else { -3f32 });
+    for bit in (0..29).chain(74..77) {
+        llr[bit] = -llr[bit] * 3.;
+    }
+    for bit in (100..170).step_by(7) {
+        llr[bit] = -llr[bit] * 0.2;
+    }
+    let channel = Channel::new();
+    let never = || false;
+    let families = vec![llr; 5];
+    let plain = complete(decode_families(
+        Mode::Ft8,
+        families.clone(),
+        &channel,
+        &mut CpuBudget::new(&never),
+    ))
+    .unwrap();
+    assert_ne!(plain.map(|w| w.to_vec()), Some(bits.clone()));
+    let assisted = cq_assisted(&families);
+    assert_eq!(assisted.len(), 2);
+    assert!(
+        assisted
+            .iter()
+            .all(|(_, fixed)| fixed.iter().filter(|&&f| f).count() == 32)
+    );
+    let word = complete(decode_assisted_families(
+        assisted,
+        &channel,
+        &mut CpuBudget::new(&never),
+    ))
+    .unwrap();
+    assert_eq!(word.map(|w| w.to_vec()), Some(bits));
 }

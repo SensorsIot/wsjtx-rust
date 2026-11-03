@@ -793,7 +793,7 @@ package WstxRequirements {
              (j) the "Auto Seq off" line (warning style), then "Send 73
              next" (title "Send IW9FRA HB9BLA 73 next") sending choose_next tx5 and
              enable_tx; at 1366x768 no page scroll and, in the compact QSO pane (#37, no
-             dialogue or Last row), the line, the 73 and Log QSO buttons fully visible; no horizontal
+             Last row), the line, the 73 and Log QSO buttons fully visible; no horizontal
              overflow at 360 px; Auto Seq on sending set_auto_seq true; the line hidden
              with Auto Seq on and nothing offered. (j) runs in headless Chromium against
              the actual server binary with a stubbed contact snapshot. A manual entry of
@@ -1001,7 +1001,7 @@ package WstxRequirements {
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
     requirement 'CL-010-06' {
-        doc /* Present bounded Band Activity and, since #37, the compact QSO pane (WstxOperatingLayout::QsoPane: the running QSO's last partner message and at most two other stations near my Rx frequency or calling me, each with message and SNR only) in place of the Rx Frequency pane; local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxOperatingLayout::QsoPane, QsoPaneCrowding. */
+        doc /* Present bounded Band Activity and, since #37, the compact QSO pane (WstxOperatingLayout::QsoPane: the running QSO's last partner message, its QSO dialogue and, below it, at most eight stations calling my call with time and SNR: during a QSO those within +/-50 Hz of my Rx or Tx offset, otherwise every caller, #37) in place of the Rx Frequency pane; local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxOperatingLayout::QsoPane, QsoPaneCrowding. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.js";
     }
@@ -1863,6 +1863,7 @@ package WstxRequirements {
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets.
+             Recorded corpus (22 FT8 recordings, the official FT8 and the modern FT4 recording, #56): the decoder finds at least the pinned number of the 409 complete-frame decodes of WSJT-X 3.3.0-beta5 jt9 -8/-5 -d 3 (fixtures/decoder/jt9-deep-reference.json; same text, carrier within 5 Hz); jt9 is a lower bound, not exhaustive truth.
              SNR (#52): every decoded observation of the pinned official FT8 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -25. Through the live worker with a correlated UTC clock, the published SNR of a synthetic FT8 period (louder noise in its first 0.25 s and before it) equals the file decode of the same period-aligned audio.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -1875,7 +1876,7 @@ package WstxRequirements {
             verify 'FR-004';
             verify 'FR-018';
         }
-        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start";
+        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word";
     }
     verification 'TC-004-003' {
         doc /* TC-004-003 — Invalid and nonmatching input
@@ -2098,16 +2099,19 @@ package WstxRequirements {
              need, and saves with the TTL field as hop limit 2 and interface "1"; the same group
              without an interface is refused with targets[0].multicast_interface.
              Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
-             header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", at most two
-             Others lines "⚠ <message>  <SNR>" newest first (a station within +/-50 Hz of Rx
-             and a station calling me, not the partner, no time/DT/frequency), NEXT "▸ next:
+             header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", the QSO
+             dialogue (ten entries, oldest first, scrolling inside the card at its newest
+             line) and below it the Others "HH:MM:SS ⚠ <message>  <SNR>" oldest first (only
+             stations calling me within +/-50 Hz of Rx 1500 Hz or Tx 2100 Hz, not the partner,
+             not a station near neither, no DT/frequency; "nobody else calling" when none),
+             NEXT "▸ next:
              <message>" while armed, and the buttons, all inside the pane (not clipped), the
-             pane content at most 250 px high (the earlier pane needed about 380 px for the
+             pane content without the QSO area at most 250 px high (the earlier pane needed about 380 px for the
              same contact), and side by side the pane card ends level with Band Activity (no
-             empty band under it, item 8); there is no dialogue, LAST row or
+             empty band under it, item 8); there is no LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
-             then enable_tx. Idle, a station on my Rx frequency is a plain line "◂ <message>
-             <SNR>" whose double-click sends select_row then enable_tx. When the contact is
+             then enable_tx. Idle, every station calling me is a plain line "HH:MM:SS ◂ <message>
+             <SNR>" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
              completed (Log QSO or completion) the pane shows "✓ Logged <call>", no NEXT and
              no partner lines, and after loggedNoticeSeconds only the idle pane; a cancelled
              contact is gone at once. At 360x800 nothing overflows horizontally.
@@ -4103,6 +4107,113 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_050_02_verified_by_TC_050_002 from 'CL-050-02' to 'TC-050-002';
+    // #50/#10 operator feedback 2026-11-02 evening (US5WFL/YO3GNF, TC2TR, the 22:48 CQ run on 40 m).
+    requirement 'CL-050-04' {
+        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, during a contact or during my CQ, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxContact::ChangeContact, SelectDecodedRow, WstxOperatingLayout::BandActivity. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; client/contact.js";
+    }
+    dependency CL_050_04_to_FR_007 from 'CL-050-04' to 'FR-007';
+    dependency CL_050_04_to_FR_008 from 'CL-050-04' to 'FR-008';
+    requirement 'CL-010-17' {
+        doc /* (#10) Call 1st (WSJT-X "CQ: First"), an operator setting next to Auto Seq, initially on: while my own CQ runs with Enable Tx and Auto Seq on, the first decoded message to my call of a step, in decode order, whose exchange is a grid or a report is answered at once as a selection of that row with Enable Tx kept, so the next own period answers that caller. Off, a CQ moves only on an operator selection. Details: WstxContact::CallFirst. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
+    }
+    dependency CL_010_17_to_FR_007 from 'CL-010-17' to 'FR-007';
+    verification 'TC-050-004' {
+        doc /* TC-050-004 — A double-click switches to another station with Enable Tx kept
+             CL-050-04
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); the actual candidate Router, contact engine and #9 transmit owner on a recording hardware double with Chromium on the real clock (contact_http_tests::contact_browser_operating_flow, tests/contact.test.cjs).
+             Steps: (a) engine: select "CQ K1ABC FN42", Enable Tx, send Tx1 in the odd period, then select "CQ DL1ABC JO62" (even period) with replace true and run two periods; then enter_dx W1AW with replace true; again switching 100 ms after my period start (PTT keyed, audio not started); (b) browser: double-click "CQ K1ABC FN42"; after its Tx1 double-click "CQ DL1ABC JO62"; publish DL1ABC's report and RR73; then CQ and, while calling, double-click "CQ EA8BIA IL18" and run that QSO the same way.
+             Expected: (a) still armed, last_disarm_cause unchanged, the next odd period sends "DL1ABC HB9BLA JN47", no later period sends to K1ABC, the manual replacement keeps Enable Tx; the switch in the keyed window sends the new contact's Tx1 in that same period, still armed; (b) each double-click sends select_row with replace true then enable_tx and shows no "Change contact" button; still armed, last_disarm_cause not contact_cancelled; the next own period sends "DL1ABC HB9BLA JN47", then "DL1ABC HB9BLA R-03" and "DL1ABC HB9BLA 73"; the contact completes and contacts.adi holds exactly one record for it; the same for EA8BIA from the CQ ("R+00").
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-04';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; tests/contact.test.cjs";
+    }
+    dependency CL_050_04_verified_by_TC_050_004 from 'CL-050-04' to 'TC-050-004';
+    // #50/#37 CR 2 (operator 2026-11-02): period bar, QSO pane lines, QSO dialogue.
+    requirement 'CL-050-03' {
+        doc /* The QSO pane's period bar shows the elapsed part of the current period (15 s FT8, 7.5 s FT4) on the station's clock, the UTC the transmitter keys on including the #43 correction, never the browser's wall clock: the browser takes the largest offset of the station's utc_ms over its own monotonic time among the observations of the last 20 s and redraws at least every 100 ms without animation. An offset more than 500 ms below the estimate is a backward step of the station clock and restarts the estimate at once. The bar is red in a period of my Tx parity while Enable Tx is on and whenever the station reports transmitting, green in every other period. Details: WstxContact::OperatorDisplays StationPeriodClock, WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_050_03_to_FR_008 from 'CL-050-03' to 'FR-008';
+    dependency CL_050_03_to_FR_019 from 'CL-050-03' to 'FR-019';
+    requirement 'CL-050-05' {
+        doc /* (#37) While an own CQ runs the QSO pane header reads "Calling CQ" with the Tx period; the message line reads "▶ TX now: <message>" with the seconds left while the station reports transmitting ("▶ TX now: Tune" with the Tune seconds left during Tune) and "▸ next: <message> · Tx in <n> s" otherwise; the Others, below the QSO dialogue, list only stations calling my call, with time and SNR: during a QSO those other than the partner within +/-50 Hz of my Rx or Tx offset (⚠, a double-click switches the contact with Enable Tx kept), otherwise every caller on any frequency as soon as decoded; an empty list is one muted line "nobody calling" ("nobody else calling" during a QSO). Details: WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_050_05_to_FR_007 from 'CL-050-05' to 'FR-007';
+    dependency CL_050_05_to_FR_019 from 'CL-050-05' to 'FR-019';
+    requirement 'CL-050-06' {
+        doc /* (#37) The contact snapshot carries the QSO dialogue of the current contact, at most 16 entries: each partner message the engine counted (with SNR) and each of our transmissions of that contact as sent, with its period start and a repeat count; the QSO pane shows it while the QSO runs, oldest first and newest at the bottom, scrolling inside the card without growing the page, and drops it with the QSO. Details: WstxContact::ContactSnapshot dialogue, WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_050_06_to_FR_007 from 'CL-050-06' to 'FR-007';
+    dependency CL_050_06_to_FR_019 from 'CL-050-06' to 'FR-019';
+    verification 'TC-050-003' {
+        doc /* TC-050-003 — Period bar colour and station clock
+             CL-050-03
+             Setup: actual candidate server and Chromium; the operating screen with a routed ContactSnapshot (Enable Tx on, own CQ, parity even) whose utc_ms is the browser's time plus a station offset; station.tick events dispatched to the page.
+             Steps: read #qso-progress width and colour in an even and an odd station period, with transmitting true in the odd period, and after a 1 s backward step of the station clock; screenshots at 1366x768 and 360 px of a receive (green) and a transmit (red) period.
+             Expected: the width is (station time mod period)/period within 4 percentage points, not the browser-clock phase, also right after the backward step; the even period (my Tx parity) and a transmitting period rgb(255, 64, 64), the odd receive period rgb(48, 208, 80); no width transition.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_03_verified_by_TC_050_003 from 'CL-050-03' to 'TC-050-003';
+    verification 'TC-050-005' {
+        doc /* TC-050-005 — QSO pane while calling CQ and transmitting (#37)
+             CL-050-05
+             Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
+             Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and the Others with no row; (ui-operating TC-007-009) the Others idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) the Others with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
+             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller "HH:MM:SS ◂ …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as "HH:MM:SS ⚠ …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs; tests/contact.test.cjs";
+    }
+    dependency CL_050_05_verified_by_TC_050_005 from 'CL-050-05' to 'TC-050-005';
+    verification 'TC-050-006' {
+        doc /* TC-050-006 — QSO dialogue in the contact snapshot and the pane (#37)
+             CL-050-06
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); the snapshot shape bound (contact_http_tests); the operating screen with a routed ContactSnapshot in Chromium.
+             Steps: (a) engine: replay a QSO with K1ABC (select their CQ, Tx1 twice, their report, Tx3, their RR73, 73) and read the dialogue after each step; cancel a second contact; push 20 distinct entries; (b) the maximum snapshot shape with 16 maximal entries; (c) browser: a running QSO with a 10-entry dialogue at 1366x768 and 360 px, then the completed contact.
+             Expected: (a) entries in order tx "K1ABC HB9BLA JN47" count 2, rx "HB9BLA K1ABC -05" with SNR, tx "K1ABC HB9BLA R-12", rx "HB9BLA K1ABC RR73", tx "K1ABC HB9BLA 73", periods the period starts; a new contact starts empty, cancel empties it, at most 16 entries (the oldest dropped); (b) at most 4096 bytes; (c) lines "HH:MM:SS ▸ …" and "HH:MM:SS ◂ …  −5 dB" oldest first, the newest line visible, no page scroll, gone once completed.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-06';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_06_verified_by_TC_050_006 from 'CL-050-06' to 'TC-050-006';
+    verification 'TC-010-010' {
+        doc /* TC-010-010 — Call 1st answers the first caller of my CQ
+             CL-010-17
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); hand-authored rows of the 2026-11-02 22:48 CQ run; the snapshot wire (contact_http_tests).
+             Steps: Enable Tx with no partner (calling, odd parity), Hold Tx on; after my CQ deliver in one even period, decode order "HB9BLA EA4HTI IM69" (1678 Hz, -8) then "HB9BLA F1PBZ -13" (2144 Hz, -10), in reverse slice order; later "HB9BLA EA8BIA -11" and "HB9BLA SV1DZB KM18"; repeat with Call 1st off, with Auto Seq off, and with only "HB9BLA DL1ABC RR73", "HB9BLA DL2ABC 73", "HB9BLA DL3ABC RRR", "HB9BLA DL4ABC R-10".
+             Also: the same callers after Enable Tx off (disarmed, still calling).
+             Expected: Call 1st on: the contact is EA4HTI (grid IM69) in report with next Tx2 "EA4HTI HB9BLA -08" at once, still armed, Tx offset 1500 Hz kept, the next odd period sends it; the later callers change nothing; Call 1st off, Auto Seq off, Enable Tx off or only continuing exchanges: still calling (with Enable Tx off nothing is sent) and the next odd period sends "CQ HB9BLA JN47"; the snapshot settings carry call_first true by default.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-010-17';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs";
+    }
+    dependency CL_010_17_verified_by_TC_010_010 from 'CL-010-17' to 'TC-010-010';
     verification 'TC-054-001' {
         doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
              CL-054-01

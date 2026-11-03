@@ -71,17 +71,16 @@ package WstxOfflineDecode {
         attribute candidateCap : Integer = 256;
         attribute rawMaximumBound : Integer = 661758;
         attribute complexTransformBound : Integer = 838992;
-        attribute recoveryInformationRank : Integer = 77;
-        attribute fecIterations : Integer = 50;
-        attribute recoveryTrials : Integer = 137;
+        attribute recoveryInformationRank : Integer = 91;
+        attribute fecIterations : Integer = 30;
+        attribute recoverySums : Integer = 2;
         attribute subtractionPasses : Integer = 3;
         attribute subtractions : Integer = 32;
         attribute minFrequencyHz : Real = 200.0;
         attribute maxFrequencyHz : Real = 3500.0;
         attribute costasThreshold : Real = 2.7;
-        attribute minMeanAbsLlr : Real = 1.0;
-        attribute maxHardDisagreements : Integer = 24;
-        attribute minSumAlpha : Real = 0.8;
+        attribute maxHardDisagreements : Integer = 36;
+        doc /* maxHardDisagreements applies to FT8 only (ft8b); FT4 (ft4_decode) has none. */
     }
     attribute def ModeParameters {
         attribute mode : Mode;
@@ -146,8 +145,8 @@ package WstxOfflineDecode {
         doc /* QEX sections2..5/AppendixA plus published data-only tables define normal
              77-bit FT4/FT8. Current source-field boundaries are pinned independently by
              WstxProductScope::BehaviorBaseline's portable codec manifest and fixed official
-             vectors. This does not adopt permissive malformed-payload aliases, AP/context
-             guessing, SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
+             vectors. This does not adopt permissive malformed-payload aliases, context guessing
+             beyond the CQ a-priori passes of Ft8DecodeMetricFamilies (#56), SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
              Both modes share source families:0.0 free text,0.1 DXpedition,0.3/.4 FieldDay,
              0.5 telemetry,1/2 standard /R or /P,3 RTTY,4 nonstandard,5 extended VHF.
              0.2/.6/.7 and6/7 are unsupported; WSPR packaging0.6 is not an ordinary message.
@@ -448,10 +447,9 @@ package WstxOfflineDecode {
         attribute totalCostasSymbols : Integer = 21;
         attribute metricFamilies : Integer = 5;
         attribute metricScale : Real = 2.83;
-        attribute channelIterationsPerFamily : Integer = 50;
-        attribute channelTrialsPerFamily : Integer = 137;
-        attribute hardDisagreementMax : Integer = 24;
-        attribute meanAbsLlrMin : Real = 1.0;
+        attribute channelIterationsPerFamily : Integer = 30;
+        attribute recoverySumsPerFamily : Integer = 2;
+        attribute hardDisagreementMax : Integer = 36;
         attribute filterRadius : Integer = 2000;
         attribute filterTaps : Integer = 4001;
     }
@@ -528,19 +526,52 @@ package WstxOfflineDecode {
              A/B/C=Ft8MetricDifferenceperbitforsingle/pair/triple. D=A/max8S,zeroifmax0.
              E=largestabsoluteRAW A/B/Cperbit,tiesA/B/C. FormEbeforeanynormalization.
              Normalizeeach174elementfamilyasFt8ChannelPolarity,NOmean subtraction.
-             NoAP/callsign/contact/semanticprior. No currentFT4neighborlikelihoodapplies. */
+             No callsign/contact/semanticprior here; the only a-priori bits are the CQ
+             passes of Ft8DecodeMetricFamilies. No currentFT4neighborlikelihoodapplies. */
     }
     action def Ft8DecodeMetricFamilies {
         in families : PhysicalLlrFamily[5];
         out accepted : Boolean;
         out channelWord : Integer[174];
         out payload77 : Integer[77];
-        doc /* Fiveorderedfamilies,each<=50minsumalpha.8and<=137rank77order0/1/2recovery
-             trials/16least-reliablebasisbits. CRCbitsconstrained; publishedH+CRCmandatory.
-             RequiremeanabsLLR>=1/hardCHANNELdisagreements<=24. Avalidwordfailinggates
-             DOESNOTstoplaterfamilies. Firstallgatesacceptedwordwins; no6thfallbackdecode.
+        doc /* Fiveorderedfamilies, each through Ft8ChannelDecode. Accept a word with
+             hard disagreements (nharderrors)<=36 that is not the all-zero codeword (ft8b,
+             #56); publishedH+CRCmandatory. Avalidwordfailingacceptance
+             DOESNOTstoplaterfamilies. Firstacceptedwordwins. Only when all five fail, two
+             a-priori passes (ft8b iaptype 1, CQ ??? ???) decode the single and then the
+             triple family with payload bits 0..28 fixed to the CQ token (c28=2, ipa=0) and
+             bits 74..76 to i3=1, at 1.1 times that family's largest |LLR|, through
+             Ft8ChannelDecode with those bits fixed; same acceptance. No callsign, contact or
+             other a-priori knowledge; no further fallback decode. Not yet delivered (#56,
+             later slice): ft4_decode's FT4 CQ pass, and WSJT-X's a1/? marking: a-priori words
+             are published like any other word, with UDP Low confidence false.
              Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
              Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
+    }
+    action def Ft8ChannelDecode {
+        in llrZeroPositive : Real[174];
+        out channelWord : Integer[174];
+        out hardDisagreements : Integer;
+        doc /* Adapted WSJT-X decode174_91 (maxosd=2, norder=2) and osd174_91 (Keff=91,
+             ndeep=2), shared by FT8 and FT4 (#56). Sum-product belief propagation, flooding
+             schedule: check message 2*platanh(product of tanh(extrinsic/2)), WSJT-X
+             piecewise-linear platanh saturating at 7. Iterations 0..30; a word whose syndrome and CRC are zero ends it;
+             stop early after iteration>=10 when unsatisfied checks>15 did not decrease for 5
+             iterations. Keep the cumulative bit sums of iterations 1 and 2. On BP failure
+             run ordered statistics on each kept sum in turn: order the 174 bits by
+             decreasing |sum| (ties in reverse index order), Gaussian-eliminate the systematic
+             (174,91) generator with whole-row operations (CRC bits free; the pivot of
+             position id is searched in positions id..110, i.e. within the first k+20), re-encode the hard decisions of
+             the 91 most reliable bits, then try every single (pair) flip of them whose
+             re-encoded first 40 parity bits differ from the hard decisions in at most 9 (8)
+             places; keep the candidate of least reliability-weighted distance. The result
+             must pass H and CRC. hardDisagreements counts bits that disagree with the
+             channel LLR signs (BP word) or with the kept sum's hard decisions (OSD word).
+             Deliberate deviations: tanh by a rational approximant within 1e-4; an OSD word
+             with zero disagreements is accepted (decode174_91 requires >0); every word
+             must pass H and CRC (WSJT-X checks CRC only).
+             A-priori (fixed) bits keep their channel LLR in BP and are never flipped.
+             Cancellation is checked every BP iteration and every OSD flip position. */
     }
     action def Ft8SubtractVerifiedFrame {
         in source : ModemSampleWindow;
@@ -669,9 +700,11 @@ package WstxOfflineDecode {
              fourbits200..203=pair,204..205=single (zerobased).
              NormalizeFULL206populationasFT8(no meansubtraction),thenextractinclusive
              ranges8..65/74..131/140..197=>174data,scale2.83/negateONCE.
-             Threeorderedfamilies,each50minsumalpha.8/137rank77boundedrecovery,
-             meanabs>=1/hardCHANNELdisagreements<=24/H+CRC. Failedwordcontinues;
-             no4thfallback. Sourceunsupported/invalidstatusretained, noAP/semanticprior. */
+             Threeorderedfamilies, each through Ft8ChannelDecode; accept any word that is
+             not the all-zero codeword (ft4_decode has no hard-disagreement cap), H+CRC.
+             Failedwordcontinues;
+             no4thfallback. Sourceunsupported/invalidstatusretained, no semanticprior. The FT4
+             CQ a-priori pass of ft4_decode is not yet delivered (#56, later slice). */
     }
     action def Ft4SubtractVerifiedFrame {
         in source : ModemSampleWindow;
@@ -731,9 +764,9 @@ package WstxOfflineDecode {
              noisegridseparatefromFt4FrequencyCandidates/Ft4BandLimitAndFineSync.
              FT8BandLimit/FineSynchronization/ObserveMetricFamilies/DecodeMetricFamilies;
              FT4BandLimitAndFineSync/ObserveMetricFamilies. Qualifiedcap256,257=>limited.
-             FiveFT8orthreeFT4families; each<=50minsumalpha.8/<=137rank77recovery among16
-             leastreliablebasisbits,CRCconstrained. Meanabs1/hard24/H+CRCmandatory.
-             NoAP/hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
+             FiveFT8orthreeFT4families; each Ft8ChannelDecode (BP<=30 + OSD ndeep2 on
+             2 sums, rank91). FT8 hard disagreements<=36; never all-zero; H+CRC mandatory.
+             FT8 CQ a-priori passes only, no other hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
              <=3passes/32verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
              SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;
@@ -900,7 +933,7 @@ package WstxOfflineDecode {
                  Finitecaserequireszeropublications,no search_limited,neverproductionhelpers.
                  All2286originalcases/thresholds/256cap remain. Verifyrecipe/composer/audiohashes,
                  FT4bandlimitedblocksync/threemetrics andFT8bandlimitedsymbolsync/fivemetrics;
-                 physicalhits/complexenvelopeSIC/rank77/64MiB.
+                 physicalhits/complexenvelopeSIC/rank91/64MiB.
                  No externaldecoder oracle or skipped case pass. */
         }
         dependency phaseLikelihoodCase from phaseLikelihoodAndScale to WstxRequirements::'TC-004-003';

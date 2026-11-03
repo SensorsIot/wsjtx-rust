@@ -4,7 +4,7 @@
 // (no audio, PTT or radio). Decoded rows are hand-authored and published through the
 // test-only control peer; expected values below are the independent TC tables.
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-06, CL-010-11, CL-010-14; TC-007-001,
-// TC-007-003, TC-007-004, TC-010-008, TC-010-009; CL-050-01, TC-050-001.
+// TC-007-003, TC-007-004, TC-010-008, TC-010-009; CL-050-01, TC-050-001; CL-050-04, TC-050-004.
 // Proves: CL-055-02; TC-055-004 (DXCC column, approximate distance, QSO header).
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
@@ -47,12 +47,14 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.deepEqual(await dxcc('HB9BLA W1XYZ -10'),['U.S.A.','U.S.A. \u00b7 NA \u00b7 CQ zone 5 \u00b7 ITU zone 8 (cty.dat)','~7706 km']);
   assert.equal((await dxcc('CQ DL1ABC JO62'))[0],'Germany');
   assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
-  // #37 QsoPane, no contact: Rx 1500 Hz; the candidates within +/-50 Hz (1450.0..1550.0) and the
-  // row to my call, plain, newest two first, message and SNR only; never 1449.9 Hz or HB9BL.
+  // #37 QsoPane, no contact (operator 2026-11-02): only the stations calling my call, on any
+  // frequency, with their period start and SNR; never the CQs near Rx or HB9BL.
+  // Proves: CL-050-05; TC-050-005 (Others).
   const others=async()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
-  await waitFor(async()=>(await others()).length===2,async()=>`QSO pane ${JSON.stringify(await others())}`);
-  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212);
-  assert.deepEqual(await others(),[['candidate',`${recv} HB9BLA W1XYZ -10  ${minus}10 dB`],['candidate',`${recv} CQ W5EE FN31  +5 dB`]]);
+  await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
+  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212),hms=new Date(period).toISOString().slice(11,19);
+  assert.deepEqual(await others(),[['candidate',`${hms} ${recv} HB9BLA W1XYZ -10  ${minus}10 dB`]]);
+  assert.equal(await page.locator('#qso-others-none').isVisible(),false);
   // Local sorting: no request. The DX entry is in the QSO fold-out.
   const before=requests.length;
   await page.locator('#band-activity th[data-sort=signal]').click();await page.locator('#qso-more summary').click();
@@ -273,5 +275,60 @@ test('TC-055-004 RR73 sent as a grid square is no grid for the distance, in eith
       assert.deepEqual(await tr.evaluate(t=>[t.children[4].textContent,t.children[5].textContent,t.children[6].textContent]),[row.text,'U.S.A.',expected[row.text]],JSON.stringify(order.map(r=>r.text)));
     }
   }
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-050-04; TC-050-004 (b). #50 (operator 2026-11-02, US5WFL then YO3GNF;
+// TC2TR): as WSJT-X (handleDecodeSelection with quick_call), a double-click on another
+// station mid-QSO or during my CQ switches at once, without a confirmation, keeps Enable Tx
+// on, and the next own period calls the new station; Auto Seq then runs that QSO to its
+// completion and it is logged once. The station runs on the real clock, so each step
+// waits for the transmission (#9 transmit view last_text, set when its audio starts).
+const sentTo=async text=>(await snapshot()).transmit.last_text===text;
+async function dblclickRow(text,hz,snr){
+  const {sequences}=await publish(evenNow(),[{text,hz,snr}]);
+  const tr=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`);await tr.waitFor({timeout:30000});
+  const mark=requests.length;await tr.dblclick();
+  return mark;
+}
+async function completes(call,report){
+  const period=30000+15000;
+  await waitFor(()=>sentTo(`${call} HB9BLA JN47`),`Tx1 to ${call}`,period);
+  await publish(evenNow(),[{text:`HB9BLA ${call} -05`,hz:900,snr:-5}]);
+  await waitFor(()=>sentTo(`${call} HB9BLA R${report}`),`Tx3 to ${call}`,period);
+  await publish(evenNow(),[{text:`HB9BLA ${call} RR73`,hz:900,snr:-5}]);
+  await waitFor(()=>sentTo(`${call} HB9BLA 73`),`Tx5 to ${call}`,period);
+  const done=await waitFor(async()=>{const s=await snapshot();return s.contact?.state==='completed'&&s;},'completed',period);
+  assert.equal(done.contact.dx_call,call);
+  const log=await (await fetch(origin+'/contacts')).json();
+  assert.equal(log.records.filter(r=>r.contact_id===done.contact.id).length,1,`${call} logged once`);
+  // The pane shows the completion (its snapshot is current) before the next action.
+  await page.locator('#contact-logged').filter({hasText:`Logged ${call}`}).waitFor({timeout:15000});
+}
+test('TC-050-004 a double-click switches mid-QSO and from my CQ with Tx kept on, and the new QSO completes',{timeout:420000},async()=>{
+  // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
+  let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);
+  await waitFor(async()=>{const s=await snapshot();return s.transmit.arm_state==='armed'&&s.contact?.dx_call==='K1ABC';},'armed with K1ABC',15000);
+  await waitFor(()=>sentTo('K1ABC HB9BLA JN47'),'Tx1 to K1ABC',45000);
+  mark=await dblclickRow('CQ DL1ABC JO62',800,-3);
+  await waitFor(async()=>(await snapshot()).contact?.dx_call==='DL1ABC',async()=>`switched to DL1ABC: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-3))} ${JSON.stringify((await snapshot()).contact)}`,15000);
+  const switched=requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body));
+  await waitFor(async()=>requests.slice(mark).some(r=>r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx'),'enable_tx after the switch');
+  // A stale_revision refusal (the revision moves with every transmit step) is retried, so a
+  // request may repeat; the sequence is select_row (replace) then enable_tx.
+  assert.deepEqual(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body)).map(c=>[c.action,c.replace??c.enabled]).filter((c,i,a)=>i===0||JSON.stringify(c)!==JSON.stringify(a[i-1])),[['select_row',true],['enable_tx',true]],JSON.stringify(switched));
+  assert.equal(await page.locator('#contact-change').count(),0,'no confirmation button');
+  const s=await snapshot();assert.equal(s.transmit.arm_state,'armed','Enable Tx stays on');
+  assert.notEqual(s.transmit.last_disarm_cause,'contact_cancelled');
+  await completes('DL1ABC','-03');
+  // From my CQ: CQ (arms, calling), then double-click another station's CQ.
+  await page.locator('#qso-cq').click();
+  await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},async()=>`calling CQ: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-2))} ${JSON.stringify((await snapshot()).transmit)} ${JSON.stringify((await snapshot()).contact?.state)}`,15000);
+  await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'Calling CQ'}).waitFor();
+  mark=await dblclickRow('CQ EA8BIA IL18',1595,0);
+  await waitFor(async()=>(await snapshot()).contact?.dx_call==='EA8BIA','answered EA8BIA',15000);
+  assert.equal((await snapshot()).transmit.arm_state,'armed');
+  assert.equal(await page.locator('#contact-change').count(),0,'no confirmation button');
+  await completes('EA8BIA','+00');
   assert.deepEqual(page.errors,[]);
 });

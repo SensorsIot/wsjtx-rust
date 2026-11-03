@@ -146,7 +146,7 @@ test('receive frame race updates its live owner while recording job is absent',{
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:current});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(current)}));
   }});
-  await page.waitForFunction(()=>live?.source&&snapshot&&snapshot.job===null);
+  await page.waitForFunction(()=>typeof live!=='undefined'&&live?.source&&snapshot&&snapshot.job===null);
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{
     boot_id:live.boot_id,source_id:live.source.id,job_id:live.job.id,generation:live.generation,sequence:0,first_frame:0,end_frame:2400,levels_b64:btoa('\0'.repeat(1024))}}}})));
   await page.waitForFunction(()=>document.querySelector('#waterfall').dataset.rows==='1');
@@ -397,51 +397,62 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
 });
 
 // Proves: CL-010-16, CL-010-06; TC-007-009 the compact QSO pane (#37, operator decisions
-// 2026-11-02, items 1-10): the running QSO only, message and SNR per line, at most two
-// Others lines (⚠ while a QSO runs, plain candidates when idle), NEXT only while armed,
-// "✓ Logged <call>" for a few seconds, nothing of a finished contact, about half the height.
+// 2026-11-02, items 1-10): the running QSO only, NEXT only while armed, "✓ Logged <call>"
+// for a few seconds, nothing of a finished contact, about half the height.
+// Proves: CL-050-05, CL-050-06; TC-050-005, TC-050-006 (c) (#37, operator 2026-11-02): the
+// Others are only stations calling my call, with time and SNR (⚠ during a QSO within
+// ±50 Hz of my Rx or Tx offset, every caller otherwise), below the QSO dialogue.
 test('TC-007-009 the compact QSO pane shows only the running QSO and clears when it ends',{timeout:60000},async t=>{
-  let state,contact=null,transmit={},log=null,records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
+  let state,contact=null,transmit={},log=null,settings={},records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
   const standard=(from,to)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const record=(sequence,text,hz,snr)=>{const [to,from]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:period};};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-    // Rx is 1500 Hz: 1449.9 Hz is outside +/-50 Hz; the partner IW9FRA at 1505 Hz is never an Other.
-    // The partner's RR73 is the newest row, so it would lead the Others if it were not excluded.
-    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA DL1ABC JO31',400,-8),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA IW9FRA RR73',1505,17)];
-    Object.assign(state.job,{first_sequence:0,next_sequence:5,available_count:5,latest_decode:{id:1,first_sequence:0,next_sequence:5,period_start_utc:period,complete:true}});
+    // Rx and Tx are 1500 Hz. CQs (even near Rx) are never QSO pane lines; DL1ABC calls me at
+    // 400 Hz (a candidate idle, not near my frequency during a QSO); SV1DZB calls me at 1530 Hz;
+    // the partner IW9FRA is never an Other.
+    // During the QSO Tx is 2100 Hz: EA8BIA at 2130 Hz is near my Tx, F1PBZ at 1600 Hz near neither.
+    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA DL1ABC JO31',400,-8),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA IW9FRA RR73',1505,17),record(5,'HB9BLA SV1DZB KM18',1530,-8),
+      record(6,'HB9BLA EA8BIA IL18',2130,0),record(7,'HB9BLA F1PBZ JN18',1600,-10)];
+    Object.assign(state.job,{first_sequence:0,next_sequence:8,available_count:8,latest_decode:{id:1,first_sequence:0,next_sequence:8,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit,log})}));
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit,log,settings})}));
     await contactCommands(p,commands);
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const others=()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
   const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
   const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
-  // Removed: dialogue history, LAST row and crowding badge.
+  // Removed: the old dialogue history pane, LAST row and crowding badge.
   for(const selector of ['#rx-pane','#rx-pane-rows','#contact-last','#qso-crowd','#rx-pane-erase'])assert.equal(await page.locator(selector).count(),0,`${selector} is gone`);
 
-  // Item 7, idle: the stations on my Rx frequency (and a station calling me) are plain
-  // candidates, at most two, newest first, message and SNR only (no time, DT or Hz).
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
-  assert.deepEqual(await others(),[['candidate','◂ HB9BLA IW9FRA RR73  +17 dB'],['candidate','◂ CQ YO3GNF KN34  +12 dB']]);
+  // Idle: every station calling my call, on any frequency, oldest first, with its period
+  // start and SNR (no DT or Hz); no CQ, even near Rx.
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===5);
+  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA IW9FRA RR73  +17 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB'],
+    ['candidate','12:00:15 ◂ HB9BLA EA8BIA IL18  0 dB'],['candidate','12:00:15 ◂ HB9BLA F1PBZ JN18  −10 dB']]);
+  assert.equal(await shown(page,'#qso-others-none'),false,'no "nobody calling" with callers');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'no Log QSO without a running QSO');
   // Double-click answers: select (no replace), then enable_tx.
   let m=commands.length;await page.locator('#qso-others li').nth(1).dblclick();await waitCommands(m+2);
-  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,false],['enable_tx',true,undefined]]);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',4,false],['enable_tx',true,undefined]]);
 
   // Items 1-4 and 10, a running QSO with Enable Tx on: header, the last partner message with
   // SNR and xN, the Others marked ⚠ (a station near Rx and one calling me, not the partner),
   // NEXT with its countdown.
   const iw9fra=['IW9FRA HB9BLA JN47','IW9FRA HB9BLA +10','IW9FRA HB9BLA R+10','IW9FRA HB9BLA RR73','IW9FRA HB9BLA 73','CQ HB9BLA JN47'];
-  const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3}});
-  await show(running,{arm_state:'armed'});
-  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn');
+  // TC-050-006 (c): the server-owned dialogue, ten entries (more than the free height).
+  const p0=Date.parse('2026-10-27T11:58:00Z'),entry=(i,dir,text,snr=null,count=1)=>({dir,text,snr,period_utc_ms:p0+i*15000,count});
+  const dialogue=[entry(1,'tx','IW9FRA HB9BLA JN47',null,2),entry(2,'rx','HB9BLA IW9FRA -05',-5),entry(3,'tx','IW9FRA HB9BLA R+10'),entry(4,'rx','HB9BLA IW9FRA -05',-6),entry(5,'tx','IW9FRA HB9BLA R+10'),
+    entry(6,'rx','HB9BLA IW9FRA RR73',17),entry(7,'tx','IW9FRA HB9BLA 73'),entry(8,'rx','HB9BLA IW9FRA RR73',15),entry(9,'tx','IW9FRA HB9BLA 73'),entry(10,'rx','HB9BLA IW9FRA RR73',17,3)];
+  const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3},dialogue});
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});
+  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others li').length===2);
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
@@ -450,7 +461,12 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
-  assert.deepEqual(await others(),[['warn','⚠ CQ YO3GNF KN34  +12 dB'],['warn','⚠ HB9BLA DL1ABC JO31  −8 dB']]);
+  assert.deepEqual(await others(),[['warn','12:00:15 ⚠ HB9BLA SV1DZB KM18  −8 dB'],['warn','12:00:15 ⚠ HB9BLA EA8BIA IL18  0 dB']],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
+  const lines=await page.locator('#qso-dialogue li').allTextContents();
+  assert.deepEqual([lines.length,lines[0],lines[1],lines.at(-1)],[10,'11:58:15 ▸ IW9FRA HB9BLA JN47 ×2','11:58:30 ◂ HB9BLA IW9FRA -05  −5 dB','12:00:30 ◂ HB9BLA IW9FRA RR73  +17 dB ×3']);
+  // The QSO area scrolls inside the card, kept at its newest line, and grows nothing.
+  const area=await page.locator('#qso-area').evaluate(a=>({scrolls:a.scrollHeight>a.clientHeight,bottom:Math.abs(a.scrollTop+a.clientHeight-a.scrollHeight)<=2,overflow:getComputedStyle(a).overflowY}));
+  assert.equal(area.overflow,'auto');assert.equal(area.bottom,true,`kept at the newest line ${JSON.stringify(area)}`);
   assert.equal(await shown(page,'#qso-next'),true,'NEXT while armed');
   assert.deepEqual([await page.locator('#qso-next .op-eyebrow').textContent(),await page.locator('#contact-next').textContent()],['▸ next:','IW9FRA HB9BLA 73']);
   assert.equal(await shown(page,'#contact-state'),false,'no status line without an exception');
@@ -461,9 +477,13 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.deepEqual(metrics,{x:false,y:false});
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others li:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
+  await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
   // Content height: the header plus the lines, buttons and fold-out of the pane body.
   const heights=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect(),body=document.querySelector('#rx-focus .op-contact-body'),cs=getComputedStyle(body);
-    const content=box('#rx-focus .op-qso-head').height+[...body.children].filter(e=>e.getClientRects().length).reduce((h,e)=>Math.max(h,e.getBoundingClientRect().bottom),0)-body.getBoundingClientRect().top+parseFloat(cs.paddingBottom);
+    // The QSO area (#37 dialogue and Others) takes the free height by design: it is not
+    // counted; the other lines are summed with their gaps.
+    const kids=[...body.children].filter(e=>e.getClientRects().length&&e.id!=='qso-area'&&getComputedStyle(e).display!=='none');
+    const content=box('#rx-focus .op-qso-head').height+kids.reduce((h,e)=>h+e.getBoundingClientRect().height,0)+parseFloat(cs.rowGap||cs.gap||0)*(kids.length-1)+parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom);
     return {content,pane:box('#rx-focus'),activity:box('#band-activity')};});
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1366x768.png'});
   // The earlier pane needed about 380 px for this contact (at ad2f48bda it filled the 297 px
@@ -474,7 +494,12 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.ok(Math.abs(heights.pane.bottom-heights.activity.bottom)<=1&&Math.abs(heights.pane.top-heights.activity.top)<=1,`pane ${heights.pane.top}-${heights.pane.bottom}, Band Activity ${heights.activity.top}-${heights.activity.bottom}`);
   // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
   m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
-  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,true],['enable_tx',true,undefined]]);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',5,true],['enable_tx',true,undefined]]);
+  // Nobody else near my frequencies: one muted line says so.
+  settings={rx_hz:2800,tx_hz:2800};await show(running,{arm_state:'armed'});
+  await page.locator('#qso-others-none').filter({hasText:'nobody else calling'}).waitFor();
+  assert.deepEqual(await others(),[]);
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
   // Auto Seq off (#11) stays visible in the compact pane.
@@ -500,7 +525,8 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
-  assert.deepEqual(await others(),[['candidate','◂ CQ YO3GNF KN34  +12 dB'],['candidate','◂ HB9BLA DL1ABC JO31  −8 dB']],'the finished partner is not a candidate');
+  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB'],['candidate','12:00:15 ◂ HB9BLA EA8BIA IL18  0 dB'],['candidate','12:00:15 ◂ HB9BLA F1PBZ JN18  −10 dB']],'the finished partner is not a candidate');
+  assert.equal(await shown(page,'#qso-dialogue'),false,'the dialogue goes with the QSO');
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
   m=commands.length;await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('Alt+q');await page.waitForTimeout(400);
   assert.deepEqual(commands.slice(m),[],'nor by Alt+Q');
@@ -513,6 +539,119 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.waitForFunction(()=>document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-next').hidden);
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   assert.equal(await page.locator('#contact-logged').textContent(),'','an earlier save is not shown again');
+  assert.deepEqual(errors,[]);
+});
+
+// The fixture server's own station.tick runs on the browser's clock; these tests simulate a
+// station whose clock differs, so only the test's ticks reach the page.
+async function testTicksOnly(page){
+  await page.evaluate(()=>addEventListener('station-message',e=>{if(e.detail?.message?.type==='station.tick'&&!e.detail.test)e.stopImmediatePropagation();},true));
+}
+// A station.tick delivered through the page's actual listener, then the QSO pane read in the
+// same task (the tick handler redraws synchronously), so no other tick can interleave.
+async function tickAndRead(page,offset,transmitting){
+  return page.evaluate(([offset,transmitting])=>{
+    const utc=Date.now()+offset;
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:utc,period_ms:15000,transmitting,rx_level_db:null}}}}));
+    const bar=document.querySelector('#qso-progress'),cs=getComputedStyle(bar);
+    return {utc,width:parseFloat(bar.style.width),colour:cs.backgroundColor,transition:cs.transitionDuration,
+      label:document.querySelector('#qso-next .op-eyebrow').textContent,next:document.querySelector('#contact-next').textContent,countdown:document.querySelector('#qso-countdown').textContent};
+  },[offset,transmitting]);
+}
+// An own CQ (contact calling) with Enable Tx on, Tx parity even (my periods: even index).
+function ownCq(){return {id:crypto.randomUUID(),origin:'own_cq',dx_call:null,dx_grid:null,report_sent:null,report_rcvd:null,state:'calling',next_slot:'tx6',tx4:'rrr',
+  messages:[null,null,null,null,null,'CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,suggested_slot:null,last_rcvd:null,dialogue:[]};}
+const GREEN='rgb(48, 208, 80)',RED='rgb(255, 64, 64)';
+
+// Proves: CL-050-03; TC-050-003. #50 (operator 2026-11-02, CT7BRV): the QSO pane's period bar
+// runs on the station's clock (station.tick / snapshot utc_ms over the browser's monotonic
+// clock), not the browser's wall clock, and is red in my Tx periods and while transmitting,
+// green in receive periods.
+test('TC-050-003 the period bar follows the station clock and is red in my Tx periods and green otherwise',{timeout:40000},async t=>{
+  const clock={offset:0};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:{...contactSnapshot(base,{contact:ownCq(),transmit:{arm_state:'armed'},settings:{parity:'even'}}),utc_ms:Date.now()+clock.offset}}));
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
+  await testTicksOnly(page);
+  // A station clock ahead of the browser, in an even (my Tx) period 30..60 s ahead, half a
+  // period out of phase with the browser's clock.
+  const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+((now%15000)+7500)%15000,offset=even-now;
+  clock.offset=offset;let r=await tickAndRead(page,offset,false);
+  const phase=u=>100*(((u%15000)+15000)%15000)/15000;
+  assert.ok(Math.abs(r.width-phase(r.utc))<=4,`width ${r.width} vs station phase ${phase(r.utc)}`);
+  assert.ok(Math.abs(r.width-phase(r.utc-offset))>10,'not the browser-clock phase');
+  assert.equal(Math.floor(r.utc/15000)%2,0,'an even station period');
+  assert.deepEqual([r.colour,r.transition],[RED,'0s'],'my Tx period while Enable Tx is on: red, no animated width');
+  await page.screenshot({path:'test-results/ui-operating/period-bar-tx-1366x768.png'});
+  // The station 15 s further: an odd (receive) period; a larger offset is taken at once.
+  clock.offset=offset+15000;r=await tickAndRead(page,offset+15000,false);
+  assert.equal(Math.floor(r.utc/15000)%2,1,'an odd station period');
+  assert.ok(Math.abs(r.width-phase(r.utc))<=4,`width ${r.width} vs station phase ${phase(r.utc)}`);
+  assert.equal(r.colour,GREEN,'a receive period: green');
+  await page.screenshot({path:'test-results/ui-operating/period-bar-rx-1366x768.png'});
+  // Keyed in the odd period (e.g. Tune or a late start): red while the station transmits.
+  r=await tickAndRead(page,offset+15000,true);
+  assert.equal(r.colour,RED,'transmitting: red');
+  // A backward step of the station clock (#43 correction, here 1 s) is taken at once.
+  clock.offset=offset+14000;r=await tickAndRead(page,offset+14000,false);
+  assert.ok(Math.abs(r.width-phase(r.utc))<=4,`after a 1 s step back: width ${r.width} vs station phase ${phase(r.utc)}`);
+  clock.offset=offset+15000;r=await tickAndRead(page,offset+15000,false);
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#qso-next').scrollIntoViewIfNeeded();
+  r=await tickAndRead(page,offset+15000,true);assert.equal(r.colour,RED);
+  await page.screenshot({path:'test-results/ui-operating/period-bar-tx-360x800.png'});
+  r=await tickAndRead(page,offset+15000,false);assert.equal(r.colour,GREEN);
+  await page.screenshot({path:'test-results/ui-operating/period-bar-rx-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-050-05; TC-050-005. #37 (operator 2026-11-02, a CQ run on 40 m): while my CQ
+// runs the header says "Calling CQ" with the Tx period, also after a receive refresh; the
+// message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty
+// Others list says "nobody calling".
+test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherwise, and nobody calling',{timeout:40000},async t=>{
+  const clock={offset:0};let transmit={arm_state:'armed'},watchdog=null;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>{const s={...contactSnapshot(base,{contact:ownCq(),transmit,settings:{parity:'even'}}),utc_ms:Date.now()+clock.offset};if(watchdog)s.watchdog=watchdog;return route.fulfill({json:s});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
+  await testTicksOnly(page);
+  const header=()=>page.locator('#rx-focus .op-contact-identity').evaluate(h=>[h.querySelector('strong').textContent,h.querySelector('div > span').textContent]);
+  // A receive refresh redraws the receive display; the CQ header stays.
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{}}}})));
+  await page.waitForTimeout(800);
+  assert.deepEqual(await header(),['Calling CQ','Tx even (1st)']);
+  assert.equal(await page.locator('#qso-others-none').textContent(),'nobody calling');
+  assert.equal(await shown(page,'#qso-others-none'),true);
+  const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+4000,offset=even-now;
+  clock.offset=offset;let r=await tickAndRead(page,offset,true);
+  assert.deepEqual([r.label,r.next],['▶ TX now:','CQ HB9BLA JN47']);
+  assert.match(r.countdown,/^\d+ s left$/);assert.equal(Number(r.countdown.split(' ')[0]),10,'audio 0.5 s + 12.64 s from the period start, 4 s in: 10 s left');
+  await page.screenshot({path:'test-results/ui-operating/qso-tx-now-1366x768.png'});
+  // The transmit view's text of this period is what is on the air (here not the next one).
+  transmit={arm_state:'armed',last_text:'K1ABC HB9BLA -05',last_period_utc:even-4000};
+  await page.evaluate(()=>window.wstxContact.load());
+  r=await tickAndRead(page,offset,true);
+  assert.deepEqual([r.label,r.next],['▶ TX now:','K1ABC HB9BLA -05']);
+  // Tune is a tone: "TX now: Tune" with the Tune time left, never a message.
+  transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:80};
+  await page.evaluate(()=>window.wstxContact.load());
+  r=await tickAndRead(page,offset,true);
+  assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
+  transmit={arm_state:'armed'};watchdog=null;await page.evaluate(()=>window.wstxContact.load());
+  clock.offset=offset+11000;r=await tickAndRead(page,offset+11000,false);
+  assert.deepEqual([r.label,r.next],['▸ next:','CQ HB9BLA JN47']);
+  assert.match(r.countdown,/^Tx in \d+ s$/);assert.equal(Number(r.countdown.split(' ')[2]),15,'between periods: the next even period in 15 s');
+  await page.screenshot({path:'test-results/ui-operating/qso-between-periods-1366x768.png'});
+  await page.screenshot({path:'test-results/ui-operating/qso-calling-cq-1366x768.png'});
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#rx-focus').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/qso-calling-cq-360x800.png'});
   assert.deepEqual(errors,[]);
 });
 
@@ -908,9 +1047,10 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // Independent great-circle distance between the JN47AA and FN42 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
-  // QSO pane (#37): with no contact, W1XYZ at 1480 Hz (within +/-50 Hz of Rx 1500) is a plain candidate.
-  await page.locator('#qso-others li[data-kind=candidate]').filter({hasText:'CQ W1XYZ FN42'}).waitFor();
-  assert.deepEqual(await page.locator('#qso-others li').allTextContents(),['◂ CQ W1XYZ FN42  −10 dB']);
+  // QSO pane (#37, operator 2026-11-02): a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
+  // nobody calls me yet.
+  await page.locator('#qso-others-none').filter({hasText:'nobody calling'}).waitFor();
+  assert.deepEqual(await page.locator('#qso-others li').allTextContents(),[]);
   // A new period keeps the previous one below a divider, newest first.
   records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
   Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:2,first_sequence:2,next_sequence:3,period_start_utc:period[1],complete:true}});
@@ -1690,7 +1830,7 @@ test('TC-051-001 an open page reloads after the station restarts with another cl
   const {state,restart}=await updatedStation(page,app,dir,t);
   assert.equal(state.navigations,0,'the same build never reloads');
   const {before}=await restart('0123456789abcdef');
-  await page.waitForFunction(()=>connection.dataset.state==='connected'&&profileData&&live!==undefined,null,{timeout:30000});
+  await page.waitForFunction(()=>connection.dataset.state==='connected'&&profileData&&typeof live!=='undefined',null,{timeout:30000});
   assert.equal(state.navigations,1,'exactly one reload');assert.equal(state.rewritten,1,'one status of the updated station');
   const after=await page.evaluate(()=>({build:document.body.dataset.build,boot:profileData.boot_id,live:live?.boot_id,theme:document.documentElement.dataset.theme,speed:localStorage.getItem('wstx.waterfall-speed.v1'),reloaded:sessionStorage.getItem('wstx.reloaded-build.v1'),notice:document.querySelector('#station-notice').hidden}));
   assert.notEqual(after.boot,before,'a restarted station');
@@ -1712,7 +1852,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
     await p.route('**/receive/results?*',route=>route.fulfill({json:bad.results?{...emptyResults(receiving),dxcc:null}:emptyResults(receiving)}));
     await p.route('**/receive/selection',async route=>{const json=await (await route.fetch()).json();await route.fulfill({json:bad.selection?{...json,dxcc:null}:json});});
   }});
-  await page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  await page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='calling');
   // A receive snapshot of an unknown shape: visible error chip with the reload action.
   reject=true;await page.evaluate(()=>receiveSync());
@@ -1743,7 +1883,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   await page.waitForTimeout(1500);assert.equal(state.navigations,0,'a QSO in progress holds the reload');
   assert.equal(await notice.getAttribute('data-severity'),'warn');
   contact=null;await notice.click();
-  await page.waitForFunction(()=>connection.dataset.state==='connected'&&live!==undefined,null,{timeout:30000});
+  await page.waitForFunction(()=>connection.dataset.state==='connected'&&typeof live!=='undefined',null,{timeout:30000});
   assert.equal(state.navigations,1,'the chip reloads the page');
   assert.equal(await page.locator('#station-notice').isHidden(),true);
   // An open dialog also holds the reload.
@@ -1772,7 +1912,7 @@ async function liveDisplayFixture(t){
     await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving)receiving=liveFixture(json);await route.fulfill({json:receiving});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(receiving)}));
   }});
-  await f.page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  await f.page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   return {...f,newJob:async()=>{receiving={...receiving,job:{...receiving.job,id:crypto.randomUUID()}};await f.page.evaluate(()=>receiveSync());await f.page.waitForFunction(id=>live.job.id===id,receiving.job.id);}};
 }
 // Proves: CL-054-02; TC-054-002 a fixed level mapping with Zero/Gain sliders, Flatten and the spectrum line option.
@@ -1791,7 +1931,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   // No automatic level: more rows and a new job keep the mapping.
   await liveFrames(page,[{sequence:2,levels:levels.map(q=>q+10)}]);assert.deepEqual(await cell(page,100),[255,192,0],'a louder row is louder, not re-levelled (t=0.833)');
   await newJob();await liveFrames(page,[{sequence:0,levels}]);assert.deepEqual(await cell(page,100),[0,220,240],'a new job keeps the levels');
-  await page.reload();await page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  await page.reload();await page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   assert.deepEqual(await page.evaluate(()=>[sensitivity,displayRange]),[10,30],'per-browser settings survive a reload');
   // Flatten: a 30 dB passband slope is evened out across frequency; the native readout is unchanged.
   const slope=Array.from({length:1024},(_,k)=>30+Math.floor(30*k/1024));

@@ -338,6 +338,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         keys(&v["settings"]),
         sorted(&[
             "auto_seq",
+            "call_first",
             "tx1_skip",
             "tx_minutes",
             "tune_seconds",
@@ -360,7 +361,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
-        json!({"auto_seq":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
+        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
@@ -373,18 +374,23 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         (status, code(&v).0),
         (StatusCode::FORBIDDEN, "forbidden_origin")
     );
-    // The maximum shape (six 37-character messages, 13-character calls, a log outcome)
-    // fits; one byte over the cap is refused, never truncated.
+    // The maximum shape (six 37-character messages, 13-character calls, a log outcome,
+    // 16 maximal dialogue entries, #37) fits; one byte over the cap is refused, never
+    // truncated.
     let long = "A".repeat(37);
+    let entry =
+        json!({"dir":"tx","text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX});
+    let dialogue = vec![entry; crate::contact::DIALOGUE_MAX];
     let max = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"contact_revision":MAX_SAFE_TEST,"snapshot_sequence":MAX_SAFE_TEST,
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
             "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
-        "settings":{"auto_seq":true,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
+        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
             "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",
-            "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX}},
+            "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX},
+            "dialogue":dialogue},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
         "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
@@ -649,8 +655,14 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "end_utc",
             "saved",
             "suggested_slot",
-            "last_rcvd"
+            "last_rcvd",
+            "dialogue"
         ])
+    );
+    assert_eq!(
+        c["dialogue"],
+        json!([]),
+        "a new contact has no dialogue (#37)"
     );
     assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
     assert_eq!(
@@ -770,9 +782,19 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
         f.tick();
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let (_, t1, _, _) = f.call("GET", "/transmit", None).await;
-    let started = !t1["transmit"]["last_text"].is_null();
-    let new = accepted(&t1).difference(&accepted(&t0)).count();
+    // The audio may start after the fifth step (real clock); the next request is then
+    // queued by a later step, so keep stepping for a bounded time (#10 flake).
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (t1, started, new) = loop {
+        let (_, t1, _, _) = f.call("GET", "/transmit", None).await;
+        let started = !t1["transmit"]["last_text"].is_null();
+        let new = accepted(&t1).difference(&accepted(&t0)).count();
+        if !started || new > 0 || Instant::now() >= deadline {
+            break (t1, started, new);
+        }
+        f.tick();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
     assert_eq!(new, usize::from(started), "{t1}");
     // Every key falls inside an own-parity (odd) period's start window.
     for (at, on) in f.bench.keys.lock().unwrap().iter().copied() {
@@ -906,6 +928,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         logged_on_completion: true,
         suggested: None,
         last_rcvd: None,
+        dialogue: Default::default(),
     };
     let record = contact_http::Station::record_of(
         &c,
@@ -1468,4 +1491,19 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     assert_eq!(snap["contact"]["saved"], true, "{snap}");
     let log = f.state.logbook.history(&f.id, 0, 10).unwrap();
     assert_eq!(log["records"].as_array().unwrap().len(), 1, "{log}");
+    // Proves: CL-050-06; TC-050-006 (#37): the snapshot's QSO dialogue, as exchanged.
+    let p = |n: i64| p0 + n * 7_500;
+    assert_eq!(
+        snap["contact"]["dialogue"],
+        json!([
+            {"dir":"tx","text":"IW9FRA HB9BLA JN47","snr":null,"period_utc_ms":p(1),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":10,"period_utc_ms":p(2),"count":1},
+            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(3),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":15,"period_utc_ms":p(4),"count":1},
+            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(5),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA RR73","snr":17,"period_utc_ms":p(6),"count":1},
+            {"dir":"tx","text":"IW9FRA HB9BLA 73","snr":null,"period_utc_ms":p(7),"count":1}
+        ]),
+        "{snap}"
+    );
 }
