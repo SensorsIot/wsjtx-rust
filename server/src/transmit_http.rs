@@ -201,6 +201,10 @@ impl Station {
             receipts: Mutex::new(VecDeque::new()),
         }))
     }
+    /// Shares the station's call hash table with the transmit owner (CL-024-01).
+    pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {
+        self.service.with(|c| c.attach_hashes(hashes));
+    }
     /// Test seam: the same station with injected hardware (virtual devices, no radio).
     #[cfg(test)]
     pub(crate) fn start_with(hardware: Box<dyn Hardware>) -> std::io::Result<Arc<Self>> {

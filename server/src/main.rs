@@ -274,6 +274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             recording.initialize_profile_revision(store.document.revision);
+            recording.set_my_call(Some(&store.document.callsign));
             // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
             // WstxTransmit::TransmitClock: the station measures its UTC offset by SNTP
             // on its own thread, at start and every minute. WSTX_SNTP_SERVERS replaces
@@ -310,6 +311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 hooked.emergency_release();
                 previous(info);
             }));
+            transmit.attach_hashes(recording.hashes.clone());
             let _ = recording.transmit.set(transmit);
             recording.sync_transmit_mode();
             // WstxContact: one contact engine per station, consuming the transmit owner.
@@ -724,6 +726,7 @@ async fn put_profile(
         }
         drop(authorization);
         state.recording.profile_changed(store.document.revision);
+        state.recording.set_my_call(Some(&store.document.callsign));
         Json(representation(&state, &store.document, &app.origin)).into_response()
     })
     .await

@@ -1,3 +1,4 @@
+use super::hashes::HashTable;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -34,8 +35,20 @@ impl Call {
             hash_value: Some(n),
         }
     }
-    fn display(&self) -> &str {
-        self.text.as_deref().unwrap_or("<...>")
+    /// A hashed call, filled in with `call` when the station's table knows it
+    /// (WstxOfflineDecode::HashResolution).
+    fn hashed_as(bits: u8, n: u32, call: Option<String>) -> Self {
+        Self {
+            text: call,
+            ..Self::hashed(bits, n)
+        }
+    }
+    fn display(&self) -> String {
+        match (&self.kind, &self.text) {
+            (CallKind::Hash, Some(t)) => format!("<{t}>"),
+            (_, Some(t)) => t.clone(),
+            (_, None) => "<...>".into(),
+        }
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -136,7 +149,7 @@ fn radix(mut n: u128, alphabets: &[&[u8]]) -> Option<String> {
         Some(String::from_utf8(out).ok()?)
     }
 }
-fn c28(n: u32) -> Option<Call> {
+fn c28(n: u32, table: Option<&HashTable>) -> Option<Call> {
     if n < 3 {
         return Some(Call::named(["DE", "QRZ", "CQ"][n as usize].into(), true));
     }
@@ -155,7 +168,8 @@ fn c28(n: u32) -> Option<Call> {
         return Some(Call::named(format!("CQ {s}"), true));
     }
     if n < 6257896 {
-        return Some(Call::hashed(22, n - 2063592));
+        let h = n - 2063592;
+        return Some(Call::hashed_as(22, h, table.and_then(|t| t.lookup22(h))));
     }
     let s = radix(
         (n - 6257896) as u128,
@@ -208,7 +222,15 @@ fn suffix(c: &mut Call, on: bool, s: &str) -> Option<()> {
     }
     Some(())
 }
-fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
+/// A 'to' slot hash equal to my hash of that width is my call (hashmy10/12/22).
+fn mine(call: &mut Call, table: Option<&HashTable>) {
+    if let (Some(t), Some(bits), Some(n)) = (table, call.hash_bits, call.hash_value)
+        && let Some(my) = t.mine(bits, n)
+    {
+        call.text = Some(my);
+    }
+}
+fn decode(b: &Bits<'_>, i3: u8, n3: u8, table: Option<&HashTable>) -> Option<(String, Fields)> {
     let g = |s, n| b.get(s, n) as u32;
     let ackword = |a: bool| if a { " R" } else { "" };
     match (i3, n3) {
@@ -228,15 +250,17 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
             Some((s.clone(), Fields::Telemetry { value: s }))
         }
         (0, 1) => {
-            let first = c28(g(0, 28))?;
-            let second = c28(g(28, 28))?;
-            let hashed = Call::hashed(10, g(56, 10));
+            let first = c28(g(0, 28), table)?;
+            let second = c28(g(28, 28), table)?;
+            let h10 = g(56, 10);
+            let hashed = Call::hashed_as(10, h10, table.and_then(|t| t.lookup10(h10)));
             let report = 2 * g(66, 5) as i32 - 30;
             Some((
                 format!(
-                    "{} RR73; {} <...> {report:+03}",
+                    "{} RR73; {} {} {report:+03}",
                     first.display(),
-                    second.display()
+                    second.display(),
+                    hashed.display()
                 ),
                 Fields::Dxpedition {
                     first,
@@ -247,8 +271,8 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
             ))
         }
         (0, 3 | 4) => {
-            let to = c28(g(0, 28))?;
-            let from = c28(g(28, 28))?;
+            let to = c28(g(0, 28), table)?;
+            let from = c28(g(28, 28), table)?;
             let ack = g(56, 1) != 0;
             let transmitters = g(57, 4) + 1 + if n3 == 4 { 16 } else { 0 };
             let cl = g(61, 3);
@@ -278,8 +302,11 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
             ))
         }
         (1 | 2, _) => {
-            let mut to = c28(g(0, 28))?;
-            let mut from = c28(g(29, 28))?;
+            let mut to = c28(g(0, 28), table)?;
+            if to.kind == CallKind::Hash {
+                mine(&mut to, table);
+            }
+            let mut from = c28(g(29, 28), table)?;
             suffix(&mut to, g(28, 1) != 0, if i3 == 1 { "/R" } else { "/P" })?;
             suffix(&mut from, g(57, 1) != 0, if i3 == 1 { "/R" } else { "/P" })?;
             let ack = g(58, 1) != 0;
@@ -323,8 +350,8 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
         }
         (3, _) => {
             let tu = g(0, 1) != 0;
-            let to = c28(g(1, 28))?;
-            let from = c28(g(29, 28))?;
+            let to = c28(g(1, 28), table)?;
+            let from = c28(g(29, 28), table)?;
             let ack = g(57, 1) != 0;
             let report = 529 + g(58, 3) * 10;
             let raw = g(61, 13);
@@ -356,7 +383,12 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
             ))
         }
         (4, _) => {
-            let hashed_call = Call::hashed(12, g(0, 12));
+            let h12 = g(0, 12);
+            let hash_second = g(70, 1) != 0;
+            let mut hashed_call = Call::hashed_as(12, h12, table.and_then(|t| t.lookup12(h12)));
+            if !hash_second && hashed_call.text.is_none() {
+                mine(&mut hashed_call, table);
+            }
             let s = radix(
                 b.get(12, 58),
                 &[&b" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/"[..]; 11],
@@ -366,7 +398,6 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
                 return None;
             }
             let full_call = Call::named(s.into(), false);
-            let hash_second = g(70, 1) != 0;
             let roger = ["", "RRR", "RR73", "73"][g(71, 2) as usize].to_string();
             let cq = g(73, 1) != 0;
             let text = if cq {
@@ -377,10 +408,10 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
                     if hash_second {
                         full_call.display()
                     } else {
-                        "<...>"
+                        hashed_call.display()
                     },
                     if hash_second {
-                        "<...>"
+                        hashed_call.display()
                     } else {
                         full_call.display()
                     },
@@ -403,14 +434,22 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
             ))
         }
         (5, _) => {
-            let to = Call::hashed(12, g(0, 12));
-            let from = Call::hashed(22, g(12, 22));
+            let h12 = g(0, 12);
+            let mut to = Call::hashed_as(12, h12, table.and_then(|t| t.lookup12(h12)));
+            mine(&mut to, table);
+            let h22 = g(12, 22);
+            let from = Call::hashed_as(22, h22, table.and_then(|t| t.lookup22(h22)));
             let ack = g(34, 1) != 0;
             let report = 52 + g(35, 3);
             let serial = g(38, 11);
             let grid = grid(g(49, 25), true)?;
             Some((
-                format!("<...> <...>{} {report}{serial:04} {grid}", ackword(ack)),
+                format!(
+                    "{} {}{} {report}{serial:04} {grid}",
+                    to.display(),
+                    from.display(),
+                    ackword(ack)
+                ),
                 Fields::Vhf {
                     to,
                     from,
@@ -424,7 +463,13 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8) -> Option<(String, Fields)> {
         _ => None,
     }
 }
+/// The pure unpack: no hash table, every hash displays `<...>`.
 pub fn unpack(bits: &[u8; 77]) -> Payload {
+    unpack_with(bits, None)
+}
+/// As `unpack`, filling hashed calls in from the station's table (unpack77 nrx=1,
+/// WstxOfflineDecode::HashResolution).
+pub fn unpack_with(bits: &[u8; 77], table: Option<&HashTable>) -> Payload {
     let b = Bits(bits);
     let i3 = b.get(74, 3) as u8;
     let n3 = if i3 == 0 {
@@ -450,7 +495,7 @@ pub fn unpack(bits: &[u8; 77]) -> Payload {
         p.status = PayloadStatus::Unsupported;
         return p;
     }
-    if let Some((text, fields)) = decode(&b, i3, n3.unwrap_or(0)) {
+    if let Some((text, fields)) = decode(&b, i3, n3.unwrap_or(0), table) {
         p.status = PayloadStatus::Decoded;
         p.text = Some(text);
         p.fields = Some(fields);

@@ -189,14 +189,9 @@ fn letters(s: &str) -> bool {
     s.bytes().all(|c| c.is_ascii_uppercase())
 }
 
-/// ihashcall: top `m` bits of the low 64 bits of 47055833459 * base-38 value.
+/// ihashcall (shared with the station's hash table, WstxOfflineDecode::HashResolution).
 fn hash(call: &str, m: u32) -> Option<u128> {
-    let mut n = 0u64;
-    for i in 0..11 {
-        let c = call.as_bytes().get(i).copied().unwrap_or(b' ');
-        n = n * 38 + BASE38.iter().position(|&a| a == c)? as u64;
-    }
-    Some(u128::from(n.wrapping_mul(47_055_833_459) >> (64 - m)))
+    crate::decoder::ihashcall(call, m).map(u128::from)
 }
 /// `<CALL>` hash token body (pack77_valid_hash_call_token).
 fn hash_body(token: &str) -> Option<&str> {
