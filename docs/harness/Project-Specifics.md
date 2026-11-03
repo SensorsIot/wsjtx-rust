@@ -172,9 +172,21 @@ promise: a mixed group would declare `timing_inputs` and guard those assertions 
 
 The gate runs up to three groups at a time (`gate.parallel: 3` in
 `.harness/config.yaml`), longest first, and prints each group's output whole in name
-order. A timing suite runs alone (the harness default `gate.timing_alone: true`): the
-link measurements have not yet been shown stable beside other groups, so the project
-keeps that default until a measured gate shows otherwise. The groups declare what they must not share:
+order. `protocol-thin`, `recording-thin` and `radio-selection-thin` run beside other groups
+(`gate.timing_alone: false`). Most of their bounds are wall-clock and byte bounds on the
+simulated 32 kbit/s link; besides those, `recording-thin` holds two local 250 ms TC-018
+cancellation bounds (one while four stations replay a recording) and
+`radio-selection-thin` the 4230-5000 ms native setup and 2 s Off-acknowledgement bounds.
+All were measured stable beside other groups on HB9BLA (harness#28, 2026-11-03): three
+gates of a compression-module edit ran the three concurrently with `wstx-rust`,
+`radio-selection` and `source-model-traces`, all green, with the suite times of their
+alone runs (177-178 s, 321-324 s, 262-268 s against 177, 319-320 and 260 s) and 373-382 s
+wall instead of about 14 min. That evidence does not cover the CPU-heavy decoder groups as
+neighbours, so `decoder-correctness` (12-thread busy-period decode) and
+`wstx-rust-decoder` hold `exclusive: [link-measurement]`, which the three share. The CPU
+measurements run alone (`exclusive: ["*"]`): `decoder-quality` and
+`live-station-latency` (a browser row-latency budget on the busy decoder). The groups
+declare what they must not share:
 
 - the browser groups run `target/debug/wstx-rust.exe`, which `cargo test` relinks with
   the dev-dependency features, and Windows refuses to replace a running executable. So

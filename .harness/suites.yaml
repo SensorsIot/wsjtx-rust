@@ -74,6 +74,8 @@
     cargo test --locked -p wstx-rust --lib
     --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
     --config profile.unit-opt.overflow-checks=true --profile unit-opt --no-run
+  # CPU-heavy (all cores): kept apart from the timing suites that run beside other groups.
+  exclusive: [link-measurement]
   needs: "Pinned Rust toolchain. Windows PC; no radio or live station. The library's decoder:: unit tests (the complement of wstx-rust's --skip decoder::), selected by the decoder, the transmit packer its tests encode with (transmit/pack.rs and its module root), the library root, the decoder fixtures they include and the Cargo pins."
 
 - suite: protocol
@@ -130,6 +132,7 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
+  shared: [link-measurement]
   needs: "Node 24, npm ci, Playwright Chromium. Windows PC; timing suite (#28): TC-021-007 silence detection and recovery bounds, TC-021-008 32 kbit/s shared TLS link, 60-second idle budget and stalled-reader liveness, plus the link simulator self-check. Runs only when the router with the status websocket and its thin pacing (main.rs), compression, the status client loaded over the link (app.js, index.html, style.css), its test file, the link simulator or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: profiles
@@ -241,6 +244,7 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
+  shared: [link-measurement]
   needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): actual TLS/browser and calibrated 32 kbit/s simulator, including full 60-second measurements, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds. Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients loaded cold over the link (app.js, index.html, recording.js, recording.css), its test file, the link simulator or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: recording-fixtures
@@ -377,6 +381,9 @@
   - fixtures/decoder/
   - server/src/lib.rs
   build: cargo test --release --locked --test decoder_signal --no-run
+  # CPU-heavy (12-thread busy-period decode): kept apart from the timing suites that run
+  # beside other groups (gate.timing_alone: false).
+  exclusive: [link-measurement]
   needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the #56 jt9 deep-decode parity corpus, same-frequency frames, physical noise, the #57 thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; missing inputs fail closed. Not a measurement: it runs beside other groups."
 
 - suite: decoder-quality
@@ -552,6 +559,7 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
+  exclusive: ["*"]
   build: cargo test --release --locked --bin wstx-rust --no-run
   run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture"
   paths:
@@ -758,6 +766,7 @@
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run
   exclusive: [radio-selection-evidence]
+  shared: [link-measurement]
   needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite (#28): actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on the existing32kbit TLS link. Both75s Thin/Off windows, all five known-answer contexts and observed pending polls are mandatory; no physical radio, device or production fault switch. Runs only when the router, compression, the selection/CAT/receive/source/audio/spectrum code that sets the real-time load, the status and receive/selection clients loaded over the link (app.js, index.html, recording.js, recording.css), its test files, the link simulator or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: mcp
