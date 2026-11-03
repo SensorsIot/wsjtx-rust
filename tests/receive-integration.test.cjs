@@ -52,7 +52,10 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
       const cells=await row.locator('td').evaluateAll(nodes=>nodes.map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}));
       assert.ok(cells[0].font>=16,`source time readable at ${width}px`);
       for(const cell of cells.slice(1))assert.ok(cell.font>=16,`decoded cell readable at ${width}px`);
-      assert.ok(cells.every(cell=>cell.top>=8&&cell.bottom>=8));
+      // #55 CL-055-05 (operator 2026-11-03): dense rows with a fine pointer keep 1 px vertical
+      // cell padding; a coarse (touch) pointer keeps 8 px so rows stay tappable.
+      const coarse=await page.evaluate(()=>matchMedia('(pointer:coarse)').matches),pad=coarse?8:1;
+      assert.ok(cells.every(cell=>cell.top>=pad&&cell.bottom>=pad),`cell padding at least ${pad} px at ${width}px (${coarse?'coarse':'fine'} pointer)`);
       const overflow=await row.locator('td').evaluateAll(nodes=>nodes.flatMap(cell=>{const box=cell.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(cell);return [...range.getClientRects()].filter(r=>r.left<box.left-1||r.right>box.right+1).map(r=>({text:cell.textContent,left:r.left,right:r.right,cellLeft:box.left,cellRight:box.right}));}));
       assert.deepEqual(overflow,[],`actual decoded cell text fits at ${width}px`);
       const pageOverflow=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,width:innerWidth,items:[...document.querySelectorAll('body *')].map(el=>({id:el.id,cls:el.className,tag:el.tagName,r:el.getBoundingClientRect(),text:el.textContent.slice(0,80)})).filter(x=>x.r.width>0&&(x.r.right>innerWidth+1||x.r.left< -1)).slice(0,20)}));
