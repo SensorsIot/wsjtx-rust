@@ -339,7 +339,7 @@ function paint() {
     }
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
     const labelStep=500*Math.max(1,Math.ceil(parseFloat(getComputedStyle(ruler).fontSize)*4/Math.max(1,ruler.clientWidth/6)));
-    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.textContent=String(f);ruler.append(tick);}
+    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${wstxWaterfallAxis.x(f,ruler)}px`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.append(Object.assign(document.createElement('b'),{textContent:String(f)}));ruler.append(tick);}
     const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
     legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
@@ -1101,3 +1101,13 @@ function stationNoticeShow(){
 function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
 addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
 window.wstxStationData=stationData;
+
+// WstxOperatingLayout::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
+// box carries the fixed 0..3000 Hz span (the time ruler beside it is outside). The frequency axis
+// ticks, the Rx/Tx lines with their brackets and the pointer frequency all use this one mapping.
+// x(hz,container): the CSS px offset of hz in the container's padding box; hz(clientX): the
+// integer Hz under a pointer.
+const wstxWaterfallAxis={low:0,high:3000,
+  x(hz,container){const c=waterfall.getBoundingClientRect(),o=container.getBoundingClientRect();return c.left-o.left-container.clientLeft+(hz-this.low)*c.width/(this.high-this.low);},
+  hz(clientX){const c=waterfall.getBoundingClientRect();return Math.max(this.low,Math.min(this.high,Math.round(this.low+(clientX-c.left)*(this.high-this.low)/Math.max(c.width,1))));}};
+window.wstxWaterfallAxis=wstxWaterfallAxis;

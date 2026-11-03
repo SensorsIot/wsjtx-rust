@@ -619,17 +619,25 @@ const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
 rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.dataset.key='rx';txMarker.dataset.key='tx';
 for(const m of [rxMarker,txMarker]){m.setAttribute('role','slider');m.setAttribute('aria-valuemin','0');m.setAttribute('aria-valuemax','3000');m.setAttribute('aria-label',m===rxMarker?'Rx marker, drag to set the Rx frequency':'Tx marker, drag to set the Tx frequency');}
+for(const m of [rxMarker,txMarker]){const goal=document.createElement('span');goal.className='ct-goal';m.append(goal);}
 wrap?.append(rxMarker,txMarker);
 // #50: 3 px green Rx and red Tx lines without text; the Rx/Tx strip below shows the values.
+// CL-050-07: the lines, their brackets and the pointer use the waterfall's one frequency
+// mapping (recording.js wstxWaterfallAxis, the canvas box), as the frequency axis does. Each
+// line is the lowest tone; its WSJT-X bracket spans the occupied width of the station's mode.
 let dragging=null;
+const occupiedHz=()=>(tick?tick.period===7500:typeof live!=='undefined'&&live?.job?.mode==='ft4')?4*12000/576:8*12000/1920;
+function place(m,hz){const axis=window.wstxWaterfallAxis,x=axis.x(hz,wrap);m.style.left=`${x}px`;m.firstChild.style.width=`${axis.x(hz+occupiedHz(),wrap)-x}px`;}
 function markers(){
   const s=snap?.settings;
-  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
+  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){place(m,hz);m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
 }
-const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
+const pointerHz=event=>window.wstxWaterfallAxis.hz(event.clientX);
+if(waterfall)new ResizeObserver(()=>markers()).observe(waterfall);
+addEventListener('station-message',event=>{if(event.detail?.message?.type==='station.tick')queueMicrotask(markers);});
 for(const m of [rxMarker,txMarker]){
   m.addEventListener('pointerdown',event=>{if(event.button!==0||!snap)return;event.preventDefault();event.stopPropagation();dragging=m;m.setPointerCapture(event.pointerId);m.classList.add('ct-dragging');});
-  m.addEventListener('pointermove',event=>{if(dragging!==m)return;m.style.left=`${pointerHz(event)/30}%`;m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
+  m.addEventListener('pointermove',event=>{if(dragging!==m)return;place(m,pointerHz(event));m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
   m.addEventListener('pointerup',event=>{if(dragging!==m)return;dragging=null;m.classList.remove('ct-dragging');const hz=pointerHz(event);if(String(hz)!==m.dataset.hz)send('set_frequency',{rx_hz:m.dataset.key==='rx'?hz:null,tx_hz:m.dataset.key==='tx'?hz:null},m.dataset.key==='rx'?'Rx frequency':'Tx frequency');else markers();});
   m.addEventListener('click',event=>event.stopPropagation());
 }
