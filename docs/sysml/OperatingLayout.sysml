@@ -411,8 +411,9 @@ attribute def ActivityOrdering {
              QSO, and an open Logbook page lists a new record when the contact snapshot
              reports it saved); opening it never hides Halt Tx.
              Alt+letter bindings apply only where the browser delivers the key; every
-             action is also a focusable labelled control. Ctrl+R, Ctrl+1..6, F11/F12 and
-             Now buttons are not adopted (browser reload/tab keys; #10 decision 7).
+             action is also a focusable labelled control. Ctrl+R, Ctrl+1..6 and F11/F12
+             are not adopted (browser reload/tab keys; #10 decision 7); since #37
+             (operator 2026-11-03) each fold-out Tx line has Next and Now (QsoPane).
              Every control is a server request; state shows only server-confirmed
              values, pending and unknown outcomes explicitly. */
     }
@@ -422,13 +423,15 @@ attribute def ActivityOrdering {
     // Operator design interview 2026-11-01 (issue #37 comments). Laptop first (minimum
     // 1366x768, mouse and keyboard); tablet adaptation is a later CR; a phone must not break.
     enum def TopBarItem {
-        enum band; enum mode; enum dialFrequency; enum utcPeriod; enum exceptionChips;
+        enum band; enum mode; enum dialFrequency; enum utcPeriod;
         enum logbook; enum settings; enum halt;
     }
-    enum def ExceptionChip {
+    // #37 (operator 2026-11-03): the entries of the ErrorField, which replaced the top-bar
+    // exception chips; receiveRestarted (an informational notice) is no entry any more.
+    enum def ErrorFieldEntry {
         enum linkStale; enum catLost; enum catSetupUnconfirmed; enum audioUnavailable;
         enum audioLevelLow; enum audioLevelHigh; enum clockOff; enum receiveStopped;
-        enum receiveRestarted; enum receiveOutcomeUnknown;
+        enum receiveOutcomeUnknown; enum bandModeFailed; enum transmitRefused;
         // #43 CL-043-03: transmit refused while the air clock is unknown; NTP/air disagree.
         enum clockUnknown; enum clockDisagree;
         enum stationUpdated; enum stationDataRejected;
@@ -465,23 +468,29 @@ attribute def ActivityOrdering {
              restart (ChangeKind restart: a change restarts receive through the operating
              selection, contract 4.7.5, and asks first while a QSO or transmission is
              active); dial frequency (display, CAT readback or nominal); UTC (#50: the
-             period progress is only the QSO pane's NEXT bar); exception chips (ExceptionChip, shown only while the
-             condition holds, nothing when all is well; each names its cause, opens its
-             detail in the Settings drawer, and receiveStopped offers the explicit receive
-             start; stationUpdated and stationDataRejected reload the page instead,
-             WstxStationProtocol::PageUpdate, #51); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
+             period progress is only the QSO pane's NEXT bar); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
              HALT stays reachable by pointer too: a confirmation popup (the only popup kind)
              carries its own HALT with the same action and enabled state as the top-bar one,
-             because a modal popup makes the rest of the page inert. A
-             link that is connected shows no chip; the accessible status stays. There is no
+             because a modal popup makes the rest of the page inert. One HALT is visible at
+             a time (#37, operator 2026-11-03): in the operating view it is the QSO pane's
+             HALT and the top-bar HALT is hidden while the QSO pane HALT is fully on screen;
+             whenever it is not (a page such as Logbook or "?" or the Settings drawer covers
+             the workspace, or the stacked QSO pane at most 75em wide or on a phone is scrolled
+             out of view), the top-bar HALT is shown, so a pointer HALT is always on screen; both are the same action and enabled
+             state, and Esc / Alt+H halt everywhere. The exception chips
+             that stood in the top bar are the ErrorField below the QSO pane since #37
+             (operator 2026-11-03). A link that is connected shows no entry; the accessible
+             status stays. There is no
              refresh control: the status refreshes itself (an explicit Refresh status is in
              Settings > Expert).
              Waterfall full width with the Rx/Tx strip (RxTxStrip) directly below it; its corner
              holds Sensitivity, Range (#54) and Waterfall speed (operative, immediate; the speed is a
              per-browser preference).
              Workspace: Band Activity (BandActivityView) on the left with the strategy
-             element above it, the QSO pane (QsoPane) on the right; at most 75em wide the
-             QSO pane goes below Band Activity, at most 48em everything stacks (a phone
+             element above it; on the right one vertical column (LowerPanel, #37): the QSO
+             pane (QsoPane), the ControlPanel below it and the ErrorField below that, the
+             three the same width; at most 75em wide that column goes below Band Activity,
+             still the same vertical stack, at most 48em everything stacks (a phone
              scrolls the workspace, never horizontally).
              Strategy element: `Strategy [name] [edit] [Highlight | Auto]` (#39,
              WstxStrategy): the name chooses the active strategy (None: none), edit opens
@@ -502,7 +511,9 @@ attribute def ActivityOrdering {
         attribute hasTxFromRx : Boolean = true;
         attribute hasRxFromTx : Boolean = true;
         attribute markersDraggable : Boolean = true;
-        doc /* `Rx [Hz] [-][+]  Tx [Hz] [-][+]  Hold Tx  [Tx=Rx] [Rx=Tx]` under the waterfall.
+        doc /* `Rx [Hz] [-][+]  Tx [Hz] [-][+]  [Tx=Rx] [Rx=Tx]` under the waterfall; Hold Tx
+             (hasHoldTx) is in the ControlPanel below the QSO pane since #37 (operator
+             2026-11-03); the frequencies themselves stay here.
              Exact Hz can be typed; the buttons, the mouse wheel and the arrow keys step
              1 Hz, with Shift 10 Hz. Each change is one WstxContact set_frequency or
              set_hold_tx request; the fields show only server-confirmed values (a typed
@@ -666,11 +677,13 @@ attribute def ActivityOrdering {
         attribute hasCrowdingBadge : Boolean = false;
         attribute loggedNoticeSeconds : Integer = 8;
         attribute hasEnableTx : Boolean = false;
-        attribute hasNowButtons : Boolean = false;
+        attribute hasNowButtons : Boolean = true;
+        attribute hasFinalMessageButtons : Boolean = false;
         assert constraint compact {
             hasPartnerHeader and hasLastPartnerMessage and maximumOtherLines == 8 and
             hasNextWithCountdown and hasDialogue and not hasLastSentRow and
-            not hasCrowdingBadge and not hasEnableTx and not hasNowButtons
+            not hasCrowdingBadge and not hasEnableTx and hasNowButtons and
+            not hasFinalMessageButtons
         }
         doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
              compact QSO pane (operator decisions 2026-11-02): it shows only the running QSO
@@ -680,8 +693,8 @@ attribute def ActivityOrdering {
              replacing the earlier option C where the card filled its column): the pane is
              content high at the top of its column, side by side as when it sits below Band
              Activity (at most 75em wide, where Band Activity takes the freed height); side
-             by side the height below the pane stays free, empty for now, for future panels
-             the operator will choose; the waterfall/workspace split is unchanged. The QSO
+             by side the height below the pane holds the ControlPanel and the ErrorField
+             (LowerPanel, #37 operator 2026-11-03); the default split leaves room for them (LowerPanel). The QSO
              area (the #60 table of the dialogue and the Others, items 7 and 3) shows its
              header row and at most qsoAreaRows (6) rows and scrolls inside, kept at its
              newest row; where the workspace is lower than the pane's content (1366x768) the
@@ -734,7 +747,12 @@ attribute def ActivityOrdering {
              it is red, as the waterfall Tx marker rgb(255,64,64), in a period of my Tx
              parity while Enable Tx is on and whenever the station reports transmitting,
              and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
-             5. Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
+             5. Direct buttons: CQ, Reply, Tune, HALT, Log QSO (SetEnableTx (#37). Operator
+             2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
+             and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
+             and the fold-out Next/Now overrides by hand as in WSJT-X; Reply stays only until
+             the #50 double-click fix is deployed (the operator's workaround), then it goes;
+             this HALT is the one HALT of the operating view (OperatingScreen);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result
              line goes when the QSO ends.
@@ -786,10 +804,83 @@ attribute def ActivityOrdering {
              the header reads "Pouncing on <call> (<band>) · waiting for CQ or 73" (in its
              contact "· in QSO") with a "Stop pounce" button that stops the run; hidden
              otherwise and never clipped on the 1366x768 screen.
-             A fold-out shows the DX Call/Grid entry with Generate, Tx1-Tx6 with their Next
-             choice and editable text, Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
-             Cancel contact in place. On a station without transmit capability the transmit
+             A fold-out "Messages Tx1-Tx6" shows Tx1-Tx6, each with its Next choice
+             (choose_next), a Now button (#37: choose_next, then SetEnableTx on when it is
+             off, so the message goes from the next own period; disabled without a message,
+             without transmit capability or on a completed contact) and its editable
+             text, Skip Tx1, RRR/RR73 and Cancel contact in place; the DX Call/Grid entry,
+             report, Tx period, Auto Seq, Call 1st and Hold Tx are the ControlPanel below the
+             pane (#37, operator 2026-11-03). On a station without transmit capability the transmit
              buttons are disabled with the reason. */
+    }
+    attribute def LowerPanel {
+        attribute verticalStack : Boolean = true;
+        attribute sameWidthAsQsoPane : Boolean = true;
+        attribute hasControlPanel : Boolean = true;
+        attribute hasErrorField : Boolean = true;
+        attribute hasMessagesPanel : Boolean = false;
+        attribute hasFrequencies : Boolean = false;
+        attribute hasLevelMeter : Boolean = false;
+        assert constraint lowerPanelRules {
+            verticalStack and sameWidthAsQsoPane and hasControlPanel and hasErrorField and
+            not hasMessagesPanel and not hasFrequencies and not hasLevelMeter
+        }
+        doc /* CL-037-01 (#37, operator 2026-11-03, "the space freed below the compact QSO pane,
+             after the WSJT-X lower panel", narrowed the same morning: "We do not need to see
+             Tx1 to Tx6. Just the control stuff and the error field messages."). The right
+             column of the workspace is one vertical stack at every width (side by side, at
+             most 75em and at most 48em alike): the QsoPane on top, the ControlPanel below it
+             and the ErrorField below that. Each block has exactly the left and right edges of
+             the QSO pane card (full-width blocks). Tx1-Tx6 stay in the QSO pane fold-out (no
+             Messages panel). Rx/Tx frequency and dial frequency stay under the waterfall
+             (RxTxStrip) and in the top bar, and the input level is no meter here: it appears
+             only as an ErrorField entry when wrong. The whole stack stays within the fixed
+             1366x768 screen (TC-007-009); the QSO area gives up height first. To leave room
+             for the stack, the default signal height (SplitGeometry, before the operator
+             drags the separator) is 330 px or, when less, the available height minus 400 px
+             (never below the signal minimum): unchanged at 1920x1080, about 250 px at
+             1366x768. */
+    }
+    attribute def ControlPanel {
+        doc /* CL-037-01. Always visible below the QSO pane, no fold-out: DX Call and DX Grid with
+             Generate (Enter), Report (dB, -50..+49), Auto Seq, Call 1st, Hold Tx and the Tx
+             period Even / 1st or Odd / 2nd. These are the existing controls, moved: each
+             sends the same single WstxContact request as before (enter_dx, set_report,
+             set_auto_seq, set_call_first, set_hold_tx, set_parity) and shows only the
+             server-confirmed value. They are laid out across the full width of the block in
+             rows (wrapping at narrow widths), not as one narrow column. */
+    }
+    attribute def ErrorField {
+        attribute hasHistory : Boolean = false;
+        attribute hasAcknowledge : Boolean = false;
+        attribute showsSince : Boolean = true;
+        assert constraint currentOnly { not hasHistory and not hasAcknowledge and showsSince }
+        doc /* CL-037-02 (#37, operator 2026-11-03, with the correction "NO history"). A small
+             block at the bottom of the right column, below the ControlPanel, that lists only
+             problems that still apply and need the operator to act (ErrorFieldEntry), one line
+             each, naming the cause and "since HH:MM" (UTC, when this page first saw the
+             condition hold). An entry appears while its condition holds and disappears by
+             itself when it clears; there is no acknowledge control and no list of past
+             problems. A click on an entry opens its detail in the Settings drawer;
+             receiveStopped offers the explicit receive start; stationUpdated and
+             stationDataRejected reload the page (WstxStationProtocol::PageUpdate, #51).
+             Entries and their conditions:
+             linkStale "Station connection lost · reconnecting", while the link of a retained
+             authorization is not connected (then no other entry is derived, its data being
+             stale); catLost / catSetupUnconfirmed, the CAT status not ready or not
+             commissioned; audioUnavailable, the audio input unavailable, and "No audio input"
+             without a configured input; audioLevelLow / audioLevelHigh, the input level too
+             low or overdriven while receive runs; clockOff / clockUnknown (Tx blocked) and
+             clockDisagree, as CL-043-03; receiveStopped and receiveOutcomeUnknown;
+             bandModeFailed, a failed or unknown band/mode change; transmitRefused "Tx refused
+             · <reason>", while the contact snapshot's transmit refusal names a reason the
+             operator must fix (transmit unsupported or unavailable, radio unavailable or lost,
+             clock not synchronized, frequency out of range, the message not packable, PTT or
+             audio failures), until the next accepted Enable Tx clears it; stationUpdated and
+             stationDataRejected. Informational or transient events (a refused request that is
+             retried, busy, a stale revision or period, a receive restart, a completed action)
+             are no entries. With no entry the block shows one muted line "No problems".
+             The block is small: at most about four entry lines high, scrolling inside. */
     }
     attribute def SettingsDrawer {
         attribute sections : Integer = 4;
@@ -866,7 +957,7 @@ attribute def ActivityOrdering {
         doc /* WSJT-X keys 1:1 where the function exists: Esc and Alt+H halt (Esc also
              cancels the contact, WstxContact::HaltTx); F1/F3/F5 and "?" open the overview;
              F2 Settings; F4 clears the DX call (contact cancel); Alt+1..Alt+6 choose the
-             next message Tx1-Tx6 (no Now buttons); Alt+M receive start/stop; Alt+T Tune;
+             next message Tx1-Tx6 (Now is a fold-out button only); Alt+M receive start/stop; Alt+T Tune;
              Alt+Q Log QSO; F11/F12 Rx -/+1 Hz; Shift+F11/F12 Tx -/+60 Hz FT8 (90 Hz FT4);
              Ctrl+F11/F12 Rx and Tx -/+1 Hz. Letter and "?" keys are inactive while a text
              field has focus; Esc and Alt+H always act. Alt+N (Enable Tx) has no function. */

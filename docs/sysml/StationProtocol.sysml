@@ -127,11 +127,11 @@ package WstxStationProtocol {
              the reload while a contact or transmission is in progress (contact not idle,
              completed or cancelled; Tx armed; Tune on), a confirmation or editor popup is
              open or the Settings form has unsaved edits; it then shows the
-             ExceptionChip stationUpdated "Station updated · reload", whose click
+             ErrorFieldEntry stationUpdated (WstxOperatingLayout::ErrorField) "Station updated · reload", whose click
              reloads. A held page keeps working with its old client.
              A station snapshot the page rejects by its exact validation (the receive
              snapshot, a result page, the operating selection snapshot, the contact
-             snapshot, a waterfall frame of an unknown shape) shows the ExceptionChip stationDataRejected "Station data not
+             snapshot, a waterfall frame of an unknown shape) shows the ErrorFieldEntry stationDataRejected "Station data not
              understood (<which>) · reload" with the same reload action; a later valid
              snapshot of that kind clears it. Neither chip opens the Settings drawer.
              Chosen defaults (#51 implementation, the issue left them open): the build is
