@@ -1068,7 +1068,8 @@ document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localSt
 // The log client (WstxContact OfferLogReview) and then the contact client load after this
 // browser's first recording and receive snapshots (or 20 s after the station is ready), so
 // their bytes never compete with the cold page, authorization or the first state reads on a
-// 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
+// 32 kbit/s link (TC-009-005 and TC-010-002 bounds). Their downloads still hold the station's
+// messages behind them on that link, so app.js deferredDownload sets the silence bound (#8).
 let clientLoader=null;
 function clientsLoad(){
   if(clientLoader||document.querySelector('script[src="/logbook.js"]'))return;
@@ -1076,7 +1077,7 @@ function clientsLoad(){
   clientLoader=setInterval(()=>{
     if(!(snapshot&&live!==undefined)&&performance.now()-since<20000)return;
     clearInterval(clientLoader);
-    const load=src=>new Promise(resolve=>{const script=document.createElement('script');script.src=src;script.onload=script.onerror=resolve;document.head.append(script);});
+    const load=src=>deferredDownload(new Promise(resolve=>{const script=document.createElement('script');script.src=src;script.onload=script.onerror=resolve;document.head.append(script);}));
     const append=()=>load('/logbook.js').then(()=>load('/contact.js'));
     if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
   },250);
