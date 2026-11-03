@@ -233,6 +233,7 @@ impl WireRecord {
                 self.arrl_sect,
                 self.state,
             ],
+            source: None,
             unknown: Vec::new(),
         }
     }

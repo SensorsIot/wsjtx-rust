@@ -534,6 +534,7 @@ impl Station {
                 None,
                 None,
             ],
+            source: None,
             unknown: Vec::new(),
         };
         for (name, value) in contest {

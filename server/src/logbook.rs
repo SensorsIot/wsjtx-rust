@@ -1,4 +1,4 @@
-//! CR #10 persistent contact log (WstxContact::LogRecord, SaveContact, ImportAdi,
+//! CR #10 persistent contact log (WstxContact::LogRecord, SaveContact, UpdateLogbook,
 //! ExportAdi, ContactHistory, WorkedBeforeQuery, AdiLimits). The selected profile's
 //! `contacts.adi` is ADIF 3.1.8 ADI, always written as a complete new file in the
 //! profile directory, flushed and atomically replaced. The in-memory view changes only
@@ -28,6 +28,12 @@ pub const HISTORY_PAGE_BYTES_MAX: usize = 16_384;
 pub const WORKED_CALLS_MAX: usize = 64;
 pub const FILE_NAME: &str = "contacts.adi";
 const ID_FIELD: &str = "app_wstxrust_contact_id";
+/// #10 UpdateLogbook source marker of a record added from another logger's export.
+const SOURCE_FIELD: &str = "app_wstxrust_source";
+/// #10 consolidation window: a record this close to a stored one is already present.
+const CONSOLIDATION_SECONDS: i64 = 120;
+/// #10 at most this many skip/drop reason groups are listed in the update summary.
+const REASON_GROUPS: usize = 16;
 const RECEIPTS: usize = 16;
 const IMPORT_IDLE: Duration = Duration::from_secs(60);
 
@@ -117,6 +123,8 @@ pub struct Unknown {
 pub struct Record {
     pub contact_id: String,
     pub values: [Option<String>; 24],
+    /// APP_WSTXRUST_SOURCE: the program a record added by UpdateLogbook came from.
+    pub source: Option<String>,
     pub unknown: Vec<Unknown>,
 }
 impl Record {
@@ -148,15 +156,39 @@ impl Record {
             .map(|b| b.to_ascii_lowercase())
             .or_else(|| self.values[FREQ].as_deref().and_then(band_of_mhz))
     }
-    fn natural_key(&self) -> (String, String, String, String, String, String) {
-        let value = |i: usize| self.values[i].clone().unwrap_or_default();
+    /// Seconds of QSO_DATE + TIME_ON on a day count (UTC), for the consolidation window.
+    fn start_seconds(&self) -> Option<i64> {
+        let date = self.values[QSO_DATE].as_deref()?;
+        let time = self.values[TIME_ON].as_deref()?;
+        let number = |s: &str| s.parse::<i64>().ok();
+        let (y, m, d) = (
+            number(&date[..4])?,
+            number(&date[4..6])?,
+            number(&date[6..8])?,
+        );
+        // Days from civil (Howard Hinnant), proleptic Gregorian.
+        let y = if m <= 2 { y - 1 } else { y };
+        let era = y.div_euclid(400);
+        let yoe = y - era * 400;
+        let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        let days = era * 146_097 + doe - 719_468;
+        let seconds = if time.len() == 6 {
+            number(&time[4..6])?
+        } else {
+            0
+        };
+        Some(days * 86_400 + number(&time[..2])? * 3600 + number(&time[2..4])? * 60 + seconds)
+    }
+    /// #10 consolidation key: call, effective band and effective mode.
+    fn consolidation_key(&self) -> (String, String, String) {
         (
-            value(CALL).to_ascii_uppercase(),
-            value(QSO_DATE),
-            value(TIME_ON).chars().take(4).collect(),
+            self.values[CALL]
+                .as_deref()
+                .unwrap_or("")
+                .to_ascii_uppercase(),
             self.effective_band().unwrap_or_default(),
-            value(MODE).to_ascii_uppercase(),
-            value(SUBMODE).to_ascii_uppercase(),
+            self.effective_mode(),
         )
     }
     pub fn history_json(&self, index: usize) -> Value {
@@ -186,7 +218,8 @@ impl Record {
             line.push('<');
             line.push_str(name);
             line.push(':');
-            line.push_str(&value.len().to_string());
+            // ADIF LEN counts characters, not UTF-8 bytes.
+            line.push_str(&value.chars().count().to_string());
             if let Some(kind) = kind {
                 line.push(':');
                 line.push_str(kind);
@@ -200,6 +233,9 @@ impl Record {
             }
         }
         field(ID_FIELD, None, &self.contact_id);
+        if let Some(source) = &self.source {
+            field(SOURCE_FIELD, None, source);
+        }
         for unknown in &self.unknown {
             field(&unknown.name, unknown.kind.as_deref(), &unknown.value);
         }
@@ -356,60 +392,83 @@ impl Fault {
 pub struct Limits {
     pub records: usize,
 }
-type RawField = (String, Option<String>, String);
-fn text_byte(b: u8) -> bool {
-    (0x20..=0x7e).contains(&b) || matches!(b, b'\t' | b'\r' | b'\n')
+/// One ADI field: name, optional type indicator and value, or the fault of that value
+/// alone (field_too_long, unsupported_character), which the caller judges per record.
+type RawField = (String, Option<String>, Result<String, &'static str>);
+#[derive(Debug)]
+pub struct Parsed {
+    /// Header PROGRAMID when it is a 1..32 character token (UpdateLogbook source marker).
+    pub program: Option<String>,
+    pub records: Vec<Vec<RawField>>,
 }
-/// ADIF 3.1.8 ADI only. Header present when the first character is not '<', ended by
-/// <EOH>. Tags <NAME:LEN[:TYPE]> are case-insensitive and LEN is exact; text between
-/// fields of a record must be white space so that an inexact LEN is detected
-/// (lengthMismatch) instead of silently truncating a value.
-pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Vec<Vec<RawField>>, Fault> {
+fn control(c: char) -> bool {
+    c.is_control() && !matches!(c, '\t' | '\r' | '\n')
+}
+/// Byte index `n` characters after `start`, if the text holds that many.
+fn advance(text: &str, start: usize, n: usize) -> Option<usize> {
+    let rest = &text[start..];
+    if rest.as_bytes().get(..n)?.is_ascii() {
+        return Some(start + n);
+    }
+    match rest.char_indices().nth(n) {
+        Some((i, _)) => Some(start + i),
+        None => (rest.chars().count() == n).then_some(text.len()),
+    }
+}
+/// ADIF ADI (UTF-8, a leading byte order mark ignored). Header present when the first
+/// character is not '<', ended by <EOH>. Tags <NAME:LEN[:TYPE]> are case-insensitive and
+/// LEN is exact in characters; text between fields of a record must be white space so
+/// that an inexact LEN is detected (lengthMismatch) instead of silently truncating a value.
+/// Structural faults refuse the file; a value's own fault stays with its field.
+pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Parsed, Fault> {
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| Fault::new("unsupported_character", None, None))?;
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let b = text.as_bytes();
     let mut records = Vec::new();
+    let mut program = None;
     let mut current: Vec<RawField> = Vec::new();
-    let mut in_header = bytes.first().is_some_and(|b| *b != b'<');
+    let mut in_header = b.first().is_some_and(|c| *c != b'<');
     let mut position = 0;
     let at = |records: &Vec<Vec<RawField>>| Some(records.len());
     loop {
-        let next = bytes[position..].iter().position(|b| *b == b'<');
-        let end = next.map_or(bytes.len(), |n| position + n);
-        let text = &bytes[position..end];
-        if text.iter().any(|b| !text_byte(*b)) {
+        let next = b[position..].iter().position(|c| *c == b'<');
+        let end = next.map_or(b.len(), |n| position + n);
+        let between = &text[position..end];
+        if between.chars().any(control) {
             return Err(Fault::new("unsupported_character", at(&records), None));
         }
-        if !in_header && !current.is_empty() && !text.iter().all(u8::is_ascii_whitespace) {
-            let field = current.last().map(|f| f.0.to_ascii_lowercase());
-            return Err(Fault::new(
-                "length_mismatch",
-                at(&records),
-                field.as_deref(),
-            ));
+        // Text after a value means its LEN is not exact (Log4OM writes CNTY like
+        // "<CNTY:10>NY,ORLEANS // Orleans"): that field is faulted, never truncated.
+        if !in_header
+            && !between.bytes().all(|c| c.is_ascii_whitespace())
+            && let Some(last) = current.last_mut()
+        {
+            last.2 = Err("length_mismatch");
         }
         let Some(_) = next else {
             if in_header || !current.is_empty() {
                 return Err(Fault::new("malformed", at(&records), None));
             }
-            return Ok(records);
+            return Ok(Parsed { program, records });
         };
         let open = end;
-        let Some(close) = bytes[open + 1..].iter().position(|b| *b == b'>') else {
+        let Some(close) = b[open + 1..].iter().position(|c| *c == b'>') else {
             return Err(Fault::new("malformed", at(&records), None));
         };
         let close = open + 1 + close;
-        let tag = &bytes[open + 1..close];
-        if tag.iter().any(|b| !(0x20..=0x7e).contains(b)) {
+        let tag = &text[open + 1..close];
+        if tag.bytes().any(|c| !(0x20..=0x7e).contains(&c)) {
             return Err(Fault::new(
-                if tag.iter().all(|b| text_byte(*b)) {
-                    "malformed"
-                } else {
+                if tag.chars().any(control) {
                     "unsupported_character"
+                } else {
+                    "malformed"
                 },
                 at(&records),
                 None,
             ));
         }
-        let tag =
-            std::str::from_utf8(tag).map_err(|_| Fault::new("malformed", at(&records), None))?;
         let mut parts = tag.split(':');
         let name = parts.next().unwrap_or("");
         if name.len() > FIELD_NAME_CHARACTERS_MAX {
@@ -418,7 +477,7 @@ pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Vec<Vec<RawField>>, Fault>
         if name.is_empty()
             || name
                 .bytes()
-                .any(|b| matches!(b, b',' | b':' | b'<' | b'>' | b'{' | b'}' | b' '))
+                .any(|c| matches!(c, b',' | b':' | b'<' | b'>' | b'{' | b'}' | b' '))
         {
             return Err(Fault::new("malformed", at(&records), None));
         }
@@ -441,47 +500,44 @@ pub fn parse(bytes: &[u8], limits: &Limits) -> Result<Vec<Vec<RawField>>, Fault>
         if parts.next().is_some()
             || length.is_empty()
             || length.len() > 10
-            || !length.bytes().all(|b| b.is_ascii_digit())
-            || kind.is_some_and(|k| k.len() != 1 || !k.bytes().all(|b| b.is_ascii_alphabetic()))
+            || !length.bytes().all(|c| c.is_ascii_digit())
+            || kind.is_some_and(|k| k.len() != 1 || !k.bytes().all(|c| c.is_ascii_alphabetic()))
         {
             return Err(Fault::new("malformed", at(&records), Some(&lname)));
         }
         let length: usize = length
             .parse()
             .map_err(|_| Fault::new("malformed", at(&records), Some(&lname)))?;
-        if length > FIELD_CHARACTERS_MAX {
-            return Err(Fault::new("field_too_long", at(&records), Some(&lname)));
-        }
         let start = close + 1;
-        let Some(stop) = start.checked_add(length).filter(|s| *s <= bytes.len()) else {
+        let Some(stop) = advance(text, start, length) else {
             return Err(Fault::new("length_mismatch", at(&records), Some(&lname)));
         };
-        let value = &bytes[start..stop];
-        if !value.iter().all(|b| text_byte(*b)) {
-            return Err(Fault::new(
-                "unsupported_character",
-                at(&records),
-                Some(&lname),
-            ));
-        }
+        let value = &text[start..stop];
+        let value = if length > FIELD_CHARACTERS_MAX {
+            Err("field_too_long")
+        } else if value.chars().any(control) {
+            Err("unsupported_character")
+        } else {
+            Ok(value.to_owned())
+        };
         if !in_header {
-            current.push((
-                name.to_owned(),
-                kind.map(str::to_owned),
-                String::from_utf8_lossy(value).into_owned(),
-            ));
+            current.push((name.to_owned(), kind.map(str::to_owned), value));
+        } else if lname == "programid" {
+            program = value.ok().filter(|v| token(v));
         }
         position = stop;
     }
 }
-/// Interpret one parsed record; the contact id stays empty when the file has none.
+/// The stored-log reading of one parsed record: any fault refuses it. The contact id stays
+/// empty when the record has none.
 fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
     let mut record = Record::default();
     let mut seen_id = false;
     for (name, kind, value) in raw {
         let lname = name.to_ascii_lowercase();
+        let value = value.map_err(|code| Fault::new(code, Some(index), Some(&lname)))?;
         let supported = FIELDS.iter().position(|f| *f == lname);
-        if supported.is_none() && lname != ID_FIELD {
+        if supported.is_none() && lname != ID_FIELD && lname != SOURCE_FIELD {
             record.unknown.push(Unknown { name, kind, value });
             continue;
         }
@@ -502,6 +558,14 @@ fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
                 }
                 record.values[i] = Some(value);
             }
+        } else if lname == SOURCE_FIELD {
+            if record.source.is_some() {
+                return Err(Fault::new("malformed", Some(index), Some(&lname)));
+            }
+            if !token(&value) {
+                return Err(Fault::new("invalid_value", Some(index), Some(&lname)));
+            }
+            record.source = Some(value);
         } else {
             if seen_id {
                 return Err(Fault::new("malformed", Some(index), Some(&lname)));
@@ -529,20 +593,69 @@ fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
 }
 pub fn parse_records(bytes: &[u8], limits: &Limits) -> Result<Vec<Record>, Fault> {
     parse(bytes, limits)?
+        .records
         .into_iter()
         .enumerate()
         .map(|(i, raw)| interpret(i, raw))
         .collect()
 }
+/// A fault that keeps a record out of an update, or a field out of its record.
+type FieldFault = (&'static str, String);
+/// #10 UpdateLogbook reading of one record: only the kept fields (FIELDS, contact id,
+/// source); every other field is not stored. A missing or invalid required field, or a
+/// kept field given twice, skips the record; an invalid optional field is dropped.
+fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), FieldFault> {
+    let mut record = Record::default();
+    let mut dropped = Vec::new();
+    let mut seen = Vec::new();
+    for (name, _, value) in raw {
+        let lname = name.to_ascii_lowercase();
+        let supported = FIELDS.iter().position(|f| *f == lname);
+        if supported.is_none() && lname != ID_FIELD && lname != SOURCE_FIELD {
+            continue;
+        }
+        if seen.contains(&lname) {
+            return Err(("malformed", lname));
+        }
+        seen.push(lname.clone());
+        let required = supported.is_some_and(|i| [CALL, QSO_DATE, TIME_ON, MODE].contains(&i));
+        let checked = value.and_then(|v| {
+            if !printable(&v) {
+                Err("unsupported_character")
+            } else if v.is_empty() {
+                Ok(None)
+            } else if match supported {
+                Some(i) => valid_import_value(i, &v),
+                None if lname == SOURCE_FIELD => token(&v),
+                None => crate::profile::valid_uuid(&v.to_ascii_lowercase()),
+            } {
+                Ok(Some(v))
+            } else {
+                Err("invalid_value")
+            }
+        });
+        match (checked, supported) {
+            (Ok(None), _) => {}
+            (Ok(Some(v)), Some(i)) => record.values[i] = Some(v),
+            (Ok(Some(v)), None) if lname == SOURCE_FIELD => record.source = Some(v),
+            (Ok(Some(v)), None) => record.contact_id = v.to_ascii_lowercase(),
+            (Err(code), _) if required => return Err((code, lname)),
+            (Err(code), _) => dropped.push((code, lname)),
+        }
+    }
+    for required in [CALL, QSO_DATE, TIME_ON, MODE] {
+        if record.values[required].is_none() {
+            return Err(("missing_required_field", FIELDS[required].to_owned()));
+        }
+    }
+    Ok((record, dropped))
+}
 
-/// First differing supported field. With `natural` (an import record without contact
-/// id matched by natural key), a value absent on either side carries no information.
-fn first_difference(a: &Record, b: &Record, natural: bool) -> Option<&'static str> {
+/// First differing supported field of two records with the same contact id.
+fn first_difference(a: &Record, b: &Record) -> Option<&'static str> {
     for (i, name) in FIELDS.iter().enumerate() {
-        let (x, y) = (a.values[i].as_deref(), b.values[i].as_deref());
-        let (x, y) = match (x, y) {
+        let (x, y) = match (a.values[i].as_deref(), b.values[i].as_deref()) {
             (None, None) => continue,
-            (Some(_), None) | (None, Some(_)) if natural => continue,
             (Some(x), Some(y)) => (x, y),
             _ => return Some(name),
         };
@@ -591,6 +704,45 @@ pub enum ImportState {
     Completed,
     Failed,
 }
+/// One group of UpdateLogbook skip or drop reasons: code, field, count, first record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Group {
+    pub code: &'static str,
+    pub field: Option<String>,
+    pub count: usize,
+    pub record: usize,
+}
+/// #10 UpdateLogbook summary: added, already present, skipped (with reasons) and the
+/// optional fields dropped from added or present records.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Summary {
+    pub added: usize,
+    pub present: usize,
+    pub skipped: usize,
+    pub reasons: Vec<Group>,
+    pub dropped: Vec<Group>,
+}
+fn group(groups: &mut Vec<Group>, code: &'static str, field: Option<String>, record: usize) {
+    if let Some(g) = groups
+        .iter_mut()
+        .find(|g| g.code == code && g.field == field)
+    {
+        g.count += 1;
+    } else if groups.len() < REASON_GROUPS {
+        groups.push(Group {
+            code,
+            field,
+            count: 1,
+            record,
+        });
+    }
+}
+fn groups_json(groups: &[Group]) -> Value {
+    groups
+        .iter()
+        .map(|g| json!({"code":g.code,"field":g.field,"count":g.count,"record":g.record}))
+        .collect()
+}
 struct Import {
     id: String,
     total: u64,
@@ -598,16 +750,18 @@ struct Import {
     bytes: Vec<u8>,
     received: u64,
     state: ImportState,
-    counts: (usize, usize, usize),
+    summary: Summary,
     error: Option<Fault>,
     touched: Instant,
 }
 impl Import {
     fn view(&self) -> Value {
+        let s = &self.summary;
         json!({"v":1,"id":self.id,"state":match self.state {
             ImportState::Receiving=>"receiving",ImportState::Completed=>"completed",ImportState::Failed=>"failed"},
             "received_bytes":self.received,"total_bytes":self.total,
-            "new":self.counts.0,"duplicate":self.counts.1,"conflict":self.counts.2,
+            "added":s.added,"present":s.present,"skipped":s.skipped,
+            "reasons":groups_json(&s.reasons),"dropped":groups_json(&s.dropped),
             "error":self.error.as_ref().map(Fault::json)})
     }
 }
@@ -630,6 +784,46 @@ struct Inner {
     fault: Option<&'static str>,
 }
 /// (records revision, country table, worked set of that log and table).
+/// #10 worked-before index of the log: (effective band, effective mode) per call and
+/// per 4-character grid square, so a query looks up the asked calls, not every record.
+#[derive(Default)]
+struct WorkedIndex {
+    calls: HashMap<String, Vec<(String, String)>>,
+    grids: HashMap<String, Vec<(String, String)>>,
+}
+impl WorkedIndex {
+    fn of(records: &[Record]) -> Self {
+        let mut index = Self::default();
+        for record in records {
+            let (call, band, mode) = record.consolidation_key();
+            if let Some(grid) = record.values[GRID].as_deref().and_then(square) {
+                index
+                    .grids
+                    .entry(grid)
+                    .or_default()
+                    .push((band.clone(), mode.clone()));
+            }
+            index.calls.entry(call).or_default().push((band, mode));
+        }
+        index
+    }
+    fn status(entries: Option<&Vec<(String, String)>>, band: &str, mode: &str) -> &'static str {
+        match entries {
+            None => "not_worked",
+            // A record without band is never "this band" (as before the index).
+            Some(e)
+                if e.iter()
+                    .any(|(b, m)| !b.is_empty() && b == band && m == mode) =>
+            {
+                "worked_this_band_and_mode"
+            }
+            Some(_) => "worked_other_band_or_mode",
+        }
+    }
+}
+fn square(grid: &str) -> Option<String> {
+    grid.get(..4).map(str::to_ascii_uppercase)
+}
 type WorkedCache = (
     u64,
     std::sync::Arc<crate::dxcc::Cty>,
@@ -644,6 +838,8 @@ pub struct Logbook {
     /// when either changes: /receive/results reads it on every page.
     /// The table is held (not its address), so a later table can never match it.
     worked_set: Mutex<Option<WorkedCache>>,
+    /// #10 the worked-before index for the records revision it was built from.
+    worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
 }
 struct DxccState {
     table: crate::dxcc::Table,
@@ -778,6 +974,7 @@ impl Logbook {
             }),
             dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
             worked_set: Mutex::new(None),
+            worked_index: Mutex::new(None),
         }
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, StoreError> {
@@ -861,7 +1058,7 @@ impl Logbook {
         if let Some(&index) = inner.ids.get(&record.contact_id) {
             let stored = &inner.records[index];
             return Ok(
-                if first_difference(stored, &record, false).is_none() && stored.unknown.is_empty() {
+                if first_difference(stored, &record).is_none() && stored.unknown.is_empty() {
                     SaveOutcome::AlreadySaved
                 } else {
                     SaveOutcome::Conflict
@@ -880,12 +1077,13 @@ impl Logbook {
             self.append(&mut inner, vec![record], gate)?;
             return Ok(LogOutcome::Saved);
         };
-        if first_difference(&inner.records[index], &record, false).is_none() {
+        if first_difference(&inner.records[index], &record).is_none() {
             return Ok(LogOutcome::AlreadySaved);
         }
         let mut next = inner.records.clone();
         next[index] = Record {
             unknown: next[index].unknown.clone(),
+            source: next[index].source.clone(),
             ..record
         };
         self.publish(&inner, &next, gate)?;
@@ -945,44 +1143,31 @@ impl Logbook {
         let inner = self.lock()?;
         Ok(document(&utc_timestamp(), &inner.records))
     }
-    /// WorkedBeforeQuery over the stored log (including contacts saved this session).
+    /// The worked-before index of the current log, rebuilt only when the log changed.
+    fn index(&self, inner: &Inner) -> std::sync::Arc<WorkedIndex> {
+        let mut cache = self.worked_index.lock().unwrap_or_else(|p| p.into_inner());
+        match &*cache {
+            Some((revision, index)) if *revision == inner.revision => index.clone(),
+            _ => {
+                let index = std::sync::Arc::new(WorkedIndex::of(&inner.records));
+                *cache = Some((inner.revision, index.clone()));
+                index
+            }
+        }
+    }
+    /// WorkedBeforeQuery over the stored log (including contacts saved this session and
+    /// records added by UpdateLogbook).
     pub fn worked(
         &self,
         calls: &[String],
         band: &str,
         mode: &str,
     ) -> Result<Vec<&'static str>, StoreError> {
-        let inner = self.lock()?;
-        let wanted: HashMap<String, usize> = calls
-            .iter()
-            .enumerate()
-            .map(|(i, c)| (c.to_ascii_uppercase(), i))
-            .collect();
-        let mut status = vec![0u8; calls.len()];
+        let index = self.index(&*self.lock()?);
         let (band, mode) = (band.to_ascii_lowercase(), mode.to_ascii_uppercase());
-        for record in &inner.records {
-            let call = record.values[CALL]
-                .as_deref()
-                .unwrap_or("")
-                .to_ascii_uppercase();
-            if !wanted.contains_key(&call) {
-                continue;
-            }
-            let here = record.effective_band().as_deref() == Some(band.as_str())
-                && record.effective_mode() == mode;
-            for (i, c) in calls.iter().enumerate() {
-                if c.eq_ignore_ascii_case(&call) {
-                    status[i] = status[i].max(if here { 2 } else { 1 });
-                }
-            }
-        }
-        Ok(status
-            .into_iter()
-            .map(|s| match s {
-                2 => "worked_this_band_and_mode",
-                1 => "worked_other_band_or_mode",
-                _ => "not_worked",
-            })
+        Ok(calls
+            .iter()
+            .map(|c| WorkedIndex::status(index.calls.get(&c.to_ascii_uppercase()), &band, &mode))
             .collect())
     }
 
@@ -1074,28 +1259,13 @@ impl Logbook {
         band: &str,
         mode: &str,
     ) -> Result<Vec<&'static str>, StoreError> {
-        let inner = self.lock()?;
-        let square = |g: &str| g.get(..4).map(str::to_ascii_uppercase);
-        let mut status = vec![0u8; grids.len()];
+        let index = self.index(&*self.lock()?);
         let (band, mode) = (band.to_ascii_lowercase(), mode.to_ascii_uppercase());
-        for record in &inner.records {
-            let Some(grid) = record.values[GRID].as_deref().and_then(square) else {
-                continue;
-            };
-            let here = record.effective_band().as_deref() == Some(band.as_str())
-                && record.effective_mode() == mode;
-            for (i, g) in grids.iter().enumerate() {
-                if square(g).as_deref() == Some(grid.as_str()) {
-                    status[i] = status[i].max(if here { 2 } else { 1 });
-                }
-            }
-        }
-        Ok(status
-            .into_iter()
-            .map(|s| match s {
-                2 => "worked_this_band_and_mode",
-                1 => "worked_other_band_or_mode",
-                _ => "not_worked",
+        Ok(grids
+            .iter()
+            .map(|g| match square(g) {
+                Some(g) => WorkedIndex::status(index.grids.get(&g), &band, &mode),
+                None => "not_worked",
             })
             .collect())
     }
@@ -1132,7 +1302,7 @@ impl Logbook {
             bytes: Vec::new(),
             received: 0,
             state: ImportState::Receiving,
-            counts: (0, 0, 0),
+            summary: Summary::default(),
             error: None,
             touched: now,
         };
@@ -1183,31 +1353,35 @@ impl Logbook {
         }
         let mut import = inner.import.take().ok_or("not_found")?;
         let result = if sha256_hex(&import.bytes) != import.sha256 {
-            Err((Fault::new("integrity_mismatch", None, None), (0, 0, 0)))
+            Err(Fault::new("integrity_mismatch", None, None))
         } else {
-            self.classify(&inner, &import.bytes)
+            self.consolidate(&inner, &import.bytes)
         };
         let outcome = match result {
-            Err((fault, counts)) => {
+            Err(fault) => {
                 import.state = ImportState::Failed;
-                import.counts = counts;
                 import.error = Some(fault);
                 Err("import_failed")
             }
-            Ok((new, counts)) => {
-                import.counts = counts;
-                match self.append(&mut inner, new, gate) {
+            Ok((new, summary)) => {
+                import.summary = summary;
+                let appended = if new.is_empty() {
+                    Ok(())
+                } else {
+                    self.append(&mut inner, new, gate)
+                };
+                match appended {
                     Ok(()) => {
                         import.state = ImportState::Completed;
                         Ok(())
                     }
-                    Err(StoreError::Unauthorized(_)) => {
+                    Err(e) => {
                         import.state = ImportState::Failed;
-                        Err("unauthorized")
-                    }
-                    Err(StoreError::Unavailable) => {
-                        import.state = ImportState::Failed;
-                        Err("storage_unavailable")
+                        import.summary.added = 0;
+                        Err(match e {
+                            StoreError::Unauthorized(_) => "unauthorized",
+                            StoreError::Unavailable => "storage_unavailable",
+                        })
                     }
                 }
             }
@@ -1217,68 +1391,64 @@ impl Logbook {
         inner.import = Some(import);
         outcome.map(|()| view)
     }
-    /// Validation before publication: parse, then classify every record as new,
-    /// duplicate or conflict against stored records and earlier records of the file.
-    #[allow(clippy::type_complexity)]
-    fn classify(
-        &self,
-        inner: &Inner,
-        bytes: &[u8],
-    ) -> Result<(Vec<Record>, (usize, usize, usize)), (Fault, (usize, usize, usize))> {
-        let records = parse_records(
+    /// #10 UpdateLogbook before publication: the structural parse (any fault refuses the
+    /// file), then each record skipped, already present or added. A record is present
+    /// when its contact id is stored or added earlier from this file, or when a stored
+    /// or earlier added record has the same consolidation key and a start at most
+    /// CONSOLIDATION_SECONDS away; the stored record wins and is never changed.
+    fn consolidate(&self, inner: &Inner, bytes: &[u8]) -> Result<(Vec<Record>, Summary), Fault> {
+        let parsed = parse(
             bytes,
             &Limits {
                 records: IMPORT_RECORDS_MAX,
             },
-        )
-        .map_err(|fault| (fault, (0, 0, 0)))?;
-        let mut by_id: HashMap<String, Record> = HashMap::new();
-        let mut by_key: HashMap<_, Record> = HashMap::new();
+        )?;
+        let source = parsed.program.unwrap_or_else(|| "ADIF".to_owned());
+        let mut ids: std::collections::HashSet<String> = inner.ids.keys().cloned().collect();
+        let mut starts: HashMap<(String, String, String), Vec<i64>> = HashMap::new();
         for record in &inner.records {
-            by_id
-                .entry(record.contact_id.clone())
-                .or_insert_with(|| record.clone());
-            by_key
-                .entry(record.natural_key())
-                .or_insert_with(|| record.clone());
-        }
-        let (mut new, mut duplicate, mut conflict) = (Vec::new(), 0, 0);
-        let mut first_conflict = None;
-        for (index, mut record) in records.into_iter().enumerate() {
-            let natural = record.contact_id.is_empty();
-            let existing = if natural {
-                by_key.get(&record.natural_key())
-            } else {
-                by_id.get(&record.contact_id)
-            };
-            match existing.map(|stored| first_difference(stored, &record, natural)) {
-                Some(None) => duplicate += 1,
-                Some(Some(field)) => {
-                    conflict += 1;
-                    first_conflict.get_or_insert(Fault::new(
-                        "identity_conflict",
-                        Some(index),
-                        Some(field),
-                    ));
-                }
-                None => {
-                    if natural {
-                        record.contact_id = crate::profile::new_uuid()
-                            .map_err(|_| (Fault::new("malformed", Some(index), None), (0, 0, 0)))?;
-                    }
-                    by_id.insert(record.contact_id.clone(), record.clone());
-                    by_key
-                        .entry(record.natural_key())
-                        .or_insert_with(|| record.clone());
-                    new.push(record);
-                }
+            if let Some(start) = record.start_seconds() {
+                starts
+                    .entry(record.consolidation_key())
+                    .or_default()
+                    .push(start);
             }
         }
-        let counts = (new.len(), duplicate, conflict);
-        match first_conflict {
-            Some(fault) => Err((fault, counts)),
-            None => Ok((new, counts)),
+        let (mut new, mut summary) = (Vec::new(), Summary::default());
+        for (index, raw) in parsed.records.into_iter().enumerate() {
+            let (mut record, dropped) = match interpret_update(raw) {
+                Ok(read) => read,
+                Err((code, field)) => {
+                    summary.skipped += 1;
+                    group(&mut summary.reasons, code, Some(field), index);
+                    continue;
+                }
+            };
+            for (code, field) in dropped {
+                group(&mut summary.dropped, code, Some(field), index);
+            }
+            let key = record.consolidation_key();
+            let start = record.start_seconds();
+            let near = |s: &i64| start.is_some_and(|t| (s - t).abs() <= CONSOLIDATION_SECONDS);
+            if ids.contains(&record.contact_id)
+                || starts.get(&key).is_some_and(|s| s.iter().any(near))
+            {
+                summary.present += 1;
+                continue;
+            }
+            if record.contact_id.is_empty() {
+                record.contact_id = crate::profile::new_uuid()
+                    .map_err(|_| Fault::new("malformed", Some(index), None))?;
+            }
+            record.source.get_or_insert_with(|| source.clone());
+            ids.insert(record.contact_id.clone());
+            if let Some(start) = start {
+                starts.entry(key).or_default().push(start);
+            }
+            new.push(record);
         }
+        summary.added = new.len();
+        Ok((new, summary))
     }
 }
 

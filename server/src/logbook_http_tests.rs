@@ -609,7 +609,7 @@ async fn history_and_export_routes_follow_the_wire_contract() {
     assert_eq!(text.matches(" <eor>\n").count(), 11);
 }
 
-// Proves: CL-010-04, CL-010-15; TC-011-002 import reservation, chunks, retry and failure.
+// Proves: CL-010-04, CL-010-15; TC-011-002 update reservation, chunks, retry and failure.
 #[tokio::test]
 async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     let f = HttpFixture::new("http://localhost:8096");
@@ -644,7 +644,7 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     assert_eq!(reserved.status, StatusCode::CREATED);
     assert_eq!(
         reserved.json(),
-        json!({"v":1,"id":id,"state":"receiving","received_bytes":0,"total_bytes":bytes.len(),"new":0,"duplicate":0,"conflict":0,"error":null})
+        json!({"v":1,"id":id,"state":"receiving","received_bytes":0,"total_bytes":bytes.len(),"added":0,"present":0,"skipped":0,"reasons":[],"dropped":[],"error":null})
     );
     assert_eq!(
         f.post(
@@ -712,7 +712,7 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     let done = last.unwrap();
     assert_eq!(done.status, StatusCode::CREATED);
     assert_eq!(
-        (done.json()["new"].clone(), done.json()["duplicate"].clone()),
+        (done.json()["added"].clone(), done.json()["present"].clone()),
         (json!(1), json!(399))
     );
     assert_eq!(
@@ -722,8 +722,8 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
         "completed"
     );
     let file = std::fs::read(f.directory.join("contacts.adi")).unwrap();
-    // A conflicting import publishes nothing and reports record/field context.
-    let bad = b"<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <rst_sent:3>-01 <eor>\n<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <rst_sent:3>-02 <eor>";
+    // A broken file publishes nothing and reports record/field context.
+    let bad = b"<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <rst_sent:3>-01 <eor>\n<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <rst_sent:3>-02 <eor";
     let bad_id = profile::new_uuid().unwrap();
     assert_eq!(
         f.post(
@@ -750,7 +750,7 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     assert_eq!(view["state"], "failed");
     assert_eq!(
         view["error"],
-        json!({"code":"identity_conflict","record":1,"field":"rst_sent"})
+        json!({"code":"malformed","record":2,"field":null})
     );
     assert_eq!(
         std::fs::read(f.directory.join("contacts.adi")).unwrap(),

@@ -407,7 +407,7 @@ attribute def ActivityOrdering {
              Frequency pane (WstxContact::RoutesToRxFrequencyPane) with Tx-labelled own
              messages, unread count and Erase. At 360 CSS px it stacks below Band Activity
              or is a labelled tab, with no horizontal page overflow.
-             Logbook region: history and ADI import/export (since #41 there is no log
+             Logbook region: history and ADI export (since #41 there is no log
              review form: WstxContact::DirectLog stores each completed contact and Log
              QSO, and an open Logbook page lists a new record when the contact snapshot
              reports it saved); opening it never hides Halt Tx.
@@ -933,7 +933,9 @@ attribute def ActivityOrdering {
              Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
              audio (input, output, input listing, Rx level meter), transmit (Tx watchdog
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
-             Logging & Reporting: the existing log (Logbook page, ADIF), the WSJT-X UDP
+             Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
+             logbook from ADIF" (WstxContact::UpdateLogbook: an ADIF file input, the Update
+             logbook button and the summary line), the WSJT-X UDP
              interface (WstxUdp, CL-040-02): instance name and up to 16 targets, each
              address:port, enabled, multicast TTL (the hop limit of an IPv6 group) and
              interface (an interface index for an IPv6 group, with a hint that an
