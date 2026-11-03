@@ -1982,6 +1982,66 @@ async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_chan
     assert_eq!(f.keys(), 0);
 }
 
+// Proves: CL-024-01; TC-024-003 (g) (#24 S1b). Station automation stays standard-only: a
+// run does not start with a nonstandard profile callsign.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automation_does_not_start_with_a_nonstandard_own_call() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let code = |r: &crate::mcp_tests::Reply| {
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone(),
+        )
+    };
+    f.state.store.lock().unwrap().document.callsign = "DL/HB9BLA".into();
+    assert_eq!(code(&auto(&f).await), (json!("not_ready"), json!("call")));
+    f.state.store.lock().unwrap().document.callsign = "HB9BLA".into();
+    assert_eq!(
+        code(&auto(&f).await),
+        (json!("not_configured"), json!("strategy"))
+    );
+}
+
+// Proves: CL-024-02; TC-024-005 (e) (#24 S2a). Station automation only observes in a contest
+// activity: a run does not start.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automation_does_not_start_in_a_contest_activity() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let contact = f.state.recording.contact.get().unwrap();
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "contact_revision":contact.revision(),"action":"set_activity","activity":"ww_digi"});
+    contact.operate(&f.state, body, true).unwrap();
+    let r = auto(&f).await;
+    assert_eq!(
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (json!("not_ready"), json!("activity"))
+    );
+}
+
+// Proves: CL-024-04; TC-024-012 (#24 S4b). Station automation does not start as a Hound.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automation_does_not_start_as_a_hound() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let contact = f.state.recording.contact.get().unwrap();
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "contact_revision":contact.revision(),"action":"set_activity","activity":"hound"});
+    contact.operate(&f.state, body, true).unwrap();
+    let r = auto(&f).await;
+    assert_eq!(
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (json!("not_ready"), json!("activity"))
+    );
+}
+
 // ------------------------------------------------------------------ #42 Alert
 /// The strategy "Alerts": rule 1 (call prefix K, no alert), rule 2 (any CQ, alert).
 fn alerts_strategy() -> Value {

@@ -46,7 +46,8 @@ package WstxOperatingLayout {
              opens audio. Separate operating mode/band
              behavior is WstxOperatingReceive/contract 4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
-             no fabricated UTC/DT, message text or resolved hash. Full source/job/
+             no fabricated UTC/DT or message text; a hashed call shows as the station's
+             publication gives it (<CALL> or <...>, WstxOfflineDecode::HashResolution). Full source/job/
              generation/sequence binds each row; new identity clears rows (an unknown-loss
              source epoch of the same receive keeps them, CL-061-01), stale
              pages cannot append. At most2048 rows, explicit cursor-expiry history
@@ -554,7 +555,9 @@ attribute def ActivityOrdering {
              from a sender worked before on this band and mode, has no background, and New call and
              New call on band are on by default (WSJT-X: off). A row takes the highest-priority
              enabled slot it matches. Matches: mycall, a decoded message to the profile callsign
-             (also from a sender worked before); new_call, the worked-before status
+             (also from a sender worked before), also as a filled-in hash <MYCALL> or the 'to' call
+             of a nonstandard i3=4 message (WSJT-X matches "[ <]MYCALL[ >]", #24 S1b); new_call,
+             the worked-before status
              not_worked of the sending call; new_call_band, not_worked or worked_other_band_or_mode; every new_*
              slot also when the record carries flags.<slot> true (#55 supplies DXCC, continent and
              zone flags from cty.dat; a slot without data stays inactive). As in WSJT-X, every
@@ -573,7 +576,8 @@ attribute def ActivityOrdering {
     attribute def BandActivityValue {
         attribute levels : Integer = 8;
         doc /* #55 (operator 2026-11-03, CL-055-04). The value of a Band Activity row, best
-             first: 1 calling me (a decoded message to the profile callsign); 2 a strategy
+             first: 1 calling me (a decoded message to the profile callsign, matched as for the
+             mycall slot, also a filled-in hash <MYCALL> or a nonstandard i3=4 'to', #24); 2 a strategy
              hit (Highlight on, WstxStrategy::HighlightView rank not null); 3 new DXCC or new
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
@@ -820,9 +824,18 @@ attribute def ActivityOrdering {
              (choose_next), a Now button (#37: choose_next, then SetEnableTx on when it is
              off, so the message goes from the next own period; disabled without a message,
              without transmit capability or on a completed contact) and its editable
-             text, Skip Tx1, RRR/RR73 and Cancel contact in place; the DX Call/Grid entry,
-             report, Tx period, Auto Seq, Call 1st and Hold Tx are the ControlPanel below the
-             pane (#37, operator 2026-11-03). On a station without transmit capability the transmit
+             text (Tx5 is editable whenever a contact exists, also without a message, for
+             WSJT-X Tx5 free text, #24 S1b; the others once they have a message), Skip Tx1,
+             RRR/RR73 and Cancel contact in place, and above them the Activity choice (None,
+             NA VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup, Hound; set_activity,
+             WstxContact::GridExchangeContest, #24 S2a, HoundOperation, #24 S4b) that shows the
+             station's setting, with an Exchange entry beside it (ContestExchange, #24 S2b:
+             shows settings.exchange; choosing Field Day or RTTY Roundup sends set_activity
+             with the entered exchange, and changing the exchange while one of them is chosen
+             sends it again; the next serial is shown while RTTY uses DX or #); the DX
+             Call/Grid entry, report, Tx period, Auto Seq, Call 1st and Hold Tx are the
+             ControlPanel below the pane (#37, operator 2026-11-03). On a station without
+             transmit capability the transmit
              buttons are disabled with the reason. */
     }
     attribute def LowerPanel {

@@ -3067,3 +3067,64 @@ fn live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction(
     assert_eq!(w["period_start_utc"], "2026-10-27T12:00:30.0000000Z", "{w}");
     assert_eq!(w["window_offset_ms"], -1200, "{w}");
 }
+
+// Proves: CL-024-01; TC-024-002 (#24 S1). The live publication fills hashed calls in from
+// the calls heard so far and my call; earlier records keep their text; UDP Decode messages
+// carry the same text; a hashed 'from' still gives no strategy facts.
+#[test]
+fn live_publication_fills_in_hashed_calls() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let (job, mut decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-10-27T12:00:00.0000000Z", 0);
+    r.state.lock().unwrap().live.as_mut().unwrap().next_frame = 400000;
+    decoded.start_frame = 186000;
+    r.set_my_call(Some("HB9BLA"));
+    let publish = |text: &str| {
+        let mut d = decoded.clone();
+        d.payload = decoder::unpack(&wstx_rust::transmit::pack(text).unwrap().bits);
+        r.publish_decode(&job, &d).unwrap();
+        let s = r.state.lock().unwrap();
+        s.live.as_ref().unwrap().records.back().unwrap().0.clone()
+    };
+    let early = publish("<VP2X/K1JT> W9XYZ -05");
+    publish("CQ VP2X/K1JT");
+    let later = publish("<VP2X/K1JT> W9XYZ -05");
+    let mine = publish("<HB9BLA> VP2X/K1JT");
+    let unknown = publish("<DL/K1ABC> W9XYZ");
+    let reply = publish("W9XYZ <VP2X/K1JT> -07");
+    let plain = publish("CQ W9XYZ EN37");
+    let s = r.state.lock().unwrap();
+    let records: Vec<Value> = s
+        .live
+        .as_ref()
+        .unwrap()
+        .records
+        .iter()
+        .map(|(v, _)| v.clone())
+        .collect();
+    drop(s);
+    assert_eq!(
+        records[0]["text"], "<...> W9XYZ -05",
+        "no rewriting of history"
+    );
+    assert_eq!(early["fields"]["to"]["text"], Value::Null);
+    assert_eq!(later["text"], "<VP2X/K1JT> W9XYZ -05");
+    assert_eq!(
+        later["fields"]["to"],
+        json!({"kind":"hash","text":"VP2X/K1JT","hash_bits":22,
+               "hash_value":decoder::ihashcall("VP2X/K1JT",22).unwrap()})
+    );
+    assert_eq!(mine["text"], "<HB9BLA> VP2X/K1JT");
+    assert_eq!(unknown["text"], "<...> W9XYZ");
+    assert_eq!(unknown["fields"]["to"]["text"], Value::Null);
+    assert_eq!(reply["text"], "W9XYZ <VP2X/K1JT> -07");
+    for record in [&early, &later, &mine, &unknown, &reply] {
+        let udp = crate::udp::decode_of(record, "ft8").unwrap();
+        assert_eq!(udp.message, record["text"].as_str().unwrap());
+    }
+    assert!(crate::strategy::facts(&reply).is_none());
+    assert_eq!(crate::strategy::facts(&plain).unwrap().from, "W9XYZ");
+    r.set_my_call(Some("HB9BLB"));
+    assert_eq!(publish("<HB9BLB> VP2X/K1JT")["text"], "<HB9BLB> VP2X/K1JT");
+}

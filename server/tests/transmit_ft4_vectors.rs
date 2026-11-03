@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: TC-005-002, TC-006-002, CL-011-01
+// Proves: TC-005-002, TC-006-002, TC-024-007, CL-011-01, CL-024-03
 use rustfft::{FftPlanner, num_complex::Complex};
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -48,7 +48,7 @@ fn tc_005_002_ft4sim_bits_codeword_and_tones_match_exactly() {
         let message = v["message"].as_str().unwrap();
         let expect_ok = v["encoded"] == true && v["altered"] == false && {
             let (i3, n3) = (v["i3"].as_u64().unwrap(), v["n3"].as_u64().unwrap());
-            matches!(i3, 1 | 2 | 4) || (i3 == 0 && matches!(n3, 0 | 5))
+            matches!(i3, 1..=4) || (i3 == 0 && matches!(n3, 0 | 3 | 4 | 5))
         };
         match encode_ft4(message) {
             Ok(frame) if expect_ok => {
@@ -69,7 +69,7 @@ fn tc_005_002_ft4sim_bits_codeword_and_tones_match_exactly() {
         }
     }
     assert!(
-        encoded >= 60 && refused >= 13,
+        encoded >= 80 && refused >= 30,
         "{encoded} encoded, {refused} refused"
     );
     // The frame is the genft4 layout: four Costas 4x4 arrays around three data blocks.
@@ -320,4 +320,27 @@ fn tc_006_002_ft4_start_plan_late_start_and_refusals() {
             Err(ScheduleError::ClockNotSynchronized)
         );
     }
+}
+
+/// FT4 carries the same Field Day and RTTY Roundup payloads (#24 S2b), TU; included.
+// Proves: TC-024-007, CL-024-03
+#[test]
+fn tc_024_007_ft4_field_day_and_rtty_roundup_match_ft4sim() {
+    let mut exact = 0;
+    for v in vectors()["vectors"].as_array().unwrap() {
+        let message = v["message"].as_str().unwrap();
+        let contest = v["i3"] == 3 || (v["i3"] == 0 && matches!(v["n3"].as_u64(), Some(3 | 4)));
+        if v["encoded"] == true && v["altered"] == false && contest {
+            exact += 1;
+            let frame = encode_ft4(message).unwrap_or_else(|e| panic!("{message}: {e:?}"));
+            let field = |k: &str| digits(v[k].as_str().unwrap());
+            assert_eq!(frame.packed.bits.to_vec(), field("bits77"), "{message}");
+            assert_eq!(frame.tones.to_vec(), field("tones103"), "{message}");
+        }
+    }
+    assert!(exact >= 20, "{exact} contest vectors");
+    assert_eq!(
+        encode_ft4("PJ4/K1ABC W9XYZ 6A WI"),
+        Err(PackError::NotExact)
+    );
 }

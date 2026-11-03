@@ -625,7 +625,7 @@ function renderResults(){
 function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
-  const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  const f=record.fields,decoded=record.status==='decoded',to=recordTo(f),my=(profileData?.settings?.callsign??'').trim().toUpperCase();
   // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
   // every decoded sender (operator decision CL-055-04; WSJT-X: CQ/QRZ lines only). No CQ slot (#50).
   const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
@@ -1133,10 +1133,13 @@ function keepWaterfall(){
 
 // #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
 // hits, is applied by the Highlight in contact.js) and BandActivityHover (title and aria-description).
+// #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
+// 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).
+function recordTo(f){return f?.type==='nonstandard'?(f.cq?null:(f.hash_second?f.full_call:f.hashed_call)?.text??null):['call','hash'].includes(f?.to?.kind)?f.to.text:null;}
 function activityValue(r){
   if(r?.status!=='decoded')return 8;
   const my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  if(my&&r.fields?.to?.kind==='call'&&r.fields.to.text===my)return 1;
+  if(my&&recordTo(r.fields)===my)return 1;
   const groups=[[3,['new_dxcc','new_continent']],[4,['new_dxcc_band','new_continent_band']],[5,['new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band']],[6,['new_grid','new_grid_band']],[7,['new_call','new_call_band']]];
   return groups.find(([,names])=>names.some(k=>r.flags?.[k]===true))?.[0]??8;
 }

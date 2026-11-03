@@ -284,6 +284,9 @@ pub struct Recording {
     /// Bumped at each latest_decode publication so Detailed WebSocket peers announce it at
     /// once instead of on the 2 s receive tick (#57 CL-057-01).
     pub(crate) publication: tokio::sync::watch::Sender<u64>,
+    /// The station's call hash table (WstxOfflineDecode::HashResolution, CL-024-01), shared
+    /// with the transmit owner; kept for the process lifetime.
+    pub(crate) hashes: Arc<Mutex<decoder::HashTable>>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
     startup: Mutex<startup::Startup>,
     /// #52 per-window receive diagnostics and the dump setting (receive-diagnostics.json).
@@ -1239,6 +1242,23 @@ impl Recording {
             l.publication_error = Some("decode_limit");
             return Err(decoder::DecodeError::DecodeLimit);
         }
+        // HashResolution: fill hashed calls in from the calls heard and sent so far, then
+        // learn this record's calls.
+        let resolved;
+        let decode = {
+            let mut hashes = self.hashes.lock().unwrap_or_else(|p| p.into_inner());
+            let payload = hashes.resolve(&decode.payload);
+            hashes.learn(&payload);
+            if payload == decode.payload {
+                decode
+            } else {
+                resolved = decoder::Decode {
+                    payload,
+                    ..decode.clone()
+                };
+                &resolved
+            }
+        };
         let mut value =
             serde_json::to_value(decode).map_err(|_| decoder::DecodeError::DecodeLimit)?;
         let drift = l.capture_drift.map_or(0, |(d, _)| d);
@@ -1287,6 +1307,21 @@ impl Recording {
 }
 
 impl Recording {
+    /// Startup wiring of HashResolution (CL-024-01): my call from the profile and the
+    /// table shared with this station's transmit owner, once it is started.
+    pub(crate) fn start_hashes(&self, callsign: &str) {
+        self.set_my_call(Some(callsign));
+        if let Some(transmit) = self.transmit.get() {
+            transmit.attach_hashes(self.hashes.clone());
+        }
+    }
+    /// My call for the hash table (the profile callsign; None without one).
+    pub(crate) fn set_my_call(&self, call: Option<&str>) {
+        self.hashes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .set_my_call(call);
+    }
     pub(crate) fn initialize_profile_revision(&self, revision: u64) {
         self.state.lock().unwrap().operating.profile_revision = revision;
     }
@@ -3147,6 +3182,7 @@ impl Recording {
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
                 publication: tokio::sync::watch::Sender::new(0),
+                hashes: Default::default(),
                 startup,
                 diagnostics,
                 diagnostics_error: Arc::new(AtomicBool::new(false)),
@@ -3218,6 +3254,7 @@ impl Recording {
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),
             publication: tokio::sync::watch::Sender::new(0),
+            hashes: Default::default(),
             startup,
             diagnostics,
             diagnostics_error: Arc::new(AtomicBool::new(false)),

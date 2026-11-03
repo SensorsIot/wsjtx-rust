@@ -2286,3 +2286,29 @@ mod automatic_cat {
         assert_eq!((p.opens, p.writes.len(), p.closes), (0, 0, 0));
     }
 }
+
+// Proves: CL-024-01; TC-024-002 (#24 S1). A saved profile callsign becomes the station's
+// own call for HashResolution.
+#[tokio::test]
+async fn profile_save_sets_my_call_for_the_hash_table() {
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let state = f.app().profile.as_ref().unwrap().clone();
+    let body = {
+        let store = state.store.lock().unwrap();
+        let mut settings = store.document.settings();
+        settings.callsign = "HB9BLA".into();
+        serde_json::to_vec(&json!({"profile_id":store.document.profile_id,"revision":store.document.revision,"settings":settings})).unwrap()
+    };
+    let response = put_profile(
+        State(f.app().clone()),
+        f.headers(Some(&g.cookie)),
+        Ok(Bytes::from(body)),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        state.recording.hashes.lock().unwrap().my_call(),
+        Some("HB9BLA")
+    );
+}

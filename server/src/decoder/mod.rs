@@ -6,6 +6,9 @@ mod bitmetrics;
 mod channel;
 mod coarse_ft4;
 mod fit;
+mod hashes;
+#[cfg(test)]
+mod hashes_test;
 mod history;
 mod parallel;
 mod payload;
@@ -20,8 +23,12 @@ mod synchronization;
 mod waveform;
 pub use apriori::{APriori, QsoProgress};
 pub use channel::{Channel, ChannelWord};
+pub use hashes::{HashTable, MAX_HASH22, ihashcall};
 pub use history::DecodeState;
-pub use payload::{Call, CallKind, Exchange, Fields, Payload, PayloadStatus, unpack};
+pub use payload::{
+    Call, CallKind, Exchange, Fields, Payload, PayloadStatus, arrl_sections, rtty_exchanges,
+    unpack, unpack_with,
+};
 pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
 pub(crate) use waveform::gaussian_pulse;

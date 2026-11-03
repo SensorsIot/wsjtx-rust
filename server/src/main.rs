@@ -311,6 +311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 previous(info);
             }));
             let _ = recording.transmit.set(transmit);
+            recording.start_hashes(&store.document.callsign);
             recording.sync_transmit_mode();
             // WstxContact: one contact engine per station, consuming the transmit owner.
             let _ = recording.contact.set(contact_http::Station::start());
@@ -726,6 +727,7 @@ async fn put_profile(
         }
         drop(authorization);
         state.recording.profile_changed(store.document.revision);
+        state.recording.set_my_call(Some(&store.document.callsign));
         Json(representation(&state, &store.document, &app.origin)).into_response()
     })
     .await

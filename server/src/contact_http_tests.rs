@@ -337,6 +337,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(
         keys(&v["settings"]),
         sorted(&[
+            "exchange",
+            "serial",
             "auto_seq",
             "call_first",
             "tx1_skip",
@@ -346,7 +348,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
             "tx_hz",
             "hold_tx",
             "parity",
-            "report"
+            "report",
+            "activity"
         ])
     );
     assert_eq!(
@@ -361,7 +364,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
-        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15})
+        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
@@ -385,9 +388,9 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
             "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
-        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50},
+        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50,"activity":"field_day","exchange":"32F WWA","serial":u32::MAX},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
-            "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
+            "exchange_sent":"32F WWA","exchange_rcvd":"32F WWA","state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
             "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",
             "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX},
             "dialogue":dialogue},
@@ -647,6 +650,8 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "dx_grid",
             "report_sent",
             "report_rcvd",
+            "exchange_sent",
+            "exchange_rcvd",
             "state",
             "next_slot",
             "tx4",
@@ -915,6 +920,9 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         report: -12,
         report_rcvd: Some(-9),
         report_sent: Some(-12),
+        exchange_sent: None,
+        exchange_rcvd: None,
+        activity: crate::contact::Activity::None,
         state: crate::contact::State::Completed,
         next: crate::contact::Slot::Tx6,
         tx4: crate::contact::Tx4::Rr73,
@@ -945,7 +953,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
             "rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123445",
             "qso_date_off":"20261101","time_off":"123515","band":"20m","freq":"14.081234",
             "station_callsign":"HB9BLA","my_gridsquare":"JN47","tx_pwr":null,"comment":null,
-            "unknown_field_count":0})
+            "stx":null,"stx_string":null,"srx":null,"contest_id":null,"srx_string":null,"class":null,"arrl_sect":null,"state":null,"unknown_field_count":0})
     );
     assert_eq!(
         crate::logbook::validate_record(&record, "HB9BLA", "JN47"),
@@ -1505,6 +1513,186 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
             {"dir":"tx","text":"IW9FRA HB9BLA 73","snr":null,"period_utc_ms":p(7),"count":1}
         ]),
         "{snap}"
+    );
+}
+
+// Proves: CL-024-01; TC-024-002 (#24 S1). The station's startup wiring gives the transmit
+// owner the Recording's call hash table and sets my call from the profile.
+#[test]
+fn startup_shares_the_hash_table_with_the_transmit_owner() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    assert!(r.transmit.get().unwrap().hash_table().is_none());
+    r.start_hashes("hb9bla");
+    let shared = r.transmit.get().unwrap().hash_table().unwrap();
+    assert!(Arc::ptr_eq(&shared, &r.hashes));
+    assert_eq!(r.hashes.lock().unwrap().my_call(), Some("HB9BLA"));
+}
+
+// Proves: CL-024-01; TC-024-003 (f). A nonstandard manual entry over POST /contact/command
+// gets its compound message set, and the station's contact step hands its DX call to the
+// call hash table.
+#[tokio::test]
+async fn the_contact_step_gives_the_hash_table_the_dx_call() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    let (s, v) = f
+        .send(
+            "enter_dx",
+            json!({"dx_call":"PJ4/K1ABC","dx_grid":null,"replace":false}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["messages"][0], "<PJ4/K1ABC> HB9BLA JN47");
+    r.contact.get().unwrap().tick(&f.state);
+    assert_eq!(r.hashes.lock().unwrap().dx_call(), Some("PJ4/K1ABC"));
+    let (s, v) = f.send("cancel", json!({})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    r.contact.get().unwrap().tick(&f.state);
+    assert_eq!(r.hashes.lock().unwrap().dx_call(), None);
+}
+
+// Proves: CL-024-02; TC-024-005 (d). set_activity over POST /contact/command: the settings
+// read it back, an unknown activity is refused and UDP Status carries WSJT-X's value.
+#[tokio::test]
+async fn set_activity_reads_back_and_reaches_udp_status() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let (s, v) = f.send("set_activity", json!({"activity":"eu_vhf"})).await;
+    assert_eq!(
+        (s, code(&v)),
+        (
+            StatusCode::BAD_REQUEST,
+            ("invalid_request", Some("activity"))
+        )
+    );
+    for (name, udp) in [
+        ("ww_digi", 5u8),
+        ("arrl_digi", 8),
+        ("na_vhf", 1),
+        ("none", 0),
+    ] {
+        let (s, v) = f.send("set_activity", json!({ "activity": name })).await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+        assert_eq!(f.snapshot().await["settings"]["activity"], name);
+        assert_eq!(
+            crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+            udp,
+            "{name}"
+        );
+    }
+}
+
+// Proves: CL-024-03; TC-024-008 (d), (e). set_activity field_day/rtty with the exchange
+// over POST /contact/command: normalized read-back, the serial, refusals and UDP Status 3/4.
+#[tokio::test]
+async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    for body in [
+        json!({"activity":"field_day"}),
+        json!({"activity":"field_day","exchange":"33A EMA"}),
+        json!({"activity":"rtty","exchange":"DXX"}),
+        json!({"activity":"ww_digi","exchange":"MA"}),
+        json!({"activity":"rtty","exchange":7}),
+        json!({"activity":"field_day","exchange":"1\u{e9} EMA"}),
+    ] {
+        let (s, v) = f.send("set_activity", body.clone()).await;
+        assert_eq!(
+            (s, code(&v)),
+            (
+                StatusCode::BAD_REQUEST,
+                ("invalid_request", Some("exchange"))
+            ),
+            "{body}"
+        );
+    }
+    for (name, exchange, shown, udp) in [
+        ("field_day", "1a  ema", "1A EMA", 3u8),
+        ("rtty", "dx", "DX", 4),
+    ] {
+        let (s, v) = f
+            .send("set_activity", json!({"activity":name,"exchange":exchange}))
+            .await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+        let settings = &f.snapshot().await["settings"];
+        assert_eq!(
+            (
+                &settings["activity"],
+                &settings["exchange"],
+                &settings["serial"]
+            ),
+            (&json!(name), &json!(shown), &json!(1))
+        );
+        assert_eq!(
+            crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+            udp,
+            "{name}"
+        );
+    }
+    let (s, _) = f.send("set_activity", json!({"activity":"none"})).await;
+    assert_eq!(s, StatusCode::ACCEPTED);
+    assert_eq!(f.snapshot().await["settings"]["exchange"], Value::Null);
+}
+
+// Proves: CL-024-04; TC-024-012 (#24 S4b). set_activity hound over POST /contact/command:
+// read-back with Tx parity odd and Hold Tx, no exchange, UDP Status 7; the row reader keeps a
+// 0.1 DXpedition record as its fields, not as a standard message.
+#[tokio::test]
+async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let (s, v) = f
+        .send("set_activity", json!({"activity":"hound","exchange":"MA"}))
+        .await;
+    assert_eq!(
+        (s, code(&v)),
+        (
+            StatusCode::BAD_REQUEST,
+            ("invalid_request", Some("exchange"))
+        )
+    );
+    let (s, v) = f.send("set_activity", json!({"activity":"hound"})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let settings = &f.snapshot().await["settings"];
+    assert_eq!(
+        (
+            &settings["activity"],
+            &settings["parity"],
+            &settings["hold_tx"],
+            &settings["exchange"]
+        ),
+        (&json!("hound"), &json!("odd"), &json!(true), &Value::Null)
+    );
+    assert_eq!(
+        crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+        7
+    );
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    table.set_dx_call(Some("KH7Z"));
+    let payload = table.resolve(&wstx_rust::decoder::unpack(
+        &crate::contact_tests::dxpedition_bits("HB9BLA", "K1ABC", "KH7Z", -8),
+    ));
+    let mut record = serde_json::to_value(wstx_rust::decoder::Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: 450.0,
+        snr_db: Some(-5.0),
+        a_priori: None,
+    })
+    .unwrap();
+    record["sequence"] = json!(1);
+    record["status"] = json!("decoded");
+    let row = contact_http::row_of(&record, &("s".into(), "j".into(), 1), "ft8").unwrap();
+    assert_eq!(row.text, "HB9BLA RR73; K1ABC <KH7Z> -08");
+    assert_eq!(row.standard, None);
+    assert_eq!(
+        row.dxpedition.as_deref(),
+        Some(&contact::Dxpedition {
+            rr73_to: contact::Call::Sign("HB9BLA".into()),
+            report_to: contact::Call::Sign("K1ABC".into()),
+            fox: contact::Call::Hashed("KH7Z".into()),
+            report: -8,
+        })
     );
 }
 

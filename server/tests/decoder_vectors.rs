@@ -57,7 +57,7 @@ fn frozen_payload_channel_tone_vectors() {
         assert_eq!(c.decode(&llr, &|| false), Some(word), "fec {id}");
     }
 }
-// Proves: FR-003, FR-004, CL-007-03.
+// Proves: FR-003, FR-004, CL-007-03, TC-024-007, CL-024-03.
 #[test]
 fn canonical_payload_boundaries() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -65,7 +65,7 @@ fn canonical_payload_boundaries() {
     ))
     .unwrap();
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 103);
+    assert_eq!(cases.len(), 109);
     for c in cases {
         let p = unpack(&bits(c["payload77"].as_str().unwrap()));
         assert_eq!(

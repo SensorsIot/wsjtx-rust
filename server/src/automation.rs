@@ -555,6 +555,17 @@ impl Owner {
                 if !auto_seq {
                     return Err(("not_ready", Some("auto_seq")));
                 }
+                // #24 S1b: station automation stays standard-only; a nonstandard own call
+                // would call CQ without ever recognizing a caller's <MYCALL>.
+                if contact_http::my_call(state)
+                    .is_some_and(|c| !crate::contact::is_standard_call(&c))
+                {
+                    return Err(("not_ready", Some("call")));
+                }
+                // #24 S2a: in a contest activity automation only observes (scope default).
+                if contact.status_facts().activity != crate::contact::Activity::None {
+                    return Err(("not_ready", Some("activity")));
+                }
                 // #42 Pounce waits on the current band: it must be known.
                 let pounce = match &config.pounce {
                     None => None,
