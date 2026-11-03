@@ -98,6 +98,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | Group | Functional coverage | Direct change owners |
 |---|---|---|
 | `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
+| `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, `transmit/mod.rs`), the library root, the decoder fixtures they include, Cargo inputs and Rust toolchain |
 | `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
 | `protocol-thin` | Timing: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Timing inputs: router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
 | `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests |
@@ -169,9 +170,12 @@ order. A timing suite runs alone (the harness default `gate.timing_alone: true`)
 link measurements have not yet been shown stable beside other groups, so the project
 keeps that default until a measured gate shows otherwise. The groups declare what they must not share:
 
-- `debug-exe`: the browser groups run `target/debug/wstx-rust.exe` (`shared`), which
-  `wstx-rust`'s `cargo test --all-targets` relinks with the dev-dependency features
-  (`exclusive`); Windows refuses to replace a running executable;
+- the browser groups run `target/debug/wstx-rust.exe`, which `cargo test` relinks with
+  the dev-dependency features, and Windows refuses to replace a running executable. So
+  `wstx-rust` builds and runs in its own Cargo output directory
+  (`$CARGO_TARGET_DIR/unit`) and `wstx-rust-decoder` in its own profile directory
+  (`unit-opt`); neither touches the browser groups' executable, and both run beside them
+  (harness#28; before, a `debug-exe` tag kept `wstx-rust` apart from every browser group);
 - `radio-selection-evidence`: both radio-selection groups write
   `test-results/radio-selection/`;
 - `decoder-quality` runs alone (`exclusive: ["*"]`): its owned-Job CPU matrix measures
