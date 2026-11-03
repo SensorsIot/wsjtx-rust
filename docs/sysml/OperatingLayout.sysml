@@ -567,7 +567,11 @@ attribute def ActivityOrdering {
              station and Auto Seq runs that QSO to its completion and log (#50, operator
              2026-11-02); a stale_revision refusal of its select_row or enable_tx (the
              contact revision moves with every transmit step) is retried at most twice
-             with the reloaded snapshot, since the operator's choice is explicit; the
+             with the reloaded snapshot, since the operator's choice is explicit. The
+             double-click is the second press of the row (its click count 2), so a
+             redraw of the Band Activity rows between the two clicks or during the
+             second press still replies (#50, operator 2026-11-03 G8KHF after G6WCX:
+             the browser drops a click whose pressed row was redrawn); the
              Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here and, for a row with a resolved
              sender, "Pounce <call>" or "Stop pouncing <call>" (#42 WstxStrategy::Pounce)
