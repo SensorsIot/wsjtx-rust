@@ -1274,8 +1274,16 @@ fn tc_042_002_ignore_configuration_is_exact() {
         ("ignore_calls", json!(calls_101), "ignore_calls"),
         ("ignore_calls", json!("K1ABC"), "ignore_calls"),
         ("session_ignore_minutes", json!(0), "session_ignore_minutes"),
-        ("session_ignore_minutes", json!(721), "session_ignore_minutes"),
-        ("session_ignore_minutes", json!(1.5), "session_ignore_minutes"),
+        (
+            "session_ignore_minutes",
+            json!(721),
+            "session_ignore_minutes",
+        ),
+        (
+            "session_ignore_minutes",
+            json!(1.5),
+            "session_ignore_minutes",
+        ),
     ] {
         let mut bad = c.clone();
         bad[key] = value.clone();
@@ -1307,10 +1315,14 @@ fn tc_042_002_ignored_senders_never_match() {
     let mut st = me();
     assert_eq!(
         ranks(&s, &records, &st),
-        vec![(0, Some(0), false), (1, Some(0), false), (2, None, true), (3, None, false)]
+        vec![
+            (0, Some(0), false),
+            (1, Some(0), false),
+            (2, None, true),
+            (3, None, false)
+        ]
     );
-    st.ignored
-        .insert("K1ABC".into(), Tier::Permanent);
+    st.ignored.insert("K1ABC".into(), Tier::Permanent);
     st.ignored.insert("W1AW".into(), Tier::Session);
     let v = evaluate(&s, &records, &st);
     assert_eq!(
@@ -1418,7 +1430,10 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
         "strategies":[strategy_json("NA first","call")]});
     std::fs::write(
         f.dir.join(FILE_NAME),
-        serde_json::to_vec(&json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":legacy})).unwrap(),
+        serde_json::to_vec(
+            &json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":legacy}),
+        )
+        .unwrap(),
     )
     .unwrap();
     let old = Owner::default().snapshot(&f.state);
@@ -1435,12 +1450,18 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
     one["ignore_calls"] = json!([]);
     std::fs::write(
         f.dir.join(FILE_NAME),
-        serde_json::to_vec(&json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":one})).unwrap(),
+        serde_json::to_vec(
+            &json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":one}),
+        )
+        .unwrap(),
     )
     .unwrap();
     let half = Owner::default().snapshot(&f.state);
     assert_eq!(
-        (half["configuration"].clone(), half["configuration_error"].clone()),
+        (
+            half["configuration"].clone(),
+            half["configuration_error"].clone()
+        ),
         (Value::Null, json!("invalid_configuration"))
     );
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
@@ -1542,6 +1563,7 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
         json!([{"call":"W1AW","band":"40m","remaining_s":300}])
     );
     // Evaluation sees both tiers.
+    // The unranked rows are in sequence order here also by SNR (W1AW -1, DL1XYZ -3).
     let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     publish(
@@ -1549,8 +1571,8 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
         e,
         &[
             ("CQ K1ABC FN42", 1500.0, Some(-12.0)),
-            ("CQ W1AW FN31", 900.0, Some(-3.0)),
-            ("CQ DL1XYZ JO62", 1200.0, Some(-1.0)),
+            ("CQ W1AW FN31", 900.0, Some(-1.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-3.0)),
         ],
     );
     let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,

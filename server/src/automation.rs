@@ -830,6 +830,7 @@ impl Owner {
                     .filter(|v| {
                         v.facts.to_call.as_deref() == Some(my.as_str())
                             && !v.facts.signoff
+                            && !v.ignored
                             && strategy::sane_call(&v.facts.from)
                             && eligible(run, &v.facts.from)
                             && (!s.apply_to_callers || v.rank.is_some())

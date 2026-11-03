@@ -9,6 +9,7 @@ use axum::extract::RawQuery;
 use recording_http::authorize;
 use selection_http::empty;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 #[cfg(test)]
 #[path = "strategy_tests.rs"]
@@ -21,6 +22,10 @@ pub const RULES_MAX: usize = 8;
 pub const CONDITIONS_MAX: usize = 12;
 pub const LIST_MAX: usize = 32;
 pub const EVALUATE_MAX: u64 = 2048;
+/// #42 WstxStrategy::IgnoreLists bounds.
+pub const IGNORE_CALLS_MAX: usize = 100;
+pub const SESSION_IGNORE_MAX: usize = 64;
+pub const SESSION_IGNORE_MINUTES: u64 = 30;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub use crate::dxcc::CONTINENTS;
@@ -98,12 +103,27 @@ pub(crate) struct Strategy {
     pub switch_after: u64,
 }
 /// WstxStrategy::StrategyConfiguration.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Config {
     pub continent: Option<String>,
     pub active: Option<String>,
     pub highlight: bool,
     pub strategies: Vec<Strategy>,
+    /// #42 the permanent ignore list (exact calls) and the session list expiry.
+    pub ignore_calls: Vec<String>,
+    pub session_ignore_minutes: u64,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            continent: None,
+            active: None,
+            highlight: false,
+            strategies: Vec::new(),
+            ignore_calls: Vec::new(),
+            session_ignore_minutes: SESSION_IGNORE_MINUTES,
+        }
+    }
 }
 
 type Field = String;
@@ -300,7 +320,14 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
 pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
     exact(
         v,
-        &["continent", "active", "highlight", "strategies"],
+        &[
+            "continent",
+            "active",
+            "highlight",
+            "strategies",
+            "ignore_calls",
+            "session_ignore_minutes",
+        ],
         "configuration",
     )?;
     let continent = match &v["continent"] {
@@ -337,12 +364,47 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         ),
     };
     let highlight = v["highlight"].as_bool().ok_or(bad("highlight"))?;
+    let calls = v["ignore_calls"]
+        .as_array()
+        .filter(|a| a.len() <= IGNORE_CALLS_MAX)
+        .ok_or(bad("ignore_calls"))?;
+    let mut ignore_calls: Vec<String> = Vec::new();
+    for (i, c) in calls.iter().enumerate() {
+        let field = format!("ignore_calls[{i}]");
+        let c = word(c, &field, 13, b"/")?;
+        if ignore_calls.contains(&c) {
+            return Err(bad(field));
+        }
+        ignore_calls.push(c);
+    }
     Ok(Config {
         continent,
         active,
         highlight,
         strategies,
+        ignore_calls,
+        session_ignore_minutes: bounded(
+            &v["session_ignore_minutes"],
+            "session_ignore_minutes",
+            1,
+            720,
+        )?,
     })
+}
+/// A saved configuration written before #42 has neither ignore key: it reads with the
+/// empty permanent list and the default expiry (exactly one of them stays malformed).
+fn upgrade(mut v: Value) -> Value {
+    if let Some(o) = v.as_object_mut()
+        && !o.contains_key("ignore_calls")
+        && !o.contains_key("session_ignore_minutes")
+    {
+        o.insert("ignore_calls".into(), json!([]));
+        o.insert(
+            "session_ignore_minutes".into(),
+            json!(SESSION_IGNORE_MINUTES),
+        );
+    }
+    v
 }
 fn range_json(r: &Range) -> (Value, Value) {
     (json!(r.min), json!(r.max))
@@ -456,7 +518,8 @@ impl Strategy {
 impl Config {
     pub(crate) fn json(&self) -> Value {
         json!({"continent":self.continent,"active":self.active,"highlight":self.highlight,
-            "strategies":self.strategies.iter().map(Strategy::json).collect::<Vec<_>>()})
+            "strategies":self.strategies.iter().map(Strategy::json).collect::<Vec<_>>(),
+            "ignore_calls":self.ignore_calls,"session_ignore_minutes":self.session_ignore_minutes})
     }
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
@@ -573,6 +636,74 @@ pub(crate) struct Station {
     /// log is unreadable) for NewEntity.
     pub mode: String,
     pub worked: Option<std::sync::Arc<crate::dxcc::Worked>>,
+    /// #42 WstxStrategy::IgnoreLists: the ignored calls and their list.
+    pub ignored: HashMap<String, Tier>,
+}
+/// The list an ignored call is on (the session list wins when on both).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tier {
+    Session,
+    Permanent,
+}
+impl Tier {
+    fn name(self) -> &'static str {
+        match self {
+            Tier::Session => "session",
+            Tier::Permanent => "permanent",
+        }
+    }
+}
+#[derive(Clone, Debug)]
+struct SessionEntry {
+    call: String,
+    band: Option<String>,
+    until: Instant,
+}
+/// #42 WstxStrategy::IgnoreLists session list: station memory only, at most 64 entries in
+/// the order added, each ending at its expiry; any change of the observed station band
+/// empties it.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Session {
+    entries: Vec<SessionEntry>,
+    /// The station band seen last (None: nothing observed yet).
+    seen: Option<Option<String>>,
+}
+impl Session {
+    /// Adds (or renews and moves last) a call for `minutes` from `now`.
+    pub(crate) fn add(&mut self, call: &str, band: Option<&str>, minutes: u64, now: Instant) {
+        self.entries.retain(|e| e.call != call);
+        if self.entries.len() >= SESSION_IGNORE_MAX {
+            self.entries.remove(0);
+        }
+        self.entries.push(SessionEntry {
+            call: call.to_owned(),
+            band: band.map(str::to_owned),
+            until: now + Duration::from_secs(minutes * 60),
+        });
+    }
+    pub(crate) fn remove(&mut self, call: &str) {
+        self.entries.retain(|e| e.call != call);
+    }
+    /// The station band now: a change from the band seen last empties the list.
+    pub(crate) fn observe_band(&mut self, band: Option<&str>) {
+        let band = band.map(str::to_owned);
+        if self.seen.as_ref().is_some_and(|seen| *seen != band) {
+            self.entries.clear();
+        }
+        self.seen = Some(band);
+    }
+    /// The live entries (ended ones dropped): call, band, whole seconds left (rounded up).
+    pub(crate) fn entries(&mut self, now: Instant) -> Vec<(String, Option<String>, u64)> {
+        self.entries.retain(|e| e.until > now);
+        self.entries
+            .iter()
+            .map(|e| {
+                let left = e.until - now;
+                let secs = left.as_secs() + u64::from(left.subsec_nanos() > 0);
+                (e.call.clone(), e.band.clone(), secs)
+            })
+            .collect()
+    }
 }
 /// WstxStrategy::DirectedCqRule: is a CQ with this target addressed to my station?
 /// A continent target only to that continent; DX only from another, known continent
@@ -673,6 +804,8 @@ pub(crate) struct Verdict {
     pub grey: bool,
     pub why: String,
     pub km: Option<f64>,
+    /// #42 the sender is on an ignore list (never answered, also as a caller).
+    pub ignored: bool,
 }
 impl Verdict {
     pub(crate) fn json(&self, explain: bool) -> Value {
@@ -696,6 +829,17 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
             .zip(st.my_grid.as_deref())
             .and_then(|(g, m)| distance_bearing(m, g))
             .map(|g| g.0);
+        if let Some(tier) = st.ignored.get(&f.from) {
+            out.push(Verdict {
+                why: format!("{} is ignored ({} list)", f.from, tier.name()),
+                facts: f,
+                rank: None,
+                grey: false,
+                km,
+                ignored: true,
+            });
+            continue;
+        }
         if st.greyed(&f) {
             let target = f.target.clone().unwrap_or_default();
             out.push(Verdict {
@@ -707,6 +851,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
                 rank: None,
                 grey: true,
                 km,
+                ignored: false,
             });
             continue;
         }
@@ -733,6 +878,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
             rank,
             grey: false,
             km,
+            ignored: false,
         });
     }
     out
@@ -820,7 +966,18 @@ pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) 
             .collect::<HashMap<_, _>>()
     };
     let (dxcc, _) = state.logbook.dxcc();
+    let mut ignored: HashMap<String, Tier> = config
+        .ignore_calls
+        .iter()
+        .map(|c| (c.clone(), Tier::Permanent))
+        .collect();
+    if let Some(s) = r.contact.get() {
+        for (c, _, _) in s.strategy.session_entries(Instant::now()) {
+            ignored.insert(c, Tier::Session);
+        }
+    }
     Station {
+        ignored,
         my_continent: my_continent(config, call.as_deref(), &dxcc),
         my_call: call.unwrap_or_default(),
         my_grid: locator,
@@ -856,6 +1013,8 @@ struct Inner {
 #[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
+    /// #42 the session ignore list; a leaf lock, never held with `inner`.
+    session: Mutex<Session>,
 }
 pub(crate) type Refusal = (&'static str, Option<String>);
 impl Owner {
@@ -875,7 +1034,7 @@ impl Owner {
                             && v["schema_version"] == 1
                             && v["profile_id"] == state.recording.profile.as_str()
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
-                        ok.then(|| parse_config(&v["configuration"]).ok())
+                        ok.then(|| parse_config(&upgrade(v["configuration"].clone())).ok())
                             .flatten()
                             .map(|c| (v["revision"].as_u64().unwrap_or(0), c))
                     });
@@ -896,11 +1055,27 @@ impl Owner {
     pub(crate) fn config(&self, state: &ProfileState) -> Option<Config> {
         self.lock(state).config.clone()
     }
+    fn session(&self) -> std::sync::MutexGuard<'_, Session> {
+        self.session.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// The live session ignore list (call, band, seconds left).
+    pub(crate) fn session_entries(&self, now: Instant) -> Vec<(String, Option<String>, u64)> {
+        self.session().entries(now)
+    }
+    /// The station step's band observation: a band change empties the session list.
+    pub(crate) fn observe_band(&self, band: Option<&str>) {
+        self.session().observe_band(band);
+    }
     /// StrategySnapshot.
     pub(crate) fn snapshot(&self, state: &ProfileState) -> Value {
         let r = &state.recording;
         let (call, _) = contact_http::profile_facts(state);
         let (dxcc, _) = state.logbook.dxcc();
+        let session: Vec<Value> = self
+            .session_entries(Instant::now())
+            .into_iter()
+            .map(|(call, band, left)| json!({"call":call,"band":band,"remaining_s":left}))
+            .collect();
         let inner = self.lock(state);
         let mine = inner
             .config
@@ -909,7 +1084,58 @@ impl Owner {
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
             "configuration":inner.config.as_ref().map(Config::json),
             "configuration_error":inner.error,"my_continent":mine,
-            "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c))})
+            "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c)),
+            "session_ignore":session})
+    }
+    /// POST /strategy/ignore after the route checks: adds a call to (or removes it from)
+    /// the session list; no revision changes.
+    pub(crate) fn ignore(&self, state: &ProfileState, body: Value) -> Result<Value, Refusal> {
+        let r = &state.recording;
+        let keys = ["v", "profile_id", "boot_id", "call", "ignore"];
+        let o = body.as_object().ok_or(("invalid_request", None))?;
+        if let Some(k) = keys.iter().find(|k| !o.contains_key(**k)) {
+            return Err(("invalid_request", Some((*k).into())));
+        }
+        if o.len() != keys.len() {
+            return Err(("invalid_request", None));
+        }
+        if body["v"].as_u64() != Some(1) {
+            return Err(if body["v"].is_u64() {
+                ("unsupported_version", Some("v".into()))
+            } else {
+                ("invalid_request", Some("v".into()))
+            });
+        }
+        for k in ["profile_id", "boot_id"] {
+            if !body[k].as_str().is_some_and(profile::valid_uuid) {
+                return Err(("invalid_request", Some(k.into())));
+            }
+        }
+        let call =
+            word(&body["call"], "call", 13, b"/").map_err(|f| ("invalid_request", Some(f)))?;
+        let on = body["ignore"]
+            .as_bool()
+            .ok_or(("invalid_request", Some("ignore".into())))?;
+        if body["profile_id"] != r.profile.as_str() {
+            return Err(("wrong_profile", Some("profile_id".into())));
+        }
+        if body["boot_id"] != r.boot.as_str() {
+            return Err(("state_conflict", Some("boot_id".into())));
+        }
+        let minutes = self
+            .config(state)
+            .map_or(SESSION_IGNORE_MINUTES, |c| c.session_ignore_minutes);
+        let band = station_band(r);
+        {
+            let mut session = self.session();
+            session.observe_band(band);
+            if on {
+                session.add(&call, band, minutes, Instant::now());
+            } else {
+                session.remove(&call);
+            }
+        }
+        Ok(self.snapshot(state))
     }
     /// PUT /strategy after the route checks. `running` names the strategy an active
     /// Auto run uses: it cannot be removed or switched while the run lasts.
@@ -1171,6 +1397,22 @@ pub async fn put(
     .await;
     match reply {
         Ok(Ok(snapshot)) => Json(snapshot).into_response(),
+        Ok(Err((code, field))) => refusal(code, field.as_deref()),
+        Err(_) => refusal("storage_unavailable", None),
+    }
+}
+pub async fn ignore_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let (station, state, body) = match body_of(&app, &headers, query, body).await {
+        Ok(v) => v,
+        Err(e) => return *e,
+    };
+    match tokio::task::spawn_blocking(move || station.strategy.ignore(&state, body)).await {
+        Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err((code, field))) => refusal(code, field.as_deref()),
         Err(_) => refusal("storage_unavailable", None),
     }
