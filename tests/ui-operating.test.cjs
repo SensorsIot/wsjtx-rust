@@ -201,7 +201,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
-  for(const name of ['CQ','Reply','RR73','73','Tune','Halt Tx','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  for(const name of ['CQ','Reply','Tune','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.equal(await page.locator('#contact-auto').isDisabled(),true);assert.equal(await page.locator('#contact-auto').getAttribute('aria-label'),'Auto sequence unavailable');
   assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is next to the disabled transmit buttons');
   await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
@@ -264,7 +264,7 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2,box.y+box.height/2-40);await page.mouse.up();
   assert.ok(Number(await separator.getAttribute('aria-valuenow'))<before);
   await app.close();await page.locator('#connection[data-state=stale]').waitFor();
-  for(const name of ['CQ','Reply','Halt Tx','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+  for(const name of ['CQ','Reply','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
   assert.ok(sent.some(m=>m.type==='station.get'),'recorder observes actual allowed station traffic');
   assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
 });
@@ -330,7 +330,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // WstxOperatingLayout::OperatingScreen and friends (operator design interview 2026-11-01). The
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
-const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#halt-tx','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#qso-rr73','#qso-73','#contact-tune','#qso-halt','#contact-log'];
+const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#qso-reply','#contact-tune','#qso-halt','#contact-log'];
 const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
@@ -376,7 +376,7 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   // buttons, all fully visible on the 1366x768 screen; there is no dialogue or LAST row.
   assert.equal(await page.locator('#rx-pane,#contact-last').count(),0);
   await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
-  for(const selector of ['#qso-autoseq','#qso-suggest','#qso-73','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
+  for(const selector of ['#qso-autoseq','#qso-suggest','#qso-halt','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible on the 1366x768 screen`);
   settings={auto_seq:true};await show({...contact,suggested_slot:null});await page.waitForFunction(()=>document.querySelector('#qso-autoseq').hidden);
   settings={auto_seq:false};await show({...contact,suggested_slot:'tx5'});await page.waitForFunction(()=>!document.querySelector('#qso-autoseq').hidden);
   await page.setViewportSize({width:360,height:800});
@@ -725,7 +725,7 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16; TC-007-009 one fixed laptop screen and phone safety.
+// Proves: CL-010-16, CL-037-03; TC-007-009 one fixed laptop screen and phone safety.
 test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating items',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:25000});
@@ -742,10 +742,13 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   const extra=await page.locator('#station-bar').evaluate((bar,allowed)=>[...bar.querySelectorAll('button,select,input')].filter(n=>n.getClientRects().length&&!n.closest('#exception-chips')&&!allowed.includes(n.id)&&!allowed.includes(n.getAttribute('aria-label'))).map(n=>n.id||n.textContent),allowed);
   assert.deepEqual(extra,[],'the top bar holds only its decided items');
   assert.equal(await page.locator('#station-bar #refresh').count(),0,'no refresh in the top bar: the status refreshes itself');
-  // The DX entry is in the QSO fold-out; the compact pane (#37) has no dialogue to erase.
-  for(const selector of ['#dx-call','#dx-grid','#dx-generate'])assert.equal(await shown(page,selector),false,`${selector} folded away`);
-  await page.locator('#qso-more summary').click();for(const selector of ['#dx-call','#dx-generate','#contact-messages'])assert.equal(await shown(page,selector),true,`${selector} in the fold-out`);await page.locator('#qso-more summary').click();
+  // #37 LowerPanel: the DX entry is in the Control panel below the pane; Tx1-Tx6 in the fold-out.
+  for(const selector of ['#dx-call','#dx-grid','#dx-generate'])assert.equal(await inViewport(page,selector),true,`${selector} in the Control panel`);
+  assert.equal(await shown(page,'#contact-messages'),false,'Tx1-Tx6 folded away');
+  await page.locator('#qso-more summary').click();assert.equal(await shown(page,'#contact-messages'),true,'Tx1-Tx6 in the fold-out');await page.locator('#qso-more summary').click();
   assert.equal(await page.locator('#connection').evaluate(el=>el.getBoundingClientRect().width<=1),true,'a connected link shows no status text');
+  // #37 (operator 2026-11-03): one HALT on the screen, the QSO pane's.
+  assert.deepEqual(await page.getByRole('button',{name:/^HALT$|^Halt Tx$/}).filter({visible:true}).evaluateAll(list=>list.map(b=>b.id)),['qso-halt'],'one HALT, in the QSO pane');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'a phone does not overflow horizontally');
@@ -1097,7 +1100,7 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
+// Proves: CL-010-16, CL-037-03, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
 test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
   const standard=(from,to='CQ')=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
@@ -1148,17 +1151,24 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-reply').disabled);
   m=commands.length;await page.locator('#qso-reply').click();for(let i=0;i<40&&commands.length<m+1;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled]),[['enable_tx',true]],'Reply arms the prepared contact');
-  m=commands.length;await page.locator('#qso-rr73').click();for(let i=0;i<60&&commands.length<m+3;i++)await page.waitForTimeout(50);
-  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.form??c.slot??c.enabled]),[['set_tx4','rr73'],['choose_next','tx4'],['enable_tx',true]],'RR73: Tx4 as RR73 next, then transmit');
-  m=commands.length;await page.locator('#qso-73').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
-  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx5',undefined],['enable_tx',true,7]],'73 on a contact in progress: Tx5 next, then transmit');
-  // #37 review: on a completed contact Enable Tx would start a fresh CQ, so RR73 and 73 are off.
-  contact=partner('completed');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#qso-73').disabled);
-  assert.deepEqual([await page.locator('#qso-rr73').isDisabled(),await page.locator('#qso-73').isDisabled()],[true,true],'RR73 and 73 disabled on a completed contact');
-  m=commands.length;await page.locator('#qso-rr73').click({force:true});await page.locator('#qso-73').click({force:true});
-  await page.locator('#qso-73').evaluate(b=>{b.disabled=false;b.click();b.disabled=true;});await page.waitForTimeout(500);
+  // #37 (operator 2026-11-03): no RR73 or 73 button; the fold-out Now of a Tx line chooses it
+  // next and turns Enable Tx on, as WSJT-X Next/Now.
+  assert.equal(await page.locator('#qso-rr73,#qso-73').count(),0,'no RR73 or 73 button');
+  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Reply','Tune','HALT','Log QSO']);
+  await page.locator('#qso-more summary').click();
+  const now=slot=>page.locator(`#contact-messages .ct-now[data-slot=${slot}]`);
+  m=commands.length;await now('tx4').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx4',undefined],['enable_tx',true,7]],'Now Tx4: Tx4 next, then transmit');
+  m=commands.length;await now('tx5').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx5',undefined],['enable_tx',true,7]],'Now Tx5 on a contact in progress: Tx5 next, then transmit');
+  // #37 review: on a completed contact Enable Tx would start a fresh CQ, so Now is off.
+  contact=partner('completed');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
+  assert.deepEqual([await now('tx4').isDisabled(),await now('tx5').isDisabled()],[true,true],'Now disabled on a completed contact');
+  m=commands.length;await now('tx4').click({force:true});await now('tx5').click({force:true});
+  await now('tx5').evaluate(b=>{b.disabled=false;b.click();b.disabled=true;});await page.waitForTimeout(500);
   assert.deepEqual(commands.slice(m),[],'a completed contact sends no choose_next or enable_tx');
-  contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-73').disabled);
+  await page.locator('#qso-more summary').click();
+  contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
   m=commands.length;await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
   assert.match(await page.locator('#op-confirm-text').textContent(),/Abandon the QSO with K1ABC/);await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
   assert.equal(commands.length,m,'cancelled CQ sends nothing');
@@ -1234,7 +1244,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
   await page.locator('#token').fill(token);await page.locator('#login button').click();await page.locator('#connection[data-state="connected"]').waitFor();
   assert.equal(await page.locator('#login-view').isVisible(),false);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  for(const selector of ['#operating-workspace','#radio-toolbar','#halt-tx','#rxtx-strip','#qso-cq'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
+  for(const selector of ['#operating-workspace','#radio-toolbar','#qso-halt','#rxtx-strip','#qso-cq'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
   assert.deepEqual(errors,[]);
 });
 
@@ -1318,7 +1328,7 @@ test('TC-007-002 readable text reflows throughout every operating region at 200 
    assert.equal(result.overflow,false,`page overflow ${region} ${width}px ${scale}x`);
    assert.deepEqual(result.clipped,[],`text clipping ${region} ${width}px ${scale}x`);
    assert.deepEqual(result.overlap,[],`text overlap ${region} ${width}px ${scale}x`);
-   await page.locator('#halt-tx').scrollIntoViewIfNeeded();assert.equal(await page.locator('#halt-tx').isVisible(),true);assert.equal(await page.locator('#halt-tx').isDisabled(),true);
+   const haltShown=page.locator('#halt-tx:visible,#qso-halt:visible').first();await haltShown.scrollIntoViewIfNeeded();assert.equal(await haltShown.isVisible(),true);assert.equal(await haltShown.isDisabled(),true);
    if(width===1200&&region==='operate')await page.screenshot({path:`test-results/ui-operating/readable-${scale}x-1200.png`,fullPage:true});
   }
  }
@@ -1951,7 +1961,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   reject=true;await page.evaluate(()=>receiveSync());
   const notice=page.locator('#station-notice:not([hidden])');
   await notice.filter({hasText:'Station data not understood (receive) · reload'}).waitFor();
-  assert.equal(await notice.getAttribute('data-severity'),'error');assert.equal(await notice.locator('xpath=..').getAttribute('id'),'station-bar');
+  assert.equal(await notice.getAttribute('data-severity'),'error');assert.equal(await notice.evaluate(n=>!!n.closest('#error-field')),true,'the notice is an error field entry (#37)');
   reject=false;await page.evaluate(()=>receiveSync());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
   // A result page and an operating selection snapshot of an unknown shape are named the same way.
   for(const [kind,read] of [['selection','operatingSync(true)'],['results','(lastResultStart=-Infinity,receiveResults())']]){
@@ -2013,7 +2023,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   const {page,errors,newJob}=await liveDisplayFixture(t);
   // Independent palette anchors (CL-006-03): t=0.1 -> (0,0,57), t=0.9 -> (255,105,0), t=0.3 -> (0,60,185), t=0.5 -> (0,220,240).
   const noise=40,carrier=80,levels=Array.from({length:1024},(_,k)=>k>=498&&k<=502?carrier:noise);
-  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.round(document.querySelector('#signal').getBoundingClientRect().height)]),['0','50','1','10 px/s',true,330],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px');
+  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-200))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 400 px (#37 LowerPanel)');
   await liveFrames(page,[{sequence:0,levels},{sequence:1,levels}]);
   assert.deepEqual([await cell(page,100),await cell(page,500)],[[0,0,57],[255,105,0]],'noise -80 dBFS and a -40 dBFS carrier on the fixed -85..-35 dBFS scale');
   assert.match(await page.locator('#level-legend').textContent(),/WF -85 to -35 dBFS/);
@@ -2044,5 +2054,105 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
   const row=q=>Array.from({length:128},()=>q);
   await liveFrames(page,[{sequence:0,levels:row(10),thin:true},{sequence:2,levels:row(20),thin:true},{sequence:5,levels:row(30),thin:true},{sequence:6,levels:row(40),thin:true},{sequence:10,levels:row(50),thin:true}]);
   assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,30],[5,30],[6,40],[7,null],[8,null],[9,null],[10,50]]);
+  assert.deepEqual(errors,[]);
+});
+
+// ---------------------------------------------------------------- #37 lower panel
+// WstxOperatingLayout::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
+// of 2026-11-03 (vertical stack, the QSO card's width, the controls always visible, the error
+// field with current problems only and no history), not the candidate markup.
+const panelControls=['#dx-call','#dx-grid','#dx-generate','#contact-report','#contact-auto','#contact-call-first','#contact-hold','#contact-parity'];
+async function lowerStack(page){return page.evaluate(()=>{
+  const box=s=>{const r=document.querySelector(s).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};};
+  const panel=document.querySelector('#qso-control'),pr=panel.getBoundingClientRect(),controls=[...panel.querySelectorAll('input,select,button')].map(n=>n.closest('label')??n).map(n=>n.getBoundingClientRect());
+  const spread=(Math.max(...controls.map(r=>r.right))-Math.min(...controls.map(r=>r.left)))/pr.width;
+  return {pane:box('#rx-focus'),control:box('#qso-control'),error:box('#error-field'),spread,scroll:document.documentElement.scrollWidth>innerWidth};
+});}
+function assertStack(s,label){
+  assert.ok(s.pane.bottom<=s.control.top+0.5&&s.control.bottom<=s.error.top+0.5,`${label}: pane, Control and error field stacked top to bottom ${JSON.stringify(s)}`);
+  for(const k of ['control','error'])assert.ok(Math.abs(s[k].left-s.pane.left)<=1&&Math.abs(s[k].right-s.pane.right)<=1,`${label}: ${k} has the QSO card's edges ${JSON.stringify(s)}`);
+  assert.equal(s.scroll,false,`${label}: no horizontal overflow`);
+}
+// Proves: CL-037-01; TC-037-001 the Control panel below the QSO pane.
+test('TC-037-001 the Control panel sits below the QSO pane at its width with DX call, report, Auto Seq, Call 1st, Hold Tx and Tx period always visible',{timeout:60000},async t=>{
+  const commands=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner('replying')})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-report').disabled,null,{timeout:45000});
+  assert.equal(await page.locator('#qso-more').evaluate(d=>d.open),false,'the fold-out stays closed');
+  for(const selector of panelControls){
+    assert.equal(await page.locator(`#qso-control ${selector}`).count(),1,`${selector} in the Control panel`);
+    assert.equal(await inViewport(page,selector),true,`${selector} visible without opening the fold-out`);
+    assert.equal(await page.locator(`#qso-more ${selector}`).count(),0,`${selector} left the fold-out`);
+  }
+  assert.equal(await page.locator('#qso-more #contact-messages li').count(),6,'Tx1-Tx6 stay in the fold-out');
+  assert.equal(await page.locator('#rxtx-strip #contact-hold').count(),0,'Hold Tx left the Rx/Tx strip');
+  for(const selector of ['#contact-rx','#contact-tx'])assert.equal(await page.locator(`#rxtx-strip ${selector}`).count(),1,'the frequencies stay under the waterfall');
+  assert.equal(await page.locator('#qso-control .op-input-meter,#qso-control #op-dial,#qso-control #contact-rx,#error-field .op-input-meter').count(),0,'no level meter or frequency in the lower panel');
+  const desk=await lowerStack(page);assertStack(desk,'1366x768');
+  assert.ok(desk.spread>=0.8,`the controls are laid out across the panel width (${desk.spread})`);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),false,'no page scroll at 1366x768');
+  await page.screenshot({path:'test-results/ui-operating/lower-panel-1366x768.png'});
+  // Each control sends its single contact request.
+  const last=async n=>{for(let i=0;i<40&&commands.length<n;i++)await page.waitForTimeout(50);assert.equal(commands.length,n,JSON.stringify(commands.slice(-3)));return commands.at(-1);};
+  await page.locator('#contact-report').fill('7');await page.locator('#contact-report').press('Tab');assert.deepEqual([(await last(1)).action,commands[0].report],['set_report',7]);
+  await page.locator('#contact-auto').uncheck();assert.deepEqual([(await last(2)).action,commands[1].enabled],['set_auto_seq',false]);
+  await page.locator('#contact-call-first').uncheck();assert.deepEqual([(await last(3)).action,commands[2].enabled],['set_call_first',false]);
+  await page.locator('#contact-hold').check();assert.deepEqual([(await last(4)).action,commands[3].enabled],['set_hold_tx',true]);
+  await page.locator('#contact-parity').selectOption('odd');assert.deepEqual([(await last(5)).action,commands[4].parity],['set_parity','odd']);
+  await page.locator('#dx-call').fill('W1AW');await page.locator('#dx-call').press('Enter');assert.deepEqual([(await last(6)).action,commands[5].dx_call],['enter_dx','W1AW']);
+  await page.setViewportSize({width:1920,height:1080});assertStack(await lowerStack(page),'1920x1080');
+  await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  assertStack(await lowerStack(page),'360x800');
+  await page.locator('#error-field').scrollIntoViewIfNeeded();await page.screenshot({path:'test-results/ui-operating/lower-panel-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-037-02; TC-037-002 the error field lists current problems only.
+test('TC-037-002 the error field lists only current problems with their time and clears them by itself',{timeout:60000},async t=>{
+  let transmit={};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{transmit})}));
+    // A healthy station: receive runs (the receive snapshot names a running live job).
+    const idle=await (await fetch(app.origin+'/receive')).json(),running=liveFixture({...idle,generation:idle.generation+1});
+    await p.route('**/receive',route=>route.fulfill({json:running}));
+    await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(running)}));
+    await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:running.generation,job:{id:running.job.id,source_id:running.source.id,generation:running.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&live?.job?.state==='running',null,{timeout:45000});
+  const entries=()=>page.locator('#error-field [role=listitem]').evaluateAll(list=>list.map(e=>[e.querySelector('button').dataset.chip,e.querySelector('button').textContent,e.querySelector('.op-error-since')?.textContent]));
+  const show=()=>page.evaluate(()=>window.wstxChipsShow());
+  await show();
+  assert.deepEqual(await entries(),[],'a healthy station has no entry');
+  const none=page.locator('#error-field').getByText('No problems',{exact:true});
+  assert.equal(await none.isVisible(),true,'an empty field says No problems');
+  assert.equal(await page.locator('#station-bar .op-chip:not([hidden])').count(),0,'no exception chips in the top bar');
+  // CAT not ready.
+  const hhmm=()=>new Date().toISOString().slice(11,16);
+  const before=hhmm();
+  await page.evaluate(()=>{profileData.settings.control.mode='cat';catStatus={condition:'radioUnavailable'};document.querySelector('#cat-status').textContent='CAT radio unavailable';});await show();
+  let list=await entries();
+  assert.equal(list.length,1,JSON.stringify(list));assert.deepEqual(list[0].slice(0,2),['cat','✖ CAT radio unavailable']);
+  assert.ok([`since ${before}`,`since ${hhmm()}`].includes(list[0][2]),list[0][2]);
+  assert.equal(await none.isVisible(),false);
+  // A transmit refusal the operator must fix appears; a transient one does not.
+  transmit={refusal:'radio_lost'};await page.evaluate(()=>window.wstxContact.load());await show();
+  assert.deepEqual((await entries()).map(e=>e[1]).sort(),['✖ CAT radio unavailable','✖ Tx refused · radio lost']);
+  transmit={refusal:'busy'};await page.evaluate(()=>window.wstxContact.load());await show();
+  assert.deepEqual((await entries()).map(e=>e[0]),['cat'],'a transient refusal is no entry');
+  transmit={refusal:'ptt_timeout'};await page.evaluate(()=>window.wstxContact.load());await show();
+  // The CAT condition clears: its entry goes without any operator action, the refusal stays.
+  await page.evaluate(()=>{catStatus={condition:'ready'};});await show();
+  assert.deepEqual((await entries()).map(e=>e[1]),['✖ Tx refused · ptt timeout']);
+  assert.equal(await page.locator('#error-field').getByRole('button',{name:/acknowledge|dismiss|clear|^ok$/i}).count(),0,'no acknowledge control');
+  transmit={refusal:null};await page.evaluate(()=>window.wstxContact.load());await show();
+  assert.deepEqual(await entries(),[],'no history: a cleared problem leaves nothing');
+  assert.equal(await none.isVisible(),true);
+  // Connection loss.
+  await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();await show();
+  assert.deepEqual((await entries()).map(e=>e[1]),['✖ Station connection lost · reconnecting']);
   assert.deepEqual(errors,[]);
 });
