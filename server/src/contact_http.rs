@@ -114,6 +114,8 @@ pub(crate) struct StatusFacts {
     pub rx_hz: u32,
     pub tx_hz: u32,
     pub next_message: Option<String>,
+    /// GridExchangeContest (#24 S2a).
+    pub activity: contact::Activity,
 }
 pub(crate) fn mode_of(text: &str) -> decoder::Mode {
     if text == "ft4" {
@@ -264,6 +266,7 @@ impl Station {
             rx_hz: e.settings.rx_hz,
             tx_hz: e.settings.tx_hz,
             next_message: c.and_then(|c| c.messages[c.next.index()].clone()),
+            activity: e.settings.activity,
         }
     }
     /// One ContactCommand body through exactly the browser's validation and execution
@@ -576,7 +579,8 @@ impl Station {
         let s = &e.settings;
         let settings = json!({"auto_seq":s.auto_seq,"call_first":s.call_first,"tx1_skip":s.tx1_skip,
             "tx_minutes":view.as_ref().map_or(6,|v|v.tx_minutes),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
-            "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report});
+            "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
+            "activity":s.activity.name()});
         let watchdog = json!({"tx_remaining_minutes":view.as_ref().map_or(0,|v|v.tx_remaining_minutes),
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
@@ -682,6 +686,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
         "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "set_call_first" | "tune" => &["enabled"],
+        "set_activity" => &["activity"],
         "enable_tx" => &["enabled", "safety_revision"],
         "set_tx4" => &["form"],
         "set_frequency" => &["rx_hz", "tx_hz"],
@@ -762,6 +767,12 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
         "set_hold_tx" => Command::SetHoldTx(boolean(b, "enabled")?),
         "set_auto_seq" => Command::SetAutoSeq(boolean(b, "enabled")?),
         "set_call_first" => Command::SetCallFirst(boolean(b, "enabled")?),
+        "set_activity" => Command::SetActivity(
+            b["activity"]
+                .as_str()
+                .and_then(contact::Activity::parse)
+                .ok_or(("invalid_request", Some("activity")))?,
+        ),
         "enable_tx" => {
             if !b["safety_revision"].is_null() {
                 safe(b, "safety_revision")?;

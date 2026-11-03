@@ -236,6 +236,61 @@ pub enum Received {
     SeventyThree,
     Other,
 }
+/// WstxContact::GridExchangeContest: the station's special operating activity (#24 S2a).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Activity {
+    #[default]
+    None,
+    NaVhf,
+    WwDigi,
+    ArrlDigi,
+}
+impl Activity {
+    pub fn name(self) -> &'static str {
+        match self {
+            Activity::None => "none",
+            Activity::NaVhf => "na_vhf",
+            Activity::WwDigi => "ww_digi",
+            Activity::ArrlDigi => "arrl_digi",
+        }
+    }
+    pub fn parse(text: &str) -> Option<Self> {
+        [Self::None, Self::NaVhf, Self::WwDigi, Self::ArrlDigi]
+            .into_iter()
+            .find(|a| a.name() == text)
+    }
+    /// WSJT-X SpecialOperatingActivity value (UDP Status special operation).
+    pub fn special_operation(self) -> u8 {
+        match self {
+            Activity::None => 0,
+            Activity::NaVhf => 1,
+            Activity::WwDigi => 5,
+            Activity::ArrlDigi => 8,
+        }
+    }
+    /// The CQ modifier of genCQMsg (m_cqStr).
+    fn cq(self) -> Option<&'static str> {
+        match self {
+            Activity::None => None,
+            Activity::NaVhf | Activity::ArrlDigi => Some("TEST"),
+            Activity::WwDigi => Some("WW"),
+        }
+    }
+}
+/// ContestReceivedKind: in a grid-exchange contest a grid is the report and R+grid the
+/// roger report (DecodedMessageReaction.cpp ~533-547, #24 S2a).
+pub fn classify_in(standard: &Standard, activity: Activity) -> Received {
+    match (&standard.exchange, activity) {
+        (Exchange::Grid(_), a) if a != Activity::None => {
+            if standard.ack {
+                Received::RogerReport
+            } else {
+                Received::SignalReport
+            }
+        }
+        _ => classify(standard),
+    }
+}
 pub fn classify(standard: &Standard) -> Received {
     match standard.exchange {
         Exchange::Grid(_) => Received::Grid,
@@ -341,12 +396,29 @@ pub fn generate(
     report: i32,
     tx4: Tx4,
 ) -> Option<[Option<String>; 6]> {
-    let r = render_report(report);
+    generate_with(my_call, grid4, dx, report, tx4, Activity::None)
+}
+/// StandardMessageSet with the station's special activity (GridExchangeContest).
+pub fn generate_with(
+    my_call: &str,
+    grid4: &str,
+    dx: Option<&str>,
+    report: i32,
+    tx4: Tx4,
+    activity: Activity,
+) -> Option<[Option<String>; 6]> {
+    let (r, rr) = match activity {
+        Activity::None => (render_report(report), format!("R{}", render_report(report))),
+        _ => (grid4.to_owned(), format!("R {grid4}")),
+    };
     let mut set: [Option<String>; 6] = Default::default();
     // MW genStdMsgs/genCQMsg, 77-bit: brackets mark the hashed nonstandard side (#24 S1b).
     let my_standard = is_standard_call(my_call);
     set[5] = Some(if my_standard {
-        format!("CQ {my_call} {grid4}")
+        match activity.cq() {
+            Some(cq) => format!("CQ {cq} {my_call} {grid4}"),
+            None => format!("CQ {my_call} {grid4}"),
+        }
     } else {
         format!("CQ {my_call}")
     });
@@ -364,7 +436,7 @@ pub fn generate(
             signoff.clone()
         });
         set[1] = Some(format!("{exchange} {r}"));
-        set[2] = Some(format!("{exchange} R{r}"));
+        set[2] = Some(format!("{exchange} {rr}"));
         set[3] = Some(format!(
             "{signoff} {}",
             if tx4 == Tx4::Rr73 { "RR73" } else { "RRR" }
@@ -391,6 +463,8 @@ pub struct Settings {
     pub hold_tx: bool,
     pub parity: Parity,
     pub report: i32,
+    /// GridExchangeContest (#24 S2a): this boot's special activity, none by default.
+    pub activity: Activity,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -405,6 +479,7 @@ impl Default for Settings {
             // WSJT-X m_txFirst default false: transmit in the second (odd) period.
             parity: Parity::Odd,
             report: REPORT_DEFAULT,
+            activity: Activity::None,
         }
     }
 }
@@ -561,6 +636,7 @@ pub enum Command {
     SetParity(Parity),
     SetAutoSeq(bool),
     SetCallFirst(bool),
+    SetActivity(Activity),
     SetWatchdogs {
         tx_minutes: u32,
         tune_seconds: u32,
@@ -724,7 +800,15 @@ impl Engine {
             return Err("profile_incomplete");
         };
         let tx4 = tx4_default(mode);
-        let messages = generate(&call, &grid4, Some(&dx), report, tx4).ok_or("invalid_call")?;
+        let messages = generate_with(
+            &call,
+            &grid4,
+            Some(&dx),
+            report,
+            tx4,
+            self.settings.activity,
+        )
+        .ok_or("invalid_call")?;
         // The same partner in the other mode is a different contact (ContactMode).
         let same = self
             .contact
@@ -790,9 +874,17 @@ impl Engine {
             return;
         };
         if let Some(c) = self.contact.as_mut()
-            && let Some(set) = generate(&call, &grid4, c.dx_call.as_deref(), c.report, c.tx4)
+            && let Some(set) = generate_with(
+                &call,
+                &grid4,
+                c.dx_call.as_deref(),
+                c.report,
+                c.tx4,
+                self.settings.activity,
+            )
         {
             c.messages[1..4].clone_from_slice(&set[1..4]);
+            c.messages[5].clone_from(&set[5]);
         }
     }
     /// Applies one accepted-or-refused operating command. Ok means accepted (the caller
@@ -817,7 +909,7 @@ impl Engine {
                 };
                 let my = ctx.call.clone().ok_or("profile_incomplete")?;
                 let to_me = std.to.call() == Some(my.as_str());
-                let received = classify(&std);
+                let received = classify_in(&std, self.settings.activity);
                 let report = row.snr_db.map_or(self.settings.report, report_from_snr);
                 let grid = match &std.exchange {
                     Exchange::Grid(g) if valid_grid(g) => Some(g.clone()),
@@ -999,6 +1091,10 @@ impl Engine {
             Command::SetParity(parity) => self.settings.parity = parity,
             Command::SetAutoSeq(enabled) => self.settings.auto_seq = enabled,
             Command::SetCallFirst(enabled) => self.settings.call_first = enabled,
+            Command::SetActivity(activity) => {
+                self.settings.activity = activity;
+                self.regenerate(ctx);
+            }
             Command::SetWatchdogs {
                 tx_minutes,
                 tune_seconds,
@@ -1038,8 +1134,15 @@ impl Engine {
                 let revision = shown.ok_or("stale_revision")?;
                 let needs_cq = self.contact.as_ref().is_none_or(|c| !c.state.transmits());
                 let cq = if needs_cq {
-                    let set = generate(&call, &grid4, None, self.settings.report, Tx4::Rrr)
-                        .ok_or("profile_incomplete")?;
+                    let set = generate_with(
+                        &call,
+                        &grid4,
+                        None,
+                        self.settings.report,
+                        Tx4::Rrr,
+                        self.settings.activity,
+                    )
+                    .ok_or("profile_incomplete")?;
                     Some((set, (self.new_id)().ok_or("storage_unavailable")?))
                 } else {
                     None
@@ -1180,7 +1283,10 @@ impl Engine {
                             if submitted.slot == Slot::Tx3 {
                                 c.first_tx3_period.get_or_insert(submitted.period);
                             }
-                            if matches!(submitted.slot, Slot::Tx2 | Slot::Tx3) {
+                            // A contest Tx2/Tx3 carries my grid, not a report (#24 S2a).
+                            if matches!(submitted.slot, Slot::Tx2 | Slot::Tx3)
+                                && self.settings.activity == Activity::None
+                            {
                                 c.report_sent = Some(submitted.report);
                             }
                             if c.dx_call.is_some() {
@@ -1270,7 +1376,7 @@ impl Engine {
                     if !self.count(row.key.clone(), (period, row.text.clone())) {
                         continue;
                     }
-                    let received = classify(std);
+                    let received = classify_in(std, self.settings.activity);
                     let auto = self.settings.auto_seq;
                     let c = self.contact.as_mut().expect("checked");
                     c.heard(row, period);
@@ -1388,7 +1494,10 @@ impl Engine {
                 && matches!(std.from, Call::Sign(_))
                 // AutoRespondPeriod.cpp isDirectAutoRespondCandidate: an exchange that is
                 // not a continuing one (R+report, RRR, RR73, 73), i.e. a grid or a report.
-                && matches!(classify(std), Received::Grid | Received::SignalReport)
+                && matches!(
+                    classify_in(std, self.settings.activity),
+                    Received::Grid | Received::SignalReport
+                )
                 && row
                     .period_start_ms
                     .is_some_and(|p| transmit::parity(row.mode, p) != parity)

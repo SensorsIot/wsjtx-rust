@@ -2413,7 +2413,14 @@ fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
     assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
     s.run(period(1) + 14 * SECOND);
     assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ WW HB9BLA JN47"));
-    let caller = decoded(&mut s, &mut table, period(2), "HB9BLA S52XYZ JN76", 1300.0, -8.0);
+    let caller = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA S52XYZ JN76",
+        1300.0,
+        -8.0,
+    );
     s.command(Command::SelectRow {
         row: caller,
         replace: false,
@@ -2432,8 +2439,18 @@ fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
     );
     assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
     s.run(period(3) + 14 * SECOND);
-    assert_eq!(s.sent_in(period(3)).as_deref(), Some("S52XYZ HB9BLA R JN47"));
-    let rr73 = decoded(&mut s, &mut table, period(4), "HB9BLA S52XYZ RR73", 1300.0, -8.0);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("S52XYZ HB9BLA R JN47")
+    );
+    let rr73 = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "HB9BLA S52XYZ RR73",
+        1300.0,
+        -8.0,
+    );
     s.deliver(&[rr73]);
     assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
     s.run(period(6));
@@ -2468,12 +2485,26 @@ fn na_vhf_moves_to_rogers_on_r_grid() {
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.run(period(2) + 14 * SECOND);
     assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
-    let r = decoded(&mut s, &mut table, period(2), "HB9BLA K1ABC R FN42", 1200.0, -10.0);
+    let r = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA K1ABC R FN42",
+        1200.0,
+        -10.0,
+    );
     s.deliver(&[r]);
     assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
     s.run(period(4) + 14 * SECOND);
     assert_eq!(s.sent_in(period(3)).as_deref(), Some("K1ABC HB9BLA RRR"));
-    let bye = decoded(&mut s, &mut table, period(4), "HB9BLA K1ABC 73", 1200.0, -10.0);
+    let bye = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "HB9BLA K1ABC 73",
+        1200.0,
+        -10.0,
+    );
     s.deliver(&[bye]);
     assert_eq!(s.state().0, State::Completed);
     assert_eq!(one_log(&mut s).dx_grid.as_deref(), Some("FN42"));
@@ -2502,7 +2533,7 @@ fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
         replace: true,
     })
     .unwrap();
-    assert_eq!(set(&s)[1], "K1ABC HB9BLA -10");
+    assert_eq!(set(&s)[1], "K1ABC HB9BLA -15");
     assert_eq!(set(&s)[5], "CQ HB9BLA JN47");
     for (a, name, udp) in [
         (Activity::None, "none", 0),
