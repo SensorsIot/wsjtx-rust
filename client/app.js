@@ -31,8 +31,11 @@ function disconnect(current) {
   login.hidden = location.protocol !== 'https:' || retained;
   clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
 }
+let loginRetry = null;
+const loginRetryText = () => `Slow link · Retrying authorization (attempt ${loginRetry.attempt} of ${loginRetry.attempts})…`;
 function showAuthorizationUnavailable(error) {
   const condition = error?.authorizationCondition;
+  if (condition === 'explicit-in-progress' && loginRetry) {stale(); connection.textContent = loginRetryText() + ' · station data stale'; login.hidden = true; return;}
   const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
     'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
     'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
@@ -157,8 +160,15 @@ login.addEventListener('submit', async event => {
   finally {secret = null;}
 });
 const logoutButton = document.querySelector('#logout'), forgetButton = document.querySelector('#forget');
+// CL-022-01 slow-link setup retry: the token login stays in progress; say so instead of failing.
+addEventListener('station-authorization-retry', event => {
+  if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
+  loginRetry = event.detail; document.querySelector('#login-error').textContent = loginRetryText();
+  if (authorization.snapshot().state === 'authorizing') {stale(); connection.textContent = loginRetryText() + ' · station data stale';}
+});
 addEventListener('station-authorization', event => {
   if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
+  if (event.detail.state !== 'authorizing') loginRetry = null;
   logoutButton.hidden = !event.detail.ready;
   forgetButton.hidden = !['retained-rejected', 'credential-invalid'].includes(event.detail.authorizationCondition);
   if (event.detail.ready) return;

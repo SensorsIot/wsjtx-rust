@@ -2484,6 +2484,19 @@ package WstxRequirements {
              retained-rejected, invalid or missing credential is never retried
              without an operator action, so it cannot spam challenges or drain any
              admission bound; transient failures back off exponentially to60s.
+             Slow-link setup retry (operator decision 2026-11-03, issue22): during one
+             token login each setup step (POST /session, bootstrap-scope, enroll, and
+             the challenge/proof/status renewal) has its own 10 s attempt bound. A step
+             whose attempt timed out or failed on the network (no HTTP status) is
+             retried automatically, at most 3 attempts per step after 1 s then 2 s,
+             and the whole login stops after 45 s, without a second operator press.
+             Enroll repeats the same operation ID and verifier (idempotent receipt);
+             a renewal attempt starts from a fresh challenge. Any HTTP refusal
+             (401/403/409/413/429/503) or invalid/mismatched response is definitive
+             and never retried. While retrying the existing authorizing state stays
+             and the connection status shows 'Retrying authorization' with the attempt; page
+             unload (pagehide) cancels pending attempts and waits. Each retried
+             session/bootstrap-scope/enroll attempt spends the setup budget above.
              Browser Log out revokes this grant (revoke all_for_radio=false), then
              deletes the local key after the committed receipt; the server clears
              the transport cookie. A confirmed rejected/invalid retained credential
@@ -2749,6 +2762,15 @@ package WstxRequirements {
              proof establishes readiness. Contrast pre-commit failure: no retained
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
+             Slow-link setup retry oracle (independent request counters on the actual
+             browser): hold the first bootstrap-scope response past its 10 s bound;
+             the status shows 'Retrying authorization' and becomes connected after one
+             token press with one session, two bootstrap-scope and one enrollment.
+             A network-failed enrollment is repeated once with the identical operation
+             ID and verifier and connects. Network failure of every /session
+             attempt stops after exactly 3 attempts with 'Could not authenticate'.
+             A 401 bootstrap-scope is never retried. Navigating away during a held
+             attempt sends no further setup request.
              Automated companions: tests/profiles.test.cjs TC-022-006 cases and
              server/src/auth_tests.rs, including plaintext runtime-token operating
              access. Radio identity Add/Replace and injected-time restart subsets

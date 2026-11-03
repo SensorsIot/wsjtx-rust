@@ -90,9 +90,13 @@ window.stationAuthorization = (() => {
     let offset = 0; for (const part of parts) {result.set(part, offset); offset += part.length;}
     return result;
   }
+  // A rejected fetch or body read has no HTTP status: a timeout, abort or network failure.
+  const transient = error => {if (error && typeof error === 'object') error.transient = true; return error;};
   async function raw(path, body, signal) {
-    const response = await fetch('/authorization/v1/' + path, {method: 'POST', cache: 'no-store',
-      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal});
+    let response;
+    try {response = await fetch('/authorization/v1/' + path, {method: 'POST', cache: 'no-store',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal});}
+    catch (error) {throw transient(error);}
     if (!response.ok) {
       const error = new Error(response.status === 429 ? 'Authorization rate limited' : response.status === 503 ?
         'Authorization persistence unavailable' : 'Authorization unavailable');
@@ -100,7 +104,8 @@ window.stationAuthorization = (() => {
     }
     if (path === 'proof' && response.status !== 204) throw new Error('Invalid proof acknowledgement');
     if (response.status === 204) return null;
-    const text = await response.text();
+    let text;
+    try {text = await response.text();} catch (error) {throw transient(error);}
     if (encoder.encode(text).length > 1024) throw new Error('Invalid authorization response');
     return JSON.parse(text);
   }
@@ -159,6 +164,28 @@ window.stationAuthorization = (() => {
     }
   }
 
+  // Slow-link setup retry (CL-022-01, operator decision 2026-11-03): each token-login step
+  // has its own 10 s attempt; only a transient attempt is repeated (3 attempts, 1 s/2 s
+  // pauses), the whole login stops at 45 s or on page unload. HTTP refusals are definitive.
+  const attemptMs = 10000, attempts = 3, pauses = [1000, 2000], loginMs = 45000;
+  function pause(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) {reject(signal.reason); return;}
+      const done = () => {clearTimeout(timer); reject(signal.reason);};
+      const timer = setTimeout(() => {signal.removeEventListener('abort', done); resolve();}, ms);
+      signal.addEventListener('abort', done, {once: true});
+    });
+  }
+  async function retried(login, current, step, action) {
+    for (let attempt = 1; ; attempt++) {
+      try {return await action(AbortSignal.any([login, AbortSignal.timeout(attemptMs)]));}
+      catch (error) {
+        if (!error?.transient || login.aborted || attempt >= attempts || current !== epoch) throw error;
+        window.dispatchEvent(new CustomEvent('station-authorization-retry', {detail: Object.freeze({epoch: current, step, attempt: attempt + 1, attempts})}));
+        await pause(pauses[attempt - 1], login);
+      }
+    }
+  }
   function ensureReady() {
     if (authorizing) {const error = new Error('Explicit authorization in progress'); error.authorizationCondition = 'explicit-in-progress'; return Promise.reject(error);}
     if (state === 'ready') return Promise.resolve(snapshot());
@@ -201,13 +228,20 @@ window.stationAuthorization = (() => {
     if (recovery || authorizing) throw new Error('Authorization recovery in progress');
     authorizing = true; lastFailure = null; retryAt = 0; failures = 0;
     const current = ++epoch; publish('authorizing');
+    const unload = new AbortController(), leave = () => unload.abort();
+    addEventListener('pagehide', leave);
+    const login = AbortSignal.any([unload.signal, AbortSignal.timeout(loginMs)]);
     let condition = null;
     try {
       let response;
-      try {response = await fetch('/session', {method: 'POST', body: secret, signal: AbortSignal.timeout(10000)});}
+      try {
+        response = await retried(login, current, 'session', async signal => {
+          try {return await fetch('/session', {method: 'POST', body: secret, signal});} catch (error) {throw transient(error);}
+        });
+      }
       finally {secret = null;}
       if (response.status !== 204) throw new Error('Could not authorize station');
-      const signal = AbortSignal.timeout(10000), discovered = await raw('bootstrap-scope', {version: 1}, signal);
+      const discovered = await retried(login, current, 'bootstrap-scope', signal => raw('bootstrap-scope', {version: 1}, signal));
       if (discovered.version !== 1 || !validScope(discovered.current_scope)) throw new Error('Explicit radio setup required');
       condition = 'credential-storage-unavailable';
       const db = await open(true); db.close();
@@ -227,13 +261,16 @@ window.stationAuthorization = (() => {
       condition = 'credential-storage-unavailable';
       await stored(credential, false, true);
       condition = 'enrollment-pending';
-      const receipt = await raw('enroll', {version: 1, operation_id: credential.enrollment_id, scope: credential.scope,
-        grant_id: credential.grant_id, public_key: credential.public_key}, signal);
+      // The server answers a repeated identical enrollment with its committed receipt.
+      const enrollment = {version: 1, operation_id: credential.enrollment_id, scope: credential.scope,
+        grant_id: credential.grant_id, public_key: credential.public_key};
+      const receipt = await retried(login, current, 'enroll', signal => raw('enroll', enrollment, signal));
       if (receipt.version !== 1 || receipt.operation_id !== credential.enrollment_id || receipt.grant_id !== credential.grant_id ||
           receipt.outcome !== 'committed' || !sameScope(receipt.scope, credential.scope)) throw new Error('Enrollment outcome unknown');
       credential.pending_enrollment = false; await stored(credential);
       condition = 'retained-transient';
-      const currentScope = await renew(credential, signal);
+      // Each renewal attempt starts from a fresh one-use challenge.
+      const currentScope = await retried(login, current, 'renew', signal => renew(credential, signal));
       if (current === epoch) {lastFailure = null; publish('ready', currentScope);}
       return snapshot();
     } catch (error) {
@@ -246,7 +283,7 @@ window.stationAuthorization = (() => {
       if (current === epoch) {lastFailure = condition ? {condition, status: failure.status} : null; publish('unavailable');}
       throw failure;
     }
-    finally {authorizing = false; secret = null;}
+    finally {authorizing = false; secret = null; removeEventListener('pagehide', leave);}
   }
   async function erase() {
     let db;

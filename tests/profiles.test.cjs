@@ -18,6 +18,7 @@ const WebSocket = require('ws');
 const {receive} = require('./peer.cjs');
 let root, browser, tls, retainFixtureRoot = false;
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
 // Proves: CL-044-05; TC-044-002. Saved audio devices are WASAPI endpoint IDs of their flow (capture 0.0.1, render 0.0.0).
 const captureId = i => `{0.0.1.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`;
@@ -170,6 +171,80 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
     db.close();
     try {await crypto.subtle.exportKey('pkcs8', value.key); return false;} catch {return value.key.extractable === false && value.key.usages.join(',') === 'sign';}
   }), true);
+});
+
+// Proves the CL-022-01 slow-link setup retry (operator decision 2026-11-03, #22): one token
+// press survives a late or network-failed setup step; refusals are never retried.
+test('TC-022-006: token login retries a slow or failed setup step without another press', {timeout: 120000}, async t => {
+  const {profiles} = await fixture(t, true);
+  const fresh = async () => {const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close()); return context.newPage();};
+  // Independent request counters per actual browser page; enroll bodies kept for identity.
+  const counted = page => {
+    const seen = {'/session': 0, '/authorization/v1/bootstrap-scope': 0, '/authorization/v1/enroll': 0, enrollBodies: []};
+    page.on('request', request => {const route = new URL(request.url()).pathname; if (Object.hasOwn(seen, route)) seen[route]++; if (route === '/authorization/v1/enroll') seen.enrollBodies.push(request.postData());});
+    return seen;
+  };
+  const open = async (page, p) => {
+    await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible'});
+    await page.evaluate(() => {const node = document.querySelector('#login-error'); window.__loginTexts = []; new MutationObserver(() => window.__loginTexts.push(node.textContent)).observe(node, {childList: true, characterData: true, subtree: true});});
+  };
+  const press = async (page, p) => {await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();};
+  const refused = page => page.locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor({timeout: 20000});
+  const texts = page => page.evaluate(() => window.__loginTexts);
+
+  // The first bootstrap-scope is answered by the server but delivered after its 10 s bound.
+  {
+    const p = profiles[0], page = await fresh(), seen = counted(page); let held = 0;
+    await page.route(p.origin + '/authorization/v1/bootstrap-scope', async route => {
+      if (held++) {await route.continue(); return;}
+      const response = await route.fetch(); await sleep(11000);
+      await route.fulfill({response}).catch(() => {});
+    });
+    await open(page, p); await press(page, p);
+    await page.locator('#connection').filter({hasText: 'Retrying authorization (attempt 2 of 3)'}).waitFor({timeout: 15000});
+    await connected(page);
+    assert.equal(await page.locator('#login-error').textContent(), '');
+    assert.equal((await texts(page)).some(text => text.includes('Could not authenticate')), false, 'no refusal shown');
+    assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 2, 1]);
+  }
+  // A network-failed enrollment repeats the identical operation ID and verifier once.
+  {
+    const p = profiles[1], page = await fresh(), seen = counted(page); let failed = 0;
+    await page.route(p.origin + '/authorization/v1/enroll', route => failed++ ? route.continue() : route.abort('failed'));
+    await open(page, p); await press(page, p); await connected(page);
+    assert.equal(seen['/session'], 1); assert.equal(seen['/authorization/v1/enroll'], 2);
+    assert.equal(seen.enrollBodies[0], seen.enrollBodies[1], 'retried enrollment is the same operation');
+    assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), true);
+  }
+  // Every /session attempt fails on the network: exactly three attempts, then the refusal text.
+  {
+    const p = profiles[2], page = await fresh(), seen = counted(page);
+    await page.route(p.origin + '/session', route => route.abort('failed'));
+    await open(page, p); await press(page, p); await refused(page);
+    assert.equal(seen['/session'], 3); await sleep(4000); assert.equal(seen['/session'], 3, 'bounded attempts');
+    assert.equal(seen['/authorization/v1/bootstrap-scope'], 0);
+    assert.equal((await texts(page)).filter(text => text.includes('Retrying authorization')).length >= 2, true);
+    assert.equal(await page.locator('#token').inputValue(), '');
+    await page.unroute(p.origin + '/session');
+  }
+  // A definitive 401 refusal is never retried.
+  {
+    const p = profiles[2], page = await fresh(), seen = counted(page);
+    await page.route(p.origin + '/authorization/v1/bootstrap-scope', route => route.fulfill({status: 401, contentType: 'application/json', body: '{}'}));
+    await open(page, p); await press(page, p); await refused(page);
+    await sleep(4000);
+    assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
+    assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), false);
+  }
+  // Leaving the page during a held attempt sends no further setup request.
+  {
+    const p = profiles[3], page = await fresh(), seen = counted(page); let arrived;
+    const first = new Promise(resolve => {arrived = resolve;});
+    await page.route(p.origin + '/authorization/v1/bootstrap-scope', () => arrived());
+    await open(page, p); await press(page, p); await first;
+    await page.goto('about:blank'); await sleep(13000);
+    assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
+  }
 });
 
 // Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
