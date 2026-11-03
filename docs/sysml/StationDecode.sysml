@@ -223,7 +223,8 @@ package WstxOfflineDecode {
     requirement SharedWireMapping {
         doc /* ResultRecord has exact keys sequence,status,payload77,i3,n3,text,fields,
              start_frame,frequency_hz,snr_db, plus a_priori (Integer 1..6, the WSJT-X aN
-             type of APrioriHypotheses) present only for an a-priori word (#56 slice 5).
+             type of APrioriHypotheses) present only for an a-priori word, whose status is
+             always decoded (#56 slice 5).
              LiveTimedResultRecord adds exactly
              period_start_utc anddt_seconds. Fields null unless decoded; text null unless
              decoded then<=80canonicalASCII; payload77exact77ASCIIbits; i3=0..7,
@@ -602,11 +603,13 @@ package WstxOfflineDecode {
              standard message "MyCall DxCall RRR" packed from the selected profile callsign
              and the current contact's dx_call (WSJT-X ft8apset: i3=1 and an exact round
              trip required, else neither; without a DxCall the dummy KA1ABC packs MyCall and
-             dxCall is absent). qsoProgress = WSJT-X nQSOProgress from the contact state:
+             dxCall is absent). Deliberate departure: a nonstandard (compound) MyCall that
+             ft8apset would pack hashed as <MyCall> gives no myCall here (types 1 only). qsoProgress = WSJT-X nQSOProgress from the contact state:
              calling/idle/cancelled 0, replying 1, report 2, roger_report 3, rogers 4,
              signoff/completed 5. rxHz/txHz = the contact Rx/Tx audio frequencies.
-             cqOnly (lapcqonly) = no transmission of this station in the last 300 s (the
-             latest started transmission of any contact since start). A file decode has no
+             cqOnly (lapcqonly) = for the last 300 s no contact tick saw the station
+             transmitting, tuning or with Enable Tx on (WSJT-X m_dateTimeLastTX, refreshed
+             while m_transmitting, m_auto or m_tune); true from start until then. A file decode has no
              myCall/dxCall (CQ hypothesis only). */
     }
     action def APrioriHypotheses {
@@ -628,7 +631,9 @@ package WstxOfflineDecode {
              FT4: each type once on the quadruple family, fixed at 1.1 times the single
              family's largest |LLR|. Each through Ft8ChannelDecode with those bits fixed;
              first accepted wins. Acceptance: not all-zero, hard disagreements<=36 (both
-             modes), and, for every type except FT8 type 1, WSJT-X's confidence
+             modes), a payload that unpacks with status decoded (WSJT-X drops an a-priori word
+             that does not unpack and tries the next pass), and, for every type except FT8
+             type 1, WSJT-X's confidence
              qual = 1-(nharderrors+dmin)/60 >= lowConfidenceQuality, dmin = sum of |LLR|
              over the bits the word disagrees with. Deliberate departure: WSJT-X publishes a
              low-confidence a-priori word marked '?' (and FT4 any hard-error count); the

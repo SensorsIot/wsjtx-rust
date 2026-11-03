@@ -1510,12 +1510,12 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
 
 // Proves: FR-003, CL-007-03 (#56 slice 5 APrioriContext). The live decode context follows
 // the profile callsign and the current contact: MyCall alone before a contact, then DxCall,
-// the WSJT-X QSO progress of the contact state and the Rx/Tx offsets; CQ-only while the
-// station has not transmitted.
+// the WSJT-X QSO progress of the contact state and the Rx/Tx offsets. CQ-only (lapcqonly)
+// holds until Enable Tx is on, clears while it is on and returns 300 s after it went off.
 #[tokio::test]
 async fn a_priori_context_follows_profile_and_contact() {
     use decoder::QsoProgress;
-    let f = fixture("http://127.0.0.1:18017", false);
+    let f = fixture("http://127.0.0.1:18017", true);
     let r = &f.state.recording;
     let (source, job, generation) = r.fixture_live_job("ft8");
     f.tick();
@@ -1549,11 +1549,39 @@ async fn a_priori_context_follows_profile_and_contact() {
     assert_eq!(ap.progress, QsoProgress::Replying);
     assert_eq!(ap.rx_hz, snap["settings"]["rx_hz"].as_f64().unwrap());
     assert_eq!(ap.tx_hz, snap["settings"]["tx_hz"].as_f64().unwrap());
-    assert!(ap.cq_only, "no transmission yet");
+    assert!(ap.cq_only, "Enable Tx was never on");
     r.fixture_publish_period(
         &period_text(p0 + 30_000),
         vec![record("HB9BLA K1ABC -10", 1234.0, Some(-5.0))],
     );
     f.tick();
     assert_eq!(f.contact().a_priori().progress, QsoProgress::RogerReport);
+    // Enable Tx on: the station is operating, every type of the state runs.
+    f.contact().grant.store(true, Ordering::SeqCst);
+    let safety = f.snapshot().await["transmit"]["safety_revision"].clone();
+    let (s, v) = f
+        .send(
+            "enable_tx",
+            json!({"enabled":true,"safety_revision":safety}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    f.tick();
+    assert!(!f.contact().a_priori().cq_only, "Enable Tx on");
+    let (s, v) = f
+        .send("enable_tx", json!({"enabled":false,"safety_revision":null}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    f.bench.offset.store(299_000, Ordering::SeqCst);
+    f.tick();
+    assert!(
+        !f.contact().a_priori().cq_only,
+        "299 s after Enable Tx went off"
+    );
+    f.bench.offset.store(301_000, Ordering::SeqCst);
+    f.tick();
+    assert!(
+        f.contact().a_priori().cq_only,
+        "301 s after Enable Tx went off"
+    );
 }

@@ -46,9 +46,9 @@ struct Inner {
     outbox: Vec<logbook::Record>,
     /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
     a_priori: decoder::APriori,
-    /// The latest started transmission seen: (contact id, its last tx entry's period and
-    /// count), and when it was seen (UTC ms).
-    last_tx: Option<((String, i64, u32), i64)>,
+    /// The last tick (UTC ms) at which the station transmitted, tuned or had Enable Tx on
+    /// (WSJT-X m_dateTimeLastTX, refreshed while m_transmitting, m_auto or m_tune).
+    last_tx: Option<i64>,
 }
 /// lapcqonly: without a transmission for this long only the CQ a-priori type runs.
 const CQ_ONLY_AFTER_MS: i64 = 300_000;
@@ -230,20 +230,15 @@ impl Station {
     pub(crate) fn a_priori(&self) -> decoder::APriori {
         self.lock().a_priori.clone()
     }
-    /// The context from the profile callsign, the current contact and the latest started
-    /// transmission (lapcqonly after CQ_ONLY_AFTER_MS without one).
-    fn refresh_a_priori(inner: &mut Inner, call: Option<&str>, now: i64) {
+    /// The context from the profile callsign, the current contact and the transmit owner
+    /// (lapcqonly after CQ_ONLY_AFTER_MS without transmitting, tuning or Enable Tx).
+    fn refresh_a_priori(inner: &mut Inner, call: Option<&str>, active: bool, now: i64) {
         use decoder::QsoProgress as P;
+        if active {
+            inner.last_tx = Some(now);
+        }
         let e = &inner.engine;
         let c = e.contact.as_ref();
-        if let Some(c) = c
-            && let Some(tx) = c.dialogue.iter().rev().find(|x| x.tx)
-        {
-            let marker = (c.id.clone(), tx.period_ms, tx.count);
-            if inner.last_tx.as_ref().is_none_or(|(m, _)| *m != marker) {
-                inner.last_tx = Some((marker, now));
-            }
-        }
         let progress = match c.map(|c| c.state) {
             Some(contact::State::Replying) => P::Replying,
             Some(contact::State::Report) => P::Report,
@@ -261,10 +256,7 @@ impl Station {
             progress,
             rx_hz: f64::from(e.settings.rx_hz),
             tx_hz: f64::from(e.settings.tx_hz),
-            cq_only: inner
-                .last_tx
-                .as_ref()
-                .is_none_or(|(_, at)| now - at > CQ_ONLY_AFTER_MS),
+            cq_only: inner.last_tx.is_none_or(|at| now - at > CQ_ONLY_AFTER_MS),
         };
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
@@ -368,8 +360,14 @@ impl Station {
                 mode,
                 automatic: false,
             };
-            inner.engine.step(core, &ctx, &rows);
-            Self::refresh_a_priori(inner, ctx.call.as_deref(), now);
+            inner.engine.step(core.as_deref_mut(), &ctx, &rows);
+            let active = core.as_deref().is_some_and(|c| {
+                let v = c.view();
+                v.transmitting
+                    || v.tune
+                    || v.arm_state == wstx_rust::transmit::service::ArmState::Armed
+            });
+            Self::refresh_a_priori(inner, ctx.call.as_deref(), active, now);
             Self::collect_logs(
                 inner,
                 state,

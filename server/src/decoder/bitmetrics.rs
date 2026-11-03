@@ -203,8 +203,9 @@ pub(super) async fn observe(
         .map(|(word, kind)| (word, Some(kind))))
 }
 /// The a-priori passes (WstxStationDecode::APrioriHypotheses), tried in order only after
-/// every unassisted family failed. A word needs at most 36 hard disagreements in both modes
-/// and, except for FT8's CQ type 1, WSJT-X's confidence (not marked '?').
+/// every unassisted family failed. A word needs at most 36 hard disagreements in both modes,
+/// a decoded payload (WSJT-X drops an a-priori word that does not unpack and tries the next
+/// pass) and, except for FT8's CQ type 1, WSJT-X's confidence (not marked '?').
 async fn decode_assisted_families(
     mode: Mode,
     hypotheses: Vec<(u8, [f32; 174], [bool; 174])>,
@@ -216,6 +217,9 @@ async fn decode_assisted_families(
         if let Some((word, errors)) = channel.decode_assisted(&llr, &fixed, &|| (budget.cancel)())
             && accepted(Mode::Ft8, &word, errors)
             && (mode == Mode::Ft8 && kind == 1 || apriori::confident(&word, &llr, errors))
+            && channel
+                .payload(&word, mode)
+                .is_some_and(|p| super::unpack(&p).status == super::PayloadStatus::Decoded)
         {
             return Ok(Some((word, kind)));
         }
