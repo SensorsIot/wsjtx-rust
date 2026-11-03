@@ -1001,7 +1001,7 @@ package WstxRequirements {
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
     requirement 'CL-010-06' {
-        doc /* Present bounded Band Activity and, since #37, the compact QSO pane (WstxOperatingLayout::QsoPane: the running QSO's last partner message and at most two other stations near my Rx frequency or calling me, each with message and SNR only) in place of the Rx Frequency pane; local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxOperatingLayout::QsoPane, QsoPaneCrowding. */
+        doc /* Present bounded Band Activity and, since #37, the compact QSO pane (WstxOperatingLayout::QsoPane: the running QSO's last partner message, its QSO dialogue and, below it, at most eight stations calling my call with time and SNR: during a QSO those within +/-50 Hz of my Rx or Tx offset, otherwise every caller, #37) in place of the Rx Frequency pane; local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxOperatingLayout::QsoPane, QsoPaneCrowding. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.js";
     }
@@ -2098,16 +2098,19 @@ package WstxRequirements {
              need, and saves with the TTL field as hop limit 2 and interface "1"; the same group
              without an interface is refused with targets[0].multicast_interface.
              Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
-             header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", at most two
-             Others lines "⚠ <message>  <SNR>" newest first (a station within +/-50 Hz of Rx
-             and a station calling me, not the partner, no time/DT/frequency), NEXT "▸ next:
+             header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", the QSO
+             dialogue (ten entries, oldest first, scrolling inside the card at its newest
+             line) and below it the Others "HH:MM:SS ⚠ <message>  <SNR>" oldest first (only
+             stations calling me within +/-50 Hz of Rx 1500 Hz or Tx 2100 Hz, not the partner,
+             not a station near neither, no DT/frequency; "nobody else calling" when none),
+             NEXT "▸ next:
              <message>" while armed, and the buttons, all inside the pane (not clipped), the
-             pane content at most 250 px high (the earlier pane needed about 380 px for the
+             pane content without the QSO area at most 250 px high (the earlier pane needed about 380 px for the
              same contact), and side by side the pane card ends level with Band Activity (no
              empty band under it, item 8); there is no LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
-             then enable_tx. Idle, a station on my Rx frequency is a plain line "◂ <message>
-             <SNR>" whose double-click sends select_row then enable_tx. When the contact is
+             then enable_tx. Idle, every station calling me is a plain line "HH:MM:SS ◂ <message>
+             <SNR>" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
              completed (Log QSO or completion) the pane shows "✓ Logged <call>", no NEXT and
              no partner lines, and after loggedNoticeSeconds only the idle pane; a cancelled
              contact is gone at once. At 360x800 nothing overflows horizontally.
@@ -4089,14 +4092,14 @@ package WstxRequirements {
     dependency CL_050_04_verified_by_TC_050_004 from 'CL-050-04' to 'TC-050-004';
     // #50/#37 CR 2 (operator 2026-11-02): period bar, QSO pane lines, QSO dialogue.
     requirement 'CL-050-03' {
-        doc /* The QSO pane's period bar shows the elapsed part of the current period (15 s FT8, 7.5 s FT4) on the station's clock, the UTC the transmitter keys on including the #43 correction, never the browser's wall clock: the browser takes the largest offset of the station's utc_ms over its own monotonic time among the observations of the last 20 s and redraws at least every 100 ms without animation. The bar is red in a period of my Tx parity while Enable Tx is on and whenever the station reports transmitting, green in every other period. Details: WstxContact::OperatorDisplays StationPeriodClock, WstxOperatingLayout::QsoPane. */
+        doc /* The QSO pane's period bar shows the elapsed part of the current period (15 s FT8, 7.5 s FT4) on the station's clock, the UTC the transmitter keys on including the #43 correction, never the browser's wall clock: the browser takes the largest offset of the station's utc_ms over its own monotonic time among the observations of the last 20 s and redraws at least every 100 ms without animation. An offset more than 500 ms below the estimate is a backward step of the station clock and restarts the estimate at once. The bar is red in a period of my Tx parity while Enable Tx is on and whenever the station reports transmitting, green in every other period. Details: WstxContact::OperatorDisplays StationPeriodClock, WstxOperatingLayout::QsoPane. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }
     dependency CL_050_03_to_FR_008 from 'CL-050-03' to 'FR-008';
     dependency CL_050_03_to_FR_019 from 'CL-050-03' to 'FR-019';
     requirement 'CL-050-05' {
-        doc /* (#37) While an own CQ runs the QSO pane header reads "Calling CQ" with the Tx period; the message line reads "▶ TX now: <message>" with the seconds left while the station reports transmitting and "▸ next: <message> · Tx in <n> s" otherwise; the Others, below the QSO dialogue, list only stations calling my call, with time and SNR: during a QSO those other than the partner within +/-50 Hz of my Rx or Tx offset (⚠, a double-click switches the contact with Enable Tx kept), otherwise every caller on any frequency as soon as decoded; an empty list is one muted line "nobody calling" ("nobody else calling" during a QSO). Details: WstxOperatingLayout::QsoPane. */
+        doc /* (#37) While an own CQ runs the QSO pane header reads "Calling CQ" with the Tx period; the message line reads "▶ TX now: <message>" with the seconds left while the station reports transmitting ("▶ TX now: Tune" with the Tune seconds left during Tune) and "▸ next: <message> · Tx in <n> s" otherwise; the Others, below the QSO dialogue, list only stations calling my call, with time and SNR: during a QSO those other than the partner within +/-50 Hz of my Rx or Tx offset (⚠, a double-click switches the contact with Enable Tx kept), otherwise every caller on any frequency as soon as decoded; an empty list is one muted line "nobody calling" ("nobody else calling" during a QSO). Details: WstxOperatingLayout::QsoPane. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }
@@ -4113,8 +4116,8 @@ package WstxRequirements {
         doc /* TC-050-003 — Period bar colour and station clock
              CL-050-03
              Setup: actual candidate server and Chromium; the operating screen with a routed ContactSnapshot (Enable Tx on, own CQ, parity even) whose utc_ms is the browser's time plus a station offset; station.tick events dispatched to the page.
-             Steps: read #qso-progress width and colour in an even and an odd station period, and with transmitting true in the odd period; screenshots at 1366x768 and 360 px of a receive (green) and a transmit (red) period.
-             Expected: the width is (station time mod period)/period within 4 percentage points, not the browser-clock phase; the even period (my Tx parity) and a transmitting period rgb(255, 64, 64), the odd receive period rgb(48, 208, 80); no width transition.
+             Steps: read #qso-progress width and colour in an even and an odd station period, with transmitting true in the odd period, and after a 1 s backward step of the station clock; screenshots at 1366x768 and 360 px of a receive (green) and a transmit (red) period.
+             Expected: the width is (station time mod period)/period within 4 percentage points, not the browser-clock phase, also right after the backward step; the even period (my Tx parity) and a transmitting period rgb(255, 64, 64), the odd receive period rgb(48, 208, 80); no width transition.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4127,14 +4130,14 @@ package WstxRequirements {
         doc /* TC-050-005 — QSO pane while calling CQ and transmitting (#37)
              CL-050-05
              Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
-             Steps: read the header after a receive refresh, the message line with transmitting false and true and the Others with no qualifying row, then with callers of my call at 1678 and 2144 Hz and a CQ near Rx; during a running QSO (Rx and Tx 1500 Hz) rows to my call at 1530 Hz, 1600 Hz and from the partner, and a station near Rx calling another; screenshots of calling CQ, TX now and between periods.
-             Expected: header "Calling CQ" with "Tx even (1st)"; "▸ next:" "CQ HB9BLA JN47" with "Tx in n s" while not transmitting, "▶ TX now:" "CQ HB9BLA JN47" with "n s left" while transmitting; "nobody calling" for an empty list; while calling CQ both callers "HH:MM:SS ◂ …" and not the CQ; during the QSO only the 1530 Hz caller as "HH:MM:SS ⚠ …", "nobody else calling" without it, and its double-click sends select_row replace true then enable_tx.
+             Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and the Others with no row; (ui-operating TC-007-009) the Others idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) the Others with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
+             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller "HH:MM:SS ◂ …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as "HH:MM:SS ⚠ …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-050-05';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        attribute executable : String = "tests/ui-operating.test.cjs; tests/contact.test.cjs";
     }
     dependency CL_050_05_verified_by_TC_050_005 from 'CL-050-05' to 'TC-050-005';
     verification 'TC-050-006' {

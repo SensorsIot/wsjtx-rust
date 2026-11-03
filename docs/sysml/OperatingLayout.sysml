@@ -651,7 +651,8 @@ attribute def ActivityOrdering {
              clock) the line is "▶ TX now: <message>" with "<n> s left" (the time to the end
              of the waveform, audio delay plus 12.64 s FT8 / 5.04 s FT4 after the period
              start), the message being the transmit view's last_text of this period, else
-             the next message; otherwise "▸ next: <message>" with "Tx in <n> s" (#37,
+             the next message; during Tune (transmit view tune) "▶ TX now: Tune" with the
+             Tune seconds left (watchdog tune_remaining_seconds); otherwise "▸ next: <message>" with "Tx in <n> s" (#37,
              operator 2026-11-02). The bar (#50, operator 2026-11-02) is the
              one period bar: its width is the elapsed part of the current period
              (15 s FT8, 7.5 s FT4) on the station's clock (Contact OperatorDisplays

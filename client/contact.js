@@ -53,9 +53,15 @@ function load(){
 // WstxContact::OperatorDisplays StationPeriodClock (#50): the station's UTC (the clock the
 // transmitter keys on), never the browser's wall clock. Each station observation gives an
 // offset over this browser's monotonic clock; a late delivery only lowers it, so the largest
-// offset of the last 20 s is the estimate.
+// offset of the last 20 s is the estimate. An offset more than 500 ms below the estimate is a
+// backward step of the station clock (#43 correction), which restarts the estimate at once.
 let clockSamples=[];
-function stationSample(utc){if(!Number.isSafeInteger(utc))return;const at=performance.now();clockSamples=clockSamples.filter(s=>at-s[0]<=20000);clockSamples.push([at,utc-at]);}
+const CLOCK_STEP_MS=500;
+function stationSample(utc){
+  if(!Number.isSafeInteger(utc))return;const at=performance.now(),offset=utc-at,now=stationNow();
+  clockSamples=now!==null&&offset<now-at-CLOCK_STEP_MS?[]:clockSamples.filter(s=>at-s[0]<=20000);
+  clockSamples.push([at,offset]);
+}
 function stationNow(){
   if(!clockSamples.length)return null;const at=performance.now(),recent=clockSamples.filter(s=>at-s[0]<=20000);
   return at+Math.max(...(recent.length?recent:clockSamples.slice(-1)).map(s=>s[1]));
@@ -662,6 +668,12 @@ function countdown(){
   bar.dataset.phase=tick.transmitting||(armed&&index%2===parity)?'tx':'rx';
   const c=snap.contact,next=c?(c.messages[slots.indexOf(c.next_slot)]??'None'):'None';
   line.dataset.now=String(tick.transmitting);
+  if(tick.transmitting&&snap.transmit.tune){
+    // Tune is a tone, not a message: its own line and the Tune time left.
+    label.textContent='▶ TX now:';$('contact-next').textContent='Tune';
+    text.textContent=`${snap.watchdog?.tune_remaining_seconds??0} s left`;
+    return;
+  }
   if(tick.transmitting){
     const t=snap.transmit,end=start+(p===7500?300+5040:500+12640);
     label.textContent='\u25B6 TX now:';$('contact-next').textContent=t.last_period_utc===start&&t.last_text?t.last_text:next;

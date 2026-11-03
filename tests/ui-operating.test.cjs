@@ -403,7 +403,7 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
 // Others are only stations calling my call, with time and SNR (⚠ during a QSO within
 // ±50 Hz of my Rx or Tx offset, every caller otherwise), below the QSO dialogue.
 test('TC-007-009 the compact QSO pane shows only the running QSO and clears when it ends',{timeout:60000},async t=>{
-  let state,contact=null,transmit={},log=null,records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
+  let state,contact=null,transmit={},log=null,settings={},records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
   const standard=(from,to)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const record=(sequence,text,hz,snr)=>{const [to,from]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:period};};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -413,14 +413,16 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     // Rx and Tx are 1500 Hz. CQs (even near Rx) are never QSO pane lines; DL1ABC calls me at
     // 400 Hz (a candidate idle, not near my frequency during a QSO); SV1DZB calls me at 1530 Hz;
     // the partner IW9FRA is never an Other.
-    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA DL1ABC JO31',400,-8),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA IW9FRA RR73',1505,17),record(5,'HB9BLA SV1DZB KM18',1530,-8)];
-    Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
+    // During the QSO Tx is 2100 Hz: EA8BIA at 2130 Hz is near my Tx, F1PBZ at 1600 Hz near neither.
+    records=[record(0,'CQ K1ABC FN42',1449.9,-3),record(1,'CQ W1XYZ FN42',1480,-10),record(2,'HB9BLA DL1ABC JO31',400,-8),record(3,'CQ YO3GNF KN34',1530,12.4),record(4,'HB9BLA IW9FRA RR73',1505,17),record(5,'HB9BLA SV1DZB KM18',1530,-8),
+      record(6,'HB9BLA EA8BIA IL18',2130,0),record(7,'HB9BLA F1PBZ JN18',1600,-10)];
+    Object.assign(state.job,{first_sequence:0,next_sequence:8,available_count:8,latest_decode:{id:1,first_sequence:0,next_sequence:8,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit,log})}));
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit,log,settings})}));
     await contactCommands(p,commands);
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===6&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const others=()=>page.locator('#qso-others li').evaluateAll(lis=>lis.map(li=>[li.dataset.kind,li.textContent]));
   const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
   const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
@@ -429,8 +431,9 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
 
   // Idle: every station calling my call, on any frequency, oldest first, with its period
   // start and SNR (no DT or Hz); no CQ, even near Rx.
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===3);
-  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA IW9FRA RR73  +17 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB']]);
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===5);
+  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA IW9FRA RR73  +17 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB'],
+    ['candidate','12:00:15 ◂ HB9BLA EA8BIA IL18  0 dB'],['candidate','12:00:15 ◂ HB9BLA F1PBZ JN18  −10 dB']]);
   assert.equal(await shown(page,'#qso-others-none'),false,'no "nobody calling" with callers');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
@@ -448,8 +451,8 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const dialogue=[entry(1,'tx','IW9FRA HB9BLA JN47',null,2),entry(2,'rx','HB9BLA IW9FRA -05',-5),entry(3,'tx','IW9FRA HB9BLA R+10'),entry(4,'rx','HB9BLA IW9FRA -05',-6),entry(5,'tx','IW9FRA HB9BLA R+10'),
     entry(6,'rx','HB9BLA IW9FRA RR73',17),entry(7,'tx','IW9FRA HB9BLA 73'),entry(8,'rx','HB9BLA IW9FRA RR73',15),entry(9,'tx','IW9FRA HB9BLA 73'),entry(10,'rx','HB9BLA IW9FRA RR73',17,3)];
   const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3},dialogue});
-  await show(running,{arm_state:'armed'});
-  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn');
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});
+  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others li')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others li').length===2);
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
@@ -458,7 +461,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
-  assert.deepEqual(await others(),[['warn','12:00:15 ⚠ HB9BLA SV1DZB KM18  −8 dB']],'only a caller within ±50 Hz of my Rx/Tx, not the partner');
+  assert.deepEqual(await others(),[['warn','12:00:15 ⚠ HB9BLA SV1DZB KM18  −8 dB'],['warn','12:00:15 ⚠ HB9BLA EA8BIA IL18  0 dB']],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
   const lines=await page.locator('#qso-dialogue li').allTextContents();
   assert.deepEqual([lines.length,lines[0],lines[1],lines.at(-1)],[10,'11:58:15 ▸ IW9FRA HB9BLA JN47 ×2','11:58:30 ◂ HB9BLA IW9FRA -05  −5 dB','12:00:30 ◂ HB9BLA IW9FRA RR73  +17 dB ×3']);
   // The QSO area scrolls inside the card, kept at its newest line, and grows nothing.
@@ -492,6 +495,11 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
   m=commands.length;await page.locator('#qso-others li').first().dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',5,true],['enable_tx',true,undefined]]);
+  // Nobody else near my frequencies: one muted line says so.
+  settings={rx_hz:2800,tx_hz:2800};await show(running,{arm_state:'armed'});
+  await page.locator('#qso-others-none').filter({hasText:'nobody else calling'}).waitFor();
+  assert.deepEqual(await others(),[]);
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others li').length===2);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
   // Auto Seq off (#11) stays visible in the compact pane.
@@ -517,7 +525,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
-  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB']],'the finished partner is not a candidate');
+  assert.deepEqual(await others(),[['candidate','12:00:15 ◂ HB9BLA DL1ABC JO31  −8 dB'],['candidate','12:00:15 ◂ HB9BLA SV1DZB KM18  −8 dB'],['candidate','12:00:15 ◂ HB9BLA EA8BIA IL18  0 dB'],['candidate','12:00:15 ◂ HB9BLA F1PBZ JN18  −10 dB']],'the finished partner is not a candidate');
   assert.equal(await shown(page,'#qso-dialogue'),false,'the dialogue goes with the QSO');
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
   m=commands.length;await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('Alt+q');await page.waitForTimeout(400);
@@ -555,15 +563,16 @@ const GREEN='rgb(48, 208, 80)',RED='rgb(255, 64, 64)';
 // clock), not the browser's wall clock, and is red in my Tx periods and while transmitting,
 // green in receive periods.
 test('TC-050-003 the period bar follows the station clock and is red in my Tx periods and green otherwise',{timeout:40000},async t=>{
+  const clock={offset:0};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:ownCq(),transmit:{arm_state:'armed'},settings:{parity:'even'}})}));
+    await p.route('**/contact',route=>route.fulfill({json:{...contactSnapshot(base,{contact:ownCq(),transmit:{arm_state:'armed'},settings:{parity:'even'}}),utc_ms:Date.now()+clock.offset}}));
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
   // A station clock ahead of the browser, in an even (my Tx) period 30..60 s ahead, half a
   // period out of phase with the browser's clock.
   const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+((now%15000)+7500)%15000,offset=even-now;
-  let r=await tickAndRead(page,offset,false);
+  clock.offset=offset;let r=await tickAndRead(page,offset,false);
   const phase=u=>100*(((u%15000)+15000)%15000)/15000;
   assert.ok(Math.abs(r.width-phase(r.utc))<=4,`width ${r.width} vs station phase ${phase(r.utc)}`);
   assert.ok(Math.abs(r.width-phase(r.utc-offset))>10,'not the browser-clock phase');
@@ -571,7 +580,7 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   assert.deepEqual([r.colour,r.transition],[RED,'0s'],'my Tx period while Enable Tx is on: red, no animated width');
   await page.screenshot({path:'test-results/ui-operating/period-bar-tx-1366x768.png'});
   // The station 15 s further: an odd (receive) period; a larger offset is taken at once.
-  r=await tickAndRead(page,offset+15000,false);
+  clock.offset=offset+15000;r=await tickAndRead(page,offset+15000,false);
   assert.equal(Math.floor(r.utc/15000)%2,1,'an odd station period');
   assert.ok(Math.abs(r.width-phase(r.utc))<=4,`width ${r.width} vs station phase ${phase(r.utc)}`);
   assert.equal(r.colour,GREEN,'a receive period: green');
@@ -579,6 +588,10 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   // Keyed in the odd period (e.g. Tune or a late start): red while the station transmits.
   r=await tickAndRead(page,offset+15000,true);
   assert.equal(r.colour,RED,'transmitting: red');
+  // A backward step of the station clock (#43 correction, here 1 s) is taken at once.
+  clock.offset=offset+14000;r=await tickAndRead(page,offset+14000,false);
+  assert.ok(Math.abs(r.width-phase(r.utc))<=4,`after a 1 s step back: width ${r.width} vs station phase ${phase(r.utc)}`);
+  clock.offset=offset+15000;r=await tickAndRead(page,offset+15000,false);
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
   await page.locator('#qso-next').scrollIntoViewIfNeeded();
@@ -594,9 +607,10 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
 // message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty
 // Others list says "nobody calling".
 test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherwise, and nobody calling',{timeout:40000},async t=>{
+  const clock={offset:0};let transmit={arm_state:'armed'},watchdog=null;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:ownCq(),transmit:{arm_state:'armed'},settings:{parity:'even'}})}));
+    await p.route('**/contact',route=>{const s={...contactSnapshot(base,{contact:ownCq(),transmit,settings:{parity:'even'}}),utc_ms:Date.now()+clock.offset};if(watchdog)s.watchdog=watchdog;return route.fulfill({json:s});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
   const header=()=>page.locator('#rx-focus .op-contact-identity').evaluate(h=>[h.querySelector('strong').textContent,h.querySelector('div > span').textContent]);
@@ -607,11 +621,22 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   assert.equal(await page.locator('#qso-others-none').textContent(),'nobody calling');
   assert.equal(await shown(page,'#qso-others-none'),true);
   const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+4000,offset=even-now;
-  let r=await tickAndRead(page,offset,true);
+  clock.offset=offset;let r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next],['▶ TX now:','CQ HB9BLA JN47']);
   assert.match(r.countdown,/^\d+ s left$/);assert.equal(Number(r.countdown.split(' ')[0]),10,'audio 0.5 s + 12.64 s from the period start, 4 s in: 10 s left');
   await page.screenshot({path:'test-results/ui-operating/qso-tx-now-1366x768.png'});
-  r=await tickAndRead(page,offset+11000,false);
+  // The transmit view's text of this period is what is on the air (here not the next one).
+  transmit={arm_state:'armed',last_text:'K1ABC HB9BLA -05',last_period_utc:even-4000};
+  await page.evaluate(()=>window.wstxContact.load());
+  r=await tickAndRead(page,offset,true);
+  assert.deepEqual([r.label,r.next],['▶ TX now:','K1ABC HB9BLA -05']);
+  // Tune is a tone: "TX now: Tune" with the Tune time left, never a message.
+  transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:80};
+  await page.evaluate(()=>window.wstxContact.load());
+  r=await tickAndRead(page,offset,true);
+  assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
+  transmit={arm_state:'armed'};watchdog=null;await page.evaluate(()=>window.wstxContact.load());
+  clock.offset=offset+11000;r=await tickAndRead(page,offset+11000,false);
   assert.deepEqual([r.label,r.next],['▸ next:','CQ HB9BLA JN47']);
   assert.match(r.countdown,/^Tx in \d+ s$/);assert.equal(Number(r.countdown.split(' ')[2]),15,'between periods: the next even period in 15 s');
   await page.screenshot({path:'test-results/ui-operating/qso-between-periods-1366x768.png'});

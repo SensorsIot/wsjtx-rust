@@ -813,7 +813,8 @@ package WstxContact {
              ContactSnapshot utc_ms) gives offset = utc_ms - browser monotonic time at its
              receipt; the shown station time is the browser monotonic time plus the
              largest offset received in the last 20 s (a late delivery only lowers an
-             offset). The bar is redrawn at least every 100 ms with no animated width
+             offset); an offset more than 500 ms below that estimate is a backward step
+             of the station clock (#43) and restarts the estimate at once. The bar is redrawn at least every 100 ms with no animated width
              change, so it restarts at 0 at each period start within 100 ms plus the
              link's one-way delay. Rx level meter (widgets/
              signalmeter.cpp, meterwidget.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
