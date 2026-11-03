@@ -446,7 +446,7 @@ function cadenceSource(bytes){
   // (autocrlf CRLF or LF). Pin the LF-normalized text, the same as git's content (#8).
   const source=Buffer.from(bytes).toString('utf8').replace(/\r\n/g,'\n');
   const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
-  assert.equal(sha256,'319cab451cec66c3be9655a77fc1f1cfe5dd41db361d76c5fc5e602b7f2b4352','review caller/acceptance mapping when recording.js changes');
+  assert.equal(sha256,'7a3ede991186957428ecd14a5d6cf480b17448ff823d4e97f3a09f1a0799062e','review caller/acceptance mapping when recording.js changes');
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   const mapping={sha256,valid,fetchLine:797,timerLine:872},lines=source.split('\n');

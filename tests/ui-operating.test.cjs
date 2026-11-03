@@ -1814,7 +1814,10 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
   await page.locator('#ignore-session li').first().waitFor();
   assert.deepEqual(await page.locator('#ignore-session li').evaluateAll(l=>l.map(x=>[x.querySelector('.ig-call').textContent,x.querySelector('.ig-left').textContent])),[['K1ABC','30 min']]);
-  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').dispatchEvent('change');
+  // One change: leaving the field is the change (a dispatched change plus the blur would be two);
+  // the saved list is shown once the station's answer is applied, before the next field (#61 gate race).
+  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').blur();
+  await page.waitForFunction(()=>document.querySelector('#ignore-calls').value==='DL1XYZ W1AW');
   for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[2,{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:['DL1XYZ','W1AW'],session_ignore_minutes:30}]]);
   await page.fill('#ignore-minutes','45');await page.locator('#ignore-minutes').dispatchEvent('change');
@@ -2091,5 +2094,75 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
   const row=q=>Array.from({length:128},()=>q);
   await liveFrames(page,[{sequence:0,levels:row(10),thin:true},{sequence:2,levels:row(20),thin:true},{sequence:5,levels:row(30),thin:true},{sequence:6,levels:row(40),thin:true},{sequence:10,levels:row(50),thin:true}]);
   assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,30],[5,30],[6,40],[7,null],[8,null],[9,null],[10,50]]);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-061-01; TC-061-001. Scripted receive identities, periods and waterfall rows (presentation fixtures, never modem truth).
+test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a Stop/Start clears them',{timeout:45000},async t=>{
+  let state,records=[];const reads=[];
+  const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z'];
+  const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`EPOCH FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
+  const publish=(id,period,count)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  // A new receive identity as the station allocates it: fresh source, job and generation, results from sequence 0.
+  const renew=lossEpochs=>{records=[];state={...state,generation:state.generation+1,audio:{...state.audio,loss_epochs:lossEpochs,last_loss:lossEpochs?'queue_full':null},source:{...state.source,id:crypto.randomUUID()},job:{...state.job,id:crypto.randomUUID(),first_sequence:0,next_sequence:0,available_count:0,latest_decode:null}};};
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    publish(1,periods[0],2);
+    await page.route('**/recording',async route=>{const json=await(await route.fetch()).json();await route.fulfill({json:{...json,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));reads.push([query.get('job_id'),Number(query.get('generation')),cursor]);
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr[data-period], #band-activity tbody tr.ba-divider')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
+  const waterfall=()=>page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null]));
+  const level=q=>Array.from({length:1024},()=>q);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxRenderHistory);
+  publish(2,periods[1],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.id===2&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  await liveFrames(page,[0,1,2,3].map(sequence=>({sequence,levels:level(10*(sequence+1))})));
+  assert.deepEqual(await waterfall(),[[0,10],[1,20],[2,30],[3,40]]);
+  // The audio loss epoch: the recording.state and receive.state readers both see the new identity.
+  renew(1);const generation=state.generation,job=state.job.id;
+  await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,generation);
+  assert.deepEqual(await shown(),['|FT8 period 12:00:15 UTC','history:2','|FT8 period 12:00:00 UTC','history:0','history:1'],'Band Activity keeps the decoded periods');
+  await liveFrames(page,[{sequence:0,levels:level(50)},{sequence:1,levels:level(60)}]);
+  assert.deepEqual(await waterfall(),[[-5,10],[-4,20],[-3,30],[-2,40],[-1,null],[0,50],[1,60]],'old rows kept, one gap row, then the new epoch');
+  await page.locator('#exception-chips [data-chip=restart]').waitFor();
+  publish(1,periods[2],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.period_start_utc==='2026-10-27T12:00:30.0000000Z'&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  assert.deepEqual(await shown(),['latest:0','|FT8 period 12:00:15 UTC','history:2'],'the new period on top, the one before it kept');
+  assert.deepEqual(reads.find(([id])=>id===job),[job,generation,0],'the new identity is read from cursor 0');
+  // A Stop/Start (loss_epochs restarts at 0) is a new receive: both clear.
+  renew(0);await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,state.generation);
+  assert.deepEqual([await shown(),await waterfall()],[[],[]],'a new receive clears Band Activity and the waterfall');
+  await liveFrames(page,[{sequence:0,levels:level(70)}]);assert.deepEqual(await waterfall(),[[0,70]]);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
+// and Reply buttons retry a stale_revision refusal of their enable_tx with the reloaded revision, at most twice.
+test('TC-061-003 CQ and Reply retry a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
+  const commands=[];let contact=null,revision=3,stale=0;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact})}));
+    // The station refuses the next `stale` commands (its revision moved: the last 73 period ended) and moves it on.
+    await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
+      if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
+  const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
+  stale=1;let m=commands.length;await page.locator('#qso-cq').click();
+  assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
+  await page.locator('#contact-result').filter({hasText:'CQ: accepted'}).waitFor();
+  // At most two retries: a third refusal stays shown.
+  stale=3;m=commands.length;await page.locator('#qso-cq').click();
+  assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
+  await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  contact=partner('replying');stale=1;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-reply').disabled);
+  m=commands.length;await page.locator('#qso-reply').click();
+  assert.deepEqual(await sent(m,2),[['enable_tx',true,7],['enable_tx',true,8]],'Reply: refused once, sent again with the reloaded revision');
   assert.deepEqual(errors,[]);
 });

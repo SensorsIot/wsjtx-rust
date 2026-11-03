@@ -378,7 +378,7 @@ async function sync(current=socket) {
   try {
     const data=await request('/recording');if(!stationContext(current,authEpoch)) return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
-    if(identity(data)!==identity(snapshot)){rows=[];resetLevels();paint();}snapshot=data;
+    if(identity(data)!==identity(snapshot)&&!(data.job?.kind==='live'&&snapshot?.job?.kind==='live'&&data.boot_id===snapshot.boot_id)){rows=[];resetLevels();paint();}snapshot=data; // #61: receiveSync decides a live identity change
     if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
       try{const outcome=await request(`/recording/imports/${previousImport}`);if(!stationContext(current,authEpoch))return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
@@ -508,7 +508,7 @@ function applyLatestDecode(view,first){
   // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
   const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
   const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
-  activityHistory=other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
+  activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;
@@ -559,8 +559,8 @@ async function receiveSync(current=socket){
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
       if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
-      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;activityHistory=[];
-      if(data.job||live?.job){rows=[];resetLevels();paint();}
+      const carry=lossEpoch(data);activityHistory=carry?[...(resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[]),...activityHistory].slice(0,2):[];
+      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
     live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
@@ -1102,3 +1102,18 @@ function stationNoticeShow(){
 function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
 addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
 window.wstxStationData=stationData;
+// #61 CL-061-01: an unknown-loss source epoch of the same receive brings a fresh source, job and
+// generation (results from sequence 0, frames from 0) but is no new receive: loss_epochs grew
+// (it restarts at 0 with every receive start), same mode and input, no Start/Stop or band/mode
+// change. The display is kept then; anything else clears it.
+function lossEpoch(data){
+  return !!(live?.job&&data.job&&data.generation>live.generation&&data.job.state==='running'&&data.job.mode===live.job.mode&&data.audio.device_id===live.audio.device_id&&
+    data.audio.loss_epochs>live.audio.loss_epochs&&performance.now()-ownReceiveMutationAt>15000&&(operatingState?.operating_revision??null)===liveOperatingRevision);
+}
+// The kept rows move in front of the new frame origin behind one gap row marking the epoch.
+function keepWaterfall(){
+  const last=rows.at(-1);if(!last)return;
+  const interval=last.end_frame-last.first_frame,shift=last.sequence+2,frames=last.end_frame+interval;
+  for(const row of rows){row.sequence-=shift;row.first_frame-=frames;row.end_frame-=frames;}
+  rows.push({sequence:-1,first_frame:-interval,end_frame:0,levels:null,held:false});paint();
+}
