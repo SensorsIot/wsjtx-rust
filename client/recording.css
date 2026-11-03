@@ -215,16 +215,24 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-focus .op-contact-identity div>span{font-size:var(--op-font-secondary);color:#8ba4b6;overflow-wrap:anywhere}
 /* #37 compact QSO pane: its content is about half the earlier pane. Side by side the card
    fills its column (item 8 default: no empty band under it); stacked it is content high. */
-#rx-focus{max-height:100%}
+/* #37 item 8 revised (#60, operator 2026-11-03): the pane is content high at the top of its
+   column; the height below it stays free for future panels. */
+#rx-focus{align-self:start;max-height:100%}
 #rx-focus .op-contact-body{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;min-height:0;flex:0 1 auto;overflow:auto}
 #rx-focus .op-contact-body [hidden]{display:none}
-#rx-focus .ct-line,#rx-focus .ct-others li{margin:0;font:var(--op-font-normal)/1.3 var(--op-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+#rx-focus .ct-line{margin:0;font:var(--op-font-normal)/1.3 var(--op-mono);white-space:pre-wrap;overflow-wrap:anywhere}
 #rx-focus .ct-line{color:#d6e4ec}
-#rx-focus .ct-others{margin:0;padding:0;list-style:none;display:grid;gap:2px}
+#rx-focus .ct-qso-table{border-collapse:collapse;width:100%;font:var(--op-font-secondary)/1.3 var(--op-mono);color:#d6e4ec}
+#rx-focus .ct-qso-table th{position:sticky;top:0;z-index:1;background:#11212d;padding:0 4px;text-align:left;font-weight:600;color:#8fa6b5;box-shadow:inset 0 -1px #355065;white-space:nowrap}
+#rx-focus .ct-qso-table td{padding:0 4px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}
+#rx-focus .ct-qso-table td:is(:first-child,:nth-child(2)){white-space:nowrap}
+#rx-focus .ct-qso-table :is(th,td):nth-child(n+4){text-align:right;white-space:nowrap}
 #rx-focus .ct-others:empty{display:none}
-#rx-focus .ct-others li{cursor:pointer;padding:0 4px;border-radius:4px;color:#d6e4ec}
-#rx-focus .ct-others li[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
-#rx-focus .ct-others li:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
+@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary)}#rx-focus .ct-qso-table :is(th,td){padding:0 2px}}
+#rx-focus .ct-dialogue:not([hidden])+.ct-others tr:first-child td{border-top:1px solid #355065}
+#rx-focus .ct-others tr{cursor:pointer}
+#rx-focus .ct-others tr[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
+#rx-focus .ct-others tr:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
 #rx-focus .ct-dx{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
 #rx-focus .ct-dx label{display:flex;flex-direction:column;gap:2px;margin:0;font-size:var(--op-font-secondary)}
 #rx-focus .ct-dx input{width:9ch;font-family:var(--op-mono);text-transform:uppercase;padding:5px 7px}
@@ -233,7 +241,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-qso-next strong{font-family:var(--op-mono);font-weight:600;color:#e7f3f8;overflow-wrap:anywhere}
 #qso-autoseq{margin:0;padding:1px 6px;border-left:4px solid var(--op-warn);background:rgba(242,193,78,.12);color:#f2c14e;font-weight:600;font-size:var(--op-font-secondary);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
 #qso-autoseq[hidden],.op-qso-next[hidden]{display:none}#qso-autoseq{padding:0 6px;line-height:1.1}#qso-autoseq button{padding:0 6px;min-height:0;line-height:1.1;font-size:var(--op-font-secondary)}.op-qso-progress{grid-column:1/-1;height:4px;border-radius:2px;background:#203645;overflow:hidden}.op-qso-progress i{display:block;height:100%;width:0;background:rgb(48,208,80)}.op-qso-progress i[data-phase=tx]{background:rgb(255,64,64)}
-#rx-focus .op-contact-body{flex:1 1 auto}#rx-focus .ct-qso-area{flex:1 1 auto;min-height:0;overflow:auto;display:grid;align-content:start;gap:2px}#rx-focus .ct-dialogue{margin:0;padding:0;list-style:none;display:grid;gap:1px}#rx-focus .ct-dialogue li{margin:0;padding:0 4px;font:var(--op-font-secondary)/1.3 var(--op-mono);white-space:pre-wrap;overflow-wrap:anywhere;color:#d6e4ec}#rx-focus .ct-dialogue li[data-dir=tx]{color:#9fb8c9}#rx-focus .op-qso-next[data-now=true] .op-eyebrow{color:rgb(255,64,64);font-weight:700}
+#rx-focus .ct-qso-area{flex:0 1 auto;min-height:0;overflow:auto;display:grid;align-content:start;gap:2px;font-size:var(--op-font-secondary);max-height:calc(7 * 1.3em + 2px)}#rx-focus .ct-dialogue tr[data-dir=tx]{color:#9fb8c9}#rx-focus .op-qso-next[data-now=true] .op-eyebrow{color:rgb(255,64,64);font-weight:700}
 .op-qso-buttons{display:flex;flex-wrap:wrap;gap:6px}
 .op-qso-buttons button{flex:1 1 4.2rem;padding:8px 6px;font-weight:600}
 .op-app .op-qso-buttons #qso-cq,.op-app .op-qso-buttons #qso-reply{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}
@@ -244,7 +252,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #qso-more .ct-messages li{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 #qso-more .ct-text{flex:1;min-width:10ch;font-family:var(--op-mono)}
 #qso-more .ct-fields{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
-@container (max-width:75em){#controls .operating-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(18rem,1fr) auto;height:auto;min-height:100%}#band-activity{grid-row:1}#rx-focus{grid-row:2}}
+@container (max-width:75em){#controls .operating-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(18rem,1fr) auto;height:auto;min-height:100%}#band-activity{grid-row:1}#rx-focus{grid-row:2;align-self:stretch}}
 .op-drawer{position:fixed;top:var(--op-topbar,56px);right:0;bottom:0;width:min(36rem,100vw);z-index:40;display:flex;flex-direction:column;background:#0e1923;border-left:1px solid #2b4252;box-shadow:-18px 0 40px rgba(0,0,0,.45)}
 .op-drawer[hidden]{display:none!important}
 .op-drawer>header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #2b4252}
@@ -354,7 +362,7 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 10px}
 #rx-focus .op-contact-identity strong{display:inline}
 #rx-focus .op-contact-body{gap:3px;padding:6px 12px 8px}
-#rx-focus .ct-others li{user-select:none}
+#rx-focus .ct-others tr{user-select:none}
 #rx-focus .op-qso-buttons{gap:4px}
 #rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
 #controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}

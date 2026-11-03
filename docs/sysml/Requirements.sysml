@@ -1071,7 +1071,7 @@ package WstxRequirements {
              CL-010-01, CL-010-06
              Setup: actual server/browser with an independently scripted result source and request recorder; rows with distinct UTC/DT/SNR/frequency/text including literal markup, unresolved hashes, duplicate/old tuples, 2047/2048/2049 retained records and expired cursors; Rx offset 1500 Hz; profile call HB9BLA, DX call K1ABC.
              Steps: filter/sort Band Activity; with no contact, read the QSO pane Others lines for one period with rows at 1449.9, 1450.0, 1489.9, 1510.1, 1550.0 Hz, "HB9BLA W1XYZ -10" at 400 Hz and "HB9BL K1ABC -01" at 2600 Hz (#37); select rows by click/Enter and by manual DX entry; switch profile.
-             Expected (fixed input catalogue): the Others lines are exactly the two newest candidates among 1450.0, 1489.9, 1510.1, 1550.0 Hz and the HB9BLA row, plain (no warning sign), each message and SNR only, and not 1449.9 Hz or HB9BL; sorting Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
+             Expected (fixed input catalogue): the Others lines are exactly the two newest candidates among 1450.0, 1489.9, 1510.1, 1550.0 Hz and the HB9BLA row, plain (no warning sign), each a QSO table row with its period start, calls, exchange, our SNR and, for a report, the Tx SNR (no DT or frequency), and not 1449.9 Hz or HB9BL; sorting Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and independent result source. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2114,18 +2114,21 @@ package WstxRequirements {
              without an interface is refused with targets[0].multicast_interface.
              Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
              header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", the QSO
-             dialogue (ten entries, oldest first, scrolling inside the card at its newest
-             line) and below it the Others "HH:MM:SS ⚠ <message>  <SNR>" oldest first (only
+             dialogue as the #60 table (ten entries, oldest first, scrolling inside the card at its newest
+             row) and below it the Others as ⚠ rows of the same table oldest first (only
              stations calling me within +/-50 Hz of Rx 1500 Hz or Tx 2100 Hz, not the partner,
              not a station near neither, no DT/frequency; "nobody else calling" when none),
              NEXT "▸ next:
              <message>" while armed, and the buttons, all inside the pane (not clipped), the
              pane content without the QSO area at most 250 px high (the earlier pane needed about 380 px for the
-             same contact), and side by side the pane card ends level with Band Activity (no
-             empty band under it, item 8); there is no LAST row or
+             same contact); item 8 (#60, operator 2026-11-03): the pane height equals its content
+             height (within 3 px), at most 300 px at 1366x768, at the top of its column, the QSO
+             area at most its header row and 6 rows; at 1920x1080 the area is the header row and
+             6 rows, the pane at most 340 px and at least 100 px of free height lie below it
+             down to Band Activity's bottom; there is no LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
-             then enable_tx. Idle, every station calling me is a plain line "HH:MM:SS ◂ <message>
-             <SNR>" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
+             then enable_tx. Idle, every station calling me is a table row "HH:MM:SS | <my call> ◂ <caller> | <exchange> |
+             <SNR> |" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
              completed (Log QSO or completion) the pane shows "✓ Logged <call>", no NEXT and
              no partner lines, and after loggedNoticeSeconds only the idle pane; a cancelled
              contact is gone at once. At 360x800 nothing overflows horizontally.
@@ -4282,7 +4285,7 @@ package WstxRequirements {
              CL-050-05
              Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
              Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and the Others with no row; (ui-operating TC-007-009) the Others idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) the Others with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
-             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller "HH:MM:SS ◂ …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as "HH:MM:SS ⚠ …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
+             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller as a QSO table row "HH:MM:SS | <my call> ◂ <caller> | …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as rows "HH:MM:SS ⚠ | …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4296,7 +4299,7 @@ package WstxRequirements {
              CL-050-06
              Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); the snapshot shape bound (contact_http_tests); the operating screen with a routed ContactSnapshot in Chromium.
              Steps: (a) engine: replay a QSO with K1ABC (select their CQ, Tx1 twice, their report, Tx3, their RR73, 73) and read the dialogue after each step; cancel a second contact; push 20 distinct entries; (b) the maximum snapshot shape with 16 maximal entries; (c) browser: a running QSO with a 10-entry dialogue at 1366x768 and 360 px, then the completed contact.
-             Expected: (a) entries in order tx "K1ABC HB9BLA JN47" count 2, rx "HB9BLA K1ABC -05" with SNR, tx "K1ABC HB9BLA R-12", rx "HB9BLA K1ABC RR73", tx "K1ABC HB9BLA 73", periods the period starts; a new contact starts empty, cancel empties it, at most 16 entries (the oldest dropped); (b) at most 4096 bytes; (c) lines "HH:MM:SS ▸ …" and "HH:MM:SS ◂ …  −5 dB" oldest first, the newest line visible, no page scroll, gone once completed.
+             Expected: (a) entries in order tx "K1ABC HB9BLA JN47" count 2, rx "HB9BLA K1ABC -05" with SNR, tx "K1ABC HB9BLA R-12", rx "HB9BLA K1ABC RR73", tx "K1ABC HB9BLA 73", periods the period starts; a new contact starts empty, cancel empties it, at most 16 entries (the oldest dropped); (b) at most 4096 bytes; (c) rows of the #60 QSO table "HH:MM:SS | <recipient> ◂ <sender> | <exchange> | <Rx SNR> | <Tx SNR>" (a received "-05" with Rx SNR "−5" and Tx SNR "−5", sent rows without SNR) oldest first, the header row kept and the newest row visible, no page scroll, gone once completed.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4368,6 +4371,28 @@ package WstxRequirements {
     dependency CL_054_02_verified_by_TC_054_003 from 'CL-054-02' to 'TC-054-003';
     dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
+    // #60 QSO pane dialogue as a table (operator 2026-11-03, final spec).
+    requirement 'CL-060-01' {
+        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rx SNR | Tx SNR", and the stations calling me (Others, ⚠ after the time while a QSO runs) as rows of the same table and columns below a thin separator. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rx SNR is our measured SNR, signed, on received rows only. Tx SNR is the partner's report on us, only on the received row that carries it ("R-02" gives "−2", a plain report "-05" gives "−5"). The pane is content high at the top of its column, its table area at most the header row and 6 rows, scrolling inside at its newest row, so the height below the pane stays free (#37 item 8, operator 2026-11-03: "The QSO part is way too long"); it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated there. Details: WstxOperatingLayout::QsoPane items 3 and 7. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js";
+    }
+    dependency CL_060_01_to_FR_007 from 'CL-060-01' to 'FR-007';
+    dependency CL_060_01_to_FR_019 from 'CL-060-01' to 'FR-019';
+    verification 'TC-060-001' {
+        doc /* TC-060-001 — QSO pane dialogue table
+             CL-060-01
+             Setup: actual candidate server and Chromium at 1366x768; routed ContactSnapshot of a running QSO of HB9BLA with CT1BFP whose dialogue holds a sent CQ, the operator's #60 example (received IM59 +8, sent +08, received R-02 +7, sent RR73, received 73 +9, here repeated twice with my call hashed and unknown) and a sent free text; routed live rows of callers of my call: DL1ABC JO31, an unknown hashed call with RR73, a known hashed call <PJ4/K1ABC> with the report -05, and EA8BIA IL18 near my Rx.
+             Steps: read the header cells and every #qso-dialogue and #qso-others row's cells idle and while the QSO runs, the separator above the Others, the page scroll and the header position, then at 360x800 the table and page widths; screenshots at 1366x768 and 360x800.
+             Expected (independent oracle: the literal operator table of #60): header UTC, Direction, Exchange, Rx SNR, Tx SNR; idle Others [12:00:15, HB9BLA ◂ DL1ABC, JO31, −8, ""], [12:00:15, HB9BLA ◂ <...>, RR73, −12, ""], [12:00:15, HB9BLA ◂ <PJ4/K1ABC>, -05, −5, −5], [12:00:15, HB9BLA ◂ EA8BIA, IL18, 0, ""]; dialogue [22:51:00, CQ HB9BLA, JN37, "", ""], [22:51:15, HB9BLA ◂ CT1BFP, IM59, +8, ""], [22:51:30, CT1BFP ◂ HB9BLA, +08, "", ""], [22:51:45, HB9BLA ◂ CT1BFP, R-02, +7, −2], [22:52:00, CT1BFP ◂ HB9BLA, RR73, "", ""], [22:52:15, <...> ◂ CT1BFP, 73 ×2, +9, ""], [22:52:30, "", TNX 73 GL, "", ""]; during the QSO the Others [12:00:15 ⚠, HB9BLA ◂ EA8BIA, IL18, 0, ""] with a 1 px top border; no page scroll at 1366x768, the header row visible with the area at its newest row; at 360 px no horizontal overflow and the table within the pane.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-060-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_060_01_verified_by_TC_060_001 from 'CL-060-01' to 'TC-060-001';
 
     // #61 An audio gap keeps the display (operator 2026-11-03; decision recorded on issue #61).
     requirement 'CL-061-01' {
