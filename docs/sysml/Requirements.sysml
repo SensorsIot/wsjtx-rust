@@ -3745,7 +3745,7 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history (the two-tier ignore lists are delivered by #42, CL-042-02); Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
@@ -3783,6 +3783,42 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_042_01_verified_by_TC_042_001 from 'CL-042-01' to 'TC-042-001';
+    requirement 'CL-042-02' {
+        doc /* Two-tier ignore lists govern the strategy: a permanent list of calls (Settings > General, saved in the strategy configuration) and a session list in station memory (Band Activity right-click "Ignore <call>" / "Stop ignoring <call>", POST /strategy/ignore), whose entries end after the configured minutes (1..720, default 30) and which the station empties on any change of the station band. An ignored sender (exact call) never matches a rule: Highlight gives it no mark, Auto Call never selects it and Auto CQ never answers it, also when Auto CQ answers every caller; a contact already in progress and a manual Reply or Select are not changed. A saved configuration from before the lists reads with empty lists and 30 minutes. Details: WstxStrategy::IgnoreLists. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_042_02_to_FR_007 from 'CL-042-02' to 'FR-007';
+    dependency CL_042_02_to_FR_010 from 'CL-042-02' to 'FR-010';
+    dependency CL_042_02_to_FR_020 from 'CL-042-02' to 'FR-020';
+    verification 'TC-042-002' {
+        doc /* TC-042-002 — Ignore lists in the evaluator, the store, the routes and Auto
+             CL-042-02
+             Setup: hand-authored rows CQ K1ABC FN42, CQ DL1XYZ JO62, CQ NA W1AW FN31, HB9BLA VK2ABC QF56; the station HB9BLA JN47AA on 40m; the actual station router, contact engine and #9 transmit owner on the recording hardware double (virtual UTC; no audio, PTT or radio); synthetic monotonic instants for the session expiry.
+             Steps: parse the configuration with ignore_calls and session_ignore_minutes and refuse a duplicate, a lower-case or a 14-character call, 101 calls, minutes 0 and 721; read a saved pre-#42 file without both keys and with only one of them; evaluate a CQ-matching strategy with K1ABC on the permanent list, on the session list and on both, and with W1AW (greyed) ignored; the session list: add, renew, remove, expiry at the minute boundary, 65 adds, a band change and a band unknown; POST /strategy/ignore accepted and refused (extra key, bad call, wrong profile, stale boot), GET /strategy session_ignore; the station tick on another band; Auto Call with the strongest matching CQ ignored; Auto CQ (apply_to_callers off) with an ignored caller.
+             Expected: the round trip keeps both keys; the refusals name ignore_calls[i], ignore_calls and session_ignore_minutes; the pre-#42 file reads with [] and 30, the one-key file is invalid_configuration; K1ABC rank null, grey false, why "K1ABC is ignored (permanent list)", "(session list)", session first when on both; W1AW also not greyed when ignored; an entry ends exactly at added + minutes and reports remaining_s rounded up; renewal moves it last with a new expiry; the 65th add drops the oldest; a band change (also to unknown) empties the list; the route returns the snapshot at an unchanged revision with the refusal codes and fields of PUT /strategy; Auto Call selects the next matching CQ, never the ignored one; Auto CQ answers the other caller, never the ignored one; no transmit key in any evaluation.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-02';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_042_02_verified_by_TC_042_002 from 'CL-042-02' to 'TC-042-002';
+    verification 'TC-042-003' {
+        doc /* TC-042-003 — Band Activity Ignore and the Settings ignore lists
+             CL-042-02
+             Setup: the browser fixture of the operating screen with the actual isolated station and its fixture live decodes; Highlight on with a CQ strategy.
+             Steps: right-click a decoded row with a resolved sender; choose Ignore; open the menu again on that row; open Settings > General; enter two calls in the permanent list; change the session minutes; remove the session entry.
+             Expected: the menu offers Reply, Select, Set Rx here and "Ignore <call>", Ignore sends POST /strategy/ignore {call, ignore true} and does not set the Rx frequency; the row loses its Highlight mark after the station's new verdicts; the menu then offers "Stop ignoring <call>"; Settings lists the call with its remaining minutes; the permanent list saves with PUT /strategy as ignore_calls in upper case, the minutes as session_ignore_minutes; remove sends ignore false and the list is empty; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_02_verified_by_TC_042_003 from 'CL-042-02' to 'TC-042-003';
     verification 'TC-039-001' {
         doc /* TC-039-001 — Strategy configuration is exact
              CL-039-01

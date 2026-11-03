@@ -2,7 +2,8 @@ package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
          WstxRequirements; verification TC-039-001..007; the complete New matrix of
-         issue #42, CL-042-01 and TC-042-001): named strategies, the
+         issue #42, CL-042-01 and TC-042-001; its ignore lists, CL-042-02 and
+         TC-042-002..003): named strategies, the
          directed-CQ rule, Highlight in Band Activity, the strategy editor popup and Auto
          strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
          result.
@@ -36,7 +37,12 @@ package WstxStrategy {
             second Auto click starts it again. The first Auto use in a page session asks
             for confirmation once.
          D8 Out (operator decision on #42): band hopping, also as a suggestion; Rapid
-            RR73; unauthenticated UDP control; shell-command alerts. */
+            RR73; unauthenticated UDP control; shell-command alerts.
+         D9 Ignore lists (#42, IgnoreLists): a permanent list in Settings > General and a
+            session list filled from Band Activity (right-click Ignore), with a timed
+            expiry and cleared on a band change. They govern the strategy only
+            (Highlight, Auto Call, Auto CQ); a manual Reply, Select or double-click of an
+            ignored station is still the operator's explicit choice and is not refused. */
 
     enum def MessageType { enum cq; enum directed_cq; enum to_me; enum signoff; }
     enum def NewScope { enum ever; enum band; }
@@ -92,12 +98,20 @@ package WstxStrategy {
         attribute active : String[0..1];
         attribute highlight : Boolean;
         attribute strategiesMax : Integer = 16;
+        attribute ignoreCallsMax : Integer = 100;
+        attribute sessionIgnoreMinutes : Integer = 30;
+        assert constraint sessionMinutesRange { sessionIgnoreMinutes >= 1 and sessionIgnoreMinutes <= 720 }
         doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
              the seven codes: my continent for the directed-CQ rule), active (null or the
-             name of a listed strategy), highlight, strategies (0..16 Strategy). Persisted
+             name of a listed strategy), highlight, strategies (0..16 Strategy),
+             ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
+             A-Z 0-9 /, IgnoreLists) and session_ignore_minutes (#42 the session list
+             expiry, an integer 1..720, default 30). Persisted
              as strategy.json beside profile.json: {schema_version 1, profile_id, revision,
              configuration}, written atomically like udp.json; missing: the default
-             {null, null, false, []} at revision 0; foreign, malformed or larger than
+             {null, null, false, [], [], 30} at revision 0; a saved configuration written
+             before #42 that has neither ignore_calls nor session_ignore_minutes reads
+             with [] and 30 (with exactly one of them: malformed); foreign, malformed or larger than
              262144 bytes: configuration null with configuration_error
              invalid_configuration until a PUT replaces it. */
     }
@@ -130,6 +144,34 @@ package WstxStrategy {
              The worked set is the log's cached one, rebuilt when the log or the country
              table changes. */
     }
+    attribute def IgnoreLists {
+        attribute sessionEntriesMax : Integer = 64;
+        doc /* #42 (CL-042-02). A sender is ignored when its call (exactly, not as a prefix)
+             is on the permanent list (configuration ignore_calls) or on the session list.
+             The session list lives in station memory only (never persisted; a station
+             restart empties it): at most 64 entries in the order added, each {call, band,
+             expiry}, the band being the station band (CAT dial band, else the operating
+             selection band; null when unknown) and the expiry session_ignore_minutes
+             after the add, both taken when added (adding a listed call again renews
+             them and moves it last; adding a 65th call drops the oldest). An entry ends
+             at its expiry.
+             Band change: the station's contact step (every 50 ms, whether or not a
+             browser is connected) compares the station band with the band it saw last;
+             any change (also to or from unknown) empties the session list, so it is
+             empty before the next Highlight evaluation or Auto step on the new band.
+             Effect: an ignored sender's verdict has rank null and is not greyed, why
+             "<call> is ignored (session list)" or "(permanent list)" (session first when
+             on both); so Highlight gives it no mark and Auto Call never selects it; Auto
+             CQ never answers an ignored caller, also when apply_to_callers is off. A
+             contact already in progress is not changed by ignoring its partner.
+             Band Activity: the right-click menu offers "Ignore <call>" for a row with a
+             resolved sender (session list), "Stop ignoring <call>" when that call is on
+             the session list, and no ignore item for other rows. Settings > General: the
+             permanent list (calls separated by spaces or commas, saved on change with
+             PUT /strategy), the session expiry in minutes (saved on change), and the
+             session list with each call's remaining minutes and a remove control; the
+             list is read again when the drawer opens. */
+    }
     calc def DirectedCqRule {
         in target : String;
         in myContinent : String[0..1];
@@ -151,10 +193,12 @@ package WstxStrategy {
         attribute rank : Integer[0..1];
         attribute grey : Boolean;
         doc /* One per decoded standard record with a resolved sender (others have none):
-             grey per DirectedCqRule; else rank = index (0-based) of the first rule all of
+             an ignored sender (IgnoreLists) has rank null, grey false; else grey per
+             DirectedCqRule; else rank = index (0-based) of the first rule all of
              whose conditions hold, null when none. why (explain only): "matches rule n",
-             "no match (rule n: <first failing condition>; ...)" or "CQ x is not
-             addressed to my continent (c)". Display order: rank ascending, then the sort
+             "no match (rule n: <first failing condition>; ...)", "CQ x is not
+             addressed to my continent (c)" or "<call> is ignored (session list)" /
+             "(permanent list)". Display order: rank ascending, then the sort
              (strongest: SNR descending, weakest: SNR ascending, furthest: distance
              descending, newest: sequence descending; unknown values last), then sequence;
              records without a rank follow in sequence order. */
@@ -164,7 +208,18 @@ package WstxStrategy {
         attribute evaluateRecordsMax : Integer = 2048;
         doc /* GET /strategy (operating access, no query, empty body): {v 1, profile_id,
              boot_id, revision, configuration (or null), configuration_error, my_continent
-             (configured, else derived; null when unknown), derived_continent}.
+             (configured, else derived; null when unknown), derived_continent,
+             session_ignore (#42: the session list in the order added without ended
+             entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
+             up})}.
+             POST /strategy/ignore {v, profile_id, boot_id, call, ignore} (#42): exact
+             keys; same Origin/authorization/media/size rules and refusal codes as PUT
+             /strategy (400 invalid_request with the field, unsupported_version, 403
+             wrong_profile, 409 state_conflict boot_id); call 1..13 of A-Z 0-9 /; ignore
+             true adds the call to the session list (or renews it), false removes it (not
+             listed: no change). It changes no revision, is allowed while Auto runs and
+             applies at the next evaluation; returns the snapshot. No MCP tool dispatches
+             to it (an MCP principal is refused, #58 principal guard).
              PUT /strategy {v, profile_id, boot_id, expected_revision, configuration}:
              exact keys; same Origin/authorization/media/size rules and refusal codes as
              PUT /udp (400 invalid_request with the field, unsupported_version, 403
@@ -186,7 +241,8 @@ package WstxStrategy {
              once; matching rows get the strategy mark and rule number and move to the top
              of their period block in display order; greyed rows are dimmed and struck
              through; other rows keep the ActivityOrdering. Highlight off: no evaluation
-             request and no mark. Choosing a strategy or toggling Highlight is one PUT
+             request and no mark. An ignored sender (IgnoreLists) gets no mark; after an
+             Ignore or Stop ignoring the shown rows are evaluated again. Choosing a strategy or toggling Highlight is one PUT
              /strategy; it never restarts receive. */
     }
     attribute def StrategyEditor {
@@ -218,7 +274,8 @@ package WstxStrategy {
              Auto Call (waiting): on each fresh complete publication the candidates are
              the verdicts with a rank, cq-like (D3), not greyed, a CQ target other than a
              continent or DX only when the matched rule asks for it with a non-negated
-             cq_target condition, a sane call (SaneCall),
+             cq_target condition, a sane call (SaneCall), not ignored (IgnoreLists: no
+             rank),
              not mine, not completed or skipped in this run, one per call, in display
              order; the first is selected (select_row) and armed (enable_tx); an RR73/73
              candidate keeps the previous Tx frequency (set_frequency). No candidate: one
@@ -226,7 +283,7 @@ package WstxStrategy {
              Auto CQ (waiting in role cq): enable_tx with no contact in progress (a new
              own CQ, calling_cq). On each fresh partner-parity publication the callers are
              the messages to my call that are not RR73/73 (no tailender after their sign-
-             off), from a sane, not completed or skipped call, matching the strategy only
+             off), from a sane, not ignored (IgnoreLists), not completed or skipped call, matching the strategy only
              when apply_to_callers, in display order (all rank 0 otherwise); the first is
              selected (the armed CQ becomes that contact). No caller: one try.
              Alternate: switch_after consecutive tries switch Call -> CQ or CQ -> Call
@@ -263,6 +320,7 @@ package WstxStrategy {
     dependency storeClause from StrategyConfiguration to WstxRequirements::'CL-039-01';
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
     dependency newEntityClause from NewEntity to WstxRequirements::'CL-042-01';
+    dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';

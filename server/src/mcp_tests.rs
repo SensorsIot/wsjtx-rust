@@ -395,7 +395,8 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
             "PUT",
             "/strategy",
             Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
-                "configuration":{"continent":null,"active":"NA first","highlight":true,"strategies":[na_first]}})),
+                "configuration":{"continent":null,"active":"NA first","highlight":true,"strategies":[na_first],
+                    "ignore_calls":[],"session_ignore_minutes":30}})),
         )
         .await;
     assert_eq!(saved.status, StatusCode::OK, "{}", saved.json);

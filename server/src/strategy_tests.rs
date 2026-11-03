@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01;
-// TC-039-001..005, TC-042-001 (each test names its case below). Hand-authored records and strategies; the expected ranks,
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02;
+// TC-039-001..005, TC-042-001, TC-042-002 (each test names its case below). Hand-authored records and strategies; the expected ranks,
 // grey marks, orders, stop reasons and requests are the WstxStrategy tables written in
 // these tests (geography from the locator square centres), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
@@ -482,7 +482,8 @@ pub(crate) fn strategy_json(name: &str, role: &str) -> Value {
         "sort":"strongest","treat_73_as_cq":true,"apply_to_callers":false,"skip_after":2,"auto_role":role,"switch_after":2})
 }
 fn config(active: Option<&str>, role: &str) -> Value {
-    json!({"continent":null,"active":active,"highlight":true,"strategies":[strategy_json("NA first",role)]})
+    json!({"continent":null,"active":active,"highlight":true,"strategies":[strategy_json("NA first",role)],
+        "ignore_calls":[],"session_ignore_minutes":30})
 }
 
 // Proves: TC-039-001
@@ -643,7 +644,8 @@ async fn tc_039_003_store_routes_and_evaluate() {
         ),
         (
             json!(0),
-            json!({"continent":null,"active":null,"highlight":false,"strategies":[]}),
+            json!({"continent":null,"active":null,"highlight":false,"strategies":[],
+                "ignore_calls":[],"session_ignore_minutes":30}),
             json!("EU")
         ),
         "default: no strategy; continent derived from JN47AA"
@@ -1247,4 +1249,434 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     );
     advance(50_000);
     assert!(spent());
+}
+
+// ------------------------------------------------------------------ #42 ignore lists
+// Proves: TC-042-002 (WstxStrategy::IgnoreLists; the expected tiers, reasons, expiries
+// and selections are written here from the contract, not evaluator output).
+#[test]
+fn tc_042_002_ignore_configuration_is_exact() {
+    let mut c = config(Some("NA first"), "call");
+    c["ignore_calls"] = json!(["K1ABC", "VK2ABC/P"]);
+    c["session_ignore_minutes"] = json!(720);
+    let ok = parse_config(&c).unwrap();
+    assert_eq!(
+        (ok.ignore_calls.clone(), ok.session_ignore_minutes),
+        (vec!["K1ABC".to_owned(), "VK2ABC/P".to_owned()], 720)
+    );
+    assert_eq!(ok.json(), c, "round trip keeps both keys");
+    let calls_101: Vec<String> = (0..101).map(|i| format!("K{i}ABC")).collect();
+    for (key, value, field) in [
+        ("ignore_calls", json!(["K1ABC", "K1ABC"]), "ignore_calls[1]"),
+        ("ignore_calls", json!(["k1abc"]), "ignore_calls[0]"),
+        ("ignore_calls", json!(["K1ABCDEFGHIJKL"]), "ignore_calls[0]"),
+        ("ignore_calls", json!([""]), "ignore_calls[0]"),
+        ("ignore_calls", json!(calls_101), "ignore_calls"),
+        ("ignore_calls", json!("K1ABC"), "ignore_calls"),
+        ("session_ignore_minutes", json!(0), "session_ignore_minutes"),
+        (
+            "session_ignore_minutes",
+            json!(721),
+            "session_ignore_minutes",
+        ),
+        (
+            "session_ignore_minutes",
+            json!(1.5),
+            "session_ignore_minutes",
+        ),
+    ] {
+        let mut bad = c.clone();
+        bad[key] = value.clone();
+        assert_eq!(parse_config(&bad), Err(field.to_owned()), "{key}={value}");
+    }
+    let mut missing = c.clone();
+    missing.as_object_mut().unwrap().remove("ignore_calls");
+    assert_eq!(
+        parse_config(&missing),
+        Err("configuration".to_owned()),
+        "a PUT names both keys"
+    );
+    let mut empty = c.clone();
+    empty["ignore_calls"] = json!([]);
+    empty["session_ignore_minutes"] = json!(1);
+    assert!(parse_config(&empty).is_ok(), "an empty list, one minute");
+}
+
+// Proves: TC-042-002
+#[test]
+fn tc_042_002_ignored_senders_never_match() {
+    let records = rows(&[
+        ("CQ K1ABC FN42", Some(-12.0)),      // 0
+        ("CQ DL1XYZ JO62", Some(-3.0)),      // 1
+        ("CQ NA W1AW FN31", Some(-5.0)),     // 2 greyed for EU unless ignored
+        ("HB9BLA VK2ABC QF56", Some(-20.0)), // 3 calls me (no CQ)
+    ]);
+    let s = strat(vec![vec![cq()]], Sort::Strongest, false);
+    let mut st = me();
+    assert_eq!(
+        ranks(&s, &records, &st),
+        vec![
+            (0, Some(0), false),
+            (1, Some(0), false),
+            (2, None, true),
+            (3, None, false)
+        ]
+    );
+    st.ignored.insert("K1ABC".into(), Tier::Permanent);
+    st.ignored.insert("W1AW".into(), Tier::Session);
+    let v = evaluate(&s, &records, &st);
+    assert_eq!(
+        v.iter()
+            .map(|v| (v.facts.sequence, v.rank, v.grey, v.ignored))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, None, false, true),
+            (1, Some(0), false, false),
+            (2, None, false, true),
+            (3, None, false, false)
+        ]
+    );
+    assert_eq!(v[0].why, "K1ABC is ignored (permanent list)");
+    assert_eq!(v[2].why, "W1AW is ignored (session list)");
+    // An empty rule holds for every message, still not for an ignored sender.
+    let all = strat(vec![vec![]], Sort::Strongest, false);
+    assert_eq!(sorted(&all, &records, &st), vec![1, 3]);
+    // Exact calls, not prefixes.
+    let mut prefix = me();
+    prefix.ignored.insert("K1".into(), Tier::Permanent);
+    assert_eq!(ranks(&s, &records, &prefix)[0], (0, Some(0), false));
+}
+
+// Proves: TC-042-002
+#[test]
+fn tc_042_002_session_list_expiry_renewal_capacity_and_band_change() {
+    let t0 = std::time::Instant::now();
+    let min = std::time::Duration::from_secs(60);
+    let mut l = Session::default();
+    l.observe_band(Some("40m"));
+    l.add("K1ABC", Some("40m"), 2, t0);
+    l.add("DL1XYZ", Some("40m"), 30, t0 + min);
+    assert_eq!(
+        l.entries(t0),
+        vec![
+            ("K1ABC".to_owned(), Some("40m".to_owned()), 120),
+            ("DL1XYZ".to_owned(), Some("40m".to_owned()), 1860)
+        ]
+    );
+    // Remaining seconds rounded up; the entry ends exactly at its expiry.
+    let just = t0 + std::time::Duration::from_millis(119_001);
+    assert_eq!(l.entries(just)[0].2, 1);
+    assert_eq!(
+        l.entries(t0 + 2 * min)
+            .into_iter()
+            .map(|e| e.0)
+            .collect::<Vec<_>>(),
+        vec!["DL1XYZ".to_owned()],
+        "K1ABC ended at added + 2 min"
+    );
+    // Renewal moves a call last with a new expiry.
+    l.add("K1ABC", Some("40m"), 5, t0 + 2 * min);
+    l.add("DL1XYZ", Some("40m"), 1, t0 + 3 * min);
+    assert_eq!(
+        l.entries(t0 + 3 * min),
+        vec![
+            ("K1ABC".to_owned(), Some("40m".to_owned()), 240),
+            ("DL1XYZ".to_owned(), Some("40m".to_owned()), 60)
+        ]
+    );
+    l.remove("K1ABC");
+    l.remove("NOT1LISTED");
+    assert_eq!(l.entries(t0 + 3 * min).len(), 1);
+    // The same band keeps the list; another band (or an unknown one) empties it.
+    l.observe_band(Some("40m"));
+    assert_eq!(l.entries(t0 + 3 * min).len(), 1);
+    l.observe_band(Some("20m"));
+    assert!(l.entries(t0 + 3 * min).is_empty(), "band change clears");
+    l.add("K1ABC", Some("20m"), 30, t0);
+    l.observe_band(None);
+    assert!(l.entries(t0).is_empty(), "band unknown is a change");
+    l.add("K1ABC", None, 30, t0);
+    l.observe_band(None);
+    assert_eq!(l.entries(t0).len(), 1, "still unknown: no change");
+    // At most 64 entries: the 65th add drops the oldest.
+    let mut full = Session::default();
+    for i in 0..65 {
+        full.add(&format!("K{i}AA"), Some("40m"), 30, t0);
+    }
+    let e = full.entries(t0);
+    assert_eq!(
+        (e.len(), e[0].0.as_str(), e[63].0.as_str()),
+        (64, "K1AA", "K64AA")
+    );
+}
+
+async fn ignore(f: &Mcp, call: Value, on: Value) -> crate::mcp_tests::Reply {
+    f.browser(
+        "POST",
+        "/strategy/ignore",
+        Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"call":call,"ignore":on})),
+    )
+    .await
+}
+
+// Proves: TC-042-002
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_002_ignore_route_store_and_band_change() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.tick();
+    // A configuration saved before #42 reads with an empty list and 30 minutes.
+    let legacy = json!({"continent":null,"active":"NA first","highlight":true,
+        "strategies":[strategy_json("NA first","call")]});
+    std::fs::write(
+        f.dir.join(FILE_NAME),
+        serde_json::to_vec(
+            &json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":legacy}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let old = Owner::default().snapshot(&f.state);
+    assert_eq!(
+        (
+            old["revision"].clone(),
+            old["configuration"]["ignore_calls"].clone(),
+            old["configuration"]["session_ignore_minutes"].clone(),
+            old["configuration_error"].clone()
+        ),
+        (json!(3), json!([]), json!(30), Value::Null)
+    );
+    let mut one = legacy.clone();
+    one["ignore_calls"] = json!([]);
+    std::fs::write(
+        f.dir.join(FILE_NAME),
+        serde_json::to_vec(
+            &json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":one}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let half = Owner::default().snapshot(&f.state);
+    assert_eq!(
+        (
+            half["configuration"].clone(),
+            half["configuration_error"].clone()
+        ),
+        (Value::Null, json!("invalid_configuration"))
+    );
+    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
+
+    let g = f.browser("GET", "/strategy", None).await;
+    assert_eq!(
+        (
+            g.json["configuration"]["ignore_calls"].clone(),
+            g.json["configuration"]["session_ignore_minutes"].clone(),
+            g.json["session_ignore"].clone()
+        ),
+        (json!([]), json!(30), json!([])),
+        "default: empty lists, 30 minutes"
+    );
+    let r = ignore(&f, json!("K1ABC"), json!(true)).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(
+        (r.json["revision"].clone(), r.json["session_ignore"].clone()),
+        (
+            json!(0),
+            json!([{"call":"K1ABC","band":"40m","remaining_s":1800}])
+        ),
+        "the session list changes no revision"
+    );
+    for (body, status, code, field) in [
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"call":"K1ABC","ignore":true,"x":1}),
+            400,
+            "invalid_request",
+            Value::Null,
+        ),
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"call":"k1abc","ignore":true}),
+            400,
+            "invalid_request",
+            json!("call"),
+        ),
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"call":"K1ABC","ignore":"yes"}),
+            400,
+            "invalid_request",
+            json!("ignore"),
+        ),
+        (
+            json!({"v":2,"profile_id":f.id,"boot_id":f.boot,"call":"K1ABC","ignore":true}),
+            400,
+            "unsupported_version",
+            json!("v"),
+        ),
+        (
+            json!({"v":1,"profile_id":profile::new_uuid().unwrap(),"boot_id":f.boot,"call":"K1ABC","ignore":true}),
+            403,
+            "wrong_profile",
+            json!("profile_id"),
+        ),
+        (
+            json!({"v":1,"profile_id":f.id,"boot_id":profile::new_uuid().unwrap(),"call":"K1ABC","ignore":true}),
+            409,
+            "state_conflict",
+            json!("boot_id"),
+        ),
+    ] {
+        let r = f.browser("POST", "/strategy/ignore", Some(body)).await;
+        assert_eq!(
+            (
+                r.status.as_u16(),
+                r.json["error"]["code"].clone(),
+                r.json["error"]["field"].clone()
+            ),
+            (status, json!(code), field)
+        );
+    }
+    let foreign = f
+        .http(
+            "POST",
+            "/strategy/ignore",
+            &[
+                ("origin", "https://evil.example".into()),
+                ("cookie", f.cookie()),
+                ("content-type", "application/json".into()),
+            ],
+            Some(b"{}".to_vec()),
+        )
+        .await;
+    assert_eq!(foreign.status, StatusCode::FORBIDDEN);
+    // The permanent list and the session minutes are saved with PUT /strategy.
+    let mut c = config(Some("NA first"), "call");
+    c["ignore_calls"] = json!(["DL1XYZ"]);
+    c["session_ignore_minutes"] = json!(5);
+    save(&f, c.clone()).await;
+    let r = ignore(&f, json!("W1AW"), json!(true)).await;
+    assert_eq!(
+        r.json["session_ignore"],
+        json!([{"call":"K1ABC","band":"40m","remaining_s":1800},{"call":"W1AW","band":"40m","remaining_s":300}])
+    );
+    let r = ignore(&f, json!("K1ABC"), json!(false)).await;
+    assert_eq!(
+        r.json["session_ignore"],
+        json!([{"call":"W1AW","band":"40m","remaining_s":300}])
+    );
+    // Evaluation sees both tiers.
+    // The unranked rows are in sequence order here also by SNR (W1AW -1, DL1XYZ -3).
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-12.0)),
+            ("CQ W1AW FN31", 900.0, Some(-1.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-3.0)),
+        ],
+    );
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":3,"strategy":null,"explain":true});
+    let v = f
+        .browser("POST", "/strategy/evaluate", Some(body.clone()))
+        .await;
+    assert_eq!(
+        v.json["verdicts"],
+        json!([{"sequence":0,"rank":0,"grey":false,"why":"matches rule 1"},
+            {"sequence":1,"rank":null,"grey":false,"why":"W1AW is ignored (session list)"},
+            {"sequence":2,"rank":null,"grey":false,"why":"DL1XYZ is ignored (permanent list)"}])
+    );
+    // The station step on another band empties the session list.
+    f.state.recording.fixture_band("20m");
+    f.tick();
+    let g = f.browser("GET", "/strategy", None).await;
+    assert_eq!(g.json["session_ignore"], json!([]));
+    let v = f.browser("POST", "/strategy/evaluate", Some(body)).await;
+    assert_eq!(
+        v.json["verdicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| (v["sequence"].clone(), v["why"].clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (json!(1), json!("matches rule 1")),
+            (json!(0), json!("matches rule 1")),
+            (json!(2), json!("DL1XYZ is ignored (permanent list)"))
+        ],
+        "W1AW is no longer ignored on 20m; the permanent list stays"
+    );
+    assert_eq!(f.keys(), 0, "ignore lists never key");
+}
+
+// Proves: TC-042-002
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_002_auto_call_never_selects_an_ignored_station() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut c = config(Some("NA first"), "call");
+    c["ignore_calls"] = json!(["K1ABC"]);
+    save(&f, c).await;
+    assert_eq!(
+        ignore(&f, json!("W1AW"), json!(true)).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // K1ABC (permanent) and W1AW (session) would both rank first (NA, rule 1).
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(9.0)),
+            ("CQ W1AW FN31", 900.0, Some(5.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-10.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["last_decision"]["candidates"], json!(1));
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: TC-042-002
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_002_auto_cq_never_answers_an_ignored_caller() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    // apply_to_callers is off: Auto CQ answers every caller, but not an ignored one.
+    save(&f, config(Some("NA first"), "alternate")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ NA W1AW FN31", 900.0, Some(5.0))]);
+    publish(&f, e + 15_000, &[]);
+    f.tick();
+    assert_eq!(
+        f.read("automation").await["run"]["state"],
+        json!("calling_cq")
+    );
+    assert_eq!(
+        ignore(&f, json!("K1ABC"), json!(true)).await.status,
+        StatusCode::OK
+    );
+    publish(
+        &f,
+        e + 30_000,
+        &[
+            ("HB9BLA K1ABC FN42", 1500.0, Some(9.0)),
+            ("HB9BLA DL1XYZ JO62", 1200.0, Some(-10.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("DL1XYZ"), json!("report"), json!("armed"))
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["last_decision"]["candidates"], json!(1));
+    assert_eq!(f.keys(), 0);
 }

@@ -482,6 +482,7 @@ fn router(state: App) -> Router {
         .route("/automation/command", post(automation::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/strategy", get(strategy::snapshot).put(strategy::put).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/evaluate", post(strategy::evaluate_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
+        .route("/strategy/ignore", post(strategy::ignore_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))

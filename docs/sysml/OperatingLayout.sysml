@@ -569,7 +569,9 @@ attribute def ActivityOrdering {
              contact revision moves with every transmit step) is retried at most twice
              with the reloaded snapshot, since the operator's choice is explicit; the
              Reply menu item does the same; right-click
-             opens a menu: Reply, Select, Set Rx here. Enter selects; the menu is also
+             opens a menu: Reply, Select, Set Rx here and, for a row with a resolved
+             sender, "Ignore <call>" or "Stop ignoring <call>" (#42 WstxStrategy::
+             IgnoreLists session list). Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }
     calc def QsoPaneCrowding {
@@ -702,7 +704,9 @@ attribute def ActivityOrdering {
              reachable), opened by the top-bar Settings button or F2, closed by its close
              control or a pointer action outside it. Exactly four sections
              (SettingsSection):
-             General: station (display name, callsign, locator, continent), clock
+             General: station (display name, callsign, locator, continent, #42 the
+             ignore lists of WstxStrategy::IgnoreLists: permanent calls, session expiry
+             minutes, the session list with remove controls), clock
              (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
              Both with the air estimate, read with GET /clock when the drawer opens,
              saved on change with POST /clock, a plain setting without restart mark),

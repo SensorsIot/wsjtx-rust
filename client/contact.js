@@ -538,13 +538,13 @@ activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[d
 const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-menu';menu.setAttribute('role','menu');menu.hidden=true;
 menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
 document.querySelector('main').append(menu);let menuRow=null;
-function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.style.left=`${Math.min(x,innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(y,innerHeight-menu.offsetHeight-8)}px`;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();menu.querySelector('button:not(:disabled)').focus();}
+function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.style.left=`${Math.min(x,innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(y,innerHeight-menu.offsetHeight-8)}px`;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.querySelector('button:not(:disabled):not([hidden])').focus();}
 function closeMenu(){menu.hidden=true;menuRow=null;}
 activity?.addEventListener('contextmenu',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;event.preventDefault();openMenu(tr,event.clientX,event.clientY);});
 menu.addEventListener('click',event=>{
   const item=event.target.closest('[data-menu]');if(!item||!menuRow)return;const tr=menuRow;closeMenu();
   if(item.dataset.menu==='reply')replyRow(tr);else if(item.dataset.menu==='select')selectRow(tr);
-  else{const hz=Math.round(Number(tr.children[3].textContent));if(Number.isFinite(hz))send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency');}
+  else if(item.dataset.menu==='rx'){const hz=Math.round(Number(tr.children[3].textContent));if(Number.isFinite(hz))send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency');}
 });
 menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
@@ -860,7 +860,7 @@ function show(){
   autoButton.disabled=runActive()?!strategyRun():!active()||!capable;
   autoButton.setAttribute('aria-pressed',String(strategyRun()));
   autoButton.title=strategyRun()?'Stop Auto':runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
-  showContinent();
+  showContinent();showIgnore();
   autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):'waiting'}`:'Auto';
   decorate();
 }
@@ -958,6 +958,57 @@ function showContinent(){
   $('continent-derived').textContent=`From callsign: ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
+// ---------------------------------------------------------------- #42 ignore lists
+// WstxStrategy::IgnoreLists: the station keeps both lists and applies them; this client
+// only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
+// session list) and shows the session list the station returns.
+continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never highlighted or answered by Auto. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
+const ignoreCalls=$('ignore-calls'),ignoreMinutes=$('ignore-minutes'),ignoreList=$('ignore-session');
+const sessionIgnored=call=>(view?.session_ignore??[]).some(e=>e.call===call);
+function showIgnore(){
+  if(!ignoreCalls)return;const c=config();ignoreCalls.disabled=ignoreMinutes.disabled=!c;
+  if(document.activeElement!==ignoreCalls)ignoreCalls.value=(c?.ignore_calls??[]).join(' ');
+  if(document.activeElement!==ignoreMinutes)ignoreMinutes.value=c?String(c.session_ignore_minutes??30):'';
+  const list=view?.session_ignore??[],key=list.map(e=>`${e.call}/${Math.ceil(e.remaining_s/60)}`).join(',');
+  if(ignoreList.dataset.key===key)return;ignoreList.dataset.key=key;
+  ignoreList.replaceChildren(...list.map(e=>{const li=document.createElement('li');li.innerHTML=`<span class="ig-call"></span> <small class="ig-left"></small> <button type="button" class="op-icon-button">&times;</button>`;
+    li.querySelector('.ig-call').textContent=e.call;li.querySelector('.ig-left').textContent=`${Math.ceil(e.remaining_s/60)} min`;
+    const b=li.querySelector('button');b.setAttribute('aria-label',`Stop ignoring ${e.call}`);b.addEventListener('click',()=>ignore(e.call,false));return li;}));
+}
+async function ignore(call,on){
+  if(!view)return;
+  try{
+    const response=await stationFetch('/strategy/ignore',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,call,ignore:on}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`Ignore not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}`;return;}
+    // The shown rows are evaluated again with the station's new list.
+    view=data;verdicts=new Map();evaluatedKey='';lastEvaluation=-Infinity;show();evaluateShown();
+  }catch(error){statusNode.textContent=`Ignore not saved · ${error.message}`;}
+}
+// A change that leaves the saved value as it is (a repeated change on blur) sends nothing.
+ignoreCalls?.addEventListener('change',()=>{const c=config(),calls=[...new Set(words(ignoreCalls.value,false))];if(c&&calls.join(' ')!==(c.ignore_calls??[]).join(' '))saveConfiguration({...c,ignore_calls:calls},'Ignore list');});
+ignoreMinutes?.addEventListener('change',()=>{const c=config(),n=Number(ignoreMinutes.value);if(c&&Number.isInteger(n)&&n!==c.session_ignore_minutes)saveConfiguration({...c,session_ignore_minutes:n},'Session ignore');});
+// Station strategy settings, not profile fields: they never mark the profile form unsaved,
+// and Enter saves the list instead of submitting (applying) the profile form.
+for(const el of [ignoreCalls,ignoreMinutes]){for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
+  el?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();el.dispatchEvent(new Event('change'));}});}
+// The session list ends by time and band change at the station: read it when Settings opens.
+const settingsDrawer=document.querySelector('#settings-drawer');
+if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadStrategy();}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
+// Band Activity right-click: Ignore <call> / Stop ignoring <call> for a row with a resolved sender.
+const rowMenu=document.querySelector('#ba-menu');
+const ignoreItem=document.createElement('button');ignoreItem.type='button';ignoreItem.setAttribute('role','menuitem');ignoreItem.dataset.menu='ignore';ignoreItem.hidden=true;rowMenu?.append(ignoreItem);
+function rowSender(tr){
+  const id=tr.dataset.resultId??'',cut=id.lastIndexOf('/'),context=id.slice(0,cut),sequence=Number(tr.dataset.sequence);
+  const pools=[typeof live!=='undefined'&&live?.job&&liveIdentity(live)===context?resultRows:[],...(typeof activityHistory!=='undefined'?activityHistory.filter(h=>h.context===context).map(h=>h.rows):[])];
+  const record=pools.flat().find(r=>r.sequence===sequence);
+  return record?.status==='decoded'&&record.fields?.from?.kind==='call'?record.fields.from.text:null;
+}
+addEventListener('wstx-row-menu',event=>{
+  const call=view?rowSender(event.detail):null;ignoreItem.hidden=!call;ignoreItem.dataset.call=call??'';
+  if(call)ignoreItem.textContent=sessionIgnored(call)?`Stop ignoring ${call}`:`Ignore ${call}`;
+});
+ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
 const KINDS=[['message','Message type'],['new_call','New call'],['new_grid','New grid'],['new_dxcc','New DXCC'],['new_continent','New continent'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['continent','Continent'],['distance_km','Distance (km)'],['azimuth_deg','Azimuth (deg)'],['snr_db','SNR (dB)'],['dt_s','DT (s)'],['audio_hz','Audio frequency (Hz)'],['call','Call or prefix'],['cq_target','CQ target (DX, TEST, POTA...)'],['band','Band']];
@@ -1057,11 +1108,11 @@ async function preview(){
   }catch(error){if(seq===previewSeq)status.textContent=`Preview unavailable · ${error.message}`;}
 }
 $('se-save').addEventListener('click',async()=>{
-  const c=config()??{continent:null,active:null,highlight:false};
+  const c=config()??{continent:null,active:null,highlight:false,ignore_calls:[],session_ignore_minutes:30};
   const names=drafts.map(d=>d.name);const keep=names.includes(c.active)?c.active:null;
   // A strategy saved from the editor applies at once; the edited one becomes active if none was.
   const activeName=keep??drafts[current]?.name??null;
-  const ok=await saveConfiguration({continent:c.continent??null,active:activeName,highlight:!!c.highlight&&!!activeName,strategies:drafts},'Strategies');
+  const ok=await saveConfiguration({...c,continent:c.continent??null,active:activeName,highlight:!!c.highlight&&!!activeName,strategies:drafts},'Strategies');
   $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;
   if(ok){drafts=structuredClone(config().strategies);renderEditor();}
 });

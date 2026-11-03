@@ -357,3 +357,5 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #rx-focus .op-qso-buttons{gap:4px}
 #rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
 #controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}
+/* #42: the drawer's Station fieldset never grows wider than the drawer (a fieldset is min-content wide by default); the session ignore list. */
+.op-drawer .op-server-fieldset{min-width:0}.op-ignore-session{min-width:0}#ignore-session{margin:4px 0 0;padding-left:1.2em}
