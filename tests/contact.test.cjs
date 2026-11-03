@@ -199,7 +199,7 @@ test('TC-007-004 manual DX entry and Log QSO log the contact at once without hid
   assert.deepEqual([records[0].call,records[0].gridsquare,records[0].mode,records[0].station_callsign],['DL1ABC','JO62','FT8','HB9BLA']);
   assert.equal(await page.locator('#log-review').count(),0,'no review form');
   assert.equal(await page.locator('#operating-workspace').isVisible(),true,'the operating screen stays');
-  assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
+  assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view (#37)');
   assert.equal(mutations().some(r=>r.path==='/contacts'),false,'the server logs; the browser never saves');
   assert.deepEqual(page.errors,[]);
 });
@@ -231,7 +231,7 @@ test('TC-007-002 a pointer action outside the Settings drawer returns to operati
   assert.equal(await page.locator('#settings-drawer').isVisible(),true);
   await page.locator('#band-activity > header').click({timeout:5000});
   await page.locator('#settings-drawer').waitFor({state:'hidden'});
-  assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
+  assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view (#37)');
 });
 
 // Re-check item 2: the keyboard halt does not wait for contact.js (loaded after the first

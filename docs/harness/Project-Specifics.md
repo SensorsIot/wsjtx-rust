@@ -99,18 +99,22 @@ names in its own `select` the files whose behaviour its test cases prove.
 |---|---|---|
 | `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
 | `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
-| `protocol-thin` | Measurement: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
+| `protocol-thin` | Timing: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Timing inputs: router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
 | `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests |
 | `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Router, recording owners, recording client, recording test file, fixture tool and recording manifests |
 | `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Router, recording and spectrum owners, recording client, recording test file and manifests |
-| `recording-thin` | Measurement: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Router, recording/spectrum owners, HTTP compression, recording client and test file |
+| `recording-thin` | Timing: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Timing inputs: router, recording/spectrum owners, HTTP compression, status and recording clients (loaded cold over the link), recording test file and link helpers |
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
-| `radio-selection-thin` | Measurement: the 75 s native/CAT/TLS two-browser Thin and Off workload | As `radio-selection` plus spectrum, audio, decoder and library code, which set the real-time load |
+| `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/CAT/receive/source/audio/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
-| `sysml-documentation` | Canonical catalog/trace checks, full semantic and architecture validation, model/tool tests | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
+| `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the model/tool tests `test_[!a]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
+| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the toolchain pin and the test file |
+| `decoder-quality` | Timing: the release decoder quality/latency passes and the owned-Job resource matrix (runs alone) | Timing inputs: decoder sources, `decoder_signal.rs`, decoder fixtures, its resource-job tools and the Rust toolchain/dependency pins |
+| `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
+| `live-station-latency` | Timing: the #57 busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files and toolchain |
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
@@ -123,17 +127,70 @@ runs in `radio-selection-thin`, the other selection tests in `radio-selection`. 
 complement includes future names instead of silently omitting them. No test assertion,
 budget or test case is removed by selection.
 
-Measurements run only when the change touches time-critical code (harness#28).
-Timing promises live in measurement groups (`protocol-thin`, `recording-thin`,
-`radio-selection-thin`, `decoder-quality`) selected only by the code that can change
-that timing: the router/websocket and its pacing, HTTP compression, the link simulator,
-the recording/spectrum producers, the receive/audio/decoder pipeline and the clients
-that pace the display. Functional groups assert behaviour; a residual liveness deadline
-in a functional case (for example the 2 s status refresh and 10 s recovery bounds of
-the profile tests) is a known follow-up for harness#28, not a measurement promise.
+Measurements run only when the change touches time-critical code (harness#28). Every
+timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
+`protocol-thin`, `recording-thin`, `radio-selection-thin`, `live-station-latency`,
+`decoder-quality`). A timing suite has no `select`; its `timing_inputs` name the code that
+sets the measured time, and nothing else selects it: no functional owner, unmapped-input
+or unowned-path fallback, `.harness/` edit or dependency
+([harness testing standard](../../harness/core/docs/standards/testing.md#timing-suites)).
+The gate lists a timing suite the change reads but does not time as `TIMING ... not run`.
 
-The model has an explicit documentation owner. Its edits select full model validation;
-runtime oracles are selected by changed implementation and executable tests. Source
+The timing inputs are, per suite: the router `main.rs` (status websocket, thin anchors
+and detail cadence) and HTTP compression for the three link suites; the status client
+(`app.js`, `index.html`, `style.css`) for `protocol-thin`, and the status and receive
+clients (`app.js`, `index.html`, `recording.js`, `recording.css`) for the two others,
+because those assets cross the 32 kbit/s link cold (the #55 cold-load red came from a
+client-only change); the recording/spectrum producers for `recording-thin`; the
+selection, CAT, receive, source, audio and spectrum owners for `radio-selection-thin`;
+the receive/source/audio/decoder pipeline and the recording client that polls and paints
+the rows for `live-station-latency`; decoder sources, `decoder_signal.rs`, decoder
+fixtures and the resource-job tools for `decoder-quality`. Each suite's own test files
+and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs, and so
+are the Rust toolchain and dependency pins (and the Node pins for the browser suites).
+The contact, logbook, authorization, MCP, strategy, profile and UDP code, the SysML
+model and the other groups' tests are not: their changes run functional groups only.
+
+A CR that changes the measured behaviour through another path (a client timer or poll
+cadence outside those files, a heavier asset, a new background task) asks for the
+measurements with the commit trailer `Harness-Timing: yes`; the review checks that such
+a CR carries it. `HARNESS_TIMING_REQUEST=1 git push` or `gate.py --timing` does the same for one
+run; `gate.py --full` runs every timing suite. Functional groups assert behaviour; a
+residual liveness deadline in a functional case (for example the 2 s status refresh and
+10 s recovery bounds of the profile tests) is a known follow-up, not a measurement
+promise: a mixed group would declare `timing_inputs` and guard those assertions with
+`HARNESS_TIMING` (`0` skips them).
+
+### Parallel groups and shared resources
+
+The gate runs up to three groups at a time (`gate.parallel: 3` in
+`.harness/config.yaml`), longest first, and prints each group's output whole in name
+order. A timing suite runs alone (the harness default `gate.timing_alone: true`): the
+link measurements have not yet been shown stable beside other groups, so the project
+keeps that default until a measured gate shows otherwise. The groups declare what they must not share:
+
+- `debug-exe`: the browser groups run `target/debug/wstx-rust.exe` (`shared`), which
+  `wstx-rust`'s `cargo test --all-targets` relinks with the dev-dependency features
+  (`exclusive`); Windows refuses to replace a running executable;
+- `radio-selection-evidence`: both radio-selection groups write
+  `test-results/radio-selection/`;
+- `decoder-quality` runs alone (`exclusive: ["*"]`): its owned-Job CPU matrix measures
+  50 ms quanta that concurrent groups would disturb.
+
+Each group names its Cargo build (`build`); the gate runs each distinct build once,
+serially, before the groups start, so that the groups share one up-to-date build in the
+checkout's own `CARGO_TARGET_DIR` instead of queuing on Cargo's lock. The groups' `run`
+still repeats its build, which is then up to date. Ports are chosen free per test
+(`tests/support.cjs`), and each browser test station gets its own `LOCALAPPDATA`
+(`stationEnv`, #8), so the profile and radio-ownership locks of concurrent groups do not
+meet.
+
+The model has an explicit documentation owner. Its edits select the catalog/trace check,
+one full semantic validation and the light tool tests (`sysml-documentation`, about 75 s);
+the architecture mutation tests (`sysml-architecture`, one Pilot JVM per mutation) run
+only when `Architecture.sysml` or the tool that judges it changes, since the companion
+models are validated by `check` itself. Runtime oracles are selected by changed
+implementation and executable tests. Source
 edits also select the fast binding check, without a dependency that runs the full Pilot
 mutation suite on every code edit. Both model suites fingerprint the model, tool and
 complete client/server/test source inputs they read. A source edit or deletion invalidates

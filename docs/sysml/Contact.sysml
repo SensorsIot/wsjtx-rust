@@ -633,8 +633,9 @@ package WstxContact {
              current nextSlot text, txOffsetHz and mode, and a new requestSequence for
              every change. A sequence, text, report or offset change replaces the pending
              request through #9 until its audio starts; #9 then refuses audioStarted and
-             the change applies to the following period (Now buttons are not adopted,
-             D7). lastTransmittedText changes only on a started outcome; the contact
+             the change applies to the following period (D7; the #37 fold-out Now of a Tx
+             line chooses it next and turns Enable Tx on, so it too goes from the next own
+             period, never into a waveform already on the air). lastTransmittedText changes only on a started outcome; the contact
              reaches completed only on a completed Tx4 RR73/Tx5 73 outcome; refused or
              failed outcomes disarm with the visible refusal. A client timeout, colour
              change or disconnected press never means RF stopped. Tx offset domain FT8
