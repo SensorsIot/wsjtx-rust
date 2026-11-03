@@ -365,3 +365,31 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #rx-focus .op-qso-buttons{gap:4px}
 #rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
 #controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}
+/* #37 LowerPanel (operator 2026-11-03): one vertical column on the right at every width, the QSO
+   pane, the Control panel and the error field, each with the QSO card's left and right edges.
+   The QSO pane gives up height first (its QSO area scrolls inside). */
+#qso-column{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0;grid-row:1}
+#qso-column>.op-card{align-self:stretch;flex:0 0 auto}
+#qso-column>#rx-focus{flex:0 1 auto;max-height:none;min-height:0}
+#qso-column .op-lower-head{margin:0;font-size:var(--op-font-secondary);color:#7e9bad;letter-spacing:.08em;text-transform:uppercase;font-weight:600;white-space:nowrap}
+#qso-control .op-lower-head{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#error-field{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:2px 10px;padding:4px 12px}#error-field .op-lower-head{padding-top:2px}
+#qso-control .op-control-grid{display:flex;flex-direction:column;gap:3px;padding:4px 12px}
+#qso-control .op-control-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px}
+#qso-control label{display:flex;align-items:center;gap:5px;margin:0;font-size:var(--op-font-secondary);white-space:nowrap}
+#qso-control input:not([type=checkbox]),#qso-control select{padding:2px 6px;font-family:var(--op-mono)}
+#qso-control #dx-call{width:10ch;text-transform:uppercase}#qso-control #dx-grid{width:7ch;text-transform:uppercase}#qso-control #contact-report{width:6ch}
+#qso-control #dx-generate{padding:2px 8px}
+#error-field .op-error-body{flex:1 1 12rem;min-width:0;display:flex;flex-direction:column;gap:3px;max-height:calc(4 * 1.9em);overflow:auto}
+#error-field .op-error-list{display:flex;flex-direction:column;gap:3px}
+#error-field .op-error-entry{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
+#error-field .op-error-entry button.op-chip{max-width:100%;flex:1 1 auto;min-width:0;padding:1px 8px;border-radius:6px}
+#error-field .op-error-since{font:var(--op-font-secondary) var(--op-mono);color:#8ba4b6;white-space:nowrap}
+#error-field #station-notice{border-radius:6px;padding:1px 8px;max-width:none}
+#error-field .op-error-none{margin:0;font-size:var(--op-font-secondary)}
+#error-field:has(.op-error-entry,#station-notice:not([hidden])) .op-error-none{display:none}
+@container (max-width:75em){#qso-column{grid-row:2}#rx-focus{grid-row:auto}}
+/* #37 (operator 2026-11-03): one HALT at a time. In the operating view the QSO pane HALT is it;
+   the top-bar HALT shows while a page or the Settings drawer covers the workspace, and on a phone. */
+@media (min-width:48.01em){.op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx{display:none}}
+#contact-messages .ct-now{padding:1px 8px;min-height:0}
