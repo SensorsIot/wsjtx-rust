@@ -542,12 +542,17 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.deepEqual(errors,[]);
 });
 
+// The fixture server's own station.tick runs on the browser's clock; these tests simulate a
+// station whose clock differs, so only the test's ticks reach the page.
+async function testTicksOnly(page){
+  await page.evaluate(()=>addEventListener('station-message',e=>{if(e.detail?.message?.type==='station.tick'&&!e.detail.test)e.stopImmediatePropagation();},true));
+}
 // A station.tick delivered through the page's actual listener, then the QSO pane read in the
 // same task (the tick handler redraws synchronously), so no other tick can interleave.
 async function tickAndRead(page,offset,transmitting){
   return page.evaluate(([offset,transmitting])=>{
     const utc=Date.now()+offset;
-    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:utc,period_ms:15000,transmitting,rx_level_db:null}}}}));
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:utc,period_ms:15000,transmitting,rx_level_db:null}}}}));
     const bar=document.querySelector('#qso-progress'),cs=getComputedStyle(bar);
     return {utc,width:parseFloat(bar.style.width),colour:cs.backgroundColor,transition:cs.transitionDuration,
       label:document.querySelector('#qso-next .op-eyebrow').textContent,next:document.querySelector('#contact-next').textContent,countdown:document.querySelector('#qso-countdown').textContent};
@@ -569,6 +574,7 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
     await p.route('**/contact',route=>route.fulfill({json:{...contactSnapshot(base,{contact:ownCq(),transmit:{arm_state:'armed'},settings:{parity:'even'}}),utc_ms:Date.now()+clock.offset}}));
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
+  await testTicksOnly(page);
   // A station clock ahead of the browser, in an even (my Tx) period 30..60 s ahead, half a
   // period out of phase with the browser's clock.
   const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+((now%15000)+7500)%15000,offset=even-now;
@@ -613,6 +619,7 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
     await p.route('**/contact',route=>{const s={...contactSnapshot(base,{contact:ownCq(),transmit,settings:{parity:'even'}}),utc_ms:Date.now()+clock.offset};if(watchdog)s.watchdog=watchdog;return route.fulfill({json:s});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-next').hidden,null,{timeout:25000});
+  await testTicksOnly(page);
   const header=()=>page.locator('#rx-focus .op-contact-identity').evaluate(h=>[h.querySelector('strong').textContent,h.querySelector('div > span').textContent]);
   // A receive refresh redraws the receive display; the CQ header stays.
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{}}}})));
