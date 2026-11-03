@@ -201,6 +201,7 @@ impl WireRecord {
                 self.tx_pwr,
                 self.comment,
             ],
+            source: None,
             unknown: Vec::new(),
         }
     }

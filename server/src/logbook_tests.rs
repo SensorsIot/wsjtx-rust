@@ -61,6 +61,7 @@ fn reviewed(id: &str, call: &str) -> Record {
             v("10"),
             v("Tnx QSO"),
         ],
+        source: None,
         unknown: Vec::new(),
     }
 }
@@ -269,7 +270,10 @@ fn adi_limits_admit_exact_maximum_and_refuse_one_over() {
     );
     let one = "<call:5>K1ABC<qso_date:8>20261031<time_on:4>1230<mode:3>FT8<eor>\n";
     let exact = one.repeat(100_000);
-    assert_eq!(parse(exact.as_bytes(), &limits()).unwrap().len(), 100_000);
+    assert_eq!(
+        parse(exact.as_bytes(), &limits()).unwrap().records.len(),
+        100_000
+    );
     let over = parse(format!("{exact}{one}").as_bytes(), &limits()).unwrap_err();
     assert_eq!(
         (over.code, over.record),
@@ -286,108 +290,320 @@ fn import_of_exactly_sixty_four_mebibytes_is_admitted_and_published() {
     let mut bytes = record.as_bytes().to_vec();
     bytes.resize(IMPORT_BYTES_MAX as usize, b' ');
     let (result, view) = import(&log, &bytes);
-    assert_eq!(result.unwrap()["new"], 1);
+    assert_eq!(result.unwrap()["added"], 1);
     assert_eq!(view["received_bytes"], IMPORT_BYTES_MAX);
     assert_eq!(log.total().unwrap(), 1);
 }
 
-// Proves: CL-010-04; TC-011-002 unknown and other APP_ fields re-export byte-identical.
+fn summary(view: &Value) -> (Value, Value, Value) {
+    (
+        view["added"].clone(),
+        view["present"].clone(),
+        view["skipped"].clone(),
+    )
+}
+
+/// A synthetic export shaped like Log4OM 2.42 (UTF-8 byte order mark, '#' banner, ADIF
+/// 3.1.0 header with PROGRAMID LOG4OM2, about 30 fields per record including personal
+/// ones with non-ASCII values whose LEN counts characters). No real log data.
+const LOG4OM_HEADER: &str = "\u{feff}#++++++++++++++++++++++++++++++++++++\n#   Log4OM 2 by IW3HMH version 2.42.1.0\n#   http://www.log4om.com\n#   created: Dienstag, 3. M\u{e4}rz 2026\n#++++++++++++++++++++++++++++++++++++\n\n<ADIF_VER:5>3.1.0 <PROGRAMID:7>LOG4OM2 <PROGRAMVERSION:8>2.42.1.0 <eoh>\n\n";
+const LOG4OM_FT8: &str = "<CALL:5>K1ABC <BAND:3>30m <MODE:3>FT8 <QSO_DATE:8>20250218 <TIME_ON:6>225630 <A_INDEX:2>15 <CONT:2>NA <COUNTRY:13>United States <CNTY:6>MA,ESX // Essex <CQZ:1>5 <DISTANCE:7>6182.69 <DXCC:3>291 <EMAIL:17>k1abc@example.net <EQSL_QSL_RCVD:1>R <FREQ:9>10.138691 <GRIDSQUARE:6>FN42ab <ITUZ:1>8 <LOTW_QSL_SENT:1>Y <MY_CITY:6>Testen <MY_GRIDSQUARE:6>JN37vl <MY_NAME:11>Test Pr\u{fc}fer <MY_STREET:13>Stra\u{df}e 1, Ort <NAME:9>Jos\u{e9} Test <OPERATOR:6>HB9BLA <OWNER_CALLSIGN:6>HB9BLA <STATION_CALLSIGN:6>HB9BLA <PROGRAMID:7>LOG4OM2 <QSL_RCVD:1>R <QSO_COMPLETE:1>Y <QSO_DATE_OFF:8>20250218 <RST_RCVD:3>-02 <RST_SENT:3>-14 <SWL:1>N <TIME_OFF:6>225900 <TX_PWR:3>100 <LAT:11>N000 00.000 <CLUBLOG_QSO_UPLOAD_STATUS:1>N <eor>\n\n";
+const LOG4OM_FT4: &str = "<CALL:6>DL1ABC <BAND:3>20m <MODE:4>MFSK <SUBMODE:3>FT4 <QSO_DATE:8>20250219 <TIME_ON:6>101500 <CONT:2>EU <NAME:4>J\u{fc}rg <QTH:6>K\u{f6}ln 1 <STATION_CALLSIGN:6>HB9BLA <eor>\n\n";
+const LOG4OM_SSB: &str = "<CALL:5>W1XYZ <BAND:3>40m <MODE:3>SSB <SUBMODE:3>LSB <QSO_DATE:8>20250220 <TIME_ON:4>0815 <DXCC:3>291 <eor>\n\n";
+
+// Proves: CL-010-04; TC-011-002 Update logbook from a Log4OM-shaped export: byte order
+// mark, banner, UTF-8 personal fields not stored, only the log's fields kept, the source
+// marked, MFSK/FT4 and FT4 one mode, and the added records feed worked-before.
 #[test]
-fn unknown_fields_are_preserved_verbatim_and_new_records_gain_a_contact_id() {
+fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_source() {
     let dir = Dir::new();
     let log = Logbook::open(&dir.0);
-    let unknown = "<APP_N1MM_EXCHANGE1:4:S>5NN\t <userdef7:3>a<b <Name:4>Jo\r\n";
-    let text =
-        format!("<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <mode:3>FT8 {unknown} <eor>");
-    let (result, _) = import(&log, text.as_bytes());
-    assert_eq!(result.unwrap()["new"], 1);
-    let exported = String::from_utf8(log.export().unwrap()).unwrap();
-    assert!(exported.starts_with("ADIF Export\n<adif_ver:5>3.1.8\n<created_timestamp:15>"));
-    assert!(exported.contains("<programid:8>WSTXRUST\n"));
-    assert!(
-        exported.contains("<APP_N1MM_EXCHANGE1:4:S>5NN\t <userdef7:3>a<b <Name:4>Jo\r\n <eor>\n"),
-        "{exported}"
-    );
-    let stored = parse_records(&dir.file().unwrap(), &limits()).unwrap();
-    assert!(crate::profile::valid_uuid(&stored[0].contact_id));
-    assert_eq!(stored[0].unknown.len(), 3);
+    let file = format!("{LOG4OM_HEADER}{LOG4OM_FT8}{LOG4OM_FT4}{LOG4OM_SSB}");
+    let (result, view) = import(&log, file.as_bytes());
+    let result = result.unwrap();
+    assert_eq!(summary(&result), (json!(3), json!(0), json!(0)), "{result}");
+    assert_eq!(view["reasons"], json!([]));
+    assert_eq!(view["dropped"], json!([]));
+    let stored = String::from_utf8(dir.file().unwrap()).unwrap();
+    let lines: Vec<&str> = stored.lines().filter(|l| l.starts_with("<call:")).collect();
+    assert_eq!(lines.len(), 3, "{stored}");
+    let id =
+        |line: &str| line.split("<app_wstxrust_contact_id:36>").nth(1).unwrap()[..36].to_owned();
     assert_eq!(
-        log.history(ID1, 0, 1).unwrap()["records"][0]["unknown_field_count"],
-        3
+        lines[0],
+        format!(
+            "<call:5>K1ABC <gridsquare:6>FN42ab <mode:3>FT8 <rst_sent:3>-14 <rst_rcvd:3>-02 \
+             <qso_date:8>20250218 <time_on:6>225630 <qso_date_off:8>20250218 <time_off:6>225900 \
+             <band:3>30m <freq:9>10.138691 <station_callsign:6>HB9BLA <my_gridsquare:6>JN37vl \
+             <tx_pwr:3>100 <app_wstxrust_contact_id:36>{} <app_wstxrust_source:7>LOG4OM2 <eor>",
+            id(lines[0])
+        )
     );
-    let (again, _) = import(&log, exported.as_bytes());
-    let again = again.unwrap();
     assert_eq!(
-        (
-            again["new"].clone(),
-            again["duplicate"].clone(),
-            again["conflict"].clone()
-        ),
+        lines[1],
+        format!(
+            "<call:6>DL1ABC <mode:4>MFSK <submode:3>FT4 <qso_date:8>20250219 <time_on:6>101500 \
+             <band:3>20m <station_callsign:6>HB9BLA <app_wstxrust_contact_id:36>{} \
+             <app_wstxrust_source:7>LOG4OM2 <eor>",
+            id(lines[1])
+        )
+    );
+    assert!(lines[2].starts_with("<call:5>W1XYZ <mode:3>SSB <submode:3>LSB <qso_date:8>20250220 <time_on:4>0815 <band:3>40m <app_wstxrust_contact_id:36>"));
+    assert!(crate::profile::valid_uuid(&id(lines[0])) && id(lines[0]) != id(lines[1]));
+    for personal in [
+        "Jos", "example", "Stra", "dxcc", "cont:", "name", "qth", "\u{fc}",
+    ] {
+        assert!(
+            !stored
+                .to_ascii_lowercase()
+                .contains(&personal.to_ascii_lowercase()),
+            "{personal} stored"
+        );
+    }
+    assert_eq!(
+        log.history(ID1, 0, 3).unwrap()["records"][1]["unknown_field_count"],
+        0
+    );
+    assert_eq!(
+        Logbook::open(&dir.0).total().unwrap(),
+        3,
+        "the stored log reloads"
+    );
+    // The added records answer worked-before and the worked grids.
+    let calls: Vec<String> = ["DL1ABC", "k1abc", "W1XYZ"].map(String::from).to_vec();
+    assert_eq!(
+        log.worked(&calls, "20m", "FT4").unwrap(),
+        [
+            "worked_this_band_and_mode",
+            "worked_other_band_or_mode",
+            "worked_other_band_or_mode"
+        ]
+    );
+    assert_eq!(
+        log.worked(&calls[2..], "40M", "SSB").unwrap(),
+        ["worked_this_band_and_mode"]
+    );
+    assert_eq!(
+        log.worked_grids(&["fn42".into(), "JN37".into()], "30m", "FT8")
+            .unwrap(),
+        ["worked_this_band_and_mode", "not_worked"]
+    );
+    // MODE FT4 (no submode) 30 s later is the same QSO as MFSK/FT4: already present.
+    let ft4 = format!(
+        "{LOG4OM_HEADER}<CALL:6>DL1ABC <BAND:3>20m <MODE:3>FT4 <QSO_DATE:8>20250219 <TIME_ON:6>101530 <eor>\n"
+    );
+    assert_eq!(
+        summary(&import(&log, ft4.as_bytes()).0.unwrap()),
         (json!(0), json!(1), json!(0))
     );
-    assert_eq!(
-        log.total().unwrap(),
-        1,
-        "export then import yields only duplicates"
+    // Without a header PROGRAMID the marker is ADIF.
+    let plain = "<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n";
+    import(&log, plain.as_bytes()).0.unwrap();
+    assert!(String::from_utf8(dir.file().unwrap()).unwrap().contains("<call:5>N0NEW <mode:3>FT8 <qso_date:8>20261031 <time_on:4>1300 <app_wstxrust_contact_id:36>"));
+    assert!(
+        String::from_utf8(dir.file().unwrap())
+            .unwrap()
+            .contains("<app_wstxrust_source:4>ADIF <eor>")
     );
 }
 
-// Proves: CL-010-04; TC-011-002 natural key duplicates, id conflicts, all-or-nothing.
+// Proves: CL-010-04; TC-011-002 consolidation key call + band + effective mode + start
+// within 120 s; the stored station record wins byte for byte; repeatable and incremental.
 #[test]
-fn natural_key_duplicates_id_conflicts_and_any_conflict_publishes_nothing() {
+fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_adds_nothing() {
     let dir = Dir::new();
     let log = Logbook::open(&dir.0);
+    // Station record: K1ABC 20m FT8 2026-10-31 12:30:15 (reviewed()).
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
         SaveOutcome::Saved
     );
-    let saved = dir.file().unwrap();
-    // CALL case, TIME_ON HHMM vs HHMMSS, FREQ only instead of BAND: same natural key.
-    let natural = "<call:5>k1abc <qso_date:8>20261031 <time_on:4>1230 <freq:7>14.0755 <mode:3>ft8 <rst_sent:3>-12 <eor>\n";
-    let fresh =
-        "<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <band:3>40m <mode:3>FT8 <eor>\n";
-    let (result, _) = import(&log, format!("{natural}{fresh}{fresh}").as_bytes());
-    let result = result.unwrap();
+    let before = dir.file().unwrap();
+    let file = format!(
+        "<call:5>K1ABC <qso_date:8>20261031 <time_on:6>123215 <band:3>20m <mode:3>FT8 <rst_rcvd:3>+03 <eor>\n\
+         <call:5>k1abc <qso_date:8>20261031 <time_on:6>122815 <freq:9>14.075500 <mode:3>ft8 <eor>\n\
+         <call:5>K1ABC <qso_date:8>20261031 <time_on:6>123216 <band:3>20m <mode:3>FT8 <eor>\n\
+         <call:5>K1ABC <qso_date:8>20261031 <time_on:6>123015 <band:3>40m <mode:3>FT8 <eor>\n\
+         <call:5>K1ABC <qso_date:8>20261031 <time_on:6>123015 <band:3>20m <mode:4>MFSK <submode:3>FT4 <eor>\n\
+         <call:5>K1ABC <qso_date:8>20261031 <time_on:4>1233 <band:3>20m <mode:3>FT8 <eor>\n\
+         <call:5>K9ZZZ <qso_date:8>20200101 <time_on:4>0000 <mode:3>FT8 <app_wstxrust_contact_id:36>{ID1} <eor>\n"
+    );
+    // 12:32:15 is 120 s after the stored start, 12:28:15 120 s before it (band from FREQ,
+    // call and mode case): present. 12:32:16 is 121 s: added; 12:33 is then within 44 s
+    // of that added record: present. 40m and MFSK/FT4: added. The stored id: present.
+    let (result, _) = import(&log, file.as_bytes());
+    assert_eq!(summary(&result.unwrap()), (json!(3), json!(4), json!(0)));
+    let after = dir.file().unwrap();
+    assert!(
+        after.starts_with(&before),
+        "the station record and file prefix are unchanged"
+    );
+    assert_eq!(calls(&log), ["K1ABC", "K1ABC", "K1ABC", "K1ABC"]);
+    let stored = log.history(ID1, 0, 1).unwrap()["records"][0].clone();
+    assert_eq!(
+        (stored["rst_rcvd"].clone(), stored["time_on"].clone()),
+        (json!("-05"), json!("123015"))
+    );
+    // Again: nothing added, the file untouched; a grown file adds only its new record.
+    let (again, _) = import(&log, file.as_bytes());
+    assert_eq!(summary(&again.unwrap()), (json!(0), json!(7), json!(0)));
+    assert_eq!(dir.file().unwrap(), after);
+    let grown = format!(
+        "{file}<call:5>N0NEW <qso_date:8>20261101 <time_on:4>0900 <band:3>20m <mode:3>FT8 <eor>\n"
+    );
+    assert_eq!(
+        summary(&import(&log, grown.as_bytes()).0.unwrap()),
+        (json!(1), json!(7), json!(0))
+    );
+    // Export then update adds nothing.
+    let exported = log.export().unwrap();
+    assert_eq!(
+        summary(&import(&log, &exported).0.unwrap()),
+        (json!(0), json!(5), json!(0))
+    );
+    assert_eq!(log.total().unwrap(), 5);
+}
+
+// Proves: CL-010-04; TC-011-002 invalid records skipped and invalid optional fields dropped
+// with grouped reasons (at most 16 groups); a structural fault publishes nothing.
+#[test]
+fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let file = "<qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n\
+        <call:5>N1AAA <qso_date:8>20261032 <time_on:4>1300 <mode:3>FT8 <eor>\n\
+        <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <name:3>Bob <eor>\n\
+        <call:5>N2BBB <qso_date:8>20261031 <time_on:4>1301 <mode:3>FT8 <gridsquare:5>JN4qe <freq:2>-1 <comment:5>Gr\u{fc}\u{df}e <eor>\n\
+        <call:5>N3CCC <call:5>N3CCC <qso_date:8>20261031 <time_on:4>1302 <mode:3>FT8 <eor>\n\
+        <call:5>N4D\u{c4}D <qso_date:8>20261031 <time_on:4>1303 <mode:3>FT8 <eor>\n\
+        <call:5>N7GGG x <qso_date:8>20261031 <time_on:4>1304 <mode:3>FT8 <eor>\n\
+        <call:5>N8HHH <qso_date:8>20261031 <time_on:4>1305 <mode:3>FT8 <gridsquare:4>FN42 // Here <eor>\n";
+    let (result, view) = import(&log, file.as_bytes());
+    assert_eq!(summary(&result.unwrap()), (json!(2), json!(0), json!(6)));
+    assert_eq!(
+        view["reasons"],
+        json!([
+            {"code":"missing_required_field","field":"call","count":2,"record":0},
+            {"code":"invalid_value","field":"qso_date","count":1,"record":1},
+            {"code":"malformed","field":"call","count":1,"record":4},
+            {"code":"unsupported_character","field":"call","count":1,"record":5},
+            {"code":"length_mismatch","field":"call","count":1,"record":6}
+        ])
+    );
+    assert_eq!(
+        view["dropped"],
+        json!([
+            {"code":"invalid_value","field":"gridsquare","count":1,"record":3},
+            {"code":"invalid_value","field":"freq","count":1,"record":3},
+            {"code":"unsupported_character","field":"comment","count":1,"record":3},
+            {"code":"length_mismatch","field":"gridsquare","count":1,"record":7}
+        ])
+    );
+    let stored = log.history(ID1, 0, 1).unwrap()["records"][0].clone();
     assert_eq!(
         (
-            result["new"].clone(),
-            result["duplicate"].clone(),
-            result["conflict"].clone()
+            stored["call"].clone(),
+            stored["gridsquare"].clone(),
+            stored["freq"].clone(),
+            stored["comment"].clone()
         ),
-        (json!(1), json!(2), json!(0))
+        (json!("N2BBB"), Value::Null, Value::Null, Value::Null)
     );
-    assert_eq!(calls(&log), ["K1ABC", "N0NEW"]);
-    let after = dir.file().unwrap();
-    // Natural-key match with a differing value, and an id match with a differing value.
-    let differing = "<call:5>K1ABC <qso_date:8>20261031 <time_on:6>123015 <band:3>20m <mode:3>FT8 <rst_rcvd:3>+03 <eor>\n";
-    let by_id = format!(
-        "<call:5>K1ABC <qso_date:8>20261031 <time_on:6>123015 <mode:3>FT8 <app_wstxrust_contact_id:36>{ID1} <eor>\n"
-    );
-    let other = "<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1400 <mode:3>FT8 <eor>\n";
-    for (bad, field) in [(differing.to_owned(), "rst_rcvd"), (by_id, "gridsquare")] {
-        let (result, view) = import(&log, format!("{other}{bad}").as_bytes());
-        assert_eq!(result, Err("import_failed"));
-        assert_eq!(view["state"], "failed");
+    // 18 distinct reasons (a repeated kept field each): 16 groups listed, all counted.
+    let mut many = String::new();
+    for name in FIELDS.iter().chain(&[ID_FIELD, SOURCE_FIELD]) {
+        many.push_str(&format!("<call:5>N5EEE <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <{name}:1>1 <{name}:1>1 <eor>\n"));
+    }
+    let (_, view) = import(&log, many.as_bytes());
+    assert_eq!(summary(&view), (json!(0), json!(0), json!(18)));
+    assert_eq!(view["reasons"].as_array().unwrap().len(), 16);
+    let file_before = dir.file().unwrap();
+    for (broken, code, record, field) in [
+        (
+            "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:30>K1ABC <eor>",
+            "length_mismatch",
+            1,
+            Some("call"),
+        ),
+        (
+            "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>K1ABC <qso_date:8>20261031",
+            "malformed",
+            1,
+            None,
+        ),
+        (
+            "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n\u{1}",
+            "unsupported_character",
+            1,
+            None,
+        ),
+    ] {
+        let (result, view) = import(&log, broken.as_bytes());
+        assert_eq!(result, Err("import_failed"), "{broken}");
         assert_eq!(
             view["error"],
-            json!({"code":"identity_conflict","record":1,"field":field})
+            json!({"code":code,"record":record,"field":field}),
+            "{broken}"
         );
-        assert_eq!(
-            (view["new"].clone(), view["conflict"].clone()),
-            (json!(1), json!(1)),
-            "counts are still reported"
-        );
-        assert_eq!(dir.file().unwrap(), after, "zero records published");
-        assert_eq!(log.total().unwrap(), 2);
+        assert_eq!(dir.file().unwrap(), file_before, "nothing published");
     }
-    let (invalid, view) = import(&log, format!("{other}<call:5>K1ABC <eor>").as_bytes());
-    assert_eq!(invalid, Err("import_failed"));
+    let (result, view) = import(&log, &[b'<', 0xff, b'>']);
     assert_eq!(
-        view["error"],
-        json!({"code":"missing_required_field","record":1,"field":"qso_date"})
+        (result, view["error"]["code"].clone()),
+        (Err("import_failed"), json!("unsupported_character"))
     );
-    assert_eq!(dir.file().unwrap(), after);
-    assert_ne!(saved, after);
+    assert_eq!(log.total().unwrap(), 2);
+}
+
+// Proves: CL-010-04, CL-010-13; TC-011-002 workload: a 27,000-QSO export of about 27 MB
+// (Log4OM-shaped records) is consolidated in one update; worked-before then answers
+// from the index. Timing is printed, not asserted (functional suite).
+#[test]
+fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_the_index() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let mut file = String::from(LOG4OM_HEADER);
+    let padding = format!("<NOTES:800>{}", "n".repeat(800));
+    for i in 0..27_000u32 {
+        let (day, minute) = (1 + i / 1440 % 28, i % 1440);
+        file.push_str(&format!(
+            "<CALL:7>K{:06} <BAND:3>20m <MODE:4>MFSK <SUBMODE:3>FT4 <QSO_DATE:8>2025{:02}{:02} <TIME_ON:6>{:02}{:02}00 <GRIDSQUARE:4>FN{:02} <NAME:9>Jos\u{e9} Test <EMAIL:17>k1abc@example.net {padding} <eor>\n",
+            i, 1 + i / 40_320, day, minute / 60, minute % 60, i % 100
+        ));
+    }
+    assert!(
+        file.len() > 25_000_000 && file.len() < IMPORT_BYTES_MAX as usize,
+        "{}",
+        file.len()
+    );
+    let started = Instant::now();
+    let (result, _) = import(&log, file.as_bytes());
+    eprintln!(
+        "27000 QSOs, {} bytes: update {:?}",
+        file.len(),
+        started.elapsed()
+    );
+    assert_eq!(
+        summary(&result.unwrap()),
+        (json!(27_000), json!(0), json!(0))
+    );
+    let calls: Vec<String> = (0..64).map(|i| format!("K{:06}", i * 400)).collect();
+    let started = Instant::now();
+    let first = log.worked(&calls, "20m", "FT4").unwrap();
+    let again = log.worked(&calls, "20m", "FT4").unwrap();
+    eprintln!(
+        "worked-before 64 calls: first (builds the index) and second {:?}",
+        started.elapsed()
+    );
+    assert!(
+        first
+            .iter()
+            .chain(&again)
+            .all(|s| *s == "worked_this_band_and_mode")
+    );
+    let started = Instant::now();
+    assert_eq!(Logbook::open(&dir.0).total().unwrap(), 27_000);
+    eprintln!("reopen {:?}", started.elapsed());
 }
 
 // Proves: CL-010-04; TC-011-002 import retry identity and integrity check.

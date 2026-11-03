@@ -1673,30 +1673,47 @@ test('TC-011-001 completed QSOs log without a review and the open Logbook lists 
  assert.deepEqual(errors,[]);
 });
 
-test('TC-011-002 ADI import and export controls publish all-or-nothing and download contacts.adi',{timeout:30000},async t=>{
+// Proves: CL-010-04; TC-011-002 browser subset (#10 Update logbook from ADIF). Actual server
+// and Chromium; a synthetic Log4OM-shaped export (byte order mark, '#' banner, PROGRAMID
+// LOG4OM2, a UTF-8 NAME, MFSK/FT4) and hand-counted summaries.
+test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger export and Export downloads contacts.adi',{timeout:30000},async t=>{
  const {page,errors}=await fixture(t,{width:1200,height:900});
  await page.waitForFunction(()=>profileData&&window.wstxLogbook);
+ await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+ const section=page.locator('#settings-update-log');
+ await section.getByRole('heading',{name:'Update logbook from ADIF'}).waitFor();
+ assert.equal(await page.locator('#settings-log + #settings-update-log').count(),1,'beside the Log block');
+ const good='﻿#++++++++\n#   Log4OM 2 test export\n#   created: Dienstag, 3. März 2026\n#++++++++\n\n<ADIF_VER:5>3.1.0 <PROGRAMID:7>LOG4OM2 <PROGRAMVERSION:8>2.42.1.0 <eoh>\n\n'
+  +'<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:6>123000 <NAME:9>José Test <GRIDSQUARE:5>FN42a <EMAIL:13>k@example.net <eor>\n\n'
+  +'<CALL:6>DL1ABC <BAND:3>40m <MODE:4>MFSK <SUBMODE:3>FT4 <QSO_DATE:8>20261031 <TIME_ON:6>123100 <DXCC:3>230 <eor>\n\n'
+  +'<BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:4>1232 <eor>\n';
+ const update=async(name,text,expected)=>{
+  await page.locator('#log-import-file').setInputFiles({name,mimeType:'text/plain',buffer:Buffer.from(text)});
+  await section.getByRole('button',{name:'Update logbook'}).click();
+  await page.locator('#log-import-status',{hasText:expected}).waitFor();
+  assert.equal(await page.locator('#log-import-status').innerText(),expected);
+ };
+ await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
+ await update('bad.adi',bad,'Logbook not updated · nothing was added · malformed in record 2');
+ await page.setViewportSize({width:360,height:800});
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow at 360 px');
+ await page.setViewportSize({width:1200,height:900});
+ await page.locator('#settings-drawer .return-operate').click();
  await page.locator('#station-bar [data-region="logbook"]').click();
- await page.locator('#log-history-status',{hasText:'No contacts saved yet'}).waitFor();
- const good='<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <APP_OTHER_X:2>ok <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1231 <band:3>40m <mode:3>FT8 <eor>\n';
- await page.locator('#log-import-file').setInputFiles({name:'good.adi',mimeType:'text/plain',buffer:Buffer.from(good)});
- await page.getByRole('button',{name:'Import ADIF'}).click();
- await page.locator('#log-import-status',{hasText:'Imported'}).waitFor();
- assert.match(await page.locator('#log-import-status').innerText(),/2 new, 0 duplicate, 0 conflicting/);
  await page.locator('#log-history-status',{hasText:'2 contacts'}).waitFor();
- assert.match(await page.locator('#log-history').innerText(),/1 other field kept/);
- const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
- await page.locator('#log-import-file').setInputFiles({name:'bad.adi',mimeType:'text/plain',buffer:Buffer.from(bad)});
- await page.getByRole('button',{name:'Import ADIF'}).click();
- await page.locator('#log-import-status',{hasText:'Import failed'}).waitFor();
- assert.match(await page.locator('#log-import-status').innerText(),/no contacts were added .*malformed in record 2/);
- await page.locator('#log-history-status',{hasText:'2 contacts'}).waitFor();
+ assert.doesNotMatch(await page.locator('#log-history').innerText(),/other field/);
+ assert.equal(await page.locator('#region-logbook #log-import').count(),0,'the Logbook page only exports');
  const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Export ADIF'}).click()]);
  assert.equal(download.suggestedFilename(),'contacts.adi');
  const text=await fs.readFile(await download.path(),'utf8');
  assert.match(text,/^ADIF Export\n<adif_ver:5>3\.1\.8\n/);
- assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <APP_OTHER_X:2>ok <eor>\n/);
+ assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
+ assert.match(text,/<call:6>DL1ABC <mode:4>MFSK <submode:3>FT4 <qso_date:8>20261031 <time_on:6>123100 <band:3>40m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
+ assert.doesNotMatch(text,/Jos|example|dxcc|name/i,'only the log fields are stored');
  assert.equal(text.match(/<eor>/g).length,2);
+ assert.match(await page.locator('#log-export-status').innerText(),/Exported contacts\.adi/);
  assert.deepEqual(errors,[]);
 });
 

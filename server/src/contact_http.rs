@@ -429,6 +429,7 @@ impl Station {
                 None,
                 None,
             ],
+            source: None,
             unknown: Vec::new(),
         })
     }

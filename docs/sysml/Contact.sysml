@@ -626,8 +626,10 @@ package WstxContact {
              (optional, D10); a COMMENT containing '<' or '>' is refused (DIFFERENT from
              WSJT-X to_adi_text stripping them: a supplied record is never altered).
              DirectLog writes neither TX_PWR nor COMMENT (no power or comment entry
-             since #41 retired the review); SaveContact and ImportAdi may carry them.
-             APP_WSTXRUST_CONTACT_ID = contactId. Name, operator, propagation, satellite
+             since #41 retired the review); SaveContact and UpdateLogbook may carry them.
+             APP_WSTXRUST_CONTACT_ID = contactId; APP_WSTXRUST_SOURCE (a token of 1..32
+             letters, digits or '-') marks a record added by UpdateLogbook with the
+             program it came from and is absent on the station's own records. Name, operator, propagation, satellite
              and contest exchange fields are not adopted (D10; WSJT-X writes OPERATOR
              only with a configured operator call, which this product does not have).
              Start time (MW set_dateTimeQSO ~8944): the UTC start of the period of this
@@ -708,7 +710,10 @@ package WstxContact {
         out statuses : WorkedStatus[0..64];
         doc /* D9 adopted (WB indexes calls keyed by band+mode and band; LogBook::match).
              Determined by the server from the profile's contacts.adi including contacts
-             saved this session: workedThisBandAndMode when a record has the same CALL,
+             saved this session and records added by UpdateLogbook (#10, 2026-11-03),
+             through an index of the log by call and by grid square that is rebuilt only
+             when the log changes, so a query costs a lookup per asked call, not a scan
+             of the log: workedThisBandAndMode when a record has the same CALL,
              BAND and MODE/SUBMODE; workedOtherBandOrMode when only CALL matches; else
              notWorked. Calls compare case-insensitively on the full call. DXCC entity,
              continent and zone status come with each decoded record instead
@@ -840,58 +845,113 @@ package WstxContact {
         attribute historyPageRecordsMax : Integer = 10;
         attribute historyPageBytesMax : Integer = 16384;
         doc /* Application admission limits (#10 text; not ADIF limits). Exactly at a
-             limit is admitted, one over is refused and publishes no record of that
-             import. Inside a record only white space is permitted between a field value
-             and the next tag; any other text there is length_mismatch (an inexact LEN is
-             never silently truncated). The stored log is not limited by one import's record count. */
+             limit is admitted, one over is refused: a file over importBytesMax or
+             importRecordsMax, or a field name over fieldNameCharactersMax, refuses the
+             whole update and publishes no record of it; a field value over
+             fieldCharactersMax is a fault of that field only (UpdateLogbook). Inside a
+             record only white space is permitted between a field value and the next
+             tag; any other text there is a lengthMismatch fault of the field before it
+             (an inexact LEN is never silently truncated: that value is not taken; the
+             stored log refuses such a file, UpdateLogbook judges the field as below;
+             Log4OM 2.42 writes CNTY values longer than their LEN). A logger export of about 27,000 QSOs with about 60
+             fields each (Log4OM 2: about 28 MB) is inside these limits. The stored log is
+             not limited by one update's record count. */
     }
     enum def AdiError {
         enum malformed; enum lengthMismatch; enum unsupportedCharacter; enum fieldTooLong;
         enum tooManyRecords; enum tooLarge; enum missingRequiredField; enum invalidValue;
-        enum identityConflict; enum integrityMismatch;
+        enum integrityMismatch;
     }
-    action def ImportAdi {
+    action def UpdateLogbook {
         in importId : String;
         in totalBytes : Integer;
         in sha256 : String;
-        out newCount : Integer;
-        out duplicateCount : Integer;
-        out conflictCount : Integer;
+        out added : Integer;
+        out present : Integer;
+        out skipped : Integer;
         out error : AdiError[0..1];
-        doc /* ADIF 3.1.8 ADI only (header optional, ended by <EOH>; records end <EOR>;
-             tags case-insensitive <NAME:LEN[:TYPE]> with exact LEN in characters; only
-             white space between fields within a record, see AdiLimits). Characters: printable ASCII 0x20-0x7E, plus
-             TAB/CR/LF only inside unknown-field values; anything else
-             unsupportedCharacter. Required per record: CALL, QSO_DATE (valid
-             YYYYMMDD), TIME_ON (HHMM or HHMMSS), MODE; supported fields that are present
-             must be valid (LogRecord domains; FREQ and TX_PWR positive decimals,
-             GRIDSQUARE 2/4/6/8 Maidenhead) else invalidValue with record index and
-             field name. Unknown fields (including other programs' APP_ fields and
-             USERDEF fields) are preserved verbatim, name and value, in the stored record
-             and re-exported unchanged after the supported fields, as WSJT-X
-             logbook/ADIF tools keep unknown tags; they are never interpreted or
-             executed. Header fields are not stored.
-             Identity: a valid APP_WSTXRUST_CONTACT_ID UUID is the record identity.
-             Without it the natural key is (CALL case-folded, QSO_DATE, TIME_ON to the
-             minute, BAND or, without BAND, FREQ's ADIF band, MODE, SUBMODE); a new such
-             record receives a fresh contact id, written as APP_WSTXRUST_CONTACT_ID.
-             Duplicate: same identity (or, without id, same natural key) as a stored or
-             earlier record of the same file and identical supported-field values;
-             skipped and counted. Conflict: same identity with any differing supported
-             field value; counted, reported with record index and the first differing
-             field. Any conflict or error fails the whole import: zero records are
-             published (validation completes before publication); counts are still
-             reported. Otherwise new records are appended in file order in one atomic
-             replace of contacts.adi.
+        doc /* #10 operator request 2026-11-03 ("updating the logbook"): consolidate the
+             log of another logger, exported as ADIF ADI (for example Log4OM 2), into
+             the station's contact log, so one log without duplicates feeds
+             worked-before, DXCC and grid status. Settings > Logging & Reporting >
+             "Update logbook from ADIF": the operator picks the file and presses Update
+             logbook. It is the one ADI import of the station: it replaces the former
+             ImportAdi and retires its all-or-nothing conflict rule and its verbatim
+             unknown fields (decision on #10: one function for any logger; a repeated
+             update from a grown export adds only what is new).
+             File (any ADIF 3.x ADI writer): UTF-8, a leading byte order mark ignored;
+             an optional header (any text, such as '#' banner lines, and fields) ended
+             by <EOH>; records end <EOR>; tags case-insensitive <NAME:LEN[:TYPE]> with
+             exact LEN in characters; only white space between the fields of a record,
+             see AdiLimits. Header fields are not stored; the header PROGRAMID, when it
+             is a token of 1..32 letters, digits or '-', is the source marker, else ADIF.
+             Refused as a whole, publishing nothing, with error {code,record,field}:
+             integrityMismatch (sha256 of the received bytes, checked first); bytes
+             that are no UTF-8, or a control character other than TAB/CR/LF outside a
+             field value (unsupportedCharacter); a broken tag or a missing <EOH> or
+             <EOR> (malformed); a LEN past the end of the file (lengthMismatch);
+             tooLarge; tooManyRecords; a field name over the limit (fieldTooLong).
+             Per record, after that structural check:
+             - Kept fields: only the LogRecord fields (CALL, GRIDSQUARE, MODE, SUBMODE,
+               RST_SENT, RST_RCVD, QSO_DATE, TIME_ON, QSO_DATE_OFF, TIME_OFF, BAND,
+               FREQ, STATION_CALLSIGN, MY_GRIDSQUARE, TX_PWR, COMMENT), a valid
+               APP_WSTXRUST_CONTACT_ID and APP_WSTXRUST_SOURCE. Every other field
+               (names, addresses, e-mail, QSL and upload states, other APP_ fields) is
+               not stored, so the update does not widen the personal data the station
+               keeps.
+             - A record is skipped, with reason {code,field}, when CALL, QSO_DATE
+               (valid YYYYMMDD), TIME_ON (HHMM or HHMMSS) or MODE is missing
+               (missingRequiredField) or invalid (invalidValue; unsupportedCharacter
+               for a value that is not printable ASCII; fieldTooLong; lengthMismatch
+               for text after its value), or when a kept
+               field occurs twice in it (malformed).
+             - An optional kept field whose value fails its domain (FREQ and TX_PWR
+               positive decimals, GRIDSQUARE and MY_GRIDSQUARE 2/4/6/8 Maidenhead, BAND
+               the ADIF enumeration, RST at most 16 characters, SUBMODE a token,
+               STATION_CALLSIGN 1..32 letters, digits or '/', a contact id a UUID, a
+               source a token; every value printable ASCII and at most
+               fieldCharactersMax, with no text after it) is left out of that record,
+               which is still added;
+               the summary lists it as dropped {code,field}.
+             Values are stored as written (no case or mode rewriting): MODE FT4 and
+             MODE MFSK with SUBMODE FT4 are both FT4 for consolidation and
+             worked-before (effective mode: SUBMODE when MODE is MFSK, else MODE).
+             Consolidation (the record is already present, counted present, nothing
+             changes): a record whose APP_WSTXRUST_CONTACT_ID is stored or was added
+             earlier from the same file; or a stored record, or an earlier added record
+             of the same file, with the same CALL (case-insensitive), effective band
+             (BAND, or without BAND the ADIF band of FREQ, or none) and effective mode,
+             whose start (QSO_DATE + TIME_ON) is at most 120 s from this record's start
+             (WSJT-X/ADIF practice: loggers differ in seconds and rounding). The stored
+             record wins and is never changed, so the station's own records keep all
+             their fields. Otherwise the record is added: a new contact id when it has
+             none, APP_WSTXRUST_SOURCE the file's marker unless it carries one. Added
+             records are appended in file order in one atomic replace of contacts.adi
+             (as SaveContact); a failed replace adds none.
+             Repeatable and incremental: updating again with the same or a grown export
+             adds only the records not yet present; export then update of the station
+             log adds none.
+             Nothing leaves the station: no WstxUdp QSO Logged or Logged ADIF, no other
+             forwarding or upload; only DirectLog sends logged contacts.
+             Summary: added, present, skipped, reasons (the skipped records grouped by
+             {code,field} with count and first record index) and dropped (the dropped
+             fields grouped likewise), each at most 16 groups in order of first
+             occurrence (skipped is always the full count). The browser shows "Logbook
+             updated: N added, M already present, K skipped" with the reasons and the
+             dropped fields, or "Logbook not updated" with the error and its
+             record/field.
              Retry identity: importId is a caller-chosen UUID. Reserving the same
-             importId with identical totalBytes and sha256 returns the existing import
+             importId with identical totalBytes and sha256 returns the existing
              resource or its final result without a second effect; different values are
-             state_conflict. sha256 of the complete received bytes is checked before
-             validation (integrityMismatch). One import per profile at a time; the
-             resource is retained until the next reservation or restart. Chunks follow
-             the WstxRecordingReceive import pattern: exact Content-Range, at most
+             state_conflict. One update per profile at a time; the resource is retained
+             until the next reservation or restart. Chunks follow the
+             WstxRecordingReceive import pattern: exact Content-Range, at most
              importChunkBytesMax each, in order. Bulk transfer yields to status/control
-             and never delays HaltTransmit. */
+             and never delays HaltTransmit. Authorization: an operator action with the
+             configuration access of the other log routes.
+             Workload (#10): a 28 MB export of about 27,000 QSOs is consolidated within
+             seconds of its last chunk, and worked-before stays an index lookup
+             (WorkedBeforeQuery). */
     }
     action def ExportAdi {
         doc /* GET /contacts/export.adi streams the whole profile log as ADIF 3.1.8 ADI:
@@ -900,7 +960,7 @@ package WstxContact {
              set), APP_WSTXRUST_CONTACT_ID and preserved unknown fields verbatim. Content
              type application/octet-stream with attachment filename contacts.adi; no
              content coding; streamed with backpressure behind status/control. Export
-             then import of the same file yields only duplicates. */
+             then UpdateLogbook of the same file adds no record (all already present). */
     }
     action def ContactHistory {
         in cursor : Integer;
@@ -1081,12 +1141,14 @@ package WstxContact {
              (ExportAdi); POST /contacts/imports {v,profile_id,boot_id,import_id,
              total_bytes,sha256} 201/200 reserve; PUT /contacts/imports/{id} chunks;
              GET /contacts/imports/{id} exactly {v:1,id,state,received_bytes,total_bytes,
-             new,duplicate,conflict,error} with error null or {code,record,field}
-             (ImportAdi); POST /transmit/halt (WstxTransmit::HaltTransmit).
+             added,present,skipped,reasons,dropped,error} with reasons and dropped arrays
+             of {code,field,count,record} and error null or {code,record,field}; the
+             completing chunk answers 201 with that view, a refused update 422
+             import_failed (UpdateLogbook); POST /transmit/halt (WstxTransmit::HaltTransmit).
              All use the existing HTTP/TLS authentication, exact Origin on mutations,
              JSON media rules and error envelope; the 1024-byte body cap applies except
              the stated 2048-byte worked-before body, 8192-byte save body and 16384-byte
-             import chunks. Mutations are never
+             update chunks. Mutations are never
              replayed automatically; reconnect reads GET /contact first. MCP uses the
              same station operations. */
     }

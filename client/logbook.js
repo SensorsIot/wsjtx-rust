@@ -1,5 +1,5 @@
 'use strict';
-// CR #10 contact log (WstxContact::ContactHistory, ImportAdi, ExportAdi, WorkedBeforeQuery).
+// CR #10 contact log (WstxContact::ContactHistory, UpdateLogbook, ExportAdi, WorkedBeforeQuery).
 // The server owns the log, its identities, times and worked-before status, and logs each
 // completed QSO itself (DirectLog, #41: no review form); this browser renders confirmed
 // responses and sends requests.
@@ -8,9 +8,9 @@ const region=document.querySelector('#region-logbook .op-secondary-body');
 if(!region)return;
 for(const node of [...region.childNodes].slice(1))node.remove();
 region.querySelector('p').textContent='Contacts logged in this station profile\u2019s contacts.adi (ADIF 3.1.8). Each completed QSO is logged automatically; history is read-only.';
-region.insertAdjacentHTML('beforeend',`<h3>Logged contacts</h3><p id="log-history-status" role="status">History not loaded</p><ol id="log-history"></ol><button type="button" id="log-history-older" disabled>Older contacts</button> <button type="button" id="log-history-newer" disabled>Newer contacts</button> <button type="button" id="log-history-refresh">Reload history</button><h3>ADIF interchange</h3><label>ADIF file (.adi)<input id="log-import-file" type="file" accept=".adi,.adif,text/plain"></label><button type="button" id="log-import">Import ADIF</button> <button type="button" id="log-export">Export ADIF</button><p id="log-import-status" role="status"></p>`);
+region.insertAdjacentHTML('beforeend',`<h3>Logged contacts</h3><p id="log-history-status" role="status">History not loaded</p><ol id="log-history"></ol><button type="button" id="log-history-older" disabled>Older contacts</button> <button type="button" id="log-history-newer" disabled>Newer contacts</button> <button type="button" id="log-history-refresh">Reload history</button><h3>ADIF export</h3><button type="button" id="log-export">Export ADIF</button><p id="log-export-status" role="status"></p><p class="op-muted">To add the QSOs of another logger, use Settings \u203a Logging &amp; Reporting \u203a Update logbook from ADIF.</p>`);
 const $=id=>document.getElementById(id);
-for(const el of region.querySelectorAll('#log-history,#log-import-status'))el.style.overflowWrap='anywhere';
+for(const el of region.querySelectorAll('#log-history,#log-export-status'))el.style.overflowWrap='anywhere';
 const uuid=()=>crypto.randomUUID();
 const station=()=>profileData&&{profile_id:profileData.profile_id,boot_id:profileData.boot_id};
 async function call(path,options={}){
@@ -58,36 +58,49 @@ $('log-history-refresh').addEventListener('click',()=>loadHistory(null));
 document.addEventListener('click',event=>{if(event.target.closest?.('button[data-region="logbook"]'))loadHistory(null);});
 document.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.closest?.('button[data-region="logbook"]'))loadHistory(null);});
 
-// ---------------------------------------------------------------- import / export
+// ---------------------------------------------------------------- update logbook / export
+// #10 WstxContact::UpdateLogbook in Settings > Logging & Reporting: another logger's ADIF
+// export (for example Log4OM) is consolidated into this log. The station decides what is
+// added, already present or skipped; this browser uploads the file and shows the summary.
 async function sha256(bytes){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');}
-$('log-import').addEventListener('click',async()=>{
-  const status=$('log-import-status'),file=$('log-import-file').files[0],s=station();
-  if(!file){status.textContent='Choose an ADIF file first';return;}
-  if(!s){status.textContent='Station profile unavailable';return;}
-  if(file.size===0||file.size>67108864){status.textContent='Import refused \u00b7 the file must hold 1 byte to 64 MiB';return;}
-  $('log-import').disabled=true;
-  try{
-    const bytes=new Uint8Array(await file.arrayBuffer()),id=uuid();
-    status.textContent='Checking file integrity';
-    const reserve=await call('/contacts/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...s,import_id:id,total_bytes:bytes.length,sha256:await sha256(bytes)})});
-    if(!reserve.response.ok)throw new Error(reserve.data?.error?.code??'import_unavailable');
-    let last=reserve;
-    for(let start=reserve.data.received_bytes;start<bytes.length;start+=16384){
-      const chunk=bytes.subarray(start,Math.min(bytes.length,start+16384));
-      last=await call(`/contacts/imports/${id}`,{method:'PUT',headers:{'Content-Type':'application/octet-stream','Content-Range':`bytes ${start}-${start+chunk.length-1}/${bytes.length}`},body:chunk});
-      if(last.response.status===422)break;
-      if(!last.response.ok)throw new Error(last.data?.error?.code??'import_failed');
-      status.textContent=`Uploading \u00b7 ${last.data.received_bytes} of ${bytes.length} bytes`;
-    }
-    const view=last.response.status===422?(await call(`/contacts/imports/${id}`)).data:last.data;
-    const counts=`${view.new} new, ${view.duplicate} duplicate, ${view.conflict} conflicting`;
-    status.textContent=view.state==='completed'?`Imported \u00b7 ${counts}`:`Import failed \u00b7 no contacts were added \u00b7 ${view.error?.code??'unknown'}${view.error?.record!==null&&view.error?.record!==undefined?` in record ${view.error.record+1}`:''}${view.error?.field?` field ${view.error.field}`:''} \u00b7 ${counts}`;
-    loadHistory(null);
-  }catch(error){status.textContent=`Import outcome unknown \u00b7 ${error.message}`;}
-  finally{$('log-import').disabled=false;}
-});
+const groups=list=>list.map(g=>`${g.count} ${g.code.replaceAll('_',' ')}${g.field?` ${g.field}`:''}`).join(', ');
+function updated(v){
+  if(v.state==='completed')return `Logbook updated: ${v.added} added, ${v.present} already present, ${v.skipped} skipped${v.reasons.length?` (${groups(v.reasons)})`:''}${v.dropped.length?` · fields left out: ${groups(v.dropped)}`:''}`;
+  const e=v.error;
+  return `Logbook not updated · nothing was added · ${e?.code?.replaceAll('_',' ')??'storage unavailable'}${e&&e.record!==null&&e.record!==undefined?` in record ${e.record+1}`:''}${e?.field?` field ${e.field}`:''}`;
+}
+const logging=document.querySelector('#settings-logging');
+if(logging&&typeof block==='function'){
+  const section=block('settings-update-log','Update logbook from ADIF',logging,'<p class="op-muted">Adds the QSOs of another logger’s ADIF export (for example Log4OM) that this logbook does not have yet, so worked-before, DXCC and grid status know them. A QSO already here (same call, band and mode, start within 2 minutes) stays as it is. Only the log fields are kept; nothing is sent to other programs. Repeat it after new QSOs in the other logger.</p><label>ADIF file (.adi)<input id="log-import-file" type="file" accept=".adi,.adif,text/plain"></label><p class="op-actions"><button type="button" id="log-import">Update logbook</button></p><p id="log-import-status" class="op-muted" role="status"></p>');
+  document.getElementById('settings-log')?.after(section); // contact.js moves it there when it loads later
+  $('log-import-status').style.overflowWrap='anywhere';
+  $('log-import').addEventListener('click',async()=>{
+    const status=$('log-import-status'),file=$('log-import-file').files[0],s=station();
+    if(!file){status.textContent='Choose an ADIF file first';return;}
+    if(!s){status.textContent='Station profile unavailable';return;}
+    if(file.size===0||file.size>67108864){status.textContent='Logbook not updated · the file must hold 1 byte to 64 MiB';return;}
+    $('log-import').disabled=true;
+    try{
+      const bytes=new Uint8Array(await file.arrayBuffer()),id=uuid();
+      status.textContent='Checking file integrity';
+      const reserve=await call('/contacts/imports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...s,import_id:id,total_bytes:bytes.length,sha256:await sha256(bytes)})});
+      if(!reserve.response.ok)throw new Error(reserve.data?.error?.code??'update_unavailable');
+      let last=reserve;
+      for(let start=reserve.data.received_bytes;start<bytes.length;start+=16384){
+        const chunk=bytes.subarray(start,Math.min(bytes.length,start+16384));
+        last=await call(`/contacts/imports/${id}`,{method:'PUT',headers:{'Content-Type':'application/octet-stream','Content-Range':`bytes ${start}-${start+chunk.length-1}/${bytes.length}`},body:chunk,timeout:60000});
+        if(last.response.status===422)break;
+        if(!last.response.ok)throw new Error(last.data?.error?.code??'import_failed');
+        status.textContent=`Uploading · ${Math.floor(100*last.data.received_bytes/bytes.length)} % of ${bytes.length} bytes`;
+      }
+      status.textContent=updated(last.response.status===422?(await call(`/contacts/imports/${id}`)).data:last.data);
+      loadHistory(null);
+    }catch(error){status.textContent=`Update outcome unknown · ${error.message}`;}
+    finally{$('log-import').disabled=false;}
+  });
+}
 $('log-export').addEventListener('click',async()=>{
-  const status=$('log-import-status');
+  const status=$('log-export-status');
   try{
     const response=await stationFetch('/contacts/export.adi',{signal:AbortSignal.timeout(60000)});
     if(!response.ok)throw new Error((await response.json()).error?.code??'export_unavailable');

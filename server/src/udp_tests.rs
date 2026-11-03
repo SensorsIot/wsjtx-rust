@@ -1609,3 +1609,68 @@ async fn tc_012_007_status_follows_each_decode_window_and_the_pulse() {
     owner.step(&f.state);
     assert!(drain(&a).is_empty() && drain(&b).is_empty() && drain(&c).is_empty());
 }
+
+// Proves: CL-010-04, TC-011-002. #10 Update logbook from ADIF sends nothing anywhere: the
+// added records reach no UDP target as QSO Logged or Logged ADIF (only DirectLog and
+// SaveContact send logged contacts).
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_011_002_update_logbook_adds_records_without_any_udp_datagram() {
+    let f = fixture("http://127.0.0.1:18409", false);
+    let a = peer();
+    let owner = install(
+        &f,
+        vec![target_json(
+            a.local_addr().unwrap(),
+            &["qso_logged", "logged_adif"],
+            false,
+        )],
+    );
+    owner.step(&f.state);
+    drain(&a);
+    let file = b"Log4OM export\n<PROGRAMID:7>LOG4OM2 <eoh>\n<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261101 <TIME_ON:6>120000 <eor>\n<CALL:6>DL1ABC <BAND:3>20m <MODE:4>MFSK <SUBMODE:3>FT4 <QSO_DATE:8>20261101 <TIME_ON:6>121000 <eor>\n";
+    let sha: String = ring::digest::digest(&ring::digest::SHA256, file)
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let id = profile::new_uuid().unwrap();
+    let reserve = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"import_id":id,"total_bytes":file.len(),"sha256":sha});
+    let (s, v) = call(
+        &f,
+        "POST",
+        "/contacts/imports",
+        Some(serde_json::to_vec(&reserve).unwrap()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+    let request = axum::http::Request::builder()
+        .method("PUT")
+        .uri(format!("/contacts/imports/{id}"))
+        .header(header::ORIGIN, &f.origin)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_RANGE,
+            format!("bytes 0-{}/{}", file.len() - 1, file.len()),
+        )
+        .body(Body::from(file.to_vec()))
+        .unwrap();
+    let response = f.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let view: Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        (view["added"].clone(), view["present"].clone()),
+        (json!(2), json!(0)),
+        "{view}"
+    );
+    assert_eq!(stored(&f).len(), 2);
+    owner.step(&f.state);
+    assert!(
+        drain(&a).is_empty(),
+        "no QSO Logged or Logged ADIF for updated records"
+    );
+}
