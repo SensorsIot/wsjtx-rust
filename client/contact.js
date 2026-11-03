@@ -238,7 +238,8 @@ function loadAutomation(){
   automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
     automationNode.dataset.active=String(!!active);
-    automationNode.textContent=active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    // #42 a pounce run names its call (WstxStrategy::Pounce).
+    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
     if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
@@ -538,7 +539,8 @@ activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[d
 const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-menu';menu.setAttribute('role','menu');menu.hidden=true;
 menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
 document.querySelector('main').append(menu);let menuRow=null;
-function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.style.left=`${Math.min(x,innerWidth-menu.offsetWidth-8)}px`;menu.style.top=`${Math.min(y,innerHeight-menu.offsetHeight-8)}px`;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.querySelector('button:not(:disabled):not([hidden])').focus();}
+// The row's own items (#42 Pounce, Ignore) are set first, so the menu is placed at its real size.
+function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.style.left=`${Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-8))}px`;menu.querySelector('button:not(:disabled):not([hidden])').focus();}
 function closeMenu(){menu.hidden=true;menuRow=null;}
 activity?.addEventListener('contextmenu',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;event.preventDefault();openMenu(tr,event.clientX,event.clientY);});
 menu.addEventListener('click',event=>{
@@ -859,8 +861,8 @@ function show(){
   const capable=window.wstxContact?.snapshot()?.transmit?.capability==='available';
   autoButton.disabled=runActive()?!strategyRun():!active()||!capable;
   autoButton.setAttribute('aria-pressed',String(strategyRun()));
-  autoButton.title=strategyRun()?'Stop Auto':runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
-  showContinent();showIgnore();
+  autoButton.title=strategyRun()?'Stop Auto':runActive()&&run.pounce?`Pouncing on ${run.pounce.call}: stop the pounce first`:runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
+  showContinent();showIgnore();showPounce();
   autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):'waiting'}`:'Auto';
   decorate();
 }
@@ -997,7 +999,8 @@ const settingsDrawer=document.querySelector('#settings-drawer');
 if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadStrategy();}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
 // Band Activity right-click: Ignore <call> / Stop ignoring <call> for a row with a resolved sender.
 const rowMenu=document.querySelector('#ba-menu');
-const ignoreItem=document.createElement('button');ignoreItem.type='button';ignoreItem.setAttribute('role','menuitem');ignoreItem.dataset.menu='ignore';ignoreItem.hidden=true;rowMenu?.append(ignoreItem);
+const pounceItem=document.createElement('button');pounceItem.type='button';pounceItem.setAttribute('role','menuitem');pounceItem.dataset.menu='pounce';pounceItem.hidden=true;
+const ignoreItem=document.createElement('button');ignoreItem.type='button';ignoreItem.setAttribute('role','menuitem');ignoreItem.dataset.menu='ignore';ignoreItem.hidden=true;rowMenu?.append(pounceItem,ignoreItem);
 function rowSender(tr){
   const id=tr.dataset.resultId??'',cut=id.lastIndexOf('/'),context=id.slice(0,cut),sequence=Number(tr.dataset.sequence);
   const pools=[typeof live!=='undefined'&&live?.job&&liveIdentity(live)===context?resultRows:[],...(typeof activityHistory!=='undefined'?activityHistory.filter(h=>h.context===context).map(h=>h.rows):[])];
@@ -1007,8 +1010,43 @@ function rowSender(tr){
 addEventListener('wstx-row-menu',event=>{
   const call=view?rowSender(event.detail):null;ignoreItem.hidden=!call;ignoreItem.dataset.call=call??'';
   if(call)ignoreItem.textContent=sessionIgnored(call)?`Stop ignoring ${call}`:`Ignore ${call}`;
+  // #42 Pounce: offered for any resolved sender; stopping only the running pounce on it.
+  const on=!!call&&pouncing(call);pounceItem.hidden=!call;pounceItem.dataset.call=call??'';
+  if(call){pounceItem.textContent=on?`Stop pouncing ${call}`:`Pounce ${call}`;
+    const capable=window.wstxContact?.snapshot()?.transmit?.capability==='available',mode=typeof live!=='undefined'?live?.job?.mode:null;
+    pounceItem.disabled=!on&&(runActive()||!capable||!['ft8','ft4'].includes(mode));
+    pounceItem.title=on?'Stop waiting for this station':runActive()?'Another automation run is active':!capable?'Transmission unavailable':!['ft8','ft4'].includes(mode)?'Pounce needs FT8/FT4 receive':`Answer ${call} when it calls CQ or ends a QSO with 73 (transmits)`;}
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
+// ---------------------------------------------------------------- #42 Pounce
+// WstxStrategy::Pounce: the station runs it as an automation run with pounce <call>; this
+// client only starts and stops it and shows it (QSO pane line, strategy element status).
+const pouncing=call=>runActive()&&run.pounce?.call===call;
+document.querySelector('#qso-heard')?.insertAdjacentHTML('afterend','<p id="qso-pounce" class="ct-line op-pounce" role="status" hidden><span id="qso-pounce-text"></span> <button type="button" id="qso-pounce-stop" title="Stop waiting for this station">Stop pounce</button></p>');
+const pounceLine=$('qso-pounce');
+function showPounce(){
+  if(!pounceLine)return;const p=runActive()?run.pounce:null;pounceLine.hidden=!p;if(!p)return;
+  $('qso-pounce-text').textContent=`Pouncing on ${p.call} (${p.band}) · ${run.state==='waiting'?'waiting for CQ or 73':'in QSO'}`;
+}
+async function stopPounce(){if(!runActive()||!run.pounce)return;try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Pounce stop refused · ${error.message}`;}}
+$('qso-pounce-stop')?.addEventListener('click',stopPounce);
+async function startPounce(call){
+  const c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
+  if(!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Pounce needs FT8/FT4 receive';return;}
+  // The page session's one confirmation, shared with Auto.
+  if(!autoConfirmed){
+    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog (${c.settings.tx_minutes} min) counts from your last action and is never reset by automation. HALT or Esc stops it.`,'Pounce');
+    if(!ok)return;autoConfirmed=true;
+  }
+  try{
+    let a=await readAutomation();
+    await automationCommand('configure',{expected_policy_revision:a.policy_revision,configuration:{modes:[mode],ranking:'first_seen',min_snr_db:null,allowed_calls:[],blocked_calls:[],max_contacts:1,max_unanswered_periods:5,completion_action:'stop',max_run_minutes:480,strategy:false,pounce:call}});
+    a=await readAutomation();
+    await automationCommand('start',{expected_policy_revision:a.policy_revision,expected_run_revision:a.run_revision,mode,safety_revision:window.wstxContact.snapshot()?.transmit?.safety_revision??null});
+  }catch(error){statusNode.textContent=`Pounce not started · ${error.message}`;}
+  finally{show();}
+}
+pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!call)return;if(pouncing(call))stopPounce();else startPounce(call);});
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
 const KINDS=[['message','Message type'],['new_call','New call'],['new_grid','New grid'],['new_dxcc','New DXCC'],['new_continent','New continent'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['continent','Continent'],['distance_km','Distance (km)'],['azimuth_deg','Azimuth (deg)'],['snr_db','SNR (dB)'],['dt_s','DT (s)'],['audio_hz','Audio frequency (Hz)'],['call','Call or prefix'],['cq_target','CQ target (DX, TEST, POTA...)'],['band','Band']];

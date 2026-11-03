@@ -3,7 +3,7 @@ package WstxStrategy {
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
          WstxRequirements; verification TC-039-001..007; the complete New matrix of
          issue #42, CL-042-01 and TC-042-001; its ignore lists, CL-042-02 and
-         TC-042-002..003): named strategies, the
+         TC-042-002..003; Pounce, CL-042-03 and TC-042-004..005): named strategies, the
          directed-CQ rule, Highlight in Band Activity, the strategy editor popup and Auto
          strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
          result.
@@ -42,7 +42,13 @@ package WstxStrategy {
             session list filled from Band Activity (right-click Ignore), with a timed
             expiry and cleared on a band change. They govern the strategy only
             (Highlight, Auto Call, Auto CQ); a manual Reply, Select or double-click of an
-            ignored station is still the operator's explicit choice and is not refused. */
+            ignored station is still the operator's explicit choice and is not refused.
+         D10 Pounce (#42, Pounce; WSJT-Z's "wait for one call"): an operator action arms a
+            watch for exactly one call on the current band and mode; when that station
+            calls CQ or ends a QSO with RR73/73 the station answers it as a double-click
+            does (select, Enable Tx, Auto Seq). It is a WstxMcp::OperatingAutomation run
+            (one run at a time: never beside Auto Call or Auto CQ), needs no strategy and
+            ends on success, a band change, HALT, the Tx watchdog or the operator. */
 
     enum def MessageType { enum cq; enum directed_cq; enum to_me; enum signoff; }
     enum def NewScope { enum ever; enum band; }
@@ -171,6 +177,50 @@ package WstxStrategy {
              PUT /strategy), the session expiry in minutes (saved on change), and the
              session list with each call's remaining minutes and a remove control; the
              list is read again when the drawer opens. */
+    }
+    attribute def Pounce {
+        doc /* #42 (CL-042-03). A pounce is a WstxMcp::OperatingAutomation run whose
+             AutomationConfiguration has pounce = <call> (strategy false): one run at a time,
+             so at most one pounce and never beside an Auto strategy run (configure and
+             start are refused state_conflict run while any run is active). Start also
+             needs a known station band (station_band: CAT dial band, else the operating
+             selection band; unknown: not_ready band) and captures it with the mode; it
+             needs no active strategy. The run snapshot names it: pounce {call, band}
+             (null for other runs).
+             Each station step, after the WstxMcp checks (halt, context and mode, authority,
+             time limit): a station band other than the captured one stops band_changed
+             (a contact armed by the run is disarmed).
+             Waiting: on each fresh complete publication the candidates are the decoded
+             standard records from exactly the pounce call that are a CQ not greyed by
+             DirectedCqRule (my continent as configured in the strategy store, else
+             derived), or an RR73/73 to another call than mine (D3, always for a pounce),
+             and whose sender is not ignored (IgnoreLists, both tiers; the ignore lists
+             win); a CQ with any other target (TEST, POTA, a country, a number) is
+             answered, since the operator chose the station. The first by sequence is
+             answered exactly as Auto Call answers (select_row {replace false}, after an
+             RR73/73 set_frequency keeping my Tx frequency (Hold Tx), enable_tx with the
+             run's safety revision), so the contact engine calls it in the next own period
+             and Auto Seq runs the QSO; last_decision as for every run. Nothing from the
+             call: the run keeps waiting (no try is counted, no stop).
+             In the contact: completed stops completed (the pounce ends on success,
+             whatever completion_action says); max_unanswered_periods partner periods
+             without progress disarm and cancel the contact and return to waiting for the
+             same call (the pounce stays armed). Every other WstxMcp stop (halted,
+             context_changed, authority_lost, time_limit, contact_changed, transmit_stopped,
+             tx_watchdog, transmit_refused, provider_error, an explicit stop) is unchanged.
+             Browser: the Band Activity right-click menu offers "Pounce <call>" for a row
+             with a resolved sender, disabled without transmit capability, outside FT8/FT4
+             receive or while another run is active, and "Stop pouncing <call>" while a
+             pounce on that call runs (it sends stop). Pounce asks the page session's one
+             Auto confirmation (shared with Auto), then sends configure {modes [the live
+             mode], ranking first_seen, min_snr_db null, allowed_calls [], blocked_calls [],
+             max_contacts 1, max_unanswered_periods 5, completion_action stop,
+             max_run_minutes 480, strategy false, pounce <call>} and start with the shown
+             safety revision; the browser never sends enable_tx for it. While the pounce
+             runs, the QSO pane shows "Pouncing on <call> (<band>) · waiting for CQ or 73"
+             or "· in QSO" with a Stop pounce button (stop), and the strategy element's
+             status "Pounce <call> waiting" or "in QSO" with "HALT ends it"; the Auto button
+             is disabled meanwhile. */
     }
     calc def DirectedCqRule {
         in target : String;
@@ -321,6 +371,8 @@ package WstxStrategy {
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
     dependency newEntityClause from NewEntity to WstxRequirements::'CL-042-01';
     dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
+    dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
+    dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';

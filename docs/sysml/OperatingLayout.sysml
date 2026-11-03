@@ -570,7 +570,8 @@ attribute def ActivityOrdering {
              with the reloaded snapshot, since the operator's choice is explicit; the
              Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here and, for a row with a resolved
-             sender, "Ignore <call>" or "Stop ignoring <call>" (#42 WstxStrategy::
+             sender, "Pounce <call>" or "Stop pouncing <call>" (#42 WstxStrategy::Pounce)
+             and "Ignore <call>" or "Stop ignoring <call>" (#42 WstxStrategy::
              IgnoreLists session list). Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }
@@ -689,6 +690,10 @@ attribute def ActivityOrdering {
              next" button (e.g. "Send 73 next", the full message as its title) that chooses
              that slot and arms (Reply). It is hidden otherwise and never clipped on the
              1366x768 screen.
+             Pounce (#42 WstxStrategy::Pounce): while a pounce run is active, a line under
+             the header reads "Pouncing on <call> (<band>) · waiting for CQ or 73" (in its
+             contact "· in QSO") with a "Stop pounce" button that stops the run; hidden
+             otherwise and never clipped on the 1366x768 screen.
              A fold-out shows the DX Call/Grid entry with Generate, Tx1-Tx6 with their Next
              choice and editable text, Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
              Cancel contact in place. On a station without transmit capability the transmit

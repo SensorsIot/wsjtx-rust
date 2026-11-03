@@ -456,6 +456,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         "completion_action",
         "max_run_minutes",
         "strategy",
+        "pounce",
     ] {
         assert!(
             described.contains(&format!("{key}:")),

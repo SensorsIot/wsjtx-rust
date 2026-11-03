@@ -1799,7 +1799,7 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   const row=page.locator('#band-activity tr[data-sequence="0"]');
   const items=()=>page.locator('#ba-menu button:not([hidden])').evaluateAll(b=>b.map(x=>x.textContent));
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
-  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Ignore K1ABC']);
+  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   const n=evaluations.length;
   await page.locator('#ba-menu [data-menu=ignore]').click();
   for(let i=0;i<60&&!ignores.length;i++)await page.waitForTimeout(50);
@@ -1808,7 +1808,7 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   assert.ok(evaluations.length>n,'the shown rows are evaluated again');
   assert.equal(commands.some(c=>c.action==='set_frequency'),false,'Ignore never sets the Rx frequency');
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
-  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Stop ignoring K1ABC']);
+  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Stop ignoring K1ABC']);
   await page.keyboard.press('Escape');
   // Settings > General: the session list with remaining minutes, the permanent list, minutes.
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
@@ -1824,6 +1824,63 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   for(let i=0;i<60&&ignores.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(ignores[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,call:'K1ABC',ignore:false});
   await page.waitForFunction(()=>!document.querySelector('#ignore-session li'));
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-042-03; TC-042-005 Band Activity Pounce sends exactly the automation requests
+// written here (the station's automation replies are hand-written fixtures); the browser
+// never arms for the pounce; the QSO pane and the strategy element show the running pounce.
+test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{timeout:60000},async t=>{
+  let state,view,automation={run:null,policy:0,runRevision:0,configuration:null};const autos=[],commands=[];
+  const period='2026-10-27T12:00:00.0000000Z';
+  const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
+  const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
+  const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
+  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:false,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:2,available_count:2,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    await contactCommands(p,commands);
+    await p.route('**/strategy',route=>route.fulfill({json:view}));
+    await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.configuration,run:automation.run}}));
+    await p.route('**/automation/command',async route=>{const b=JSON.parse(route.request().postData());autos.push(b);
+      if(b.action==='configure'){automation.policy++;automation.configuration={...b.configuration};}
+      if(b.action==='start'){automation.runRevision++;automation.run={id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,role:null,tries:0,skipped:[],pounce:{call:automation.configuration.pounce,band:'40m'}};}
+      if(b.action==='stop'){automation.runRevision++;automation.run={...automation.run,state:'stopped',reason:'stopped'};}
+      await route.fulfill({status:202,json:{v:1,accepted:true}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&document.querySelector('#strategy-auto')?.disabled===false,null,{timeout:25000});
+  const row=page.locator('#band-activity tr[data-sequence="0"]');
+  const items=()=>page.locator('#ba-menu button:not([hidden])').evaluateAll(b=>b.map(x=>x.textContent));
+  await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
+  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
+  await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog \(6 min\) counts from your last action and is never reset by automation\. HALT or Esc stops it\.$/);
+  await page.locator('#op-confirm-ok').click();
+  for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
+  assert.deepEqual(autos[0].configuration,{modes:['ft8'],ranking:'first_seen',min_snr_db:null,allowed_calls:[],blocked_calls:[],max_contacts:1,max_unanswered_periods:5,completion_action:'stop',max_run_minutes:480,strategy:false,pounce:'K1ABC'});
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:1}}}})));
+  await page.locator('#qso-pounce:not([hidden])').waitFor();
+  assert.equal(await page.locator('#qso-pounce-text').textContent(),'Pouncing on K1ABC (40m) · waiting for CQ or 73');
+  assert.match(await page.locator('#station-automation').textContent(),/^Pounce K1ABC waiting · HALT ends it$/);
+  assert.equal(await page.locator('#strategy-auto').isDisabled(),true,'no Auto beside the pounce');
+  assert.equal(await page.locator('#qso-pounce').evaluate(n=>{const r=n.getBoundingClientRect();return r.bottom<=innerHeight&&r.right<=innerWidth&&n.scrollWidth<=n.clientWidth+1;}),true,'the pounce line is not clipped at 1366x768');
+  await page.screenshot({path:'test-results/ui-operating/pounce-1366.png'});
+  await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
+  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Stop pouncing K1ABC','Ignore K1ABC']);
+  await page.keyboard.press('Escape');
+  await page.locator('#qso-pounce-stop').click();
+  for(let i=0;i<60&&autos.length<3;i++)await page.waitForTimeout(50);
+  assert.deepEqual([autos[2].action,autos[2].run_id],['stop',automation.run.id]);
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:2}}}})));
+  await page.locator('#qso-pounce[hidden]').waitFor({state:'attached'});
+  assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='select_row'),false,'the station run answers; the browser never arms for it');
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
