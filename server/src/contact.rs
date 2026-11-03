@@ -316,7 +316,12 @@ pub fn contest_exchange(activity: Activity, text: Option<&str>) -> Option<Option
     let Some(kind) = activity.contest() else {
         return text.is_none().then_some(None);
     };
-    let text = text?.to_ascii_uppercase();
+    let text = text?;
+    // Only ASCII can be an exchange (and slicing below needs char boundaries).
+    if !text.is_ascii() {
+        return None;
+    }
+    let text = text.to_ascii_uppercase();
     let words = text.split_whitespace().collect::<Vec<_>>();
     let ok = match (kind, words.as_slice()) {
         (ContestKind::FieldDay, [class, section]) => {
@@ -328,8 +333,13 @@ pub fn contest_exchange(activity: Activity, text: Option<&str>) -> Option<Option
                 && matches!(c, "A" | "B" | "C" | "D" | "E" | "F")
                 && crate::decoder::arrl_sections().iter().any(|s| s == section)
         }
+        // RTTY_roundup_exchange_re: a multiplier, DX/# (serial) or a fixed 0001-7999.
         (ContestKind::Rtty, [x]) => {
-            matches!(*x, "DX" | "#") || crate::decoder::rtty_exchanges().iter().any(|s| s == x)
+            matches!(*x, "DX" | "#")
+                || crate::decoder::rtty_exchanges().iter().any(|s| s == x)
+                || (x.len() == 4
+                    && x.bytes().all(|b| b.is_ascii_digit())
+                    && x.parse::<u32>().is_ok_and(|n| (1..=7999).contains(&n)))
         }
         _ => false,
     };
@@ -1283,6 +1293,10 @@ impl Engine {
                     contest_exchange(activity, exchange.as_deref()).ok_or("invalid_exchange")?;
                 self.settings.activity = activity;
                 self.settings.exchange = exchange;
+                // The current contact follows the activity (its messages and log fields).
+                if let Some(c) = self.contact.as_mut() {
+                    c.activity = activity;
+                }
                 self.regenerate(ctx);
                 // The CQ message follows the activity (genCQMsg m_cqStr).
                 let set = match (ctx.call.as_deref(), ctx.grid4(), self.contact.as_ref()) {

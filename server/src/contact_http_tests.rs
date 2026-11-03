@@ -1594,6 +1594,7 @@ async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() 
         json!({"activity":"rtty","exchange":"DXX"}),
         json!({"activity":"ww_digi","exchange":"MA"}),
         json!({"activity":"rtty","exchange":7}),
+        json!({"activity":"field_day","exchange":"1\u{e9} EMA"}),
     ] {
         let (s, v) = f.send("set_activity", body.clone()).await;
         assert_eq!(

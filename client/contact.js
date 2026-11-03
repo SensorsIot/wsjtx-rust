@@ -135,7 +135,7 @@ function render(){
     row.classList.toggle('ct-next-row',c?.next_slot===slot);
   }
   $('contact-tx1-skip').checked=!!s?.tx1_skip;$('contact-rr73').checked=c?.tx4==='rr73';$('contact-rr73').disabled=!c?.dx_call;
-  if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;if(document.activeElement!==$('contact-activity'))$('contact-activity').value=s.activity??'none';if(document.activeElement!==$('contact-exchange'))$('contact-exchange').value=s.exchange??'';$('contact-serial').textContent=s.activity==='rtty'&&(s.exchange==='DX'||s.exchange==='#')?`Serial ${String(s.serial??1).padStart(4,'0')}`:'';$('contact-auto').checked=s.auto_seq;$('contact-call-first').checked=s.call_first!==false;
+  if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;if(document.activeElement!==$('contact-activity'))$('contact-activity').value=s.activity??'none';if(document.activeElement!==$('contact-exchange')&&s.exchange!==shownExchange){shownExchange=s.exchange;$('contact-exchange').value=s.exchange??'';}$('contact-serial').textContent=s.activity==='rtty'&&(s.exchange==='DX'||s.exchange==='#')?`Serial ${String(s.serial??1).padStart(4,'0')}`:'';$('contact-auto').checked=s.auto_seq;$('contact-call-first').checked=s.call_first!==false;
     setValue($('watchdog-tx'),s.tx_minutes);setValue($('watchdog-tune'),s.tune_seconds);}
   $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
   $('contact-call-first').disabled=!capable;
@@ -293,6 +293,7 @@ $('contact-tx1-skip').addEventListener('change',event=>send('set_tx1_skip',{enab
 $('contact-rr73').addEventListener('change',event=>send('set_tx4',{form:event.target.checked?'rr73':'rrr'},'RRR/RR73'));
 $('contact-report').addEventListener('change',event=>{const n=Number(event.target.value);if(Number.isInteger(n))send('set_report',{report:n},'Report');else resultText.textContent='Report must be a whole number of dB';});
 $('contact-parity').addEventListener('change',event=>send('set_parity',{parity:event.target.value},'Tx period'));
+let shownExchange;
 const sendActivity=()=>{const activity=$('contact-activity').value,contest=activity==='field_day'||activity==='rtty';send('set_activity',contest?{activity,exchange:$('contact-exchange').value}:{activity},'Activity');};
 $('contact-activity').addEventListener('change',sendActivity);
 $('contact-exchange').addEventListener('change',()=>{if(['field_day','rtty'].includes($('contact-activity').value))sendActivity();});

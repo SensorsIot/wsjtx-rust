@@ -131,7 +131,7 @@ package WstxContact {
              partner message to my call is classified (ContestReceivedKind): a grid
              without R as signalReport, a grid with R as rogerReport, everything else as
              in a standard QSO. So a caller's grid after my CQ selects Tx3 (rogerReport),
-             a CQer's "R GRID" after my Tx1 moves to Tx4 (rogers), and RRR/RR73/73 end the
+             a CQer's "R GRID" after my first message (Tx2 since Tx1 is disabled in contests, #24 S2b) moves to Tx4 (rogers), and RRR/RR73/73 end the
              contact as usual, which logs it (log on RRR/RR73/73, make-qso.adoc NIL
              guidance); report_sent and report_rcvd stay null and the received grid is the
              DX grid. Contest dupes are the existing worked-before indication of the
@@ -154,13 +154,19 @@ package WstxContact {
              the activity (not saved). field_day: exchange "nC SECTION" (n 1-32 without
              a leading zero, C A-F, SECTION one of the 86 decoder sections, DX outside
              W/VE), e.g. "1A EMA". rtty: exchange a state/province/multiplier of the 171
-             RTTY exchanges, e.g. "MA", or "DX" or "#" for a four-digit serial. Upper case
+             RTTY exchanges, e.g. "MA", a fixed four-digit number 0001-7999, or "DX" or "#"
+             for a four-digit serial. Only ASCII is accepted. Upper case
              is folded and blank runs collapse; anything else, a missing exchange for these
              two, or an exchange for another activity is refused invalid_request field
              exchange. serial is the station's contest serial number: 1 at boot,
              incremented by one each time a contact is logged (DirectLog, completion or
              Log QSO of a contact not yet logged) while an activity other than none is set
-             (MW ~10542), never reset by set_activity.
+             (MW ~10542), never reset by set_activity. set_activity also sets the activity of the
+             current contact (its messages are regenerated and its log fields follow it).
+             DIFFERENT from WSJT-X: a contest contact without exchange_sent or
+             exchange_rcvd is still logged (logqso.cpp ~415 refuses it), the RTTY RST of
+             each side is replaced independently, and UDP QSO Logged keeps the exchange
+             fields empty (Logged ADIF carries them).
              Messages (both calls must be standard calls; otherwise generation fails
              invalid_call, since WSJT-X would hash and alter the call): Tx6 "CQ FD MYCALL
              GRID4" / "CQ RU MYCALL GRID4"; the sent exchange is the Field Day exchange,

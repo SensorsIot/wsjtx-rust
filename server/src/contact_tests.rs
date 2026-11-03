@@ -2822,6 +2822,11 @@ fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
         assert!(rtty(Some(good)).is_some(), "{good}");
     }
     assert_eq!(rtty(Some("DXX")), None);
+    assert_eq!(rtty(Some("0013")), Some(Some("0013".into())));
+    assert_eq!(rtty(Some("8000")), None);
+    // Non-ASCII is refused, never a panic (review S2b2 finding 1).
+    assert_eq!(fd(Some("1\u{e9} EMA")), None);
+    assert_eq!(rtty(Some("\u{e9}")), None);
     assert_eq!(contest_exchange(Activity::WwDigi, Some("MA")), None);
     assert_eq!(contest_exchange(Activity::None, None), Some(None));
     let mut s = station();
@@ -2864,4 +2869,15 @@ fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
         slot_text("TU; K1ABC HB9BLA R 579 MA").as_deref(),
         Some("TU; K1ABC HB9BLA R 579 MA")
     );
+    // A contact prepared before the activity changes follows it (review S2b2 finding 2).
+    let mut s = station();
+    let cq = decoded_in(&mut s, P0, "CQ K1ABC FN42", -3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    contest(&mut s, Activity::FieldDay, "1A EMA");
+    assert_eq!(s.engine.contact.as_ref().unwrap().activity, Activity::FieldDay);
+    assert_eq!(set(&s)[1], "K1ABC HB9BLA 1A EMA");
 }
