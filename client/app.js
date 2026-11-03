@@ -130,7 +130,16 @@ function stationUpdated(build) {
   window.dispatchEvent(new CustomEvent('station-updated', {detail: build}));
   return false;
 }
-setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > 12000) disconnect(socket); }, 1000);
+// WstxStationProtocol::BrowserLinkLifecycle (#8): the page's own deferred client download shares
+// the one station-to-browser bottleneck, so on a 32 kbit/s link the station's messages can queue
+// behind it for more than 12 s. While one is pending the silence bound is 30 s; its completion
+// or failure counts as a message. No other request extends the bound.
+let deferredDownloads = 0;
+function deferredDownload(promise) {
+  deferredDownloads++;
+  return promise.finally(() => {deferredDownloads--; lastMessage = Date.now();});
+}
+setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : 12000)) disconnect(socket); }, 1000);
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
