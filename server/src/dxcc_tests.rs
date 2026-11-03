@@ -393,6 +393,77 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
     );
 }
 
+// Proves: TC-055-006 (CL-055-04) every decoded sender, not only a CQ caller, carries its
+// entity and flags: a report and an R-report to other stations from new senders, and an
+// RR73 from a sender worked on this band and mode (entity, no flag).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
+    use crate::automation_tests::{at_even, publish};
+    let f = crate::mcp_tests::station(false).await;
+    let adi = "<call:6>DL1ABC <gridsquare:4>JO62 <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>
+";
+    let id = crate::profile::new_uuid().unwrap();
+    let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(publish()) };
+    let sha: String = ring::digest::digest(&ring::digest::SHA256, adi.as_bytes())
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let now = std::time::Instant::now();
+    f.state
+        .logbook
+        .reserve(&id, adi.len() as u64, &sha, now)
+        .unwrap();
+    f.state
+        .logbook
+        .chunk(&id, 0, adi.len() as u64, adi.as_bytes(), now, &open)
+        .unwrap();
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("20m");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("K9XX G4XYZ -10", 1000.0, Some(-10.0)),
+            ("K9XX YO3ABC R-07", 1100.0, Some(-7.0)),
+            ("K9XX DL1ABC RR73", 1200.0, Some(-3.0)),
+        ],
+    );
+    let uri = format!(
+        "/receive/results?source_id={source}&job_id={job}&generation={generation}&cursor=0&limit=16"
+    );
+    let records = f.browser("GET", &uri, None).await.json["records"].clone();
+    let names = |r: &Value| {
+        let mut v: Vec<String> = r["flags"]
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    };
+    assert_eq!(records[0]["dxcc"]["name"], "England");
+    assert_eq!(
+        names(&records[0]),
+        [
+            "new_call",
+            "new_call_band",
+            "new_dxcc",
+            "new_dxcc_band",
+            "new_itu_zone",
+            "new_itu_zone_band"
+        ],
+        "a report to another station from a new sender (EU and CQ 14 worked)"
+    );
+    assert_eq!(records[1]["dxcc"]["name"], "Romania");
+    assert!(
+        names(&records[1]).contains(&"new_dxcc".to_owned()),
+        "an R-report sender is flagged too"
+    );
+    assert_eq!(records[2]["dxcc"]["name"], "Germany");
+    assert_eq!(records[2].get("flags"), None, "worked on 20m FT8: no flag");
+}
+
 // Proves: TC-055-002 the cached worked set follows every country-table change: after
 // repeated uploads (freed tables whose memory may be reused) the set is always the one
 // of the current table.

@@ -18,6 +18,7 @@ const WebSocket = require('ws');
 const {receive} = require('./peer.cjs');
 let root, browser, tls, retainFixtureRoot = false;
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
 // Proves: CL-044-05; TC-044-002. Saved audio devices are WASAPI endpoint IDs of their flow (capture 0.0.1, render 0.0.0).
 const captureId = i => `{0.0.1.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`;
@@ -169,6 +170,80 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
     db.close();
     try {await crypto.subtle.exportKey('pkcs8', value.key); return false;} catch {return value.key.extractable === false && value.key.usages.join(',') === 'sign';}
   }), true);
+});
+
+// Proves the CL-022-01 slow-link setup retry (operator decision 2026-11-03, #22): one token
+// press survives a late or network-failed setup step; refusals are never retried.
+test('TC-022-006: token login retries a slow or failed setup step without another press', {timeout: 120000}, async t => {
+  const {profiles} = await fixture(t, true);
+  const fresh = async () => {const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close()); return context.newPage();};
+  // Independent request counters per actual browser page; enroll bodies kept for identity.
+  const counted = page => {
+    const seen = {'/session': 0, '/authorization/v1/bootstrap-scope': 0, '/authorization/v1/enroll': 0, enrollBodies: []};
+    page.on('request', request => {const route = new URL(request.url()).pathname; if (Object.hasOwn(seen, route)) seen[route]++; if (route === '/authorization/v1/enroll') seen.enrollBodies.push(request.postData());});
+    return seen;
+  };
+  const open = async (page, p) => {
+    await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible'});
+    await page.evaluate(() => {const node = document.querySelector('#login-error'); window.__loginTexts = []; new MutationObserver(() => window.__loginTexts.push(node.textContent)).observe(node, {childList: true, characterData: true, subtree: true});});
+  };
+  const press = async (page, p) => {await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();};
+  const refused = page => page.locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor({timeout: 20000});
+  const texts = page => page.evaluate(() => window.__loginTexts);
+
+  // The first bootstrap-scope is answered by the server but delivered after its 10 s bound.
+  {
+    const p = profiles[0], page = await fresh(), seen = counted(page); let held = 0;
+    await page.route(p.origin + '/authorization/v1/bootstrap-scope', async route => {
+      if (held++) {await route.continue(); return;}
+      const response = await route.fetch(); await sleep(11000);
+      await route.fulfill({response}).catch(() => {});
+    });
+    await open(page, p); await press(page, p);
+    await page.locator('#connection').filter({hasText: 'Retrying authorization (attempt 2 of 3)'}).waitFor({timeout: 15000});
+    await connected(page);
+    assert.equal(await page.locator('#login-error').textContent(), '');
+    assert.equal((await texts(page)).some(text => text.includes('Could not authenticate')), false, 'no refusal shown');
+    assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 2, 1]);
+  }
+  // A network-failed enrollment repeats the identical operation ID and verifier once.
+  {
+    const p = profiles[1], page = await fresh(), seen = counted(page); let failed = 0;
+    await page.route(p.origin + '/authorization/v1/enroll', route => failed++ ? route.continue() : route.abort('failed'));
+    await open(page, p); await press(page, p); await connected(page);
+    assert.equal(seen['/session'], 1); assert.equal(seen['/authorization/v1/enroll'], 2);
+    assert.equal(seen.enrollBodies[0], seen.enrollBodies[1], 'retried enrollment is the same operation');
+    assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), true);
+  }
+  // Every /session attempt fails on the network: exactly three attempts, then the refusal text.
+  {
+    const p = profiles[2], page = await fresh(), seen = counted(page);
+    await page.route(p.origin + '/session', route => route.abort('failed'));
+    await open(page, p); await press(page, p); await refused(page);
+    assert.equal(seen['/session'], 3); await sleep(4000); assert.equal(seen['/session'], 3, 'bounded attempts');
+    assert.equal(seen['/authorization/v1/bootstrap-scope'], 0);
+    assert.equal((await texts(page)).filter(text => text.includes('Retrying authorization')).length >= 2, true);
+    assert.equal(await page.locator('#token').inputValue(), '');
+    await page.unroute(p.origin + '/session');
+  }
+  // A definitive 401 refusal is never retried.
+  {
+    const p = profiles[2], page = await fresh(), seen = counted(page);
+    await page.route(p.origin + '/authorization/v1/bootstrap-scope', route => route.fulfill({status: 401, contentType: 'application/json', body: '{}'}));
+    await open(page, p); await press(page, p); await refused(page);
+    await sleep(4000);
+    assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
+    assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), false);
+  }
+  // Leaving the page during a held attempt sends no further setup request.
+  {
+    const p = profiles[3], page = await fresh(), seen = counted(page); let arrived;
+    const first = new Promise(resolve => {arrived = resolve;});
+    await page.route(p.origin + '/authorization/v1/bootstrap-scope', () => arrived());
+    await open(page, p); await press(page, p); await first;
+    await page.goto('about:blank'); await sleep(13000);
+    assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
+  }
 });
 
 // Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
@@ -542,7 +617,7 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     let opens = 0, aborts = 0, closes = 0, writes = 0, fetches = 0, finishBootstrap, bootstrap, challenges = 0, proofs = 0, statuses = 0, verified = 0, proofBodyReads = 0;
     let record = bootstrapFault ? fault === 'bootstrap-existing-invalid' ? null : ['bootstrap-existing-pending', 'bootstrap-existing-retained'].includes(fault) ? {...credential, pending_enrollment: fault === 'bootstrap-existing-pending'} : undefined :
       fault === 'empty' || fault === 'retry-bootstrap' ? undefined : fault === 'invalid' ? null : {...credential, pending_enrollment: fault === 'pending' || fault === 'retry-pending'};
-    const calls = [], controllers = [], timeoutValues = [], proofNonces = new Set(), events = []; let activeNonce, busyEpoch;
+    const calls = [], controllers = [], timeoutValues = [], proofNonces = new Set(), events = [], retries = [], pauses = [], pageListeners = []; let activeNonce, busyEpoch;
     const indexedDB = {open() {
       opens++; if (fault === 'open-throw') throw new DOMException('Injected storage failure', 'SecurityError'); const request = {}, db = {objectStoreNames: {contains: name => fault !== 'missing-store' && name === 'credential'}, close() {closes++;},
         createObjectStore() {writes++; throw new Error('Lookup must not create a store');},
@@ -613,9 +688,13 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
       }
       throw new Error('Unexpected retry boundary');
     };
-    const window = {dispatchEvent(event) {events.push(event.detail); if (fault === 'retry-stale' && event.detail.state === 'recovering' && !bootstrap) bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);}};
-    const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;}};
-    const realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array,
+    const window = {dispatchEvent(event) {if (event.type === 'station-authorization-retry') {retries.push(event.detail); return;} events.push(event.detail); if (fault === 'retry-stale' && event.detail.state === 'recovering' && !bootstrap) bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);}};
+    const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;},
+      any(signals) {const combined = new AbortController(); for (const signal of signals) {if (signal.aborted) {combined.abort(signal.reason); break;} signal.addEventListener('abort', () => combined.abort(signal.reason), {once: true});} return combined.signal;}};
+    // Controlled clock: a setup retry pause elapses at once and is recorded (CL-022-01 slow-link retry).
+    const realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array, AbortController,
+      setTimeout: (callback, milliseconds) => {pauses.push(milliseconds); queueMicrotask(callback); return pauses.length;}, clearTimeout() {},
+      addEventListener: (type, listener) => pageListeners.push([type, listener]), removeEventListener: (type, listener) => {const index = pageListeners.findIndex(([t, l]) => t === type && l === listener); if (index >= 0) pageListeners.splice(index, 1);},
       CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal: deadlineSource, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
     vm.runInContext(source, realm, {timeout: 1000});
     if (fault === 'explicit' || fault === 'bootstrap-busy') {bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true); busyEpoch = window.stationAuthorization.snapshot().epoch;}
@@ -634,8 +713,8 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
         'retry-status403': 3, 'retry-status429': 3, 'retry-status503': 3, 'retry-status-scope': 3, 'retry-second-challenge-scope': 4, 'retry-second-status-scope': 6,
         'retry-pending': 5, 'retry-bootstrap': 6, 'retry-aborted': 3, 'retry-abort-challenge': 4, 'retry-stale': 1};
       assert.equal(fetches, counts[fault], 'retry bounds match the independent call-count oracle'); assert.equal(verified, proofs); assert.equal(proofBodyReads, 0);
-      assert.equal(timeoutValues.every(value => value === 10000), true);
-      assert.equal(timeoutValues.length, ['retry-bootstrap', 'retry-stale'].includes(fault) ? 2 : 1, 'retry never creates a replacement deadline');
+      // Retained recovery keeps one 10 s deadline; a token login adds its 45 s bound and one 10 s bound per step attempt.
+      assert.deepEqual(timeoutValues, {'retry-bootstrap': [45000, 10000, 10000, 10000, 10000], 'retry-stale': [45000, 10000, 10000]}[fault] ?? [10000], 'retry never creates a replacement deadline');
       if (!['retry-bootstrap', 'retry-stale'].includes(fault)) assert.equal(calls.every(call => call.signal === controllers[0].signal), true, 'all triplets retain the original signal object');
       if (fault === 'retry-success' || fault === 'retry-repeat401') assert.equal(challenges, 2);
     }
@@ -645,10 +724,17 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
       assert.equal(retry?.condition, expected, 'backoff preserves the owner failure classification'); assert.equal(opens, priorOpens); assert.equal(fetches, priorFetches);
     }
     if (bootstrapFault) {
-      const expectedFetches = {'bootstrap-denied': 1, 'bootstrap-open-error': 2, 'bootstrap-add-error': 2, 'bootstrap-existing-invalid': 2, 'bootstrap-existing-pending': 2, 'bootstrap-existing-retained': 2, 'bootstrap-enroll-loss': 3, 'bootstrap-clear-error': 3, 'bootstrap-renew-network': 4, 'bootstrap-renew-unauthorized': 4, 'bootstrap-renew-rate': 4, 'bootstrap-busy': 1};
-      assert.equal(fetches, expectedFetches[fault], 'classification never adds recovery or enrollment requests');
-      assert.equal(timeoutValues.every(value => value === 10000), true);
-      assert.equal(timeoutValues.length, ['bootstrap-denied', 'bootstrap-busy'].includes(fault) ? 1 : 2);
+      // Only a network-failed step is repeated, three attempts at most (enroll-loss, renew-network).
+      const expectedFetches = {'bootstrap-denied': 1, 'bootstrap-open-error': 2, 'bootstrap-add-error': 2, 'bootstrap-existing-invalid': 2, 'bootstrap-existing-pending': 2, 'bootstrap-existing-retained': 2, 'bootstrap-enroll-loss': 5, 'bootstrap-clear-error': 3, 'bootstrap-renew-network': 6, 'bootstrap-renew-unauthorized': 4, 'bootstrap-renew-rate': 4, 'bootstrap-busy': 1};
+      assert.equal(fetches, expectedFetches[fault], 'classification adds only the bounded transient retries');
+      // Every step attempt here ends at its first request, so attempts equal requests.
+      assert.deepEqual(timeoutValues, [45000, ...Array(expectedFetches[fault]).fill(10000)], 'one 45 s login bound and one 10 s bound per step attempt');
+      const transientRetries = {'bootstrap-enroll-loss': ['enroll', 'enroll'], 'bootstrap-renew-network': ['renew', 'renew']}[fault] ?? [];
+      assert.deepEqual(retries.map(detail => detail.step), transientRetries, 'refusals and invalid outcomes are never retried');
+      assert.deepEqual(retries.map(detail => [detail.attempt, detail.attempts]), transientRetries.map((_, index) => [index + 2, 3]));
+      assert.deepEqual(pauses, transientRetries.length ? [1000, 2000] : [], 'bounded 1 s then 2 s pauses');
+      assert.equal(pageListeners.length, 0, 'the login removes its pagehide listener');
+      if (fault === 'bootstrap-renew-network') assert.equal(challenges, 3, 'each renewal attempt starts from a fresh challenge');
       if (fault === 'bootstrap-add-error') assert.equal(record === undefined, true, 'failed initial transaction is not a retained enrollment');
       if (fault === 'bootstrap-clear-error' || fault === 'bootstrap-enroll-loss') assert.equal(record?.pending_enrollment, true, 'pending truth survives an unacknowledged outcome or failed durable clear');
       if (fault.startsWith('bootstrap-renew-')) assert.equal(record?.pending_enrollment, false, 'only completed durable clear establishes confirmed retained truth');
@@ -1267,7 +1353,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
     } catch {observation.asset_error = true;}})());
   });
   const tracked = new Map(), counts = {session: 0, enroll: 0, followup: 0, mutation: 0, sockets: 0, protectedBeforeReceipt: 0}, replies = [];
-  let initial = true, routeError = false, forwarded = false, enrollFailed = false, enrollment, retained, receiptHeld = false, receiptReleased = false;
+  let initial = true, routeError = false, forwarded = false, enrollFailed = false, enrollment, enrollmentBody, retained, receiptHeld = false, receiptReleased = false;
   let holdSnapshot = false, rejectedIntent = false, holdNoEffects = false, readyEarly = false, connectedEarly = false;
   let resolveEnrollment;
   const enrollmentSeen = new Promise(resolve => {resolveEnrollment = resolve;});
@@ -1353,7 +1439,10 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
       try {
         if (initial && ['/authorization/v1/challenge','/authorization/v1/proof','/authorization/v1/receipt'].includes(pathname)) {await initialClosed; try {await route.abort('failed');} catch {} return;}
         if (initial && pathname.endsWith('/enroll')) {
-          enrollment = JSON.parse(req.postData()); retained = await metadata(page);
+          // CL-022-01 retries a network-failed enrollment within the login: the initial link stays
+          // down, so each identical retry fails without reaching the server and the outcome stays unknown.
+          if (enrollment) {if (req.postData() !== enrollmentBody) routeError = true; await route.abort('failed'); return;}
+          enrollmentBody = req.postData(); enrollment = JSON.parse(enrollmentBody); retained = await metadata(page);
           if (committed) {
             const headers = await req.allHeaders(); wire[initial ? 0 : 1][authCode(pathname)]++; const result = await request(p.origin, 'POST', req.postDataBuffer(), {Origin: p.origin, 'Content-Type': 'application/json', Cookie: headers.cookie || ''}, pathname);
             replies.push({path: pathname, status: result.status, initial});
@@ -1513,7 +1602,8 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   assert.equal(wire.every(bucket => bucket.reduce((sum, n) => sum + n, 0) <= 10 && bucket[8] === 0), true);
   assert.equal(replies.some(v => v.status === 429), false);
   assert.equal(wire[0][1] === 1 && wire[0][2] === 1 && wire[0][3] === (committed ? 1 : 0), true);
-  assert.equal(routeError, false); assert.equal(counts.session, 1); assert.equal(counts.enroll, 1); assert.equal(counts.mutation, 0);
+  assert.equal(routeError, false); assert.equal(counts.session, 1); assert.equal(counts.mutation, 0);
+  assert.equal(counts.enroll, 3, 'the initial login makes its three bounded identical enrollment attempts; the restarted browser none');
   assert.equal(after.keyValid && after.grant === retained.grant && after.public === retained.public && after.operation === retained.operation && equal(after.scope, retained.scope), true);
   assert.equal(storeValid(await store(), committed), true);
   assert.equal((await fs.readFile(path.join(p.dir, 'authorization.json'))).equals(durableBefore), true);

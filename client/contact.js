@@ -642,17 +642,25 @@ const waterfall=document.querySelector('#waterfall'),wrap=document.querySelector
 const rxMarker=document.createElement('div'),txMarker=document.createElement('div');
 rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMarker.dataset.key='rx';txMarker.dataset.key='tx';
 for(const m of [rxMarker,txMarker]){m.setAttribute('role','slider');m.setAttribute('aria-valuemin','0');m.setAttribute('aria-valuemax','3000');m.setAttribute('aria-label',m===rxMarker?'Rx marker, drag to set the Rx frequency':'Tx marker, drag to set the Tx frequency');}
+for(const m of [rxMarker,txMarker]){const goal=document.createElement('span');goal.className='ct-goal';m.append(goal);}
 wrap?.append(rxMarker,txMarker);
 // #50: 3 px green Rx and red Tx lines without text; the Rx/Tx strip below shows the values.
+// CL-050-07: the lines, their brackets and the pointer use the waterfall's one frequency
+// mapping (recording.js wstxWaterfallAxis, the canvas box), as the frequency axis does. Each
+// line is the lowest tone; its WSJT-X bracket spans the occupied width of the station's mode.
 let dragging=null;
+const occupiedHz=()=>(tick?tick.period===7500:typeof live!=='undefined'&&live?.job?.mode==='ft4')?4*12000/576:8*12000/1920;
+function place(m,hz){const axis=window.wstxWaterfallAxis,x=axis.x(hz,wrap);m.style.left=`${x}px`;m.firstChild.style.width=`${axis.x(hz+occupiedHz(),wrap)-x}px`;}
 function markers(){
   const s=snap?.settings;
-  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){m.style.left=`${hz/30}%`;m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
+  for(const [m,hz,label] of [[rxMarker,s?.rx_hz,'Rx'],[txMarker,s?.tx_hz,'Tx']]){if(dragging===m)continue;m.hidden=typeof hz!=='number';if(typeof hz==='number'){place(m,hz);m.dataset.hz=String(hz);m.title=`${label} ${hz} Hz`;m.setAttribute('aria-valuenow',String(hz));}}
 }
-const pointerHz=event=>{const box=waterfall.getBoundingClientRect();return Math.max(0,Math.min(3000,Math.round((event.clientX-box.left)/box.width*3000)));};
+const pointerHz=event=>window.wstxWaterfallAxis.hz(event.clientX);
+if(waterfall)new ResizeObserver(()=>markers()).observe(waterfall);
+addEventListener('station-message',event=>{if(event.detail?.message?.type==='station.tick')queueMicrotask(markers);});
 for(const m of [rxMarker,txMarker]){
   m.addEventListener('pointerdown',event=>{if(event.button!==0||!snap)return;event.preventDefault();event.stopPropagation();dragging=m;m.setPointerCapture(event.pointerId);m.classList.add('ct-dragging');});
-  m.addEventListener('pointermove',event=>{if(dragging!==m)return;m.style.left=`${pointerHz(event)/30}%`;m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
+  m.addEventListener('pointermove',event=>{if(dragging!==m)return;place(m,pointerHz(event));m.title=`${m.dataset.key==='rx'?'Rx':'Tx'} ${pointerHz(event)} Hz`;});
   m.addEventListener('pointerup',event=>{if(dragging!==m)return;dragging=null;m.classList.remove('ct-dragging');const hz=pointerHz(event);if(String(hz)!==m.dataset.hz)send('set_frequency',{rx_hz:m.dataset.key==='rx'?hz:null,tx_hz:m.dataset.key==='tx'?hz:null},m.dataset.key==='rx'?'Rx frequency':'Tx frequency');else markers();});
   m.addEventListener('click',event=>event.stopPropagation());
 }
@@ -899,7 +907,8 @@ function decorate(){
     const v=on?verdicts.get(tr.dataset.resultId):null;
     tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
-    if(v?.grey)tr.title='Directed CQ not addressed to my continent: never answered';else if(v)tr.title=`Strategy ${config().active}: rule ${v.rank+1}`;else tr.removeAttribute('title');
+    // #55 BandActivityHover: the verdict joins the row's other reasons.
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ not addressed to my continent: never answered';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   if(!on)return;
   // Matches go to the top of their period block in the station's order.
@@ -909,7 +918,9 @@ function decorate(){
     const matched=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).index-verdicts.get(b.dataset.resultId).index);
     if(!matched.length)return;
     const anchor=block.at(-1).nextSibling;
-    for(const tr of [...matched,...block.filter(r=>!matched.includes(r))])tbody.insertBefore(tr,anchor);
+    // #55 BandActivityValue: in the value order rows calling me stay above the strategy hits (value 2).
+    const first=typeof activitySortField!=='undefined'&&activitySortField==='value'?block.filter(r=>r.classList.contains('ba-tome')):[];
+    for(const tr of [...first,...matched.filter(r=>!first.includes(r)),...block.filter(r=>!matched.includes(r)&&!first.includes(r))])tbody.insertBefore(tr,anchor);
   };
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
@@ -1039,6 +1050,74 @@ addEventListener('wstx-row-menu',event=>{
     pounceItem.title=on?'Stop waiting for this station':runActive()?'Another automation run is active':!capable?'Transmission unavailable':!['ft8','ft4'].includes(mode)?'Pounce needs FT8/FT4 receive':`Answer ${call} when it calls CQ or ends a QSO with 73 (transmits)`;}
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
+// ---------------------------------------------------------------- #42 Alert
+// WstxStrategy::Alert: the station records the alerts of rules marked alert; this client
+// lists the history and announces new alerts as the operator chose (both off by default):
+// a short tone while the page is visible, a browser notification also while it is hidden.
+ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>A strategy rule marked Alert (strategy editor) records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
+const alertSound=$('alert-sound'),alertNotify=$('alert-notify'),alertList=$('alert-history'),alertNote=$('alert-note');
+let alertView=null,alertSeen=null,alertSocket=null,alertSeq=0,audio=null;
+const alertKey=()=>`wstx.alerts.v1:${alertView?.profile_id??view?.profile_id??''}`;
+function alertPrefs(){try{const p=JSON.parse(localStorage.getItem(alertKey())??'null');return {sound:p?.sound===true,notify:p?.notify===true};}catch{return {sound:false,notify:false};}}
+function saveAlertPrefs(p){try{localStorage.setItem(alertKey(),JSON.stringify({sound:p.sound,notify:p.notify}));}catch{}}
+const notifyGranted=()=>typeof Notification!=='undefined'&&Notification.permission==='granted';
+function showAlertPrefs(){if(!alertSound)return;const p=alertPrefs();alertSound.checked=p.sound;alertNotify.checked=p.notify&&notifyGranted();alertNotify.disabled=typeof Notification==='undefined';if(alertNotify.disabled)alertNote.textContent='This browser offers no notifications here';}
+function alertLine(a){
+  return [`${String(a.utc??'').slice(11,19)} ${a.call} ${a.message}`,a.rule,[a.band,a.mode?String(a.mode).toUpperCase():null].filter(Boolean).join(' '),Number.isFinite(a.snr_db)?`${Math.round(a.snr_db)} dB`:null,a.dxcc].filter(Boolean).join(' \u00b7 ');
+}
+function showAlerts(){
+  if(!alertList)return;const list=[...(alertView?.alerts??[])].reverse(),key=list.map(a=>a.id).join(',');
+  alertClear.disabled=!list.length;if(alertList.dataset.key===key)return;alertList.dataset.key=key;
+  alertList.replaceChildren(...list.map(a=>{const li=document.createElement('li'),span=document.createElement('span');span.className='al-text';span.textContent=alertLine(a);li.append(span);return li;}));
+}
+function alertAudio(){try{audio??=new AudioContext();if(audio.state==='suspended')audio.resume?.();}catch{audio=null;}return audio;}
+function tone(){const a=alertAudio();if(!a)return;try{const o=a.createOscillator(),g=a.createGain(),t=a.currentTime;o.frequency.value=880;g.gain.setValueAtTime(0.15,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);o.connect(g).connect(a.destination);o.start(t);o.stop(t+0.16);}catch{}}
+function announce(a){
+  const p=alertPrefs();
+  if(p.sound&&document.visibilityState==='visible')tone();
+  if(p.notify&&notifyGranted()){try{new Notification(`Alert ${a.call}`,{body:`${a.message} \u00b7 ${a.rule}`,tag:`wstx-alert-${a.id}`});}catch{}}
+}
+// quiet: the history read at page load or on a new socket announces nothing.
+async function loadAlerts(quiet){
+  const seq=++alertSeq;
+  try{
+    const response=await stationFetch('/strategy/alerts',{cache:'no-store',signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(seq!==alertSeq||!response.ok||data?.v!==1||!Array.isArray(data.alerts))return;
+    const known=alertSeen!==null&&alertView?.boot_id===data.boot_id&&!quiet;
+    const fresh=known?data.alerts.filter(a=>a.id>alertSeen):[];
+    alertView=data;alertSeen=Math.max(known?alertSeen:0,...data.alerts.map(a=>a.id));
+    showAlertPrefs();showAlerts();for(const a of fresh)announce(a);
+  }catch{}
+}
+const alertClear=$('alert-clear');
+alertClear?.addEventListener('click',async()=>{
+  if(!alertView)return;
+  try{
+    const response=await stationFetch('/strategy/alerts/clear',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:alertView.profile_id,boot_id:alertView.boot_id}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.v!==1){alertNote.textContent=`Not cleared \u00b7 ${data?.error?.code??response.status}`;return;}
+    alertSeq++;alertView=data;showAlerts();
+  }catch(error){alertNote.textContent=`Not cleared \u00b7 ${error.message}`;}
+});
+alertSound?.addEventListener('change',()=>{saveAlertPrefs({...alertPrefs(),sound:alertSound.checked});if(alertSound.checked)alertAudio();});
+// The notification permission is asked only here, on the operator's click.
+alertNotify?.addEventListener('change',async()=>{
+  const p=alertPrefs();alertNote.textContent='';
+  if(!alertNotify.checked){saveAlertPrefs({...p,notify:false});return;}
+  let permission=typeof Notification==='undefined'?'unavailable':Notification.permission;
+  if(permission==='default'){try{permission=await Notification.requestPermission();}catch{permission='denied';}}
+  if(permission!=='granted'){alertNotify.checked=false;saveAlertPrefs({...p,notify:false});alertNote.textContent=`Notifications not allowed (${permission}); allow them in the browser's site settings`;return;}
+  saveAlertPrefs({...p,notify:true});
+});
+// Station settings, not profile fields: they never mark the profile form unsaved.
+for(const el of [alertSound,alertNotify])for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
+// A suspended audio context (autoplay rules) resumes with the operator's next action.
+addEventListener('pointerdown',()=>{if(audio?.state==='suspended')audio.resume?.();},true);
+addEventListener('station-message',event=>{const {message,current}=event.detail;if(current===socket&&message?.type==='alert.state')loadAlerts(false);});
+addEventListener('station-ready',event=>{if(event.detail===alertSocket)return;alertSocket=event.detail;loadAlerts(true);});
+if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadAlerts(false);}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){alertSocket=socket;loadAlerts(true);}
 // ---------------------------------------------------------------- #42 Pounce
 // WstxStrategy::Pounce: the station runs it as an automation run with pounce <call>; this
 // client only starts and stops it and shows it (QSO pane line, strategy element status).
@@ -1110,7 +1189,7 @@ function renderEditor(){
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
 <p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. Directed CQs not for my continent never match.</p>
-<ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
+<ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><label class="op-check se-alert" title="Sound or browser notification when a decode matches this rule (Settings &gt; General); never transmits"><input type="checkbox" data-alert="${ri}"${r.alert?' checked':''}>Alert</label><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
 <p class="op-actions"><button type="button" data-act="add-rule"${s.rules.length>=8?' disabled':''}>Add rule</button></p>
 <div class="se-options"><label>Sort matches<select id="se-sort">${[['strongest','Strongest first'],['weakest','Weakest first'],['furthest','Furthest first'],['newest','Newest first']].map(([v,l])=>option(v,l,s.sort===v)).join('')}</select></label>
 <label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
@@ -1131,6 +1210,7 @@ editor.addEventListener('input',event=>{
     else if(f==='min'||f==='max')c[f]=t.value===''?null:Number(t.value);
     else if(t.dataset.continent)c.values=[...li.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent);
   }
+  else if(t.dataset.alert!==undefined){const r=s.rules[Number(t.dataset.alert)];if(t.checked)r.alert=true;else delete r.alert;}
   else if(t.id==='se-name')s.name=t.value;
   else if(t.id==='se-sort')s.sort=t.value;else if(t.id==='se-73')s.treat_73_as_cq=t.checked;else if(t.id==='se-role')s.auto_role=t.value;
   else if(t.id==='se-switch')s.switch_after=Number(t.value);else if(t.id==='se-skip')s.skip_after=Number(t.value);else if(t.id==='se-callers')s.apply_to_callers=t.checked;

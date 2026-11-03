@@ -3,7 +3,8 @@
 //! evaluator. The browser's Highlight view and the station's Auto runs
 //! (WstxMcp::OperatingAutomation with a strategy) both use these verdicts; the browser
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
-//! /strategy (configuration), POST /strategy/evaluate (verdicts of retained live rows).
+//! /strategy (configuration), POST /strategy/evaluate (verdicts of retained live rows),
+//! #42 GET /strategy/alerts and POST /strategy/alerts/clear (WstxStrategy::Alert).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -26,6 +27,9 @@ pub const EVALUATE_MAX: u64 = 2048;
 pub const IGNORE_CALLS_MAX: usize = 100;
 pub const SESSION_IGNORE_MAX: usize = 64;
 pub const SESSION_IGNORE_MINUTES: u64 = 30;
+/// #42 WstxStrategy::Alert bounds: the history length and the dedupe window.
+pub const ALERT_HISTORY_MAX: usize = 100;
+pub const ALERT_DEDUPE_MS: i64 = 10 * 60_000;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub use crate::dxcc::CONTINENTS;
@@ -101,6 +105,8 @@ pub(crate) struct Strategy {
     pub skip_after: u64,
     pub role: Role,
     pub switch_after: u64,
+    /// #42 Alert: the indices of the rules marked alert, ascending.
+    pub alerts: Vec<usize>,
 }
 /// WstxStrategy::StrategyConfiguration.
 #[derive(Clone, Debug, PartialEq)]
@@ -280,9 +286,18 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
         .filter(|r| (1..=RULES_MAX).contains(&r.len()))
         .ok_or(bad(format!("{field}.rules")))?;
     let mut parsed = Vec::new();
+    let mut alerts = Vec::new();
     for (i, rule) in rules.iter().enumerate() {
         let rf = format!("{field}.rules[{i}]");
-        exact(rule, &["conditions"], &rf)?;
+        // #42 Alert: the optional alert key (absent: false).
+        if rule.get("alert").is_some() {
+            exact(rule, &["conditions", "alert"], &rf)?;
+            if rule["alert"].as_bool().ok_or(bad(format!("{rf}.alert")))? {
+                alerts.push(i);
+            }
+        } else {
+            exact(rule, &["conditions"], &rf)?;
+        }
         let list = rule["conditions"]
             .as_array()
             .filter(|c| c.len() <= CONDITIONS_MAX)
@@ -314,6 +329,7 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
             _ => return Err(bad(format!("{field}.auto_role"))),
         },
         switch_after: bounded(&v["switch_after"], &format!("{field}.switch_after"), 1, 20)?,
+        alerts,
     })
 }
 /// Exact StrategyConfiguration parsing (field names a refused value).
@@ -508,7 +524,13 @@ impl Condition {
 impl Strategy {
     pub(crate) fn json(&self) -> Value {
         json!({"name":self.name,
-            "rules":self.rules.iter().map(|r| json!({"conditions":r.iter().map(Condition::json).collect::<Vec<_>>()})).collect::<Vec<_>>(),
+            "rules":self.rules.iter().enumerate().map(|(i, r)| {
+                let mut rule = json!({"conditions":r.iter().map(Condition::json).collect::<Vec<_>>()});
+                if self.alerts.contains(&i) {
+                    rule["alert"] = json!(true);
+                }
+                rule
+            }).collect::<Vec<_>>(),
             "sort":match self.sort {Sort::Strongest=>"strongest",Sort::Weakest=>"weakest",Sort::Furthest=>"furthest",Sort::Newest=>"newest"},
             "treat_73_as_cq":self.treat_73_as_cq,"apply_to_callers":self.apply_to_callers,"skip_after":self.skip_after,
             "auto_role":match self.role {Role::Call=>"call",Role::Cq=>"cq",Role::Alternate=>"alternate"},
@@ -806,6 +828,9 @@ pub(crate) struct Verdict {
     pub km: Option<f64>,
     /// #42 the sender is on an ignore list (never answered, also as a caller).
     pub ignored: bool,
+    /// #42 Alert: the first rule marked alert whose conditions all hold (none for an
+    /// ignored sender or a greyed CQ).
+    pub alert: Option<usize>,
 }
 impl Verdict {
     pub(crate) fn json(&self, explain: bool) -> Value {
@@ -837,6 +862,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
                 grey: false,
                 km,
                 ignored: true,
+                alert: None,
             });
             continue;
         }
@@ -852,11 +878,17 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
                 grey: true,
                 km,
                 ignored: false,
+                alert: None,
             });
             continue;
         }
         let mut rank = None;
         let mut failed = Vec::new();
+        let holds = |rule: &[Condition]| {
+            rule.iter()
+                .all(|c| st.holds(&c.cond, &f, s.treat_73_as_cq) != c.negate)
+        };
+        let alert = s.alerts.iter().copied().find(|i| holds(&s.rules[*i]));
         for (i, rule) in s.rules.iter().enumerate() {
             match rule
                 .iter()
@@ -879,6 +911,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
             grey: false,
             km,
             ignored: false,
+            alert,
         });
     }
     out
@@ -1000,6 +1033,44 @@ pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) 
     }
 }
 
+// ------------------------------------------------------------------ alerts
+/// #42 WstxStrategy::Alert: the station's alert history (memory only) with its live-job
+/// cursor and the dedupe memory (kept apart from the history: Clear keeps it).
+#[derive(Default)]
+struct AlertLog {
+    /// (live job identity, next sequence to read).
+    cursor: Option<((String, String, u64), u64)>,
+    entries: std::collections::VecDeque<Value>,
+    next_id: u64,
+    revision: u64,
+    /// (call, station band) -> period start (ms) of its last alert.
+    last: HashMap<(String, Option<String>), i64>,
+}
+impl AlertLog {
+    /// Records an alert unless the same call and band alerted less than 10 minutes
+    /// before this period start.
+    fn record(&mut self, call: &str, band: Option<&str>, period_ms: i64, mut alert: Value) {
+        let key = (call.to_owned(), band.map(str::to_owned));
+        if self
+            .last
+            .get(&key)
+            .is_some_and(|at| period_ms - at < ALERT_DEDUPE_MS && period_ms >= *at)
+        {
+            return;
+        }
+        self.last
+            .retain(|_, at| period_ms - *at < ALERT_DEDUPE_MS && *at <= period_ms);
+        self.last.insert(key, period_ms);
+        self.next_id += 1;
+        alert["id"] = json!(self.next_id);
+        if self.entries.len() >= ALERT_HISTORY_MAX {
+            self.entries.pop_front();
+        }
+        self.entries.push_back(alert);
+        self.revision += 1;
+    }
+}
+
 // ------------------------------------------------------------------ owner
 #[derive(Default)]
 struct Inner {
@@ -1015,6 +1086,10 @@ pub(crate) struct Owner {
     inner: Mutex<Inner>,
     /// #42 the session ignore list; a leaf lock, never held with `inner`.
     session: Mutex<Session>,
+    /// #42 the alert history; taken before `inner` and `session`, never under them.
+    alerts: Mutex<AlertLog>,
+    /// Its revision, read without the lock by the alert.state event.
+    alert_revision: std::sync::atomic::AtomicU64,
 }
 pub(crate) type Refusal = (&'static str, Option<String>);
 impl Owner {
@@ -1065,6 +1140,118 @@ impl Owner {
     /// The station step's band observation: a band change empties the session list.
     pub(crate) fn observe_band(&self, band: Option<&str>) {
         self.session().observe_band(band);
+    }
+    fn alerts(&self) -> std::sync::MutexGuard<'_, AlertLog> {
+        self.alerts.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// The alert history revision (alert.state).
+    pub(crate) fn alert_revision(&self) -> u64 {
+        self.alert_revision
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+    /// #42 WstxStrategy::Alert, once per station step: reads the live records past the
+    /// cursor once each and records the alerts of the active strategy's alert rules.
+    /// Never transmits or changes a contact or run.
+    pub(crate) fn alert_step(&self, state: &ProfileState) {
+        let r = &state.recording;
+        let mut log = self.alerts();
+        let cursor = log.cursor.clone();
+        let Some((identity, mode, records)) = r.live_records_after(
+            cursor.as_ref().map(|c| &c.0),
+            cursor.as_ref().map_or(0, |c| c.1),
+        ) else {
+            return;
+        };
+        let same = cursor.as_ref().is_some_and(|c| c.0 == identity);
+        let next = records
+            .last()
+            .and_then(|v| v["sequence"].as_u64())
+            .map_or(if same { cursor.map_or(0, |c| c.1) } else { 0 }, |s| s + 1);
+        log.cursor = Some((identity, next));
+        if records.is_empty() {
+            return;
+        }
+        let Some(config) = self.config(state) else {
+            return;
+        };
+        let Some(chosen) = config.active_strategy().filter(|s| !s.alerts.is_empty()) else {
+            return;
+        };
+        let st = station(state, &config, &records);
+        let before = log.revision;
+        for v in evaluate(chosen, &records, &st) {
+            let Some(rule) = v.alert else { continue };
+            if v.facts.from == st.my_call {
+                continue;
+            }
+            let Some(record) = records
+                .iter()
+                .find(|x| x["sequence"].as_u64() == Some(v.facts.sequence))
+            else {
+                continue;
+            };
+            let utc = record["period_start_utc"].as_str().unwrap_or("");
+            let period_ms = crate::contact::parse_utc(utc).unwrap_or_else(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis() as i64)
+            });
+            let alert = json!({"id":0,"utc":utc,"call":v.facts.from,"message":record["text"],
+                "rule":format!("{} rule {}", chosen.name, rule + 1),"band":st.band,"mode":mode,
+                "snr_db":record["snr_db"],
+                "dxcc":st.dxcc.lookup(&v.facts.from).map(|e| e.name)});
+            log.record(&v.facts.from, st.band.as_deref(), period_ms, alert);
+        }
+        if log.revision != before {
+            self.alert_revision
+                .store(log.revision, std::sync::atomic::Ordering::Release);
+        }
+    }
+    /// GET /strategy/alerts.
+    pub(crate) fn alerts_snapshot(&self, state: &ProfileState) -> Value {
+        let r = &state.recording;
+        let log = self.alerts();
+        json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":log.revision,
+            "alerts":log.entries})
+    }
+    /// POST /strategy/alerts/clear after the route checks: empties the history (the
+    /// dedupe memory stays).
+    pub(crate) fn clear_alerts(&self, state: &ProfileState, body: Value) -> Result<Value, Refusal> {
+        let r = &state.recording;
+        let keys = ["v", "profile_id", "boot_id"];
+        let o = body.as_object().ok_or(("invalid_request", None))?;
+        if let Some(k) = keys.iter().find(|k| !o.contains_key(**k)) {
+            return Err(("invalid_request", Some((*k).into())));
+        }
+        if o.len() != keys.len() {
+            return Err(("invalid_request", None));
+        }
+        if body["v"].as_u64() != Some(1) {
+            return Err(if body["v"].is_u64() {
+                ("unsupported_version", Some("v".into()))
+            } else {
+                ("invalid_request", Some("v".into()))
+            });
+        }
+        for k in ["profile_id", "boot_id"] {
+            if !body[k].as_str().is_some_and(profile::valid_uuid) {
+                return Err(("invalid_request", Some(k.into())));
+            }
+        }
+        if body["profile_id"] != r.profile.as_str() {
+            return Err(("wrong_profile", Some("profile_id".into())));
+        }
+        if body["boot_id"] != r.boot.as_str() {
+            return Err(("state_conflict", Some("boot_id".into())));
+        }
+        {
+            let mut log = self.alerts();
+            log.entries.clear();
+            log.revision += 1;
+            self.alert_revision
+                .store(log.revision, std::sync::atomic::Ordering::Release);
+        }
+        Ok(self.alerts_snapshot(state))
     }
     /// StrategySnapshot.
     pub(crate) fn snapshot(&self, state: &ProfileState) -> Value {
@@ -1416,6 +1603,46 @@ pub async fn ignore_route(
         Ok(Err((code, field))) => refusal(code, field.as_deref()),
         Err(_) => refusal("storage_unavailable", None),
     }
+}
+pub async fn alerts_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, false).await {
+        Ok(r) => r,
+        Err(e) => return refusal(e, None),
+    };
+    if let Err(e) = empty(query, body) {
+        return refusal(e, None);
+    }
+    let (Some(station), Some(state)) = (station_of(&r), app.profile.clone()) else {
+        return refusal("not_found", None);
+    };
+    Json(station.strategy.alerts_snapshot(&state)).into_response()
+}
+pub async fn clear_alerts_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let (station, state, body) = match body_of(&app, &headers, query, body).await {
+        Ok(v) => v,
+        Err(e) => return *e,
+    };
+    match station.strategy.clear_alerts(&state, body) {
+        Ok(v) => Json(v).into_response(),
+        Err((code, field)) => refusal(code, field.as_deref()),
+    }
+}
+/// alert.state: announces a new alert or a clear; the browser then reads GET
+/// /strategy/alerts.
+pub(crate) fn alert_event(r: &recording::Recording, revision: u64) -> String {
+    json!({"v":1,"type":"alert.state","data":{"profile_id":r.profile,"boot_id":r.boot,
+        "alert_revision":revision}})
+    .to_string()
 }
 pub async fn evaluate_route(
     State(app): State<App>,

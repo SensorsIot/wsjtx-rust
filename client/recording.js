@@ -22,7 +22,7 @@ const strip=document.createElement('section');strip.id='rxtx-strip';strip.classN
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col" data-sort="value" aria-sort="none" tabindex="0" class="op-sort" title="Sort by value: calling me, strategy, new DXCC, zone, grid, call, then strongest">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span class="op-contact-badge">Unavailable</span></header>
 <div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
@@ -339,7 +339,7 @@ function paint() {
     }
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
     const labelStep=500*Math.max(1,Math.ceil(parseFloat(getComputedStyle(ruler).fontSize)*4/Math.max(1,ruler.clientWidth/6)));
-    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.textContent=String(f);ruler.append(tick);}
+    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${wstxWaterfallAxis.x(f,ruler)}px`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.append(Object.assign(document.createElement('b'),{textContent:String(f)}));ruler.append(tick);}
     const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
     legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
@@ -478,7 +478,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
-let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
+let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
@@ -569,11 +569,11 @@ async function receiveSync(current=socket){
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
-  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='frequency';activitySortDirection='asc';}
+  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='value';activitySortDirection='desc';}
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
-  return [...records].sort((a,b)=>{
+  return [...records].sort((a,b)=>{if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// #55 CL-055-04: value, strongest SNR (unavailable last), decode order
     const left=key(a),right=key(b);
     if(missing(left)!==missing(right))return missing(left)?1:-1;
     const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
@@ -581,8 +581,8 @@ function activityOrdering(records=resultRows){
   });
 }
 function sortBy(button){
-  if(button.dataset.sort===activitySortField)activitySortDirection=activitySortDirection==='asc'?'desc':'asc';
-  else{activitySortField=button.dataset.sort;activitySortDirection=activitySortField==='signal'?'desc':'asc';}
+  if(button.dataset.sort===activitySortField){if(activitySortField!=='value')activitySortDirection=activitySortDirection==='asc'?'desc':'asc';}
+  else{activitySortField=button.dataset.sort;activitySortDirection=['signal','value'].includes(activitySortField)?'desc':'asc';}
   renderResults();
 }
 document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
@@ -615,9 +615,9 @@ function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
   const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
-  // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
-  const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
+  // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
+  // every decoded sender (operator decision CL-055-04; WSJT-X: CQ/QRZ lines only). No CQ slot (#50).
+  const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
   if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
@@ -631,7 +631,7 @@ function activityRow(record,period,context,mode){
     if(index===5&&dx)cell.title=`${dx.name} \u00b7 ${dx.cont} \u00b7 CQ zone ${dx.cq} \u00b7 ITU zone ${dx.itu} (cty.dat)`;if(index===6&&approx)cell.title='Approximate: from the country position (cty.dat), no grid in the message';
     row.append(cell);
   }
-  return row;
+  activityWhy(row);return row;
 }
 function validRecord(r){
   return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))&&!(k==='a_priori'&&Number.isInteger(r.a_priori)&&r.a_priori>=1&&r.a_priori<=6&&r.status==='decoded')).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
@@ -1119,3 +1119,36 @@ function keepWaterfall(){
   for(const row of rows){row.sequence-=shift;row.first_frame-=frames;row.end_frame-=frames;}
   rows.push({sequence:-1,first_frame:-interval,end_frame:0,levels:null,held:false});paint();
 }
+
+// #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
+// hits, is applied by the Highlight in contact.js) and BandActivityHover (title and aria-description).
+function activityValue(r){
+  if(r?.status!=='decoded')return 8;
+  const my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  if(my&&r.fields?.to?.kind==='call'&&r.fields.to.text===my)return 1;
+  const groups=[[3,['new_dxcc','new_continent']],[4,['new_dxcc_band','new_continent_band']],[5,['new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band']],[6,['new_grid','new_grid_band']],[7,['new_call','new_call_band']]];
+  return groups.find(([,names])=>names.some(k=>r.flags?.[k]===true))?.[0]??8;
+}
+function activityReasons(r){
+  if(r?.status!=='decoded'||!r.flags)return [];
+  const dx=r.dxcc,band=operatingState?.selection?.band||'this band',ex=r.fields?.exchange,grid=ex?.kind==='grid'&&typeof ex.value==='string'?ex.value.slice(0,4).toUpperCase():'';
+  const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:`New DXCC: ${dx?.name??''}`,new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New call on ${band}`};
+  return Object.keys(text).filter(k=>r.flags[k]===true).map(k=>text[k].replace(/:?\s+$/,''));
+}
+function activityWhy(row){
+  const worked=row.dataset.worked==='worked_this_band_and_mode'?`Worked before on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'Worked before on another band or mode':'';
+  const parts=[row.classList.contains('ba-tome')?'Calling me':'',row.dataset.whyStrategy??'',...(row.dataset.why?row.dataset.why.split('\n'):[]),worked].filter(Boolean);
+  if(parts.length){row.title=parts.join('\n');row.setAttribute('aria-description',parts.join('; '));}
+  else{row.removeAttribute('title');row.removeAttribute('aria-description');}
+}
+window.wstxActivityWhy=activityWhy;
+
+// WstxOperatingLayout::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
+// box carries the fixed 0..3000 Hz span (the time ruler beside it is outside). The frequency axis
+// ticks, the Rx/Tx lines with their brackets and the pointer frequency all use this one mapping.
+// x(hz,container): the CSS px offset of hz in the container's padding box; hz(clientX): the
+// integer Hz under a pointer.
+const wstxWaterfallAxis={low:0,high:3000,
+  x(hz,container){const c=waterfall.getBoundingClientRect(),o=container.getBoundingClientRect();return c.left-o.left-container.clientLeft+(hz-this.low)*c.width/(this.high-this.low);},
+  hz(clientX){const c=waterfall.getBoundingClientRect();return Math.max(this.low,Math.min(this.high,Math.round(this.low+(clientX-c.left)*(this.high-this.low)/Math.max(c.width,1))));}};
+window.wstxWaterfallAxis=wstxWaterfallAxis;

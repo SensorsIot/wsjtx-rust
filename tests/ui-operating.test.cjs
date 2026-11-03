@@ -13,12 +13,12 @@ const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
-async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
+async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1}={}){
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport}),page=await context.newPage();
+  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
   const errors=[],sent=[];page.on('pageerror',e=>errors.push(e.message));
   page.on('websocket',ws=>ws.on('framesent',frame=>sent.push(JSON.parse(frame.payload))));
@@ -1097,6 +1097,73 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-050-07; TC-050-007 one frequency mapping for the waterfall pointer, the Rx/Tx lines
+// and the axis ticks, and the WSJT-X brackets of the lines following the mode.
+async function waterfallMappingPass(page,commands,settings,label){
+  const wait=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);assert.equal(commands.length,n,`${label} command ${n}: ${JSON.stringify(commands.slice(-3))}`);return commands.at(-1);};
+  // The oracle: the waterfall canvas's own box carries 0..3000 Hz.
+  const axis=async()=>{const b=await page.evaluate(()=>{const r=document.querySelector('#waterfall').getBoundingClientRect();return {x:r.left,w:r.width};});return hz=>b.x+hz*b.w/3000;};
+  const tickX=f=>page.evaluate(f=>{const s=document.querySelectorAll('#frequency-ruler > span')[f/100],r=s.getBoundingClientRect();return r.left+.5;},f);
+  const centre=key=>page.evaluate(key=>{const r=document.querySelector(`#waterfall-wrap .ct-${key}`).getBoundingClientRect();return r.left+r.width/2;},key);
+  const confirm=async(rx,tx)=>{settings.rx_hz=rx;settings.tx_hz=tx;await page.evaluate(()=>window.wstxContact.load());
+    await page.waitForFunction(([rx,tx])=>document.querySelector('#waterfall-wrap .ct-rx').dataset.hz===String(rx)&&document.querySelector('#waterfall-wrap .ct-txm').dataset.hz===String(tx),[rx,tx]);};
+  await page.waitForTimeout(150);
+  let x=await axis();
+  for(let f=0;f<=3000;f+=100)assert.ok(Math.abs(await tickX(f)-x(f))<=1,`${label}: axis tick ${f} Hz at ${await tickX(f)}, mapping ${x(f)}`);
+  const wf=await page.locator('#waterfall').boundingBox(),y=wf.y+wf.height*.6;
+  for(const f of [500,2500,1500]){
+    const px=await tickX(f),n=commands.length;await page.mouse.dblclick(px,y);
+    const c=await wait(n+1);assert.equal(c.action,'set_frequency');
+    assert.ok(Math.abs(c.rx_hz-f)<=2&&Math.abs(c.tx_hz-f)<=2,`${label}: double-click at the ${f} Hz tick sent Rx ${c.rx_hz} Tx ${c.tx_hz}`);
+    await confirm(c.rx_hz,c.tx_hz);
+    for(const key of ['rx','txm'])assert.ok(Math.abs(await centre(key)-px)<=1,`${label}: ${key} line at ${await centre(key)} for the pointer at ${px} (${f} Hz)`);
+  }
+  {const px=await tickX(1000),n=commands.length;await page.mouse.click(px,y);const c=await wait(n+1);
+    assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-1000)<=2,`${label}: click at the 1000 Hz tick sent Tx ${c.tx_hz}`);
+    await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-px)<=1,`${label}: Tx line at ${await centre('txm')} for ${px}`);}
+  {const from=await centre('txm'),to=await tickX(2000),n=commands.length;
+    await page.mouse.move(from,y);await page.mouse.down();await page.mouse.move(to,y,{steps:6});
+    assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: the dragged Tx line follows the pointer`);await page.mouse.up();
+    const c=await wait(n+1);assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-2000)<=2,`${label}: drag to the 2000 Hz tick sent Tx ${c.tx_hz}`);
+    await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: confirmed Tx line at the drop point`);}
+  x=await axis();
+  // The brackets: from the line over the occupied width to its right, in the line's colour.
+  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents};}));
+  for(const [period,width] of [[15000,50],[7500,4*12000/576],[15000,50]]){
+    await page.evaluate(period=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:period,transmitting:false,rx_level_db:null}}}})),period);
+    await page.waitForTimeout(50);
+    const got=await brackets();
+    for(const [i,colour] of [[0,'rgb(48, 208, 80)'],[1,'rgb(255, 64, 64)']]){const b=got[i];
+      assert.ok(b?.visible,`${label}: bracket ${i} shown (${JSON.stringify(b)})`);assert.equal(b.colour,colour);assert.equal(b.pointer,'none');
+      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
+      assert.ok(Math.abs(b.top-wf.y)<=1,`${label}: bracket at the top of the waterfall`);}
+  }
+  // A click inside a bracket still reaches the waterfall (within 1 px: a click's clientX is whole px).
+  {const b=(await brackets())[0],n=commands.length;await page.mouse.click((b.left+b.right)/2,b.top+b.height/2);const c=await wait(n+1);
+    assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-(b.hz+25))<=Math.max(2,3000/wf.width),`${label}: click in the Rx bracket sent Tx ${c.tx_hz}`);await confirm(settings.rx_hz,c.tx_hz);}
+}
+test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency mapping; the brackets follow the mode',{timeout:150000},async t=>{
+  for(const scale of [1,2]){
+    const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false};
+    const {page,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
+      const base=await (await fetch(app.origin+'/profile')).json();
+      await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{settings})}));
+      await contactCommands(p,commands);
+    }});
+    await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled,null,{timeout:45000});
+    // The station's own ticks are held back; the test's ticks set the mode.
+    await page.evaluate(()=>addEventListener('station-message',e=>{if(e.detail?.message?.type==='station.tick'&&!e.detail.test)e.stopImmediatePropagation();},true));
+    await waterfallMappingPass(page,commands,settings,`1366x768 dpr ${scale}`);
+    if(scale===2){assert.deepEqual(errors,[]);continue;}
+    await page.evaluate(()=>{for(const id of ['display-flatten','display-spectrum']){const box=document.querySelector('#'+id);box.checked=true;box.dispatchEvent(new Event('change'));}});
+    await page.locator('#display-speed').fill('4');await page.locator('#display-speed').dispatchEvent('input');
+    await waterfallMappingPass(page,commands,settings,'1366x768 Flatten, spectrum line, speed 4');
+    for(const [width,height] of [[900,700],[360,800]]){await page.setViewportSize({width,height});await waterfallMappingPass(page,commands,settings,`${width}x${height}`);}
+    assert.equal(commands.some(c=>c.action==='enable_tx'),false,'no pointer action enables Tx');
+    assert.deepEqual(errors,[]);
+  }
+});
+
 // Proves: CL-010-16, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
 test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
@@ -1382,7 +1449,8 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
     });
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===16);
-  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
+  // #55: the default is the value order; Freq once ascending, twice descending.
+  await clickSort(page,'frequency');await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
   assert.equal(await page.locator('tr[data-period=latest]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
@@ -1521,6 +1589,9 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   }});
   const order=()=>page.locator('tr[data-period=latest]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
+  // #55 CL-055-04: by default the value order (all without a flag here), strongest SNR first, unknown last.
+  assert.deepEqual(await order(),[1,4,3,0,2]);assert.deepEqual(await sortState(page),['value','desc']);
+  await clickSort(page,'frequency');
   assert.deepEqual(await order(),[1,4,0,3,2],'frequency200 precedes1000, numeric ties retain sequence');
   assert.deepEqual(await sortState(page),['frequency','asc']);
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);assert.deepEqual(await order(),[2,0,3,4,1]);
@@ -1536,7 +1607,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,1,2,3,4]);await clickSort(page,'dt');assert.deepEqual(await order(),[0,1,2,3,4],'all unknown DT stays in sequence order');
   for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
   await page.evaluate(()=>{profileData.profile_id='not-a-valid-uuid';renderResults();});assert.deepEqual(await sortState(page),['dt','desc'],'invalid profile cannot reset preference');
-  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.deepEqual(await sortState(page),['frequency','asc']);
+  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.deepEqual(await sortState(page),['value','desc'],'a different profile resets to the value order');
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });
 
@@ -1619,7 +1690,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  const period='2026-10-27T12:00:15.0000000Z';
  const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
  const reply={type:'standard',to:{kind:'call',text:'K9XX',hash_bits:null,hash_value:null},from:{kind:'call',text:'W2AB',hash_bits:null,hash_value:null},ack:false,exchange:{kind:'report',value:-5}};
- const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1}));
+ const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1,...(['W1XYZ','W2AB'].includes(call)?{flags:{new_call:true,new_call_band:true}}:{})}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
@@ -1633,37 +1704,134 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
- // #50: no text marks; worked-before feeds the "New call" slots, on by default. Only interesting stations
- // are coloured (operator 2026-11-03, unlike WSJT-X): no CQ slot, so the CQ of a station worked on this band
- // and mode has no colour.
+ // #50: no text marks; the New call slots come from the #55 flags of every sender (CL-055-04) and are on
+ // by default. Only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X): no CQ slot, so
+ // the CQ of a station worked on this band and mode has no colour; rows in value order.
  const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- assert.deepEqual(await rowsNow(),[['CQ K1ABC FN42','worked_this_band_and_mode',null,none],['CQ W1XYZ FN42','not_worked','new_call new_call_band',newCall],['FREE TEXT',null,null,none],['K9XX W2AB R-05','not_worked',null,none]],'no CQ colour; worked before has no colour; New slots only on CQ lines (WSJT-X)');
+ assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band',newCall],['K9XX W2AB R-05','not_worked','new_call new_call_band',newCall],['CQ K1ABC FN42','worked_this_band_and_mode',null,none],['FREE TEXT',null,null,none]],'no CQ colour; worked before has no colour; New slots on non-CQ senders too (CL-055-04)');
  await page.locator('#open-server-settings').click();
  assert.equal(await page.locator('#band-colours [data-hl-slot=cq]').count(),0,'Settings lists no CQ slot');
  await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await rowsNow()).map(r=>r[3]),[none,newCallBand,none,none],'with New call off, New call on band remains');
+ assert.deepEqual((await rowsNow()).map(r=>r[3]),[newCallBand,newCallBand,none,none],'with New call off, New call on band remains');
  assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,false,'the choice is per browser');
- // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC over CQ.
+ // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC; no CQ colour.
  const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['new_dxcc','new_dxcc new_continent','new_dxcc new_continent mycall','new_grid','new_itu_zone','cq'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
  assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none,none],'WSJT-X priority; New grid and ITU zone are off by default; no CQ colour');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ','W2AB']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
- assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode] td[data-col=message]').getAttribute('title'),'Worked before on this band and mode','the status stays readable as a tooltip');
+ assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on 20m FT8','the status stays readable as the row tooltip (#55 BandActivityHover)');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-055-04; TC-055-006 browser subset. Actual server log and worked-before query;
+// the result records (with #55 dxcc and flags), the strategy verdict and the selection band
+// are presentation fixtures.
+test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
+ const period='2026-10-27T12:00:15.0000000Z';
+ const fields=(from,to,exchange)=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
+ const F=(...names)=>Object.fromEntries(names.map(n=>[n,true]));
+ const ro={name:'Romania',cont:'EU',cq:20,itu:28},ja={name:'Japan',cont:'AS',cq:25,itu:45},us={name:'U.S.A.',cont:'NA',cq:5,itu:8},en={name:'England',cont:'EU',cq:14,itu:27};
+ // [text, from, to, exchange, snr, flags, dxcc]
+ const rows=[
+  ['CQ K1ABC FN42','K1ABC','CQ',{kind:'grid',value:'FN42'},-10,null,us],
+  ['K9XX YO3ABC -07','YO3ABC','K9XX',{kind:'report',value:-7},-15,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),ro],
+  ['HB9BLA W1XYZ -12','W1XYZ','HB9BLA',{kind:'report',value:-12},-18,F('new_call','new_call_band'),us],
+  ['CQ JA1AAA PM95','JA1AAA','CQ',{kind:'grid',value:'PM95'},-5,F('new_cq_zone','new_cq_zone_band'),ja],
+  ['CQ G4XYZ IO91','G4XYZ','CQ',{kind:'grid',value:'IO91'},-8,F('new_grid','new_grid_band'),en],
+  ['K9XX W2AB R-05','W2AB','K9XX',{kind:'report',value:-5},-20,F('new_call','new_call_band'),us],
+  ['K1ZZ W3EF RR73','W3EF','K1ZZ',{kind:'roger',value:'RR73'},-4,F('new_call','new_call_band'),us],
+  ['FREE TEXT',null,null,null,0,null,null],
+  ['W9AA W2CD 73','W2CD','W9AA',{kind:'roger',value:'73'},-12,null,us],
+ ];
+ const records=rows.map(([text,from,to,exchange,snr,flags,dxcc],i)=>({sequence:i,start_frame:186000+i,frequency_hz:2400-i*150,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:from?fields(from,to,exchange):{},period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})}));
+ const n=records.length;let state,view;
+ const strategy={name:'Hover test',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  const profile=await(await fetch(app.origin+'/profile')).json();
+  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
+  assert.equal(saved.status,201);
+  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',highlight:true,strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/strategy',route=>route.fulfill({json:view}));
+  // The strategy hits the 73 from W2CD (no flag): value 2, under the row to my call.
+  await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',sort:'strongest',verdicts:[{sequence:8,rank:0,grey:false}]}}));
+ }});
+ await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
+ const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.title,getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description')]));
+ const none='rgba(0, 0, 0, 0)';
+ const expected=[
+  ['HB9BLA W1XYZ -12','Calling me\nNew call\nNew call on 20m','rgba(255, 102, 102, 0.32)'],
+  ['W9AA W2CD 73','Strategy Hover test: rule 1',none],
+  ['K9XX YO3ABC -07','New DXCC: Romania\nNew DXCC on 20m\nNew call\nNew call on 20m','rgba(255, 0, 255, 0.26)'],
+  ['CQ JA1AAA PM95','New CQ zone 25\nNew CQ zone on 20m','rgba(255, 191, 0, 0.26)'],
+  ['CQ G4XYZ IO91','New grid IO91\nNew grid on 20m',none],
+  ['K1ZZ W3EF RR73','New call\nNew call on 20m','rgba(0, 255, 255, 0.24)'],
+  ['K9XX W2AB R-05','New call\nNew call on 20m','rgba(0, 255, 255, 0.24)'],
+  ['FREE TEXT','',none],
+  ['CQ K1ABC FN42','Worked before on 20m FT8',none],
+ ];
+ const got=await shown();
+ assert.deepEqual(got.map(r=>r.slice(0,3)),expected,'value order, equal values strongest first; a report from a new DXCC is coloured; no flag, no colour');
+ assert.deepEqual(got.map(r=>r[3]),expected.map(r=>r[1]?r[1].replaceAll('\n','; '):null),'the same reasons for assistive technology');
+ assert.equal(await page.locator('#band-activity th[data-sort=value]').textContent(),'DXCC');
+ assert.deepEqual(await sortState(page),['value','desc']);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
+ // New call (on by default, #50) and an enabled New grid colour the non-CQ senders as well (operator decision, not WSJT-X).
+ await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
+ assert.deepEqual((await shown()).map(r=>r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-colours-all-senders-1440.png'});
+ await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
+ assert.deepEqual((await shown()).map(r=>r[0]),[...rows].reverse().map(r=>r[0]),'a column header still sorts by its column');
+ await clickSort(page,'value');assert.deepEqual(await sortState(page),['value','desc']);
+ assert.deepEqual((await shown()).map(r=>r[0]),expected.map(r=>r[0]),'the DXCC header returns to the value order');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-055-05; TC-055-007. Band Activity row density at 1366x768: the result records
+// are presentation fixtures; the layout is the actual client.
+test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:30000},async t=>{
+ const period='2026-10-27T12:00:15.0000000Z',n=30;
+ const records=Array.from({length:n},(_,i)=>{const call=`K${i%10}A${String.fromCharCode(65+i%26)}${String.fromCharCode(65+(i*7)%26)}`;return {sequence:i,start_frame:186000+i,frequency_hz:300+i*90,snr_db:-20+i%15,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1};});
+ let state;
+ const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(page,app)=>{
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor,cursor+16),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:next<n,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+ }});
+ await page.waitForFunction(n=>document.querySelectorAll('#band-activity tr[data-sequence]').length===n,n,{timeout:25000});
+ const measure=()=>page.evaluate(()=>{const wrap=document.querySelector('#band-activity .op-table-wrap').getBoundingClientRect(),rows=[...document.querySelectorAll('#band-activity tr[data-sequence]')],td=rows[0].children[4];
+  return {height:rows[0].getBoundingClientRect().height,visible:rows.filter(r=>{const b=r.getBoundingClientRect();return b.top>=wrap.top&&b.bottom<=wrap.bottom;}).length,font:getComputedStyle(td).fontSize};});
+ await page.screenshot({path:'test-results/ui-operating/band-activity-density-1366.png'});
+ const dense=await measure();
+ t.diagnostic(`row ${dense.height}px, ${dense.visible} rows visible, font ${dense.font}`);
+ assert.ok(dense.height<=24,`a desktop row is at most 24 px high (${dense.height})`);
+ assert.equal(dense.font,'16px','the font size is unchanged (the 16 px operating font, TC-007-002)');
+ assert.ok(dense.visible>=8,`at least 8 rows visible at 1366x768, 5 before #55 (${dense.visible})`);
+ // Touch: a coarse pointer keeps taller rows (CSS rule under pointer:coarse).
+ assert.ok(await page.evaluate(()=>[...document.styleSheets].some(sheet=>{try{return [...sheet.cssRules].some(r=>r.media&&/pointer:\s*coarse/.test(r.media.mediaText)&&[...r.cssRules].some(c=>c.selectorText==='#band-activity td'&&parseFloat(c.style.paddingTop)>=8));}catch{return false;}})),'a coarse pointer keeps tappable rows');
  assert.deepEqual(errors,[]);
 });
 
 // Proves: CL-050-02; TC-050-002 (b). Operator 2026-11-03: only interesting stations are coloured. The
-// /contact/worked statuses and receive pages are routed fixtures; the colours are the served client's CSS.
+// /contact/worked statuses and receive pages (with the #55 flags a station derives from its log,
+// CL-055-04) are routed fixtures; the colours are the served client's CSS.
 test('TC-050-002 a CQ from a station worked on this band and mode has no colour; My call still applies',{timeout:30000},async t=>{
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
  const call=text=>({kind:'call',text,hash_bits:null,hash_value:null});
  const cq=from=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:call(from),ack:false,exchange:{kind:'grid',value:'FN42'}});
- const rows=[['CQ K1AA FN42',cq('K1AA')],['CQ K2BB FN42',cq('K2BB')],['CQ K3CC FN42',cq('K3CC')],['HB9BLA K1AA R-05',{type:'standard',to:call('HB9BLA'),from:call('K1AA'),ack:false,exchange:{kind:'report',value:-5}}]];
- const records=rows.map(([text,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1}));
+ const rows=[['CQ K1AA FN42',cq('K1AA'),null],['CQ K2BB FN42',cq('K2BB'),{new_call_band:true}],['CQ K3CC FN42',cq('K3CC'),{new_call:true,new_call_band:true}],['HB9BLA K1AA R-05',{type:'standard',to:call('HB9BLA'),from:call('K1AA'),ack:false,exchange:{kind:'report',value:-5}},null]];
+ const records=rows.map(([text,fields,flags],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{})}));
  const statuses={K1AA:'worked_this_band_and_mode',K2BB:'worked_other_band_or_mode',K3CC:'not_worked'};
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
@@ -1677,10 +1845,10 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
  const seen=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
  assert.deepEqual(seen,[
-  ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)'],
+  ['HB9BLA K1AA R-05','worked_this_band_and_mode','mycall','rgba(255, 102, 102, 0.32)'],
   ['CQ K2BB FN42','worked_other_band_or_mode','new_call_band','rgba(153, 255, 255, 0.2)'],
   ['CQ K3CC FN42','not_worked','new_call new_call_band','rgba(0, 255, 255, 0.24)'],
-  ['HB9BLA K1AA R-05','worked_this_band_and_mode','mycall','rgba(255, 102, 102, 0.32)']],'only interesting stations are coloured; My call still applies');
+  ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order (#55)');
  assert.deepEqual(queries.map(q=>q.calls),[['K1AA','K2BB','K3CC']]);
  assert.deepEqual(errors,[]);
 });
@@ -1990,6 +2158,86 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:2}}}})));
   await page.locator('#qso-pounce[hidden]').waitFor({state:'attached'});
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='select_row'),false,'the station run answers; the browser never arms for it');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-042-04; TC-042-007 the editor's per-rule Alert checkbox, the Settings > General
+// alert history, Sound and Browser notification (off by default; permission asked only on
+// the click). The station's alert snapshots are hand-written fixtures; the page's
+// Notification and AudioContext are recording doubles; the expected lines, tones and
+// notifications are written here from WstxStrategy::Alert.
+test('TC-042-007 Alert checkbox, alert history, sound and browser notification',{timeout:60000},async t=>{
+  let view;const puts=[],clears=[];let history=[],revision=1;
+  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const alert=(id,call,message,snr,dxcc)=>({id,utc:'2026-10-27T12:00:00.0000000Z',call,message,rule:'CQ rule 1',band:'40m',mode:'ft8',snr_db:snr,dxcc});
+  history=[alert(1,'K1ABC','CQ K1ABC FN42',-12,'United States')];
+  const doubles=()=>{
+    window.__tones=0;window.__notes=[];window.__asks=0;window.__hidden=false;
+    class FakeNotification{constructor(title,options){window.__notes.push({title,body:options?.body});}
+      static get permission(){return sessionStorage.getItem('fake-permission')??'default';}
+      static async requestPermission(){window.__asks++;sessionStorage.setItem('fake-permission','granted');return 'granted';}}
+    window.Notification=FakeNotification;
+    const param=()=>({value:0,setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}});
+    window.AudioContext=class{constructor(){this.currentTime=0;this.destination={};this.state='running';}
+      createOscillator(){return {frequency:param(),type:'sine',connect(){return this;},start(){window.__tones++;},stop(){}};}
+      createGain(){return {gain:param(),connect(){return this;}};}resume(){return Promise.resolve();}};
+    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.__hidden?'hidden':'visible'});
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.__hidden});
+  };
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:false,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    await p.addInitScript(doubles);
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
+    await p.route('**/strategy/alerts',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:history}}));
+    await p.route('**/strategy/alerts/clear',async route=>{clears.push(JSON.parse(route.request().postData()));history=[];revision++;
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:[]}});});
+  }});
+  const announce=async(next)=>{history.push(next);revision++;
+    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'alert.state',data:{profile_id:'p',boot_id:'b',alert_revision:r}}}})),revision);
+    await page.waitForFunction(n=>document.querySelectorAll('#alert-history li').length===n,history.length,{timeout:10000});};
+  const counters=()=>page.evaluate(()=>({tones:window.__tones,notes:window.__notes,asks:window.__asks}));
+  // The editor: rule 1 marked Alert is saved with alert true.
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  await page.locator('#strategy-editor [data-alert="0"]').check();
+  await page.locator('#se-save').click();for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(puts[0].configuration.strategies[0].rules,[{conditions:[{kind:'message',negate:false,value:'cq'}],alert:true}]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  await page.locator('#strategy-editor button[value=cancel]').click();
+  // Settings > General: the history, both announcements off by default.
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.locator('#alert-history li').first().waitFor();
+  const lines=()=>page.locator('#alert-history li .al-text').evaluateAll(l=>l.map(x=>x.textContent));
+  assert.deepEqual(await lines(),['12:00:00 K1ABC CQ K1ABC FN42 · CQ rule 1 · 40m FT8 · -12 dB · United States']);
+  assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[false,false]);
+  await announce(alert(2,'DL1XYZ','CQ DL1XYZ JO62',-3,'Fed. Rep. of Germany'));
+  assert.deepEqual((await lines())[0],'12:00:00 DL1XYZ CQ DL1XYZ JO62 · CQ rule 1 · 40m FT8 · -3 dB · Fed. Rep. of Germany','newest first');
+  assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'both off: nothing announced, no permission asked');
+  await page.locator('#alert-sound').check();
+  await announce(alert(3,'W1AW','CQ W1AW FN31',-5,'United States'));
+  assert.deepEqual(await counters(),{tones:1,notes:[],asks:0});
+  await page.locator('#alert-notify').check();
+  for(let i=0;i<40&&(await counters()).asks<1;i++)await page.waitForTimeout(50);
+  assert.equal(await page.locator('#alert-notify').isChecked(),true,'granted on the click');
+  await announce(alert(4,'JA1XYZ','CQ JA1XYZ PM95',-15,'Japan'));
+  for(let i=0;i<40&&!(await counters()).notes.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(await counters(),{tones:2,notes:[{title:'Alert JA1XYZ',body:'CQ JA1XYZ PM95 · CQ rule 1'}],asks:1});
+  // A hidden page plays no tone; the notification still shows.
+  await page.evaluate(()=>{window.__hidden=true;});
+  await announce(alert(5,'VK2ABC','CQ VK2ABC QF56',-20,'Australia'));
+  for(let i=0;i<40&&(await counters()).notes.length<2;i++)await page.waitForTimeout(50);
+  const c=await counters();assert.deepEqual([c.tones,c.notes.length,c.notes[1].title],[2,2,'Alert VK2ABC']);
+  // A reload keeps both choices and announces nothing from the history.
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#alert-history li').length===5,null,{timeout:20000});
+  assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[true,true]);
+  await page.waitForTimeout(300);
+  assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'the history read at load announces nothing');
+  await page.locator('#alert-clear').click();
+  for(let i=0;i<60&&!clears.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(clears,[{v:1,profile_id:view.profile_id,boot_id:view.boot_id}]);
+  await page.waitForFunction(()=>!document.querySelector('#alert-history li'));
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),

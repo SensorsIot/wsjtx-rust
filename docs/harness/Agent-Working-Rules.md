@@ -9,8 +9,12 @@ rules around it. Agent memory only points here.
 
 ## Who changes what
 
-- **One repository leader.** Repository changes (commits, pushes to the main branch)
-  come from one session at a time; another session reads, copies and reports.
+- **One repository leader.** Repository changes (commits, hand-ins to the
+  [merge queue](../../harness/core/docs/Merge-Queue.md), harness pushes) come from one
+  session at a time; another session reads, copies and reports. A CR reaches the main
+  branch through the queue (the single exception the merge queue document names aside).
+- **Heavy runs wait for the gate.** Before a long build or test run outside the gate, a
+  session runs `merge_queue.py busy --wait`, so that it does not compete with a gate.
 - **Per approved issue.** A session changes the main branch or the running installation
   only for an issue the operator has approved for it, each issue on its own; the approval
   is recorded on that issue. Without it the session writes the change text (outcome,
