@@ -125,6 +125,7 @@ impl Spectrum {
         samples: &[f32],
         mode: Mode,
         scalar: bool,
+        threads: usize,
         budget: &mut CpuBudget<'_>,
     ) -> Result<Self, DecodeError> {
         let n = mode.symbol_frames();
@@ -148,15 +149,14 @@ impl Spectrum {
         } else {
             FftPlanner::new().plan_fft_forward(n)
         };
-        let mut buffer = vec![Complex32::new(0., 0.); n];
-        let mut scratch = vec![Complex32::new(0., 0.); fft.get_inplace_scratch_len()];
+        let scratch_len = fft.get_inplace_scratch_len();
         #[cfg(test)]
         if std::env::var_os("WSTX_RESOURCE_CAPACITY_NONCE").is_some() {
             eprintln!(
                 "RESOURCE_STORAGE {}",
                 serde_json::json!({"owner":"spectrum","mode":mode,
                 "rows":rows,"width":width,"values_complex32_capacity":values.capacity(),
-                "buffer_complex32_capacity":buffer.capacity(),"scratch_complex32_capacity":scratch.capacity()})
+                "buffer_complex32_capacity":n,"scratch_complex32_capacity":scratch_len})
             );
         }
         let oscillators = (0..2)
@@ -172,37 +172,63 @@ impl Spectrum {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        for row in 0..rows {
-            budget.checkpoint().await?;
-            for (half, oscillator) in oscillators.iter().enumerate() {
-                for j in 0..n {
-                    buffer[j] = oscillator[j] * samples[row * hop + j];
-                }
-                fft.process_with_scratch(&mut buffer, &mut scratch);
-                if buffer
-                    .iter()
-                    .any(|z| !z.re.is_finite() || !z.im.is_finite())
-                {
-                    return Err(DecodeError::InvalidSamples);
-                }
-                for j in (half..regular + 15).step_by(2) {
-                    values[row * width + j] = buffer[j / 2];
-                }
-            }
-            if endpoint {
-                for tone in 0..mode.tone_count() {
-                    let angle = -2. * PI * (3500. + tone as f64 * mode.spacing()) / 12000.;
-                    let rotation = Complex64::from_polar(1., angle);
-                    let mut oscillator = Complex64::new(1., 0.);
-                    let mut z = Complex64::new(0., 0.);
-                    for &x in &samples[row * hop..row * hop + n] {
-                        z += oscillator * x as f64;
-                        oscillator *= rotation;
+        // The rows are independent, so they are transformed in parallel, each into its own
+        // row of the table and exactly as on one thread (#57 CL-057-02).
+        let slots = values
+            .chunks_mut(width)
+            .enumerate()
+            .map(std::sync::Mutex::new)
+            .collect::<Vec<_>>();
+        let transformed = super::parallel::map(
+            threads,
+            &slots,
+            budget,
+            || {
+                (
+                    vec![Complex32::new(0., 0.); n],
+                    vec![Complex32::new(0., 0.); scratch_len],
+                )
+            },
+            |slot, (buffer, scratch), _| {
+                let mut slot = slot.lock().unwrap();
+                let (row, out) = &mut *slot;
+                let row = *row;
+                for (half, oscillator) in oscillators.iter().enumerate() {
+                    for j in 0..n {
+                        buffer[j] = oscillator[j] * samples[row * hop + j];
                     }
-                    values[row * width + regular + 15 + tone] =
-                        Complex32::new(z.re as f32, z.im as f32);
+                    fft.process_with_scratch(buffer, scratch);
+                    if buffer
+                        .iter()
+                        .any(|z| !z.re.is_finite() || !z.im.is_finite())
+                    {
+                        return Err(DecodeError::InvalidSamples);
+                    }
+                    for j in (half..regular + 15).step_by(2) {
+                        out[j] = buffer[j / 2];
+                    }
                 }
-            }
+                if endpoint {
+                    for tone in 0..mode.tone_count() {
+                        let angle = -2. * PI * (3500. + tone as f64 * mode.spacing()) / 12000.;
+                        let rotation = Complex64::from_polar(1., angle);
+                        let mut oscillator = Complex64::new(1., 0.);
+                        let mut z = Complex64::new(0., 0.);
+                        for &x in &samples[row * hop..row * hop + n] {
+                            z += oscillator * x as f64;
+                            oscillator *= rotation;
+                        }
+                        out[regular + 15 + tone] = Complex32::new(z.re as f32, z.im as f32);
+                    }
+                }
+                Ok(())
+            },
+        )
+        .await?;
+        drop(slots);
+        for row in transformed {
+            budget.checkpoint().await?;
+            row?;
             #[cfg(test)]
             super::resource_observer::hit(super::resource_observer::Phase::DetectionRow);
         }

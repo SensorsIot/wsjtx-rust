@@ -14,7 +14,8 @@ pub(super) struct Subtractor {
     phasors: Vec<Complex64>,
     total: f64,
     correction: Vec<f64>,
-    /// Prefix sums of the demodulated envelope u, u*e^{-i pi m/R} and u*e^{+i pi m/R}.
+    /// Ring of the prefix sums of the demodulated envelope u, u*e^{-i pi m/R} and
+    /// u*e^{+i pi m/R}, indexed by prefix position modulo its power-of-two length.
     prefix: [Vec<Complex64>; 3],
 }
 impl Subtractor {
@@ -50,7 +51,9 @@ impl Subtractor {
             }
             correction.push(total / available);
         }
-        let prefix = std::array::from_fn(|_| vec![Complex64::new(0., 0.); frame + 1]);
+        // A window sum spans at most 2R+2 prefix entries.
+        let ring = (2 * radius + 2).next_power_of_two();
+        let prefix = std::array::from_fn(|_| vec![Complex64::new(0., 0.); ring]);
         Ok(Self {
             mode,
             frame,
@@ -60,6 +63,9 @@ impl Subtractor {
             correction,
             prefix,
         })
+    }
+    pub(super) fn mode(&self) -> Mode {
+        self.mode
     }
     /// Centered linear convolution of the demodulated envelope with the raised-cosine
     /// kernel cos^2(pi j/2R) = (1 + cos(pi j/R))/2, |j| <= R, as three exact window sums
@@ -78,31 +84,55 @@ impl Subtractor {
         {
             return Err(DecodeError::InvalidSamples);
         }
+        #[cfg(test)]
+        super::resource_observer::hit(super::resource_observer::Phase::SubtractionForward);
+        // Cancellation is checked before the sweep, so a cancelled subtraction leaves the
+        // residual unchanged.
         budget.checkpoint().await?;
         let period = 2 * self.radius;
+        let mask = self.prefix[0].len() - 1;
         let [plain, lower, upper] = &mut self.prefix;
         let zero = Complex64::new(0., 0.);
         let (mut p, mut l, mut u) = (zero, zero, zero);
-        for (k, q) in wave.iter().enumerate() {
-            let value = Complex64::new(q[0] as f64, -(q[1] as f64)) * samples[start + k] as f64;
-            let phasor = self.phasors[k % period];
-            p += value;
-            l += value * phasor;
-            u += value * phasor.conj();
-            plain[k + 1] = p;
-            lower[k + 1] = l;
-            upper[k + 1] = u;
-        }
-        #[cfg(test)]
-        super::resource_observer::hit(super::resource_observer::Phase::SubtractionForward);
-        budget.checkpoint().await?;
+        (plain[0], lower[0], upper[0]) = (zero, zero, zero);
+        // One sweep: the prefix sums run R+1 samples ahead of the output and live in a ring
+        // of at least 2R+2 entries, so every window sum reads the same exact prefix values
+        // as with full-length prefix arrays, while staying in cache. Each input sample is
+        // read before the output overwrites it.
         let r = self.radius;
         let scale = 1. / (2. * self.total);
+        let mut filled = 1;
+        let mut ahead = 0;
+        let mut index = 0;
         for (k, q) in wave.iter().enumerate() {
             let (lo, hi) = (k.saturating_sub(r), (k + r + 1).min(self.frame));
+            while filled <= hi {
+                let m = filled - 1;
+                let w = wave[m];
+                let value = Complex64::new(w[0] as f64, -(w[1] as f64)) * samples[start + m] as f64;
+                let phasor = self.phasors[ahead];
+                ahead += 1;
+                if ahead == period {
+                    ahead = 0;
+                }
+                p += value;
+                l += value * phasor;
+                u += value * phasor.conj();
+                (
+                    plain[filled & mask],
+                    lower[filled & mask],
+                    upper[filled & mask],
+                ) = (p, l, u);
+                filled += 1;
+            }
+            let (lo, hi) = (lo & mask, hi & mask);
             let constant = plain[hi] - plain[lo];
             // sum_m e^{+i pi (k-m)/R} u[m] and sum_m e^{-i pi (k-m)/R} u[m].
-            let rotation = self.phasors[k % period];
+            let rotation = self.phasors[index];
+            index += 1;
+            if index == period {
+                index = 0;
+            }
             let forward = (lower[hi] - lower[lo]) * rotation.conj();
             let backward = (upper[hi] - upper[lo]) * rotation;
             let mut envelope = (constant + (forward + backward) * 0.5) * scale;

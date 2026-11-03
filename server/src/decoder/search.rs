@@ -3,7 +3,7 @@ use super::bitmetrics;
 use super::fit::fit_coefficients;
 use super::history::DecodeState;
 use super::physical_sync;
-use super::snr::Ft8Snr;
+use super::snr::{Ft8Snr, Signal};
 use super::subtraction::Subtractor;
 use super::synchronization::{Candidate, Spectrum};
 use super::{Channel, Mode, Payload, quadratures, unpack};
@@ -75,6 +75,10 @@ pub enum DecodeError {
 }
 /// Verified subtractions per window (#56: jt9 subtracts every decode, MAX_EARLY 200).
 const SUBTRACTIONS: usize = 200;
+/// Subtraction passes per window.
+const PASSES: usize = 3;
+/// Verifications run at once (#57 CL-057-02); each holds one 1.2 MB known-word waveform.
+const VERIFICATIONS: usize = 16;
 /// Ft8PaddedResidual: 2.0 s of zeros before and 0.64 s after an FT8 window (jt9 sync8
 /// lags -62..+62, DT -2.5..+2.5 s).
 const PAD_BEFORE: usize = 24000;
@@ -251,8 +255,9 @@ impl Decoder {
         // FT8 candidates of the last pass whose verification found no word and which a frame
         // subtracted in that pass overlaps (Ft8RetryOverlapped).
         let mut retry = Vec::<Candidate>::new();
-        for _pass in 0..3 {
-            let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
+        for pass in 0..PASSES {
+            let spectrum =
+                Spectrum::new(&samples, mode, self.scalar, self.threads, &mut budget).await?;
             let mut physical = plan.current_pass(&samples, &mut budget).await?;
             let mut contrast = None;
             let candidates = if mode == Mode::Ft4 {
@@ -309,18 +314,36 @@ impl Decoder {
             // verified in parallel and replayed here in order, each step and error taken
             // exactly where the single-threaded loop takes it (#57 CL-057-02).
             // Each verification holds one 1.2 MB known-word waveform while it refines, so at
-            // most eight run at once (about 20 MB); more threads gain little here.
+            // most VERIFICATIONS run at once (about 20 MB).
             let stop = || cancel();
+            // A complete FT8 frame's SNR signal power depends only on this pass's residual, so
+            // each verification measures it; the replay adds the per-period baseline.
+            let period_start = state.period_start();
+            let measure = |samples: &[f32], fitted: Candidate, tones: &[u8]| {
+                if mode != Mode::Ft8 || !inside(fitted.start) {
+                    return None;
+                }
+                let start = fitted.start.max(front) - front;
+                super::snr::signal(
+                    &samples[front..front + length],
+                    super::snr::period_of(origin, start, period_start),
+                    start,
+                    fitted.frequency,
+                    tones,
+                )
+            };
             let verifications = super::parallel::map(
-                self.threads.min(8),
+                self.threads.min(VERIFICATIONS),
                 &candidates,
                 &mut budget,
                 || physical.fork(),
-                |&c, pass, budget| complete(self.verify(&samples, c, &stop, pass, budget)),
+                |&c, pass, budget| {
+                    complete(self.verify(&samples, c, &stop, &measure, pass, budget))
+                },
             )
             .await?;
-            // The SNR keeps its per-period baseline cache, so it is measured in this replay,
-            // after the duplicate and physical checks, exactly as the serial loop did.
+            // The SNR baseline is cached per period, so it is computed in this replay, after
+            // the duplicate and physical checks, exactly as the serial loop did.
             let mut ft8_snr = Ft8Snr::new(self.scalar);
             let mut pending = vec![];
             let mut verified = 0;
@@ -348,7 +371,7 @@ impl Decoder {
                 if seen(&window_seen, &payload.payload77, absolute, fitted.frequency) {
                     continue;
                 }
-                let (supported, hits) = supported?;
+                let (supported, hits, signal) = supported?;
                 if !supported {
                     continue;
                 }
@@ -356,21 +379,13 @@ impl Decoder {
                 let snr = match (&contrast, complete) {
                     (_, false) => None,
                     (Some(contrast), true) => contrast.snr_db(fitted.frequency).map(|db| (db, db)),
-                    (None, true) => ft8_snr
-                        .snr_db(
-                            &samples[front..front + length],
-                            super::snr::period_of(
-                                origin,
-                                fitted.start.max(front) - front,
-                                state.period_start(),
-                            ),
-                            fitted.start.max(front) - front,
-                            fitted.frequency,
-                            &tones,
-                            &mut budget,
-                        )
-                        .await?
-                        .map(|db| (db, super::snr::reported(db))),
+                    (None, true) => match signal {
+                        Some(signal) => ft8_snr
+                            .snr_db(&samples[front..front + length], &signal, &mut budget)
+                            .await?
+                            .map(|db| (db, super::snr::reported(db))),
+                        None => None,
+                    },
                 };
                 if weak_word(mode, hits, snr.map(|(db, _)| db)) {
                     continue;
@@ -405,26 +420,13 @@ impl Decoder {
                 .collect();
             // Discard the immutable current-pass transform before modifying its residual.
             drop(physical);
-            // The residual is updated in order; only the waveforms are built in parallel,
-            // at most four at a time (about 2.4 MB each while built) to bound their memory.
-            for chunk in pending.chunks(self.threads.min(4)) {
-                let waves = super::parallel::map(
-                    self.threads,
-                    chunk,
-                    &mut budget,
-                    || (),
-                    |s, _, _| quadratures(mode, &s.tones, s.frequency),
-                )
-                .await?;
-                for (subtraction, wave) in chunk.iter().zip(waves) {
-                    budget.checkpoint().await?;
-                    let wave = wave.ok_or(DecodeError::InvalidSamples)?;
-                    subtractor
-                        .subtract(&mut samples, subtraction.start, &wave, &mut budget)
-                        .await?;
-                    subtractions += 1;
-                }
+            // No pass reads the last pass's residual, so its subtractions are not made.
+            if pass + 1 == PASSES {
+                break;
             }
+            self.subtract_in_order(&mut samples, &pending, &mut subtractor, &mut budget)
+                .await?;
+            subtractions += pending.len();
             // The padding stays zero: a subtraction near a window edge spills into it.
             samples[..front].fill(0.);
             samples[front + length..].fill(0.);
@@ -433,6 +435,71 @@ impl Decoder {
             }
         }
         budget.checkpoint().await?;
+        Ok(())
+    }
+    /// Subtracts the pass's verified frames from the residual in order. Only their waveforms
+    /// are built in parallel, at most four at a time (about 2.4 MB each while built): the
+    /// first four before the first subtraction, and each further four on other threads while
+    /// this thread subtracts the previous four, so at most eight are held (CL-057-02).
+    async fn subtract_in_order(
+        &self,
+        samples: &mut [f32],
+        pending: &[Subtraction],
+        subtractor: &mut Subtractor,
+        budget: &mut CpuBudget<'_>,
+    ) -> Result<(), DecodeError> {
+        let mode = subtractor.mode();
+        let build = |s: &Subtraction| quadratures(mode, &s.tones, s.frequency);
+        let chunks = pending.chunks(self.threads.min(4)).collect::<Vec<_>>();
+        let Some(first) = chunks.first() else {
+            return Ok(());
+        };
+        let mut waves =
+            super::parallel::map(self.threads, first, budget, || (), |s, _, _| build(s)).await?;
+        let helpers = self.threads - 1;
+        for (index, chunk) in chunks.iter().enumerate() {
+            budget.checkpoint().await?;
+            let next = chunks.get(index + 1).filter(|_| helpers > 0);
+            let cancel = budget.cancel;
+            let (built, subtracted) = std::thread::scope(|scope| {
+                let workers = next.map(|next| {
+                    let count = helpers.min(next.len());
+                    (0..count)
+                        .map(|k| {
+                            scope.spawn(move || {
+                                next.iter()
+                                    .enumerate()
+                                    .filter(|(j, _)| j % count == k)
+                                    .map(|(j, s)| (j, build(s)))
+                                    .collect::<Vec<_>>()
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let mut local = CpuBudget::new(cancel);
+                let subtracted = chunk.iter().zip(waves.drain(..)).try_for_each(|(s, wave)| {
+                    let wave = wave.ok_or(DecodeError::InvalidSamples)?;
+                    complete(subtractor.subtract(samples, s.start, &wave, &mut local))
+                });
+                let built = workers.map(|workers| {
+                    let mut built = workers
+                        .into_iter()
+                        .flat_map(|w| w.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
+                        .collect::<Vec<_>>();
+                    built.sort_by_key(|(j, _)| *j);
+                    built.into_iter().map(|(_, wave)| wave).collect::<Vec<_>>()
+                });
+                (built, subtracted)
+            });
+            subtracted?;
+            waves = match (built, chunks.get(index + 1)) {
+                (Some(built), _) => built,
+                (None, Some(next)) => {
+                    super::parallel::map(1, next, budget, || (), |s, _, _| build(s)).await?
+                }
+                (None, None) => vec![],
+            };
+        }
         Ok(())
     }
     /// One candidate's verification, everything that does not depend on the window's
@@ -444,6 +511,7 @@ impl Decoder {
         samples: &[f32],
         c: Candidate,
         cancel: &(impl Fn() -> bool + Sync),
+        measure: &impl Fn(&[f32], Candidate, &[u8]) -> Option<Signal>,
         physical: &mut PassBand<'_>,
         budget: &mut CpuBudget<'_>,
     ) -> Verification {
@@ -474,7 +542,18 @@ impl Decoder {
         let tones = self.channel.tones(&word, mode);
         let fitted = async {
             let fitted = refine_known(samples, mode, &tones, c, cancel, budget, physical).await?;
-            let supported = physical_sync::support(physical, fitted, budget).await;
+            let supported =
+                physical_sync::support(physical, fitted, budget)
+                    .await
+                    .map(|(supported, hits)| {
+                        (
+                            supported,
+                            hits,
+                            supported
+                                .then(|| measure(samples, fitted, &tones))
+                                .flatten(),
+                        )
+                    });
             Ok((fitted, supported))
         }
         .await;
@@ -483,12 +562,19 @@ impl Decoder {
 }
 
 /// [`Decoder::verify`] staged as the in-order replay consumes it: the payload and tones,
-/// then the refined frame, then whether its physical check supports it.
+/// then the refined frame, then whether its physical check supports it (with its hard
+/// Costas hits and, for a supported complete FT8 frame, its SNR signal power).
 type Verification = Result<
     Option<(
         Payload,
         Vec<u8>,
-        Result<(Candidate, Result<(bool, usize), DecodeError>), DecodeError>,
+        Result<
+            (
+                Candidate,
+                Result<(bool, usize, Option<Signal>), DecodeError>,
+            ),
+            DecodeError,
+        >,
     )>,
     DecodeError,
 >;

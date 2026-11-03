@@ -637,6 +637,8 @@ package WstxOfflineDecode {
              y[k]=sumj h[j]*c[k-j], exact linear (zero outside frame): with
              h~(1+cos(pi*j/2000))/2, y = constant plus two cosine-modulated window
              sums of exact prefix sums, O(frame) per subtraction, no FFT padding (#47).
+             One sweep keeps the prefix sums 2000+1 frames ahead in a ring of at least
+             2*2000+2 entries; every window sum uses the same exact prefix values (#57).
              Atedge-distancea0..2000 dividebyavailableweight sumj[-2000..a]h[j].
              Subtract2*Re(reference[k]*y[k])ONLYwithinframe; originalsourceimmutable.
              <=3passes/200verifiedsubtractions, invalidatepassFFTafterresidualchanges.
@@ -822,6 +824,8 @@ package WstxOfflineDecode {
              FT8 CQ a-priori passes only, no other hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
              <=3passes/200verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
+             The last pass's verified frames are not subtracted: no later pass reads that
+             residual (#57).
              SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;
              onecurrentmode/windowplan/scratchcache andcurrentpassFFT,droponepochreset;
              no globalmutablecommonblocks; residualchangeinvalidatesFFT.
