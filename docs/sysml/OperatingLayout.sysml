@@ -503,7 +503,17 @@ attribute def ActivityOrdering {
              double-click Rx and Tx (WstxContact::PointerEffect). The Rx and Tx markers are 3 px
              green (Rx) and red (Tx) lines over the full waterfall height, without text, and can be
              dragged; the release sends one set_frequency. No strip or
-             pointer action enables transmission. */
+             pointer action enables transmission.
+             Frequency mapping (#50, CL-050-07): the waterfall canvas's own box carries the fixed
+             0..3000 Hz span, 0 Hz at its left edge and 3000 Hz at its right edge (the time ruler
+             beside it is outside the span). The pointer frequency, the Rx and Tx lines, their
+             brackets and the frequency axis ticks all use this one mapping, so a line and an
+             axis tick of a frequency lie within 1 px of the pointer position that selects it, at
+             every width, display option and devicePixelRatio. Each line marks the signal's
+             lowest tone and carries a WSJT-X bracket (goalpost) of the line's colour at the top
+             of the waterfall over the occupied width to its right: FT8 8 x 6.25 = 50 Hz, FT4
+             4 x 20.833 = 83.3 Hz, following the station's operating mode (station.tick period,
+             15 s FT8, 7.5 s FT4). The bracket takes no pointer input. */
     }
     enum def BandActivitySlot {
         enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;

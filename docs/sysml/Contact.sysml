@@ -536,7 +536,8 @@ package WstxContact {
         in pointerHz : Integer;
         doc /* D3 adopted (PL mouseReleaseEvent ~976, mouseDoubleClickEvent ~1012; MW
              setFreq4 ~12816). pointerAction and pointerHz: pointerHz is the waterfall/spectrum frequency under the
-             pointer from the fixed 0..3000 Hz axis, rounded to integer Hz (the native/
+             pointer from the fixed 0..3000 Hz axis, rounded to integer Hz, by the waterfall's one
+             frequency mapping (WstxOperatingLayout::RxTxStrip, CL-050-07) (the native/
              projected readout of WstxRecordingReceive is unchanged). #50 (CL-050-01, operator
              2026-11-02, replacing the #37 mapping): click -> Tx, sent after 250 ms so that a
              leftDoubleClick -> Rx and Tx sends only its one request; shiftClick and ctrlClick

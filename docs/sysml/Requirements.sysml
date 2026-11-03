@@ -4227,6 +4227,28 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_050_06_verified_by_TC_050_006 from 'CL-050-06' to 'TC-050-006';
+    // #50 waterfall frequency mapping and Rx/Tx brackets (operator 2026-11-03 about 09:45).
+    requirement 'CL-050-07' {
+        doc /* The waterfall pointer, the Rx and Tx lines and the frequency axis share one mapping of the fixed 0..3000 Hz span onto the waterfall canvas's own box: a click, double-click or marker drag selects the frequency under the pointer, and the confirmed line and the axis tick of that frequency are drawn within 1 px of the pointer position, at every page width, display option (speed, Flatten, spectrum line) and devicePixelRatio. The Rx (green) and Tx (red) lines mark the lowest tone and each carries a WSJT-X bracket (goalpost) at the top of the waterfall over the occupied width to its right, 50 Hz in FT8 and 83.3 Hz in FT4, following the station's operating mode. Details: WstxOperatingLayout::RxTxStrip, WstxContact::PointerEffect. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
+    }
+    dependency CL_050_07_to_FR_007 from 'CL-050-07' to 'FR-007';
+    dependency CL_050_07_to_FR_019 from 'CL-050-07' to 'FR-019';
+    verification 'TC-050-007' {
+        doc /* TC-050-007 — Waterfall pointer, lines and axis on one frequency mapping; Rx/Tx brackets
+             CL-050-07
+             Setup: actual release candidate (fixture station) and Chromium with routed contact snapshots and recorded contact commands; station.tick delivered through the page's own listener.
+             Steps: at 1366x768 double-click and click at the 500, 1500 and 2500 Hz axis ticks and drag the Tx line to the 2000 Hz tick, confirming each value in the contact snapshot; repeat at 900x700 and at 360x800, with Flatten and the spectrum line on, at speed 4 and with devicePixelRatio 2; read the bracket of each line in FT8 and after an FT4 tick.
+             Expected: each request carries the tick's frequency within 2 Hz; each confirmed line's centre and each tick lie within 1 px of the pointer position; the bracket starts within 1 px of its line and is as wide as 50 Hz (FT8) or 83.3 Hz (FT4) on the mapping, within 1 px, green for Rx and red for Tx; a click inside a bracket still reaches the waterfall.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-07';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_07_verified_by_TC_050_007 from 'CL-050-07' to 'TC-050-007';
     verification 'TC-010-010' {
         doc /* TC-010-010 — Call 1st answers the first caller of my CQ
              CL-010-17
