@@ -67,7 +67,7 @@ function wav(seconds=1,amplitude=.5,frequency=750){
   const count=Math.round(seconds*12000),b=Buffer.alloc(44+count*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(count*2,40);
   for(let n=0;n<count;n++)b.writeInt16LE(Math.max(-32768,Math.min(32767,Math.round(amplitude*32768*Math.sin(2*Math.PI*frequency*n/12000)))),44+n*2);return b;
 }
-async function page(f,viewport={width:1100,height:850}){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});if(await p.locator('#open-server-settings').count()){await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();}await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
+async function page(f,viewport={width:1100,height:850},connectMs=30000){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:connectMs});if(await p.locator('#open-server-settings').count()){await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();}await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
@@ -307,7 +307,10 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
       const second=await browser.newContext({ignoreHTTPSErrors:true});cleanups.push(()=>second.close());await enroll(second,f.origin,f.token);
       if(closing){await second.close();throw Error('Cold-load fixture was released during setup');}
       const began=performance.now(),coldBefore={...f.proxy.counters};
-      pages=await Promise.all([page(f),page({...f,context:second})]);
+      // Two uncached browsers share the 4000 B/s link: the second one's assets delay the first one's
+      // login and snapshots, so 30 s after load is no bound here; TC-010-002 reports cold asset
+      // metrics and bounds the steady state, and the contact client below keeps its 150 s.
+      pages=await Promise.all([page(f,undefined,120000),page({...f,context:second},undefined,120000)]);
       for(const p of pages)await p.selectOption('#display-profile','thin'); // Explicit32kbit/s mode; default Detailed has no such promise.
       // The cold load ends with the contact client, which loads after the first snapshots (#37).
       for(const p of pages)await p.waitForFunction(()=>!!window.wstxContact,null,{timeout:150000});
