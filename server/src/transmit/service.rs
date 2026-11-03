@@ -584,14 +584,14 @@ impl<H: Hardware> Core<H> {
                 && job.prepared.request.mode == request.mode
         };
         // Replacement window: only while the audio of the pending request has not started.
+        // From keying the current request is bound to its period: a request for another
+        // period becomes the next one (#10: never a busy refusal that disarms for timing).
         let slot = match &self.current {
             Some(job) if job.audio_start_utc_ms.is_some() && same_period(job) => {
                 return self.refuse(sequence, TransmitRefusal::AudioStarted, false);
             }
-            Some(job) if job.audio_start_utc_ms.is_some() => 1,
-            Some(job) if job.keyed && !same_period(job) => {
-                return self.refuse(sequence, TransmitRefusal::Busy, true);
-            }
+            // Audio starts only on a keyed request, so this also covers a playing one.
+            Some(job) if job.keyed && !same_period(job) => 1,
             _ => 0,
         };
         let prepared = match prepare(&request) {

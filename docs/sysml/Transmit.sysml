@@ -481,17 +481,18 @@ package WstxTransmit {
         attribute periodStartUtcMs : Integer;
         attribute messageText : String;
         attribute txOffsetHz : Integer;
-        doc /* At most one pending (not audio-started) request per station. Admitted only
+        doc /* At most one request per station waits to be keyed. Admitted only
              while armed under TransmitAuthority; the service packs messageText
              (PackMessage), plans the start (PlanTransmitStart), encodes the 48 kHz
              waveform, keys PTT and plays (TransmitTiming). requestSequence is a
              strictly increasing safe integer per boot: a lower or equal sequence is
              duplicateSequence, never transmits twice and changes nothing (a retry does
              not disarm). A new admitted request REPLACES the pending one (replaced)
-             while its audio has not started; a keyed pending request is replaced only
-             by one for the same period (else busy). From audio start a request for the
-             same period is refused audioStarted (no disarm) and one for another period
-             becomes the next pending request, started after the current one completes.
+             while its audio has not started; a keyed request is replaced only by one
+             for the same period. From keying a request for another period becomes the
+             next pending request, started after the current one completes, and from
+             audio start one for the same period is refused audioStarted (no disarm):
+             the keyed request never makes another one busy or disarms (#10).
              Clock, alignment and lateness refusals (clockNotSynchronized,
              misalignedPeriod, stalePeriod) and packRefused or frequencyOutOfRange are
              checked at admission; the start is planned again at keying and at audio

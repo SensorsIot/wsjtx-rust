@@ -287,7 +287,9 @@ package WstxContact {
              of the old contact is replaced; a transmission already on the air continues,
              as with CancelContact; a replacement in my own period after PTT is keyed and
              before its audio starts replaces that period's request, so the new message is
-             sent in it). The replacement itself never turns Enable Tx on. During a station
+             sent in it; when the new contact has the other parity, the keyed message is
+             sent and the new one is queued for the next period of its parity, never
+             refused busy, #10). The replacement itself never turns Enable Tx on. During a station
              automation run (WstxMcp OperatingAutomation) an operator replacement of the
              run's contact ends the run, which disarms (contact_changed, TC-020-003); this
              exception stands until the operator decides otherwise. A
