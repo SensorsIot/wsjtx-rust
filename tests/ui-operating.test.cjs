@@ -572,7 +572,7 @@ test('TC-060-001 the QSO pane shows my call left and an arrow to the receiver be
   // with my call hashed and unknown.
   const p0=Date.parse('2026-11-03T22:51:00Z'),entry=(i,dir,text,snr=null)=>({dir,text,snr,period_utc_ms:p0+i*15000,count:1});
   const dialogue=[entry(0,'tx','CQ HB9BLA JN37'),entry(1,'rx','HB9BLA CT1BFP IM59',8),entry(2,'tx','CT1BFP HB9BLA +08'),entry(3,'rx','<...> CT1BFP RR73',-3)];
-  contact=partner('reporting',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:null,messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
+  contact=partner('report',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:null,messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
     suggested_slot:null,last_rcvd:{text:'<...> CT1BFP RR73',snr:-3,period_utc_ms:p0+45000,count:1},dialogue});
   await page.evaluate(()=>window.wstxContact.load());
   await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue li').length===4);
