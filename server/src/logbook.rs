@@ -789,7 +789,13 @@ impl WorkedIndex {
     fn status(entries: Option<&Vec<(String, String)>>, band: &str, mode: &str) -> &'static str {
         match entries {
             None => "not_worked",
-            Some(e) if e.iter().any(|(b, m)| b == band && m == mode) => "worked_this_band_and_mode",
+            // A record without band is never "this band" (as before the index).
+            Some(e)
+                if e.iter()
+                    .any(|(b, m)| !b.is_empty() && b == band && m == mode) =>
+            {
+                "worked_this_band_and_mode"
+            }
             Some(_) => "worked_other_band_or_mode",
         }
     }

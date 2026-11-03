@@ -405,6 +405,12 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
             .unwrap()
             .contains("<app_wstxrust_source:4>ADIF <eor>")
     );
+    // N0NEW has no band: worked, but never on "this band", not even an unknown one.
+    let n0new = ["N0NEW".to_owned()];
+    assert_eq!(
+        log.worked(&n0new, "", "FT8").unwrap(),
+        ["worked_other_band_or_mode"]
+    );
 }
 
 // Proves: CL-010-04; TC-011-002 consolidation key call + band + effective mode + start
@@ -514,6 +520,24 @@ fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file()
     for name in FIELDS.iter().chain(&[ID_FIELD, SOURCE_FIELD]) {
         many.push_str(&format!("<call:5>N5EEE <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <{name}:1>1 <{name}:1>1 <eor>\n"));
     }
+    // A value over 1024 characters faults only its field: a long unknown NOTES is not
+    // stored, a long COMMENT is dropped, a long CALL skips its record.
+    let long = |name: &str, c: &str| format!("<{name}:1025>{}", c.repeat(1025));
+    let too_long = format!(
+        "<call:5>N9III <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 {} {} <eor>\n{} <qso_date:8>20261031 <time_on:4>1301 <mode:3>FT8 <eor>\n",
+        long("notes", "x"),
+        long("comment", "x"),
+        long("call", "K")
+    );
+    let (result, view) = import(&log, too_long.as_bytes());
+    assert_eq!(summary(&result.unwrap()), (json!(1), json!(0), json!(1)));
+    assert_eq!(
+        (view["reasons"].clone(), view["dropped"].clone()),
+        (
+            json!([{"code":"field_too_long","field":"call","count":1,"record":1}]),
+            json!([{"code":"field_too_long","field":"comment","count":1,"record":0}])
+        )
+    );
     let (_, view) = import(&log, many.as_bytes());
     assert_eq!(summary(&view), (json!(0), json!(0), json!(18)));
     assert_eq!(view["reasons"].as_array().unwrap().len(), 16);
@@ -552,7 +576,7 @@ fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file()
         (result, view["error"]["code"].clone()),
         (Err("import_failed"), json!("unsupported_character"))
     );
-    assert_eq!(log.total().unwrap(), 2);
+    assert_eq!(log.total().unwrap(), 3);
 }
 
 // Proves: CL-010-04, CL-010-13; TC-011-002 workload: a 27,000-QSO export of about 27 MB
