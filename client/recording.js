@@ -225,7 +225,7 @@ function split(value) {
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
-  upper = Math.max(minimum,Math.min(maximum,value ?? 330));
+  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-400))); // #37: room for the QSO pane, Control and error field
   signal.style.height = `${upper}px`;
   for (const [name,value] of [['min',minimum],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
