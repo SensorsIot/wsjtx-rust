@@ -2,7 +2,7 @@
 .op-app small{font-size:var(--op-font-secondary)}
 body[data-profile=true]{padding:0}body[data-profile=true] main{max-width:none;margin:0;display:flex;flex-direction:column;height:100dvh;min-height:372px}#signal{flex:none;min-height:160px;margin:0;border-radius:0;padding:6px 12px;display:flex;flex-direction:column;overflow:hidden}#signal h2{font-size:var(--op-font-secondary);margin:0}#signal canvas{width:100%;min-height:0;flex:1;display:block}#splitter{height:12px;flex:none;cursor:row-resize;background:#55716f;touch-action:none}#splitter:focus-visible{outline:3px solid #93e4bf;outline-offset:-3px}#controls{min-height:200px;flex:1;overflow:auto;padding:16px;min-width:0}#controls header{flex-wrap:wrap}#controls h1,#controls .intro{display:none}#controls section{margin-top:16px;padding:10px 14px}#recording-controls{display:flex;gap:8px;flex-wrap:wrap}#recording-controls p{width:100%;margin:4px 0;overflow-wrap:anywhere}#recording-controls input{width:100%}#controls dd{overflow-wrap:anywhere;min-width:0}#controls button{max-width:100%}#signal-status{font-size:var(--op-font-secondary);margin:2px 0;overflow-wrap:anywhere}#signal-meta{font-size:var(--op-font-secondary);margin:0;overflow-wrap:anywhere}#controls footer{margin-top:12px}
 
-#signal canvas{image-rendering:pixelated;filter:none}#spectrum{flex:1;min-height:16px!important;margin-left:44px;width:calc(100% - 44px)!important}#frequency-ruler{position:relative;height:22px;flex:none;margin-left:44px;font-size:var(--op-font-technical);color:#b7cbd1}#frequency-ruler span{position:absolute;top:0;border-left:1px solid #718894;padding-top:5px;transform:translateX(-50%)}#frequency-ruler span:first-child{transform:none}#frequency-ruler span:last-child{transform:translateX(-100%)}#frequency-ruler .minor{height:4px;padding:0}#frequency-ruler .major{height:7px}#waterfall-wrap{position:relative;flex:2;min-height:20px;overflow:hidden}#waterfall{margin-left:44px;width:calc(100% - 44px)!important;height:100%;flex:none!important}#time-ruler{position:absolute;left:0;top:0;bottom:0;width:42px;font-size:var(--op-font-technical);color:#b7cbd1;overflow:hidden}#time-ruler span{position:absolute;left:0}#level-legend{flex:none;font-size:var(--op-font-secondary);line-height:1.45;color:#b7cbd1;overflow-wrap:anywhere;border:0}#display-levels{display:flex;flex-wrap:wrap;gap:8px;width:100%;align-items:center}#display-levels label{font-size:var(--op-font-secondary);margin:0}#display-levels input[type=number]{width:90px;padding:5px}#display-levels input[type=checkbox]{width:auto}#bin-readout{width:100%;font-size:var(--op-font-secondary);overflow-wrap:anywhere}#signal{min-width:0}#signal canvas:focus-visible{outline:2px solid #93e4bf;outline-offset:-2px}
+#signal canvas{image-rendering:pixelated;filter:none}#spectrum{flex:1;min-height:16px!important;margin-left:44px;width:calc(100% - 44px)!important}#frequency-ruler{position:relative;height:22px;flex:none;margin-left:44px;font-size:var(--op-font-technical);color:#b7cbd1}#frequency-ruler span{position:absolute;top:0;width:0;margin-left:-.5px;border-left:1px solid #718894;padding-top:5px}#frequency-ruler b{position:absolute;top:5px;left:0;font-weight:inherit;white-space:nowrap;transform:translateX(-50%)}#frequency-ruler span:first-child b{transform:none}#frequency-ruler span:last-child b{transform:translateX(-100%)}#frequency-ruler .minor{height:4px;padding:0}#frequency-ruler .major{height:7px}#waterfall-wrap{position:relative;flex:2;min-height:20px;overflow:hidden}#waterfall{margin-left:44px;width:calc(100% - 44px)!important;height:100%;flex:none!important}#time-ruler{position:absolute;left:0;top:0;bottom:0;width:42px;font-size:var(--op-font-technical);color:#b7cbd1;overflow:hidden}#time-ruler span{position:absolute;left:0}#level-legend{flex:none;font-size:var(--op-font-secondary);line-height:1.45;color:#b7cbd1;overflow-wrap:anywhere;border:0}#display-levels{display:flex;flex-wrap:wrap;gap:8px;width:100%;align-items:center}#display-levels label{font-size:var(--op-font-secondary);margin:0}#display-levels input[type=number]{width:90px;padding:5px}#display-levels input[type=checkbox]{width:auto}#bin-readout{width:100%;font-size:var(--op-font-secondary);overflow-wrap:anywhere}#signal{min-width:0}#signal canvas:focus-visible{outline:2px solid #93e4bf;outline-offset:-2px}
 
 #recording-controls label{max-width:100%;min-width:0}#recording-controls select{max-width:100%;width:100%}
 
@@ -69,7 +69,8 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 #band-activity th{font-size:var(--op-font-secondary);padding:8px 5px;overflow-wrap:normal;white-space:normal}
 #band-activity th:first-child,#band-activity th:nth-child(2),#band-activity th:nth-child(3),#band-activity th:nth-child(4),#band-activity th:last-child{width:1%}
 #band-activity th:nth-child(5){width:auto}
-#band-activity td{padding:8px 5px;overflow-wrap:normal;white-space:nowrap}
+#band-activity td{padding:1px 5px;line-height:1.25;overflow-wrap:normal;white-space:nowrap}
+@media(pointer:coarse){#band-activity td{padding:8px 5px}}
 #band-activity td:first-child{min-width:12ch;font-size:var(--op-font-normal)}
 #band-activity td:nth-child(2){min-width:6ch}
 #band-activity td:nth-child(3){min-width:5ch}
@@ -151,7 +152,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-tx span{font-size:var(--op-font-secondary);letter-spacing:.05em;color:#8caabb}
 
 #waterfall-wrap{position:relative}
-.ct-marker{position:absolute;top:0;bottom:0;width:0;margin-left:-1px;border-left:3px solid;pointer-events:none;z-index:1;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
+.ct-marker{position:absolute;top:0;bottom:0;width:0;margin-left:-1.5px;border-left:3px solid;pointer-events:none;z-index:1;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .ct-rx{border-color:#30d050;color:#30d050}
 .ct-txm{border-color:#ff4040;color:#ff6060}
 .op-input-meter[data-level=high] strong,.op-input-meter[data-level=low] strong{color:#ffb040}
@@ -188,6 +189,8 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rxtx-strip button{padding:4px 10px;min-width:2.2rem}
 #rxtx-strip .op-strip-field:nth-of-type(2){margin-left:10px}
 .ct-marker{pointer-events:auto;cursor:ew-resize;touch-action:none}
+/* #50 CL-050-07: WSJT-X bracket from the line (lowest tone) over the occupied width; contact.js sets its width. */
+.ct-goal{position:absolute;top:0;left:-1.5px;height:8px;box-sizing:border-box;border:2px solid;border-color:inherit;border-bottom:0;pointer-events:none}
 .ct-marker.ct-dragging{opacity:.75}
 #operating-workspace{min-height:0;height:100%;container-type:inline-size}
 #controls .operating-grid{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%;min-height:0;padding:8px 10px 10px;gap:8px}
@@ -201,9 +204,9 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #band-activity td{font-family:var(--op-mono)}
 #band-activity td:nth-child(6){min-width:5ch}#band-activity td:nth-child(7){min-width:7ch}
 #band-activity th:nth-child(6),#band-activity th:nth-child(7){width:1%}
-#band-activity tr.ba-divider td{padding:3px 12px;font:600 var(--op-font-secondary) 'Segoe UI',system-ui,sans-serif;color:#7e9bad;background:#0f1e29;letter-spacing:.06em}
+#band-activity tr.ba-divider td{padding:1px 12px;font:600 var(--op-font-secondary) 'Segoe UI',system-ui,sans-serif;color:#7e9bad;background:#0f1e29;letter-spacing:.06em}
 #band-activity tr[data-period=history] td{opacity:.78}
-#band-activity th.op-sort{cursor:pointer}#band-activity th.op-sort:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
+#band-activity th[data-sort=value]{white-space:nowrap}#band-activity th.op-sort{cursor:pointer}#band-activity th.op-sort:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
 #band-activity th[aria-sort=ascending]:after{content:" \25B2"}#band-activity th[aria-sort=descending]:after{content:" \25BC"}
 #band-activity thead:focus-within{clip-path:none!important;position:static!important;width:auto!important;height:auto!important}
 @container (max-width:44em){#band-activity tr.ba-divider{display:block!important}#band-activity tr.ba-divider td{display:block}}
@@ -327,6 +330,7 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 .udp-target,.udp-messages{min-inline-size:0;max-width:100%;box-sizing:border-box}.udp-target>label{max-width:100%}.udp-target input:not([type=checkbox]){width:100%;box-sizing:border-box}
 /* #39 WstxStrategy: Highlight marks in Band Activity and the strategy editor popup. */
 #band-activity tr.ba-strategy td:first-child{box-shadow:inset 3px 0 var(--op-accent,#99e1c3)}#band-activity tr.ba-strategy td[data-col=message]{color:#c9f2df;font-weight:600}
+#band-activity td[data-ap]::after{content:' ' attr(data-ap);font-size:.75em;opacity:.7}
 #band-activity tr.ba-grey td{opacity:.45}#band-activity tr.ba-grey td[data-col=message]{text-decoration:line-through;text-decoration-thickness:1px}
 .op-app .op-segmented button[aria-pressed=true]{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}.op-app #strategy-auto[aria-pressed=true]{background:#5a3a14;border-color:#c58a2e;color:#ffe2b3}
 .op-strategy-editor{max-width:min(60rem,calc(100vw - 32px));width:60rem;max-height:calc(100dvh - 32px);overflow:auto}.op-strategy-editor form{display:flex;flex-direction:column;gap:10px}.op-strategy-editor h2{font-size:1.25rem;margin:0}.op-strategy-editor h3{font-size:var(--op-font-normal);margin:0}
@@ -365,6 +369,8 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #rx-focus .op-qso-buttons{gap:4px}
 #rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
 #controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}
+/* #42: the drawer's Station fieldset never grows wider than the drawer (a fieldset is min-content wide by default); the session ignore list. */
+.op-drawer .op-server-fieldset{min-width:0}.op-ignore-session{min-width:0}#ignore-session{margin:4px 0 0;padding-left:1.2em}
 /* #37 LowerPanel (operator 2026-11-03): one vertical column on the right at every width, the QSO
    pane, the Control panel and the error field, each with the QSO card's left and right edges.
    The QSO pane gives up height first (its QSO area scrolls inside). */

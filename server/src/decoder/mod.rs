@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 //! Pure FT4/FT8 modem kernels. Samples use the canonical 12 kHz clock.
+mod apriori;
 mod baseband;
 mod bitmetrics;
 mod channel;
@@ -17,6 +18,7 @@ mod snr;
 mod subtraction;
 mod synchronization;
 mod waveform;
+pub use apriori::{APriori, QsoProgress};
 pub use channel::{Channel, ChannelWord};
 pub use history::DecodeState;
 pub use payload::{Call, CallKind, Exchange, Fields, Payload, PayloadStatus, unpack};

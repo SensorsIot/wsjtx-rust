@@ -160,7 +160,7 @@ package WstxOfflineDecode {
              77-bit FT4/FT8. Current source-field boundaries are pinned independently by
              WstxProductScope::BehaviorBaseline's portable codec manifest and fixed official
              vectors. This does not adopt permissive malformed-payload aliases, context guessing
-             beyond the CQ a-priori passes of Ft8DecodeMetricFamilies (#56), SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
+             beyond the a-priori passes of APrioriHypotheses (#56), SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
              Both modes share source families:0.0 free text,0.1 DXpedition,0.3/.4 FieldDay,
              0.5 telemetry,1/2 standard /R or /P,3 RTTY,4 nonstandard,5 extended VHF.
              0.2/.6/.7 and6/7 are unsupported; WSPR packaging0.6 is not an ordinary message.
@@ -222,7 +222,10 @@ package WstxOfflineDecode {
     }
     requirement SharedWireMapping {
         doc /* ResultRecord has exact keys sequence,status,payload77,i3,n3,text,fields,
-             start_frame,frequency_hz,snr_db. LiveTimedResultRecord adds exactly
+             start_frame,frequency_hz,snr_db, plus a_priori (Integer 1..6, the WSJT-X aN
+             type of APrioriHypotheses) present only for an a-priori word, whose status is
+             always decoded (#56 slice 5).
+             LiveTimedResultRecord adds exactly
              period_start_utc anddt_seconds. Fields null unless decoded; text null unless
              decoded then<=80canonicalASCII; payload77exact77ASCIIbits; i3=0..7,
              n3nullunlessi3=0then0..7. Sequence/start are nonnegative safe integers below
@@ -347,6 +350,7 @@ package WstxOfflineDecode {
         attribute start_frame : Integer;
         attribute frequency_hz : Real;
         attribute snr_db : Real[0..1];
+        attribute a_priori : Integer[0..1];
         assert constraint boundedRecord {
             sequence >= 0 and sequence <= (900719925 * 10000000 + 4740991) and i3 >= 0 and i3 <= 7 and
             start_frame >= 0 and start_frame <= (900719925 * 10000000 + 4740991) and
@@ -579,8 +583,63 @@ package WstxOfflineDecode {
              A/B/C=Ft8MetricDifferenceperbitforsingle/pair/triple. D=A/max8S,zeroifmax0.
              E=largestabsoluteRAW A/B/Cperbit,tiesA/B/C. FormEbeforeanynormalization.
              Normalizeeach174elementfamilyasFt8ChannelPolarity,NOmean subtraction.
-             No callsign/contact/semanticprior here; the only a-priori bits are the CQ
-             passes of Ft8DecodeMetricFamilies. No currentFT4neighborlikelihoodapplies. */
+             No callsign/contact/semanticprior here; the only a-priori bits are the
+             APrioriHypotheses passes. No currentFT4neighborlikelihoodapplies. */
+    }
+    item def APrioriContext {
+        attribute myCall : Integer[0..29];
+        attribute dxCall : Integer[0..29];
+        attribute qsoProgress : Integer;
+        attribute rxHz : Real;
+        attribute txHz : Real;
+        attribute cqOnly : Boolean;
+        attribute apWidthHz : Real = 50.0;
+        attribute lowConfidenceQuality : Real = 0.17;
+        attribute cqOnlyAfterSeconds : Integer = 300;
+        doc /* #56 slice 5. The station's a-priori context of one live decode window, set on
+             the modem state before the window like its period start, so the decode set
+             depends only on the window and this context (CL-057-02 in-order replay holds).
+             myCall = payload bits 0..28 (c28 and /R flag) and dxCall = bits 29..57 of the
+             standard message "MyCall DxCall RRR" packed from the selected profile callsign
+             and the current contact's dx_call (WSJT-X ft8apset: i3=1 and an exact round
+             trip required, else neither; without a DxCall the dummy KA1ABC packs MyCall and
+             dxCall is absent). Deliberate departure: a nonstandard (compound) MyCall that
+             ft8apset would pack hashed as <MyCall> gives no myCall here (types 1 only). qsoProgress = WSJT-X nQSOProgress from the contact state:
+             calling/idle/cancelled 0, replying 1, report 2, roger_report 3, rogers 4,
+             signoff/completed 5. rxHz/txHz = the contact Rx/Tx audio frequencies.
+             cqOnly (lapcqonly) = for the last 300 s no contact tick saw the station
+             transmitting, tuning or with Enable Tx on (WSJT-X m_dateTimeLastTX, refreshed
+             while m_transmitting, m_auto or m_tune); true from start until then. A file decode has no
+             myCall/dxCall (CQ hypothesis only). */
+    }
+    action def APrioriHypotheses {
+        in context : APrioriContext;
+        in families : PhysicalLlrFamily[0..5];
+        in carrierHz : Real;
+        out hypotheses : PhysicalLlrFamily[0..8];
+        doc /* #56 slice 5, WSJT-X 3.3.0-beta5 ft8b/ft4_decode, ncontest=0. Tried only after
+             every unassisted family of a candidate failed. Types: 1 CQ ??? ???, 2 MyCall ??? ???,
+             3 MyCall DxCall ???, 4/5/6 MyCall DxCall RRR/73/RR73 (tails ir=0, grid 32402/
+             32404/32403, i3=1). Types per qsoProgress (naptypes): FT8 0:[1,2] 1,2:[2,3]
+             3,4:[3,4,5,6] 5:[3,1,2]; FT4 0:[1,2] 1,2:[2,3] 3,4:[3,6] 5:[3,1,2]; cqOnly:[1].
+             Skipped: type>=2 without myCall; type>=3 without dxCall or when the carrier is
+             more than apWidthHz from rxHz and (FT8 only) from txHz. Fixed bits: type1 bits
+             0..28 = CQ token (c28=2, ipa=0); type2 0..28 = myCall; type3 0..57 = myCall,
+             dxCall; types 4..6 all 77. FT8 types 1..3 also fix 74..76 to i3=1; FT4's do
+             not, and FT4 fixed bits are scrambled with ft4XorMask. FT8: each type on the
+             single then the triple family, fixed at 1.1 times that family's largest |LLR|;
+             FT4: each type once on the quadruple family, fixed at 1.1 times the single
+             family's largest |LLR|. Each through Ft8ChannelDecode with those bits fixed;
+             first accepted wins. Acceptance: not all-zero, hard disagreements<=36 (both
+             modes), a payload that unpacks with status decoded (WSJT-X drops an a-priori word
+             that does not unpack and tries the next pass), and, for every type except FT8
+             type 1, WSJT-X's confidence
+             qual = 1-(nharderrors+dmin)/60 >= lowConfidenceQuality, dmin = sum of |LLR|
+             over the bits the word disagrees with. Deliberate departure: WSJT-X publishes a
+             low-confidence a-priori word marked '?' (and FT4 any hard-error count); the
+             station acts on decoded rows, so it does not publish one. FT8 type 1 keeps the
+             slice-2 acceptance (hard disagreements<=36). The published record carries the
+             type as a_priori (WSJT-X aN); an unassisted word has no a_priori key. */
     }
     action def Ft8DecodeMetricFamilies {
         in families : PhysicalLlrFamily[5];
@@ -591,13 +650,10 @@ package WstxOfflineDecode {
              hard disagreements (nharderrors)<=36 that is not the all-zero codeword (ft8b,
              #56); publishedH+CRCmandatory. Avalidwordfailingacceptance
              DOESNOTstoplaterfamilies. Firstacceptedwordwins. Only when all five fail, two
-             a-priori passes (ft8b iaptype 1, CQ ??? ???) decode the single and then the
-             triple family with payload bits 0..28 fixed to the CQ token (c28=2, ipa=0) and
-             bits 74..76 to i3=1, at 1.1 times that family's largest |LLR|, through
-             Ft8ChannelDecode with those bits fixed; same acceptance. No callsign, contact or
-             other a-priori knowledge; no further fallback decode. Not yet delivered (#56,
-             later slice): ft4_decode's FT4 CQ pass, and WSJT-X's a1/? marking: a-priori words
-             are published like any other word, with UDP Low confidence false.
+             the APrioriHypotheses passes of the window's APrioriContext run (#56 slices 2 and 5);
+             no further fallback decode. An a-priori word's record carries a_priori (1..6);
+             UDP Low confidence stays false because a low-confidence a-priori word is never
+             published.
              Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
              Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
     }
@@ -637,6 +693,8 @@ package WstxOfflineDecode {
              y[k]=sumj h[j]*c[k-j], exact linear (zero outside frame): with
              h~(1+cos(pi*j/2000))/2, y = constant plus two cosine-modulated window
              sums of exact prefix sums, O(frame) per subtraction, no FFT padding (#47).
+             One sweep keeps the prefix sums 2000+1 frames ahead in a ring of at least
+             2*2000+2 entries; every window sum uses the same exact prefix values (#57).
              Atedge-distancea0..2000 dividebyavailableweight sumj[-2000..a]h[j].
              Subtract2*Re(reference[k]*y[k])ONLYwithinframe; originalsourceimmutable.
              <=3passes/200verifiedsubtractions, invalidatepassFFTafterresidualchanges.
@@ -756,8 +814,8 @@ package WstxOfflineDecode {
              Threeorderedfamilies, each through Ft8ChannelDecode; accept any word that is
              not the all-zero codeword (ft4_decode has no hard-disagreement cap), H+CRC.
              Failedwordcontinues;
-             no4thfallback. Sourceunsupported/invalidstatusretained, no semanticprior. The FT4
-             CQ a-priori pass of ft4_decode is not yet delivered (#56, later slice). */
+             no4thfallback except the APrioriHypotheses passes (#56 slice 5).
+             Sourceunsupported/invalidstatusretained, no semanticprior. */
     }
     action def Ft4SubtractVerifiedFrame {
         in source : ModemSampleWindow;
@@ -819,9 +877,11 @@ package WstxOfflineDecode {
              FT4BandLimitAndFineSync/ObserveMetricFamilies. Qualifiedcap256,257=>limited.
              FiveFT8orthreeFT4families; each Ft8ChannelDecode (BP<=30 + OSD ndeep2 on
              2 sums, rank91). FT8 hard disagreements<=36; never all-zero; H+CRC mandatory.
-             FT8 CQ a-priori passes only, no other hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
+             APrioriHypotheses passes only (CQ, MyCall/DxCall per QSO state), no other hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
              <=3passes/200verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
+             The last pass's verified frames are not subtracted: no later pass reads that
+             residual (#57).
              SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;
              onecurrentmode/windowplan/scratchcache andcurrentpassFFT,droponepochreset;
              no globalmutablecommonblocks; residualchangeinvalidatesFFT.

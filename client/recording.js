@@ -22,7 +22,7 @@ const strip=document.createElement('section');strip.id='rxtx-strip';strip.classN
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col" data-sort="value" aria-sort="none" tabindex="0" class="op-sort" title="Sort by value: calling me, strategy, new DXCC, zone, grid, call, then strongest">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span class="op-contact-badge">Unavailable</span></header>
 <div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
@@ -95,8 +95,8 @@ panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
 // #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority
 // order with its default on/off. A slot without data (DXCC, zones and continent need cty.dat, #55; grids
-// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour.
-const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',true]];
+// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour; #55: no flag, no colour (CQ off).
+const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',false]];
 const bandFlags=bandSlots.map(([k])=>k).filter(k=>k.startsWith('new_'));
 const bandColours=document.createElement('fieldset');bandColours.id='band-colours';bandColours.className='op-server-fieldset';
 bandColours.innerHTML='<legend>Band Activity colours (WSJT-X)</legend>'+bandSlots.map(([k,label])=>`<label class="op-check"><input type="checkbox" data-hl-slot="${k}"> <span class="op-swatch" data-hl-swatch="${k}"></span>${label}</label>`).join('');
@@ -339,7 +339,7 @@ function paint() {
     }
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
     const labelStep=500*Math.max(1,Math.ceil(parseFloat(getComputedStyle(ruler).fontSize)*4/Math.max(1,ruler.clientWidth/6)));
-    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${f/30}%`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.textContent=String(f);ruler.append(tick);}
+    for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${wstxWaterfallAxis.x(f,ruler)}px`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.append(Object.assign(document.createElement('b'),{textContent:String(f)}));ruler.append(tick);}
     const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
     legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';
@@ -378,7 +378,7 @@ async function sync(current=socket) {
   try {
     const data=await request('/recording');if(!stationContext(current,authEpoch)) return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
-    if(identity(data)!==identity(snapshot)){rows=[];resetLevels();paint();}snapshot=data;
+    if(identity(data)!==identity(snapshot)&&!(data.job?.kind==='live'&&snapshot?.job?.kind==='live'&&data.boot_id===snapshot.boot_id)){rows=[];resetLevels();paint();}snapshot=data; // #61: receiveSync decides a live identity change
     if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
       try{const outcome=await request(`/recording/imports/${previousImport}`);if(!stationContext(current,authEpoch))return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
@@ -478,7 +478,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
-let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
+let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
@@ -508,7 +508,7 @@ function applyLatestDecode(view,first){
   // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
   const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
   const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
-  activityHistory=other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
+  activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;
@@ -559,8 +559,8 @@ async function receiveSync(current=socket){
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
     if(liveIdentity(data)!==liveIdentity(live)){
       if(live?.job&&data.generation>live.generation&&performance.now()-ownReceiveMutationAt>15000&&operatingState&&operatingState.operating_revision===liveOperatingRevision)restartedAt=performance.now();
-      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;activityHistory=[];
-      if(data.job||live?.job){rows=[];resetLevels();paint();}
+      const carry=lossEpoch(data);activityHistory=carry?[...(resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[]),...activityHistory].slice(0,2):[];
+      resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
     live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
@@ -569,11 +569,11 @@ async function receiveSync(current=socket){
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
-  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='frequency';activitySortDirection='asc';}
+  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='value';activitySortDirection='desc';}
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
-  return [...records].sort((a,b)=>{
+  return [...records].sort((a,b)=>{if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// #55 CL-055-04: value, strongest SNR (unavailable last), decode order
     const left=key(a),right=key(b);
     if(missing(left)!==missing(right))return missing(left)?1:-1;
     const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
@@ -581,8 +581,8 @@ function activityOrdering(records=resultRows){
   });
 }
 function sortBy(button){
-  if(button.dataset.sort===activitySortField)activitySortDirection=activitySortDirection==='asc'?'desc':'asc';
-  else{activitySortField=button.dataset.sort;activitySortDirection=activitySortField==='signal'?'desc':'asc';}
+  if(button.dataset.sort===activitySortField){if(activitySortField!=='value')activitySortDirection=activitySortDirection==='asc'?'desc':'asc';}
+  else{activitySortField=button.dataset.sort;activitySortDirection=['signal','value'].includes(activitySortField)?'desc':'asc';}
   renderResults();
 }
 document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
@@ -615,9 +615,9 @@ function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
   const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
-  // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
-  const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
+  // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
+  // every decoded sender (operator decision CL-055-04; WSJT-X colours CQ/QRZ lines only).
+  const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
   if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
@@ -625,14 +625,16 @@ function activityRow(record,period,context,mode){
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
-    if(index===4)cell.dataset.col='message';
+    if(index===4){cell.dataset.col='message';
+      // #56: WSJT-X's a-priori marker (aN), shown after the message but not part of its text.
+      if(decoded&&Number.isInteger(record.a_priori)){cell.dataset.ap=`a${record.a_priori}`;cell.title=`A-priori decode (WSJT-X a${record.a_priori})`;}}
     if(index===5&&dx)cell.title=`${dx.name} \u00b7 ${dx.cont} \u00b7 CQ zone ${dx.cq} \u00b7 ITU zone ${dx.itu} (cty.dat)`;if(index===6&&approx)cell.title='Approximate: from the country position (cty.dat), no grid in the message';
     row.append(cell);
   }
-  return row;
+  activityWhy(row);return row;
 }
 function validRecord(r){
-  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
+  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))&&!(k==='a_priori'&&Number.isInteger(r.a_priori)&&r.a_priori>=1&&r.a_priori<=6&&r.status==='decoded')).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
     Number.isSafeInteger(r.sequence)&&r.sequence>=0&&Number.isSafeInteger(r.start_frame)&&r.start_frame>=0&&
     ((r.period_start_utc===null&&r.dt_seconds===null)||(validPeriodTime(r.period_start_utc,live.job.mode)&&Number.isFinite(r.dt_seconds)&&r.dt_seconds>=-(live.job.mode==='ft8'?7.5:3.75)&&r.dt_seconds<(live.job.mode==='ft8'?7.5:3.75)))&&
     Number.isFinite(r.frequency_hz)&&r.frequency_hz>=200&&r.frequency_hz<=3500&&
@@ -1068,7 +1070,8 @@ document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localSt
 // The log client (WstxContact OfferLogReview) and then the contact client load after this
 // browser's first recording and receive snapshots (or 20 s after the station is ready), so
 // their bytes never compete with the cold page, authorization or the first state reads on a
-// 32 kbit/s link (TC-009-005 and TC-010-002 bounds).
+// 32 kbit/s link (TC-009-005 and TC-010-002 bounds). Their downloads still hold the station's
+// messages behind them on that link, so app.js deferredDownload sets the silence bound (#8).
 let clientLoader=null;
 function clientsLoad(){
   if(clientLoader||document.querySelector('script[src="/logbook.js"]'))return;
@@ -1076,7 +1079,7 @@ function clientsLoad(){
   clientLoader=setInterval(()=>{
     if(!(snapshot&&live!==undefined)&&performance.now()-since<20000)return;
     clearInterval(clientLoader);
-    const load=src=>new Promise(resolve=>{const script=document.createElement('script');script.src=src;script.onload=script.onerror=resolve;document.head.append(script);});
+    const load=src=>deferredDownload(new Promise(resolve=>{const script=document.createElement('script');script.src=src;script.onload=script.onerror=resolve;document.head.append(script);}));
     const append=()=>load('/logbook.js').then(()=>load('/contact.js'));
     if(typeof requestIdleCallback==='function')requestIdleCallback(append,{timeout:2000});else setTimeout(append,0);
   },250);
@@ -1101,3 +1104,51 @@ function stationNoticeShow(){
 function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
 addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
 window.wstxStationData=stationData;
+// #61 CL-061-01: an unknown-loss source epoch of the same receive brings a fresh source, job and
+// generation (results from sequence 0, frames from 0) but is no new receive: loss_epochs grew
+// (it restarts at 0 with every receive start), same mode and input, no Start/Stop or band/mode
+// change. The display is kept then; anything else clears it.
+function lossEpoch(data){
+  return !!(live?.job&&data.job&&data.generation>live.generation&&data.job.state==='running'&&data.job.mode===live.job.mode&&data.audio.device_id===live.audio.device_id&&
+    data.audio.loss_epochs>live.audio.loss_epochs&&performance.now()-ownReceiveMutationAt>15000&&(operatingState?.operating_revision??null)===liveOperatingRevision);
+}
+// The kept rows move in front of the new frame origin behind one gap row marking the epoch.
+function keepWaterfall(){
+  const last=rows.at(-1);if(!last)return;
+  const interval=last.end_frame-last.first_frame,shift=last.sequence+2,frames=last.end_frame+interval;
+  for(const row of rows){row.sequence-=shift;row.first_frame-=frames;row.end_frame-=frames;}
+  rows.push({sequence:-1,first_frame:-interval,end_frame:0,levels:null,held:false});paint();
+}
+
+// #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
+// hits, is applied by the Highlight in contact.js) and BandActivityHover (title and aria-description).
+function activityValue(r){
+  if(r?.status!=='decoded')return 8;
+  const my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  if(my&&r.fields?.to?.kind==='call'&&r.fields.to.text===my)return 1;
+  const groups=[[3,['new_dxcc','new_continent']],[4,['new_dxcc_band','new_continent_band']],[5,['new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band']],[6,['new_grid','new_grid_band']],[7,['new_call','new_call_band']]];
+  return groups.find(([,names])=>names.some(k=>r.flags?.[k]===true))?.[0]??8;
+}
+function activityReasons(r){
+  if(r?.status!=='decoded'||!r.flags)return [];
+  const dx=r.dxcc,band=operatingState?.selection?.band||'this band',ex=r.fields?.exchange,grid=ex?.kind==='grid'&&typeof ex.value==='string'?ex.value.slice(0,4).toUpperCase():'';
+  const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:`New DXCC: ${dx?.name??''}`,new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New call on ${band}`};
+  return Object.keys(text).filter(k=>r.flags[k]===true).map(k=>text[k].replace(/:?\s+$/,''));
+}
+function activityWhy(row){
+  const worked=row.dataset.worked==='worked_this_band_and_mode'?`Worked before on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'Worked before on another band or mode':'';
+  const parts=[row.classList.contains('ba-tome')?'Calling me':'',row.dataset.whyStrategy??'',...(row.dataset.why?row.dataset.why.split('\n'):[]),worked].filter(Boolean);
+  if(parts.length){row.title=parts.join('\n');row.setAttribute('aria-description',parts.join('; '));}
+  else{row.removeAttribute('title');row.removeAttribute('aria-description');}
+}
+window.wstxActivityWhy=activityWhy;
+
+// WstxOperatingLayout::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
+// box carries the fixed 0..3000 Hz span (the time ruler beside it is outside). The frequency axis
+// ticks, the Rx/Tx lines with their brackets and the pointer frequency all use this one mapping.
+// x(hz,container): the CSS px offset of hz in the container's padding box; hz(clientX): the
+// integer Hz under a pointer.
+const wstxWaterfallAxis={low:0,high:3000,
+  x(hz,container){const c=waterfall.getBoundingClientRect(),o=container.getBoundingClientRect();return c.left-o.left-container.clientLeft+(hz-this.low)*c.width/(this.high-this.low);},
+  hz(clientX){const c=waterfall.getBoundingClientRect();return Math.max(this.low,Math.min(this.high,Math.round(this.low+(clientX-c.left)*(this.high-this.low)/Math.max(c.width,1))));}};
+window.wstxWaterfallAxis=wstxWaterfallAxis;

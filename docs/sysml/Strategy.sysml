@@ -2,7 +2,9 @@ package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
          WstxRequirements; verification TC-039-001..007; the complete New matrix of
-         issue #42, CL-042-01 and TC-042-001): named strategies, the
+         issue #42, CL-042-01 and TC-042-001; its ignore lists, CL-042-02 and
+         TC-042-002..003; Pounce, CL-042-03 and TC-042-004..005; Alert, CL-042-04 and
+         TC-042-006..007): named strategies, the
          directed-CQ rule, Highlight in Band Activity, the strategy editor popup and Auto
          strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
          result.
@@ -36,7 +38,25 @@ package WstxStrategy {
             second Auto click starts it again. The first Auto use in a page session asks
             for confirmation once.
          D8 Out (operator decision on #42): band hopping, also as a suggestion; Rapid
-            RR73; unauthenticated UDP control; shell-command alerts. */
+            RR73; unauthenticated UDP control; shell-command alerts.
+         D9 Ignore lists (#42, IgnoreLists): a permanent list in Settings > General and a
+            session list filled from Band Activity (right-click Ignore), with a timed
+            expiry and cleared on a band change. They govern the strategy only
+            (Highlight, Auto Call, Auto CQ); a manual Reply, Select or double-click of an
+            ignored station is still the operator's explicit choice and is not refused.
+         D10 Pounce (#42, Pounce; WSJT-Z's "wait for one call"): an operator action arms a
+            watch for exactly one call on the current band and mode; when that station
+            calls CQ or ends a QSO with RR73/73 the station answers it as a double-click
+            does (select, Enable Tx, Auto Seq). It is a WstxMcp::OperatingAutomation run
+            (one run at a time: never beside Auto Call or Auto CQ), needs no strategy and
+            ends on success, a band change, HALT, the Tx watchdog or the operator.
+         D11 Alert (#42, Alert): a third action beside Highlight and Auto. A rule marked
+            alert makes the station record an alert for each decode that matches it
+            (ignore lists and the directed-CQ rule apply first; one alert per call and
+            band in 10 minutes) in a bounded alert history in station memory; the
+            browser plays a short sound and/or shows a browser notification as the
+            operator chose (both off by default). An alert never transmits and changes no
+            contact or automation state. Shell-command alerts stay out (D8). */
 
     enum def MessageType { enum cq; enum directed_cq; enum to_me; enum signoff; }
     enum def NewScope { enum ever; enum band; }
@@ -83,7 +103,10 @@ package WstxStrategy {
         assert constraint skipRange { skipAfter >= 1 and skipAfter <= 20 }
         assert constraint switchRange { switchAfter >= 1 and switchAfter <= 20 }
         doc /* Wire keys exactly name (1..32 printable ASCII, no leading/trailing space,
-             unique ignoring case), rules (1..8, each {conditions: 0..12 Condition}; rule
+             unique ignoring case), rules (1..8, each {conditions: 0..12 Condition} plus
+             the optional alert (#42 Alert: a boolean, absent = false; the snapshot names
+             alert only as true on an alert rule, so a false or absent alert reads back
+             without the key); rule
              order is priority, rule 1 highest; an empty rule holds for every message),
              sort, treat_73_as_cq, apply_to_callers, skip_after, auto_role, switch_after. */
     }
@@ -92,12 +115,20 @@ package WstxStrategy {
         attribute active : String[0..1];
         attribute highlight : Boolean;
         attribute strategiesMax : Integer = 16;
+        attribute ignoreCallsMax : Integer = 100;
+        attribute sessionIgnoreMinutes : Integer = 30;
+        assert constraint sessionMinutesRange { sessionIgnoreMinutes >= 1 and sessionIgnoreMinutes <= 720 }
         doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
              the seven codes: my continent for the directed-CQ rule), active (null or the
-             name of a listed strategy), highlight, strategies (0..16 Strategy). Persisted
+             name of a listed strategy), highlight, strategies (0..16 Strategy),
+             ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
+             A-Z 0-9 /, IgnoreLists) and session_ignore_minutes (#42 the session list
+             expiry, an integer 1..720, default 30). Persisted
              as strategy.json beside profile.json: {schema_version 1, profile_id, revision,
              configuration}, written atomically like udp.json; missing: the default
-             {null, null, false, []} at revision 0; foreign, malformed or larger than
+             {null, null, false, [], [], 30} at revision 0; a saved configuration written
+             before #42 that has neither ignore_calls nor session_ignore_minutes reads
+             with [] and 30 (with exactly one of them: malformed); foreign, malformed or larger than
              262144 bytes: configuration null with configuration_error
              invalid_configuration until a PUT replaces it. */
     }
@@ -130,6 +161,137 @@ package WstxStrategy {
              The worked set is the log's cached one, rebuilt when the log or the country
              table changes. */
     }
+    attribute def IgnoreLists {
+        attribute sessionEntriesMax : Integer = 64;
+        doc /* #42 (CL-042-02). A sender is ignored when its call (exactly, not as a prefix)
+             is on the permanent list (configuration ignore_calls) or on the session list.
+             The session list lives in station memory only (never persisted; a station
+             restart empties it): at most 64 entries in the order added, each {call, band,
+             expiry}, the band being the station band (CAT dial band, else the operating
+             selection band; null when unknown) and the expiry session_ignore_minutes
+             after the add, both taken when added (adding a listed call again renews
+             them and moves it last; adding a 65th call drops the oldest). An entry ends
+             at its expiry.
+             Band change: the station's contact step (every 50 ms, whether or not a
+             browser is connected) compares the station band with the band it saw last;
+             any change (also to or from unknown) empties the session list, so it is
+             empty before the next Highlight evaluation or Auto step on the new band.
+             Effect: an ignored sender's verdict has rank null and is not greyed, why
+             "<call> is ignored (session list)" or "(permanent list)" (session first when
+             on both); so Highlight gives it no mark and Auto Call never selects it; Auto
+             CQ never answers an ignored caller, also when apply_to_callers is off. A
+             contact already in progress is not changed by ignoring its partner.
+             Band Activity: the right-click menu offers "Ignore <call>" for a row with a
+             resolved sender (session list), "Stop ignoring <call>" when that call is on
+             the session list, and no ignore item for other rows. Settings > General: the
+             permanent list (calls separated by spaces or commas, saved on change with
+             PUT /strategy), the session expiry in minutes (saved on change), and the
+             session list with each call's remaining minutes and a remove control; the
+             list is read again when the drawer opens. */
+    }
+    attribute def Pounce {
+        doc /* #42 (CL-042-03). A pounce is a WstxMcp::OperatingAutomation run whose
+             AutomationConfiguration has pounce = <call> (strategy false): one run at a time,
+             so at most one pounce and never beside an Auto strategy run (configure and
+             start are refused state_conflict run while any run is active). Start also
+             needs a known station band (station_band: CAT dial band, else the operating
+             selection band; unknown: not_ready band) and captures it with the mode; it
+             needs no active strategy. The run snapshot names it: pounce {call, band}
+             (null for other runs).
+             Each station step, after the WstxMcp checks (halt, context and mode, authority,
+             time limit): a station band other than the captured one stops band_changed
+             (a contact armed by the run is disarmed).
+             Waiting: on each fresh complete publication the candidates are the decoded
+             standard records from exactly the pounce call that are a CQ not greyed by
+             DirectedCqRule (my continent as configured in the strategy store, else
+             derived), or an RR73/73 to another call than mine (D3, always for a pounce),
+             and whose sender is not ignored (IgnoreLists, both tiers; the ignore lists
+             win); a CQ with any other target (TEST, POTA, a country, a number) is
+             answered, since the operator chose the station. The first by sequence is
+             answered exactly as Auto Call answers (select_row {replace false}, after an
+             RR73/73 set_frequency keeping my Tx frequency (Hold Tx), enable_tx with the
+             run's safety revision), so the contact engine calls it in the next own period
+             and Auto Seq runs the QSO; last_decision as for every run. Nothing from the
+             call: the run keeps waiting (no try is counted, no stop).
+             In the contact: completed stops completed (the pounce ends on success,
+             whatever completion_action says); max_unanswered_periods partner periods
+             without progress disarm and cancel the contact and return to waiting for the
+             same call (the pounce stays armed). Every other WstxMcp stop (halted,
+             context_changed, authority_lost, time_limit, contact_changed, transmit_stopped,
+             tx_watchdog, transmit_refused, provider_error, an explicit stop) is unchanged.
+             Browser: the Band Activity right-click menu offers "Pounce <call>" for a row
+             with a resolved sender, disabled without transmit capability, outside FT8/FT4
+             receive or while another run is active, and "Stop pouncing <call>" while a
+             pounce on that call runs (it sends stop). Pounce asks the page session's one
+             Auto confirmation (shared with Auto), then sends configure {modes [the live
+             mode], ranking first_seen, min_snr_db null, allowed_calls [], blocked_calls [],
+             max_contacts 1, max_unanswered_periods 5, completion_action stop,
+             max_run_minutes 480, strategy false, pounce <call>} and start with the shown
+             safety revision; the browser never sends enable_tx for it. While the pounce
+             runs, the QSO pane shows "Pouncing on <call> (<band>) · waiting for CQ or 73"
+             or "· in QSO" with a Stop pounce button (stop), and the strategy element's
+             status "Pounce <call> waiting" or "in QSO" with "HALT ends it"; the Auto button
+             is disabled meanwhile. */
+    }
+    attribute def Alert {
+        attribute historyMax : Integer = 100;
+        attribute dedupeMinutes : Integer = 10;
+        doc /* #42 (CL-042-04). Station side: the station's contact step (every 50 ms,
+             whether or not a browser is connected) reads the records of the current live
+             job past its alert cursor once each (a job not seen before from its first
+             retained record); the cursor advances also while no strategy is active or no
+             rule is marked alert, so marking a rule later never alerts on older decodes.
+             With an active strategy that has an alert rule, each new decoded standard
+             record with a resolved sender other than my call is evaluated with the
+             station facts of Evaluate: an ignored sender (IgnoreLists, both tiers) and a
+             CQ greyed by DirectedCqRule never alert; else its alert rule is the first
+             rule marked alert all of whose conditions hold (a higher rule without alert
+             that also holds does not hide it); none: no alert. Dedupe: no alert when the
+             station recorded one for the same call and the same station band
+             (station_band at that time; unknown counts as its own band) whose period
+             start lies less than 10 minutes before this record's period start (exactly
+             10 minutes later alerts again); this memory is kept apart from the history,
+             so Clear does not reset it. An alert never transmits, never selects, arms or
+             changes a contact, the automation run, the Tx watchdog or the strategy
+             store.
+             History: station memory only (it survives page reloads, a station restart
+             empties it), the last 100 alerts in the order recorded (the 101st drops the
+             oldest), each {id (1, 2, ... since the station started), utc (the record's
+             period_start_utc), call, message (the record text), rule ("<strategy name>
+             rule <n>", n 1-based), band (station band, null when unknown), mode (the live
+             job mode, ft8 or ft4), snr_db (null when unknown), dxcc (the full entity name
+             of WstxContact::EntityOfCall, null without an entity)}; revision counts every
+             alert recorded and every clear since the station started.
+             Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
+             /strategy/alerts (operating access, no query, empty body) -> {v 1,
+             profile_id, boot_id, revision, alerts (oldest first)}. POST
+             /strategy/alerts/clear {v, profile_id, boot_id}: exact keys, the refusals of
+             POST /strategy/ignore (400 invalid_request with the field,
+             unsupported_version, 403 wrong_profile, 409 state_conflict boot_id); it
+             empties the history, revision + 1, and returns the alerts snapshot. No MCP
+             tool dispatches to the clear (an MCP principal is refused, #58); wstx_read
+             view alerts reads GET /strategy/alerts (WstxMcp::ToolCatalog).
+             Event: a display-subscribed peer receives alert.state {v 1, type
+             "alert.state", data {profile_id, boot_id, alert_revision}} when the revision
+             changes after it subscribed (never on subscription itself), paced with
+             contact.state; the browser then reads GET /strategy/alerts.
+             Browser: the editor offers each rule an "Alert" checkbox (StrategyEditor).
+             Settings > General shows an Alerts section: "Sound" and "Browser
+             notification" checkboxes, both off by default, kept per browser and profile
+             in localStorage (wstx.alerts.v1:<profile_id> = {sound, notify}; unreadable:
+             both off); checking Browser notification is the only place that asks for the
+             browser's notification permission (Notification.requestPermission on that
+             click, never otherwise); a permission other than granted leaves it unchecked
+             with the reason. The history list, newest first, each line "<HH:MM:SS> <call>
+             <message> · <rule> · <band> <MODE> · <snr> dB · <dxcc>" (unknown parts left
+             out), and a Clear button (POST /strategy/alerts/clear). An alert counts as new
+             when its id is above the highest id this page has seen (the history read at
+             page load or reconnect announces nothing): for each new alert a short tone
+             (Web Audio, about 0.15 s) only when Sound is on and the page is visible, and a
+             notification titled "Alert <call>" with body "<message> · <rule>" when Browser
+             notification is on and permission is granted (also while the page is hidden);
+             with both off nothing is announced (the history still lists it). */
+    }
     calc def DirectedCqRule {
         in target : String;
         in myContinent : String[0..1];
@@ -151,10 +313,12 @@ package WstxStrategy {
         attribute rank : Integer[0..1];
         attribute grey : Boolean;
         doc /* One per decoded standard record with a resolved sender (others have none):
-             grey per DirectedCqRule; else rank = index (0-based) of the first rule all of
+             an ignored sender (IgnoreLists) has rank null, grey false; else grey per
+             DirectedCqRule; else rank = index (0-based) of the first rule all of
              whose conditions hold, null when none. why (explain only): "matches rule n",
-             "no match (rule n: <first failing condition>; ...)" or "CQ x is not
-             addressed to my continent (c)". Display order: rank ascending, then the sort
+             "no match (rule n: <first failing condition>; ...)", "CQ x is not
+             addressed to my continent (c)" or "<call> is ignored (session list)" /
+             "(permanent list)". Display order: rank ascending, then the sort
              (strongest: SNR descending, weakest: SNR ascending, furthest: distance
              descending, newest: sequence descending; unknown values last), then sequence;
              records without a rank follow in sequence order. */
@@ -164,7 +328,18 @@ package WstxStrategy {
         attribute evaluateRecordsMax : Integer = 2048;
         doc /* GET /strategy (operating access, no query, empty body): {v 1, profile_id,
              boot_id, revision, configuration (or null), configuration_error, my_continent
-             (configured, else derived; null when unknown), derived_continent}.
+             (configured, else derived; null when unknown), derived_continent,
+             session_ignore (#42: the session list in the order added without ended
+             entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
+             up})}.
+             POST /strategy/ignore {v, profile_id, boot_id, call, ignore} (#42): exact
+             keys; same Origin/authorization/media/size rules and refusal codes as PUT
+             /strategy (400 invalid_request with the field, unsupported_version, 403
+             wrong_profile, 409 state_conflict boot_id); call 1..13 of A-Z 0-9 /; ignore
+             true adds the call to the session list (or renews it), false removes it (not
+             listed: no change). It changes no revision, is allowed while Auto runs and
+             applies at the next evaluation; returns the snapshot. No MCP tool dispatches
+             to it (an MCP principal is refused, #58 principal guard).
              PUT /strategy {v, profile_id, boot_id, expected_revision, configuration}:
              exact keys; same Origin/authorization/media/size rules and refusal codes as
              PUT /udp (400 invalid_request with the field, unsupported_version, 403
@@ -186,15 +361,17 @@ package WstxStrategy {
              once; matching rows get the strategy mark and rule number and move to the top
              of their period block in display order; greyed rows are dimmed and struck
              through; other rows keep the ActivityOrdering. Highlight off: no evaluation
-             request and no mark. Choosing a strategy or toggling Highlight is one PUT
+             request and no mark. An ignored sender (IgnoreLists) gets no mark; after an
+             Ignore or Stop ignoring the shown rows are evaluated again. Choosing a strategy or toggling Highlight is one PUT
              /strategy; it never restarts receive. */
     }
     attribute def StrategyEditor {
         doc /* The edit (pencil) popup (a modal dialog carrying its own HALT with the top-bar HALT's
              action and enabled state; receive keeps running): choose, add, duplicate and
              delete strategies; name; rules with conditions (kind, not, value) in priority
-             order; sort; Treat 73 as CQ; Auto role, switch after, skip after, Auto CQ
-             answers only matching callers. The live preview evaluates the unsaved draft
+             order, each rule with its "Alert" checkbox (#42 Alert: sound or notification,
+             never transmits); sort; Treat 73 as CQ; Auto role, switch after, skip after,
+             Auto CQ answers only matching callers. The live preview evaluates the unsaved draft
              against the latest period (POST /strategy/evaluate with explain, 400 ms after
              an edit) and shows each decode's rank and why. Save sends one PUT /strategy
              and applies at once (also to a running Auto run); the edited strategy becomes
@@ -218,7 +395,8 @@ package WstxStrategy {
              Auto Call (waiting): on each fresh complete publication the candidates are
              the verdicts with a rank, cq-like (D3), not greyed, a CQ target other than a
              continent or DX only when the matched rule asks for it with a non-negated
-             cq_target condition, a sane call (SaneCall),
+             cq_target condition, a sane call (SaneCall), not ignored (IgnoreLists: no
+             rank),
              not mine, not completed or skipped in this run, one per call, in display
              order; the first is selected (select_row) and armed (enable_tx); an RR73/73
              candidate keeps the previous Tx frequency (set_frequency). No candidate: one
@@ -226,7 +404,7 @@ package WstxStrategy {
              Auto CQ (waiting in role cq): enable_tx with no contact in progress (a new
              own CQ, calling_cq). On each fresh partner-parity publication the callers are
              the messages to my call that are not RR73/73 (no tailender after their sign-
-             off), from a sane, not completed or skipped call, matching the strategy only
+             off), from a sane, not ignored (IgnoreLists), not completed or skipped call, matching the strategy only
              when apply_to_callers, in display order (all rank 0 otherwise); the first is
              selected (the armed CQ becomes that contact). No caller: one try.
              Alternate: switch_after consecutive tries switch Call -> CQ or CQ -> Call
@@ -263,6 +441,10 @@ package WstxStrategy {
     dependency storeClause from StrategyConfiguration to WstxRequirements::'CL-039-01';
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
     dependency newEntityClause from NewEntity to WstxRequirements::'CL-042-01';
+    dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
+    dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
+    dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;
+    dependency alertClause from Alert to WstxRequirements::'CL-042-04';
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';

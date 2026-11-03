@@ -330,5 +330,20 @@ test('TC-050-004 a double-click switches mid-QSO and from my CQ with Tx kept on,
   assert.equal((await snapshot()).transmit.arm_state,'armed');
   assert.equal(await page.locator('#contact-change').count(),0,'no confirmation button');
   await completes('EA8BIA','+00');
+  // (c) #50 operator 2026-11-03 (G8KHF after the completed G6WCX): after a completed
+  // contact (disarmed, contact_completed) a double-click whose second press sees the Band
+  // Activity rows redrawn (a result page arrived; the browser then drops that click and the
+  // dblclick) still replies: select_row with replace true, then enable_tx, then Tx1.
+  const done=await snapshot();assert.equal(done.transmit.arm_state,'disarmed');assert.equal(done.transmit.last_disarm_cause,'contact_completed');
+  const {sequences}=await publish(evenNow(),[{text:'CQ G8KHF IO92',hz:1888,snr:3}]);
+  const g8=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`);await g8.waitFor({timeout:30000});
+  const box=await g8.locator('td[data-col=message]').boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
+  mark=requests.length;
+  await page.mouse.move(x,y);await page.mouse.down({clickCount:1});await page.mouse.up({clickCount:1});
+  await page.mouse.down({clickCount:2});await page.evaluate(()=>renderResults());await page.mouse.up({clickCount:2});
+  await waitFor(async()=>requests.slice(mark).some(r=>r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx'),async()=>`enable_tx after the double-click: ${JSON.stringify(commands().slice(-3))}`);
+  assert.deepEqual(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body)).map(c=>[c.action,c.replace??c.enabled]).filter((c,i,a)=>i===0||JSON.stringify(c)!==JSON.stringify(a[i-1])),[['select_row',true],['enable_tx',true]]);
+  await waitFor(async()=>{const s=await snapshot();return s.transmit.arm_state==='armed'&&s.contact?.dx_call==='G8KHF';},'armed with G8KHF',15000);
+  await waitFor(()=>sentTo('G8KHF HB9BLA JN47'),'Tx1 to G8KHF',45000);
   assert.deepEqual(page.errors,[]);
 });

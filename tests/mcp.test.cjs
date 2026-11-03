@@ -14,7 +14,7 @@ const crypto = require('node:crypto');
 const {spawn} = require('node:child_process');
 const {once} = require('node:events');
 const selfsigned = require('selfsigned');
-const {grant, browserPort} = require('./support.cjs');
+const {grant, browserPort, stationEnv} = require('./support.cjs');
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 let root, app, origin, ca, token, certPath, document;
 
@@ -53,8 +53,7 @@ before(async () => {
     endpoint: {bind: `127.0.0.1:${port}`, origin}, connection_type: 'standard'};
   await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
   token = crypto.randomBytes(32).toString('hex');
-  const clean = {...process.env}; for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  app = spawn(exe, ['--profile', dir], {env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_TLS_CERT: certPath, WSTX_TLS_KEY: keyPath, WSTX_TOKEN: token}, windowsHide: true});
+  app = spawn(exe, ['--profile', dir], {env: stationEnv({WSTX_TLS_CERT: certPath, WSTX_TLS_KEY: keyPath, WSTX_TOKEN: token}), windowsHide: true});
   let output = ''; app.stdout.on('data', b => {output += b;}); app.stderr.on('data', b => {output += b;});
   const deadline = Date.now() + 10000;
   while (!output.includes(`WSTX listening ${origin}`)) {

@@ -1,3 +1,4 @@
+use super::super::{ChannelWord, QsoProgress};
 use super::*;
 
 /// Test-owned FT4 upper envelope. These are legal typed capacity entries, not detections.
@@ -275,6 +276,7 @@ fn payload_layout_witnesses() -> Vec<(String, &'static str, Decode)> {
             start_frame: 0,
             frequency_hz: 1000.,
             snr_db: Some(-20.),
+            a_priori: None,
         };
         assert_eq!(record.payload.status, PayloadStatus::Decoded, "{label}");
         let actual = match record.payload.fields.as_ref().unwrap() {
@@ -606,6 +608,7 @@ fn resource_capacity_owned_child() {
                     start_frame: 0,
                     frequency_hz: 1000.,
                     snr_db: None,
+                    a_priori: None,
                 }
             })
             .collect::<Vec<_>>();
@@ -1429,18 +1432,282 @@ fn failed_fine_point_retries_at_the_data_point() {
             let plan = BandPlan::new(Mode::Ft8, samples.len(), false).unwrap();
             let mut budget = CpuBudget::new(&cancel);
             let mut pass = complete(plan.current_pass(&samples, &mut budget)).unwrap();
-            let mut at =
-                |c| complete(bitmetrics::observe(&mut pass, c, &channel, &mut budget)).unwrap();
+            let mut at = |c| {
+                complete(bitmetrics::observe(
+                    &mut pass,
+                    c,
+                    &channel,
+                    &APriori::default(),
+                    &mut budget,
+                ))
+                .unwrap()
+            };
             if at(displaced).is_some() || at(truth).is_none() {
                 continue;
             }
-            let verified =
-                complete(decoder.verify(&samples, displaced, &cancel, &mut pass, &mut budget))
-                    .unwrap();
-            checked = Some((seed, amplitude, verified.map(|(_, t, _)| t == tones)));
+            let verified = complete(decoder.verify(
+                &samples,
+                displaced,
+                &APriori::default(),
+                &cancel,
+                &|_: &[f32], _, _: &[u8]| None,
+                &mut pass,
+                &mut budget,
+            ))
+            .unwrap();
+            checked = Some((seed, amplitude, verified.map(|(_, t, _, _)| t == tones)));
             break 'search;
         }
     }
     let (seed, amplitude, verified) = checked.expect("a window where only the true point decodes");
     assert_eq!(verified, Some(true), "seed {seed}, amplitude {amplitude}");
+}
+
+/// A window of `length` frames: uniform noise (0.2 peak to peak) plus one frame of `mode`
+/// (tones, carrier, start, amplitude).
+fn mode_window(
+    mode: Mode,
+    tones: &[u8],
+    carrier: f64,
+    start: usize,
+    amplitude: f64,
+    seed: u64,
+    length: usize,
+) -> Vec<f32> {
+    let wave = quadratures(mode, tones, carrier).unwrap();
+    let mut state = seed;
+    (0..length)
+        .map(|k| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let mut x = ((state >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.2;
+            if let Some(w) = k.checked_sub(start).and_then(|i| wave.get(i)) {
+                x += amplitude * w[0] as f64;
+            }
+            x as f32
+        })
+        .collect()
+}
+/// The a-priori context of `my` working `dx` (Rx = Tx = 1500 Hz).
+fn qso(my: &str, dx: &str, progress: QsoProgress) -> APriori {
+    let bits = crate::transmit::pack(&format!("{my} {dx} RRR"))
+        .unwrap()
+        .bits;
+    APriori {
+        my_call: Some(bits[..29].try_into().unwrap()),
+        dx_call: Some(bits[29..58].try_into().unwrap()),
+        progress,
+        rx_hz: 1500.,
+        tx_hz: 1500.,
+        cq_only: false,
+    }
+}
+/// The channel word and tones of a message in `mode`.
+fn message(mode: Mode, text: &str) -> (ChannelWord, Vec<u8>) {
+    let channel = Channel::new();
+    let bits = crate::transmit::pack(text).unwrap().bits;
+    let word = channel.encode(&bits, mode);
+    (word, channel.tones(&word, mode))
+}
+/// The word observed at the true point of a one-frame window under a context.
+fn observed(
+    mode: Mode,
+    samples: &[f32],
+    at: Candidate,
+    ap: &APriori,
+) -> Option<(ChannelWord, Option<u8>)> {
+    let cancel = || false;
+    let plan = BandPlan::new(mode, samples.len(), false).unwrap();
+    let mut budget = CpuBudget::new(&cancel);
+    let mut pass = complete(plan.current_pass(samples, &mut budget)).unwrap();
+    complete(bitmetrics::observe(
+        &mut pass,
+        at,
+        &Channel::new(),
+        ap,
+        &mut budget,
+    ))
+    .unwrap()
+}
+const TRUE_POINT: Candidate = Candidate {
+    start: 6000,
+    frequency: 1500.,
+    score: 0.,
+};
+/// The first (seed, amplitude) whose frame fails unassisted and under every `wrong` context,
+/// below the first level of its seed that decodes unassisted,
+/// decodes under `right` with AP type `kind` and satisfies `also`.
+fn weak_assisted_window(
+    mode: Mode,
+    text: &str,
+    right: &APriori,
+    wrong: &[APriori],
+    kind: u8,
+    also: impl Fn(&[f32]) -> bool,
+) -> (u64, f64, Vec<f32>) {
+    let (word, tones) = message(mode, text);
+    let length = if mode == Mode::Ft8 { 180000 } else { 90000 };
+    for seed in 1..60u64 {
+        for step in 0..24 {
+            let amplitude = 0.002 + step as f64 * 0.0005;
+            let samples = mode_window(mode, &tones, 1500., 6000, amplitude, seed, length);
+            // Decoded without any a-priori pass: the level is above the unassisted limit.
+            if let Some((_, None)) = observed(mode, &samples, TRUE_POINT, &APriori::default()) {
+                break;
+            }
+            if observed(mode, &samples, TRUE_POINT, right) != Some((word, Some(kind))) {
+                continue;
+            }
+            for ap in wrong {
+                assert_eq!(
+                    observed(mode, &samples, TRUE_POINT, ap),
+                    None,
+                    "{text}: seed {seed}, amplitude {amplitude}, {ap:?}"
+                );
+            }
+            if !also(&samples) {
+                continue;
+            }
+            return (seed, amplitude, samples);
+        }
+    }
+    panic!("{text}: no weak window that only the a-priori pass decodes");
+}
+
+// Proves: FR-003, FR-004, CL-007-03 (#56 slice 5 APrioriHypotheses). Weak FT8 QSO messages
+// below the unassisted limit decode only through the a-priori pass with the right MyCall,
+// DxCall, QSO state and Rx/Tx frequency, and the published record carries the AP type.
+#[test]
+fn weak_qso_words_decode_only_with_the_right_calls() {
+    use QsoProgress::*;
+    for (text, progress, kind) in [
+        ("HB9BLA K1ABC FN42", Report, 3),
+        ("HB9BLA K1ABC RR73", Rogers, 6),
+    ] {
+        let right = qso("HB9BLA", "K1ABC", progress);
+        let mut far = right.clone();
+        (far.rx_hz, far.tx_hz) = (1600., 1700.);
+        let mut wrong = vec![
+            qso("HB9BLA", "K9XYZ", Rogers),
+            qso("DL1ABC", "K1ABC", progress),
+            APriori {
+                cq_only: true,
+                ..right.clone()
+            },
+        ];
+        // Type 2 (MyCall ??? ???) needs no Rx/Tx proximity; the DxCall types do.
+        if progress == Rogers {
+            wrong.push(far);
+        }
+        // The full decode must find the frame's candidate: with the right context the word is
+        // published, without any context it is not.
+        let decode = |samples: &[f32], ap: &APriori| {
+            let mut state = DecodeState::new(Mode::Ft8);
+            state.set_a_priori(ap.clone());
+            let mut decoded = vec![];
+            complete(Decoder::new().decode_window_into_async(
+                samples.to_vec(),
+                0,
+                &mut state,
+                &|| false,
+                &mut |d| {
+                    decoded.push(d.clone());
+                    Ok(())
+                },
+            ))
+            .unwrap();
+            decoded
+        };
+        let has = |decoded: &[Decode]| {
+            decoded
+                .iter()
+                .any(|d| d.payload.text.as_deref() == Some(text))
+        };
+        let (seed, amplitude, samples) =
+            weak_assisted_window(Mode::Ft8, text, &right, &wrong, kind, |samples| {
+                has(&decode(samples, &right)) && !has(&decode(samples, &APriori::default()))
+            });
+        let decoded = decode(&samples, &right);
+        let found = decoded
+            .iter()
+            .find(|d| d.payload.text.as_deref() == Some(text))
+            .unwrap_or_else(|| panic!("{text}: seed {seed}, amplitude {amplitude}: {decoded:?}"));
+        // In the full decode the first matching type of the state may be an earlier one at
+        // its refined point (type 3 before type 6 in the rogers state).
+        assert!(
+            found.a_priori.is_some_and(|k| (2..=kind).contains(&k)),
+            "{found:?}"
+        );
+        let record = serde_json::to_value(found).unwrap();
+        assert_eq!(record["a_priori"], found.a_priori.unwrap(), "{record}");
+    }
+}
+
+// Proves: CL-007-03 (#56 slice 5). Under a wrong DxCall, in every QSO state, and in pure
+// noise under the right one, the a-priori passes never yield a word other than the one on
+// the air, at any level from buried to strong, in FT8 and FT4.
+#[test]
+fn wrong_dx_call_never_yields_a_false_word() {
+    use QsoProgress::*;
+    let mut assisted = 0;
+    for mode in [Mode::Ft8, Mode::Ft4] {
+        let length = if mode == Mode::Ft8 { 180000 } else { 90000 };
+        for text in ["HB9BLA K1ABC FN42", "HB9BLA K1ABC RR73", "HB9BLA K1ABC -12"] {
+            let (word, tones) = message(mode, text);
+            for seed in 1..9u64 {
+                for amplitude in [0., 0.003, 0.005, 0.007, 0.01, 0.02] {
+                    let samples = mode_window(mode, &tones, 1500., 6000, amplitude, seed, length);
+                    for progress in [Calling, Replying, Report, RogerReport, Rogers, Signoff] {
+                        for dx in ["K9XYZ", "W1AW", "K1ABD"] {
+                            let ap = qso("HB9BLA", dx, progress);
+                            if let Some((found, kind)) = observed(mode, &samples, TRUE_POINT, &ap) {
+                                assert!(
+                                    found == word && amplitude > 0.,
+                                    "{mode:?} {text} under {dx} {progress:?}: false word \
+                                     (type {kind:?}), seed {seed}, amplitude {amplitude}"
+                                );
+                                assisted += usize::from(kind.is_some());
+                            }
+                        }
+                        if amplitude == 0. {
+                            let ap = qso("HB9BLA", "K1ABC", progress);
+                            assert_eq!(
+                                observed(mode, &samples, TRUE_POINT, &ap),
+                                None,
+                                "{mode:?} noise, seed {seed}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("A_PRIORI wrong-DxCall checks: {assisted} correct a-priori words");
+}
+
+// Proves: FR-003, CL-007-03 (#56 slice 5). FT4 a-priori: a weak CQ below the unassisted limit
+// decodes through type 1 without any QSO context, and a weak HB9BLA K1ABC RR73 through type 6
+// with the right calls only.
+#[test]
+fn ft4_a_priori_recovers_weak_cq_and_qso_words() {
+    use QsoProgress::*;
+    let mut no_my_call = qso("HB9BLA", "K1ABC", Rogers);
+    no_my_call.my_call = None;
+    weak_assisted_window(
+        Mode::Ft4,
+        "CQ K1ABC FN42",
+        &APriori::default(),
+        &[],
+        1,
+        |_| true,
+    );
+    weak_assisted_window(
+        Mode::Ft4,
+        "HB9BLA K1ABC RR73",
+        &qso("HB9BLA", "K1ABC", Rogers),
+        &[qso("HB9BLA", "K9XYZ", Rogers), no_my_call],
+        6,
+        |_| true,
+    );
 }

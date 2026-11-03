@@ -395,7 +395,8 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
             "PUT",
             "/strategy",
             Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
-                "configuration":{"continent":null,"active":"NA first","highlight":true,"strategies":[na_first]}})),
+                "configuration":{"continent":null,"active":"NA first","highlight":true,"strategies":[na_first],
+                    "ignore_calls":[],"session_ignore_minutes":30}})),
         )
         .await;
     assert_eq!(saved.status, StatusCode::OK, "{}", saved.json);
@@ -439,7 +440,8 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
             "transmit",
             "contact",
             "automation",
-            "strategy"
+            "strategy",
+            "alerts"
         ])
     );
     assert_eq!(catalog[5]["annotations"]["readOnlyHint"], true);
@@ -455,6 +457,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         "completion_action",
         "max_run_minutes",
         "strategy",
+        "pounce",
     ] {
         assert!(
             described.contains(&format!("{key}:")),
@@ -470,6 +473,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ("contact", "/contact"),
         ("automation", "/automation"),
         ("strategy", "/strategy"),
+        ("alerts", "/strategy/alerts"),
     ] {
         let browser = f.browser("GET", path, None).await;
         assert_eq!(browser.status, StatusCode::OK, "{path}: {}", browser.json);
@@ -1033,7 +1037,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
 /// The internal MCP-principal station transport of an MCP client token: the handle the
 /// in-process dispatch presents. No client ever receives it; tests use it to send an
 /// MCP-principal request straight to a browser route.
-fn internal_transport(f: &Mcp, token: &str) -> String {
+pub(crate) fn internal_transport(f: &Mcp, token: &str) -> String {
     let mut owner = f.state.authorization.lock().unwrap();
     let service = owner.as_mut().unwrap();
     service
@@ -1043,7 +1047,13 @@ fn internal_transport(f: &Mcp, token: &str) -> String {
         .0
 }
 /// A request presenting `value` as the station session cookie (with Origin).
-async fn with_cookie(f: &Mcp, method: &str, uri: &str, value: &str, body: Option<Value>) -> Reply {
+pub(crate) async fn with_cookie(
+    f: &Mcp,
+    method: &str,
+    uri: &str,
+    value: &str,
+    body: Option<Value>,
+) -> Reply {
     let mut h = vec![
         ("origin", f.app.origin.clone()),
         ("cookie", format!("wstx_session_{}={value}", f.id)),

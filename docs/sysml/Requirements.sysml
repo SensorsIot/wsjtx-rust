@@ -1325,6 +1325,10 @@ package WstxRequirements {
              4. Drop bytes without closing the established test connection. Expect stale detection
                 within the contract's silent-loss bound and scheduler tolerance. Restore byte delivery;
                 expect bounded recovery and another snapshot without waiting for the old close handshake.
+             5. Hold (delay, not drop) every station-to-browser byte for 16s while the page's
+                deferred client download is pending, then deliver it. Expect the same socket, no
+                stale state and no new connection (#8). Hold beyond 31s with the download pending:
+                expect stale detection within the 31s bound plus 1-second scheduler tolerance.
 
              **Oracle:** contract state transitions/time limits and observed request exchange.
              The automation cuts/restores the proxy to the actual server and checks a new snapshot
@@ -1852,6 +1856,7 @@ package WstxRequirements {
              Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets.
              SNR (#52): every decoded observation of the pinned modern FT4 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -21.
+             A-priori decoding (#56 slice 5, WstxStationDecode::APrioriHypotheses): in FT4 a weak CQ decodes through type 1 without context and a weak HB9BLA K1ABC RR73 through type 6 only with the right calls.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1863,14 +1868,14 @@ package WstxRequirements {
             verify 'FR-004';
             verify 'FR-018';
         }
-        attribute executable : String = "server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::official_modern_recording_baselines";
+        attribute executable : String = "server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/decoder/search_test.rs::ft4_a_priori_recovers_weak_cq_and_qso_words";
     }
     verification 'TC-004-002' {
         doc /* TC-004-002 — Offline FT8
              FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
              Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions.
              Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets.
-             Recorded corpus (22 FT8 recordings, the official FT8 and the modern FT4 recording, #56): the decoder finds at least the pinned number of the 409 complete-frame decodes of WSJT-X 3.3.0-beta5 jt9 -8/-5 -d 3 (fixtures/decoder/jt9-deep-reference.json; same text, carrier within 5 Hz, or, for the one pinned case PA3EPP SP8NFO KN09 in 191111_110615, the same text on another carrier of the period: the station publishes the +23 dB 906 Hz signal, jt9 its 1056 Hz image, each publishing a message once per period, the first copy its own order verifies); jt9 is a lower bound, not exhaustive truth. A strong FT8 frame that began before the window, or runs past its end, masks a weak complete frame on the same carrier: the weak frame decodes and the partial frame is never published; a frame starting at most half a symbol before the window is published at start 0, one starting earlier is not (#56 Ft8PaddedResidual). The same word on a carrier more than 50 Hz away is published once and subtracted, so a weak frame under the second copy decodes. The weak-word guard rejects exactly an FT8 word with at most 10 Costas hits and a measured SNR below -25 dB. A weak word that fails at its fine point decodes at the nearby data point (#56 slice 4 Ft8DataPoint). A failed FT8 candidate overlapped by a frame subtracted in the same pass is qualified again on the next pass (Ft8RetryOverlapped); its evidence is the parity count (WA2FZW DL5AXX RR73 in the official recording is found only through it), not a dedicated synthetic test.
+             Recorded corpus (22 FT8 recordings, the official FT8 and the modern FT4 recording, #56): the decoder finds at least the pinned number of the 409 complete-frame decodes of WSJT-X 3.3.0-beta5 jt9 -8/-5 -d 3 (fixtures/decoder/jt9-deep-reference.json; same text, carrier within 5 Hz, or, for the one pinned case PA3EPP SP8NFO KN09 in 191111_110615, the same text on another carrier of the period: the station publishes the +23 dB 906 Hz signal, jt9 its 1056 Hz image, each publishing a message once per period, the first copy its own order verifies); jt9 is a lower bound, not exhaustive truth. A strong FT8 frame that began before the window, or runs past its end, masks a weak complete frame on the same carrier: the weak frame decodes and the partial frame is never published; a frame starting at most half a symbol before the window is published at start 0, one starting earlier is not (#56 Ft8PaddedResidual). The same word on a carrier more than 50 Hz away is published once and subtracted, so a weak frame under the second copy decodes. The weak-word guard rejects exactly an FT8 word with at most 10 Costas hits and a measured SNR below -25 dB. A weak word that fails at its fine point decodes at the nearby data point (#56 slice 4 Ft8DataPoint). A failed FT8 candidate overlapped by a frame subtracted in the same pass is qualified again on the next pass (Ft8RetryOverlapped); its evidence is the parity count (WA2FZW DL5AXX RR73 in the official recording is found only through it), not a dedicated synthetic test. A-priori decoding (#56 slice 5, WstxStationDecode::APrioriHypotheses): the type table per QSO state, lapcqonly, MyCall/DxCall availability and the 50 Hz Rx/Tx width match WSJT-X; the fixed bits are the packed message bits (FT4 scrambled); in FT8 a weak synthetic HB9BLA K1ABC FN42 (report state, type 3 at its true point) and HB9BLA K1ABC RR73 (rogers state, type 6 at its true point) below the unassisted limit decode only with the right MyCall, DxCall, state and Rx/Tx, and the full decode publishes them with an a_priori type of the state (2..the expected one); a wrong DxCall in every state, FT8 and FT4, over many seeds and levels never yields a word other than the transmitted one, and noise none; an a-priori word is published only with a decoded payload and at WSJT-X confidence qual >= 0.17 (except FT8 type 1); the live station sets MyCall, DxCall, state and Rx/Tx from the profile and the current contact, and cq-only until Enable Tx is on and again 300 s after it went off. The mode-independent evidence, the confidence boundary (server/src/decoder/apriori_test.rs::low_confidence_boundary) and the live station context (server/src/contact_http_tests.rs::a_priori_context_follows_profile_and_contact), is traced by its Proves tags, not bound here (CL-007-03: each mode case binds only tests that select its mode).
              SNR (#52): every decoded observation of the pinned official FT8 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -25. Through the live worker with a correlated UTC clock, the published SNR of a synthetic FT8 period (louder noise in its first 0.25 s and before it) equals the file decode of the same period-aligned audio.
              2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -1883,7 +1888,7 @@ package WstxRequirements {
             verify 'FR-004';
             verify 'FR-018';
         }
-        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point";
+        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/apriori_test.rs::a_priori_bits_are_the_packed_message_bits; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word";
     }
     verification 'TC-004-003' {
         doc /* TC-004-003 — Invalid and nonmatching input
@@ -2073,7 +2078,9 @@ package WstxRequirements {
         doc /* #### TC-007-009 — Laptop operating screen (#37)
 
              Proves CL-010-16. Cost level 2: actual isolated server and headless Chromium on the
-             development PC; no radio, audio device or network service. At 1366x768: no page
+             development PC; no radio, audio device or network service. A Band Activity record
+             with a_priori 1 shows the a1 marker after its message, outside the message text
+             (#56 slice 5). At 1366x768: no page
              scroll or horizontal overflow; the top bar holds only the TopBarItem set; no Monitor,
              Enable Tx, Start/Stop receive or Next receive mode control exists; no status text or
              error field entry is shown for a healthy station and each injected exception (stale
@@ -2301,7 +2308,7 @@ package WstxRequirements {
              Sorting checks: use independently scripted frequency200/1000/3499.9, SNR-20/+10/-5,
              signed DT-0.2/+0.2/unknown and case-varied literal messages. Check all fields and both
              directions, unknown-last, stable ties, arrivals spanning pages, empty/next periods,
-             mode/reconnect retention and profile reset; verify no new server mutations or changed
+             mode/reconnect retention and profile reset (to the #55 value order, the default); verify no new server mutations or changed
              result request cadence. Cost2 Windows actual Chromium/candidate server; cost4 actual
              live calls, operator changes both controls and observes only latest-period rows. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -2493,6 +2500,19 @@ package WstxRequirements {
              retained-rejected, invalid or missing credential is never retried
              without an operator action, so it cannot spam challenges or drain any
              admission bound; transient failures back off exponentially to60s.
+             Slow-link setup retry (operator decision 2026-11-03, issue22): during one
+             token login each setup step (POST /session, bootstrap-scope, enroll, and
+             the challenge/proof/status renewal) has its own 10 s attempt bound. A step
+             whose attempt timed out or failed on the network (no HTTP status) is
+             retried automatically, at most 3 attempts per step after 1 s then 2 s,
+             and the whole login stops after 45 s, without a second operator press.
+             Enroll repeats the same operation ID and verifier (idempotent receipt);
+             a renewal attempt starts from a fresh challenge. Any HTTP refusal
+             (401/403/409/413/429/503) or invalid/mismatched response is definitive
+             and never retried. While retrying the existing authorizing state stays
+             and the connection status shows 'Retrying authorization' with the attempt; page
+             unload (pagehide) cancels pending attempts and waits. Each retried
+             session/bootstrap-scope/enroll attempt spends the setup budget above.
              Browser Log out revokes this grant (revoke all_for_radio=false), then
              deletes the local key after the committed receipt; the server clears
              the transport cookie. A confirmed rejected/invalid retained credential
@@ -2758,6 +2778,15 @@ package WstxRequirements {
              proof establishes readiness. Contrast pre-commit failure: no retained
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
+             Slow-link setup retry oracle (independent request counters on the actual
+             browser): hold the first bootstrap-scope response past its 10 s bound;
+             the status shows 'Retrying authorization' and becomes connected after one
+             token press with one session, two bootstrap-scope and one enrollment.
+             A network-failed enrollment is repeated once with the identical operation
+             ID and verifier and connects. Network failure of every /session
+             attempt stops after exactly 3 attempts with 'Could not authenticate'.
+             A 401 bootstrap-scope is never retried. Navigating away during a held
+             attempt sends no further setup request.
              Automated companions: tests/profiles.test.cjs TC-022-006 cases and
              server/src/auth_tests.rs, including plaintext runtime-token operating
              access. Radio identity Add/Replace and injected-time restart subsets
@@ -2908,7 +2937,7 @@ package WstxRequirements {
     dependency CL_012_01_to_FR_020 from 'CL-012-01' to 'FR-020';
     dependency CL_012_01_to_FR_021 from 'CL-012-01' to 'FR-021';
     requirement 'CL-012-02' {
-        doc /* An MCP client observes exactly the browser's station views (profile, receive, selection, radio, transmit, contact, automation, strategy and decoded result pages, and the strategy verdicts of POST /strategy/evaluate, read-only) and operates through the same ContactCommand, HaltTransmit and AutomationCommand bodies, receipts, revisions, command_id idempotency and refusal codes as the browser, for FT8 and FT4. Details: WstxMcp::ToolCatalog, ToolResult. */
+        doc /* An MCP client observes exactly the browser's station views (profile, receive, selection, radio, transmit, contact, automation, strategy, the #42 alert history and decoded result pages, and the strategy verdicts of POST /strategy/evaluate, read-only) and operates through the same ContactCommand, HaltTransmit and AutomationCommand bodies, receipts, revisions, command_id idempotency and refusal codes as the browser, for FT8 and FT4. Details: WstxMcp::ToolCatalog, ToolResult. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/mcp.rs; server/src/contact_http.rs; server/src/automation.rs";
     }
@@ -2932,7 +2961,7 @@ package WstxRequirements {
              CL-012-01, CL-012-02, CL-012-04
              Setup: (a) actual candidate router on a selected HTTPS profile (HB9BLA, JN47AA) with its auth-v1 owner, the contact engine and the #9 transmit owner on the recording hardware double, an injected FT8 live job and hand-authored codec-packed rows "CQ K1ABC FN42" 1234.6 Hz -12.4 dB and "CQ W1AW FN31" 900.0 Hz -3.0 dB; one enrolled grant; an independent JSON-RPC test client. (b) The compiled executable on a disposable HTTPS profile with a throwaway certificate and a browser-style grant that creates the MCP client token; the browser saves the strategy "NA first" (rule 1 CQ from continent NA, rule 2 any CQ, sort strongest) as active.
              Steps: modern server/discover and tools/list; wstx_read of every view and GET of the same browser route; wstx_results and the same GET /receive/results; wstx_strategy_evaluate of sequences [0, 2) with the saved strategy and the same POST /strategy/evaluate from the browser; legacy initialize, notifications/initialized, tools/list and tools/call; (b) create an MCP client token in Settings (POST /authorization/v1/mcp-clients/create), then tools/list and wstx_read profile/contact/strategy against GET /profile and GET /strategy.
-             Expected (WstxMcp tables and the fixture's own identities): supportedVersions exactly [2026-07-28, 2025-11-25, 2025-06-18]; tools exactly wstx_read, wstx_results, wstx_contact_command, wstx_transmit_halt, wstx_automation_command, wstx_strategy_evaluate in this order and identical in both eras, wstx_read's view enum the eight views, wstx_strategy_evaluate readOnlyHint and the wstx_automation_command description naming every AutomationConfiguration key (max_run_minutes and strategy included); each view (strategy included: active "NA first", my_continent EU) equal to the browser response apart from the per-read monotonic_ms/utc_ms; profile_id/boot_id the fixture's; automation configuration and run null; the two rows with their literal text, frequency, SNR and sequences; the verdicts equal the browser's: K1ABC (FN42, NA) rank 0 and W1AW (FN31, NA) rank 0, W1AW first (strongest); legacy protocolVersion 2025-11-25, no Mcp-Session-Id, no resultType; the text content equals structuredContent; no PTT exchange.
+             Expected (WstxMcp tables and the fixture's own identities): supportedVersions exactly [2026-07-28, 2025-11-25, 2025-06-18]; tools exactly wstx_read, wstx_results, wstx_contact_command, wstx_transmit_halt, wstx_automation_command, wstx_strategy_evaluate in this order and identical in both eras, wstx_read's view enum the nine views (alerts last, #42), wstx_strategy_evaluate readOnlyHint and the wstx_automation_command description naming every AutomationConfiguration key (max_run_minutes and strategy included); each view (strategy included: active "NA first", my_continent EU) equal to the browser response apart from the per-read monotonic_ms/utc_ms; profile_id/boot_id the fixture's; automation configuration and run null; the two rows with their literal text, frequency, SNR and sequences; the verdicts equal the browser's: K1ABC (FN42, NA) rank 0 and W1AW (FN31, NA) rank 0, W1AW first (strongest); legacy protocolVersion 2025-11-25, no Mcp-Session-Id, no resultType; the text content equals structuredContent; no PTT exchange.
              2 — Isolated automated functional tests; Windows development PC, actual candidate router and executable, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3630,7 +3659,7 @@ package WstxRequirements {
     }
     dependency CL_057_01_verified_by_TC_057_001 from 'CL-057-01' to 'TC-057-001';
     requirement 'CL-057-02' {
-        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement and physical check; at most eight at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR measurement (with its per-period baseline), publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time, bounding their memory. The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
+        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the rows of the FT8 detection spectrum, the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement, physical check and, for a supported complete FT8 frame, its SNR signal power; at most sixteen at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR baseline (per period) and SNR value, publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time: the next four are built on other threads while the previous four are subtracted, so at most eight are held, bounding their memory. The last pass's verified frames are not subtracted, because no later pass reads that residual (#57: these keep a busy FT8 prompt window at about 0.3 s of decode, below the 0.5 s row budget of TC-057-002). The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/decoder/parallel.rs; server/src/decoder/search.rs; server/src/decoder/synchronization.rs; server/src/decoder/baseband.rs; server/src/audio/windows.rs; server/src/playback/windows.rs";
     }
@@ -3668,7 +3697,7 @@ package WstxRequirements {
     dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
     requirement 'CL-057-03' {
-        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by the chosen column (ActivityOrdering); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. */
+        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by value or by the chosen column (ActivityOrdering, #55 CL-055-04); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js";
     }
@@ -3754,7 +3783,7 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01) (the two-tier ignore lists, Pounce and Alert as a third action with history are delivered by #42, CL-042-02, CL-042-03 and CL-042-04); auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
@@ -3792,6 +3821,112 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_042_01_verified_by_TC_042_001 from 'CL-042-01' to 'TC-042-001';
+    requirement 'CL-042-02' {
+        doc /* Two-tier ignore lists govern the strategy: a permanent list of calls (Settings > General, saved in the strategy configuration) and a session list in station memory (Band Activity right-click "Ignore <call>" / "Stop ignoring <call>", POST /strategy/ignore), whose entries end after the configured minutes (1..720, default 30) and which the station empties on any change of the station band. An ignored sender (exact call) never matches a rule: Highlight gives it no mark, Auto Call never selects it and Auto CQ never answers it, also when Auto CQ answers every caller; a contact already in progress and a manual Reply or Select are not changed. A saved configuration from before the lists reads with empty lists and 30 minutes. Details: WstxStrategy::IgnoreLists. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_042_02_to_FR_007 from 'CL-042-02' to 'FR-007';
+    dependency CL_042_02_to_FR_010 from 'CL-042-02' to 'FR-010';
+    dependency CL_042_02_to_FR_020 from 'CL-042-02' to 'FR-020';
+    verification 'TC-042-002' {
+        doc /* TC-042-002 — Ignore lists in the evaluator, the store, the routes and Auto
+             CL-042-02
+             Setup: hand-authored rows CQ K1ABC FN42, CQ DL1XYZ JO62, CQ NA W1AW FN31, HB9BLA VK2ABC QF56; the station HB9BLA JN47AA on 40m; the actual station router, contact engine and #9 transmit owner on the recording hardware double (virtual UTC; no audio, PTT or radio); synthetic monotonic instants for the session expiry.
+             Steps: parse the configuration with ignore_calls and session_ignore_minutes and refuse a duplicate, a lower-case or a 14-character call, 101 calls, minutes 0 and 721; read a saved pre-#42 file without both keys and with only one of them; evaluate a CQ-matching strategy with K1ABC on the permanent list, on the session list and on both, and with W1AW (greyed) ignored; the session list: add, renew, remove, expiry at the minute boundary, 65 adds, a band change and a band unknown; POST /strategy/ignore accepted and refused (extra key, bad call, wrong profile, stale boot), GET /strategy session_ignore; the station tick on another band; Auto Call with the strongest matching CQ ignored; Auto CQ (apply_to_callers off) with an ignored caller.
+             Expected: the round trip keeps both keys; the refusals name ignore_calls[i], ignore_calls and session_ignore_minutes; the pre-#42 file reads with [] and 30, the one-key file is invalid_configuration; K1ABC rank null, grey false, why "K1ABC is ignored (permanent list)", "(session list)", session first when on both; W1AW also not greyed when ignored; an entry ends exactly at added + minutes and reports remaining_s rounded up; renewal moves it last with a new expiry; the 65th add drops the oldest; a band change (also to unknown) empties the list; the route returns the snapshot at an unchanged revision with the refusal codes and fields of PUT /strategy; Auto Call selects the next matching CQ, never the ignored one; Auto CQ answers the other caller, never the ignored one; no transmit key in any evaluation.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-02';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_042_02_verified_by_TC_042_002 from 'CL-042-02' to 'TC-042-002';
+    verification 'TC-042-003' {
+        doc /* TC-042-003 — Band Activity Ignore and the Settings ignore lists
+             CL-042-02
+             Setup: the browser fixture of the operating screen with the actual isolated station and its fixture live decodes; Highlight on with a CQ strategy.
+             Steps: right-click a decoded row with a resolved sender; choose Ignore; open the menu again on that row; open Settings > General; enter two calls in the permanent list; change the session minutes; remove the session entry.
+             Expected: the menu offers Reply, Select, Set Rx here, "Pounce <call>" (#42 CL-042-03) and "Ignore <call>", Ignore sends POST /strategy/ignore {call, ignore true} and does not set the Rx frequency; the row loses its Highlight mark after the station's new verdicts; the menu then offers "Stop ignoring <call>"; Settings lists the call with its remaining minutes; the permanent list saves with PUT /strategy as ignore_calls in upper case, the minutes as session_ignore_minutes; remove sends ignore false and the list is empty; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_02_verified_by_TC_042_003 from 'CL-042-02' to 'TC-042-003';
+    requirement 'CL-042-03' {
+        doc /* Pounce waits for one chosen call and answers it: an operator action (Band Activity right-click "Pounce <call>") starts a station automation run with pounce <call> on the current band and mode (one run at a time, so never beside Auto Call or Auto CQ, and needing a known band); when that call is decoded sending a CQ that the directed-CQ rule leaves to me, or an RR73/73 ending another QSO (then my Tx frequency is held), and it is on no ignore list, the station answers it as a double-click does (select_row, enable_tx; the contact engine calls in the next own period and Auto Seq runs the QSO). The pounce ends when that contact completes, on a station band change (band_changed), on HALT, the Tx watchdog or the operator's Stop pounce; a contact without an answer for max_unanswered_periods partner periods is cancelled and the pounce waits again. While it runs the QSO pane and the strategy element show it. Details: WstxStrategy::Pounce, WstxMcp::AutomationConfiguration, OperatingAutomation. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/mcp.rs; client/contact.js";
+    }
+    dependency CL_042_03_to_FR_007 from 'CL-042-03' to 'FR-007';
+    dependency CL_042_03_to_FR_020 from 'CL-042-03' to 'FR-020';
+    verification 'TC-042-004' {
+        doc /* TC-042-004 — Pounce at the station: configuration, answer, ignore, band change and end
+             CL-042-03
+             Setup: hand-authored rows; the station HB9BLA JN47AA on 40m; the actual station router, contact engine and #9 transmit owner on the recording hardware double (virtual UTC; no audio, PTT or radio); FT8 live job; the browser's grant.
+             Steps: parse configurations with pounce absent, null, K1ABC, lower case, 2 characters, K1ABC/R, with strategy true and with K1ABC in blocked_calls; start a pounce with the station band unknown; start a pounce on K1ABC on 40m; publish CQ W1AW FN31 and CQ DL1XYZ JO62; publish CQ K1ABC FN42; run the own period; the partner's report, RR73 and the own 73 period; start again and configure or start a second run while it waits; publish W1AW K1ABC RR73; a pounce on K1ABC with K1ABC on the session ignore list and a CQ K1ABC; a pounce with CQ NA K1ABC (not for EU); a pounce waiting when the station band changes to 20m; a pounce in its contact with max_unanswered_periods 2 and two partner periods without an answer.
+             Expected: absent and null read as no pounce, K1ABC accepted, the others invalid_request pounce; not_ready band; the run waits with pounce {K1ABC, 40m} and selects nothing for the other calls (candidates 0); CQ K1ABC is selected (replying, Tx1 "K1ABC HB9BLA JN47", armed) and the own period keys "K1ABC HB9BLA JN47"; the completed contact stops the run completed; a second configure or start is state_conflict run; after the RR73 to W1AW K1ABC is selected with my Tx frequency kept; an ignored K1ABC and the CQ NA are never selected (the run keeps waiting); the band change stops band_changed; two unanswered partner periods disarm and cancel the contact and the run waits again for K1ABC.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-03';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_042_03_verified_by_TC_042_004 from 'CL-042-03' to 'TC-042-004';
+    verification 'TC-042-005' {
+        doc /* TC-042-005 — Band Activity Pounce and the pounce line in the QSO pane
+             CL-042-03
+             Setup: the browser fixture of the operating screen with the actual isolated station and its fixture live decodes; the automation routes are hand-written fixtures.
+             Steps: right-click a decoded row with a resolved sender; choose Pounce; confirm; announce the started run; open the menu again; choose Stop pounce in the QSO pane.
+             Expected: the menu offers "Pounce K1ABC"; the confirmation is the Auto one; configure sends exactly {modes [ft8], ranking first_seen, min_snr_db null, allowed_calls [], blocked_calls [], max_contacts 1, max_unanswered_periods 5, completion_action stop, max_run_minutes 480, strategy false, pounce K1ABC}, then start with the shown safety revision; no contact command (no enable_tx) is sent by the browser; the QSO pane reads "Pouncing on K1ABC (40m) · waiting for CQ or 73", the status "Pounce K1ABC waiting · HALT ends it", the Auto button is disabled; the menu then offers "Stop pouncing K1ABC"; Stop pounce sends stop with the run id; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_03_verified_by_TC_042_005 from 'CL-042-03' to 'TC-042-005';
+    requirement 'CL-042-04' {
+        doc /* Alert is a third action beside Highlight and Auto: a strategy rule can be marked alert; when a decode matches an alert rule of the active strategy (an ignored sender and a directed CQ not for me never alert), the station records an alert (time, call, message, rule, band, mode, SNR, DXCC entity) in a history of the last 100 alerts in station memory (kept across page reloads, empty after a station restart), at most one per call and band in 10 minutes, and announces it to the browser; the browser plays a short sound and/or shows a browser notification as the operator chose in Settings > General (both off by default; the notification permission is asked only on the operator's click; no sound while the page is hidden), and lists the history with a Clear. An alert never transmits or changes a contact or automation run. An MCP client may read the history (wstx_read alerts), not clear it. Details: WstxStrategy::Alert, Strategy, StrategyEditor; WstxMcp::ToolCatalog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; server/src/mcp.rs; client/contact.js";
+    }
+    dependency CL_042_04_to_FR_007 from 'CL-042-04' to 'FR-007';
+    dependency CL_042_04_to_FR_020 from 'CL-042-04' to 'FR-020';
+    verification 'TC-042-006' {
+        doc /* TC-042-006 — Alert at the station: rule key, match, dedupe, ignore and directed-CQ rule, history and routes
+             CL-042-04
+             Setup: hand-authored rows and strategies; the station HB9BLA JN47AA on 40m; the actual station router and contact engine on the recording hardware double (virtual UTC; no audio, PTT or radio); FT8 live job.
+             Steps: parse a rule with alert true, false, absent and "yes"; evaluate a strategy whose rule 1 (no alert) and rule 2 (alert) both hold; publish CQ JA1XYZ PM95 before any rule is marked alert, then save the strategy "Alerts" (rule 1 call K without alert, rule 2 message CQ with alert); publish in one period CQ K1ABC FN42 (-12 dB), CQ DL1XYZ JO62 (-3 dB), CQ NA W1AW FN31, CQ G4ABC IO91 with G4ABC on the session ignore list and HB9BLA VK2ABC QF56; publish CQ K1ABC FN42 30 s later and 10 minutes after the first; change the band to 20m and publish CQ K1ABC again; read GET /strategy/alerts and wstx_read alerts; clear with an extra key, a wrong profile, a wrong boot and correctly; read GET /strategy/alerts with the MCP principal's cookie and POST the clear with it; publish 101 CQs from different calls in one period.
+             Expected: true reads back with alert true, false and absent without the key, "yes" is invalid_request strategies[0].rules[0].alert; the alert rule is rule 2 although the rank is rule 1; no alert for JA1XYZ; alerts exactly K1ABC {utc of the period, message "CQ K1ABC FN42", rule "Alerts rule 2", band 40m, mode ft8, snr_db -12, dxcc United States} and DL1XYZ (Fed. Rep. of Germany), ids 1 and 2, revision 2, none for W1AW, G4ABC or the message to me; nothing 30 s later; a third K1ABC alert 10 minutes later and a fourth on 20m; wstx_read alerts equals the browser's GET; the refusals 400 invalid_request, 403 wrong_profile, 409 state_conflict boot_id leave the history; the clear empties it with revision + 1; the MCP cookie may GET and is refused 401 on the clear; after 101 alerts the history holds the last 100; no contact, no selection and no keying throughout.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-04';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_042_04_verified_by_TC_042_006 from 'CL-042-04' to 'TC-042-006';
+    verification 'TC-042-007' {
+        doc /* TC-042-007 — Alert checkbox in the editor, the Settings alert history, sound and browser notification
+             CL-042-04
+             Setup: the browser fixture of the operating screen with the actual isolated station; the strategy and alert routes are hand-written fixtures; the page's Notification and AudioContext are recording test doubles (no sound device).
+             Steps: open the editor, tick Alert on rule 1 and Save; open Settings > General with one alert in the history; announce alert.state with a second alert; tick Sound and announce a third; tick Browser notification (the double grants) and announce a fourth; make the page hidden and announce a fifth; reload; Clear.
+             Expected: the PUT carries rule 1 with alert true; Sound and Browser notification are unchecked by default and the history line reads "12:00:00 K1ABC CQ K1ABC FN42 · CQ rule 1 · 40m FT8 · -12 dB · United States"; the second alert is listed first with no tone, no notification and no permission request; the third plays one tone and no notification; the permission is asked exactly once, on the click; the fourth plays one tone and shows one notification "Alert JA1XYZ" with body "CQ JA1XYZ PM95 · CQ rule 1"; the hidden page's fifth plays no tone and shows one notification; after the reload both checkboxes stay as chosen and nothing is announced; Clear sends exactly {v, profile_id, boot_id} to POST /strategy/alerts/clear and the list is empty; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_04_verified_by_TC_042_007 from 'CL-042-04' to 'TC-042-007';
     verification 'TC-039-001' {
         doc /* TC-039-001 — Strategy configuration is exact
              CL-039-01
@@ -3927,6 +4062,18 @@ package WstxRequirements {
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/main.rs; client/logbook.js";
     }
     dependency CL_055_03_to_FR_016 from 'CL-055-03' to 'FR-016';
+    requirement 'CL-055-04' {
+        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded standard message (CQ, replies to others, reports, R-reports, RR73, 73) is coloured by the same new DXCC, continent, zone, grid and call flags; a message to my call keeps the calling-me colour on top; a row without a flag has no colour (the CQ slot is off by default and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order: calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxOperatingLayout::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/contact.js; client/logbook.js";
+    }
+    dependency CL_055_04_to_FR_019 from 'CL-055-04' to 'FR-019';
+    requirement 'CL-055-05' {
+        doc /* Band Activity rows are tighter so more stations fit (operator 2026-11-03): less vertical padding and line height on decode rows and period dividers at the same font size, at most 24 px per row with a mouse; touch (coarse pointer) and the stacked narrow layout keep tappable rows. Details: WstxOperatingLayout::BandActivityView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.css";
+    }
+    dependency CL_055_05_to_FR_019 from 'CL-055-05' to 'FR-019';
     verification 'TC-055-001' {
         doc /* TC-055-001 — Entity resolution known answers
              CL-055-01
@@ -3983,6 +4130,36 @@ package WstxRequirements {
         attribute executable : String = "tests/contact.test.cjs; server/tests/decoder_vectors.rs";
     }
     dependency CL_055_02_verified_by_TC_055_004 from 'CL-055-02' to 'TC-055-004';
+    verification 'TC-055-006' {
+        doc /* TC-055-006 — Band Activity colours, hover text and value order for every sender
+             CL-055-04, CL-055-02
+             Setup: actual router with a selected profile whose log holds DL1ABC JO62 20m FT8 (TC-055-002); in the browser the operating fixture with routed result records carrying #55 flags and dxcc, selection band 20m, a worked-before query answered by the actual server.
+             Steps: read /receive/results for a report and an R-report to other stations from new senders (K9XX G4XYZ -10, K9XX YO3ABC R-07) and an RR73 from a sender worked on 20m FT8 (K9XX DL1ABC RR73); in the browser render one period with a report from a new-DXCC sender (YO3ABC K9XX -07), a row to my call, a new CQ zone, a new grid, a new call, two rows of equal value with different SNR and a worked-before CQ without flags; turn Highlight on with a strategy hit.
+             Expected: the server gives both non-CQ senders their dxcc and flags (England new call, DXCC and ITU zone; Romania new DXCC) and the worked sender Germany without flags; the YO3ABC report is coloured new DXCC and its title starts "New DXCC: Romania" followed by "New DXCC on 20m"; the row to my call is "Calling me" first and keeps the my-call colour; the worked-before CQ has no colour and its title is "Worked before on 20m FT8"; rows are in value order calling me, strategy hit, new DXCC, new zone, new grid, new call, no flag, equal values strongest first; the DXCC header restores this order after a Freq sort.
+             2 — Isolated automated (functional) tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-04';
+            verify 'CL-055-02';
+        }
+        attribute executable : String = "server/src/dxcc_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_055_04_verified_by_TC_055_006 from 'CL-055-04' to 'TC-055-006';
+    dependency CL_055_02_verified_by_TC_055_006 from 'CL-055-02' to 'TC-055-006';
+    verification 'TC-055-007' {
+        doc /* TC-055-007 — Dense Band Activity rows
+             CL-055-05
+             Setup: operating fixture at 1366x768 with a period of 30 routed decodes; Chromium.
+             Steps: wait for the rows; measure a row, the font size and the rows fully visible in the table; read the coarse-pointer rule.
+             Expected: a row at most 24 px high (41 px before), the font size unchanged (the normal operating font), at least 8 rows visible (5 before), and a pointer:coarse rule keeping at least 8 px cell padding; screenshot band-activity-density-1366.png (before and after on the issue).
+             2 — Isolated automated (functional) tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_055_05_verified_by_TC_055_007 from 'CL-055-05' to 'TC-055-007';
     verification 'TC-055-005' {
         doc /* TC-055-005 — Live DXCC on HB9BLA
              CL-055-02, CL-055-03
@@ -4098,7 +4275,7 @@ package WstxRequirements {
     dependency CL_050_01_to_FR_007 from 'CL-050-01' to 'FR-007';
     dependency CL_050_01_to_FR_019 from 'CL-050-01' to 'FR-019';
     requirement 'CL-050-02' {
-        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks: My call and CQ from the message, New call / New call on band from the station's worked-before status (a never-worked call is both), the DXCC, continent, zone and grid slots from record flags when a station supplies them, every New slot on CQ/QRZ lines only as in WSJT-X; worked before has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
+        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks other than the a-priori marker aN after an a-priori word's message (#56 slice 5): My call and CQ from the message, the New call, grid, DXCC, continent and zone slots from the record flags the station supplies (#55), for every decoded sender (operator decision, CL-055-04, not only CQ/QRZ lines as in WSJT-X); CQ is off by default and worked before has no colour, so a row without a flag has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/logbook.js; client/recording.css";
     }
@@ -4135,7 +4312,7 @@ package WstxRequirements {
              CL-050-02
              Setup: actual candidate server with a logged K1ABC on 20m FT8; routed live job with CQ K1ABC, CQ W1XYZ and a free-text row; Chromium.
              Steps: wait for the worked-before query; read row backgrounds; enable New call in Settings; append synthetic rows with slot sets for the #55 flags.
-             Expected: no text marks; CQ rows rgba(102,255,102,0.24) with New call off (WSJT-X default); W1XYZ (not worked) slots new_call and new_call_band, rgba(0,255,255,0.24) once enabled, K1ABC (worked) stays CQ; a not-worked caller on a non-CQ line gets no New slot; the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
+             Expected: no text marks; CQ rows without a flag have no colour (CQ off by default, #55); W1XYZ (flags new_call, new_call_band) rgba(0,255,255,0.24) once New call is enabled, K1ABC (worked, no flag) has none; a flagged sender on a non-CQ line (W2AB) gets the same slots (CL-055-04); the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4146,7 +4323,7 @@ package WstxRequirements {
     dependency CL_050_02_verified_by_TC_050_002 from 'CL-050-02' to 'TC-050-002';
     // #50/#10 operator feedback 2026-11-02 evening (US5WFL/YO3GNF, TC2TR, the 22:48 CQ run on 40 m).
     requirement 'CL-050-04' {
-        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, during a contact or during my CQ, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxContact::ChangeContact, SelectDecodedRow, WstxOperatingLayout::BandActivity. */
+        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, after a completed contact, during a contact or during my CQ, also when the rows are redrawn between its two clicks or during its second press, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxContact::ChangeContact, SelectDecodedRow, WstxOperatingLayout::BandActivity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; client/contact.js";
     }
@@ -4162,8 +4339,8 @@ package WstxRequirements {
         doc /* TC-050-004 — A double-click switches to another station with Enable Tx kept
              CL-050-04
              Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); the actual candidate Router, contact engine and #9 transmit owner on a recording hardware double with Chromium on the real clock (contact_http_tests::contact_browser_operating_flow, tests/contact.test.cjs).
-             Steps: (a) engine: select "CQ K1ABC FN42", Enable Tx, send Tx1 in the odd period, then select "CQ DL1ABC JO62" (even period) with replace true and run two periods; then enter_dx W1AW with replace true; again switching 100 ms after my period start (PTT keyed, audio not started), also to "CQ DL1ABC JO62" decoded in an odd period; (b) browser: double-click "CQ K1ABC FN42"; after its Tx1 double-click "CQ DL1ABC JO62"; publish DL1ABC's report and RR73; then CQ and, while calling, double-click "CQ EA8BIA IL18" and run that QSO the same way.
-             Expected: (a) still armed, last_disarm_cause unchanged, the next odd period sends "DL1ABC HB9BLA JN47", no later period sends to K1ABC, the manual replacement keeps Enable Tx; the switch in the keyed window sends the new contact's Tx1 in that same period, still armed; a switch in the keyed window to "CQ DL1ABC JO62" decoded in an odd period (my own parity) still sends K1ABC's Tx1 in that period and DL1ABC's Tx1 in the next even period, still armed, never refused busy (#10); (b) each double-click sends select_row with replace true then enable_tx and shows no "Change contact" button; still armed, last_disarm_cause not contact_cancelled; the next own period sends "DL1ABC HB9BLA JN47", then "DL1ABC HB9BLA R-03" and "DL1ABC HB9BLA 73"; the contact completes and contacts.adi holds exactly one record for it; the same for EA8BIA from the CQ ("R+00").
+             Steps: (a) engine: select "CQ K1ABC FN42", Enable Tx, send Tx1 in the odd period, then select "CQ DL1ABC JO62" (even period) with replace true and run two periods; then enter_dx W1AW with replace true; again switching 100 ms after my period start (PTT keyed, audio not started), also to "CQ DL1ABC JO62" decoded in an odd period; (b) browser: double-click "CQ K1ABC FN42"; after its Tx1 double-click "CQ DL1ABC JO62"; publish DL1ABC's report and RR73; then CQ and, while calling, double-click "CQ EA8BIA IL18" and run that QSO the same way; (c) browser, after the completed EA8BIA contact (disarmed, contact_completed): double-click "CQ G8KHF IO92" with the Band Activity rows redrawn during the second press (#50, operator 2026-11-03).
+             Expected: (a) still armed, last_disarm_cause unchanged, the next odd period sends "DL1ABC HB9BLA JN47", no later period sends to K1ABC, the manual replacement keeps Enable Tx; the switch in the keyed window sends the new contact's Tx1 in that same period, still armed; a switch in the keyed window to "CQ DL1ABC JO62" decoded in an odd period (my own parity) still sends K1ABC's Tx1 in that period and DL1ABC's Tx1 in the next even period, still armed, never refused busy (#10); (b) each double-click sends select_row with replace true then enable_tx and shows no "Change contact" button; still armed, last_disarm_cause not contact_cancelled; the next own period sends "DL1ABC HB9BLA JN47", then "DL1ABC HB9BLA R-03" and "DL1ABC HB9BLA 73"; the contact completes and contacts.adi holds exactly one record for it; the same for EA8BIA from the CQ ("R+00"); (c) select_row with replace true then enable_tx, armed, and the next own period sends "G8KHF HB9BLA JN47".
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4236,6 +4413,28 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_050_06_verified_by_TC_050_006 from 'CL-050-06' to 'TC-050-006';
+    // #50 waterfall frequency mapping and Rx/Tx brackets (operator 2026-11-03 about 09:45).
+    requirement 'CL-050-07' {
+        doc /* The waterfall pointer, the Rx and Tx lines and the frequency axis share one mapping of the fixed 0..3000 Hz span onto the waterfall canvas's own box: a click, double-click or marker drag selects the frequency under the pointer, and the confirmed line and the axis tick of that frequency are drawn within 1 px of the pointer position, at every page width, display option (speed, Flatten, spectrum line) and devicePixelRatio. The Rx (green) and Tx (red) lines mark the lowest tone and each carries a WSJT-X bracket (goalpost) at the top of the waterfall over the occupied width to its right, 50 Hz in FT8 and 83.3 Hz in FT4, following the station's operating mode. Details: WstxOperatingLayout::RxTxStrip, WstxContact::PointerEffect. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
+    }
+    dependency CL_050_07_to_FR_007 from 'CL-050-07' to 'FR-007';
+    dependency CL_050_07_to_FR_019 from 'CL-050-07' to 'FR-019';
+    verification 'TC-050-007' {
+        doc /* TC-050-007 — Waterfall pointer, lines and axis on one frequency mapping; Rx/Tx brackets
+             CL-050-07
+             Setup: actual release candidate (fixture station) and Chromium with routed contact snapshots and recorded contact commands; station.tick delivered through the page's own listener.
+             Steps: at 1366x768 double-click and click at the 500, 1500 and 2500 Hz axis ticks and drag the Tx line to the 2000 Hz tick, confirming each value in the contact snapshot; repeat at 900x700 and at 360x800, with Flatten and the spectrum line on, at speed 4 and with devicePixelRatio 2; read the bracket of each line in FT8 and after an FT4 tick.
+             Expected: each request carries the tick's frequency within 2 Hz; each confirmed line's centre and each tick lie within 1 px of the pointer position; the bracket starts within 1 px of its line and is as wide as 50 Hz (FT8) or 83.3 Hz (FT4) on the mapping, within 1 px, green for Rx and red for Tx; a click inside a bracket still reaches the waterfall.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-050-07';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_050_07_verified_by_TC_050_007 from 'CL-050-07' to 'TC-050-007';
     verification 'TC-010-010' {
         doc /* TC-010-010 — Call 1st answers the first caller of my CQ
              CL-010-17
@@ -4322,6 +4521,41 @@ package WstxRequirements {
     }
     dependency CL_060_01_verified_by_TC_060_001 from 'CL-060-01' to 'TC-060-001';
 
+    // #61 An audio gap keeps the display (operator 2026-11-03; decision recorded on issue #61).
+    requirement 'CL-061-01' {
+        doc /* An unknown-loss source epoch inside the same receive does not clear the operator display, as in WSJT-X. The station keeps its contract (RadioIO: fresh source, job and generation, results from sequence 0); the browser recognises the epoch from GET /receive: the same profile and boot, a running job of the same mode on the same audio.device_id, audio.loss_epochs larger than before, no receive start/stop or band/mode change by this page within 15 s and an unchanged operating revision. Then Band Activity keeps the periods already shown (the latest and, of the other parity, the one before it) below a divider, and they stay until the new receive's first view arrives; that view keeps exactly the kept period one T/R period before it (CL-057-03), the others disappear. Results are then read only under the new identity, from its first sequence; a kept row stays bound to its old identity, so a selection of it is refused by the station as before (row_unavailable). The waterfall keeps its rows: they move in front of the new epoch's frame origin, with one gap row (RGB(96,96,96)) marking the epoch, and the new epoch's rows follow. The gap row marks the loss; the error field stays empty, a receive restart being informational and no entry (#37 CL-037-02, decision recorded on #61 and #37). Anything else that changes the receive identity clears both as before: a Stop/Start, a different input or mode, a band/mode change, a station restart (new boot) or a profile change. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js";
+    }
+    dependency CL_061_01_to_FR_019 from 'CL-061-01' to 'FR-019';
+    verification 'TC-061-001' {
+        doc /* TC-061-001 — An audio loss epoch keeps the waterfall and Band Activity
+             CL-061-01
+             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot, results route and live Detailed waterfall frames (explicit presentation fixtures, never modem truth).
+             Steps: publish the periods 12:00:00 and 12:00:15 (2 and 1 records) and four waterfall rows; then announce a loss epoch: new source, job and generation, loss_epochs 1, results from sequence 0; send two waterfall rows of the new epoch from sequence 0; publish 12:00:30 under the new identity; then a Stop/Start (new identity, loss_epochs 0) with one row.
+             Expected (independent: the scripted periods and rows): after the epoch the 12:00:15 and 12:00:00 rows stay below their dividers and the six waterfall rows are the four old ones, one gap row and the two new ones in that order; the error field shows no entry for the epoch; after 12:00:30 its row is on top and the 12:00:15 rows below one divider, read with the new source, job and generation from cursor 0; after the Stop/Start Band Activity and the waterfall hold only the new receive's content. On the parent client the epoch clears both.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_01_verified_by_TC_061_001 from 'CL-061-01' to 'TC-061-001';
+    verification 'TC-061-002' {
+        doc /* TC-061-002 — Audio gaps on HB9BLA keep the display
+             CL-061-01
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 receive, one browser on the LAN; no transmission.
+             Steps: watch the waterfall and Band Activity until GET /receive audio.loss_epochs has grown at least once.
+             Expected: at each growth the waterfall keeps its history with one grey gap row and Band Activity keeps its periods; the error field shows no entry for it; a mode change still clears both.
+             3 — Live, read-only on the station; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-061-01';
+        }
+    }
+    dependency CL_061_01_verified_by_TC_061_002 from 'CL-061-01' to 'TC-061-002';
     // #37 lower panel below the compact QSO pane (operator 2026-11-03).
     requirement 'CL-037-01' {
         doc /* (#37) The right column of the workspace is one vertical stack at every width: the QSO pane, below it the Control panel and below that the error field, each with the left and right edges of the QSO pane card. The Control panel is always visible (no fold-out) and holds DX Call and DX Grid with Generate, Report, Auto Seq, Call 1st, Hold Tx and the Tx period Even / 1st or Odd / 2nd, laid out in rows across its width; each control sends the same single contact request as before and shows only the server-confirmed value. Tx1-Tx6 stay in the QSO pane fold-out; Rx/Tx and dial frequency stay under the waterfall and in the top bar; there is no level meter. The stack fits the fixed 1366x768 screen and 360 CSS px without horizontal overflow. Details: WstxOperatingLayout::LowerPanel, ControlPanel. */
@@ -4372,5 +4606,26 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_037_02_verified_by_TC_037_002 from 'CL-037-02' to 'TC-037-002';
+    // Found in the #61 gate (TC-050-004, CQ right after a completed contact refused stale_revision).
+    requirement 'CL-061-02' {
+        doc /* The QSO pane CQ and Reply buttons are explicit operator choices like the double-click (CL-050-04): a stale_revision refusal of their enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js";
+    }
+    dependency CL_061_02_to_FR_007 from 'CL-061-02' to 'FR-007';
+    verification 'TC-061-003' {
+        doc /* TC-061-003 — CQ and Reply retry a stale_revision refusal
+             CL-061-02
+             Setup: actual station Router and browser client with scripted contact snapshots and contact command replies (explicit presentation fixtures).
+             Steps: click CQ while the station refuses one command with stale_revision and moves its revision; click CQ while it refuses three; prepare a contact and click Reply while it refuses one.
+             Expected (independent: the scripted revisions): CQ sends enable_tx with revision 3, then 4 (accepted); then 4, 5, 6 and shows the refusal; Reply sends 7, then 8. On the parent client CQ and Reply send once.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_02_verified_by_TC_061_003 from 'CL-061-02' to 'TC-061-003';
 
 }
