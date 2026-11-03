@@ -1883,6 +1883,86 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='select_row'),false,'the station run answers; the browser never arms for it');
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-042-04; TC-042-007 the editor's per-rule Alert checkbox, the Settings > General
+// alert history, Sound and Browser notification (off by default; permission asked only on
+// the click). The station's alert snapshots are hand-written fixtures; the page's
+// Notification and AudioContext are recording doubles; the expected lines, tones and
+// notifications are written here from WstxStrategy::Alert.
+test('TC-042-007 Alert checkbox, alert history, sound and browser notification',{timeout:60000},async t=>{
+  let view;const puts=[],clears=[];let history=[],revision=1;
+  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const alert=(id,call,message,snr,dxcc)=>({id,utc:'2026-10-27T12:00:00.0000000Z',call,message,rule:'CQ rule 1',band:'40m',mode:'ft8',snr_db:snr,dxcc});
+  history=[alert(1,'K1ABC','CQ K1ABC FN42',-12,'United States')];
+  const doubles=()=>{
+    window.__tones=0;window.__notes=[];window.__asks=0;window.__hidden=false;
+    class FakeNotification{constructor(title,options){window.__notes.push({title,body:options?.body});}
+      static get permission(){return sessionStorage.getItem('fake-permission')??'default';}
+      static async requestPermission(){window.__asks++;sessionStorage.setItem('fake-permission','granted');return 'granted';}}
+    window.Notification=FakeNotification;
+    const param=()=>({value:0,setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}});
+    window.AudioContext=class{constructor(){this.currentTime=0;this.destination={};this.state='running';}
+      createOscillator(){return {frequency:param(),type:'sine',connect(){return this;},start(){window.__tones++;},stop(){}};}
+      createGain(){return {gain:param(),connect(){return this;}};}resume(){return Promise.resolve();}};
+    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.__hidden?'hidden':'visible'});
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>window.__hidden});
+  };
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:false,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    await p.addInitScript(doubles);
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
+    await p.route('**/strategy/alerts',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:history}}));
+    await p.route('**/strategy/alerts/clear',async route=>{clears.push(JSON.parse(route.request().postData()));history=[];revision++;
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:[]}});});
+  }});
+  const announce=async(next)=>{history.push(next);revision++;
+    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'alert.state',data:{profile_id:'p',boot_id:'b',alert_revision:r}}}})),revision);
+    await page.waitForFunction(n=>document.querySelectorAll('#alert-history li').length===n,history.length,{timeout:10000});};
+  const counters=()=>page.evaluate(()=>({tones:window.__tones,notes:window.__notes,asks:window.__asks}));
+  // The editor: rule 1 marked Alert is saved with alert true.
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  await page.locator('#strategy-editor [data-alert="0"]').check();
+  await page.locator('#se-save').click();for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(puts[0].configuration.strategies[0].rules,[{conditions:[{kind:'message',negate:false,value:'cq'}],alert:true}]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  await page.locator('#strategy-editor button[value=cancel]').click();
+  // Settings > General: the history, both announcements off by default.
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.locator('#alert-history li').first().waitFor();
+  const lines=()=>page.locator('#alert-history li .al-text').evaluateAll(l=>l.map(x=>x.textContent));
+  assert.deepEqual(await lines(),['12:00:00 K1ABC CQ K1ABC FN42 · CQ rule 1 · 40m FT8 · -12 dB · United States']);
+  assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[false,false]);
+  await announce(alert(2,'DL1XYZ','CQ DL1XYZ JO62',-3,'Fed. Rep. of Germany'));
+  assert.deepEqual((await lines())[0],'12:00:00 DL1XYZ CQ DL1XYZ JO62 · CQ rule 1 · 40m FT8 · -3 dB · Fed. Rep. of Germany','newest first');
+  assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'both off: nothing announced, no permission asked');
+  await page.locator('#alert-sound').check();
+  await announce(alert(3,'W1AW','CQ W1AW FN31',-5,'United States'));
+  assert.deepEqual(await counters(),{tones:1,notes:[],asks:0});
+  await page.locator('#alert-notify').check();
+  for(let i=0;i<40&&(await counters()).asks<1;i++)await page.waitForTimeout(50);
+  assert.equal(await page.locator('#alert-notify').isChecked(),true,'granted on the click');
+  await announce(alert(4,'JA1XYZ','CQ JA1XYZ PM95',-15,'Japan'));
+  for(let i=0;i<40&&!(await counters()).notes.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(await counters(),{tones:2,notes:[{title:'Alert JA1XYZ',body:'CQ JA1XYZ PM95 · CQ rule 1'}],asks:1});
+  // A hidden page plays no tone; the notification still shows.
+  await page.evaluate(()=>{window.__hidden=true;});
+  await announce(alert(5,'VK2ABC','CQ VK2ABC QF56',-20,'Australia'));
+  for(let i=0;i<40&&(await counters()).notes.length<2;i++)await page.waitForTimeout(50);
+  const c=await counters();assert.deepEqual([c.tones,c.notes.length,c.notes[1].title],[2,2,'Alert VK2ABC']);
+  // A reload keeps both choices and announces nothing from the history.
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#alert-history li').length===5,null,{timeout:20000});
+  assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[true,true]);
+  await page.waitForTimeout(300);
+  assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'the history read at load announces nothing');
+  await page.locator('#alert-clear').click();
+  for(let i=0;i<60&&!clears.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(clears,[{v:1,profile_id:view.profile_id,boot_id:view.boot_id}]);
+  await page.waitForFunction(()=>!document.querySelector('#alert-history li'));
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
 // uploads a replacement to the actual isolated station and returns to the bundled file;
 // a file that is no cty.dat is refused with its line and changes nothing.

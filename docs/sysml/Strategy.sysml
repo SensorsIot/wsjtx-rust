@@ -3,7 +3,8 @@ package WstxStrategy {
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
          WstxRequirements; verification TC-039-001..007; the complete New matrix of
          issue #42, CL-042-01 and TC-042-001; its ignore lists, CL-042-02 and
-         TC-042-002..003; Pounce, CL-042-03 and TC-042-004..005): named strategies, the
+         TC-042-002..003; Pounce, CL-042-03 and TC-042-004..005; Alert, CL-042-04 and
+         TC-042-006..007): named strategies, the
          directed-CQ rule, Highlight in Band Activity, the strategy editor popup and Auto
          strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
          result.
@@ -48,7 +49,14 @@ package WstxStrategy {
             calls CQ or ends a QSO with RR73/73 the station answers it as a double-click
             does (select, Enable Tx, Auto Seq). It is a WstxMcp::OperatingAutomation run
             (one run at a time: never beside Auto Call or Auto CQ), needs no strategy and
-            ends on success, a band change, HALT, the Tx watchdog or the operator. */
+            ends on success, a band change, HALT, the Tx watchdog or the operator.
+         D11 Alert (#42, Alert): a third action beside Highlight and Auto. A rule marked
+            alert makes the station record an alert for each decode that matches it
+            (ignore lists and the directed-CQ rule apply first; one alert per call and
+            band in 10 minutes) in a bounded alert history in station memory; the
+            browser plays a short sound and/or shows a browser notification as the
+            operator chose (both off by default). An alert never transmits and changes no
+            contact or automation state. Shell-command alerts stay out (D8). */
 
     enum def MessageType { enum cq; enum directed_cq; enum to_me; enum signoff; }
     enum def NewScope { enum ever; enum band; }
@@ -95,7 +103,10 @@ package WstxStrategy {
         assert constraint skipRange { skipAfter >= 1 and skipAfter <= 20 }
         assert constraint switchRange { switchAfter >= 1 and switchAfter <= 20 }
         doc /* Wire keys exactly name (1..32 printable ASCII, no leading/trailing space,
-             unique ignoring case), rules (1..8, each {conditions: 0..12 Condition}; rule
+             unique ignoring case), rules (1..8, each {conditions: 0..12 Condition} plus
+             the optional alert (#42 Alert: a boolean, absent = false; the snapshot names
+             alert only as true on an alert rule, so a false or absent alert reads back
+             without the key); rule
              order is priority, rule 1 highest; an empty rule holds for every message),
              sort, treat_73_as_cq, apply_to_callers, skip_after, auto_role, switch_after. */
     }
@@ -222,6 +233,65 @@ package WstxStrategy {
              status "Pounce <call> waiting" or "in QSO" with "HALT ends it"; the Auto button
              is disabled meanwhile. */
     }
+    attribute def Alert {
+        attribute historyMax : Integer = 100;
+        attribute dedupeMinutes : Integer = 10;
+        doc /* #42 (CL-042-04). Station side: the station's contact step (every 50 ms,
+             whether or not a browser is connected) reads the records of the current live
+             job past its alert cursor once each (a job not seen before from its first
+             retained record); the cursor advances also while no strategy is active or no
+             rule is marked alert, so marking a rule later never alerts on older decodes.
+             With an active strategy that has an alert rule, each new decoded standard
+             record with a resolved sender other than my call is evaluated with the
+             station facts of Evaluate: an ignored sender (IgnoreLists, both tiers) and a
+             CQ greyed by DirectedCqRule never alert; else its alert rule is the first
+             rule marked alert all of whose conditions hold (a higher rule without alert
+             that also holds does not hide it); none: no alert. Dedupe: no alert when the
+             station recorded one for the same call and the same station band
+             (station_band at that time; unknown counts as its own band) whose period
+             start lies less than 10 minutes before this record's period start (exactly
+             10 minutes later alerts again); this memory is kept apart from the history,
+             so Clear does not reset it. An alert never transmits, never selects, arms or
+             changes a contact, the automation run, the Tx watchdog or the strategy
+             store.
+             History: station memory only (it survives page reloads, a station restart
+             empties it), the last 100 alerts in the order recorded (the 101st drops the
+             oldest), each {id (1, 2, ... since the station started), utc (the record's
+             period_start_utc), call, message (the record text), rule ("<strategy name>
+             rule <n>", n 1-based), band (station band, null when unknown), mode (the live
+             job mode, ft8 or ft4), snr_db (null when unknown), dxcc (the full entity name
+             of WstxContact::EntityOfCall, null without an entity)}; revision counts every
+             alert recorded and every clear since the station started.
+             Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
+             /strategy/alerts (operating access, no query, empty body) -> {v 1,
+             profile_id, boot_id, revision, alerts (oldest first)}. POST
+             /strategy/alerts/clear {v, profile_id, boot_id}: exact keys, the refusals of
+             POST /strategy/ignore (400 invalid_request with the field,
+             unsupported_version, 403 wrong_profile, 409 state_conflict boot_id); it
+             empties the history, revision + 1, and returns the alerts snapshot. No MCP
+             tool dispatches to the clear (an MCP principal is refused, #58); wstx_read
+             view alerts reads GET /strategy/alerts (WstxMcp::ToolCatalog).
+             Event: a display-subscribed peer receives alert.state {v 1, type
+             "alert.state", data {profile_id, boot_id, alert_revision}} when the revision
+             changes after it subscribed (never on subscription itself), paced with
+             contact.state; the browser then reads GET /strategy/alerts.
+             Browser: the editor offers each rule an "Alert" checkbox (StrategyEditor).
+             Settings > General shows an Alerts section: "Sound" and "Browser
+             notification" checkboxes, both off by default, kept per browser and profile
+             in localStorage (wstx.alerts.v1:<profile_id> = {sound, notify}; unreadable:
+             both off); checking Browser notification is the only place that asks for the
+             browser's notification permission (Notification.requestPermission on that
+             click, never otherwise); a permission other than granted leaves it unchecked
+             with the reason. The history list, newest first, each line "<HH:MM:SS> <call>
+             <message> · <rule> · <band> <MODE> · <snr> dB · <dxcc>" (unknown parts left
+             out), and a Clear button (POST /strategy/alerts/clear). An alert counts as new
+             when its id is above the highest id this page has seen (the history read at
+             page load or reconnect announces nothing): for each new alert a short tone
+             (Web Audio, about 0.15 s) only when Sound is on and the page is visible, and a
+             notification titled "Alert <call>" with body "<message> · <rule>" when Browser
+             notification is on and permission is granted (also while the page is hidden);
+             with both off nothing is announced (the history still lists it). */
+    }
     calc def DirectedCqRule {
         in target : String;
         in myContinent : String[0..1];
@@ -299,8 +369,9 @@ package WstxStrategy {
         doc /* The edit (pencil) popup (a modal dialog carrying its own HALT with the top-bar HALT's
              action and enabled state; receive keeps running): choose, add, duplicate and
              delete strategies; name; rules with conditions (kind, not, value) in priority
-             order; sort; Treat 73 as CQ; Auto role, switch after, skip after, Auto CQ
-             answers only matching callers. The live preview evaluates the unsaved draft
+             order, each rule with its "Alert" checkbox (#42 Alert: sound or notification,
+             never transmits); sort; Treat 73 as CQ; Auto role, switch after, skip after,
+             Auto CQ answers only matching callers. The live preview evaluates the unsaved draft
              against the latest period (POST /strategy/evaluate with explain, 400 ms after
              an edit) and shows each decode's rank and why. Save sends one PUT /strategy
              and applies at once (also to a running Auto run); the edited strategy becomes
@@ -373,6 +444,7 @@ package WstxStrategy {
     dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
     dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
     dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;
+    dependency alertClause from Alert to WstxRequirements::'CL-042-04';
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';

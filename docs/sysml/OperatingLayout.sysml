@@ -711,7 +711,9 @@ attribute def ActivityOrdering {
              (SettingsSection):
              General: station (display name, callsign, locator, continent, #42 the
              ignore lists of WstxStrategy::IgnoreLists: permanent calls, session expiry
-             minutes, the session list with remove controls), clock
+             minutes, the session list with remove controls; #42 the Alerts section of
+             WstxStrategy::Alert: Sound and Browser notification checkboxes, both off by
+             default, and the alert history newest first with Clear), clock
              (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
              Both with the air estimate, read with GET /clock when the drawer opens,
              saved on change with POST /clock, a plain setting without restart mark),

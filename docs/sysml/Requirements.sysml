@@ -2899,7 +2899,7 @@ package WstxRequirements {
     dependency CL_012_01_to_FR_020 from 'CL-012-01' to 'FR-020';
     dependency CL_012_01_to_FR_021 from 'CL-012-01' to 'FR-021';
     requirement 'CL-012-02' {
-        doc /* An MCP client observes exactly the browser's station views (profile, receive, selection, radio, transmit, contact, automation, strategy and decoded result pages, and the strategy verdicts of POST /strategy/evaluate, read-only) and operates through the same ContactCommand, HaltTransmit and AutomationCommand bodies, receipts, revisions, command_id idempotency and refusal codes as the browser, for FT8 and FT4. Details: WstxMcp::ToolCatalog, ToolResult. */
+        doc /* An MCP client observes exactly the browser's station views (profile, receive, selection, radio, transmit, contact, automation, strategy, the #42 alert history and decoded result pages, and the strategy verdicts of POST /strategy/evaluate, read-only) and operates through the same ContactCommand, HaltTransmit and AutomationCommand bodies, receipts, revisions, command_id idempotency and refusal codes as the browser, for FT8 and FT4. Details: WstxMcp::ToolCatalog, ToolResult. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/mcp.rs; server/src/contact_http.rs; server/src/automation.rs";
     }
@@ -2923,7 +2923,7 @@ package WstxRequirements {
              CL-012-01, CL-012-02, CL-012-04
              Setup: (a) actual candidate router on a selected HTTPS profile (HB9BLA, JN47AA) with its auth-v1 owner, the contact engine and the #9 transmit owner on the recording hardware double, an injected FT8 live job and hand-authored codec-packed rows "CQ K1ABC FN42" 1234.6 Hz -12.4 dB and "CQ W1AW FN31" 900.0 Hz -3.0 dB; one enrolled grant; an independent JSON-RPC test client. (b) The compiled executable on a disposable HTTPS profile with a throwaway certificate and a browser-style grant that creates the MCP client token; the browser saves the strategy "NA first" (rule 1 CQ from continent NA, rule 2 any CQ, sort strongest) as active.
              Steps: modern server/discover and tools/list; wstx_read of every view and GET of the same browser route; wstx_results and the same GET /receive/results; wstx_strategy_evaluate of sequences [0, 2) with the saved strategy and the same POST /strategy/evaluate from the browser; legacy initialize, notifications/initialized, tools/list and tools/call; (b) create an MCP client token in Settings (POST /authorization/v1/mcp-clients/create), then tools/list and wstx_read profile/contact/strategy against GET /profile and GET /strategy.
-             Expected (WstxMcp tables and the fixture's own identities): supportedVersions exactly [2026-07-28, 2025-11-25, 2025-06-18]; tools exactly wstx_read, wstx_results, wstx_contact_command, wstx_transmit_halt, wstx_automation_command, wstx_strategy_evaluate in this order and identical in both eras, wstx_read's view enum the eight views, wstx_strategy_evaluate readOnlyHint and the wstx_automation_command description naming every AutomationConfiguration key (max_run_minutes and strategy included); each view (strategy included: active "NA first", my_continent EU) equal to the browser response apart from the per-read monotonic_ms/utc_ms; profile_id/boot_id the fixture's; automation configuration and run null; the two rows with their literal text, frequency, SNR and sequences; the verdicts equal the browser's: K1ABC (FN42, NA) rank 0 and W1AW (FN31, NA) rank 0, W1AW first (strongest); legacy protocolVersion 2025-11-25, no Mcp-Session-Id, no resultType; the text content equals structuredContent; no PTT exchange.
+             Expected (WstxMcp tables and the fixture's own identities): supportedVersions exactly [2026-07-28, 2025-11-25, 2025-06-18]; tools exactly wstx_read, wstx_results, wstx_contact_command, wstx_transmit_halt, wstx_automation_command, wstx_strategy_evaluate in this order and identical in both eras, wstx_read's view enum the nine views (alerts last, #42), wstx_strategy_evaluate readOnlyHint and the wstx_automation_command description naming every AutomationConfiguration key (max_run_minutes and strategy included); each view (strategy included: active "NA first", my_continent EU) equal to the browser response apart from the per-read monotonic_ms/utc_ms; profile_id/boot_id the fixture's; automation configuration and run null; the two rows with their literal text, frequency, SNR and sequences; the verdicts equal the browser's: K1ABC (FN42, NA) rank 0 and W1AW (FN31, NA) rank 0, W1AW first (strongest); legacy protocolVersion 2025-11-25, no Mcp-Session-Id, no resultType; the text content equals structuredContent; no PTT exchange.
              2 — Isolated automated functional tests; Windows development PC, actual candidate router and executable, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3745,7 +3745,7 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history (the two-tier ignore lists are delivered by #42, CL-042-02; Pounce by #42, CL-042-03); auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01) (the two-tier ignore lists, Pounce and Alert as a third action with history are delivered by #42, CL-042-02, CL-042-03 and CL-042-04); auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
@@ -3854,6 +3854,41 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_042_03_verified_by_TC_042_005 from 'CL-042-03' to 'TC-042-005';
+    requirement 'CL-042-04' {
+        doc /* Alert is a third action beside Highlight and Auto: a strategy rule can be marked alert; when a decode matches an alert rule of the active strategy (an ignored sender and a directed CQ not for me never alert), the station records an alert (time, call, message, rule, band, mode, SNR, DXCC entity) in a history of the last 100 alerts in station memory (kept across page reloads, empty after a station restart), at most one per call and band in 10 minutes, and announces it to the browser; the browser plays a short sound and/or shows a browser notification as the operator chose in Settings > General (both off by default; the notification permission is asked only on the operator's click; no sound while the page is hidden), and lists the history with a Clear. An alert never transmits or changes a contact or automation run. An MCP client may read the history (wstx_read alerts), not clear it. Details: WstxStrategy::Alert, Strategy, StrategyEditor; WstxMcp::ToolCatalog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; server/src/mcp.rs; client/contact.js";
+    }
+    dependency CL_042_04_to_FR_007 from 'CL-042-04' to 'FR-007';
+    dependency CL_042_04_to_FR_020 from 'CL-042-04' to 'FR-020';
+    verification 'TC-042-006' {
+        doc /* TC-042-006 — Alert at the station: rule key, match, dedupe, ignore and directed-CQ rule, history and routes
+             CL-042-04
+             Setup: hand-authored rows and strategies; the station HB9BLA JN47AA on 40m; the actual station router and contact engine on the recording hardware double (virtual UTC; no audio, PTT or radio); FT8 live job.
+             Steps: parse a rule with alert true, false, absent and "yes"; evaluate a strategy whose rule 1 (no alert) and rule 2 (alert) both hold; publish CQ JA1XYZ PM95 before any rule is marked alert, then save the strategy "Alerts" (rule 1 call K without alert, rule 2 message CQ with alert); publish in one period CQ K1ABC FN42 (-12 dB), CQ DL1XYZ JO62 (-3 dB), CQ NA W1AW FN31, CQ G4ABC IO91 with G4ABC on the session ignore list and HB9BLA VK2ABC QF56; publish CQ K1ABC FN42 30 s later and 10 minutes after the first; change the band to 20m and publish CQ K1ABC again; read GET /strategy/alerts and wstx_read alerts; clear with an extra key, a wrong profile, a wrong boot and correctly; read GET /strategy/alerts with the MCP principal's cookie and POST the clear with it; publish 101 CQs from different calls in one period.
+             Expected: true reads back with alert true, false and absent without the key, "yes" is invalid_request strategies[0].rules[0].alert; the alert rule is rule 2 although the rank is rule 1; no alert for JA1XYZ; alerts exactly K1ABC {utc of the period, message "CQ K1ABC FN42", rule "Alerts rule 2", band 40m, mode ft8, snr_db -12, dxcc United States} and DL1XYZ (Fed. Rep. of Germany), ids 1 and 2, revision 2, none for W1AW, G4ABC or the message to me; nothing 30 s later; a third K1ABC alert 10 minutes later and a fourth on 20m; wstx_read alerts equals the browser's GET; the refusals 400 invalid_request, 403 wrong_profile, 409 state_conflict boot_id leave the history; the clear empties it with revision + 1; the MCP cookie may GET and is refused 401 on the clear; after 101 alerts the history holds the last 100; no contact, no selection and no keying throughout.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-04';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_042_04_verified_by_TC_042_006 from 'CL-042-04' to 'TC-042-006';
+    verification 'TC-042-007' {
+        doc /* TC-042-007 — Alert checkbox in the editor, the Settings alert history, sound and browser notification
+             CL-042-04
+             Setup: the browser fixture of the operating screen with the actual isolated station; the strategy and alert routes are hand-written fixtures; the page's Notification and AudioContext are recording test doubles (no sound device).
+             Steps: open the editor, tick Alert on rule 1 and Save; open Settings > General with one alert in the history; announce alert.state with a second alert; tick Sound and announce a third; tick Browser notification (the double grants) and announce a fourth; make the page hidden and announce a fifth; reload; Clear.
+             Expected: the PUT carries rule 1 with alert true; Sound and Browser notification are unchecked by default and the history line reads "12:00:00 K1ABC CQ K1ABC FN42 · CQ rule 1 · 40m FT8 · -12 dB · United States"; the second alert is listed first with no tone, no notification and no permission request; the third plays one tone and no notification; the permission is asked exactly once, on the click; the fourth plays one tone and shows one notification "Alert JA1XYZ" with body "CQ JA1XYZ PM95 · CQ rule 1"; the hidden page's fifth plays no tone and shows one notification; after the reload both checkboxes stay as chosen and nothing is announced; Clear sends exactly {v, profile_id, boot_id} to POST /strategy/alerts/clear and the list is empty; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_04_verified_by_TC_042_007 from 'CL-042-04' to 'TC-042-007';
     verification 'TC-039-001' {
         doc /* TC-039-001 — Strategy configuration is exact
              CL-039-01
