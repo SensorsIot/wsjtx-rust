@@ -1457,6 +1457,8 @@ impl Engine {
             Command::EnableTx(false, _) => {
                 Self::disarm(core.as_deref_mut(), DisarmCause::Operator);
                 self.pending = None;
+                // MW on_autoButton_clicked: every Enable Tx click stops the reply timeout.
+                self.hound.reply_deadline = None;
             }
             Command::EnableTx(true, shown) => {
                 if capability == Capability::Unsupported {
@@ -1505,6 +1507,7 @@ impl Engine {
                 self.last_arm = ArmState::Armed;
                 self.transmit_problem = None;
                 self.hound.armed_at = Some(ctx.now_utc_ms);
+                self.hound.reply_deadline = None;
                 if let Some((messages, id)) = cq {
                     self.automatic_cq = ctx.automatic.then(|| id.clone());
                     // With no partner, Tx6 means calling CQ.

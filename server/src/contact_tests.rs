@@ -3335,6 +3335,25 @@ fn hound_reply_timeout_hound_watchdog_and_tx_watchdog() {
         "the slot stays Tx3"
     );
 
+    // The operator turning Enable Tx off and on again ends the reply timeout (MW
+    // on_autoButton_clicked stopWRTimer.stop(); review S4b finding 1).
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    let t0 = s.now();
+    s.deliver(&[report]);
+    s.run(t0 + 20 * SECOND);
+    s.command(Command::EnableTx(false, None)).unwrap();
+    s.run(t0 + 150 * SECOND);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(t0 + 165 * SECOND + 100);
+    assert!(s.armed(), "a re-arm ends the reply timeout");
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+
     // Hound watchdog: 300 s of Tx1 since the operator turned Enable Tx on.
     let mut s = hound_station();
     let mut t = hound_table();

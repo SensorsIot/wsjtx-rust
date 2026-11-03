@@ -247,7 +247,8 @@ package WstxContact {
              report on Fox +-300 Hz; a repeated Fox report returns it to the Fox's
              frequency.
              Timeouts: when the reply timeout passes Enable Tx is turned off (cause
-             txWatchdog, the slot stays tx3; MW stopWRTimeout); while Tx1 is next and
+             txWatchdog, the slot stays tx3; MW stopWRTimeout); the operator turning Enable
+             Tx on or off ends the reply timeout (MW on_autoButton_clicked stopWRTimer.stop); while Tx1 is next and
              Enable Tx has been on for 300 s since the operator last turned it on it is
              turned off (cause txWatchdog; MW Hound watchdog HWD); after the station's Tx
              watchdog expires the next slot returns to tx1 (MW ~14664). A completed contact
@@ -256,7 +257,9 @@ package WstxContact {
              auto_tx_mode(true)): only the operator arms (CL-022, #10 safety rule); (2) the
              RR73 that completes must come from the DX call (standard) or carry the DX
              call's hash (0.1); WSJT-X completes on any RR73 to my call, so another station's
-             RR73 would log my contact with the Fox; (3) the decoder keeps the full 200-3000
+             RR73 would log my contact with the Fox; likewise a 0.1 report to my call is
+             answered only when its hashed call is the DX call (WSJT-X answers it whatever
+             the hashed call, also an unresolved <...>); (3) the decoder keeps the full 200-3000
              Hz range (WSJT-X decodes only below 1000 Hz unless Rx All is checked), so
              Band Activity also shows other Hounds; (4) the decision for a period is taken
              when its request is planned (after the previous own transmission started),
