@@ -163,11 +163,47 @@ fn nonstandard_of(f: &Value) -> Option<Standard> {
         exchange,
     })
 }
+/// A Field Day or RTTY Roundup record as an engine message (ContestExchange, #24 S2b):
+/// the exchange is its last two words ("6A WI", "579 MA", "559 0013"); TU; is ignored.
+fn contest_of(f: &Value) -> Option<Standard> {
+    let (kind, text) = match f["type"].as_str()? {
+        "field_day" => (
+            contact::ContestKind::FieldDay,
+            format!(
+                "{}{} {}",
+                f["transmitters"].as_u64()?,
+                f["class"].as_str()?,
+                f["section"].as_str()?
+            ),
+        ),
+        "rtty" => {
+            let value = match (f["exchange"]["kind"].as_str()?, &f["exchange"]["value"]) {
+                ("serial", v) => format!("{:04}", v.as_u64()?),
+                ("state", v) => v.as_str()?.to_owned(),
+                _ => return None,
+            };
+            (
+                contact::ContestKind::Rtty,
+                format!("{} {value}", f["report"].as_u64()?),
+            )
+        }
+        _ => return None,
+    };
+    Some(Standard {
+        to: call_of(&f["to"])?,
+        from: call_of(&f["from"])?,
+        ack: f["ack"].as_bool()?,
+        exchange: Exchange::Contest(kind, text),
+    })
+}
 /// A published live result record as an engine row (WstxOfflineDecode::StandardFields).
 pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &str) -> Option<Row> {
     let f = &record["fields"];
     let nonstandard = (record["status"] == "decoded" && f["type"] == "nonstandard")
         .then(|| nonstandard_of(f))
+        .flatten();
+    let contest = (record["status"] == "decoded")
+        .then(|| contest_of(f))
         .flatten();
     let standard = (record["status"] == "decoded" && f["type"] == "standard")
         .then(|| {
@@ -205,7 +241,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
         frequency_hz: record["frequency_hz"].as_f64()?,
         snr_db: record["snr_db"].as_f64(),
         text: record["text"].as_str().unwrap_or("").to_owned(),
-        standard: standard.or(nonstandard),
+        standard: standard.or(nonstandard).or(contest),
     })
 }
 pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
@@ -400,6 +436,7 @@ impl Station {
         locator: Option<&str>,
     ) -> Option<logbook::Record> {
         let f = c.log_fields(now)?;
+        let contest = f.contest.clone();
         let (mode, submode) = match f.mode {
             decoder::Mode::Ft8 => ("FT8", None),
             decoder::Mode::Ft4 => ("MFSK", Some("FT4")),
@@ -408,7 +445,7 @@ impl Station {
             let hz = d + u64::from(tx_hz);
             format!("{}.{:06}", hz / 1_000_000, hz % 1_000_000)
         });
-        Some(logbook::Record {
+        let mut record = logbook::Record {
             contact_id: c.id.clone(),
             values: [
                 Some(f.call),
@@ -427,9 +464,21 @@ impl Station {
                 locator.map(String::from),
                 None,
                 None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
             ],
             unknown: Vec::new(),
-        })
+        };
+        for (name, value) in contest {
+            record.set(name, value);
+        }
+        Some(record)
     }
     /// Takes the engine's contacts due for the log into the pending records: a newer
     /// record of a pending contact id replaces it; over LOG_PENDING_MAX the oldest is
@@ -557,6 +606,7 @@ impl Station {
         let contact = e.contact.as_ref().map(|c| {
             json!({"id":c.id,"origin":c.origin.name(),"dx_call":c.dx_call,"dx_grid":c.dx_grid,
                 "report_sent":c.report_sent.map(contact::render_report),"report_rcvd":c.report_rcvd.map(contact::render_report),
+                "exchange_sent":c.exchange_sent,"exchange_rcvd":c.exchange_rcvd,
                 "state":c.state.name(),"next_slot":c.next.name(),"tx4":c.tx4.name(),"messages":c.messages,
                 "start_utc":c.start_utc_ms().map(contact::utc_text),"end_utc":c.last_counted_end.map(contact::utc_text),
                 "saved":state.logbook.saved(&c.id),
@@ -580,7 +630,7 @@ impl Station {
         let settings = json!({"auto_seq":s.auto_seq,"call_first":s.call_first,"tx1_skip":s.tx1_skip,
             "tx_minutes":view.as_ref().map_or(6,|v|v.tx_minutes),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
-            "activity":s.activity.name()});
+            "activity":s.activity.name(),"exchange":s.exchange,"serial":s.serial});
         let watchdog = json!({"tx_remaining_minutes":view.as_ref().map_or(0,|v|v.tx_remaining_minutes),
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
@@ -686,7 +736,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
         "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "set_call_first" | "tune" => &["enabled"],
-        "set_activity" => &["activity"],
+        "set_activity" => &["activity", "exchange"],
         "enable_tx" => &["enabled", "safety_revision"],
         "set_tx4" => &["form"],
         "set_frequency" => &["rx_hz", "tx_hz"],
@@ -767,12 +817,21 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
         "set_hold_tx" => Command::SetHoldTx(boolean(b, "enabled")?),
         "set_auto_seq" => Command::SetAutoSeq(boolean(b, "enabled")?),
         "set_call_first" => Command::SetCallFirst(boolean(b, "enabled")?),
-        "set_activity" => Command::SetActivity(
-            b["activity"]
+        "set_activity" => {
+            let activity = b["activity"]
                 .as_str()
                 .and_then(contact::Activity::parse)
-                .ok_or(("invalid_request", Some("activity")))?,
-        ),
+                .ok_or(("invalid_request", Some("activity")))?;
+            let exchange = match &b["exchange"] {
+                Value::Null => None,
+                Value::String(x) => Some(x.as_str()),
+                _ => return Err(("invalid_request", Some("exchange"))),
+            };
+            // ContestExchange (#24 S2b): field_day and rtty need their exchange.
+            let exchange = contact::contest_exchange(activity, exchange)
+                .ok_or(("invalid_request", Some("exchange")))?;
+            Command::SetContest { activity, exchange }
+        }
         "enable_tx" => {
             if !b["safety_revision"].is_null() {
                 safe(b, "safety_revision")?;
@@ -828,7 +887,13 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
         let _ = k;
         return Err(("invalid_request", None));
     }
-    if let Some(k) = base.iter().chain(extra).find(|k| !object.contains_key(**k)) {
+    // set_activity's exchange is optional (ContestExchange, #24 S2b).
+    let optional = |k: &str| action == "set_activity" && k == "exchange";
+    if let Some(k) = base
+        .iter()
+        .chain(extra)
+        .find(|k| !object.contains_key(**k) && !optional(k))
+    {
         return Err(("invalid_request", Some(k)));
     }
     if b["v"].as_u64() != Some(1) {
