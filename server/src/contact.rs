@@ -402,6 +402,10 @@ impl Contact {
             && last.text == text
         {
             last.count = last.count.saturating_add(1);
+            // #60: the QSO pane shows the latest decode's SNR of a repeated message.
+            if snr.is_some() {
+                last.snr = snr;
+            }
             return;
         }
         if self.dialogue.len() == DIALOGUE_MAX {

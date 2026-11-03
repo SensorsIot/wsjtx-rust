@@ -2065,6 +2065,20 @@ fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
     let c = s.engine.contact.as_ref().unwrap();
     assert_eq!(c.dialogue.len(), DIALOGUE_MAX);
     assert_eq!(c.dialogue.back().unwrap().text, "HB9BLA W1AW -20");
+    // #60: a repeated message keeps its first period and takes the latest non-null SNR.
+    for (p, snr) in [
+        (period(48), Some(-12.0)),
+        (period(50), Some(-3.0)),
+        (period(52), None),
+    ] {
+        let r = s.row(p, "HB9BLA W1AW -07", 700.0, snr);
+        s.deliver(&[r]);
+    }
+    let last = s.engine.contact.as_ref().unwrap().dialogue.back().unwrap();
+    assert_eq!(
+        (last.text.as_str(), last.snr, last.period_ms, last.count),
+        ("HB9BLA W1AW -07", Some(-3), period(48), 3)
+    );
     s.command(Command::Cancel).unwrap();
     assert!(
         s.engine.contact.as_ref().unwrap().dialogue.is_empty(),

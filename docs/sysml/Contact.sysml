@@ -1022,7 +1022,8 @@ package WstxContact {
              to me) with its rounded SNR or null, "tx" each transmission of this contact
              whose audio started (the text as sent, snr null); a message equal in dir and
              text to the newest entry increments that entry's count instead (its
-             period_utc_ms stays the first period); beyond 16 the oldest entry is dropped;
+             period_utc_ms stays the first period; its snr becomes the repeat's SNR when
+             that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
              empty for a new contact and cleared by CancelContact)
              with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
