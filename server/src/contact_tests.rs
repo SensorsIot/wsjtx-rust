@@ -2114,6 +2114,7 @@ fn decoded(
         start_frame: 0,
         frequency_hz: hz,
         snr_db: Some(snr),
+        a_priori: None,
     })
     .unwrap();
     record["sequence"] = serde_json::json!(s.sequence);
@@ -2637,6 +2638,7 @@ fn decoded_in(s: &mut Station, period: i64, text: &str, snr: f64, mode: &str) ->
         start_frame: 0,
         frequency_hz: 1300.0,
         snr_db: Some(snr),
+        a_priori: None,
     })
     .unwrap();
     record["sequence"] = serde_json::json!(s.sequence);
@@ -2960,6 +2962,7 @@ fn record_of_bits(
         start_frame: 0,
         frequency_hz: hz,
         snr_db: Some(snr),
+        a_priori: None,
     })
     .unwrap();
     record["sequence"] = serde_json::json!(s.sequence);

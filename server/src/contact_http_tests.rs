@@ -1677,6 +1677,7 @@ async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields
         start_frame: 0,
         frequency_hz: 450.0,
         snr_db: Some(-5.0),
+        a_priori: None,
     })
     .unwrap();
     record["sequence"] = json!(1);
