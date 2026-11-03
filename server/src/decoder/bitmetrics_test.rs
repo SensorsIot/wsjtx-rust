@@ -236,18 +236,23 @@ fn cq_a_priori_bits_recover_a_buried_cq_word() {
     ))
     .unwrap();
     assert_ne!(plain.map(|w| w.to_vec()), Some(bits.clone()));
-    let assisted = cq_assisted(&families);
+    let assisted = apriori::hypotheses(Mode::Ft8, &families, &APriori::default(), 1500.);
     assert_eq!(assisted.len(), 2);
     assert!(
         assisted
             .iter()
-            .all(|(_, fixed)| fixed.iter().filter(|&&f| f).count() == 32)
+            .all(|(kind, _, fixed)| *kind == 1 && fixed.iter().filter(|&&f| f).count() == 32)
     );
     let word = complete(decode_assisted_families(
+        Mode::Ft8,
         assisted,
         &channel,
         &mut CpuBudget::new(&never),
     ))
-    .unwrap();
+    .unwrap()
+    .map(|(word, kind)| {
+        assert_eq!(kind, 1);
+        word
+    });
     assert_eq!(word.map(|w| w.to_vec()), Some(bits));
 }

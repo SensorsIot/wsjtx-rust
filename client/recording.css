@@ -319,6 +319,7 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 .udp-target,.udp-messages{min-inline-size:0;max-width:100%;box-sizing:border-box}.udp-target>label{max-width:100%}.udp-target input:not([type=checkbox]){width:100%;box-sizing:border-box}
 /* #39 WstxStrategy: Highlight marks in Band Activity and the strategy editor popup. */
 #band-activity tr.ba-strategy td:first-child{box-shadow:inset 3px 0 var(--op-accent,#99e1c3)}#band-activity tr.ba-strategy td[data-col=message]{color:#c9f2df;font-weight:600}
+#band-activity td[data-ap]::after{content:' ' attr(data-ap);font-size:.75em;opacity:.7}
 #band-activity tr.ba-grey td{opacity:.45}#band-activity tr.ba-grey td[data-col=message]{text-decoration:line-through;text-decoration-thickness:1px}
 .op-app .op-segmented button[aria-pressed=true]{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}.op-app #strategy-auto[aria-pressed=true]{background:#5a3a14;border-color:#c58a2e;color:#ffe2b3}
 .op-strategy-editor{max-width:min(60rem,calc(100vw - 32px));width:60rem;max-height:calc(100dvh - 32px);overflow:auto}.op-strategy-editor form{display:flex;flex-direction:column;gap:10px}.op-strategy-editor h2{font-size:1.25rem;margin:0}.op-strategy-editor h3{font-size:var(--op-font-normal);margin:0}

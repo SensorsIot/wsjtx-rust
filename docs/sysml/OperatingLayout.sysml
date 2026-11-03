@@ -553,7 +553,9 @@ attribute def ActivityOrdering {
              otherwise. The QSO pane header shows the partner's shown name and continent
              first on its detail line under the call and grid (GET /dxcc?call=, once per DX call), and the
              entity distance marked approximate when the contact has no grid. Colours (#50, BandActivityColours) are the WSJT-X
-             row backgrounds; there are no text marks; worked before (WstxContact::
+             row backgrounds; the only text mark is WSJT-X's a-priori marker: a record with
+             a_priori N shows a small "aN" after its message, outside the message text
+             (#56 slice 5, WstxStationDecode::APrioriHypotheses); worked before (WstxContact::
              WorkedBeforeQuery) feeds only the New call slots; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never

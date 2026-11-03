@@ -1507,3 +1507,53 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
         "{snap}"
     );
 }
+
+// Proves: FR-003, CL-007-03 (#56 slice 5 APrioriContext). The live decode context follows
+// the profile callsign and the current contact: MyCall alone before a contact, then DxCall,
+// the WSJT-X QSO progress of the contact state and the Rx/Tx offsets; CQ-only while the
+// station has not transmitted.
+#[tokio::test]
+async fn a_priori_context_follows_profile_and_contact() {
+    use decoder::QsoProgress;
+    let f = fixture("http://127.0.0.1:18017", false);
+    let r = &f.state.recording;
+    let (source, job, generation) = r.fixture_live_job("ft8");
+    f.tick();
+    let calls = |text: &str| wstx_rust::transmit::pack(text).unwrap().bits;
+    let ap = f.contact().a_priori();
+    assert_eq!(
+        ap.my_call.map(|b| b.to_vec()),
+        Some(calls("HB9BLA KA1ABC RRR")[..29].to_vec())
+    );
+    assert_eq!(
+        (ap.dx_call, ap.progress, ap.cq_only),
+        (None, QsoProgress::Calling, true)
+    );
+    let p0 = now_ms().div_euclid(30_000) * 30_000 - 300_000;
+    let cq = r.fixture_publish_period(
+        &period_text(p0),
+        vec![record("CQ K1ABC FN42", 1234.0, Some(-5.0))],
+    )[0];
+    f.tick();
+    let row = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":cq});
+    let (s, v) = f
+        .send("select_row", json!({"row":row,"replace":false}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    f.tick();
+    let snap = f.snapshot().await;
+    let ap = f.contact().a_priori();
+    let bits = calls("HB9BLA K1ABC RRR");
+    assert_eq!(ap.my_call.map(|b| b.to_vec()), Some(bits[..29].to_vec()));
+    assert_eq!(ap.dx_call.map(|b| b.to_vec()), Some(bits[29..58].to_vec()));
+    assert_eq!(ap.progress, QsoProgress::Replying);
+    assert_eq!(ap.rx_hz, snap["settings"]["rx_hz"].as_f64().unwrap());
+    assert_eq!(ap.tx_hz, snap["settings"]["tx_hz"].as_f64().unwrap());
+    assert!(ap.cq_only, "no transmission yet");
+    r.fixture_publish_period(
+        &period_text(p0 + 30_000),
+        vec![record("HB9BLA K1ABC -10", 1234.0, Some(-5.0))],
+    );
+    f.tick();
+    assert_eq!(f.contact().a_priori().progress, QsoProgress::RogerReport);
+}

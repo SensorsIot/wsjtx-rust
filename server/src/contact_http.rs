@@ -44,7 +44,14 @@ struct Inner {
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
     /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
     outbox: Vec<logbook::Record>,
+    /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
+    a_priori: decoder::APriori,
+    /// The latest started transmission seen: (contact id, its last tx entry's period and
+    /// count), and when it was seen (UTC ms).
+    last_tx: Option<((String, i64, u32), i64)>,
 }
+/// lapcqonly: without a transmission for this long only the CQ a-priori type runs.
+const CQ_ONLY_AFTER_MS: i64 = 300_000;
 /// The contact engine of one station (one per process, like the transmit owner).
 pub(crate) struct Station {
     inner: Mutex<Inner>,
@@ -191,6 +198,8 @@ impl Station {
                 retry_at: None,
                 log: None,
                 outbox: Vec::new(),
+                a_priori: decoder::APriori::default(),
+                last_tx: None,
             }),
             revision: AtomicU64::new(0),
             started: Instant::now(),
@@ -216,6 +225,47 @@ impl Station {
             parity: e.settings.parity,
         });
         (e.revision, facts, e.settings.auto_seq)
+    }
+    /// WstxStationDecode::APrioriContext for the next live decode window (#56 slice 5).
+    pub(crate) fn a_priori(&self) -> decoder::APriori {
+        self.lock().a_priori.clone()
+    }
+    /// The context from the profile callsign, the current contact and the latest started
+    /// transmission (lapcqonly after CQ_ONLY_AFTER_MS without one).
+    fn refresh_a_priori(inner: &mut Inner, call: Option<&str>, now: i64) {
+        use decoder::QsoProgress as P;
+        let e = &inner.engine;
+        let c = e.contact.as_ref();
+        if let Some(c) = c
+            && let Some(tx) = c.dialogue.iter().rev().find(|x| x.tx)
+        {
+            let marker = (c.id.clone(), tx.period_ms, tx.count);
+            if inner.last_tx.as_ref().is_none_or(|(m, _)| *m != marker) {
+                inner.last_tx = Some((marker, now));
+            }
+        }
+        let progress = match c.map(|c| c.state) {
+            Some(contact::State::Replying) => P::Replying,
+            Some(contact::State::Report) => P::Report,
+            Some(contact::State::RogerReport) => P::RogerReport,
+            Some(contact::State::Rogers) => P::Rogers,
+            Some(contact::State::Signoff | contact::State::Completed) => P::Signoff,
+            _ => P::Calling,
+        };
+        let (my_call, dx_call) = call.map_or((None, None), |call| {
+            wstx_rust::transmit::a_priori_calls(call, c.and_then(|c| c.dx_call.as_deref()))
+        });
+        inner.a_priori = decoder::APriori {
+            my_call,
+            dx_call,
+            progress,
+            rx_hz: f64::from(e.settings.rx_hz),
+            tx_hz: f64::from(e.settings.tx_hz),
+            cq_only: inner
+                .last_tx
+                .as_ref()
+                .is_none_or(|(_, at)| now - at > CQ_ONLY_AFTER_MS),
+        };
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
     /// the contact's next message).
@@ -319,6 +369,7 @@ impl Station {
                 automatic: false,
             };
             inner.engine.step(core, &ctx, &rows);
+            Self::refresh_a_priori(inner, ctx.call.as_deref(), now);
             Self::collect_logs(
                 inner,
                 state,

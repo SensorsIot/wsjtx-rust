@@ -2528,6 +2528,14 @@ impl LiveWorker {
                 .ok_or("state_conflict")?;
             // FT8 SNR measures from the UTC period start, as WSJT-X does (#52).
             state.set_period_start(period_start);
+            // The station's a-priori context (MyCall, DxCall, QSO state) of this window (#56).
+            state.set_a_priori(
+                self.owner
+                    .contact
+                    .get()
+                    .map(|s| s.a_priori())
+                    .unwrap_or_default(),
+            );
             self.note_window(&window, mode, period_start, period_utc, drift_ms);
             // UDP Status decoding is true from here until this window's decode returns.
             let busy = self.owner.begin_window_decode();

@@ -564,7 +564,7 @@ epochs reset it and the ID. Retention/cursor expiry remains authoritative after 
 Live records extend12.7 with exactly period_start_utc and dt_seconds, both null without
 station clock correlation. Otherwise period_start_utc identifies the nearest nominal
 period and dt_seconds is finite in[-7.5,7.5) for FT8 or[-3.75,3.75) for FT4 under4.7.4.
-The native numerical Decode shape is unchanged. These extra live fields remain inside
+The native numerical Decode shape is unchanged except the optional a_priori key of an a-priori word (#56 slice 5). These extra live fields remain inside
 the2048-byte live record cap; existing1024-byte modem-history accounting is unchanged.
 
 `POST /receive/start` requires exactly `{v,profile_id,boot_id,generation,profile_revision,mode}`;
