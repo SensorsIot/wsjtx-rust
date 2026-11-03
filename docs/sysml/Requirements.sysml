@@ -552,11 +552,15 @@ package WstxRequirements {
              Setup: the actual transmit owner on a virtual UTC clock with a recording
              hardware double; the actual CI-V actor against an independent emulated
              IC-7300 peer; the actual station router, CL-022 lifecycle and scripted CI-V
-             peer.
+             peer; the contact engine against the actual owner core on the virtual
+             clock (contact_tests).
              Steps: request while disarmed; arm with unsupported/unavailable capability,
              a wrong safety revision and without a grant; FT8 request before the period,
              late, stale, misaligned, unsynchronized/unknown clock, bad text and offset,
-             duplicate sequence; replacement before and after audio start; halt
+             duplicate sequence; replacement before and after audio start; a request
+             for another period while the pending one is keyed before its audio, also
+             from the engine stepping between the key and the audio of a late start
+             (#10); halt
              mid-audio on the virtual clock, through the owner thread and through the
              real actor; audio device loss, CAT loss, key timeout, output open failure,
              safety revision change; an end report 300/900 ms late and one seen only
@@ -570,7 +574,10 @@ package WstxRequirements {
              without an opened output; PTT bytes exactly FE FE 94 E0 1C 00 01 FD and
              1C 00 00 with 1C 00 readback; open before key at the period start, audio at
              period start + 500 ms with skip 0, late skip (t-500 ms)*48; replaced and
-             audioStarted outcomes in order; halt releases within 250 ms and disarms;
+             audioStarted outcomes in order; a request for another period while keyed
+             before audio is accepted as the next one, plays in its own period after
+             the keyed one, never busy, still armed (#10); halt releases within 250 ms
+             and disarms;
              every failure stops audio, attempts release and disarms with its cause; a
              late end report inside the bound completes, stays armed and the next
              request plays; a device that never reports the end is released at audio
@@ -590,7 +597,7 @@ package WstxRequirements {
             verify 'CL-009-03';
             verify 'CL-009-04';
         }
-        attribute executable : String = "server/tests/transmit_service.rs; server/src/transmit_http_tests.rs";
+        attribute executable : String = "server/tests/transmit_service.rs; server/src/transmit_http_tests.rs; server/src/contact_tests.rs";
     }
     verification 'TC-008-002' {
         doc /* TC-008-002 — Physical controlled FT8 transmit
@@ -4106,8 +4113,8 @@ package WstxRequirements {
         doc /* TC-050-004 — A double-click switches to another station with Enable Tx kept
              CL-050-04
              Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); the actual candidate Router, contact engine and #9 transmit owner on a recording hardware double with Chromium on the real clock (contact_http_tests::contact_browser_operating_flow, tests/contact.test.cjs).
-             Steps: (a) engine: select "CQ K1ABC FN42", Enable Tx, send Tx1 in the odd period, then select "CQ DL1ABC JO62" (even period) with replace true and run two periods; then enter_dx W1AW with replace true; again switching 100 ms after my period start (PTT keyed, audio not started); (b) browser: double-click "CQ K1ABC FN42"; after its Tx1 double-click "CQ DL1ABC JO62"; publish DL1ABC's report and RR73; then CQ and, while calling, double-click "CQ EA8BIA IL18" and run that QSO the same way.
-             Expected: (a) still armed, last_disarm_cause unchanged, the next odd period sends "DL1ABC HB9BLA JN47", no later period sends to K1ABC, the manual replacement keeps Enable Tx; the switch in the keyed window sends the new contact's Tx1 in that same period, still armed; (b) each double-click sends select_row with replace true then enable_tx and shows no "Change contact" button; still armed, last_disarm_cause not contact_cancelled; the next own period sends "DL1ABC HB9BLA JN47", then "DL1ABC HB9BLA R-03" and "DL1ABC HB9BLA 73"; the contact completes and contacts.adi holds exactly one record for it; the same for EA8BIA from the CQ ("R+00").
+             Steps: (a) engine: select "CQ K1ABC FN42", Enable Tx, send Tx1 in the odd period, then select "CQ DL1ABC JO62" (even period) with replace true and run two periods; then enter_dx W1AW with replace true; again switching 100 ms after my period start (PTT keyed, audio not started), also to "CQ DL1ABC JO62" decoded in an odd period; (b) browser: double-click "CQ K1ABC FN42"; after its Tx1 double-click "CQ DL1ABC JO62"; publish DL1ABC's report and RR73; then CQ and, while calling, double-click "CQ EA8BIA IL18" and run that QSO the same way.
+             Expected: (a) still armed, last_disarm_cause unchanged, the next odd period sends "DL1ABC HB9BLA JN47", no later period sends to K1ABC, the manual replacement keeps Enable Tx; the switch in the keyed window sends the new contact's Tx1 in that same period, still armed; a switch in the keyed window to "CQ DL1ABC JO62" decoded in an odd period (my own parity) still sends K1ABC's Tx1 in that period and DL1ABC's Tx1 in the next even period, still armed, never refused busy (#10); (b) each double-click sends select_row with replace true then enable_tx and shows no "Change contact" button; still armed, last_disarm_cause not contact_cancelled; the next own period sends "DL1ABC HB9BLA JN47", then "DL1ABC HB9BLA R-03" and "DL1ABC HB9BLA 73"; the contact completes and contacts.adi holds exactly one record for it; the same for EA8BIA from the CQ ("R+00").
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

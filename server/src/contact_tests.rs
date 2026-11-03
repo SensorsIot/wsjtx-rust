@@ -1933,6 +1933,68 @@ fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_perio
     assert_eq!(s.sent_in(period(3)).as_deref(), Some("DL1ABC HB9BLA JN47"));
 }
 
+// Proves: CL-009-03, CL-050-04; TC-050-004 (a). #10: a switch to a station of my own parity
+// in the keyed window (PTT keyed, audio not started) moves the contact to the other parity.
+// The keyed period's message still goes out, the new contact's Tx1 is queued for its next
+// period and Enable Tx stays on: the core never refuses busy for that timing (review #50
+// observation).
+#[test]
+fn a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(3) + 100);
+    assert!(!s.core.view().transmitting, "audio not started yet");
+    let other = s.row(period(1), "CQ DL1ABC JO62", 800.0, Some(-3.0));
+    s.command(Command::SelectRow {
+        row: other,
+        replace: true,
+    })
+    .unwrap();
+    assert!(s.armed(), "Enable Tx stays on: {:?}", s.core.view());
+    s.run(period(4) + 14 * SECOND);
+    assert!(s.armed(), "{:?}", s.core.view());
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    assert_eq!(s.sent_in(period(4)).as_deref(), Some("DL1ABC HB9BLA JN47"));
+}
+
+// Proves: CL-009-03; TC-050-004 (a). #10: Enable Tx late in my own period starts that
+// period late. When the engine steps after PTT is keyed but before the owner's next tick
+// starts the audio, and its lead already lies past the period's start window, the next
+// own period's request is queued behind the keyed one; Enable Tx stays on (the debug-load
+// failure of selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms).
+#[test]
+fn a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.run(period(3) + 10_100);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.core.tick(); // keys at once for the late admitted start
+    assert_eq!(
+        s.fake.0.keys.lock().unwrap().last(),
+        Some(&(period(3) + 10_100, true))
+    );
+    assert!(!s.core.view().transmitting, "audio not started yet");
+    // The engine steps before the owner's next tick: its target moves to period(5).
+    s.fake.0.now.store(period(3) + 10_300, Ordering::SeqCst);
+    s.step(&[]);
+    assert!(s.armed(), "Enable Tx stays on: {:?}", s.core.view());
+    s.run(period(5) + 14 * SECOND);
+    assert!(s.armed(), "{:?}", s.core.view());
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("K1ABC HB9BLA JN47"));
+}
+
 // Proves: CL-050-06; TC-050-006 (a). #37 QSO dialogue: counted partner messages and this
 // contact's transmissions as sent, oldest first, repeats counted, bounded; a new contact
 // starts empty and a cancel empties it.

@@ -387,6 +387,44 @@ fn pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period
     );
 }
 
+// Proves: CL-009-03; TC-008-003. #10: a request for another period while the pending one
+// is keyed but its audio has not started is queued as the next request (no busy refusal,
+// no disarm); the keyed one plays in its own period.
+#[test]
+fn a_request_for_another_period_while_keyed_before_audio_is_queued_not_refused() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    f.at(P - 2_000);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 100); // keyed, audio at P + 500
+    let o = core.submit(request(2, P + 15_000, "DL1ABC HB9BLA JN47"));
+    assert_eq!((o.kind, o.refusal), (OutcomeKind::Accepted, None));
+    assert_eq!(core.view().arm_state, ArmState::Armed);
+    assert_eq!(core.view().pending_sequence, Some(2));
+    run(&mut core, &f, P + 500);
+    assert_eq!(core.view().last_text.as_deref(), Some("CQ HB9BLA JN47"));
+    f.at(P + 13_200);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    core.tick();
+    run(&mut core, &f, P + 15_500);
+    assert_eq!(core.view().last_text.as_deref(), Some("DL1ABC HB9BLA JN47"));
+    assert_eq!(
+        kinds(&core),
+        vec![
+            (1, OutcomeKind::Accepted),
+            (2, OutcomeKind::Accepted),
+            (1, OutcomeKind::Started),
+            (1, OutcomeKind::Completed),
+            (2, OutcomeKind::Started),
+        ]
+    );
+    assert_eq!(
+        f.keys(),
+        vec![(P, true), (P + 13_200, false), (P + 15_000, true)]
+    );
+}
+
 #[test]
 fn halt_mid_audio_stops_audio_and_releases_ptt_and_disarms() {
     let f = Fake::new();
