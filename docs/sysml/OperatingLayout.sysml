@@ -559,7 +559,8 @@ attribute def ActivityOrdering {
     attribute def BandActivityValue {
         attribute levels : Integer = 8;
         doc /* #55 (operator 2026-11-03, CL-055-04). The value of a Band Activity row, best
-             first: 1 calling me (a decoded message to the profile callsign); 2 a strategy
+             first: 1 calling me (a decoded message to the profile callsign, matched as for the
+             mycall slot, also a filled-in hash <MYCALL> or a nonstandard i3=4 'to', #24); 2 a strategy
              hit (Highlight on, WstxStrategy::HighlightView rank not null); 3 new DXCC or new
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;

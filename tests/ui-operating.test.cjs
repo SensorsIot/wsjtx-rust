@@ -2444,7 +2444,8 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.classList.contains('ba-tome')]));
-  assert.deepEqual(marks,[['<HB9BLA> PJ4/K1ABC',true],['HB9BLA <PJ4/K1ABC> -12',true],['<...> PJ4/K1ABC',false],['<HB9BLA> K1ABC -12',true]]);
+  // #55 value order: the three rows to my call (also as <HB9BLA> and nonstandard) are value 1, first.
+  assert.deepEqual(marks,[['<HB9BLA> PJ4/K1ABC',true],['HB9BLA <PJ4/K1ABC> -12',true],['<HB9BLA> K1ABC -12',true],['<...> PJ4/K1ABC',false]]);
   await page.locator('#qso-more summary').click();
   const tx5=page.locator('#contact-messages .ct-text[data-slot=tx5]');
   assert.equal(await tx5.isEnabled(),true,'Tx5 takes free text without a message');
