@@ -51,14 +51,16 @@ pub(crate) struct Config {
     pub max_run_minutes: u64,
     /// #39: the station's active WstxStrategy chooses and orders (Auto).
     pub strategy: bool,
+    /// #42 WstxStrategy::Pounce: the one call this run waits for and answers.
+    pub pounce: Option<String>,
 }
 impl Config {
-    fn json(&self) -> Value {
+    pub(crate) fn json(&self) -> Value {
         json!({"modes":self.modes,"ranking":self.ranking.name(),"min_snr_db":self.min_snr_db,
             "allowed_calls":self.allowed,"blocked_calls":self.blocked,"max_contacts":self.max_contacts,
             "max_unanswered_periods":self.max_unanswered,
             "completion_action":if self.next_candidate {"next_candidate"} else {"stop"},
-            "max_run_minutes":self.max_run_minutes,"strategy":self.strategy})
+            "max_run_minutes":self.max_run_minutes,"strategy":self.strategy,"pounce":self.pounce})
     }
 }
 type Refusal = (&'static str, Option<&'static str>);
@@ -108,8 +110,10 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
         "completion_action",
     ];
     let o = v.as_object().ok_or(bad("configuration"))?;
-    let optional =
-        usize::from(o.contains_key("max_run_minutes")) + usize::from(o.contains_key("strategy"));
+    let optional = ["max_run_minutes", "strategy", "pounce"]
+        .iter()
+        .filter(|k| o.contains_key(**k))
+        .count();
     if o.len() != keys.len() + optional || !keys.iter().all(|k| o.contains_key(*k)) {
         return Err(bad("configuration"));
     }
@@ -152,6 +156,21 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
         Some("next_candidate") => true,
         _ => return Err(bad("completion_action")),
     };
+    let strategy = match o.get("strategy") {
+        None => false,
+        Some(b) => b.as_bool().ok_or(bad("strategy"))?,
+    };
+    // #42 Pounce: one sane call, never with a strategy run nor a blocked call.
+    let pounce = match o.get("pounce") {
+        None | Some(Value::Null) => None,
+        Some(c) => Some(
+            c.as_str()
+                .filter(|c| valid_call(c) && strategy::sane_call(c))
+                .filter(|c| !strategy && !blocked.iter().any(|b| b == c))
+                .ok_or(bad("pounce"))?
+                .to_owned(),
+        ),
+    };
     Ok(Some(Config {
         modes,
         ranking,
@@ -169,10 +188,8 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
             None => RUN_MINUTES_DEFAULT,
             Some(m) => bounded(m, "max_run_minutes", 1..=480)?,
         },
-        strategy: match o.get("strategy") {
-            None => false,
-            Some(b) => b.as_bool().ok_or(bad("strategy"))?,
-        },
+        strategy,
+        pounce,
     }))
 }
 
@@ -308,6 +325,8 @@ struct Run {
     role: Option<strategy::Role>,
     tries: u64,
     skipped: Vec<String>,
+    /// #42 Pounce: the call and the station band captured at start.
+    pounce: Option<(String, String)>,
 }
 #[derive(Default)]
 struct Inner {
@@ -388,7 +407,8 @@ impl Owner {
                 "completed_contacts":run.completed,"unanswered_periods":run.unanswered,
                 "contact_id":run.contact_id,"selected":run.selected,"last_decision":run.last_decision,
                 "role":run.role.map(|r| if r == strategy::Role::Cq {"cq"} else {"call"}),"tries":run.tries,
-                "skipped":run.skipped})
+                "skipped":run.skipped,
+                "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
             "run_revision":inner.run_revision,"configuration":inner.configuration.as_ref().map(Config::json),"run":run})
@@ -535,6 +555,16 @@ impl Owner {
                 if !auto_seq {
                     return Err(("not_ready", Some("auto_seq")));
                 }
+                // #42 Pounce waits on the current band: it must be known.
+                let pounce = match &config.pounce {
+                    None => None,
+                    Some(call) => Some((
+                        call.clone(),
+                        strategy::station_band(r)
+                            .ok_or(("not_ready", Some("band")))?
+                            .to_owned(),
+                    )),
+                };
                 if facts.as_ref().is_some_and(|c| c.active) {
                     return Err(("state_conflict", Some("contact")));
                 }
@@ -600,6 +630,7 @@ impl Owner {
                     role,
                     tries: 0,
                     skipped: Vec::new(),
+                    pounce,
                 });
                 inner.run_revision += 1;
             }
@@ -680,6 +711,12 @@ impl Owner {
         if now >= run.deadline {
             return stop(&mut inner, "time_limit", armed);
         }
+        // #42 Pounce: a station band change ends it.
+        if let Some((_, band)) = &run.pounce
+            && strategy::station_band(r) != Some(band.as_str())
+        {
+            return stop(&mut inner, "band_changed", armed);
+        }
         // #39: a strategy run reads the saved active strategy at every step (Save applies
         // at once); without one it stops: Auto never runs unfiltered.
         let chosen = if run.config.strategy {
@@ -737,6 +774,10 @@ impl Owner {
                     if let Some(call) = c.dx_call {
                         run.worked.push(call);
                     }
+                    // #42 a pounce ends on its success.
+                    if run.pounce.is_some() {
+                        return stop(&mut inner, "completed", false);
+                    }
                     let (reached, next) = (
                         run.completed >= run.config.max_contacts,
                         run.config.next_candidate,
@@ -771,6 +812,17 @@ impl Owner {
                             .as_ref()
                             .map_or(run.config.max_unanswered, |(_, s)| s.skip_after);
                         if run.unanswered >= limit {
+                            if chosen.is_none() && run.pounce.is_some() {
+                                // #42 the pounce stays: wait again for the same call.
+                                run.state = RunState::Waiting;
+                                run.contact_id = None;
+                                run.progress = None;
+                                run.unanswered = 0;
+                                inner.run_revision += 1;
+                                drop(inner);
+                                cancel(contact, state);
+                                return;
+                            }
                             let Some((_, s)) = &chosen else {
                                 return stop(&mut inner, "no_answer", true);
                             };
@@ -901,12 +953,32 @@ impl Owner {
                     .map(|v| v["period_start_utc"].clone())
                     .unwrap_or(Value::Null);
                 // (call, sequence, answering an RR73/73 rather than a CQ)
-                let list: Vec<(String, u64, bool)> = match &chosen {
-                    None => candidates(&records, &run.config, &my, &run.worked)
+                let list: Vec<(String, u64, bool)> = match (&run.pounce, &chosen) {
+                    // #42 Pounce: the chosen call's CQ (not greyed) or RR73/73 to another
+                    // call, never when ignored; the first by sequence.
+                    (Some((target, _)), _) => {
+                        let config = contact.strategy.config(state).unwrap_or_default();
+                        let st = strategy::station(state, &config, &records);
+                        records
+                            .iter()
+                            .filter_map(strategy::facts)
+                            .filter(|f| {
+                                f.from == *target
+                                    && f.from != my
+                                    && !st.ignored.contains_key(&f.from)
+                                    && !st.greyed(f)
+                                    && st.cq_like(f, true)
+                            })
+                            .min_by_key(|f| f.sequence)
+                            .map(|f| (f.from, f.sequence, !f.cq))
+                            .into_iter()
+                            .collect()
+                    }
+                    (None, None) => candidates(&records, &run.config, &my, &run.worked)
                         .into_iter()
                         .map(|c| (c.call, c.sequence, false))
                         .collect(),
-                    Some((config, s)) => {
+                    (None, Some((config, s))) => {
                         let st = strategy::station(state, config, &records);
                         let mut v: Vec<strategy::Verdict> = strategy::evaluate(s, &records, &st)
                             .into_iter()

@@ -1735,7 +1735,11 @@ fn tc_042_004_pounce_configuration_is_exact() {
         .unwrap()
         .unwrap();
     assert_eq!(ok.pounce.as_deref(), Some("K1ABC"));
-    assert_eq!(ok.json()["pounce"], json!("K1ABC"), "the snapshot shows pounce");
+    assert_eq!(
+        ok.json()["pounce"],
+        json!("K1ABC"),
+        "the snapshot shows pounce"
+    );
     assert_eq!(
         automation_config(&absent).unwrap().unwrap().json()["pounce"],
         Value::Null
@@ -1883,11 +1887,7 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         StatusCode::OK
     );
     // CQ NA is not for my continent (EU): never answered (DirectedCqRule).
-    publish(
-        &f,
-        e + 30_000,
-        &[("CQ NA K1ABC FN42", 1500.0, Some(-15.0))],
-    );
+    publish(&f, e + 30_000, &[("CQ NA K1ABC FN42", 1500.0, Some(-15.0))]);
     assert_eq!(f.read("contact").await["contact"], Value::Null);
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
     // K1ABC ends its QSO with W1AW: answered, my Tx frequency held.
@@ -1961,8 +1961,14 @@ async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_chan
     assert_eq!(contact(&f).await.2, json!("disarmed"));
     // A waiting pounce ends the same way (the operator first clears the left contact).
     let revision = f.read("contact").await["contact_revision"].clone();
-    let cancel = f.browser("POST", "/contact/command", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
-        "command_id":profile::new_uuid().unwrap(),"contact_revision":revision,"action":"cancel"}))).await;
+    let cancel = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "command_id":profile::new_uuid().unwrap(),"contact_revision":revision,"action":"cancel"})),
+        )
+        .await;
     assert_eq!(cancel.status, StatusCode::ACCEPTED, "{}", cancel.json);
     assert_eq!(pounce(&f, "K1ABC", 2).await.status, StatusCode::ACCEPTED);
     f.state.recording.fixture_band("40m");
