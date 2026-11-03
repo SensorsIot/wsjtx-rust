@@ -525,7 +525,8 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     );
     assert_eq!(arm_state(&f), ArmState::Disarmed);
 
-    let v = command(&f, &owner, &c, 1, &free_text("TNX 73 GL"));
+    // #24 S1b: Tx5 takes free text of at most 13 characters, not longer.
+    let v = command(&f, &owner, &c, 1, &free_text("TNX FER QSO 73 GL"));
     assert_eq!(
         outcome(&v),
         ("refused".into(), json!("invalid_message")),

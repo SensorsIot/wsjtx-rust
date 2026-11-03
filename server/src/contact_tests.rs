@@ -2293,6 +2293,20 @@ fn nonstandard_entries_and_free_text_are_validated() {
         s.command(Command::SelectRow { row, replace: true }),
         Err("row_not_standard")
     );
+    // An i3=4 row whose hashed 'from' is unresolved names no partner either.
+    let row = decoded(
+        &mut s,
+        &mut table,
+        P0,
+        "PJ4/K9YY <W8ZZZ> RR73",
+        1500.0,
+        -10.0,
+    );
+    assert_eq!(row.text, "PJ4/K9YY <...> RR73");
+    assert_eq!(
+        s.command(Command::SelectRow { row, replace: true }),
+        Err("row_not_standard")
+    );
     let row = decoded(
         &mut s,
         &mut table,
@@ -2366,4 +2380,22 @@ fn call_first_skips_hashed_and_nonstandard_callers() {
     s.deliver(&rows);
     let c = s.engine.contact.as_ref().unwrap();
     assert_eq!(c.dx_call.as_deref(), Some("W9XYZ"));
+}
+
+// Proves: CL-024-01; TC-024-003 (d). A free-text Tx5 on an own CQ is sent once like a 73:
+// the contact completes and, without a partner, nothing goes to the log.
+#[test]
+fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
+    let mut s = station();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.command(Command::EditMessage(Slot::Tx5, "tnx 73 gl".into()))
+        .unwrap();
+    s.command(Command::ChooseNext(Slot::Tx5)).unwrap();
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(4));
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("TNX 73 GL"));
+    assert_eq!(s.sent.len(), 1, "sent once: {:?}", s.sent);
+    assert_eq!(s.state().0, State::Completed);
+    assert!(!s.armed());
+    assert!(s.engine.take_logs().is_empty());
 }

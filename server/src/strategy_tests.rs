@@ -1979,3 +1979,24 @@ async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_chan
     );
     assert_eq!(f.keys(), 0);
 }
+
+// Proves: CL-024-01; TC-024-003 (g) (#24 S1b). Station automation stays standard-only: a
+// run does not start with a nonstandard profile callsign.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automation_does_not_start_with_a_nonstandard_own_call() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let code = |r: &crate::mcp_tests::Reply| {
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone(),
+        )
+    };
+    f.state.store.lock().unwrap().document.callsign = "DL/HB9BLA".into();
+    assert_eq!(code(&auto(&f).await), (json!("not_ready"), json!("call")));
+    f.state.store.lock().unwrap().document.callsign = "HB9BLA".into();
+    assert_eq!(
+        code(&auto(&f).await),
+        (json!("not_configured"), json!("strategy"))
+    );
+}

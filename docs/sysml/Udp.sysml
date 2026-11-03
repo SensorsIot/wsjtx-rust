@@ -206,8 +206,9 @@ package WstxUdp {
              Free Text: refused tx_enabled while Enable Tx is on; an empty text is ignored;
              else ContactCommand edit_message {slot tx5, text}, as the browser's Tx5 edit:
              without a prepared contact it is refused no_contact, and a text that does not
-             pack as a standard message is refused invalid_message; the Send flag is
-             ignored.
+             pack unaltered as a standard, nonstandard or free-text (at most 13
+             characters) message is refused invalid_message (WstxContact::
+             StandardMessageSet, #24 S1b); the Send flag is ignored.
              Replay: the retained decodes (as for Reply) are sent to that target only, New
              false, in sequence order, at most replayPerStep per station step, then Status.
              Clear: window 0 (also when missing) or 2 sets the Reply/Replay floor to the

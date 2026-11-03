@@ -1133,7 +1133,9 @@ impl Engine {
             if c.last_counted_end.is_none() {
                 c.last_counted_end = Some(now);
             }
-            if !c.logged_on_completion {
+            // A contact without a partner (an own CQ ended by a free-text Tx5, #24 S1b)
+            // has nothing to log.
+            if !c.logged_on_completion && c.dx_call.is_some() {
                 c.logged_on_completion = true;
                 self.to_log.push((LogKind::Completion, c.clone()));
             }
