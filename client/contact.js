@@ -175,11 +175,22 @@ function render(){
 // #37 QsoPane item 7: the server-owned dialogue of the running QSO, oldest first, kept at
 // its newest line; it scrolls inside the card (#qso-area) and goes with the QSO.
 const hhmmss=ms=>Number.isFinite(ms)?new Date(ms).toISOString().slice(11,19):'--:--:--';
+// #60 QsoPane <message>: my call left, the other call right, the arrow between them pointing
+// to the receiver (◂ received, ▸ sent); only when both calls are known ("<CALL>"
+// counts as CALL), otherwise (a CQ, "<...>", free text) the text as it is.
+function qsoMessage(text,dir,mine,other){
+  const m=/^(\S+) (\S+)(.*)$/.exec(text??''),bare=w=>w.replace(/^<(.+)>$/,'$1');
+  if(!m||!mine||!other)return text??'';
+  const to=bare(m[1]),from=bare(m[2]);
+  if(dir==='rx'&&to===mine&&from===other)return `${m[1]} \u25C2 ${m[2]}${m[3]}`;
+  if(dir==='tx'&&to===other&&from===mine)return `${m[2]} \u25B8 ${m[1]}${m[3]}`;
+  return text;
+}
 function dialogueShow(c){
   const list=$('qso-dialogue'),entries=Array.isArray(c?.dialogue)?c.dialogue:[];
-  const key=JSON.stringify(entries);if(list.dataset.key===key)return;list.dataset.key=key;
+  const mine=myCall(),key=JSON.stringify([mine,entries]);if(list.dataset.key===key)return;list.dataset.key=key;
   list.replaceChildren(...entries.map(e=>{const li=document.createElement('li');li.dataset.dir=e.dir;
-    li.textContent=`${hhmmss(e.period_utc_ms)} ${e.dir==='tx'?'\u25B8':'\u25C2'} ${e.text}${e.dir==='rx'?`  ${snrText(e.snr)}`:''}${e.count>1?` \u00D7${e.count}`:''}`.trimEnd();return li;}));
+    li.textContent=`${hhmmss(e.period_utc_ms)}  ${qsoMessage(e.text,e.dir,mine,c.dx_call)}${e.dir==='rx'?`  ${snrText(e.snr)}`:''}${e.count>1?` \u00D7${e.count}`:''}`.trimEnd();return li;}));
   list.hidden=!entries.length;
   const area=$('qso-area');area.scrollTop=area.scrollHeight;
 }
@@ -581,7 +592,7 @@ function othersShow(){
   othersList.replaceChildren(...lines.map(({record,context})=>{
     const li=document.createElement('li');li.tabIndex=0;li.dataset.kind=qso?'warn':'candidate';
     li.dataset.row=JSON.stringify(rowOf(context,record.sequence));
-    li.textContent=`${hhmmss(Date.parse(record.period_start_utc??''))} ${qso?'⚠':'◂'} ${record.text}  ${snrText(record.snr_db)}`.trimEnd();
+    li.textContent=`${hhmmss(Date.parse(record.period_start_utc??''))}${qso?' ⚠ ':'  '}${qsoMessage(record.text,'rx',my,record.fields?.from?.text)}  ${snrText(record.snr_db)}`.trimEnd();
     li.title=qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station';
     return li;
   }));
