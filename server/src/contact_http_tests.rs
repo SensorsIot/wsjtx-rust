@@ -996,14 +996,19 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
 async fn contact_browser_operating_flow() {
     let (rest, switch_mid_qso, switch_from_cq) = tokio::join!(
         contact_browser_station(&["--test-skip-pattern=^TC-050-004 "]),
-        contact_browser_station(&["--test-name-pattern=^TC-050-004 \\(a\\) "]),
-        contact_browser_station(&["--test-name-pattern=^TC-050-004 \\(b\\) "]),
+        contact_browser_station(&["--test-name-pattern=^TC-050-004 mid-QSO: "]),
+        contact_browser_station(&["--test-name-pattern=^TC-050-004 from-CQ: "]),
     );
-    for (label, outcome) in [
+    let runs = [
         ("other tests", rest),
-        ("TC-050-004 (a)", switch_mid_qso),
-        ("TC-050-004 (b)", switch_from_cq),
-    ] {
+        ("TC-050-004 mid-QSO", switch_mid_qso),
+        ("TC-050-004 from-CQ", switch_from_cq),
+    ];
+    // Every run's output first, so that one failure does not hide the others.
+    for (label, outcome) in &runs {
+        println!("{label}:\n{}", String::from_utf8_lossy(&outcome.stdout));
+    }
+    for (label, outcome) in runs {
         let stdout = String::from_utf8_lossy(&outcome.stdout);
         assert!(
             outcome.status.success(),
@@ -1015,7 +1020,6 @@ async fn contact_browser_operating_flow() {
             stdout.contains("\u{2139} pass ") && !stdout.contains("\u{2139} pass 0"),
             "{label}: no test selected\n{stdout}"
         );
-        println!("{label}:\n{stdout}");
     }
 }
 

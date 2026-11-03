@@ -305,10 +305,11 @@ async function completes(call,report){
   // The pane shows the completion (its snapshot is current) before the next action.
   await page.locator('#contact-logged').filter({hasText:`Logged ${call}`}).waitFor({timeout:15000});
 }
-// TC-050-004 runs as two tests, (a) mid-QSO and (b) from my CQ then after a completed contact,
+// The browser part (b)/(c) runs as two tests, mid-QSO (then CQ right after the completed
+// contact, the #61 stale_revision path) and from-CQ (then (c) after the completed contact),
 // each on its own station and browser started by contact_browser_operating_flow, so that
 // their real-clock periods elapse concurrently (harness#28); every step and assertion is kept.
-test('TC-050-004 (a) a double-click switches mid-QSO with Tx kept on, and the new QSO completes',{timeout:420000},async()=>{
+test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);
   await waitFor(async()=>{const s=await snapshot();return s.transmit.arm_state==='armed'&&s.contact?.dx_call==='K1ABC';},'armed with K1ABC',15000);
@@ -324,9 +325,12 @@ test('TC-050-004 (a) a double-click switches mid-QSO with Tx kept on, and the ne
   const s=await snapshot();assert.equal(s.transmit.arm_state,'armed','Enable Tx stays on');
   assert.notEqual(s.transmit.last_disarm_cause,'contact_cancelled');
   await completes('DL1ABC','-03');
+  // CQ right after the completed contact, while its revision still moves (#61 CL-061-02).
+  await page.locator('#qso-cq').click();
+  await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},async()=>`calling CQ after DL1ABC: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-2))} ${JSON.stringify((await snapshot()).transmit)} ${JSON.stringify((await snapshot()).contact?.state)}`,15000);
   assert.deepEqual(page.errors,[]);
 });
-test('TC-050-004 (b) a double-click from my CQ switches with Tx kept on, the new QSO completes, and a double-click after it replies',{timeout:420000},async()=>{
+test('TC-050-004 from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO completes, and a double-click after it replies',{timeout:420000},async()=>{
   let mark;
   // From my CQ: CQ (arms, calling), then double-click another station's CQ.
   await page.locator('#qso-cq').click();
