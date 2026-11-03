@@ -97,6 +97,8 @@ impl PeakCapacityReserve {
         std::hint::black_box((&self.heap, &self.old_generation));
     }
 }
+/// Coarse Costas ratio admitting a raw FT8 peak (#56: 2.0, was 2.7).
+const COSTAS_THRESHOLD: f64 = 2.0;
 pub(super) struct Spectrum {
     values: Vec<Complex32>,
     width: usize,
@@ -260,7 +262,7 @@ impl Spectrum {
             budget.checkpoint().await?;
             for f in 0..nf {
                 let score = scores[r * nf + f];
-                if score < 2.7 {
+                if score < COSTAS_THRESHOLD {
                     continue;
                 }
                 let mut maximum = true;

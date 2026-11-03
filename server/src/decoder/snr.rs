@@ -93,8 +93,8 @@ impl Ft8Snr {
         Ok(self.baselines[&period].as_ref())
     }
     /// ft8b's xsnr2 from the early period buffer: the decoded tones' symbol power over the
-    /// sync8 baseline at the lowest tone, 10*log10(xsig/xbase/3e6-1)-27 dB, floored at -25
-    /// and rounded to whole dB.
+    /// sync8 baseline at the lowest tone, 10*log10(xsig/xbase/3e6-1)-27 dB, before ft8b's
+    /// floor; [`reported`] floors and rounds it.
     /// `period` is the window-relative start of the frame's period.
     pub(super) async fn snr_db(
         &mut self,
@@ -137,8 +137,12 @@ impl Ft8Snr {
         }
         let arg = xsig / xbase / 3e6 - 1.;
         let db = 10. * (if arg > 0.1 { arg } else { 0.001 }).log10() - 27.;
-        Ok(db.is_finite().then(|| db.clamp(-25., 60.).round()))
+        Ok(db.is_finite().then_some(db))
     }
+}
+/// The published FT8 SNR: whole dB, floored at -25, ceiling +60.
+pub(super) fn reported(db: f64) -> f64 {
+    db.clamp(-25., 60.).round()
 }
 #[cfg(test)]
 #[path = "snr_test.rs"]

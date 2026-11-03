@@ -73,6 +73,18 @@ pub enum DecodeError {
     SearchLimited,
     DecodeLimit,
 }
+/// Verified subtractions per window (#56: jt9 subtracts every decode, MAX_EARLY 200).
+const SUBTRACTIONS: usize = 200;
+/// Ft8PaddedResidual: 2.0 s of zeros before and 0.64 s after an FT8 window (jt9 sync8
+/// lags -62..+62, DT -2.5..+2.5 s).
+const PAD_BEFORE: usize = 24000;
+const PAD_AFTER: usize = 7680;
+/// Two verified words with the same payload and start are one frame only when their
+/// carriers are this close.
+const DUPLICATE_SEPARATION_HZ: f64 = 50.;
+/// ft8b's weak-word guard: at most this many hard Costas hits and an SNR below -25 dB.
+const WEAK_MAX_COSTAS_HITS: usize = 10;
+const WEAK_SNR_DB: f64 = -25.;
 struct Subtraction {
     start: usize,
     frequency: f64,
@@ -197,11 +209,36 @@ impl Decoder {
         if samples.len() < frame {
             return Ok(());
         }
+        // FT8 runs on the zero-padded residual (#56 Ft8PaddedResidual): frames that run past
+        // either window edge are found and subtracted like jt9's, and published only when
+        // they lie inside the window to within half a symbol.
+        let length = samples.len();
+        let (front, back) = if mode == Mode::Ft8 && length + PAD_BEFORE + PAD_AFTER <= 360000 {
+            (PAD_BEFORE, PAD_AFTER)
+        } else {
+            (0, 0)
+        };
+        if front + back > 0 {
+            let mut padded = vec![0f32; front];
+            padded.extend_from_slice(&samples);
+            padded.resize(front + length + back, 0.);
+            samples = padded;
+        }
+        let inside =
+            |start: usize| start + n / 2 >= front && start + frame <= front + length + n / 2;
         let plan = BandPlan::new(mode, samples.len(), self.scalar)?;
         let mut subtractor = Subtractor::new(mode, self.scalar)?;
         budget.checkpoint().await?;
         let mut subtractions = 0;
-        let mut window_seen = Vec::<(String, u64)>::new();
+        // (payload, padded absolute start, carrier) of this window's verified words.
+        let mut window_seen = Vec::<(String, u64, f64)>::new();
+        let seen = |window_seen: &[(String, u64, f64)], bits: &str, at: u64, carrier: f64| {
+            window_seen.iter().any(|(b, start, f)| {
+                b == bits
+                    && start.abs_diff(at) <= (n / 2) as u64
+                    && (f - carrier).abs() <= DUPLICATE_SEPARATION_HZ
+            })
+        };
         for _pass in 0..3 {
             let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
             let mut physical = plan.current_pass(&samples, &mut budget).await?;
@@ -253,47 +290,65 @@ impl Decoder {
                 let Some((payload, tones, fitted)) = verification? else {
                     continue;
                 };
-                let absolute = origin + c.start as u64;
-                if window_seen.iter().any(|(bits, start)| {
-                    *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
-                }) {
+                // A repeat of this window's word on a carrier more than 50 Hz away is a
+                // second transmission: it is subtracted (ft8b subtracts before ft8_decode
+                // drops the duplicate message) and the history keeps it from publishing twice.
+                if seen(
+                    &window_seen,
+                    &payload.payload77,
+                    origin + c.start as u64,
+                    c.frequency,
+                ) {
                     continue;
                 }
                 let (fitted, supported) = fitted?;
                 let absolute = origin + fitted.start as u64;
-                if window_seen.iter().any(|(bits, start)| {
-                    *bits == payload.payload77 && start.abs_diff(absolute) <= (n / 2) as u64
-                }) {
+                if seen(&window_seen, &payload.payload77, absolute, fitted.frequency) {
                     continue;
                 }
-                if !supported? {
+                let (supported, hits) = supported?;
+                if !supported {
                     continue;
                 }
-                let snr = match &contrast {
-                    Some(contrast) => contrast.snr_db(fitted.frequency),
-                    None => {
-                        ft8_snr
-                            .snr_db(
-                                &samples,
-                                super::snr::period_of(origin, fitted.start, state.period_start()),
-                                fitted.start,
-                                fitted.frequency,
-                                &tones,
-                                &mut budget,
-                            )
-                            .await?
-                    }
+                let complete = inside(fitted.start);
+                let snr = match (&contrast, complete) {
+                    (_, false) => None,
+                    (Some(contrast), true) => contrast.snr_db(fitted.frequency).map(|db| (db, db)),
+                    (None, true) => ft8_snr
+                        .snr_db(
+                            &samples[front..front + length],
+                            super::snr::period_of(
+                                origin,
+                                fitted.start.max(front) - front,
+                                state.period_start(),
+                            ),
+                            fitted.start.max(front) - front,
+                            fitted.frequency,
+                            &tones,
+                            &mut budget,
+                        )
+                        .await?
+                        .map(|db| (db, super::snr::reported(db))),
                 };
-                window_seen.push((payload.payload77.clone(), absolute));
+                // ft8b: nsync<=10 .and. xsnr<-25 is a likely false decode.
+                if mode == Mode::Ft8
+                    && hits <= WEAK_MAX_COSTAS_HITS
+                    && snr.is_some_and(|(db, _)| db < WEAK_SNR_DB)
+                {
+                    continue;
+                }
+                window_seen.push((payload.payload77.clone(), absolute, fitted.frequency));
                 verified += 1;
-                let record = Decode {
-                    payload,
-                    start_frame: absolute,
-                    frequency_hz: fitted.frequency,
-                    snr_db: snr,
-                };
-                state.publish_if_new(&record, publish)?;
-                if pending.len() + subtractions < 32 {
+                if complete {
+                    let record = Decode {
+                        payload,
+                        start_frame: (origin + fitted.start as u64).saturating_sub(front as u64),
+                        frequency_hz: fitted.frequency,
+                        snr_db: snr.map(|(_, reported)| reported),
+                    };
+                    state.publish_if_new(&record, publish)?;
+                }
+                if pending.len() + subtractions < SUBTRACTIONS {
                     pending.push(Subtraction {
                         start: fitted.start,
                         frequency: fitted.frequency,
@@ -323,7 +378,10 @@ impl Decoder {
                     subtractions += 1;
                 }
             }
-            if verified == 0 || subtractions >= 32 {
+            // The padding stays zero: a subtraction near a window edge spills into it.
+            samples[..front].fill(0.);
+            samples[front + length..].fill(0.);
+            if verified == 0 || subtractions >= SUBTRACTIONS {
                 break;
             }
         }
@@ -353,7 +411,7 @@ impl Decoder {
         let tones = self.channel.tones(&word, mode);
         let fitted = async {
             let fitted = refine_known(samples, mode, &tones, c, cancel, budget, physical).await?;
-            let supported = physical_sync::supports(physical, fitted, budget).await;
+            let supported = physical_sync::support(physical, fitted, budget).await;
             Ok((fitted, supported))
         }
         .await;
@@ -367,7 +425,7 @@ type Verification = Result<
     Option<(
         Payload,
         Vec<u8>,
-        Result<(Candidate, Result<bool, DecodeError>), DecodeError>,
+        Result<(Candidate, Result<(bool, usize), DecodeError>), DecodeError>,
     )>,
     DecodeError,
 >;
