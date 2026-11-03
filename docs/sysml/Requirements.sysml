@@ -4397,5 +4397,26 @@ package WstxRequirements {
         }
     }
     dependency CL_061_01_verified_by_TC_061_002 from 'CL-061-01' to 'TC-061-002';
+    // Found in the #61 gate (TC-050-004, CQ right after a completed contact refused stale_revision).
+    requirement 'CL-061-02' {
+        doc /* The QSO pane CQ and Reply buttons are explicit operator choices like the double-click (CL-050-04): a stale_revision refusal of their enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js";
+    }
+    dependency CL_061_02_to_FR_007 from 'CL-061-02' to 'FR-007';
+    verification 'TC-061-003' {
+        doc /* TC-061-003 — CQ and Reply retry a stale_revision refusal
+             CL-061-02
+             Setup: actual station Router and browser client with scripted contact snapshots and contact command replies (explicit presentation fixtures).
+             Steps: click CQ while the station refuses one command with stale_revision and moves its revision; click CQ while it refuses three; prepare a contact and click Reply while it refuses one.
+             Expected (independent: the scripted revisions): CQ sends enable_tx with revision 3, then 4 (accepted); then 4, 5, 6 and shows the refusal; Reply sends 7, then 8. On the parent client CQ and Reply send once.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_02_verified_by_TC_061_003 from 'CL-061-02' to 'TC-061-003';
 
 }

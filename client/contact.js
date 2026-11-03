@@ -273,9 +273,10 @@ $('qso-cq').addEventListener('click',async()=>{
     if(!await confirmAction(`Abandon the QSO with ${c.dx_call} and call CQ?`,'Call CQ'))return;
     const reply=await send('cancel',{},'Cancel contact');if(!reply||reply.refused)return;
   }
-  arm('CQ');
+  // #61 CL-061-02: an explicit choice, retried after stale_revision like the double-click.
+  sendExplicit(()=>arm('CQ'));
 });
-$('qso-reply').addEventListener('click',()=>arm('Reply'));
+$('qso-reply').addEventListener('click',()=>sendExplicit(()=>arm('Reply')));
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 async function finalMessage(slot,label){
   const c=snap?.contact;if(!c?.dx_call||!transmitting(c))return;

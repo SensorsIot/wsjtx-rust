@@ -1814,7 +1814,10 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
   await page.locator('#ignore-session li').first().waitFor();
   assert.deepEqual(await page.locator('#ignore-session li').evaluateAll(l=>l.map(x=>[x.querySelector('.ig-call').textContent,x.querySelector('.ig-left').textContent])),[['K1ABC','30 min']]);
-  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').dispatchEvent('change');
+  // One change: leaving the field is the change (a dispatched change plus the blur would be two);
+  // the saved list is shown once the station's answer is applied, before the next field (#61 gate race).
+  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').blur();
+  await page.waitForFunction(()=>document.querySelector('#ignore-calls').value==='DL1XYZ W1AW');
   for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[2,{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:['DL1XYZ','W1AW'],session_ignore_minutes:30}]]);
   await page.fill('#ignore-minutes','45');await page.locator('#ignore-minutes').dispatchEvent('change');
@@ -2136,5 +2139,30 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
   renew(0);await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,state.generation);
   assert.deepEqual([await shown(),await waterfall()],[[],[]],'a new receive clears Band Activity and the waterfall');
   await liveFrames(page,[{sequence:0,levels:level(70)}]);assert.deepEqual(await waterfall(),[[0,70]]);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
+// and Reply buttons retry a stale_revision refusal of their enable_tx with the reloaded revision, at most twice.
+test('TC-061-003 CQ and Reply retry a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
+  const commands=[];let contact=null,revision=3,stale=0;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact})}));
+    // The station refuses the next `stale` commands (its revision moved: the last 73 period ended) and moves it on.
+    await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
+      if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
+  const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
+  stale=1;let m=commands.length;await page.locator('#qso-cq').click();
+  assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
+  await page.locator('#contact-result').filter({hasText:'CQ: accepted'}).waitFor();
+  // At most two retries: a third refusal stays shown.
+  stale=3;m=commands.length;await page.locator('#qso-cq').click();
+  assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
+  await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  contact=partner('replying');stale=1;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-reply').disabled);
+  m=commands.length;await page.locator('#qso-reply').click();
+  assert.deepEqual(await sent(m,2),[['enable_tx',true,7],['enable_tx',true,8]],'Reply: refused once, sent again with the reloaded revision');
   assert.deepEqual(errors,[]);
 });

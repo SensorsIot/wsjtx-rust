@@ -462,7 +462,9 @@ package WstxContact {
              only while the contact is in progress, never on a completed or cancelled one,
              where Enable Tx would start a fresh own CQ) send
              enable_tx {enabled:true} with the shown safety revision, so grant, clock,
-             period and safety-revision checks are unchanged. Transmission ends by itself
+             period and safety-revision checks are unchanged; the CQ and Reply buttons, explicit
+             operator choices like the double-click, retry their enable_tx at most twice after a
+             stale_revision refusal with the reloaded snapshot (CL-061-02). Transmission ends by itself
              on completion (Enable Tx off after a completed Tx4 RR73/Tx5 73, see the
              transition table) or by HALT; there is no other off control. Alt+N has no
              function. Earlier text: Separate explicit operator action (Alt+N where the browser delivers it,
