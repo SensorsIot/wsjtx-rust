@@ -763,14 +763,14 @@ attribute def ActivityOrdering {
              ContactSnapshot
              dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
              the earlier line and arrow formats) with the header row "UTC | Direction |
-             Exchange | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
-             bottom, "×N" after the exchange for N > 1 repeats, no frequency and no other
+             Exchange | Rep | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
+             bottom, "×N" in Rep for N > 1 repeats (empty for one), no frequency and no other
              station; below a thin separator the Others (item 3) as rows of the same table
              and columns, a ⚠ after the time while a QSO runs. The area scrolls inside the
              card, kept at its newest row, with the header row staying visible, at most the
              header row and qsoAreaRows (6) rows high (item 8), and never grows the page
              (TC-007-009); at 360 CSS px the table fits the pane width and the
-             titles may be abbreviated (UTC, Dir, Exch, Rx, Tx).
+             titles may be abbreviated (UTC, Dir, Exch, Rep, Rx, Tx).
              It is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.
              Columns: UTC is HH:MM:SS, the UTC period start, with no ◂/▸ direction mark.
@@ -781,14 +781,18 @@ attribute def ActivityOrdering {
              or "CQ DX <call>" (the words before the grid) without an arrow, its grid in
              Exchange. Exchange is the message after the two calls ("IM59", "+08", "R-02",
              "RR73", "73"); a message that does not start with two calls or a CQ (free text)
-             is all Exchange with an empty Direction. Rx SNR is our measured SNR of a
-             received message, signed ("+8", "−12", "0"), on received rows only (dialogue rx
-             entries and Others), empty on sent rows. Tx SNR is the partner's report on us,
-             only on the received row that carries it: an Exchange "R-02" gives "−2", a plain
-             report "-05" gives "−5"; empty otherwise. Example (operator, #60):
-             "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |", "22:51:30 | CT1BFP ◂ HB9BLA | +08 | |",
-             "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | +7 | −2", "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | |",
-             "22:52:15 | HB9BLA ◂ CT1BFP | 73 | +9 |". Sent rows keep their own colour.
+             is all Exchange with an empty Direction. Rx SNR and Tx SNR are on every dialogue
+             row, received and sent alike (operator #60, 2026-11-03: "the RX and TX dB wherever
+             possible on each line, always the one from the last transmission"): Rx SNR is our
+             measured SNR of the latest received dialogue entry at or before that row, signed
+             ("+8", "−12", "0"); Tx SNR is the latest report the partner sent us in a received
+             dialogue entry at or before that row (an Exchange "R-02" gives "−2", a plain report
+             "-05" gives "−5"); each is empty only while no such value exists yet. An Others row
+             shows its own decode's SNR and, when it carries one, its own report. Example
+             (operator, #60): "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | | +8 |",
+             "22:51:30 | CT1BFP ◂ HB9BLA | +08 | | +8 |", "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | | +7 | −2",
+             "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | | +7 | −2", "22:52:15 | HB9BLA ◂ CT1BFP | 73 | ×2 | +9 | −2".
+             Sent rows keep their own colour.
              Messages between two other stations are not QSO pane lines.
              There is no LAST row, no crowding badge and no status line
              for a finished contact. A status line under the header is shown only for an
