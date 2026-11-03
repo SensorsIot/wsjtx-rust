@@ -93,10 +93,10 @@ const localPreferences=document.createElement('div');localPreferences.id='local-
 localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label class="op-check"><input id="display-flatten" type="checkbox"> Flatten (even out the passband across frequency)</label><label class="op-check"><input id="display-spectrum" type="checkbox"> Show spectrum line</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
-// #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority
-// order with its default on/off. A slot without data (DXCC, zones and continent need cty.dat, #55; grids
-// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour.
-const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',true]];
+// #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
+// only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X: no CQ slot, New call on by default).
+// A slot without data (cty.dat flags #55; grids, LotW) stays inactive until a record carries it. Worked before: none.
+const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',true],['new_call_band','New call on band',true],['lotw','LotW user',false]];
 const bandFlags=bandSlots.map(([k])=>k).filter(k=>k.startsWith('new_'));
 const bandColours=document.createElement('fieldset');bandColours.id='band-colours';bandColours.className='op-server-fieldset';
 bandColours.innerHTML='<legend>Band Activity colours (WSJT-X)</legend>'+bandSlots.map(([k,label])=>`<label class="op-check"><input type="checkbox" data-hl-slot="${k}"> <span class="op-swatch" data-hl-swatch="${k}"></span>${label}</label>`).join('');
@@ -618,7 +618,7 @@ function activityRow(record,period,context,mode){
   // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
   // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
   const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
-  if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
+  if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
