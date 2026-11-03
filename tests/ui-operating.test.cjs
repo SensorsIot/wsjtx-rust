@@ -433,7 +433,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   // start and SNR (no DT or Hz); no CQ, even near Rx.
   await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===5);
   assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','','−8','']],['candidate',['12:00:15','HB9BLA ◂ IW9FRA','RR73','','+17','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','','−8','']],
-    ['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','−10','']]]);
+    ['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','','−10','']]]);
   assert.equal(await shown(page,'#qso-others-none'),false,'no "nobody calling" with callers');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);

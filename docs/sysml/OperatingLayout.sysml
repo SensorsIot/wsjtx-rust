@@ -775,7 +775,8 @@ attribute def ActivityOrdering {
              card, kept at its newest row, with the header row staying visible, at most the
              header row and qsoAreaRows (6) rows high (item 8), and never grows the page
              (TC-007-009); at 360 CSS px the table fits the pane width and the
-             titles may be abbreviated (UTC, Dir, Exch, Rep, Rx, Tx).
+             titles may be abbreviated (UTC, Dir, Exch, Rep, Rx, Tx) and the Direction calls
+             may wrap at their spaces.
              It is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.
              Columns: UTC is HH:MM:SS, the UTC period start, with no ◂/▸ direction mark.

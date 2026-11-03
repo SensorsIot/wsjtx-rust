@@ -231,7 +231,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-focus .ct-qso-table td:is(:first-child,:nth-child(2)){white-space:nowrap}
 #rx-focus .ct-qso-table :is(th,td):nth-child(n+4){text-align:right;white-space:nowrap}
 #rx-focus .ct-others:empty{display:none}
-@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary)}#rx-focus .ct-qso-table :is(th,td){padding:0 2px}}
+@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary)}#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* #60 Rep column: at phone width the two calls may wrap at their spaces */
 #rx-focus .ct-dialogue:not([hidden])+.ct-others tr:first-child td{border-top:1px solid #355065}
 #rx-focus .ct-others tr{cursor:pointer}
 #rx-focus .ct-others tr[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
