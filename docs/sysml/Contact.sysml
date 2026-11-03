@@ -138,6 +138,7 @@ package WstxContact {
         attribute armState : WstxTransmit::ArmState;
         attribute mode : WstxOfflineDecode::Mode;
         attribute autoSequence : Boolean;
+        attribute callFirst : Boolean;
         attribute startUtc : String[0..1];
         attribute endUtc : String[0..1];
         attribute saved : Boolean;
@@ -152,7 +153,9 @@ package WstxContact {
              both shown. Reconnect loads this snapshot; it replays no arm, tune,
              next-message or transmit request. Another profile never inherits it.
              autoSequence is initially on (own choice, operator can switch it off;
-             off means received messages never change nextSlot). armState is the
+             off means received messages never change nextSlot). callFirst (WSJT-X
+             Call 1st / "CQ: First") is initially on (#10, operator 2026-11-02, an
+             operator-changeable default), see CallFirst. armState is the
              read view of #9's TransmitArming, never armed by selection, entry, reconnect or startup (#10 CL-010-01,
              TransmitSafetyPolicy armedOnStartup=false). mode: ContactMode. */
     }
@@ -237,7 +240,10 @@ package WstxContact {
              nextSlot and state per FirstSlotOnSelection. Unresolved hashes, rows
              without a concrete call, old/wrong-profile tuples and non-standard
              families are refused with a reason. Never sets enableTx (DIFFERENT from
-             CFG quick_call "double-click sets Tx enable": #10 safety rule). */
+             CFG quick_call "double-click sets Tx enable": #10 safety rule; the browser's
+             double-click sends SetEnableTx on after it, OperatingLayout BandActivity) and
+             never clears it: a replacement while Enable Tx is on keeps it on
+             (ChangeContact). */
     }
     calc def FirstSlotOnSelection {
         in toIsMyCall : Boolean;
@@ -250,7 +256,8 @@ package WstxContact {
              R+report -> tx4/rogers; RRR or RR73 -> tx5/signoff; 73 -> tx5/signoff
              (logged once tx5 is sent, DirectLog). Responding to a station that answered
              my CQ is this case; CQ response mode (automatic choice of the responder)
-             is #12 (D6), so a reply to my CQ always needs this explicit selection. */
+             was #12 (D6): a reply to my CQ needs this explicit selection unless CallFirst
+             answers it (#10, operator 2026-11-02, Call 1st on by default). */
     }
     action def EnterDxStation {
         in dxCallText : String;
@@ -269,9 +276,46 @@ package WstxContact {
     }
     action def ChangeContact {
         doc /* Explicit server-accepted replacement of an active partner: the old
-             contact is cancelled before the new one is prepared; Enable Tx is turned
-             off. A completed contact is not active and is already logged (DirectLog),
-             so a new partner simply replaces it (#41: no held unsaved contact). */
+             contact is cancelled before the new one is prepared; Enable Tx keeps its
+             state (#50, operator 2026-11-02, as WSJT-X 3.3.0-beta5: handleDecodeSelection,
+             widgets/mainwindow.cpp ~9122-9229, replaces the DX call and regenerates the
+             messages through processMessage and never turns Enable Tx off, except an
+             Alt double-click; DecodedMessageReaction.cpp appendReactedTail ~365-413 sets
+             DX call/grid, report and messages and, with quick_call "Double-click on call
+             sets Tx enable", Enable Tx on), so while it is on the next period of the new
+             contact's parity carries the new contact's next message (the pending request
+             of the old contact is replaced; a transmission already on the air continues,
+             as with CancelContact; a replacement in my own period after PTT is keyed and
+             before its audio starts replaces that period's request, so the new message is
+             sent in it). The replacement itself never turns Enable Tx on. During a station
+             automation run (WstxMcp OperatingAutomation) an operator replacement of the
+             run's contact ends the run, which disarms (contact_changed, TC-020-003); this
+             exception stands until the operator decides otherwise. A
+             completed contact is not active and is already logged (DirectLog), so a new
+             partner simply replaces it (#41: no held unsaved contact). */
+    }
+    action def CallFirst {
+        doc /* #10 (operator 2026-11-02). WSJT-X 3.3.0-beta5 calls Call 1st the respond
+             policy "CQ: First" (widgets/mainwindow.cpp ~1489-1493 respondComboBox;
+             updateRespondTarget ~17697-17731: the first current-period caller,
+             claimFirst per decode period, processed as a double-click with
+             auto_tx_mode(true); AutoRespondPeriod.cpp ~11-32
+             isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
+             than me, an exchange that is not R+report, RRR, RR73 or 73): while the
+             contact is calling (an own CQ started by the operator; a CQ of station
+             automation is answered by its strategy instead, WstxMcp) with Enable Tx,
+             Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
+             the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
+             sequence), that is a standard message to my call from a concrete call in the
+             station's mode, decoded in a period of the parity opposite to my Tx parity,
+             whose exchange is a grid or a report, is answered at once as SelectDecodedRow
+             of that row (prepareReply: report Tx2 after their grid, roger report Tx3
+             after their report, as FirstSlotOnSelection; Hold Tx and the to-my-call rule
+             keep my Tx offset). Enable Tx keeps its state, so the next own period answers
+             that caller; the answer is automatic, not operator activity (no Tx watchdog
+             reset). At most one caller is answered: the contact is then no longer
+             calling. With Call 1st off a calling contact moves only on an operator
+             selection (#12). */
     }
     action def CancelContact {
         doc /* Abort the current contact: disarm (Enable Tx off), clear DX call/grid and
@@ -338,7 +382,8 @@ package WstxContact {
              MW guiUpdate ~8056-8091). prepareReply is SelectDecodedRow or EnterDxStation;
              firstSlot is the FirstSlotOnSelection result (tx1 replying, tx2 report incl.
              a Tx1-skip start, tx3 rogerReport, tx4 rogers, tx5 signoff). A selection
-             while a contact is active first passes ChangeContact (cancel, then idle).
+             while a contact is active first passes ChangeContact (cancel, then
+             prepare; Enable Tx unchanged). CallFirst is a prepareReply from calling.
              Next message per state: calling tx6, replying tx1,
              report tx2, rogerReport tx3, rogers tx4, signoff tx5; completed and
              cancelled select tx6 with Enable Tx off.
@@ -756,8 +801,22 @@ package WstxContact {
              observation in the status stream, advanced locally between observations
              for display only; marked stale with the link; never a scheduling input.
              Tx progress (MW ~8388): #50, one period bar only, the QSO pane's NEXT bar
-             (its width the elapsed part of the period, FT4-NOTE 7.5) with the countdown or
-             "Transmitting" while #9 reports an active transmission; the top bar shows UTC only. Rx level meter (widgets/
+             (its width the elapsed part of the period, FT4-NOTE 7.5) with the countdown or,
+             while #9 reports an active transmission, "▶ TX now" with the seconds left
+             (#37, QsoPane NEXT); the top bar shows UTC only.
+             The bar is red in a period of my Tx parity while Enable Tx is on and whenever
+             transmitting is true, green otherwise (WstxOperatingLayout::QsoPane NEXT).
+             StationPeriodClock (#50, operator 2026-11-02): the UTC clock, the bar and the
+             countdown run on the station's UTC (the transmit owner's now_utc_ms, system
+             clock plus the #43 correction, the clock the transmitter keys on), never on the
+             browser's wall clock: each station observation (station.tick utc_ms and the
+             ContactSnapshot utc_ms) gives offset = utc_ms - browser monotonic time at its
+             receipt; the shown station time is the browser monotonic time plus the
+             largest offset received in the last 20 s (a late delivery only lowers an
+             offset); an offset more than 500 ms below that estimate is a backward step
+             of the station clock (#43) and restarts the estimate at once. The bar is redrawn at least every 100 ms with no animated width
+             change, so it restarts at 0 at each period start within 100 ms plus the
+             link's one-way delay. Rx level meter (widgets/
              signalmeter.cpp, meterwidget.cpp): 0..90 dB, rxLevelDb = round(10 log10(mean(s^2))) with s
              the canonical receive samples scaled to 16-bit full scale (32768), over the
              last status interval, at most one value per second on the status link;
@@ -868,8 +927,8 @@ package WstxContact {
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
-        enum set_parity; enum set_auto_seq; enum set_watchdogs; enum enable_tx; enum tune;
-        enum redecode; enum open_log;
+        enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs;
+        enum enable_tx; enum tune; enum redecode; enum open_log;
         doc /* discard_review is retired (#41, no log review queue) and refused
              invalid_request with field action. */
     }
@@ -890,6 +949,7 @@ package WstxContact {
              set_frequency {rx_hz|null,tx_hz|null} (null = unchanged; pointer actions use
              this with the PointerEffect result); set_hold_tx {enabled};
              set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
+             set_call_first {enabled} (CallFirst);
              set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled,
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the
@@ -936,10 +996,10 @@ package WstxContact {
              arm_state,last_disarm_cause,tune,pending_sequence,last_text,
              last_period_utc,halt_state,safety_revision,refusal} (safety_revision the
              current CL-022 safety revision of the selected radio scope or null);
-             settings exactly {auto_seq,tx1_skip,
+             settings exactly {auto_seq,call_first,tx1_skip,
              tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
-             tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd} (report_sent the
+             tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd,dialogue} (report_sent the
              report of the last transmitted Tx2/Tx3 rendered, null until one is sent;
              suggested_slot null or the slot AutoSequence would select after the latest
              counted partner message while Auto Seq is off, e.g. tx5 after their RR73 in
@@ -949,7 +1009,15 @@ package WstxContact {
              message to my call that the engine counted, or the selected row when it was
              addressed to me, with its rounded SNR or null, its period start (Unix ms) and
              how many consecutive counted messages had that identical text; null for a new
-             contact; the QSO pane's last partner message, #37)
+             contact; the QSO pane's last partner message, #37; dialogue (#37, operator
+             2026-11-02) an array of at most 16 entries exactly {dir:"rx"|"tx",text,snr,
+             period_utc_ms,count}, oldest first: "rx" each partner message the engine
+             counted for this contact (as last_rcvd, including the selected row addressed
+             to me) with its rounded SNR or null, "tx" each transmission of this contact
+             whose audio started (the text as sent, snr null); a message equal in dir and
+             text to the newest entry increments that entry's count instead (its
+             period_utc_ms stays the first period); beyond 16 the oldest entry is dropped;
+             empty for a new contact and cleared by CancelContact)
              with messages an array
              of six strings or nulls (Tx1..Tx6, each at most 37 characters); saved true
              when contacts.adi holds the contact's record; log (DirectLog) null until a

@@ -557,35 +557,51 @@ attribute def ActivityOrdering {
              WorkedBeforeQuery) feeds only the New call slots; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
-             transmits); double-click replies (select, then SetEnableTx on); right-click
+             transmits; another station while a contact is active only offers "Change
+             contact to <call>", whose replacement keeps Enable Tx as it is); double-click
+             replies (select, then SetEnableTx on), and on another station while a contact
+             is active, or during an own CQ, it is itself the explicit
+             WstxContact::ChangeContact (replace true, no confirmation, as WSJT-X
+             handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,
+             DecodedMessageReaction.cpp ~411-413), so the next own period calls the new
+             station and Auto Seq runs that QSO to its completion and log (#50, operator
+             2026-11-02); a stale_revision refusal of its select_row or enable_tx (the
+             contact revision moves with every transmit step) is retried at most twice
+             with the reloaded snapshot, since the operator's choice is explicit; the
+             Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here. Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }
     calc def QsoPaneCrowding {
         in rowFrequencyHz : Real;
         in rxOffsetHz : Integer;
+        in txOffsetHz : Integer;
         in fromPartner : Boolean;
-        return crowding : Boolean = not fromPartner and
-            rowFrequencyHz >= rxOffsetHz - 50.0 and rowFrequencyHz <= rxOffsetHz + 50.0;
-        doc /* Another station within +/-50 Hz of my Rx frequency in the latest two
-             published periods (the latest and the one before it): a QsoPane Others line.
-             Presentation only. */
+        in toMyCall : Boolean;
+        return crowding : Boolean = not fromPartner and toMyCall and
+            ((rowFrequencyHz >= rxOffsetHz - 50.0 and rowFrequencyHz <= rxOffsetHz + 50.0) or
+             (rowFrequencyHz >= txOffsetHz - 50.0 and rowFrequencyHz <= txOffsetHz + 50.0));
+        doc /* #37 (operator 2026-11-02, replacing the near-Rx rule): another station
+             calling my call within +/-50 Hz of my Rx or Tx offset in the latest two
+             published periods (the latest and the one before it): a QsoPane Others line
+             while a QSO runs. A station near my Rx that does not call me is not a QsoPane
+             line (Band Activity shows it). Presentation only. */
     }
     attribute def QsoPane {
         attribute crowdingWindowHz : Integer = 50;
         attribute hasPartnerHeader : Boolean = true;
         attribute hasLastPartnerMessage : Boolean = true;
-        attribute maximumOtherLines : Integer = 2;
+        attribute maximumOtherLines : Integer = 8;
         attribute hasNextWithCountdown : Boolean = true;
-        attribute hasDialogue : Boolean = false;
+        attribute hasDialogue : Boolean = true;
         attribute hasLastSentRow : Boolean = false;
         attribute hasCrowdingBadge : Boolean = false;
         attribute loggedNoticeSeconds : Integer = 8;
         attribute hasEnableTx : Boolean = false;
         attribute hasNowButtons : Boolean = false;
         assert constraint compact {
-            hasPartnerHeader and hasLastPartnerMessage and maximumOtherLines == 2 and
-            hasNextWithCountdown and not hasDialogue and not hasLastSentRow and
+            hasPartnerHeader and hasLastPartnerMessage and maximumOtherLines == 8 and
+            hasNextWithCountdown and hasDialogue and not hasLastSentRow and
             not hasCrowdingBadge and not hasEnableTx and not hasNowButtons
         }
         doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
@@ -596,40 +612,72 @@ attribute def ActivityOrdering {
              and Band Activity takes the freed height; side by side, where Band Activity
              already fills the column height, the pane card fills its column with the free
              height at its bottom, so there is no empty band under it; the waterfall/workspace
-             split is unchanged and the Others stay at most two lines.
+             split is unchanged; the QSO area (dialogue and Others, items 7 and 3) scrolls
+             inside the card.
              A running QSO is a contact with a DX call in replying..signoff
              (WstxContact::ContactState); a contact that is completed, logged or cancelled is
              gone from the pane, which then shows idle.
-             Lines (each a message and its SNR only: no time, DT or audio frequency, which
-             Band Activity and the waterfall markers show; SNR as "+12 dB" / "−8 dB"):
+             Lines (each a message and its SNR, the QSO area lines with their UTC period
+             start; no DT or audio frequency, which Band Activity and the waterfall markers
+             show; SNR as "+12 dB" / "−8 dB"):
              1. Header: partner call and grid; its detail line the #55 shown name and continent,
              distance from the profile locator (the approximate entity distance without a grid),
-             reports sent and received; idle: "No contact selected" ("Calling CQ" while an own CQ runs); the badge
-             Ready, Tx on, Transmitting or Receive only.
+             reports sent and received; idle: "No contact selected"; while an own CQ runs
+             (contact state calling) "Calling CQ" with the detail line "Tx even (1st)" or
+             "Tx odd (2nd)", the Tx period, whatever the receive display shows (#37,
+             operator 2026-11-02); the badge Ready, Tx on, Transmitting or Receive only.
              2. Last partner message, while a QSO runs: the contact's ContactSnapshot
              last_rcvd as one line "<text>  <SNR>" with "×N" when the identical message was
              counted N > 1 times in a row; a new text replaces it.
-             3. Others, at most maximumOtherLines lines, newest first (period, then decode
-             order), from the decoded rows of the latest two published periods that are not
-             from the partner (the partner of the last QSO stays excluded after it ended,
-             until another contact runs): while a QSO runs, the stations within +/-50 Hz of my Rx
-             frequency (QsoPaneCrowding) and the stations calling my call, each marked with a
-             warning sign ("⚠ HB9BLA DL1ABC JO31  −8 dB");
-             double-click (or Enter) switches the contact to that station and replies
-             (SelectDecodedRow with replace, then SetEnableTx on). When no QSO runs (idle,
-             finished, or an own CQ), the same rows are candidates shown plainly with a
-             receive mark and no warning sign ("◂ CQ YO3GNF KN34  +12 dB");
-             double-click (or Enter) answers (select, then SetEnableTx on).
+             3. Others (#37, operator 2026-11-02), in the QSO area below the dialogue (item
+             7), at most maximumOtherLines lines, oldest first (period, then decode order) as
+             the dialogue, from the decoded rows of the latest two published periods that
+             are standard messages to my call from another station than the partner (the
+             partner of the last QSO stays excluded after it ended, until another contact
+             runs): while a QSO runs, those within +/-50 Hz of my Rx or Tx offset
+             (QsoPaneCrowding), each "HH:MM:SS ⚠ <text>  <SNR>" ("22:48:15 ⚠ HB9BLA DL1ABC
+             JO31  −8 dB"); double-click (or Enter) switches the contact to that station and
+             replies (SelectDecodedRow with replace, then SetEnableTx on; ChangeContact keeps
+             Enable Tx on). When no QSO runs (idle, finished, or an own CQ), every station
+             calling my call on any frequency, as soon as its row is decoded, each
+             "HH:MM:SS ◂ <text>  <SNR>"; double-click (or Enter) answers (select, then
+             SetEnableTx on). Stations that do not call me are not listed (Band Activity
+             shows them). When no row qualifies, one muted line says so instead of an empty
+             list: "nobody calling" when no QSO runs, "nobody else calling" while one runs.
              4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
              the next period of the contact's parity, only while Enable Tx is on and the
-             contact is calling or a QSO runs.
+             contact is calling or a QSO runs. While the station reports transmitting
+             (station.tick transmitting, the station's keyed state, never the browser
+             clock) the line is "▶ TX now: <message>" with "<n> s left" (the time to the end
+             of the waveform, audio delay plus 12.64 s FT8 / 5.04 s FT4 after the period
+             start), the message being the transmit view's last_text of this period, else
+             the next message; during Tune (transmit view tune) "▶ TX now: Tune" with the
+             Tune seconds left (watchdog tune_remaining_seconds); otherwise "▸ next: <message>" with "Tx in <n> s" (#37,
+             operator 2026-11-02). The bar (#50, operator 2026-11-02) is the
+             one period bar: its width is the elapsed part of the current period
+             (15 s FT8, 7.5 s FT4) on the station's clock (Contact OperatorDisplays
+             StationPeriodClock), so it restarts at the period start the station keys on;
+             it is red, as the waterfall Tx marker rgb(255,64,64), in a period of my Tx
+             parity while Enable Tx is on and whenever the station reports transmitting,
+             and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
              5. Direct buttons: CQ, Reply, RR73, 73, Tune, HALT, Log QSO (SetEnableTx (#37);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result
              line goes when the QSO ends.
              6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
              be stored shows "Not logged <call> · <reason>" while that outcome holds.
-             There is no dialogue history, no LAST row, no crowding badge and no status line
+             7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
+             area below the controls, in the free height of the card (item 8), holds the
+             ContactSnapshot
+             dialogue of the running QSO only: one line per entry, oldest first and newest
+             at the bottom, "HH:MM:SS ◂ <text>  <SNR>" for a message received from the
+             partner and "HH:MM:SS ▸ <text>" for one we transmitted (HH:MM:SS the UTC period
+             start), "×N" for N > 1 repeats, no frequency and no other station, then the
+             Others (item 3); the area scrolls inside the card, kept at its newest line, and
+             never grows the page (TC-007-009);
+             it is gone with the QSO (completed, logged or cancelled), as the rest of the
+             QSO view, and a reload or another browser shows the same entries.
+             There is no LAST row, no crowding badge and no status line
              for a finished contact. A status line under the header is shown only for an
              exception: a refused transmission, a halt pending, an unknown contact state.
              Auto Seq off (#11): while Auto Seq is off during a contact or CQ, a warning
