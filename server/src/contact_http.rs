@@ -205,6 +205,17 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
     let contest = (record["status"] == "decoded")
         .then(|| contest_of(f))
         .flatten();
+    // HoundOperation (#24 S4b): a 0.1 DXpedition record keeps its fields.
+    let dxpedition = (record["status"] == "decoded" && f["type"] == "dxpedition")
+        .then(|| {
+            Some(Box::new(contact::Dxpedition {
+                rr73_to: call_of(&f["first"])?,
+                report_to: call_of(&f["second"])?,
+                fox: call_of(&f["hashed"])?,
+                report: i32::try_from(f["report"].as_i64()?).ok()?,
+            }))
+        })
+        .flatten();
     let standard = (record["status"] == "decoded" && f["type"] == "standard")
         .then(|| {
             let exchange = match (f["exchange"]["kind"].as_str()?, &f["exchange"]["value"]) {
@@ -242,6 +253,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
         snr_db: record["snr_db"].as_f64(),
         text: record["text"].as_str().unwrap_or("").to_owned(),
         standard: standard.or(nonstandard).or(contest),
+        dxpedition,
     })
 }
 pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {

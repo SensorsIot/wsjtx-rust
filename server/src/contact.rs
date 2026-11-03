@@ -227,6 +227,18 @@ pub struct Row {
     pub snr_db: Option<f64>,
     pub text: String,
     pub standard: Option<Standard>,
+    /// A 0.1 DXpedition message "RR73_TO RR73; REPORT_TO <FOX> REPORT" (#24 S4b,
+    /// HoundOperation); such a row is never a standard message.
+    pub dxpedition: Option<Box<Dxpedition>>,
+}
+/// The fields of a 0.1 DXpedition multi-message (WstxOfflineDecode Dxpedition fields).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dxpedition {
+    pub rr73_to: Call,
+    pub report_to: Call,
+    /// The hashed Fox call (10-bit hash, filled in from the DX call by hashdx10).
+    pub fox: Call,
+    pub report: i32,
 }
 /// WstxContact::ReceivedKind for a partner message addressed to my call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -255,6 +267,8 @@ pub enum Activity {
     ArrlDigi,
     FieldDay,
     Rtty,
+    /// HoundOperation (#24 S4b): the classic Hound, FT8 only.
+    Hound,
 }
 impl Activity {
     pub fn name(self) -> &'static str {
@@ -265,6 +279,7 @@ impl Activity {
             Activity::ArrlDigi => "arrl_digi",
             Activity::FieldDay => "field_day",
             Activity::Rtty => "rtty",
+            Activity::Hound => "hound",
         }
     }
     pub fn parse(text: &str) -> Option<Self> {
@@ -275,6 +290,7 @@ impl Activity {
             Self::ArrlDigi,
             Self::FieldDay,
             Self::Rtty,
+            Self::Hound,
         ]
         .into_iter()
         .find(|a| a.name() == text)
@@ -296,12 +312,17 @@ impl Activity {
             Activity::ArrlDigi => 8,
             Activity::FieldDay => 3,
             Activity::Rtty => 4,
+            Activity::Hound => 7,
         }
+    }
+    /// A contest activity (not none, not hound): Tx1 disabled, the contest serial counts.
+    fn contest_like(self) -> bool {
+        !matches!(self, Activity::None | Activity::Hound)
     }
     /// The CQ modifier of genCQMsg (m_cqStr).
     fn cq(self) -> Option<&'static str> {
         match self {
-            Activity::None => None,
+            Activity::None | Activity::Hound => None,
             Activity::NaVhf | Activity::ArrlDigi => Some("TEST"),
             Activity::WwDigi => Some("WW"),
             Activity::FieldDay => Some("FD"),
@@ -355,7 +376,7 @@ fn sent_exchange(
     serial: u32,
 ) -> String {
     match activity {
-        Activity::None => render_report(report),
+        Activity::None | Activity::Hound => render_report(report),
         Activity::NaVhf | Activity::WwDigi | Activity::ArrlDigi => grid4.to_owned(),
         Activity::FieldDay => exchange.to_owned(),
         Activity::Rtty => {
@@ -379,7 +400,7 @@ pub fn classify_in(standard: &Standard, activity: Activity) -> Received {
                 Received::SignalReport
             }
         }
-        (Exchange::Grid(_), a) if a != Activity::None => {
+        (Exchange::Grid(_), a) if a.contest_like() => {
             if standard.ack {
                 Received::RogerReport
             } else {
@@ -535,7 +556,7 @@ pub fn generate_contest(
     };
     let sent = sent_exchange(activity, grid4, report, exchange, serial);
     let (r, rr) = match activity {
-        Activity::None => (sent.clone(), format!("R{sent}")),
+        Activity::None | Activity::Hound => (sent.clone(), format!("R{sent}")),
         _ => (sent.clone(), format!("R {sent}")),
     };
     let mut set: [Option<String>; 6] = Default::default();
@@ -829,6 +850,49 @@ pub struct Engine {
     /// time the last partner RR73 was counted.
     last_tx_start_ms: Option<i64>,
     last_rr73_ms: Option<i64>,
+    /// HoundOperation (#24 S4b): the HoundTransmissionPolicy state and its timers.
+    pub hound: Hound,
+    /// The random calling offset of ClassicTxStart: a value in lo..hi.
+    pub random_hz: Box<dyn FnMut(u32, u32) -> u32 + Send>,
+}
+/// HoundTransmissionPolicy ReplyState.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HoundReply {
+    #[default]
+    None,
+    Pending,
+    Sent,
+}
+/// HoundOperation state: the policy state (reply, Fox frequency), the period the last
+/// ClassicTxStart decision was taken for, the reply timeout and when the operator last
+/// turned Enable Tx on (the Hound watchdog, MW m_tAutoOn).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Hound {
+    pub reply: HoundReply,
+    pub fox_hz: Option<u32>,
+    planned_period: Option<i64>,
+    reply_deadline: Option<i64>,
+    armed_at: Option<i64>,
+}
+/// MW guiUpdate Hound watchdog (HWD): Tx1 calling ends this long after Enable Tx went on.
+pub const HOUND_WATCHDOG_MS: i64 = 300_000;
+/// A uniform value in lo..hi from a time-seeded xorshift (QRandomGenerator stand-in).
+fn time_random() -> Box<dyn FnMut(u32, u32) -> u32 + Send> {
+    let mut x = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0x9E37_79B9_7F4A_7C15, |d| d.as_nanos() as u64)
+        | 1;
+    Box::new(move |lo, hi| {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        lo + (x % u64::from(hi.saturating_sub(lo).max(1))) as u32
+    })
+}
+/// The Fox's message to my call (HoundOperation received rows).
+enum FoxMessage {
+    Report(i32),
+    Rr73,
 }
 
 fn refusal_code(r: TransmitRefusal) -> &'static str {
@@ -865,7 +929,12 @@ impl Engine {
             automatic_cq: None,
             last_tx_start_ms: None,
             last_rr73_ms: None,
+            hound: Hound::default(),
+            random_hz: time_random(),
         }
+    }
+    fn is_hound(&self) -> bool {
+        self.settings.activity == Activity::Hound
     }
     /// The contacts due for the log since the last call (WstxContact::DirectLog).
     pub fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
@@ -887,6 +956,14 @@ impl Engine {
         let Some(mode) = ctx.mode else {
             return;
         };
+        // HoundOperation: Hound is FT8 only (MW on_actionFT4_triggered sets none).
+        if mode == Mode::Ft4 && self.is_hound() {
+            self.settings.activity = Activity::None;
+            self.hound = Hound::default();
+            if let Some(c) = self.contact.as_mut() {
+                c.activity = Activity::None;
+            }
+        }
         self.settings.tx_hz = self.settings.tx_hz.min(tx_max_hz(mode));
         let Some(c) = self.contact.as_mut() else {
             return;
@@ -973,7 +1050,12 @@ impl Engine {
         // Re-preparing the same active partner keeps its contact identity.
         let id = match self.contact.as_ref().filter(|_| active && same) {
             Some(c) => c.id.clone(),
-            None => (self.new_id)().ok_or("storage_unavailable")?,
+            None => {
+                // HoundOperation: the reply state and its timeout belong to one contact.
+                self.hound.reply = HoundReply::None;
+                self.hound.reply_deadline = None;
+                (self.new_id)().ok_or("storage_unavailable")?
+            }
         };
         // ChangeContact (#50): the old contact is replaced and Enable Tx keeps its state;
         // submit() replaces the old contact's pending request with the new one.
@@ -1037,12 +1119,13 @@ impl Engine {
         )
     }
     /// WSJT-X disables Tx1 in every contest activity (MW ~8190) as Skip Tx1 does.
+    /// A Hound never skips Tx1 (MW elide_tx1_not_allowed).
     fn tx1_disabled(&self) -> bool {
-        self.settings.tx1_skip || self.settings.activity != Activity::None
+        !self.is_hound() && (self.settings.tx1_skip || self.settings.activity.contest_like())
     }
     /// ContestExchange: a contact handed to the log for the first time counts the serial.
     fn count_serial(&mut self) {
-        if self.settings.activity != Activity::None {
+        if self.settings.activity.contest_like() {
             self.settings.serial = self.settings.serial.saturating_add(1);
         }
     }
@@ -1078,6 +1161,18 @@ impl Engine {
                 let Some(dx) = std.from.call().map(str::to_owned) else {
                     return Err("row_not_standard");
                 };
+                let hound = self.is_hound();
+                // HoundOperation: select a Fox at :00 or :30 (MW ~9143), never another
+                // Hound's R+report (DMR ~304).
+                if hound
+                    && (row.mode != Mode::Ft8
+                        || row
+                            .period_start_ms
+                            .is_some_and(|p| p.div_euclid(1000).rem_euclid(30) == 15)
+                        || (std.ack && matches!(std.exchange, Exchange::Report(_))))
+                {
+                    return Err("state_conflict");
+                }
                 let my = ctx.call.clone().ok_or("profile_incomplete")?;
                 let to_me = std.to.call() == Some(my.as_str());
                 let received = classify_in(&std, self.settings.activity);
@@ -1086,7 +1181,12 @@ impl Engine {
                     Exchange::Grid(g) if valid_grid(g) => Some(g.clone()),
                     _ => None,
                 };
-                let first = first_slot(to_me, received, self.tx1_disabled());
+                let first = match first_slot(to_me, received, self.tx1_disabled()) {
+                    // A Hound transmits only Tx1 or Tx3 (MW ~7783).
+                    Slot::Tx3 => Slot::Tx3,
+                    _ if hound => Slot::Tx1,
+                    slot => slot,
+                };
                 let rx = (row.frequency_hz.round().max(0.0) as u32).min(RX_MAX_HZ);
                 let mode = row.mode;
                 let tx_max = tx_max_hz(mode);
@@ -1102,10 +1202,12 @@ impl Engine {
                     mode,
                 )?;
                 self.settings.rx_hz = rx;
-                if !self.settings.hold_tx && !to_me && (TX_MIN_HZ..=tx_max).contains(&rx) {
+                // A Hound selection never moves the Tx offset (DMR ~330).
+                if !hound && !self.settings.hold_tx && !to_me && (TX_MIN_HZ..=tx_max).contains(&rx)
+                {
                     self.settings.tx_hz = rx;
                 }
-                if let Some(p) = row.period_start_ms {
+                if let Some(p) = row.period_start_ms.filter(|_| !hound) {
                     self.settings.parity = match transmit::parity(mode, p) {
                         Parity::Even => Parity::Odd,
                         Parity::Odd => Parity::Even,
@@ -1212,6 +1314,9 @@ impl Engine {
                 self.pending = None;
             }
             Command::ChooseNext(slot) => {
+                if self.is_hound() && !matches!(slot, Slot::Tx1 | Slot::Tx3) {
+                    return Err("state_conflict");
+                }
                 let disabled = self.tx1_disabled();
                 let c = self.contact.as_mut().ok_or("no_contact")?;
                 let slot = if slot == Slot::Tx1 && disabled {
@@ -1285,12 +1390,36 @@ impl Engine {
                 }
             }
             Command::SetHoldTx(enabled) => self.settings.hold_tx = enabled,
-            Command::SetParity(parity) => self.settings.parity = parity,
+            Command::SetParity(parity) => {
+                // HoundOperation: Tx even/1st is forced off (MW ~11352).
+                if self.is_hound() && parity != Parity::Odd {
+                    return Err("state_conflict");
+                }
+                self.settings.parity = parity;
+            }
             Command::SetAutoSeq(enabled) => self.settings.auto_seq = enabled,
             Command::SetCallFirst(enabled) => self.settings.call_first = enabled,
             Command::SetContest { activity, exchange } => {
                 let exchange =
                     contest_exchange(activity, exchange.as_deref()).ok_or("invalid_exchange")?;
+                if activity == Activity::Hound && ctx.mode() != Mode::Ft8 {
+                    return Err("state_conflict");
+                }
+                if activity == Activity::Hound {
+                    // MW ~11352: Tx even/1st off, Hold Tx on, Tx1 unless Tx3.
+                    self.settings.parity = Parity::Odd;
+                    self.settings.hold_tx = true;
+                    if let Some(c) = self.contact.as_mut()
+                        && c.state.active()
+                        && c.next != Slot::Tx3
+                    {
+                        c.next = Slot::Tx1;
+                        c.state = State::Replying;
+                    }
+                }
+                if activity != self.settings.activity {
+                    self.hound = Hound::default();
+                }
                 self.settings.activity = activity;
                 self.settings.exchange = exchange;
                 // The current contact follows the activity (its messages and log fields).
@@ -1347,6 +1476,10 @@ impl Engine {
                 // one itself (NotAuthorized), so there is no check-then-arm race.
                 let revision = shown.ok_or("stale_revision")?;
                 let needs_cq = self.contact.as_ref().is_none_or(|c| !c.state.transmits());
+                // HoundOperation: a Hound never calls CQ.
+                if needs_cq && self.is_hound() {
+                    return Err("no_contact");
+                }
                 let cq = if needs_cq {
                     let set = self
                         .generate(&call, &grid4, None, self.settings.report, Tx4::Rrr)
@@ -1371,6 +1504,7 @@ impl Engine {
                 })?;
                 self.last_arm = ArmState::Armed;
                 self.transmit_problem = None;
+                self.hound.armed_at = Some(ctx.now_utc_ms);
                 if let Some((messages, id)) = cq {
                     self.automatic_cq = ctx.automatic.then(|| id.clone());
                     // With no partner, Tx6 means calling CQ.
@@ -1444,6 +1578,7 @@ impl Engine {
     fn complete<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {
         Self::disarm(core, DisarmCause::ContactCompleted);
         self.pending = None;
+        self.hound.reply_deadline = None;
         if let Some(c) = self.contact.as_mut() {
             c.state = State::Completed;
             c.next = Slot::Tx6;
@@ -1490,6 +1625,13 @@ impl Engine {
                     OutcomeKind::Started => {
                         self.last_started_period = Some(submitted.period);
                         self.last_tx_start_ms = Some(submitted.period);
+                        // planClassicTxStart: a pending first reply is sent once it starts.
+                        if mine
+                            && self.settings.activity == Activity::Hound
+                            && self.hound.reply == HoundReply::Pending
+                        {
+                            self.hound.reply = HoundReply::Sent;
+                        }
                         if mine && let Some(c) = self.contact.as_mut() {
                             c.exchanged(true, &submitted.text, None, submitted.period);
                             c.first_tx_period.get_or_insert(submitted.period);
@@ -1501,7 +1643,10 @@ impl Engine {
                             }
                             // A contest Tx2/Tx3 carries my grid, not a report (#24 S2a).
                             if matches!(submitted.slot, Slot::Tx2 | Slot::Tx3)
-                                && self.settings.activity == Activity::None
+                                && matches!(
+                                    self.settings.activity,
+                                    Activity::None | Activity::Hound
+                                )
                             {
                                 c.report_sent = Some(submitted.report);
                             }
@@ -1575,8 +1720,13 @@ impl Engine {
                 }
             }
         }
-        // Received messages (DMR planProcessMessage, planAutoSequence).
-        for row in rows {
+        let hound = self.is_hound();
+        if hound {
+            self.hound_rows(core.as_deref_mut(), ctx, rows);
+        }
+        // Received messages (DMR planProcessMessage, planAutoSequence); a Hound has its
+        // own reactions instead (MW calls auto_sequence only outside FT8 Hound).
+        for row in rows.iter().filter(|_| !hound) {
             let Some(c) = self.contact.as_ref() else {
                 break;
             };
@@ -1665,11 +1815,21 @@ impl Engine {
             }
         }
         self.call_first(core.as_deref_mut(), ctx, rows);
+        self.hound_timeouts(core.as_deref_mut(), now);
         // Arm transitions: halt and watchdog expiry end a CQ; other states are kept.
         if let Some(core) = core.as_deref_mut() {
             let view = core.view();
             if self.last_arm == ArmState::Armed && view.arm_state == ArmState::Disarmed {
                 self.pending = None;
+                // A Hound returns to Tx1 when the Tx watchdog expires (MW ~14664).
+                if self.is_hound()
+                    && view.tx_expired
+                    && let Some(c) = self.contact.as_mut()
+                    && c.state.active()
+                {
+                    c.next = Slot::Tx1;
+                    c.state = State::Replying;
+                }
                 if matches!(
                     view.last_disarm_cause,
                     DisarmCause::Halt | DisarmCause::TxWatchdog
@@ -1781,21 +1941,35 @@ impl Engine {
     /// Keeps exactly one pending request for the next period of the contact's parity
     /// with the current next text and Tx offset (WstxContact::TransmitSubmission).
     fn submit<H: Hardware>(&mut self, core: &mut Core<H>, ctx: &Ctx) {
-        let Some(c) = self.contact.as_ref() else {
+        let hound = self.is_hound();
+        let Some(c) = self.contact.as_mut() else {
             return;
         };
         if !c.state.transmits() {
             return;
+        }
+        // A Hound transmits only Tx1 or Tx3 (MW ~7783).
+        if hound && !matches!(c.next, Slot::Tx1 | Slot::Tx3) {
+            c.next = Slot::Tx1;
+            c.state = State::Replying;
         }
         let Some(text) = c.messages[c.next.index()].clone() else {
             return;
         };
         let now = ctx.now_utc_ms;
         let mode = c.mode;
+        let next = c.next;
         let floor = self
             .last_started_period
             .map_or(now + LEAD_MS, |p| (now + LEAD_MS).max(p + period_ms(mode)));
         let period = transmit::next_period(mode, floor, self.settings.parity);
+        if hound && !core.view().tune && self.hound.planned_period != Some(period) {
+            self.hound.planned_period = Some(period);
+            self.classic_tx_start(next, mode);
+        }
+        let Some(c) = self.contact.as_ref() else {
+            return;
+        };
         let tx_hz = self.settings.tx_hz;
         if self.refused_target.as_ref() == Some(&(period, text.clone(), tx_hz)) {
             return;
@@ -1845,6 +2019,143 @@ impl Engine {
             {
                 core.disarm(DisarmCause::Refused);
             }
+        }
+    }
+}
+
+impl Engine {
+    /// HoundTransmissionPolicy planClassicTxStart for a newly planned request: a Tx1 below
+    /// 999 Hz calls at a random 1000..2998 Hz; a Tx3 after a sent first reply goes to
+    /// Fox+300 Hz (Fox at or below 600 Hz) or Fox-300 Hz.
+    fn classic_tx_start(&mut self, next: Slot, mode: Mode) {
+        if next != Slot::Tx3 && self.settings.tx_hz < 999 {
+            self.settings.tx_hz = (self.random_hz)(1000, 2999).clamp(1000, 2998);
+        }
+        if self.hound.reply == HoundReply::Sent
+            && next == Slot::Tx3
+            && let Some(fox) = self.hound.fox_hz
+        {
+            let hz = if fox <= 600 { fox + 300 } else { fox - 300 };
+            if (TX_MIN_HZ..=tx_max_hz(mode)).contains(&hz) {
+                self.settings.tx_hz = hz;
+            }
+        }
+    }
+    /// HoundOperation received rows: the Fox's report (standard, or the report slot of a
+    /// 0.1 message carrying the DX call's hash) is FoxReportReply; its RR73 (standard, or
+    /// the RR73 slot of such a 0.1 message) completes the contact.
+    fn hound_rows<H: Hardware>(&mut self, mut core: Option<&mut Core<H>>, ctx: &Ctx, rows: &[Row]) {
+        let Some(my) = ctx.call.clone() else {
+            return;
+        };
+        let mine = |call: &Call| call.call() == Some(my.as_str());
+        for row in rows {
+            let Some(c) = self.contact.as_ref() else {
+                break;
+            };
+            let Some(dx) = c.dx_call.clone() else {
+                continue;
+            };
+            let Some(period) = row.period_start_ms else {
+                continue;
+            };
+            if row.mode != c.mode
+                || !c.state.active()
+                || transmit::parity(row.mode, period) == self.settings.parity
+            {
+                continue;
+            }
+            let fox = |call: &Call| call.call() == Some(dx.as_str());
+            let message = if let Some(d) = &row.dxpedition {
+                if !fox(&d.fox) {
+                    continue;
+                }
+                if mine(&d.rr73_to) {
+                    FoxMessage::Rr73
+                } else if mine(&d.report_to) {
+                    FoxMessage::Report(d.report)
+                } else {
+                    continue;
+                }
+            } else if let Some(std) = &row.standard {
+                if !fox(&std.from) || !mine(&std.to) {
+                    continue;
+                }
+                match std.exchange {
+                    Exchange::Rr73 => FoxMessage::Rr73,
+                    Exchange::Report(r) if !std.ack => FoxMessage::Report(r),
+                    _ => continue,
+                }
+            } else {
+                continue;
+            };
+            if !self.count(row.key.clone(), (period, row.text.clone())) {
+                continue;
+            }
+            let c = self.contact.as_mut().expect("checked");
+            c.heard(row, period);
+            c.last_counted_end = Some(
+                c.last_counted_end
+                    .unwrap_or(i64::MIN)
+                    .max(period + period_ms(row.mode)),
+            );
+            match message {
+                FoxMessage::Rr73 => self.complete(core.as_deref_mut(), ctx.now_utc_ms),
+                FoxMessage::Report(r) => self.fox_report(core.as_deref(), ctx, row, r),
+            }
+        }
+    }
+    /// HoundTransmissionPolicy planFoxReportReply (MW hound_reply): the Fox frequency is
+    /// noted; unless Tune is on, Tx3 with the Fox decode's SNR on the Fox's frequency, the
+    /// first reply pending and the reply timeout of 11 T/R periods.
+    fn fox_report<H: Hardware>(&mut self, core: Option<&Core<H>>, ctx: &Ctx, row: &Row, rcvd: i32) {
+        let fox_hz = row.frequency_hz.round().max(0.0) as u32;
+        self.hound.fox_hz = Some(fox_hz);
+        if core.is_some_and(|core| core.view().tune) {
+            return;
+        }
+        let report = row.snr_db.map_or(self.settings.report, report_from_snr);
+        self.settings.report = report;
+        let Some(c) = self.contact.as_mut() else {
+            return;
+        };
+        let mode = c.mode;
+        c.report_rcvd = Some(rcvd.clamp(REPORT_MIN, REPORT_MAX));
+        c.report = report;
+        c.next = Slot::Tx3;
+        c.state = State::RogerReport;
+        c.suggested = None;
+        self.regenerate(ctx);
+        if (TX_MIN_HZ..=tx_max_hz(mode)).contains(&fox_hz) {
+            self.settings.tx_hz = fox_hz;
+        }
+        self.hound.reply = HoundReply::Pending;
+        self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
+    }
+    /// The reply timeout (MW stopWRTimeout) and the Hound watchdog (HWD) turn Enable Tx off.
+    fn hound_timeouts<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {
+        if !self.is_hound() {
+            return;
+        }
+        let Some(core) = core else {
+            return;
+        };
+        let reply = self.hound.reply_deadline.is_some_and(|t| now >= t);
+        if reply {
+            self.hound.reply_deadline = None;
+        }
+        let calling = self
+            .contact
+            .as_ref()
+            .is_some_and(|c| c.state.active() && c.next == Slot::Tx1);
+        let watchdog = calling
+            && self
+                .hound
+                .armed_at
+                .is_some_and(|t| now - t >= HOUND_WATCHDOG_MS);
+        if (reply || watchdog) && core.view().arm_state == ArmState::Armed {
+            core.disarm(DisarmCause::TxWatchdog);
+            self.pending = None;
         }
     }
 }
