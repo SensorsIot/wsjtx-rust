@@ -131,6 +131,59 @@ async fn ft8(
     }
     Ok(best)
 }
+/// Ft8DataPoint (#56 slice 4): baseband steps (5 ms) either side of the fine start and
+/// carrier tweaks around the fine carrier.
+const DATA_POINT_STEPS: isize = 2;
+const DATA_POINT_TWEAKS_HZ: [f64; 3] = [-0.5, 0., 0.5];
+/// Ft8DataPoint: near a fine point whose word failed, the point whose 79 symbols carry the
+/// most energy, each data symbol in its strongest tone and each Costas symbol in its known
+/// tone. The Costas-only sync power of [`ft8`] sees 21 symbols; this sees all 79, so a weak
+/// frame next to an interferer gets a second, data-weighted estimate. Ties keep the first
+/// point in tweak-then-step order; `None` when no point is complete.
+pub(super) async fn data_point(
+    pass: &mut PassBand<'_>,
+    fine: Candidate,
+    budget: &mut CpuBudget<'_>,
+) -> Result<Option<Candidate>, DecodeError> {
+    let mut known = [None; 79];
+    for (symbol, tone) in Mode::Ft8.sync() {
+        known[symbol] = Some(tone as usize);
+    }
+    let mut best: Option<(f64, Candidate)> = None;
+    for tweak in DATA_POINT_TWEAKS_HZ {
+        let frequency = fine.frequency + tweak;
+        for step in -DATA_POINT_STEPS..=DATA_POINT_STEPS {
+            budget.checkpoint().await?;
+            let b = fine.start as isize / 60 + step;
+            if !complete(b * 60, frequency, pass.frames, Mode::Ft8) {
+                continue;
+            }
+            let start = b as usize * 60;
+            let Some(rows) = pass.rows(start, frequency, budget).await? else {
+                continue;
+            };
+            let energy = rows
+                .iter()
+                .zip(known)
+                .map(|(row, known)| match known {
+                    Some(tone) => row[tone].norm_sqr(),
+                    None => row.iter().map(|z| z.norm_sqr()).fold(0., f64::max),
+                })
+                .sum::<f64>();
+            if best.is_none_or(|(top, _)| energy > top) {
+                best = Some((
+                    energy,
+                    Candidate {
+                        start,
+                        frequency,
+                        score: fine.score,
+                    },
+                ));
+            }
+        }
+    }
+    Ok(best.map(|(_, c)| c))
+}
 pub(super) async fn supports(
     pass: &mut PassBand<'_>,
     c: Candidate,
