@@ -107,7 +107,7 @@ package WstxContact {
              always rr73 (MW send_rr73_for_tx4 ~9661 is true for FT4 whatever
              m_send_RR73; set_rr73_tx4 ~9676 forces it), see ToggleTx4Form. */
     }
-    enum def SpecialActivity { enum none; enum na_vhf; enum ww_digi; enum arrl_digi; enum field_day; enum rtty; }
+    enum def SpecialActivity { enum none; enum na_vhf; enum ww_digi; enum arrl_digi; enum field_day; enum rtty; enum hound; }
     attribute def GridExchangeContest {
         attribute activity : SpecialActivity;
         doc /* #24 S2a, CL-024-02 (WSJT-X 3.3.0-beta5 Settings > Advanced > Special operating
@@ -137,8 +137,8 @@ package WstxContact {
              DX grid. Contest dupes are the existing worked-before indication of the
              call on this band and mode (WorkedBeforeQuery). The UDP Status special
              operation carries the WSJT-X SpecialOperatingActivity value: none 0, na_vhf 1,
-             ww_digi 5, arrl_digi 8, field_day 3, rtty 4. Field Day and FT Roundup:
-             ContestExchange (#24 S2b). In every activity other than none Tx1 is disabled
+             ww_digi 5, arrl_digi 8, field_day 3, rtty 4, hound 7 (HoundOperation). Field Day and FT Roundup:
+             ContestExchange (#24 S2b). In every contest activity (not none, not hound) Tx1 is disabled
              as in WSJT-X (MW ~8190: "start QSO with Tx2"): a selection or entry that would
              start with Tx1 starts with Tx2, as with Skip Tx1. */
     }
@@ -193,6 +193,78 @@ package WstxContact {
              value), CLASS (first word) and ARRL_SECT (second word); rtty gives STATE
              (second word); another activity SRX_STRING. Fields are written in the
              LogRecord order. */
+    }
+    attribute def HoundOperation {
+        attribute foxHz : Integer;
+        doc /* #24 S4b, CL-024-04: classic Fox/Hound as the Hound (WSJT-X 3.3.0-beta5
+             HoundTransmissionPolicy.cpp planFoxReportReply/planClassicTxStart; MW hound_reply
+             ~14896, readFromStdout Hound block ~7380-7420, guiUpdate Tx start ~7726-7790,
+             clearDX ~9951, special-op setup ~11352, processMessage ~9143, guiUpdate HWD
+             ~8317, Tx watchdog ~14664, on_actionFT4_triggered; DecodedMessageReaction.cpp
+             ~250 and ~304; controls-functions-left.adoc). SuperFox stays excluded
+             (WstxOfflineDecode SuperFox exclusion; #24 S5 deferred); the station is never
+             the Fox (S6 dropped).
+             Choosing. set_activity {activity:"hound"} (no exchange) is a boot setting like
+             the other activities, FT8 only: it is refused state_conflict while the station
+             operating mode is FT4, and a change of the station mode to FT4 sets the
+             activity back to none (MW on_actionFT4_triggered). Choosing hound sets Tx
+             parity odd (Tx even/1st forced off: I always transmit in the second period),
+             Hold Tx on, and moves a current contact's next slot to tx1 unless it is tx3.
+             While hound is set: set_parity even is refused state_conflict; choose_next
+             accepts only tx1 and tx3 (others state_conflict); Tx1 is never skipped (MW
+             elide_tx1_not_allowed), and every request carries Tx1 or Tx3 only (MW ~7783).
+             UDP Status special operation 7. Station automation does not start
+             (not_ready activity) and Call 1st never applies (a Hound never calls CQ):
+             Enable Tx without a contact that has a DX call is refused no_contact.
+             Selection (SelectDecodedRow) of a row decoded in a period starting at second
+             15 or 45 of the minute is refused state_conflict ("select a Fox at :00 or
+             :30", MW ~9143); a row whose exchange is R plus a report is refused
+             state_conflict ("hound ignores other hounds", DMR ~304); the selection never
+             sets the Tx offset from the row (DMR ~330); its first slot is tx3 for a report
+             to my call and tx1 otherwise. 0.1 DXpedition rows stay unselectable
+             (row_not_standard), as before.
+             Received rows replace AutoSequence while hound is set (MW calls auto_sequence
+             only outside FT8 Hound): of an active contact, counted once, decoded in the
+             period of the parity opposite to mine, a row is (a) the Fox's report: a
+             standard message to my call from the DX call with a report without R, or a
+             0.1 DXpedition message "X RR73; MYCALL <FOX> rr" whose report slot is my call
+             and whose hashed call is the DX call (HashResolution hashdx10); (b) the Fox's
+             RR73: a standard RR73 to my call from the DX call, or a 0.1 message whose RR73
+             slot is my call and whose hashed call is the DX call. (b) completes the contact
+             at once (Enable Tx off with cause contactCompleted, handed to the log as any
+             completion, MW stopTx + logQSO); the next selection starts a new contact. (a)
+             is FoxReportReply: foxHz := the row frequency rounded; nothing else while Tune
+             is on; otherwise report_rcvd := the Fox's report, the contact's report := the
+             row SNR (ReportRange, MW m_rptSent from the decode), Tx3 regenerated and next,
+             state rogerReport, the Tx offset := foxHz when it is a valid Tx offset, the
+             reply becomes pending and the reply timeout is 11 T/R periods (165 s) from now.
+             ClassicTxStart, once for each new period the engine plans a request for (the
+             request's tx_offset_hz): a Tx1 with a Tx offset below 999 Hz moves to a
+             uniformly random offset 1000..2998 Hz (QRandomGenerator bounded(1000,2999));
+             a Tx3 after a sent reply moves to foxHz+300 when foxHz <= 600, else foxHz-300.
+             A pending reply becomes sent when its transmission starts. So the first Tx3
+             after a Fox report goes out on the Fox's frequency and a repeat without a new
+             report on Fox +-300 Hz; a repeated Fox report returns it to the Fox's
+             frequency.
+             Timeouts: when the reply timeout passes Enable Tx is turned off (cause
+             txWatchdog, the slot stays tx3; MW stopWRTimeout); while Tx1 is next and
+             Enable Tx has been on for 300 s since the operator last turned it on it is
+             turned off (cause txWatchdog; MW Hound watchdog HWD); after the station's Tx
+             watchdog expires the next slot returns to tx1 (MW ~14664). A completed contact
+             leaves the station ready to call the next Fox with Tx1.
+             DIFFERENT from WSJT-X: (1) a Fox report never turns Enable Tx on (WSJT-X
+             auto_tx_mode(true)): only the operator arms (CL-022, #10 safety rule); (2) the
+             RR73 that completes must come from the DX call (standard) or carry the DX
+             call's hash (0.1); WSJT-X completes on any RR73 to my call, so another station's
+             RR73 would log my contact with the Fox; (3) the decoder keeps the full 200-3000
+             Hz range (WSJT-X decodes only below 1000 Hz unless Rx All is checked), so
+             Band Activity also shows other Hounds; (4) the decision for a period is taken
+             when its request is planned (after the previous own transmission started),
+             not at its key-down; a Fox report decoded before key-down still sets the
+             Fox's frequency for it, and no decision is taken while Tune is on; (5) the
+             reply state and the reply timeout belong to one contact: a completion or a new
+             contact ends them (WSJT-X's stopWRTimer keeps running and can turn off Enable
+             Tx for the next Fox). */
     }
     action def ToggleTx4Form {
         doc /* D7 adopted (MW on_txrb4_doubleClicked ~9047): switches tx4 between rrr
@@ -1072,8 +1144,8 @@ package WstxContact {
              this with the PointerEffect result); set_hold_tx {enabled};
              set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
              set_call_first {enabled} (CallFirst);
-             set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"|"field_day"|"rtty",
-             exchange?} (GridExchangeContest, ContestExchange);
+             set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"|"field_day"|"rtty"|"hound",
+             exchange?} (GridExchangeContest, ContestExchange, HoundOperation);
              set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled,
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the

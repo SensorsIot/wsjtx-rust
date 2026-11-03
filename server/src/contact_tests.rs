@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10, CL-010-12; TC-007-001, TC-008-001, TC-011-001.
+// (#24 S4b: CL-024-04; TC-024-011, TC-024-014, the classic Hound.)
 // (#41 DirectLog: the contacts the engine hands to the log.)
 // The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
 // UTC clock with a recording hardware double (no audio, PTT or radio). Decoded rows are
@@ -20,6 +21,8 @@ use wstx_rust::transmit::{ClockState, Parity};
 const P0: i64 = 1_800_000_000_000; // an even FT8 period (multiple of 30 s)
 const SECOND: i64 = 1000;
 
+/// Waveform plays: (UTC start, 48 kHz samples, first sample played).
+type Plays = Vec<(i64, Arc<[f32]>, usize)>;
 #[derive(Default)]
 struct Bench {
     now: AtomicI64,
@@ -30,6 +33,8 @@ struct Bench {
     plays: Mutex<Vec<(i64, usize)>>,
     /// The device reports the end this long after the last sample was due (#49).
     late_ms: AtomicI64,
+    /// Every waveform play's audio: (UTC start, 48 kHz samples, first sample played).
+    audio: Mutex<Plays>,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -63,6 +68,14 @@ impl Hardware for Fake {
     }
     fn play(&mut self, program: Program) -> Result<(), AudioError> {
         let waveform = matches!(program, Program::Waveform { .. });
+        if let Program::Waveform { samples, skip } = &program {
+            let at = self.now_utc_ms();
+            self.0
+                .audio
+                .lock()
+                .unwrap()
+                .push((at, samples.clone(), *skip));
+        }
         let remaining = match program {
             Program::Waveform { samples, skip } => samples.len() - skip,
             Program::Tone { .. } => usize::MAX / 2,
@@ -106,6 +119,8 @@ struct Station {
     mode: Mode,
     /// Texts whose audio started, with their period start.
     sent: Vec<(i64, String)>,
+    /// The Tx offset of each started transmission (the engine's setting at its start).
+    sent_hz: Vec<(i64, u32)>,
     /// The profile callsign (Ctx.call).
     call: String,
 }
@@ -132,6 +147,7 @@ fn station() -> Station {
         sequence: 0,
         mode: Mode::Ft8,
         sent: Vec::new(),
+        sent_hz: Vec::new(),
         call: "HB9BLA".into(),
     }
 }
@@ -194,6 +210,7 @@ impl Station {
             snr_db: snr,
             text: text.into(),
             standard: Some(parse(text)),
+            dxpedition: None,
         }
     }
     fn command(&mut self, command: Command) -> Result<(), &'static str> {
@@ -224,6 +241,8 @@ impl Station {
                     view.last_period_utc_ms.unwrap(),
                     view.last_text.clone().unwrap(),
                 ));
+                self.sent_hz
+                    .push((view.last_period_utc_ms.unwrap(), self.engine.settings.tx_hz));
             }
             if t % 50 == 0 {
                 self.step(&[]);
@@ -2883,4 +2902,675 @@ fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
         Activity::FieldDay
     );
     assert_eq!(set(&s)[1], "K1ABC HB9BLA 1A EMA");
+}
+
+// ---------------------------------------------------------------- #24 S4b Hound
+const FOX: &str = "KH7Z";
+/// The c28 of a standard call, as packed in the first call slot of i3=1.
+fn c28(call: &str) -> u128 {
+    let bits = wstx_rust::transmit::pack(&format!("{call} K1ABC RR73"))
+        .unwrap()
+        .bits;
+    bits[..28]
+        .iter()
+        .fold(0u128, |v, b| (v << 1) | u128::from(*b))
+}
+/// A 0.1 DXpedition payload "FIRST RR73; SECOND <FOX> RPT" built from its fields (the
+/// packer refuses 0.1): c28 c28 h10 r5 n3=1 i3=0.
+pub(crate) fn dxpedition_bits(first: &str, second: &str, fox: &str, report: i32) -> [u8; 77] {
+    let fields = [
+        (c28(first), 28),
+        (c28(second), 28),
+        (
+            u128::from(wstx_rust::decoder::ihashcall(fox, 10).unwrap()),
+            10,
+        ),
+        (u128::try_from((report + 30) / 2).unwrap(), 5),
+        (1, 3),
+        (0, 3),
+    ];
+    let mut out = [0u8; 77];
+    let mut at = 0;
+    for (v, w) in fields {
+        for i in (0..w).rev() {
+            out[at] = ((v >> i) & 1) as u8;
+            at += 1;
+        }
+    }
+    assert_eq!(at, 77);
+    out
+}
+/// A published record of `bits` as the station builds it: the DX call of the current
+/// contact is set on the table first (the contact step), then fill-in and learning.
+fn record_of_bits(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    bits: &[u8; 77],
+    hz: f64,
+    snr: f64,
+) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    table.set_dx_call(s.engine.contact.as_ref().and_then(|c| c.dx_call.as_deref()));
+    let payload = table.resolve(&unpack(bits));
+    table.learn(&payload);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: hz,
+        snr_db: Some(snr),
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, "ft8").unwrap()
+}
+fn fox_says(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    text: &str,
+    hz: f64,
+    snr: f64,
+) -> Row {
+    let bits = wstx_rust::transmit::pack(text).unwrap().bits;
+    record_of_bits(s, table, period, &bits, hz, snr)
+}
+fn hound_table() -> wstx_rust::decoder::HashTable {
+    let mut t = wstx_rust::decoder::HashTable::new();
+    t.set_my_call(Some("HB9BLA"));
+    t
+}
+/// A Hound station whose random calling offset is 1717 Hz (asserting WSJT-X's range).
+fn hound_station() -> Station {
+    let mut s = station();
+    s.engine.random_hz = Box::new(|lo, hi| {
+        assert_eq!(
+            (lo, hi),
+            (1000, 2999),
+            "QRandomGenerator bounded(1000, 2999)"
+        );
+        1717
+    });
+    s.command(Command::SetContest {
+        activity: Activity::Hound,
+        exchange: None,
+    })
+    .unwrap();
+    s
+}
+fn select(s: &mut Station, row: Row) {
+    s.command(Command::SelectRow {
+        row,
+        replace: false,
+    })
+    .unwrap();
+}
+impl Station {
+    /// The Tx offset of the transmission that started in `period`.
+    fn hz_in(&self, period: i64) -> Option<u32> {
+        self.sent_hz
+            .iter()
+            .find(|(p, _)| *p == period)
+            .map(|(_, hz)| *hz)
+    }
+}
+
+// Proves: CL-024-04; TC-024-011 (a), (f). The Hound transmits in the second period, calls
+// at a random 1000..2998 Hz offset when its offset is below 999 Hz, answers the Fox's
+// report with Tx3 on the Fox's frequency, repeats it on Fox-300 Hz and logs on RR73.
+#[test]
+fn a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency() {
+    let mut s = station();
+    s.engine.random_hz = Box::new(|lo, hi| {
+        assert_eq!((lo, hi), (1000, 2999));
+        1717
+    });
+    let mut t = hound_table();
+    s.command(Command::SetParity(Parity::Even)).unwrap();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(800),
+    })
+    .unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::Hound,
+        exchange: None,
+    })
+    .unwrap();
+    assert_eq!(
+        (
+            s.engine.settings.parity,
+            s.engine.settings.hold_tx,
+            s.engine.settings.activity.special_operation()
+        ),
+        (Parity::Odd, true, 7),
+        "Tx even/1st off, Hold Tx on, UDP special operation 7"
+    );
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.4, -9.0);
+    select(&mut s, cq);
+    assert_eq!(
+        s.engine.settings.tx_hz, 800,
+        "a Hound selection keeps the Tx offset"
+    );
+    assert_eq!(s.engine.settings.rx_hz, 812);
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    assert_eq!(s.next_text(), "KH7Z HB9BLA JN47");
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(1) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("KH7Z HB9BLA JN47"));
+    assert_eq!(s.hz_in(period(1)), Some(1717), "random calling offset");
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.4, -7.2);
+    s.deliver(&[report]);
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.report_rcvd, Some(-12));
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    assert_eq!(
+        s.next_text(),
+        "KH7Z HB9BLA R-07",
+        "Tx3 carries the Fox's SNR"
+    );
+    assert_eq!(s.engine.settings.tx_hz, 812, "Tx3 on the Fox's frequency");
+    assert_eq!(s.engine.hound.fox_hz, Some(812));
+    s.run(period(5) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("KH7Z HB9BLA R-07"));
+    assert_eq!(s.hz_in(period(3)), Some(812));
+    assert_eq!(s.sent_in(period(4)), None, "never in the Fox's period");
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("KH7Z HB9BLA R-07"));
+    assert_eq!(s.hz_in(period(5)), Some(512), "a repeat goes to Fox-300 Hz");
+    s.run(period(6) + 13_500);
+    let rr73 = fox_says(&mut s, &mut t, period(6), "HB9BLA KH7Z RR73", 812.4, -6.0);
+    s.deliver(&[rr73]);
+    assert!(!s.armed());
+    assert_eq!(
+        s.core.view().last_disarm_cause,
+        DisarmCause::ContactCompleted
+    );
+    assert_eq!(s.state().0, State::Completed);
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
+    assert_eq!(
+        (
+            fields.call.as_str(),
+            fields.rst_sent.as_deref(),
+            fields.rst_rcvd.as_deref()
+        ),
+        ("KH7Z", Some("-07"), Some("-12"))
+    );
+    // (f) Calling the next Fox with a Tx offset of 1500 Hz keeps it.
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(1500),
+    })
+    .unwrap();
+    let cq = fox_says(&mut s, &mut t, period(8), "CQ KH7Z BL01", 812.4, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(9) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(9)).as_deref(), Some("KH7Z HB9BLA JN47"));
+    assert_eq!(s.hz_in(period(9)), Some(1500));
+    assert!(
+        s.sent
+            .iter()
+            .all(|(p, _)| wstx_rust::transmit::parity(Mode::Ft8, *p) == Parity::Odd),
+        "every transmission in the second period: {:?}",
+        s.sent
+    );
+}
+
+// Proves: CL-024-04; TC-024-011 (b). The Fox's report inside a 0.1 multi-message is answered
+// on its frequency, the repeat goes to Fox+300 Hz (Fox at or below 600 Hz), a repeated Fox
+// report returns to the Fox's frequency, and the 0.1 RR73 to my call completes and logs.
+#[test]
+fn a_hound_answers_a_0_1_report_moves_300_hz_on_a_repeat_and_logs_the_0_1_rr73() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 450.3, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    assert_eq!(s.hz_in(period(1)), Some(1500), "1500 Hz is kept");
+    let multi = record_of_bits(
+        &mut s,
+        &mut t,
+        period(2),
+        &dxpedition_bits("W9XYZ", "HB9BLA", FOX, -12),
+        450.3,
+        -5.0,
+    );
+    assert_eq!(multi.text, "W9XYZ RR73; HB9BLA <KH7Z> -12");
+    assert!(multi.standard.is_none());
+    s.deliver(&[multi]);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    assert_eq!(s.next_text(), "KH7Z HB9BLA R-05");
+    assert_eq!(s.engine.contact.as_ref().unwrap().report_rcvd, Some(-12));
+    s.run(period(6) + 13_500);
+    assert_eq!(s.hz_in(period(3)), Some(450));
+    assert_eq!(s.hz_in(period(5)), Some(750), "Fox+300 Hz");
+    let again = fox_says(&mut s, &mut t, period(6), "HB9BLA KH7Z -10", 450.3, -4.0);
+    s.deliver(&[again]);
+    assert_eq!(s.next_text(), "KH7Z HB9BLA R-04");
+    s.run(period(10) + 13_500);
+    assert_eq!(
+        s.hz_in(period(7)),
+        Some(450),
+        "a repeated report: the Fox's frequency"
+    );
+    assert_eq!(s.hz_in(period(9)), Some(750));
+    assert_eq!(s.sent_in(period(9)).as_deref(), Some("KH7Z HB9BLA R-04"));
+    let done = record_of_bits(
+        &mut s,
+        &mut t,
+        period(10),
+        &dxpedition_bits("HB9BLA", "K1ABC", FOX, -8),
+        450.3,
+        -5.0,
+    );
+    assert_eq!(done.text, "HB9BLA RR73; K1ABC <KH7Z> -08");
+    s.deliver(&[done]);
+    assert!(!s.armed());
+    assert_eq!(s.state().0, State::Completed);
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
+    assert_eq!(
+        (fields.call.as_str(), fields.rst_rcvd.as_deref()),
+        ("KH7Z", Some("-10"))
+    );
+}
+
+// Proves: CL-024-04; TC-024-011 (c). A Hound selects only Fox rows of :00/:30 that are not
+// another Hound's R+report, transmits only Tx1/Tx3 in the second period, never calls CQ and
+// exists only in FT8.
+#[test]
+fn a_hound_refuses_wrong_period_rows_other_hounds_other_slots_and_ft4() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    assert_eq!(
+        s.command(Command::EnableTx(true, Some(7))),
+        Err("no_contact"),
+        "a Hound never calls CQ"
+    );
+    let late = fox_says(&mut s, &mut t, period(1), "CQ KH7Z BL01", 812.0, -9.0);
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: late,
+            replace: false
+        }),
+        Err("state_conflict"),
+        "a row decoded at :15"
+    );
+    let hound = fox_says(&mut s, &mut t, P0, "KH7Z W9XYZ R-05", 1900.0, -9.0);
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: hound,
+            replace: false
+        }),
+        Err("state_conflict"),
+        "another Hound's Tx3"
+    );
+    let multi = record_of_bits(
+        &mut s,
+        &mut t,
+        P0,
+        &dxpedition_bits("W9XYZ", "K1ABC", FOX, -12),
+        812.0,
+        -9.0,
+    );
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: multi,
+            replace: false
+        }),
+        Err("row_not_standard")
+    );
+    assert!(s.engine.contact.is_none(), "nothing prepared");
+    let cq = fox_says(&mut s, &mut t, period(2), "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    assert_eq!(
+        s.command(Command::SetParity(Parity::Even)),
+        Err("state_conflict")
+    );
+    for slot in [Slot::Tx2, Slot::Tx4, Slot::Tx5, Slot::Tx6] {
+        assert_eq!(
+            s.command(Command::ChooseNext(slot)),
+            Err("state_conflict"),
+            "{slot:?}"
+        );
+    }
+    s.command(Command::SetTx1Skip(true)).unwrap();
+    s.command(Command::ChooseNext(Slot::Tx3)).unwrap();
+    s.command(Command::ChooseNext(Slot::Tx1)).unwrap();
+    assert_eq!(
+        s.state(),
+        (State::Replying, Slot::Tx1),
+        "Tx1 is never skipped"
+    );
+    // FT4: the station mode change ends the Hound activity; hound is FT8 only.
+    s.mode = Mode::Ft4;
+    s.step(&[]);
+    assert_eq!(s.engine.settings.activity, Activity::None);
+    assert_eq!(
+        s.command(Command::SetContest {
+            activity: Activity::Hound,
+            exchange: None
+        }),
+        Err("state_conflict")
+    );
+}
+
+// Proves: CL-024-04; TC-024-011 (d). Not the Fox's report or RR73: an RR73 from another
+// station, a 0.1 RR73 with another hashed call; during Tune only the Fox frequency is noted.
+#[test]
+fn a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 5 * SECOND);
+    let other = fox_says(&mut s, &mut t, period(2), "HB9BLA K1ABC RR73", 812.0, -9.0);
+    let foreign = record_of_bits(
+        &mut s,
+        &mut t,
+        period(2),
+        &dxpedition_bits("HB9BLA", "W9XYZ", "VP8PJ", -8),
+        900.0,
+        -9.0,
+    );
+    let foreign_report = record_of_bits(
+        &mut s,
+        &mut t,
+        period(2),
+        &dxpedition_bits("W9XYZ", "HB9BLA", "VP8PJ", -8),
+        900.0,
+        -9.0,
+    );
+    s.deliver(&[other, foreign, foreign_report]);
+    assert!(s.armed());
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    assert_eq!(s.engine.hound.fox_hz, None);
+    // Tune needs the transmit owner armed without a request: arm it directly and tune.
+    s.command(Command::EnableTx(false, None)).unwrap();
+    s.core.arm(7).unwrap();
+    s.core.set_tune(true, 1500).unwrap();
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    s.deliver(&[report]);
+    assert_eq!(
+        s.engine.hound.fox_hz,
+        Some(812),
+        "the Fox frequency is noted"
+    );
+    assert_eq!(
+        s.state(),
+        (State::Replying, Slot::Tx1),
+        "no reply while Tune"
+    );
+    assert_eq!(s.engine.settings.tx_hz, 1500);
+    s.core.set_tune(false, 1500).unwrap();
+}
+
+// Proves: CL-024-04; TC-024-011 (e). The reply timeout (11 T/R) and the Hound watchdog (300 s
+// of Tx1) turn Enable Tx off; the station's Tx watchdog returns a Hound to Tx1.
+#[test]
+fn hound_reply_timeout_hound_watchdog_and_tx_watchdog() {
+    // Reply timeout: 165 s after the Fox's report.
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    let t0 = s.now();
+    s.deliver(&[report]);
+    s.run(t0 + 165 * SECOND - 100);
+    assert!(s.armed(), "not before 11 T/R");
+    s.run(t0 + 165 * SECOND + 100);
+    assert!(!s.armed());
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    assert_eq!(
+        s.state(),
+        (State::RogerReport, Slot::Tx3),
+        "the slot stays Tx3"
+    );
+
+    // Hound watchdog: 300 s of Tx1 since the operator turned Enable Tx on.
+    let mut s = hound_station();
+    let mut t = hound_table();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    let on = s.now();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(on + 300 * SECOND - 100);
+    assert!(s.armed());
+    s.run(on + 300 * SECOND + 100);
+    assert!(!s.armed());
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    assert!(
+        !s.core.view().tx_expired,
+        "the Hound watchdog, not the Tx watchdog"
+    );
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+
+    // The station's Tx watchdog (1 min) while Tx3 repeats: back to Tx1.
+    let mut s = hound_station();
+    let mut t = hound_table();
+    s.command(Command::SetWatchdogs {
+        tx_minutes: 1,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13_500);
+    let report = fox_says(&mut s, &mut t, period(2), "HB9BLA KH7Z -12", 812.0, -7.0);
+    s.deliver(&[report]);
+    s.run(period(3) + 100 * SECOND);
+    assert!(!s.armed());
+    assert!(s.core.view().tx_expired);
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+}
+
+// ---------------------------------------------------------------- TC-024-014
+/// The 12 kHz samples of the Hound's own waveforms that started in `period` (decimated
+/// from the 48 kHz the transmit owner played), at their offset from the period start.
+fn hound_audio(s: &Station, period: i64, into: &mut [f32]) {
+    for (at, samples, skip) in s.fake.0.audio.lock().unwrap().iter() {
+        if *at < period || *at >= period + 15 * SECOND {
+            continue;
+        }
+        let peak = samples.iter().fold(0f32, |m, x| m.max(x.abs())).max(1e-9);
+        let offset = usize::try_from((at - period) * 12).unwrap();
+        for (k, x) in samples[*skip..].iter().step_by(4).enumerate() {
+            if let Some(slot) = into.get_mut(offset + k) {
+                *slot += 0.1 * x / peak;
+            }
+        }
+    }
+}
+/// One 15 s FT8 period at 12 kHz: uniform noise plus Fox frames (77 bits, tone-0 Hz)
+/// starting 0.5 s after the period start, with the station's waveform generator.
+fn fox_audio(frames: &[([u8; 77], f64)], seed: u64) -> Vec<f32> {
+    use wstx_rust::decoder::{Channel, quadratures};
+    let channel = Channel::new();
+    let mut state = seed;
+    let mut audio: Vec<f32> = (0..180_000)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (((state >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.6) as f32
+        })
+        .collect();
+    for (bits, hz) in frames {
+        let tones = channel.tones(&channel.encode(bits, Mode::Ft8), Mode::Ft8);
+        let wave = quadratures(Mode::Ft8, &tones, *hz).unwrap();
+        for (k, w) in wave.iter().enumerate() {
+            if let Some(slot) = audio.get_mut(6000 + k) {
+                *slot += 0.1 * w[0];
+            }
+        }
+    }
+    audio
+}
+fn decode_period(audio: &[f32]) -> Vec<wstx_rust::decoder::Decode> {
+    wstx_rust::decoder::Decoder::new()
+        .decode(audio, Mode::Ft8, &|| false)
+        .unwrap()
+}
+/// The Hound's rows of one decoded period, through its hash table and row reader.
+fn hound_rows(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    audio: &[f32],
+) -> Vec<Row> {
+    decode_period(audio)
+        .into_iter()
+        .map(|d| {
+            let bits: [u8; 77] = std::array::from_fn(|i| d.payload.payload77.as_bytes()[i] - b'0');
+            record_of_bits(
+                s,
+                table,
+                period,
+                &bits,
+                d.frequency_hz,
+                d.snr_db.unwrap_or(-10.0),
+            )
+        })
+        .collect()
+}
+fn noise(seed: u64) -> Vec<f32> {
+    fox_audio(&[], seed)
+}
+
+// Proves: CL-024-04; TC-024-014. A Hound QSO with a scripted Fox over an audio loopback with
+// no RF: the Fox decodes the waveforms the transmit owner played and the Hound decodes the
+// Fox's synthesized frames with the station's decoder, hash table and row reader.
+#[test]
+fn a_hound_works_a_scripted_fox_over_an_audio_loopback() {
+    let mut s = hound_station();
+    let mut t = hound_table();
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(700),
+    })
+    .unwrap();
+    let packed = |text: &str| wstx_rust::transmit::pack(text).unwrap().bits;
+    let fox_heard = |audio: &[f32]| {
+        decode_period(audio)
+            .into_iter()
+            // The station renders R+report as "R -04" (decoder_signal canonical()).
+            .map(|d| {
+                let text = d.payload.text.unwrap_or_default();
+                (
+                    text.replace(" R -", " R-").replace(" R +", " R+"),
+                    d.frequency_hz,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // Period 0: the Fox calls CQ at 800 Hz; the operator selects it and enables Tx.
+    s.run(P0 + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        P0,
+        &fox_audio(&[(packed("CQ KH7Z BL01"), 800.0)], 1),
+    );
+    let cq = rows
+        .iter()
+        .find(|r| r.text == "CQ KH7Z BL01")
+        .cloned()
+        .unwrap_or_else(|| panic!("the Fox's CQ decodes: {rows:?}"));
+    select(&mut s, cq);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    // Period 1: the Fox decodes my Tx1 at the random calling offset.
+    s.run(period(2));
+    let mut audio = noise(2);
+    hound_audio(&s, period(1), &mut audio);
+    let heard = fox_heard(&audio);
+    assert!(
+        heard
+            .iter()
+            .any(|(text, hz)| text == "KH7Z HB9BLA JN47" && (hz - 1717.0).abs() <= 3.0),
+        "the Fox hears Tx1 at 1717 Hz: {heard:?}"
+    );
+    // Period 2: the Fox's 0.1 multi-message carries my report.
+    s.run(period(2) + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        period(2),
+        &fox_audio(&[(dxpedition_bits("W9XYZ", "HB9BLA", FOX, -12), 800.0)], 3),
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.text == "W9XYZ RR73; HB9BLA <KH7Z> -12"),
+        "the 0.1 report with the Fox filled in: {rows:?}"
+    );
+    s.deliver(&rows);
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    let tx3 = s.next_text();
+    assert!(tx3.starts_with("KH7Z HB9BLA R-"), "{tx3}");
+    // Period 3: my Tx3 on the Fox's frequency; the Fox misses it (works K1ABC in period 4).
+    s.run(period(4));
+    let mut audio = noise(4);
+    hound_audio(&s, period(3), &mut audio);
+    let heard = fox_heard(&audio);
+    assert!(
+        heard
+            .iter()
+            .any(|(text, hz)| *text == tx3 && (hz - 800.0).abs() <= 3.0),
+        "Tx3 at 800 Hz: {heard:?}"
+    );
+    s.run(period(4) + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        period(4),
+        &fox_audio(&[(packed("K1ABC KH7Z -15"), 800.0)], 5),
+    );
+    s.deliver(&rows);
+    // Period 5: the repeat on Fox-300 Hz; the Fox answers with RR73 in a 0.1 message.
+    s.run(period(6));
+    let mut audio = noise(6);
+    hound_audio(&s, period(5), &mut audio);
+    let heard = fox_heard(&audio);
+    assert!(
+        heard
+            .iter()
+            .any(|(text, hz)| *text == tx3 && (hz - 500.0).abs() <= 3.0),
+        "the repeat at 500 Hz: {heard:?}"
+    );
+    s.run(period(6) + 13_500);
+    let rows = hound_rows(
+        &mut s,
+        &mut t,
+        period(6),
+        &fox_audio(&[(dxpedition_bits("HB9BLA", "K1ABC", FOX, -8), 800.0)], 7),
+    );
+    s.deliver(&rows);
+    assert!(!s.armed());
+    assert_eq!(s.state().0, State::Completed);
+    let fields = one_log(&mut s).log_fields(s.now()).unwrap();
+    assert_eq!(
+        (fields.call.as_str(), fields.rst_rcvd.as_deref()),
+        ("KH7Z", Some("-12"))
+    );
+    assert!(
+        s.fake
+            .0
+            .audio
+            .lock()
+            .unwrap()
+            .iter()
+            .all(
+                |(at, ..)| wstx_rust::transmit::parity(Mode::Ft8, (at / 15_000) * 15_000)
+                    == Parity::Odd
+            ),
+        "the Hound never transmitted in the Fox's period"
+    );
 }

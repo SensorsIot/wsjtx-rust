@@ -2020,3 +2020,22 @@ async fn automation_does_not_start_in_a_contest_activity() {
         (json!("not_ready"), json!("activity"))
     );
 }
+
+// Proves: CL-024-04; TC-024-012 (#24 S4b). Station automation does not start as a Hound.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automation_does_not_start_as_a_hound() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let contact = f.state.recording.contact.get().unwrap();
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "contact_revision":contact.revision(),"action":"set_activity","activity":"hound"});
+    contact.operate(&f.state, body, true).unwrap();
+    let r = auto(&f).await;
+    assert_eq!(
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (json!("not_ready"), json!("activity"))
+    );
+}

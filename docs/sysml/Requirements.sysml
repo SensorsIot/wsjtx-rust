@@ -4428,7 +4428,7 @@ package WstxRequirements {
              CL-024-02
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
              Steps: open the fold-out; read the Activity choice with settings.activity ww_digi; choose ARRL Digi.
-             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
+             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009, since #24 S4b also Hound, TC-024-013) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4487,6 +4487,68 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_024_03_verified_by_TC_024_009 from 'CL-024-03' to 'TC-024-009';
+    requirement 'CL-024-04' {
+        doc /* #24 S4. Classic Hound follows HoundTransmissionPolicy: second-period only, Tx1/Tx3 only, random 1000-2998 Hz calling when the Tx offset is below 999 Hz, Tx3 on the Fox frequency after the Fox's report and Fox +-300 Hz on a repeat, completion and logging on the Fox's RR73 in standard or 0.1 form, the reply timeout and the Hound watchdog, and Fox selection limited to rows decoded at :00/:30 (not R+report rows of other Hounds). set_activity hound is FT8 only; UDP Status special operation 7; station automation does not start as a Hound. Slice S4a is the 0.1 hashdx10 rule (CL-024-01, TC-024-010); slice S4b is the Hound operation (WstxContact::HoundOperation). SuperFox (S5) stays excluded. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
+    }
+    dependency CL_024_04_to_FR_024 from 'CL-024-04' to 'FR-024';
+    verification 'TC-024-011' {
+        doc /* TC-024-011 — Classic Hound through the contact engine
+             CL-024-04
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); rows built the way the station builds them (pack, or 0.1 payloads built from their fields, unpack, HashTable fill-in with my call HB9BLA and the DX call, row reader); a deterministic random source; HB9BLA JN47AA; Fox KH7Z.
+             Steps: (a) set_activity hound with parity even and Tx 800 Hz; select "CQ KH7Z BL01" at 812 Hz (:00) with SNR -9, Enable Tx; the Fox sends "HB9BLA KH7Z -12" at 812 Hz with SNR -7; my Tx3 is sent; the Fox is silent one period; it sends "HB9BLA KH7Z RR73"; (b) the same with the Fox at 450 Hz, its report inside "W9XYZ RR73; HB9BLA <KH7Z> -12" and its RR73 inside "HB9BLA RR73; K1ABC <KH7Z> -08"; a repeated Fox report after my first Tx3; (c) refusals: Enable Tx without a DX call, a row at :15, "KH7Z W9XYZ R-05" at :00, a 0.1 row, set_parity even, choose_next tx2/tx4/tx5/tx6, choose_next tx1 with Skip Tx1 on; a station mode change to FT4, then set_activity hound; (d) not counted: "HB9BLA K1ABC RR73" (not the DX call), a 0.1 RR73 and a 0.1 report to me with another hashed call, a Fox report while Tune is on (the transmit owner armed with Tune and no request); (e) the reply timeout 165 s after the Fox's report, the Hound watchdog after 300 s of Tx1, and a 1-minute station Tx watchdog while Tx3 repeats; (f) with Tx 1500 Hz Tx1 keeps its offset.
+             Expected: (a) parity odd and Hold Tx on; the selection keeps Tx 800 Hz and gives Tx1 "KH7Z HB9BLA JN47"; Tx1 goes out in the odd period at the random offset within 1000..2998 Hz; the report gives report_rcvd -12, Tx3 "KH7Z HB9BLA R-07" at 812 Hz, the repeat at 512 Hz; the RR73 completes the contact with Enable Tx off (contactCompleted) and logs KH7Z with RST_SENT -07 and RST_RCVD -12; (b) Tx3 at 450 Hz, the repeat at 750 Hz, a repeated report back to 450 Hz, the 0.1 RR73 completes and logs; (c) no_contact for Enable Tx, row_not_standard for the 0.1 row, state_conflict for the others, Tx1 stays next with Skip Tx1, the activity reads none after the change to FT4 and hound is then state_conflict; (d) nothing changes; while Tune only the Fox frequency is recorded; (e) Enable Tx off with cause txWatchdog at each deadline, not before; the slot stays tx3 after the reply timeout, tx1 after the Hound watchdog (Tx watchdog not expired), and the expired Tx watchdog returns the slot to tx1; (f) 1500 Hz unchanged.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-04';
+        }
+        attribute executable : String = "server/src/contact_tests.rs";
+    }
+    dependency CL_024_04_verified_by_TC_024_011 from 'CL-024-04' to 'TC-024-011';
+    verification 'TC-024-012' {
+        doc /* TC-024-012 — Hound through the station: wire, UDP Status, automation and the 0.1 row reader
+             CL-024-04
+             Setup: the station fixture over POST /contact/command and GET /contact with its UDP Status; the station's row reader on published 0.1 records; station automation readiness.
+             Steps: set_activity hound, then with an exchange; read settings and UDP Status; read a published "HB9BLA RR73; K1ABC <KH7Z> -08" record; start station automation with hound set.
+             Expected: settings.activity hound, parity odd, hold_tx true; an exchange is refused invalid_request field exchange; UDP Status special operation 7; the row reader gives the 0.1 fields (RR73 to HB9BLA, report to K1ABC -08, hashed <KH7Z>) and no standard message; automation start not_ready activity.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-04';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs; server/src/strategy_tests.rs";
+    }
+    dependency CL_024_04_verified_by_TC_024_012 from 'CL-024-04' to 'TC-024-012';
+    verification 'TC-024-013' {
+        doc /* TC-024-013 — The Hound choice in the QSO fold-out
+             CL-024-04
+             Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
+             Steps: open the fold-out with settings activity hound; choose Hound from None.
+             Expected: the choice offers Hound after RTTY Roundup and shows it; choosing sends set_activity {activity hound} without an exchange; nothing transmits; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_024_04_verified_by_TC_024_013 from 'CL-024-04' to 'TC-024-013';
+    verification 'TC-024-014' {
+        doc /* TC-024-014 — Hound QSO with a scripted Fox over an audio loopback (no RF)
+             CL-024-04
+             Setup: the strongest automated equivalent of two station instances over an audio loopback: the Hound is the actual contact engine and #9 transmit owner core on a virtual UTC clock whose hardware double captures the 48 kHz waveform it plays (no PTT, audio device or radio); the scripted Fox synthesizes its FT8 frames (standard texts packed, its 0.1 frames built from their fields) with the station's waveform generator. Each 15 s period is the sum of the frames of that period plus noise at 12 kHz (the Hound's own audio decimated from 48 kHz), decoded by the station's FT8 decoder; the Hound's records pass the station's HashTable (my call, learned calls, the DX call) and row reader, the Fox decodes the Hound's audio with the same decoder. No second process, sound card or virtual cable.
+             Steps: Fox "CQ KH7Z BL01" at 800 Hz; the operator selects it and enables Tx with Tx 700 Hz; the Fox answers the decoded Tx1 with "W9XYZ RR73; HB9BLA <KH7Z> -12"; it ignores the first decoded Tx3 for one period and answers the repeat with "HB9BLA RR73; K1ABC <KH7Z> -08".
+             Expected: the Fox decodes "KH7Z HB9BLA JN47" in the odd period at a frequency within 1000..2998 Hz (+-3 Hz of the planned random offset); the Hound decodes the 0.1 report with <KH7Z> filled in; the Fox decodes the Hound's "KH7Z HB9BLA R-NN" at 800 Hz (+-3 Hz) and the repeat at 500 Hz; after the 0.1 RR73 the Hound's contact is completed, Enable Tx off and KH7Z logged with RST_RCVD -12; the Hound never transmitted in an even period.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. The level-4 acceptance (two station processes over a physical or virtual audio loopback) and the level-5 on-air QSO with a classic DXpedition are opportunistic and not part of this test. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-04';
+        }
+        attribute executable : String = "server/src/contact_tests.rs";
+    }
+    dependency CL_024_04_verified_by_TC_024_014 from 'CL-024-04' to 'TC-024-014';
     verification 'TC-024-003' {
         doc /* TC-024-003 — Compound and nonstandard QSOs through the contact engine
              CL-024-01

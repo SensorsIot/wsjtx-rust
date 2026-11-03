@@ -1633,3 +1633,64 @@ async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() 
     assert_eq!(s, StatusCode::ACCEPTED);
     assert_eq!(f.snapshot().await["settings"]["exchange"], Value::Null);
 }
+
+// Proves: CL-024-04; TC-024-012 (#24 S4b). set_activity hound over POST /contact/command:
+// read-back with Tx parity odd and Hold Tx, no exchange, UDP Status 7; the row reader keeps a
+// 0.1 DXpedition record as its fields, not as a standard message.
+#[tokio::test]
+async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let (s, v) = f
+        .send("set_activity", json!({"activity":"hound","exchange":"MA"}))
+        .await;
+    assert_eq!(
+        (s, code(&v)),
+        (
+            StatusCode::BAD_REQUEST,
+            ("invalid_request", Some("exchange"))
+        )
+    );
+    let (s, v) = f.send("set_activity", json!({"activity":"hound"})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let settings = &f.snapshot().await["settings"];
+    assert_eq!(
+        (
+            &settings["activity"],
+            &settings["parity"],
+            &settings["hold_tx"],
+            &settings["exchange"]
+        ),
+        (&json!("hound"), &json!("odd"), &json!(true), &Value::Null)
+    );
+    assert_eq!(
+        crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+        7
+    );
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    table.set_dx_call(Some("KH7Z"));
+    let payload = table.resolve(&wstx_rust::decoder::unpack(
+        &crate::contact_tests::dxpedition_bits("HB9BLA", "K1ABC", "KH7Z", -8),
+    ));
+    let mut record = serde_json::to_value(wstx_rust::decoder::Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: 450.0,
+        snr_db: Some(-5.0),
+    })
+    .unwrap();
+    record["sequence"] = json!(1);
+    record["status"] = json!("decoded");
+    let row = contact_http::row_of(&record, &("s".into(), "j".into(), 1), "ft8").unwrap();
+    assert_eq!(row.text, "HB9BLA RR73; K1ABC <KH7Z> -08");
+    assert_eq!(row.standard, None);
+    assert_eq!(
+        row.dxpedition.as_deref(),
+        Some(&contact::Dxpedition {
+            rr73_to: contact::Call::Sign("HB9BLA".into()),
+            report_to: contact::Call::Sign("K1ABC".into()),
+            fox: contact::Call::Hashed("KH7Z".into()),
+            report: -8,
+        })
+    );
+}
