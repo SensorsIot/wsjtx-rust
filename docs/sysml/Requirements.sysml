@@ -2293,7 +2293,7 @@ package WstxRequirements {
              Sorting checks: use independently scripted frequency200/1000/3499.9, SNR-20/+10/-5,
              signed DT-0.2/+0.2/unknown and case-varied literal messages. Check all fields and both
              directions, unknown-last, stable ties, arrivals spanning pages, empty/next periods,
-             mode/reconnect retention and profile reset; verify no new server mutations or changed
+             mode/reconnect retention and profile reset (to the #55 value order, the default); verify no new server mutations or changed
              result request cadence. Cost2 Windows actual Chromium/candidate server; cost4 actual
              live calls, operator changes both controls and observes only latest-period rows. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -4026,8 +4026,8 @@ package WstxRequirements {
         doc /* TC-055-006 — Band Activity colours, hover text and value order for every sender
              CL-055-04, CL-055-02
              Setup: actual router with a selected profile whose log holds DL1ABC JO62 20m FT8 (TC-055-002); in the browser the operating fixture with routed result records carrying #55 flags and dxcc, selection band 20m, a worked-before query answered by the actual server.
-             Steps: read /receive/results for a report to another station from a new sender (G4XYZ DL1ABC -10) and an RR73 from a worked sender; in the browser render one period with a report from a new-DXCC sender (YO3ABC K9XX -07), a row to my call, a new CQ zone, a new grid, a new call, two rows of equal value with different SNR and a worked-before CQ without flags; turn Highlight on with a strategy hit.
-             Expected: the server gives the non-CQ report its dxcc and flags and the worked sender no flag; the YO3ABC report is coloured new DXCC and its title starts "New DXCC: Romania" followed by "New DXCC on 20m"; the row to my call is "Calling me" first and keeps the my-call colour; the worked-before CQ has no colour and its title is "Worked before on 20m FT8"; rows are in value order calling me, strategy hit, new DXCC, new zone, new grid, new call, no flag, equal values strongest first; the DXCC header restores this order after a Freq sort.
+             Steps: read /receive/results for a report and an R-report to other stations from new senders (K9XX G4XYZ -10, K9XX YO3ABC R-07) and an RR73 from a sender worked on 20m FT8 (K9XX DL1ABC RR73); in the browser render one period with a report from a new-DXCC sender (YO3ABC K9XX -07), a row to my call, a new CQ zone, a new grid, a new call, two rows of equal value with different SNR and a worked-before CQ without flags; turn Highlight on with a strategy hit.
+             Expected: the server gives both non-CQ senders their dxcc and flags (England new call, DXCC and ITU zone; Romania new DXCC) and the worked sender Germany without flags; the YO3ABC report is coloured new DXCC and its title starts "New DXCC: Romania" followed by "New DXCC on 20m"; the row to my call is "Calling me" first and keeps the my-call colour; the worked-before CQ has no colour and its title is "Worked before on 20m FT8"; rows are in value order calling me, strategy hit, new DXCC, new zone, new grid, new call, no flag, equal values strongest first; the DXCC header restores this order after a Freq sort.
              2 — Isolated automated (functional) tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4043,7 +4043,7 @@ package WstxRequirements {
              CL-055-05
              Setup: operating fixture at 1366x768 with a period of 30 routed decodes; Chromium.
              Steps: wait for the rows; measure a row, the font size and the rows fully visible in the table; read the coarse-pointer rule.
-             Expected: a row at most 24 px high, the font size unchanged (the normal operating font), at least 10 rows visible, and a pointer:coarse rule keeping at least 8 px cell padding; screenshot band-activity-density-1366.png (before and after on the issue).
+             Expected: a row at most 24 px high (41 px before), the font size unchanged (the normal operating font), at least 8 rows visible (5 before), and a pointer:coarse rule keeping at least 8 px cell padding; screenshot band-activity-density-1366.png (before and after on the issue).
              2 — Isolated automated (functional) tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

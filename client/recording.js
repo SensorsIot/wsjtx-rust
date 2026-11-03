@@ -22,7 +22,7 @@ const strip=document.createElement('section');strip.id='rxtx-strip';strip.classN
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col" data-sort="value" aria-sort="none" tabindex="0" class="op-sort" title="Sort by value: calling me, strategy, new DXCC, zone, grid, call, then strongest">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span class="op-contact-badge">Unavailable</span></header>
 <div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
@@ -95,8 +95,8 @@ panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
 // #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority
 // order with its default on/off. A slot without data (DXCC, zones and continent need cty.dat, #55; grids
-// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour.
-const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',true]];
+// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour; #55: no flag, no colour (CQ off).
+const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',false]];
 const bandFlags=bandSlots.map(([k])=>k).filter(k=>k.startsWith('new_'));
 const bandColours=document.createElement('fieldset');bandColours.id='band-colours';bandColours.className='op-server-fieldset';
 bandColours.innerHTML='<legend>Band Activity colours (WSJT-X)</legend>'+bandSlots.map(([k,label])=>`<label class="op-check"><input type="checkbox" data-hl-slot="${k}"> <span class="op-swatch" data-hl-swatch="${k}"></span>${label}</label>`).join('');
@@ -478,7 +478,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
-let activitySortProfile=null,activitySortField='frequency',activitySortDirection='asc';
+let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
@@ -569,11 +569,11 @@ async function receiveSync(current=socket){
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
-  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='frequency';activitySortDirection='asc';}
+  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='value';activitySortDirection='desc';}
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
-  return [...records].sort((a,b)=>{
+  return [...records].sort((a,b)=>{if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// #55 CL-055-04: value, strongest SNR (unavailable last), decode order
     const left=key(a),right=key(b);
     if(missing(left)!==missing(right))return missing(left)?1:-1;
     const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
@@ -581,8 +581,8 @@ function activityOrdering(records=resultRows){
   });
 }
 function sortBy(button){
-  if(button.dataset.sort===activitySortField)activitySortDirection=activitySortDirection==='asc'?'desc':'asc';
-  else{activitySortField=button.dataset.sort;activitySortDirection=activitySortField==='signal'?'desc':'asc';}
+  if(button.dataset.sort===activitySortField){if(activitySortField!=='value')activitySortDirection=activitySortDirection==='asc'?'desc':'asc';}
+  else{activitySortField=button.dataset.sort;activitySortDirection=['signal','value'].includes(activitySortField)?'desc':'asc';}
   renderResults();
 }
 document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
@@ -615,9 +615,9 @@ function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
   const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
-  // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
-  const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
+  // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
+  // every decoded sender (operator decision CL-055-04; WSJT-X colours CQ/QRZ lines only).
+  const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
   if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
@@ -629,7 +629,7 @@ function activityRow(record,period,context,mode){
     if(index===5&&dx)cell.title=`${dx.name} \u00b7 ${dx.cont} \u00b7 CQ zone ${dx.cq} \u00b7 ITU zone ${dx.itu} (cty.dat)`;if(index===6&&approx)cell.title='Approximate: from the country position (cty.dat), no grid in the message';
     row.append(cell);
   }
-  return row;
+  activityWhy(row);return row;
 }
 function validRecord(r){
   return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
@@ -1101,3 +1101,26 @@ function stationNoticeShow(){
 function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
 addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
 window.wstxStationData=stationData;
+
+// #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
+// hits, is applied by the Highlight in contact.js) and BandActivityHover (title and aria-description).
+function activityValue(r){
+  if(r?.status!=='decoded')return 8;
+  const my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  if(my&&r.fields?.to?.kind==='call'&&r.fields.to.text===my)return 1;
+  const groups=[[3,['new_dxcc','new_continent']],[4,['new_dxcc_band','new_continent_band']],[5,['new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band']],[6,['new_grid','new_grid_band']],[7,['new_call','new_call_band']]];
+  return groups.find(([,names])=>names.some(k=>r.flags?.[k]===true))?.[0]??8;
+}
+function activityReasons(r){
+  if(r?.status!=='decoded'||!r.flags)return [];
+  const dx=r.dxcc,band=operatingState?.selection?.band||'this band',ex=r.fields?.exchange,grid=ex?.kind==='grid'&&typeof ex.value==='string'?ex.value.slice(0,4).toUpperCase():'';
+  const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:`New DXCC: ${dx?.name??''}`,new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New call on ${band}`};
+  return Object.keys(text).filter(k=>r.flags[k]===true).map(k=>text[k].replace(/:?\s+$/,''));
+}
+function activityWhy(row){
+  const worked=row.dataset.worked==='worked_this_band_and_mode'?`Worked before on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'Worked before on another band or mode':'';
+  const parts=[row.classList.contains('ba-tome')?'Calling me':'',row.dataset.whyStrategy??'',...(row.dataset.why?row.dataset.why.split('\n'):[]),worked].filter(Boolean);
+  if(parts.length){row.title=parts.join('\n');row.setAttribute('aria-description',parts.join('; '));}
+  else{row.removeAttribute('title');row.removeAttribute('aria-description');}
+}
+window.wstxActivityWhy=activityWhy;

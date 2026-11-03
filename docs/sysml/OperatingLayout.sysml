@@ -596,8 +596,8 @@ attribute def ActivityOrdering {
              row backgrounds; there are no text marks; worked before (WstxContact::
              WorkedBeforeQuery) feeds only the hover text (BandActivityHover); rows are ordered
              by value (BandActivityValue, ActivityOrdering); row density (#55, operator 2026-11-03,
-             CL-055-05): table rows with a fine pointer have 2 px vertical cell padding and line
-             height 1.3 at the unchanged font size (at most 24 px per row), period dividers 1 px,
+             CL-055-05): table rows with a fine pointer have 1 px vertical cell padding and line
+             height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
              so more stations fit; with a coarse pointer (touch) rows keep 8 px padding, and the
              stacked narrow layout keeps its card rows, so rows stay tappable at 360 px and 200 %
              zoom; with Highlight on the strategy accent of

@@ -1310,7 +1310,8 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
     });
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===16);
-  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
+  // #55: the default is the value order; Freq once ascending, twice descending.
+  await clickSort(page,'frequency');await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
   assert.equal(await page.locator('tr[data-period=latest]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
@@ -1449,6 +1450,9 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   }});
   const order=()=>page.locator('tr[data-period=latest]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
+  // #55 CL-055-04: by default the value order (all without a flag here), strongest SNR first, unknown last.
+  assert.deepEqual(await order(),[1,4,3,0,2]);assert.deepEqual(await sortState(page),['value','desc']);
+  await clickSort(page,'frequency');
   assert.deepEqual(await order(),[1,4,0,3,2],'frequency200 precedes1000, numeric ties retain sequence');
   assert.deepEqual(await sortState(page),['frequency','asc']);
   await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);assert.deepEqual(await order(),[2,0,3,4,1]);
@@ -1464,7 +1468,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,1,2,3,4]);await clickSort(page,'dt');assert.deepEqual(await order(),[0,1,2,3,4],'all unknown DT stays in sequence order');
   for(const width of [1440,360])for(const scale of [1,2]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.fontSize=16*scale+'px',scale);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
   await page.evaluate(()=>{profileData.profile_id='not-a-valid-uuid';renderResults();});assert.deepEqual(await sortState(page),['dt','desc'],'invalid profile cannot reset preference');
-  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.deepEqual(await sortState(page),['frequency','asc']);
+  await page.evaluate(()=>{profileData.profile_id='00000000-0000-4000-8000-000000000001';renderResults();});assert.deepEqual(await sortState(page),['value','desc'],'a different profile resets to the value order');
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });
 
@@ -1547,7 +1551,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  const period='2026-10-27T12:00:15.0000000Z';
  const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
  const reply={type:'standard',to:{kind:'call',text:'K9XX',hash_bits:null,hash_value:null},from:{kind:'call',text:'W2AB',hash_bits:null,hash_value:null},ack:false,exchange:{kind:'report',value:-5}};
- const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1}));
+ const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1,...(['W1XYZ','W2AB'].includes(call)?{flags:{new_call:true,new_call_band:true}}:{})}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
@@ -1561,21 +1565,22 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
- // #50: no text marks; worked-before feeds the WSJT-X "New call" slots, which are off by default (WSJT-X).
+ // #50: no text marks; the New call slots (off by default, WSJT-X) come from the #55 flags of every
+ // sender (CL-055-04); worked before and CQ alone have no colour; rows in value order.
  const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
  const [cq,newCall,none]=['rgba(102, 255, 102, 0.24)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- assert.deepEqual(await rowsNow(),[['CQ K1ABC FN42','worked_this_band_and_mode','cq',cq],['CQ W1XYZ FN42','not_worked','cq new_call new_call_band',cq],['FREE TEXT',null,null,none],['K9XX W2AB R-05','not_worked',null,none]],'CQ green; worked before has no colour; New slots only on CQ lines (WSJT-X)');
+ assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band cq',none],['K9XX W2AB R-05','not_worked','new_call new_call_band',none],['CQ K1ABC FN42','worked_this_band_and_mode','cq',none],['FREE TEXT',null,null,none]],'no flag, no colour (CQ off, #55); New slots on non-CQ senders too (CL-055-04)');
  await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await rowsNow()).map(r=>r[3]),[cq,newCall,none,none],'an enabled New call outranks CQ');
+ assert.deepEqual((await rowsNow()).map(r=>r[3]),[newCall,newCall,none,none],'an enabled New call colours CQ and non-CQ senders');
  assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,true,'the choice is per browser');
  // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC over CQ.
  const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['cq new_dxcc','cq new_dxcc new_continent','cq new_dxcc new_continent mycall','new_grid','cq new_itu_zone'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
- assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,cq],'WSJT-X priority; New grid and ITU zone are off by default');
+ assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none],'WSJT-X priority; New grid, ITU zone and (#55) CQ are off by default');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ','W2AB']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
- assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode] td[data-col=message]').getAttribute('title'),'Worked before on this band and mode','the status stays readable as a tooltip');
+ assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on 20m FT8','the status stays readable as the row tooltip (#55 BandActivityHover)');
  assert.deepEqual(errors,[]);
 });
 
@@ -1663,13 +1668,13 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
  }});
  await page.waitForFunction(n=>document.querySelectorAll('#band-activity tr[data-sequence]').length===n,n,{timeout:25000});
  const measure=()=>page.evaluate(()=>{const wrap=document.querySelector('#band-activity .op-table-wrap').getBoundingClientRect(),rows=[...document.querySelectorAll('#band-activity tr[data-sequence]')],td=rows[0].children[4];
-  return {height:rows[0].getBoundingClientRect().height,visible:rows.filter(r=>{const b=r.getBoundingClientRect();return b.top>=wrap.top&&b.bottom<=wrap.bottom;}).length,font:getComputedStyle(td).fontSize,normal:getComputedStyle(document.querySelector('main.op-app')).getPropertyValue('--op-font-normal').trim()};});
+  return {height:rows[0].getBoundingClientRect().height,visible:rows.filter(r=>{const b=r.getBoundingClientRect();return b.top>=wrap.top&&b.bottom<=wrap.bottom;}).length,font:getComputedStyle(td).fontSize};});
  await page.screenshot({path:'test-results/ui-operating/band-activity-density-1366.png'});
  const dense=await measure();
  t.diagnostic(`row ${dense.height}px, ${dense.visible} rows visible, font ${dense.font}`);
  assert.ok(dense.height<=24,`a desktop row is at most 24 px high (${dense.height})`);
- assert.equal(dense.font,dense.normal||dense.font,'the font size is unchanged');
- assert.ok(dense.visible>=10,`at least 10 rows visible at 1366x768 (${dense.visible})`);
+ assert.equal(dense.font,'16px','the font size is unchanged (the 16 px operating font, TC-007-002)');
+ assert.ok(dense.visible>=8,`at least 8 rows visible at 1366x768, 5 before #55 (${dense.visible})`);
  // Touch: a coarse pointer keeps taller rows (CSS rule under pointer:coarse).
  assert.ok(await page.evaluate(()=>[...document.styleSheets].some(sheet=>{try{return [...sheet.cssRules].some(r=>r.media&&/pointer:\s*coarse/.test(r.media.mediaText)&&[...r.cssRules].some(c=>c.selectorText==='#band-activity td'&&parseFloat(c.style.paddingTop)>=8));}catch{return false;}})),'a coarse pointer keeps tappable rows');
  assert.deepEqual(errors,[]);
