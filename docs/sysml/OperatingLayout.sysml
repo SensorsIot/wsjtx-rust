@@ -47,7 +47,8 @@ package WstxOperatingLayout {
              behavior is WstxOperatingReceive/contract 4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
              no fabricated UTC/DT, message text or resolved hash. Full source/job/
-             generation/sequence binds each row; new identity clears rows, stale
+             generation/sequence binds each row; new identity clears rows (an unknown-loss
+             source epoch of the same receive keeps them, CL-061-01), stale
              pages cannot append. At most2048 rows, explicit cursor-expiry history
              warning and partial stop/failure output; unsupported payloads display
              their status. One pending page, Thin limit1/4s and status priority
@@ -542,7 +543,8 @@ attribute def ActivityOrdering {
              CL-057-03): the period it replaced follows below a divider with its period UTC
              when it has the other parity, and no older period is kept, paged or fetched; a
              same-parity successor (a skipped period) or an uncorrelated period leaves only
-             the latest; a new receive identity (band/mode change, restart) clears it.
+             the latest; a new receive identity (band/mode change, restart) clears it,
+             an unknown-loss source epoch of the same receive does not (CL-061-01).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),

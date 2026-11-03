@@ -2093,3 +2093,48 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
   assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null])),[[0,10],[1,20],[2,20],[3,30],[4,30],[5,30],[6,40],[7,null],[8,null],[9,null],[10,50]]);
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-061-01; TC-061-001. Scripted receive identities, periods and waterfall rows (presentation fixtures, never modem truth).
+test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a Stop/Start clears them',{timeout:45000},async t=>{
+  let state,records=[];const reads=[];
+  const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z'];
+  const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`EPOCH FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
+  const publish=(id,period,count)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  // A new receive identity as the station allocates it: fresh source, job and generation, results from sequence 0.
+  const renew=lossEpochs=>{records=[];state={...state,generation:state.generation+1,audio:{...state.audio,loss_epochs:lossEpochs,last_loss:lossEpochs?'queue_full':null},source:{...state.source,id:crypto.randomUUID()},job:{...state.job,id:crypto.randomUUID(),first_sequence:0,next_sequence:0,available_count:0,latest_decode:null}};};
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    publish(1,periods[0],2);
+    await page.route('**/recording',async route=>{const json=await(await route.fetch()).json();await route.fulfill({json:{...json,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));reads.push([query.get('job_id'),Number(query.get('generation')),cursor]);
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr[data-period], #band-activity tbody tr.ba-divider')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
+  const waterfall=()=>page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null]));
+  const level=q=>Array.from({length:1024},()=>q);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxRenderHistory);
+  publish(2,periods[1],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.id===2&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  await liveFrames(page,[0,1,2,3].map(sequence=>({sequence,levels:level(10*(sequence+1))})));
+  assert.deepEqual(await waterfall(),[[0,10],[1,20],[2,30],[3,40]]);
+  // The audio loss epoch: the recording.state and receive.state readers both see the new identity.
+  renew(1);const generation=state.generation,job=state.job.id;
+  await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,generation);
+  assert.deepEqual(await shown(),['|FT8 period 12:00:15 UTC','history:2','|FT8 period 12:00:00 UTC','history:0','history:1'],'Band Activity keeps the decoded periods');
+  await liveFrames(page,[{sequence:0,levels:level(50)},{sequence:1,levels:level(60)}]);
+  assert.deepEqual(await waterfall(),[[-5,10],[-4,20],[-3,30],[-2,40],[-1,null],[0,50],[1,60]],'old rows kept, one gap row, then the new epoch');
+  await page.locator('#exception-chips [data-chip=restart]').waitFor();
+  publish(1,periods[2],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.period_start_utc==='2026-10-27T12:00:30.0000000Z'&&document.querySelectorAll('tr[data-period=latest]').length===1);
+  assert.deepEqual(await shown(),['latest:0','|FT8 period 12:00:15 UTC','history:2'],'the new period on top, the one before it kept');
+  assert.deepEqual(reads.find(([id])=>id===job),[job,generation,0],'the new identity is read from cursor 0');
+  // A Stop/Start (loss_epochs restarts at 0) is a new receive: both clear.
+  renew(0);await page.evaluate(async()=>{await sync();await receiveSync();});await page.waitForFunction(g=>live.generation===g,state.generation);
+  assert.deepEqual([await shown(),await waterfall()],[[],[]],'a new receive clears Band Activity and the waterfall');
+  await liveFrames(page,[{sequence:0,levels:level(70)}]);assert.deepEqual(await waterfall(),[[0,70]]);
+  assert.deepEqual(errors,[]);
+});

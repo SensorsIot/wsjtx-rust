@@ -4362,4 +4362,40 @@ package WstxRequirements {
     dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
 
+    // #61 An audio gap keeps the display (operator 2026-11-03; decision recorded on issue #61).
+    requirement 'CL-061-01' {
+        doc /* An unknown-loss source epoch inside the same receive does not clear the operator display, as in WSJT-X. The station keeps its contract (RadioIO: fresh source, job and generation, results from sequence 0); the browser recognises the epoch from GET /receive: the same profile and boot, a running job of the same mode on the same audio.device_id, audio.loss_epochs larger than before, no receive start/stop or band/mode change by this page within 15 s and an unchanged operating revision. Then Band Activity keeps the periods already shown (the latest and, of the other parity, the one before it) below a divider, and they stay until the new receive's first view arrives; that view keeps exactly the kept period one T/R period before it (CL-057-03), the others disappear. Results are then read only under the new identity, from its first sequence; a kept row stays bound to its old identity, so a selection of it is refused by the station as before (row_unavailable). The waterfall keeps its rows: they move in front of the new epoch's frame origin, with one gap row (RGB(96,96,96)) marking the epoch, and the new epoch's rows follow. The transient "Receive restarted" chip shows as before. Anything else that changes the receive identity clears both as before: a Stop/Start, a different input or mode, a band/mode change, a station restart (new boot) or a profile change. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js";
+    }
+    dependency CL_061_01_to_FR_019 from 'CL-061-01' to 'FR-019';
+    verification 'TC-061-001' {
+        doc /* TC-061-001 — An audio loss epoch keeps the waterfall and Band Activity
+             CL-061-01
+             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot, results route and live Detailed waterfall frames (explicit presentation fixtures, never modem truth).
+             Steps: publish the periods 12:00:00 and 12:00:15 (2 and 1 records) and four waterfall rows; then announce a loss epoch: new source, job and generation, loss_epochs 1, results from sequence 0; send two waterfall rows of the new epoch from sequence 0; publish 12:00:30 under the new identity; then a Stop/Start (new identity, loss_epochs 0) with one row.
+             Expected (independent: the scripted periods and rows): after the epoch the 12:00:15 and 12:00:00 rows stay below their dividers and the six waterfall rows are the four old ones, one gap row and the two new ones in that order; the Receive restarted chip shows; after 12:00:30 its row is on top and the 12:00:15 rows below one divider, read with the new source, job and generation from cursor 0; after the Stop/Start Band Activity and the waterfall hold only the new receive's content. On the parent client the epoch clears both.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_01_verified_by_TC_061_001 from 'CL-061-01' to 'TC-061-001';
+    verification 'TC-061-002' {
+        doc /* TC-061-002 — Audio gaps on HB9BLA keep the display
+             CL-061-01
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 receive, one browser on the LAN; no transmission.
+             Steps: watch the waterfall and Band Activity until GET /receive audio.loss_epochs has grown at least once.
+             Expected: at each growth the waterfall keeps its history with one grey gap row and Band Activity keeps its periods; the Receive restarted chip shows for about a minute; a mode change still clears both.
+             3 — Live, read-only on the station; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-061-01';
+        }
+    }
+    dependency CL_061_01_verified_by_TC_061_002 from 'CL-061-01' to 'TC-061-002';
+
 }
