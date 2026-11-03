@@ -815,7 +815,10 @@ package WstxOfflineDecode {
              ft8b weak-word guard (nsync<=10 and xsnr<-25): an FT8 word whose final point has
              at most 10 of 21 hard Costas hits and whose unfloored MeasureFrame SNR is below
              -25 dB is rejected before the window's duplicate record, publication and
-             subtraction. FT8 frames run on Ft8PaddedResidual coordinates.
+             subtraction. Deliberate deviation: ft8b subtracts such a word before rejecting
+             it; the station does not. The guard needs a measured SNR, so it does not apply
+             to a subtraction-only partial frame or a word without an SNR (carrier outside
+             the baseline band, no baseline). FT8 frames run on Ft8PaddedResidual coordinates.
              Schema/history/source/job/epoch/resultauthorityunchanged; modelisnottestverdict. */
     }
     action def ReconstructGfskReference {
