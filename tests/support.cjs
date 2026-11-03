@@ -4,6 +4,7 @@ const {once} = require('node:events');
 const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const {performance} = require('node:perf_hooks');
 
 // Chromium net/base/port_util.cc kRestrictedPorts (main branch, read 2026-10-31). A page on
@@ -38,13 +39,31 @@ async function server(env = {}, args = []) {
     await started.close();
   }
 }
+// The account-local station data of this test process: the profile UUID ownership claims
+// and radio-ownership claims a station keeps under LOCALAPPDATA. Every station a test starts
+// uses this per-run directory, so suites running at the same time in other checkouts (a push
+// gate beside an agent) and the live station never share a claim (harness#28). Removed
+// when the process exits.
+let stationData;
+function stationDataRoot() {
+  if (!stationData) {
+    stationData = fs.mkdtempSync(path.join(os.tmpdir(), 'wstx-test-station-'));
+    process.once('exit', () => { try { fs.rmSync(stationData, {recursive: true, force: true}); } catch {} });
+  }
+  return stationData;
+}
+// Environment of a station a test starts: no inherited WSTX_ setting, no public SNTP
+// server (WstxTransmit::TransmitClock), no UDP interface, and the per-run station data.
+function stationEnv(env = {}) {
+  const clean = {...process.env};
+  // Windows environment names ignore case: no differently cased LOCALAPPDATA may survive.
+  for (const key of Object.keys(clean)) if (key.startsWith('WSTX_') || key.toUpperCase() === 'LOCALAPPDATA') delete clean[key];
+  return {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', LOCALAPPDATA: stationDataRoot(), ...env};
+}
 async function serverOnce(env, args) {
   const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
   if (!fs.existsSync(exe)) throw new Error(`Missing candidate ${exe}; run cargo build --locked`);
-  const clean = {...process.env};
-  for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  // WstxTransmit::TransmitClock: isolated tests never ask a public SNTP server.
-  const child = spawn(exe, args, {env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', ...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}, windowsHide: true});
+  const child = spawn(exe, args, {env: stationEnv({...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}), windowsHide: true});
   let output = '';
   const origin = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Server readiness timeout: ' + output)); }, 10000);
@@ -155,4 +174,4 @@ async function loginPage(page, origin, token, timeout = 30000) {
   await page.locator('#token').fill(token); await page.locator('#login button').click();
   await page.locator('#connection[data-state="connected"]').waitFor({timeout});
 }
-module.exports = {server, link, grant, loginPage, restrictedPorts, listenBrowser, browserPort};
+module.exports = {server, stationEnv, link, grant, loginPage, restrictedPorts, listenBrowser, browserPort};
