@@ -3659,7 +3659,7 @@ package WstxRequirements {
     dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
     requirement 'CL-057-03' {
-        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by the chosen column (ActivityOrdering); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. */
+        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by value or by the chosen column (ActivityOrdering, #55 CL-055-04); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js";
     }
@@ -3954,6 +3954,18 @@ package WstxRequirements {
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/main.rs; client/logbook.js";
     }
     dependency CL_055_03_to_FR_016 from 'CL-055-03' to 'FR-016';
+    requirement 'CL-055-04' {
+        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded standard message (CQ, replies to others, reports, R-reports, RR73, 73) is coloured by the same new DXCC, continent, zone, grid and call flags; a message to my call keeps the calling-me colour on top; a row without a flag has no colour (the CQ slot is off by default and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order: calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxOperatingLayout::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/contact.js; client/logbook.js";
+    }
+    dependency CL_055_04_to_FR_019 from 'CL-055-04' to 'FR-019';
+    requirement 'CL-055-05' {
+        doc /* Band Activity rows are tighter so more stations fit (operator 2026-11-03): less vertical padding and line height on decode rows and period dividers at the same font size, at most 24 px per row with a mouse; touch (coarse pointer) and the stacked narrow layout keep tappable rows. Details: WstxOperatingLayout::BandActivityView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.css";
+    }
+    dependency CL_055_05_to_FR_019 from 'CL-055-05' to 'FR-019';
     verification 'TC-055-001' {
         doc /* TC-055-001 — Entity resolution known answers
              CL-055-01
@@ -4010,6 +4022,36 @@ package WstxRequirements {
         attribute executable : String = "tests/contact.test.cjs; server/tests/decoder_vectors.rs";
     }
     dependency CL_055_02_verified_by_TC_055_004 from 'CL-055-02' to 'TC-055-004';
+    verification 'TC-055-006' {
+        doc /* TC-055-006 — Band Activity colours, hover text and value order for every sender
+             CL-055-04, CL-055-02
+             Setup: actual router with a selected profile whose log holds DL1ABC JO62 20m FT8 (TC-055-002); in the browser the operating fixture with routed result records carrying #55 flags and dxcc, selection band 20m, a worked-before query answered by the actual server.
+             Steps: read /receive/results for a report to another station from a new sender (G4XYZ DL1ABC -10) and an RR73 from a worked sender; in the browser render one period with a report from a new-DXCC sender (YO3ABC K9XX -07), a row to my call, a new CQ zone, a new grid, a new call, two rows of equal value with different SNR and a worked-before CQ without flags; turn Highlight on with a strategy hit.
+             Expected: the server gives the non-CQ report its dxcc and flags and the worked sender no flag; the YO3ABC report is coloured new DXCC and its title starts "New DXCC: Romania" followed by "New DXCC on 20m"; the row to my call is "Calling me" first and keeps the my-call colour; the worked-before CQ has no colour and its title is "Worked before on 20m FT8"; rows are in value order calling me, strategy hit, new DXCC, new zone, new grid, new call, no flag, equal values strongest first; the DXCC header restores this order after a Freq sort.
+             2 — Isolated automated (functional) tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-04';
+            verify 'CL-055-02';
+        }
+        attribute executable : String = "server/src/dxcc_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_055_04_verified_by_TC_055_006 from 'CL-055-04' to 'TC-055-006';
+    dependency CL_055_02_verified_by_TC_055_006 from 'CL-055-02' to 'TC-055-006';
+    verification 'TC-055-007' {
+        doc /* TC-055-007 — Dense Band Activity rows
+             CL-055-05
+             Setup: operating fixture at 1366x768 with a period of 30 routed decodes; Chromium.
+             Steps: wait for the rows; measure a row, the font size and the rows fully visible in the table; read the coarse-pointer rule.
+             Expected: a row at most 24 px high, the font size unchanged (the normal operating font), at least 10 rows visible, and a pointer:coarse rule keeping at least 8 px cell padding; screenshot band-activity-density-1366.png (before and after on the issue).
+             2 — Isolated automated (functional) tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-055-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_055_05_verified_by_TC_055_007 from 'CL-055-05' to 'TC-055-007';
     verification 'TC-055-005' {
         doc /* TC-055-005 — Live DXCC on HB9BLA
              CL-055-02, CL-055-03
@@ -4125,7 +4167,7 @@ package WstxRequirements {
     dependency CL_050_01_to_FR_007 from 'CL-050-01' to 'FR-007';
     dependency CL_050_01_to_FR_019 from 'CL-050-01' to 'FR-019';
     requirement 'CL-050-02' {
-        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks: My call and CQ from the message, New call / New call on band from the station's worked-before status (a never-worked call is both), the DXCC, continent, zone and grid slots from record flags when a station supplies them, every New slot on CQ/QRZ lines only as in WSJT-X; worked before has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
+        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off (WstxOperatingLayout::BandActivityColours), with no text marks: My call and CQ from the message, the New call, grid, DXCC, continent and zone slots from the record flags the station supplies (#55), for every decoded sender (operator decision, CL-055-04, not only CQ/QRZ lines as in WSJT-X); CQ is off by default and worked before has no colour, so a row without a flag has no colour. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/logbook.js; client/recording.css";
     }
@@ -4162,7 +4204,7 @@ package WstxRequirements {
              CL-050-02
              Setup: actual candidate server with a logged K1ABC on 20m FT8; routed live job with CQ K1ABC, CQ W1XYZ and a free-text row; Chromium.
              Steps: wait for the worked-before query; read row backgrounds; enable New call in Settings; append synthetic rows with slot sets for the #55 flags.
-             Expected: no text marks; CQ rows rgba(102,255,102,0.24) with New call off (WSJT-X default); W1XYZ (not worked) slots new_call and new_call_band, rgba(0,255,255,0.24) once enabled, K1ABC (worked) stays CQ; a not-worked caller on a non-CQ line gets no New slot; the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
+             Expected: no text marks; CQ rows without a flag have no colour (CQ off by default, #55); W1XYZ (flags new_call, new_call_band) rgba(0,255,255,0.24) once New call is enabled, K1ABC (worked, no flag) has none; a flagged sender on a non-CQ line (W2AB) gets the same slots (CL-055-04); the choice saved in browser storage; priority My call > New continent > New DXCC > CQ, New grid and ITU zone off by default; a row to my call rgba(255,102,102,0.32).
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

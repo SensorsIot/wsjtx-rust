@@ -1579,6 +1579,102 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-055-04; TC-055-006 browser subset. Actual server log and worked-before query;
+// the result records (with #55 dxcc and flags), the strategy verdict and the selection band
+// are presentation fixtures.
+test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
+ const period='2026-10-27T12:00:15.0000000Z';
+ const fields=(from,to,exchange)=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
+ const F=(...names)=>Object.fromEntries(names.map(n=>[n,true]));
+ const ro={name:'Romania',cont:'EU',cq:20,itu:28},ja={name:'Japan',cont:'AS',cq:25,itu:45},us={name:'U.S.A.',cont:'NA',cq:5,itu:8},en={name:'England',cont:'EU',cq:14,itu:27};
+ // [text, from, to, exchange, snr, flags, dxcc]
+ const rows=[
+  ['CQ K1ABC FN42','K1ABC','CQ',{kind:'grid',value:'FN42'},-10,null,us],
+  ['K9XX YO3ABC -07','YO3ABC','K9XX',{kind:'report',value:-7},-15,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),ro],
+  ['HB9BLA W1XYZ -12','W1XYZ','HB9BLA',{kind:'report',value:-12},-18,F('new_call','new_call_band'),us],
+  ['CQ JA1AAA PM95','JA1AAA','CQ',{kind:'grid',value:'PM95'},-5,F('new_cq_zone','new_cq_zone_band'),ja],
+  ['CQ G4XYZ IO91','G4XYZ','CQ',{kind:'grid',value:'IO91'},-8,F('new_grid','new_grid_band'),en],
+  ['K9XX W2AB R-05','W2AB','K9XX',{kind:'report',value:-5},-20,F('new_call','new_call_band'),us],
+  ['K1ZZ W3EF RR73','W3EF','K1ZZ',{kind:'roger',value:'RR73'},-4,F('new_call','new_call_band'),us],
+  ['FREE TEXT',null,null,null,0,null,null],
+  ['W9AA W2CD 73','W2CD','W9AA',{kind:'roger',value:'73'},-12,null,us],
+ ];
+ const records=rows.map(([text,from,to,exchange,snr,flags,dxcc],i)=>({sequence:i,start_frame:186000+i,frequency_hz:2400-i*150,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:from?fields(from,to,exchange):{},period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})}));
+ const n=records.length;let state,view;
+ const strategy={name:'Hover test',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  const profile=await(await fetch(app.origin+'/profile')).json();
+  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
+  assert.equal(saved.status,201);
+  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',highlight:true,strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/strategy',route=>route.fulfill({json:view}));
+  // The strategy hits the 73 from W2CD (no flag): value 2, under the row to my call.
+  await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',sort:'strongest',verdicts:[{sequence:8,rank:0,grey:false}]}}));
+ }});
+ await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
+ const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.title,getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description')]));
+ const none='rgba(0, 0, 0, 0)';
+ const expected=[
+  ['HB9BLA W1XYZ -12','Calling me\nNew call\nNew call on 20m','rgba(255, 102, 102, 0.32)'],
+  ['W9AA W2CD 73','Strategy Hover test: rule 1',none],
+  ['K9XX YO3ABC -07','New DXCC: Romania\nNew DXCC on 20m\nNew call\nNew call on 20m','rgba(255, 0, 255, 0.26)'],
+  ['CQ JA1AAA PM95','New CQ zone 25\nNew CQ zone on 20m','rgba(255, 191, 0, 0.26)'],
+  ['CQ G4XYZ IO91','New grid IO91\nNew grid on 20m',none],
+  ['K1ZZ W3EF RR73','New call\nNew call on 20m',none],
+  ['K9XX W2AB R-05','New call\nNew call on 20m',none],
+  ['FREE TEXT','',none],
+  ['CQ K1ABC FN42','Worked before on 20m FT8',none],
+ ];
+ const got=await shown();
+ assert.deepEqual(got.map(r=>r.slice(0,3)),expected,'value order, equal values strongest first; a report from a new DXCC is coloured; no flag, no colour');
+ assert.deepEqual(got.map(r=>r[3]),expected.map(r=>r[1]?r[1].replaceAll('\n','; '):null),'the same reasons for assistive technology');
+ assert.equal(await page.locator('#band-activity th[data-sort=value]').textContent(),'DXCC');
+ assert.deepEqual(await sortState(page),['value','desc']);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
+ // Enabled New grid / New call colour the non-CQ senders as well (operator decision, not WSJT-X).
+ await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_call]').check();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
+ assert.deepEqual((await shown()).map(r=>r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-colours-all-senders-1440.png'});
+ await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
+ assert.deepEqual((await shown()).map(r=>r[0]),[...rows].reverse().map(r=>r[0]),'a column header still sorts by its column');
+ await clickSort(page,'value');assert.deepEqual(await sortState(page),['value','desc']);
+ assert.deepEqual((await shown()).map(r=>r[0]),expected.map(r=>r[0]),'the DXCC header returns to the value order');
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-055-05; TC-055-007. Band Activity row density at 1366x768: the result records
+// are presentation fixtures; the layout is the actual client.
+test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:30000},async t=>{
+ const period='2026-10-27T12:00:15.0000000Z',n=30;
+ const records=Array.from({length:n},(_,i)=>{const call=`K${i%10}A${String.fromCharCode(65+i%26)}${String.fromCharCode(65+(i*7)%26)}`;return {sequence:i,start_frame:186000+i,frequency_hz:300+i*90,snr_db:-20+i%15,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1};});
+ let state;
+ const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(page,app)=>{
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor,cursor+16),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:next<n,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+ }});
+ await page.waitForFunction(n=>document.querySelectorAll('#band-activity tr[data-sequence]').length===n,n,{timeout:25000});
+ const measure=()=>page.evaluate(()=>{const wrap=document.querySelector('#band-activity .op-table-wrap').getBoundingClientRect(),rows=[...document.querySelectorAll('#band-activity tr[data-sequence]')],td=rows[0].children[4];
+  return {height:rows[0].getBoundingClientRect().height,visible:rows.filter(r=>{const b=r.getBoundingClientRect();return b.top>=wrap.top&&b.bottom<=wrap.bottom;}).length,font:getComputedStyle(td).fontSize,normal:getComputedStyle(document.querySelector('main.op-app')).getPropertyValue('--op-font-normal').trim()};});
+ await page.screenshot({path:'test-results/ui-operating/band-activity-density-1366.png'});
+ const dense=await measure();
+ t.diagnostic(`row ${dense.height}px, ${dense.visible} rows visible, font ${dense.font}`);
+ assert.ok(dense.height<=24,`a desktop row is at most 24 px high (${dense.height})`);
+ assert.equal(dense.font,dense.normal||dense.font,'the font size is unchanged');
+ assert.ok(dense.visible>=10,`at least 10 rows visible at 1366x768 (${dense.visible})`);
+ // Touch: a coarse pointer keeps taller rows (CSS rule under pointer:coarse).
+ assert.ok(await page.evaluate(()=>[...document.styleSheets].some(sheet=>{try{return [...sheet.cssRules].some(r=>r.media&&/pointer:\s*coarse/.test(r.media.mediaText)&&[...r.cssRules].some(c=>c.selectorText==='#band-activity td'&&parseFloat(c.style.paddingTop)>=8));}catch{return false;}})),'a coarse pointer keeps tappable rows');
+ assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-009-05; TC-006-003. The transmit status line shows the station's SNTP clock
 // state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
 // CAT PTT setting is set in the page only, the server keeps transmit unsupported).
