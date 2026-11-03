@@ -252,7 +252,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #qso-more .ct-messages li{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 #qso-more .ct-text{flex:1;min-width:10ch;font-family:var(--op-mono)}
 #qso-more .ct-fields{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
-@container (max-width:75em){#controls .operating-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(18rem,1fr) auto;height:auto;min-height:100%}#band-activity{grid-row:1}#rx-focus{grid-row:2}}
+@container (max-width:75em){#controls .operating-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(18rem,1fr) auto;height:auto;min-height:100%}#band-activity{grid-row:1}#rx-focus{grid-row:2;align-self:stretch}}
 .op-drawer{position:fixed;top:var(--op-topbar,56px);right:0;bottom:0;width:min(36rem,100vw);z-index:40;display:flex;flex-direction:column;background:#0e1923;border-left:1px solid #2b4252;box-shadow:-18px 0 40px rgba(0,0,0,.45)}
 .op-drawer[hidden]{display:none!important}
 .op-drawer>header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #2b4252}
