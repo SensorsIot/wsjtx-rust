@@ -170,9 +170,15 @@ package WstxOfflineDecode {
              type4=12,58,1,2,1,3; currenttype5=12,22,1,3,11,25,3.
              Free-text alphabet is blank,0..9,A..Z,+-./?; trim trailing padding only,
              allblank invalid. Telemetry is71bits,18uppercasehex,firstdigit0..7,zero valid.
-             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based84
-             sections includeDX;0/>84 invalid. RTTY report529..599 step10, serial0..7999;
-            8001..8065 map published state/province tokens;8000/>8065 invalid.
+             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based86
+             sections includeDX (sectionTable: the WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS,
+             #24 S2b, which jt9 and ft8code use; it replaces the QEX 2020 84-entry table,
+             whose entries 16/25/44 GTA/MAR/NT are GH/NS/TER there and which lacks PE and NB);
+             0/>86 invalid. RTTY report529..599 step10, serial0..7999;
+            8001..8171 map the stateProvinceTable (WSJT-X 3.3.0-beta5
+             PACK77_RTTY_MULTIPLIERS: the QEX 65 states/provinces/DC plus the Dutch provinces
+             DR FR GD GR OV ZH ZL and X01..X99); 8000/>8171 invalid. The transmit packer
+             reads the same two tables (WstxTransmit::PackMessage).
              DXpedition report is even-30..32; nonstandard fullcall<=11base38characters;
              VHF report52..59,serial0..2047,gridAA00AA..RR99XX.
              Standard c28:DE0/QRZ1/CQ2; numericCQ3..1002=>CQ000..999;
@@ -343,7 +349,7 @@ package WstxOfflineDecode {
         attribute serial : Integer[0..1];
         attribute stateToken : String[0..1];
         doc /* type=rtty; exact wire exchange{kind,value} chooses serial0..7999 or
-             states8001..8065, reserved8000 invalid. report529..599 step10. Semantic
+             exchanges8001..8171 (stateProvinceTable), reserved8000 invalid. report529..599 step10. Semantic
              union arm names are not extra JSON fields. */
     }
     attribute def DxpeditionFields :> PayloadFields {
@@ -362,8 +368,8 @@ package WstxOfflineDecode {
         attribute transmitters : Integer;
         attribute 'class' : String;
         attribute section : String;
-        doc /* type=field_day,0.3=>1..16,0.4=>17..32; classA..F, section1..84 inclusiveDX.
-             S7=75WCF,76WI,0/>84 invalid; current83-line external file omitsDX. */
+        doc /* type=field_day,0.3=>1..16,0.4=>17..32; classA..F, section1..86 inclusiveDX
+             (sectionTable). S7=75WCF,76WI,84DX,85PE,86NB; 0/>86 invalid. */
     }
     attribute def NonstandardFields :> PayloadFields {
         attribute 'type' : String = "nonstandard";
