@@ -13,12 +13,12 @@ const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
-async function fixture(t,viewport,{inputDevice=null,beforeNavigate}={}){
+async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1}={}){
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport}),page=await context.newPage();
+  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
   const errors=[],sent=[];page.on('pageerror',e=>errors.push(e.message));
   page.on('websocket',ws=>ws.on('framesent',frame=>sent.push(JSON.parse(frame.payload))));
@@ -1095,6 +1095,73 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   await page.route('**/recording',()=>{});
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();assert.equal(await page.locator('#display-speed').inputValue(),'4');assert.equal(await page.evaluate(()=>speed),4);
   assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-050-07; TC-050-007 one frequency mapping for the waterfall pointer, the Rx/Tx lines
+// and the axis ticks, and the WSJT-X brackets of the lines following the mode.
+async function waterfallMappingPass(page,commands,settings,label){
+  const wait=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);assert.equal(commands.length,n,`${label} command ${n}: ${JSON.stringify(commands.slice(-3))}`);return commands.at(-1);};
+  // The oracle: the waterfall canvas's own box carries 0..3000 Hz.
+  const axis=async()=>{const b=await page.evaluate(()=>{const r=document.querySelector('#waterfall').getBoundingClientRect();return {x:r.left,w:r.width};});return hz=>b.x+hz*b.w/3000;};
+  const tickX=f=>page.evaluate(f=>{const s=document.querySelectorAll('#frequency-ruler > span')[f/100],r=s.getBoundingClientRect();return r.left+.5;},f);
+  const centre=key=>page.evaluate(key=>{const r=document.querySelector(`#waterfall-wrap .ct-${key}`).getBoundingClientRect();return r.left+r.width/2;},key);
+  const confirm=async(rx,tx)=>{settings.rx_hz=rx;settings.tx_hz=tx;await page.evaluate(()=>window.wstxContact.load());
+    await page.waitForFunction(([rx,tx])=>document.querySelector('#waterfall-wrap .ct-rx').dataset.hz===String(rx)&&document.querySelector('#waterfall-wrap .ct-txm').dataset.hz===String(tx),[rx,tx]);};
+  await page.waitForTimeout(150);
+  let x=await axis();
+  for(let f=0;f<=3000;f+=100)assert.ok(Math.abs(await tickX(f)-x(f))<=1,`${label}: axis tick ${f} Hz at ${await tickX(f)}, mapping ${x(f)}`);
+  const wf=await page.locator('#waterfall').boundingBox(),y=wf.y+wf.height*.6;
+  for(const f of [500,2500,1500]){
+    const px=await tickX(f),n=commands.length;await page.mouse.dblclick(px,y);
+    const c=await wait(n+1);assert.equal(c.action,'set_frequency');
+    assert.ok(Math.abs(c.rx_hz-f)<=2&&Math.abs(c.tx_hz-f)<=2,`${label}: double-click at the ${f} Hz tick sent Rx ${c.rx_hz} Tx ${c.tx_hz}`);
+    await confirm(c.rx_hz,c.tx_hz);
+    for(const key of ['rx','txm'])assert.ok(Math.abs(await centre(key)-px)<=1,`${label}: ${key} line at ${await centre(key)} for the pointer at ${px} (${f} Hz)`);
+  }
+  {const px=await tickX(1000),n=commands.length;await page.mouse.click(px,y);const c=await wait(n+1);
+    assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-1000)<=2,`${label}: click at the 1000 Hz tick sent Tx ${c.tx_hz}`);
+    await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-px)<=1,`${label}: Tx line at ${await centre('txm')} for ${px}`);}
+  {const from=await centre('txm'),to=await tickX(2000),n=commands.length;
+    await page.mouse.move(from,y);await page.mouse.down();await page.mouse.move(to,y,{steps:6});
+    assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: the dragged Tx line follows the pointer`);await page.mouse.up();
+    const c=await wait(n+1);assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-2000)<=2,`${label}: drag to the 2000 Hz tick sent Tx ${c.tx_hz}`);
+    await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: confirmed Tx line at the drop point`);}
+  x=await axis();
+  // The brackets: from the line over the occupied width to its right, in the line's colour.
+  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents};}));
+  for(const [period,width] of [[15000,50],[7500,4*12000/576],[15000,50]]){
+    await page.evaluate(period=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:period,transmitting:false,rx_level_db:null}}}})),period);
+    await page.waitForTimeout(50);
+    const got=await brackets();
+    for(const [i,colour] of [[0,'rgb(48, 208, 80)'],[1,'rgb(255, 64, 64)']]){const b=got[i];
+      assert.ok(b?.visible,`${label}: bracket ${i} shown (${JSON.stringify(b)})`);assert.equal(b.colour,colour);assert.equal(b.pointer,'none');
+      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
+      assert.ok(Math.abs(b.top-wf.y)<=1,`${label}: bracket at the top of the waterfall`);}
+  }
+  // A click inside a bracket still reaches the waterfall (within 1 px: a click's clientX is whole px).
+  {const b=(await brackets())[0],n=commands.length;await page.mouse.click((b.left+b.right)/2,b.top+b.height/2);const c=await wait(n+1);
+    assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-(b.hz+25))<=Math.max(2,3000/wf.width),`${label}: click in the Rx bracket sent Tx ${c.tx_hz}`);await confirm(settings.rx_hz,c.tx_hz);}
+}
+test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency mapping; the brackets follow the mode',{timeout:150000},async t=>{
+  for(const scale of [1,2]){
+    const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false};
+    const {page,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
+      const base=await (await fetch(app.origin+'/profile')).json();
+      await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{settings})}));
+      await contactCommands(p,commands);
+    }});
+    await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled,null,{timeout:45000});
+    // The station's own ticks are held back; the test's ticks set the mode.
+    await page.evaluate(()=>addEventListener('station-message',e=>{if(e.detail?.message?.type==='station.tick'&&!e.detail.test)e.stopImmediatePropagation();},true));
+    await waterfallMappingPass(page,commands,settings,`1366x768 dpr ${scale}`);
+    if(scale===2){assert.deepEqual(errors,[]);continue;}
+    await page.evaluate(()=>{for(const id of ['display-flatten','display-spectrum']){const box=document.querySelector('#'+id);box.checked=true;box.dispatchEvent(new Event('change'));}});
+    await page.locator('#display-speed').fill('4');await page.locator('#display-speed').dispatchEvent('input');
+    await waterfallMappingPass(page,commands,settings,'1366x768 Flatten, spectrum line, speed 4');
+    for(const [width,height] of [[900,700],[360,800]]){await page.setViewportSize({width,height});await waterfallMappingPass(page,commands,settings,`${width}x${height}`);}
+    assert.equal(commands.some(c=>c.action==='enable_tx'),false,'no pointer action enables Tx');
+    assert.deepEqual(errors,[]);
+  }
 });
 
 // Proves: CL-010-16, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
