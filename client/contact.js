@@ -899,7 +899,8 @@ function decorate(){
     const v=on?verdicts.get(tr.dataset.resultId):null;
     tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
-    if(v?.grey)tr.title='Directed CQ not addressed to my continent: never answered';else if(v)tr.title=`Strategy ${config().active}: rule ${v.rank+1}`;else tr.removeAttribute('title');
+    // #55 BandActivityHover: the verdict joins the row's other reasons.
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ not addressed to my continent: never answered';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   if(!on)return;
   // Matches go to the top of their period block in the station's order.
@@ -909,7 +910,9 @@ function decorate(){
     const matched=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).index-verdicts.get(b.dataset.resultId).index);
     if(!matched.length)return;
     const anchor=block.at(-1).nextSibling;
-    for(const tr of [...matched,...block.filter(r=>!matched.includes(r))])tbody.insertBefore(tr,anchor);
+    // #55 BandActivityValue: in the value order rows calling me stay above the strategy hits (value 2).
+    const first=typeof activitySortField!=='undefined'&&activitySortField==='value'?block.filter(r=>r.classList.contains('ba-tome')):[];
+    for(const tr of [...first,...matched.filter(r=>!first.includes(r)),...block.filter(r=>!matched.includes(r)&&!first.includes(r))])tbody.insertBefore(tr,anchor);
   };
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
