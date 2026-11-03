@@ -209,9 +209,28 @@ fn grid(mut n: u32, six: bool) -> Option<String> {
         String::from_utf8(out).ok()
     }
 }
-fn lists(text: &str, index: u32) -> Option<String> {
-    let a: Vec<String> = serde_json::from_str(text).ok()?;
-    a.get(index.checked_sub(1)? as usize).cloned()
+/// The WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171)
+/// in order; unpack and the transmit packer share them (WstxOfflineDecode codebook).
+pub fn arrl_sections() -> &'static [String] {
+    static T: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
+        ))
+        .expect("section table")
+    })
+}
+pub fn rtty_exchanges() -> &'static [String] {
+    static T: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../../fixtures/decoder/protocol-data/states_provinces.json"
+        ))
+        .expect("RTTY exchange table")
+    })
+}
+fn lists(table: &[String], index: u32) -> Option<String> {
+    table.get(index.checked_sub(1)? as usize).cloned()
 }
 fn suffix(c: &mut Call, on: bool, s: &str) -> Option<()> {
     if on {
@@ -280,10 +299,7 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8, table: Option<&HashTable>) -> Option<(St
                 return None;
             }
             let class_name = ((b'A' + cl as u8) as char).to_string();
-            let section = lists(
-                include_str!("../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"),
-                g(64, 7),
-            )?;
+            let section = lists(arrl_sections(), g(64, 7))?;
             Some((
                 format!(
                     "{} {}{} {transmitters}{class_name} {section}",
@@ -358,10 +374,7 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8, table: Option<&HashTable>) -> Option<(St
             let (s, exchange) = if raw < 8000 {
                 (format!("{raw:04}"), Exchange::Serial(raw))
             } else {
-                let s = lists(
-                    include_str!("../../../fixtures/decoder/protocol-data/states_provinces.json"),
-                    raw.checked_sub(8000)?,
-                )?;
+                let s = lists(rtty_exchanges(), raw.checked_sub(8000)?)?;
                 (s.clone(), Exchange::State(s))
             };
             Some((

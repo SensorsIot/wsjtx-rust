@@ -23,7 +23,10 @@ mod waveform;
 pub use channel::{Channel, ChannelWord};
 pub use hashes::{HashTable, MAX_HASH22, ihashcall};
 pub use history::DecodeState;
-pub use payload::{Call, CallKind, Exchange, Fields, Payload, PayloadStatus, unpack, unpack_with};
+pub use payload::{
+    Call, CallKind, Exchange, Fields, Payload, PayloadStatus, arrl_sections, rtty_exchanges,
+    unpack, unpack_with,
+};
 pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
 pub(crate) use waveform::gaussian_pulse;

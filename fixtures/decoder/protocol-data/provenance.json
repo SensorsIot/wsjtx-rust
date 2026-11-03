@@ -27,26 +27,38 @@
       "transform": "Matrix text normalized to LF with trailing whitespace removed; numeric matrix unchanged"
     },
     {
-      "archive_member": "ft4_ft8_public/arrl_rac_sections.txt",
-      "member_sha256": "55cee2d6f4dbc06ac53acb931839beafff672e5d872e3878aa25137e84541d55",
-      "entries": 84,
+      "source": "WSJT-X 3.3.0-beta5 (revision d89fe3) lib/77bit/packjt77_grammar.f90 PACK77_ARRL_SECTIONS",
+      "source_sha256": "0acb3f2ae372037ceda38e87cdec3890d00999f48cfee70eaf3d95380adc36b4",
+      "entries": 86,
       "path": "protocol-data/arrl_rac_sections.json",
-      "sha256": "72c4196558537c6b50c8b2ae628ef4ef47106db315fdbe26b1ed83cfd5ffe457",
-      "transform": "Ordered quoted lookup values extracted to JSON; no Fortran statements retained"
+      "sha256": "fe7db04908915ac1c31c0c3ee0012d06d82de8c045ae7f31d77cc30fadd1bc29",
+      "transform": "Ordered quoted lookup values extracted to JSON; no Fortran statements retained",
+      "supersedes": {
+        "archive_member": "ft4_ft8_public/arrl_rac_sections.txt",
+        "member_sha256": "55cee2d6f4dbc06ac53acb931839beafff672e5d872e3878aa25137e84541d55",
+        "entries": 84,
+        "reason": "#24 S2b: WSJT-X 3.3.0-beta5 jt9/ft8code pack and unpack with these tables (QEX 2020 sections 16/25/44 GTA/MAR/NT are GH/NS/TER, PE and NB added; Dutch provinces and X01-X99 added to the RTTY exchanges)"
+      }
     },
     {
-      "archive_member": "ft4_ft8_public/states_provinces.txt",
-      "member_sha256": "77fe41de5d83206820b69fe0dab4d911d8b8080309ce4906af2d4d4873d18a35",
-      "entries": 65,
+      "source": "WSJT-X 3.3.0-beta5 (revision d89fe3) lib/77bit/packjt77_grammar.f90 PACK77_RTTY_MULTIPLIERS",
+      "source_sha256": "0acb3f2ae372037ceda38e87cdec3890d00999f48cfee70eaf3d95380adc36b4",
+      "entries": 171,
       "path": "protocol-data/states_provinces.json",
-      "sha256": "df1bfcb4f2f85589ff335ee2d3ec1c6d8a45c3d6c9215f5beca0229bcfe046fd",
-      "transform": "Ordered quoted lookup values extracted to JSON; no Fortran statements retained"
+      "sha256": "13b736630a79c64ca4ef7bb74813f246af1f06acdc1416b10481c1fb8abd6322",
+      "transform": "Ordered quoted lookup values extracted to JSON; no Fortran statements retained",
+      "supersedes": {
+        "archive_member": "ft4_ft8_public/states_provinces.txt",
+        "member_sha256": "77fe41de5d83206820b69fe0dab4d911d8b8080309ce4906af2d4d4873d18a35",
+        "entries": 65,
+        "reason": "#24 S2b: WSJT-X 3.3.0-beta5 jt9/ft8code pack and unpack with these tables (QEX 2020 sections 16/25/44 GTA/MAR/NT are GH/NS/TER, PE and NB added; Dutch provinces and X01-X99 added to the RTTY exchanges)"
+      }
     }
   ],
   "fixture_files": [
     {
       "path": "independent-vector-tool/boundary_cases.py",
-      "sha256": "247e3f4ec59d666d7b8a58daae3966f2140a6b392bb42734fe3694df8eaa2845"
+      "sha256": "b90a7462911a46397e74eed45d295e7e661c5c83be4833e7e5d36c504aac1293"
     },
     {
       "path": "independent-vector-tool/generate.py",
@@ -54,7 +66,7 @@
     },
     {
       "path": "independent-vector-tool/README.md",
-      "sha256": "3ecb929761885367c977bb53ea329d35a0c7856ef11ab389fb328c90dfa3d00e"
+      "sha256": "aa475892701877ae5910655101b112980fc37d5d688206cca53347af73dd42c5"
     },
     {
       "path": "independent-vectors/manifest.json",
@@ -62,7 +74,7 @@
     },
     {
       "path": "payload-boundary-cases.json",
-      "sha256": "3671c9c62c8806528b49259635f4dd43fe9ca4eafd46c55d43678fed6b400e86"
+      "sha256": "8fdfff8018ac1627919473479a96c3e22e34e2e4c93c513912aa00468662ecc3"
     },
     {
       "path": "quality-cases.json",
