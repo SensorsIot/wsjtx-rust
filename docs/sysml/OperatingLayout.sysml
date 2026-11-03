@@ -635,12 +635,13 @@ attribute def ActivityOrdering {
              are standard messages to my call from another station than the partner (the
              partner of the last QSO stays excluded after it ended, until another contact
              runs): while a QSO runs, those within +/-50 Hz of my Rx or Tx offset
-             (QsoPaneCrowding), each "HH:MM:SS ⚠ <text>  <SNR>" ("22:48:15 ⚠ HB9BLA DL1ABC
+             (QsoPaneCrowding), each "HH:MM:SS ⚠ <message>  <SNR>" ("22:48:15 ⚠ HB9BLA ◂ DL1ABC
              JO31  −8 dB"); double-click (or Enter) switches the contact to that station and
              replies (SelectDecodedRow with replace, then SetEnableTx on; ChangeContact keeps
              Enable Tx on). When no QSO runs (idle, finished, or an own CQ), every station
              calling my call on any frequency, as soon as its row is decoded, each
-             "HH:MM:SS ◂ <text>  <SNR>"; double-click (or Enter) answers (select, then
+             "HH:MM:SS  <message>  <SNR>" ("22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB");
+             double-click (or Enter) answers (select, then
              SetEnableTx on). Stations that do not call me are not listed (Band Activity
              shows them). When no row qualifies, one muted line says so instead of an empty
              list: "nobody calling" when no QSO runs, "nobody else calling" while one runs.
@@ -670,13 +671,31 @@ attribute def ActivityOrdering {
              area below the controls, in the free height of the card (item 8), holds the
              ContactSnapshot
              dialogue of the running QSO only: one line per entry, oldest first and newest
-             at the bottom, "HH:MM:SS ◂ <text>  <SNR>" for a message received from the
-             partner and "HH:MM:SS ▸ <text>" for one we transmitted (HH:MM:SS the UTC period
-             start), "×N" for N > 1 repeats, no frequency and no other station, then the
+             at the bottom, "HH:MM:SS  <message>  <SNR>" for a message received from the
+             partner and "HH:MM:SS  <message>" for one we transmitted (HH:MM:SS the UTC period
+             start; "22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB", "22:51:30  HB9BLA ▸ CT1BFP +08"),
+             "×N" for N > 1 repeats, no frequency and no other station, then the
              Others (item 3); the area scrolls inside the card, kept at its newest line, and
              never grows the page (TC-007-009);
              it is gone with the QSO (completed, logged or cancelled), as the rest of the
              QSO view, and a reload or another browser shows the same entries.
+             <message> in the QSO area (items 3 and 7; #60, operator 2026-11-03), in fixed
+             columns: my call always left, the partner (or the other caller) always right,
+             then the exchange, with an arrow between the two calls pointing to the
+             receiver: "<my call> ◂ <other call> <exchange>" for a message the other station
+             sent to me ("HB9BLA ◂ CT1BFP IM59": CT1BFP sends to HB9BLA; every Others line)
+             and "<my call> ▸ <other call> <exchange>" for one I sent ("HB9BLA ▸ CT1BFP +08",
+             the on-air "CT1BFP HB9BLA +08"), in the line's own colour; there is no ◂/▸
+             direction mark after the time, the arrow between the calls shows the direction.
+             The arrow is there only when both calls are known: for a decoded row (Others)
+             the decoded fields to is my call and from has a call text (a hashed call
+             counting when its call is known, shown as decoded, "<PJ4/K1ABC>"); for a
+             dialogue entry the first two words of the text are, for a received message, my
+             call and the partner's call, for a sent one the partner's call and my call (a
+             hashed form "<CALL>" counting as CALL). A CQ (mine or another station's), a
+             message with an unknown hashed call ("<...>") or free text is shown as sent
+             without an arrow ("22:51:00  CQ HB9BLA JN37"). Messages between two other
+             stations are not QSO pane lines.
              There is no LAST row, no crowding badge and no status line
              for a finished contact. A status line under the header is shown only for an
              exception: a refused transmission, a halt pending, an unknown contact state.

@@ -4204,7 +4204,7 @@ package WstxRequirements {
              CL-050-05
              Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
              Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and the Others with no row; (ui-operating TC-007-009) the Others idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) the Others with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
-             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller "HH:MM:SS ◂ …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as "HH:MM:SS ⚠ …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
+             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller "HH:MM:SS  …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as "HH:MM:SS ⚠ …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4290,5 +4290,27 @@ package WstxRequirements {
     dependency CL_054_02_verified_by_TC_054_003 from 'CL-054-02' to 'TC-054-003';
     dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
+    // #60 QSO pane direction arrow between the calls (operator 2026-11-03).
+    requirement 'CL-060-01' {
+        doc /* (#60) The QSO pane's dialogue and Others lines show each message between me and another station in fixed columns, my call always left and the other station's call always right, then the exchange, with an arrow between the two calls pointing to the receiver, and no ◂/▸ direction mark after the time: "HH:MM:SS  <my call> ◂ <other call> <exchange>  <SNR>" for a message received from the partner or from a caller ("22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB", CT1BFP sends to HB9BLA) and "HH:MM:SS  <my call> ▸ <partner call> <exchange>" for one I sent ("22:51:30  HB9BLA ▸ CT1BFP +08", on the air "CT1BFP HB9BLA +08"); a ⚠ Other keeps its ⚠ after the time. The arrow and the column order are applied only when both calls are known (Others: the decoded fields to is my call and from carries a call text, a known hashed call shown as decoded "<CALL>"; dialogue: the first two words are my call and the partner's call in the on-air order of the direction, "<CALL>" counting as CALL); a CQ (mine or another's), an unknown hashed call ("<...>") or free text is shown as sent without an arrow. The pane does not grow (TC-007-009). Details: WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js";
+    }
+    dependency CL_060_01_to_FR_007 from 'CL-060-01' to 'FR-007';
+    dependency CL_060_01_to_FR_019 from 'CL-060-01' to 'FR-019';
+    verification 'TC-060-001' {
+        doc /* TC-060-001 — Direction arrow between the calls in the QSO pane
+             CL-060-01
+             Setup: actual candidate server and Chromium; routed ContactSnapshot of a running QSO with HB9BLA and the partner CT1BFP whose dialogue holds a sent CQ, a received message, a sent report and a received message with my call hashed and unknown; routed live rows of callers of my call with known calls, one whose from is a hashed unknown call and one a known hashed call.
+             Steps: read the text of every #qso-dialogue and #qso-others line while the QSO runs and the #qso-others lines idle; screenshots at 1366x768 and 360x800.
+             Expected (independent oracle: the literal operator format of #60): dialogue "22:51:00  CQ HB9BLA JN37", "22:51:15  HB9BLA ◂ CT1BFP IM59  +8 dB", "22:51:30  HB9BLA ▸ CT1BFP +08", "22:51:45  <...> CT1BFP RR73  −3 dB"; idle Others "12:00:15  HB9BLA ◂ DL1ABC JO31  −8 dB", "12:00:15  HB9BLA <...> RR73  −12 dB", "12:00:15  HB9BLA ◂ <PJ4/K1ABC> 73  −5 dB" and "12:00:15  HB9BLA ◂ EA8BIA IL18  0 dB"; during the QSO the near caller "12:00:15 ⚠ HB9BLA ◂ EA8BIA IL18  0 dB"; no line has ◂ or ▸ right after the time; no horizontal overflow at 360 px and no page scroll at 1366x768.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-060-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_060_01_verified_by_TC_060_001 from 'CL-060-01' to 'TC-060-001';
 
 }
