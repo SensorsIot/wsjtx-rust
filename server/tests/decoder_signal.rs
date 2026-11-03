@@ -715,7 +715,7 @@ fn official_modern_recording_baselines() {
 // lower bound, not exhaustive truth (CL-007-03).
 #[test]
 fn recorded_corpus_reaches_jt9_deep_decodes() {
-    const MINIMUM: usize = 380;
+    const MINIMUM: usize = 398;
     let reference: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/jt9-deep-reference.json"
     ))

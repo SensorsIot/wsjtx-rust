@@ -75,12 +75,21 @@ package WstxOfflineDecode {
         attribute fecIterations : Integer = 30;
         attribute recoverySums : Integer = 2;
         attribute subtractionPasses : Integer = 3;
-        attribute subtractions : Integer = 32;
+        attribute subtractions : Integer = 200;
         attribute minFrequencyHz : Real = 200.0;
         attribute maxFrequencyHz : Real = 3500.0;
-        attribute costasThreshold : Real = 2.7;
+        attribute costasThreshold : Real = 2.0;
         attribute maxHardDisagreements : Integer = 36;
-        doc /* maxHardDisagreements applies to FT8 only (ft8b); FT4 (ft4_decode) has none. */
+        attribute ft8PadBeforeFrames : Integer = 24000;
+        attribute ft8PadAfterFrames : Integer = 7680;
+        attribute weakSnrDb : Real = -25.0;
+        attribute weakSnrMaxCostasHits : Integer = 10;
+        attribute duplicateSubtractionSeparationHz : Real = 50.0;
+        doc /* maxHardDisagreements applies to FT8 only (ft8b); FT4 (ft4_decode) has none.
+             #56 slice 3: costasThreshold 2.0 (was 2.7; jt9 sync8 syncmin 1.3 relative to its
+             40th-percentile baseline admits these frames), subtractions 200 per window (was 32;
+             jt9 subtracts every decode, MAX_EARLY 200). ft8Pad*, weakSnr* and
+             duplicateSubtractionSeparationHz: see Ft8PaddedResidual and the aggregate. */
     }
     attribute def ModeParameters {
         attribute mode : Mode;
@@ -396,7 +405,7 @@ package WstxOfflineDecode {
         in otherPower : Real;
         return ratio : Real = (tones - 1) * expectedPower / otherPower;
         doc /* Call onlywhenotherPower>0; bothzero rejects, positive/zero outranksfinite.
-             Require>=2.7; zero-basedFT8sync0..6/36..42/72..78,FT4sync1..4/34..37/67..70/100..103.
+             Require>=costasThreshold (2.0); zero-basedFT8sync0..6/36..42/72..78,FT4sync1..4/34..37/67..70/100..103.
              Localmaxhalf-symbol/half-tone, ties scoredesc/freqasc/timeasc. */
     }
     attribute def ComplexCoefficient {
@@ -426,7 +435,27 @@ package WstxOfflineDecode {
              origin/modepreserved,source/job/boot/generationauthorityremainoutsidepuremodem.
              Originalwindowimmutable; worker-ownedresidualcopyhasSAMEorigin/mode/length.
              L=samplescount. LiveFT8<=360000frames/FT4<=180000;finiteutility<=360000.
-             No gaps/paddingfabricated. Allhistory/windows/residuals/FFTs inside64MiB. */
+             No gaps fabricated; the only padding is Ft8PaddedResidual's private zeros (#56).
+             Allhistory/windows/residuals/FFTs inside64MiB. */
+    }
+    action def Ft8PaddedResidual {
+        in source : ModemSampleWindow;
+        out residual : Real[0..360000];
+        doc /* #56 slice 3, after jt9 sync8 (lags -62..+62, DT -2.5..+2.5 s) and ft8b, which
+             read symbols outside the buffer as zero. When L+24000+7680<=360000 the FT8
+             worker-owned residual is 24000 zero frames (2.0 s), the L window frames, then
+             7680 zero frames (0.64 s); otherwise no padding. Search, band limit, fine
+             synchronization, metrics, channel decode, known-word fit and subtraction run on
+             these padded coordinates exactly as on an unpadded window, so a frame that runs
+             past either window edge (its missing symbols zero) is found, verified and
+             subtracted like any other. It is published only when it starts no earlier than
+             half a symbol (960 frames) before the window and ends no later than half a symbol
+             after it; its reported canonical start is window origin + padded start - 24000,
+             floored at 0, and its SNR is measured on the window frames at max(start, window
+             start). A frame outside that tolerance is subtraction-only: never published,
+             never a record. The padding is reset to zero after each pass's subtractions, so
+             it never carries residual energy; the original window stays immutable. FT4 has
+             no padding. */
     }
     attribute def Ft8PhysicalLimits {
         attribute inputRate : Integer = 12000;
@@ -489,8 +518,9 @@ package WstxOfflineDecode {
              Lowtaperj0..T:.5*(1+cos(pi*(T-j)/T));hightaperjK-1-T..K-1:
              .5*(1+cos(pi*(j-(K-1-T))/T));interior1.
              UnnormalizedpositiveinverseFFT,scale1/sqrt(N1*N2),200complexsamples/s.
-             Actualmixedcenter=i0*df; everytrial/reportaccountsforit. Paddingisprivate,
-             cannotadmitincomplete151680frames. Sharedplanned/scalarRustFFT6.4.1,
+             Actualmixedcenter=i0*df; everytrial/reportaccountsforit. L is the
+             Ft8PaddedResidual length; frames may extend into its zero padding (#56), never
+             beyond it. Sharedplanned/scalarRustFFT6.4.1,
              sameconventions/cacheowner; real/complex64transform/metric/convolutionsums
              overcanonicalfloat32input, finalLLRfloat32; allstoragewithin64MiB. */
     }
@@ -499,18 +529,18 @@ package WstxOfflineDecode {
         in coarseStartFrame : Integer;
         in coarseCarrierHz : Real;
         out fine : PhysicalFinePoint[0..1];
-        doc /* CoarseCostasratio>=2.7/currentgrid/suppression/order unchanged.
+        doc /* CoarseCostasratio>=costasThreshold (2.0)/currentgrid/suppression/order unchanged.
              UseFt8BandLimit; P(b,d)=sumover21Costassymbolsabs(sumj0..31
              z[b+32*s+j]*exp(-i2pi*(tone_s/32+d/200)*j))Squared.
              Independentsymbolphases. Firstb=round(coarseStart/60)+[-10..10],d0;
              thenfrequencytweaks[-2.5..2.5]step.5atbestb; rebuildatbestcarrier;
              finalb=bestb+[-4..4],d0. Descendingpower,tiesascendingfrequency/start.
-             EverypointcompleteORIGINAL151680frames/carrier200..3500inclusive.
+             Everypointcomplete151680framesinsidethe Ft8PaddedResidual/carrier200..3500inclusive.
              Outputcanonicalstart60*b includesramp,notGUI DT/UTC.
              FFT32eachsymbol,hardtone=largestabsbin0..7,tieslower;>=9/21Costashits.
              QualifyBEFORE256cap,257th=>searchLimited. Post-refinementcanonicalstarts:
              b=floor(s/60+.5),nonnegativehalftiesUP;clamp0..floor((L-151680)/60).
-             RechecktoneevidenceatnearestCOMPLETEbasebandorigin/finalcarrier,notpadding.
+             RechecktoneevidenceatnearestCOMPLETEbasebandorigin/finalcarrier (zeros of Ft8PaddedResidual count as evidence of no tone).
              PRESERVEreportedcanonicalstart s; mappingonlyphysicalguardbeforepublication/SIC.
              NOcrosssymbol/blockfractiongateforFT8. */
     }
@@ -586,7 +616,7 @@ package WstxOfflineDecode {
              sums of exact prefix sums, O(frame) per subtraction, no FFT padding (#47).
              Atedge-distancea0..2000 dividebyavailableweight sumj[-2000..a]h[j].
              Subtract2*Re(reference[k]*y[k])ONLYwithinframe; originalsourceimmutable.
-             <=3passes/32verifiedsubtractions, invalidatepassFFTafterresidualchanges.
+             <=3passes/200verifiedsubtractions, invalidatepassFFTafterresidualchanges.
              Directscalarconvolution/edgesareindependentoracle; no circularwrap.
              No additionalowner/provider/job/source orTXauthority. */
     }
@@ -716,7 +746,7 @@ package WstxOfflineDecode {
              Centeredlinearconvolution (same exact prefix-sum window sums, R700),
              NOedgeavailabilitycorrection.
              Referenceincludesramp,alreadycanonicalorigin,NOsecond-576frameadjustment.
-             Originalsamplesimmutable,3passes/32verifiedsubtractions,passFFTinvalidated.
+             Originalsamplesimmutable,3passes/200verifiedsubtractions,passFFTinvalidated.
              Sharedpurewaveform/measurement/FFT/cancelownership,within64MiB. */
     }
     action def AdmitDecode {
@@ -768,7 +798,7 @@ package WstxOfflineDecode {
              2 sums, rank91). FT8 hard disagreements<=36; never all-zero; H+CRC mandatory.
              FT8 CQ a-priori passes only, no other hints/semanticdrop; physicalsyncguardsatfinalreportedcoordinates.
              Sharedfullrateknownword3gridmeasurement,mode-specificcomplexenvelopeSIC,
-             <=3passes/32verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
+             <=3passes/200verifiedsubtractions; originalsimmutable/no weakrelativeenergystop.
              SharedFFT/bandlimit/finesync/bitmetrics/channel/convolutionboundary,modeparameters;
              onecurrentmode/windowplan/scratchcache andcurrentpassFFT,droponepochreset;
              no globalmutablecommonblocks; residualchangeinvalidatesFFT.
@@ -777,6 +807,18 @@ package WstxOfflineDecode {
              within64MiB. Onepurewaveformowner7/futurereuse9,noTXauthority.
              Displayfixed0..3000Hzindependentofdecode200..3500; no sharedmodem/displayFFTplan.
              Dedupmode/payload/startwithinhalfsymbol,retainlaterrepeatedtransmissions.
+             Within a window (#56 slice 3) a verified word whose payload and start (within half
+             a symbol) repeat an earlier word of the window is skipped when its carrier is
+             within 50 Hz of that word's; on a carrier more than 50 Hz away it is subtracted
+             like ft8b (which subtracts before ft8_decode drops the duplicate message) but
+             publication still follows the history dedup above, so it is not published twice.
+             ft8b weak-word guard (nsync<=10 and xsnr<-25): an FT8 word whose final point has
+             at most 10 of 21 hard Costas hits and whose unfloored MeasureFrame SNR is below
+             -25 dB is rejected before the window's duplicate record, publication and
+             subtraction. Deliberate deviation: ft8b subtracts such a word before rejecting
+             it; the station does not. The guard needs a measured SNR, so it does not apply
+             to a subtraction-only partial frame or a word without an SNR (carrier outside
+             the baseline band, no baseline). FT8 frames run on Ft8PaddedResidual coordinates.
              Schema/history/source/job/epoch/resultauthorityunchanged; modelisnottestverdict. */
     }
     action def ReconstructGfskReference {

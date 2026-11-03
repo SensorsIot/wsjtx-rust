@@ -1214,3 +1214,59 @@ fn ranked_refinement_matches_exhaustive_grid_search() {
         }
     }
 }
+
+/// The #56 Ft8PaddedResidual case: a strong FT8 frame that began 1.5 s before the window
+/// (its first 1.5 s, including the first Costas block, missing) masks a weak complete frame
+/// on almost the same carrier.
+fn partial_interferer_window() -> (Vec<f32>, Vec<u8>, Vec<u8>) {
+    let channel = Channel::new();
+    let word = |seed: u8| {
+        let bits: [u8; 77] = std::array::from_fn(|i| ((i as u8).wrapping_mul(seed) >> 3) & 1);
+        channel.tones(&channel.encode(&bits, Mode::Ft8), Mode::Ft8)
+    };
+    let (strong, weak) = (word(91), word(37));
+    let a = quadratures(Mode::Ft8, &strong, 1000.).unwrap();
+    let b = quadratures(Mode::Ft8, &weak, 1003.).unwrap();
+    let mut state = 7u64;
+    let samples = (0..180000usize)
+        .map(|k| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let mut x = ((state >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.2;
+            if let Some(w) = a.get(k + 18000) {
+                x += w[0] as f64;
+            }
+            if let Some(w) = k.checked_sub(6000).and_then(|i| b.get(i)) {
+                x += 0.08 * w[0] as f64;
+            }
+            x as f32
+        })
+        .collect();
+    (samples, strong, weak)
+}
+
+// Proves: FR-003, FR-004, CL-007-03 (#56 Ft8PaddedResidual). A frame that runs past the
+// window start is found and subtracted but never published; the weak frame under it decodes.
+#[test]
+fn partial_frame_interferer_is_subtracted_not_published() {
+    let channel = Channel::new();
+    let (samples, strong, weak) = partial_interferer_window();
+    let decoded = Decoder::new()
+        .decode(&samples, Mode::Ft8, &|| false)
+        .unwrap();
+    let tones = |d: &Decode| {
+        let bits: [u8; 77] = std::array::from_fn(|i| d.payload.payload77.as_bytes()[i] - b'0');
+        channel.tones(&channel.encode(&bits, Mode::Ft8), Mode::Ft8)
+    };
+    assert!(
+        decoded
+            .iter()
+            .any(|d| tones(d) == weak && d.start_frame.abs_diff(6000) <= 240),
+        "weak complete frame under the partial interferer: {decoded:?}"
+    );
+    assert!(
+        decoded.iter().all(|d| tones(d) != strong),
+        "a frame starting 1.5 s before the window is never published: {decoded:?}"
+    );
+}

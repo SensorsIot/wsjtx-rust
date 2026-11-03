@@ -141,6 +141,21 @@ pub(super) async fn supports(
     };
     Ok(bitmetrics::physical_accepts(pass.plan.mode, &rows))
 }
+/// The physical check at a reported point and its hard Costas hits (ft8b nsync).
+pub(super) async fn support(
+    pass: &mut PassBand<'_>,
+    c: Candidate,
+    budget: &mut CpuBudget<'_>,
+) -> Result<(bool, usize), DecodeError> {
+    let Some(rows) = pass.rows(c.start, c.frequency, budget).await? else {
+        return Ok((false, 0));
+    };
+    let mode = pass.plan.mode;
+    Ok((
+        bitmetrics::physical_accepts(mode, &rows),
+        bitmetrics::physical_hits(mode, &rows).0,
+    ))
+}
 pub(super) async fn qualify(
     pass: &mut PassBand<'_>,
     coarse: Candidate,
