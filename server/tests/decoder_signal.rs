@@ -715,7 +715,7 @@ fn official_modern_recording_baselines() {
 // lower bound, not exhaustive truth (CL-007-03).
 #[test]
 fn recorded_corpus_reaches_jt9_deep_decodes() {
-    const MINIMUM: usize = 398;
+    const MINIMUM: usize = 401;
     let reference: Value = serde_json::from_str(include_str!(
         "../../fixtures/decoder/jt9-deep-reference.json"
     ))
@@ -725,7 +725,7 @@ fn recorded_corpus_reaches_jt9_deep_decodes() {
     );
     let canonical = |text: &str| text.replace(" R -", " R-").replace(" R +", " R+");
     let decoder = Decoder::new();
-    let (mut found, mut total) = (0, 0);
+    let (mut found, mut total, mut copies) = (0, 0, 0);
     for case in reference["cases"].as_array().unwrap() {
         let input = case["input"].as_str().unwrap();
         let file = if input == "WSTX_DECODER_OFFICIAL_FT8" {
@@ -756,22 +756,36 @@ fn recorded_corpus_reaches_jt9_deep_decodes() {
             }
             total += 1;
             let text = r["text"].as_str().unwrap();
-            if decoded.iter().any(|d| {
+            let same = |d: &&Decode| {
                 d.payload
                     .text
                     .as_deref()
                     .is_some_and(|t| canonical(t) == text)
-                    && (d.frequency_hz - r["freq"].as_f64().unwrap()).abs() <= 5.
-            }) {
+            };
+            if decoded
+                .iter()
+                .filter(same)
+                .any(|d| (d.frequency_hz - r["freq"].as_f64().unwrap()).abs() <= 5.)
+            {
                 found += 1;
+            } else if decoded.iter().any(|d| same(&d)) {
+                // jt9 and the station each publish a message once per period: the first copy
+                // their own candidate order verifies (ft8_decode drops a repeated msg37). A
+                // message on the air on several carriers (PA3EPP SP8NFO KN09 at 906 Hz and
+                // 100 Hz-spaced images, jt9 keeping the 1056 Hz one) is found on another copy.
+                found += 1;
+                copies += 1;
+                eprintln!("JT9_PARITY {input}: {text} found on another carrier");
             } else {
                 missing.push(text);
             }
         }
         eprintln!("JT9_PARITY {input}: missing {missing:?}");
     }
-    eprintln!("JT9_PARITY total {found}/{total}");
+    eprintln!("JT9_PARITY total {found}/{total}, {copies} on another carrier");
     assert_eq!(total, 409);
+    // Only the one known multi-carrier message is matched on another copy.
+    assert!(copies <= 1, "{copies} decodes matched on another carrier");
     assert!(
         found >= MINIMUM,
         "{found}/{total} jt9 deep decodes found, below {MINIMUM}"

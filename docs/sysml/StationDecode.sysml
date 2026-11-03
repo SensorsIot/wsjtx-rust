@@ -85,11 +85,16 @@ package WstxOfflineDecode {
         attribute weakSnrDb : Real = -25.0;
         attribute weakSnrMaxCostasHits : Integer = 10;
         attribute duplicateSubtractionSeparationHz : Real = 50.0;
+        attribute dataPointSteps : Integer = 2;
+        attribute dataPointTweakHz : Real = 0.5;
+        attribute retrySeparationHz : Real = 50.0;
         doc /* maxHardDisagreements applies to FT8 only (ft8b); FT4 (ft4_decode) has none.
              #56 slice 3: costasThreshold 2.0 (was 2.7; jt9 sync8 syncmin 1.3 relative to its
              40th-percentile baseline admits these frames), subtractions 200 per window (was 32;
              jt9 subtracts every decode, MAX_EARLY 200). ft8Pad*, weakSnr* and
-             duplicateSubtractionSeparationHz: see Ft8PaddedResidual and the aggregate. */
+             duplicateSubtractionSeparationHz: see Ft8PaddedResidual and the aggregate.
+             #56 slice 4: dataPoint* see Ft8DataPoint; retrySeparationHz see the aggregate
+             (Ft8RetryOverlapped). */
     }
     attribute def ModeParameters {
         attribute mode : Mode;
@@ -544,6 +549,24 @@ package WstxOfflineDecode {
              PRESERVEreportedcanonicalstart s; mappingonlyphysicalguardbeforepublication/SIC.
              NOcrosssymbol/blockfractiongateforFT8. */
     }
+    action def Ft8DataPoint {
+        in source : ModemSampleWindow;
+        in fine : PhysicalFinePoint;
+        out alternative : PhysicalFinePoint[0..1];
+        doc /* #56 slice 4. Used only when no metric family (unassisted or CQ a-priori) of
+             the fine point yields an accepted word. Over carriers fine+{-0.5,0,+0.5} Hz
+             (dataPointTweakHz) and baseband origins b=fine/60+[-2..2] (dataPointSteps, 5 ms),
+             each point complete inside the Ft8PaddedResidual and carrier 200..3500: Ft8BandLimit
+             rows as for the metric families; energy = sum over the 79 symbols of the Costas
+             symbol's known-tone power, or the data symbol's largest tone power. The highest
+             energy wins; ties keep the first point in carrier-then-origin order. If it differs
+             from the fine point, Ft8ObserveMetricFamilies runs once more there, physical gate
+             included, and an accepted word continues from that point (known-word refinement,
+             physical check, SNR, subtraction) exactly as a word of the fine point would.
+             Rationale: the Costas-only sync power sees 21 of 79 symbols; next to an
+             interferer it can settle just outside the region where the word decodes. ft8b
+             has no such step; it only adds words, each under every later check. */
+    }
     action def Ft8ObserveMetricFamilies {
         in source : ModemSampleWindow;
         in point : PhysicalFinePoint;
@@ -819,6 +842,14 @@ package WstxOfflineDecode {
              it; the station does not. The guard needs a measured SNR, so it does not apply
              to a subtraction-only partial frame or a word without an SNR (carrier outside
              the baseline band, no baseline). FT8 frames run on Ft8PaddedResidual coordinates.
+             Ft8RetryOverlapped (#56 slice 4): an FT8 candidate of a pass whose verification
+             yields no word (Ft8DataPoint included) and which a frame subtracted in that pass
+             overlaps (carriers within retrySeparationHz 50 Hz, starts less than one frame
+             apart) is qualified again (Ft8FineSynchronization from its fine point) on the next
+             pass's residual and, if it qualifies and no candidate of that pass lies within
+             1 Hz and 120 frames of it, appended in order after the pass's own candidates; the
+             256 cap counts it. Requalification runs in parallel and is replayed in order, so
+             the decode set stays independent of the thread count (CL-057-02).
              Schema/history/source/job/epoch/resultauthorityunchanged; modelisnottestverdict. */
     }
     action def ReconstructGfskReference {

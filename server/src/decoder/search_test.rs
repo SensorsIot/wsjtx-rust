@@ -1270,3 +1270,177 @@ fn partial_frame_interferer_is_subtracted_not_published() {
         "a frame starting 1.5 s before the window is never published: {decoded:?}"
     );
 }
+
+/// A 15 s FT8 window: uniform noise of the given peak-to-peak width plus frames (tones,
+/// carrier, start relative to the window, possibly negative or past the end, amplitude).
+fn ft8_window(frames: &[(&[u8], f64, isize, f64)], seed: u64, noise: f64) -> Vec<f32> {
+    let waves = frames
+        .iter()
+        .map(|&(tones, carrier, start, amplitude)| {
+            (
+                quadratures(Mode::Ft8, tones, carrier).unwrap(),
+                start,
+                amplitude,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut state = seed;
+    (0..180000isize)
+        .map(|k| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let mut x = ((state >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * noise;
+            for (wave, start, amplitude) in &waves {
+                if let Some(w) = usize::try_from(k - start).ok().and_then(|i| wave.get(i)) {
+                    x += amplitude * w[0] as f64;
+                }
+            }
+            x as f32
+        })
+        .collect()
+}
+fn ft8_word(seed: u8) -> Vec<u8> {
+    let channel = Channel::new();
+    let bits: [u8; 77] = std::array::from_fn(|i| ((i as u8).wrapping_mul(seed) >> 3) & 1);
+    channel.tones(&channel.encode(&bits, Mode::Ft8), Mode::Ft8)
+}
+fn decoded_tones(d: &Decode) -> Vec<u8> {
+    let channel = Channel::new();
+    let bits: [u8; 77] = std::array::from_fn(|i| d.payload.payload77.as_bytes()[i] - b'0');
+    channel.tones(&channel.encode(&bits, Mode::Ft8), Mode::Ft8)
+}
+
+// Proves: FR-003, FR-004, CL-007-03 (#56 Ft8PaddedResidual, end edge). A strong frame that
+// runs 0.64 s past the window end is subtracted, not published; the weak frame under it decodes.
+#[test]
+fn frame_past_the_window_end_is_subtracted_not_published() {
+    let (strong, weak) = (ft8_word(91), ft8_word(37));
+    let samples = ft8_window(
+        &[(&strong, 1000., 36000, 1.), (&weak, 1003., 6000, 0.08)],
+        7,
+        0.2,
+    );
+    let decoded = Decoder::new()
+        .decode(&samples, Mode::Ft8, &|| false)
+        .unwrap();
+    assert!(
+        decoded
+            .iter()
+            .any(|d| decoded_tones(d) == weak && d.start_frame.abs_diff(6000) <= 240),
+        "weak complete frame under the end-edge interferer: {decoded:?}"
+    );
+    assert!(
+        decoded.iter().all(|d| decoded_tones(d) != strong),
+        "a frame ending 0.64 s after the window is never published: {decoded:?}"
+    );
+}
+
+// Proves: FR-003, CL-007-03 (#56 Ft8PaddedResidual publication boundary). A frame starting up
+// to half a symbol (960 frames) before the window is published at start 0; one starting
+// further before is not.
+#[test]
+fn half_symbol_publication_boundary() {
+    let tones = ft8_word(53);
+    for (start, published) in [(-900isize, true), (-1100, false)] {
+        let samples = ft8_window(&[(&tones, 1200., start, 0.5)], 11, 0.2);
+        let decoded = Decoder::new()
+            .decode(&samples, Mode::Ft8, &|| false)
+            .unwrap();
+        let found = decoded
+            .iter()
+            .filter(|d| decoded_tones(d) == tones)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found.len(),
+            usize::from(published),
+            "start {start}: {decoded:?}"
+        );
+        if published {
+            assert_eq!(found[0].start_frame, 0, "start {start}: {decoded:?}");
+        }
+    }
+}
+
+// Proves: FR-003, FR-004 (#56 duplicate on another carrier). The same word on carriers 100 Hz
+// apart is published once, and both copies are subtracted: a weak frame 3 Hz from the second
+// copy decodes.
+#[test]
+fn duplicate_on_a_distant_carrier_is_subtracted_and_published_once() {
+    let (word, weak) = (ft8_word(91), ft8_word(37));
+    let samples = ft8_window(
+        &[
+            (&word, 1000., 6000, 1.),
+            (&word, 1100., 6000, 0.5),
+            (&weak, 1103., 6000, 0.03),
+        ],
+        13,
+        0.2,
+    );
+    let decoded = Decoder::new()
+        .decode(&samples, Mode::Ft8, &|| false)
+        .unwrap();
+    assert_eq!(
+        decoded.iter().filter(|d| decoded_tones(d) == word).count(),
+        1,
+        "{decoded:?}"
+    );
+    assert!(
+        decoded.iter().any(|d| decoded_tones(d) == weak),
+        "weak frame under the subtracted second copy: {decoded:?}"
+    );
+}
+
+// Proves: CL-007-03 (#56 ft8b weak-word guard). Rejected exactly when an FT8 word has at most
+// 10 of 21 Costas hits and a measured SNR below -25 dB.
+#[test]
+fn weak_word_guard_boundaries() {
+    assert!(weak_word(Mode::Ft8, 10, Some(-25.01)));
+    assert!(weak_word(Mode::Ft8, 0, Some(-40.)));
+    assert!(!weak_word(Mode::Ft8, 11, Some(-40.)));
+    assert!(!weak_word(Mode::Ft8, 10, Some(-25.)));
+    assert!(!weak_word(Mode::Ft8, 10, None));
+    assert!(!weak_word(Mode::Ft4, 0, Some(-40.)));
+}
+
+// Proves: FR-003, CL-007-03 (#56 Ft8DataPoint). A weak word that fails at its fine point
+// decodes at the nearby point holding the most frame energy.
+#[test]
+fn failed_fine_point_retries_at_the_data_point() {
+    let channel = Channel::new();
+    let decoder = Decoder::new();
+    let tones = ft8_word(77);
+    let cancel = || false;
+    let truth = Candidate {
+        start: 6000,
+        frequency: 1500.,
+        score: 0.,
+    };
+    let displaced = Candidate {
+        start: 6120,
+        frequency: 1500.5,
+        score: 0.,
+    };
+    let mut checked = None;
+    'search: for seed in 1..40u64 {
+        for step in 0..16 {
+            let amplitude = 0.004 + step as f64 * 0.0005;
+            let samples = ft8_window(&[(&tones, 1500., 6000, amplitude)], seed, 0.2);
+            let plan = BandPlan::new(Mode::Ft8, samples.len(), false).unwrap();
+            let mut budget = CpuBudget::new(&cancel);
+            let mut pass = complete(plan.current_pass(&samples, &mut budget)).unwrap();
+            let mut at =
+                |c| complete(bitmetrics::observe(&mut pass, c, &channel, &mut budget)).unwrap();
+            if at(displaced).is_some() || at(truth).is_none() {
+                continue;
+            }
+            let verified =
+                complete(decoder.verify(&samples, displaced, &cancel, &mut pass, &mut budget))
+                    .unwrap();
+            checked = Some((seed, amplitude, verified.map(|(_, t, _)| t == tones)));
+            break 'search;
+        }
+    }
+    let (seed, amplitude, verified) = checked.expect("a window where only the true point decodes");
+    assert_eq!(verified, Some(true), "seed {seed}, amplitude {amplitude}");
+}

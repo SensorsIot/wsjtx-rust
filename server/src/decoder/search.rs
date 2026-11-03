@@ -85,6 +85,15 @@ const DUPLICATE_SEPARATION_HZ: f64 = 50.;
 /// ft8b's weak-word guard: at most this many hard Costas hits and an SNR below -25 dB.
 const WEAK_MAX_COSTAS_HITS: usize = 10;
 const WEAK_SNR_DB: f64 = -25.;
+/// Ft8RetryOverlapped: a failed FT8 candidate is verified again in the next pass when a frame
+/// subtracted in this pass lies within this carrier distance (one FT8 signal spans 43.75 Hz)
+/// and overlaps it in time.
+const RETRY_SEPARATION_HZ: f64 = 50.;
+/// ft8b: `nsync<=10 .and. xsnr<-25` is a likely false decode. FT8 only; a word without a
+/// measured SNR is never rejected here.
+fn weak_word(mode: Mode, hits: usize, snr_db: Option<f64>) -> bool {
+    mode == Mode::Ft8 && hits <= WEAK_MAX_COSTAS_HITS && snr_db.is_some_and(|db| db < WEAK_SNR_DB)
+}
 struct Subtraction {
     start: usize,
     frequency: f64,
@@ -239,6 +248,9 @@ impl Decoder {
                     && (f - carrier).abs() <= DUPLICATE_SEPARATION_HZ
             })
         };
+        // FT8 candidates of the last pass whose verification found no word and which a frame
+        // subtracted in that pass overlaps (Ft8RetryOverlapped).
+        let mut retry = Vec::<Candidate>::new();
         for _pass in 0..3 {
             let spectrum = Spectrum::new(&samples, mode, self.scalar, &mut budget).await?;
             let mut physical = plan.current_pass(&samples, &mut budget).await?;
@@ -261,10 +273,37 @@ impl Decoder {
                 contrast = Some(coarse);
                 candidates
             } else {
-                spectrum
+                let mut candidates = spectrum
                     .candidates(samples.len(), &physical, self.threads, &mut budget)
-                    .await?
+                    .await?;
+                // Each retried point is qualified again on this pass's residual, in parallel,
+                // and appended in order after the pass's own candidates, unless one of those
+                // already lies at it; the 256 cap still holds.
+                let requalified = super::parallel::map(
+                    self.threads,
+                    &retry,
+                    &mut budget,
+                    || physical.fork(),
+                    |&c, pass, budget| complete(physical_sync::qualify(pass, c, budget)),
+                )
+                .await?;
+                for q in requalified {
+                    let Some(q) = q? else {
+                        continue;
+                    };
+                    if candidates.iter().any(|c| {
+                        (c.frequency - q.frequency).abs() < 1. && c.start.abs_diff(q.start) < n / 16
+                    }) {
+                        continue;
+                    }
+                    if candidates.len() == 256 {
+                        return Err(DecodeError::SearchLimited);
+                    }
+                    candidates.push(q);
+                }
+                candidates
             };
+            let mut failed = vec![];
             // Every candidate's verification is independent of the others; only the duplicate
             // checks depend on this window's earlier records. Candidates are therefore
             // verified in parallel and replayed here in order, each step and error taken
@@ -288,6 +327,9 @@ impl Decoder {
             for (c, verification) in candidates.iter().zip(verifications) {
                 budget.checkpoint().await?;
                 let Some((payload, tones, fitted)) = verification? else {
+                    if mode == Mode::Ft8 {
+                        failed.push(*c);
+                    }
                     continue;
                 };
                 // A repeat of this window's word on a carrier more than 50 Hz away is a
@@ -330,11 +372,7 @@ impl Decoder {
                         .await?
                         .map(|db| (db, super::snr::reported(db))),
                 };
-                // ft8b: nsync<=10 .and. xsnr<-25 is a likely false decode.
-                if mode == Mode::Ft8
-                    && hits <= WEAK_MAX_COSTAS_HITS
-                    && snr.is_some_and(|(db, _)| db < WEAK_SNR_DB)
-                {
+                if weak_word(mode, hits, snr.map(|(db, _)| db)) {
                     continue;
                 }
                 window_seen.push((payload.payload77.clone(), absolute, fitted.frequency));
@@ -356,6 +394,15 @@ impl Decoder {
                     });
                 }
             }
+            retry = failed
+                .into_iter()
+                .filter(|c| {
+                    pending.iter().any(|s| {
+                        (s.frequency - c.frequency).abs() < RETRY_SEPARATION_HZ
+                            && s.start.abs_diff(c.start) < frame
+                    })
+                })
+                .collect();
             // Discard the immutable current-pass transform before modifying its residual.
             drop(physical);
             // The residual is updated in order; only the waveforms are built in parallel,
@@ -401,8 +448,24 @@ impl Decoder {
         budget: &mut CpuBudget<'_>,
     ) -> Verification {
         let mode = physical.plan.mode;
-        let Some(word) = bitmetrics::observe(physical, c, &self.channel, budget).await? else {
-            return Ok(None);
+        let (c, word) = match bitmetrics::observe(physical, c, &self.channel, budget).await? {
+            Some(word) => (c, word),
+            // Ft8DataPoint: an FT8 word that fails at the fine point is tried once more at
+            // the nearby point holding the most frame energy, when that point differs.
+            None if mode == Mode::Ft8 => {
+                let Some(alternative) = physical_sync::data_point(physical, c, budget).await?
+                else {
+                    return Ok(None);
+                };
+                if (alternative.start, alternative.frequency) == (c.start, c.frequency) {
+                    return Ok(None);
+                }
+                match bitmetrics::observe(physical, alternative, &self.channel, budget).await? {
+                    Some(word) => (alternative, word),
+                    None => return Ok(None),
+                }
+            }
+            None => return Ok(None),
         };
         let Some(payload) = self.channel.payload(&word, mode) else {
             return Ok(None);
