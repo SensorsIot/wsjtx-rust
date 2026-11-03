@@ -1766,6 +1766,66 @@ test('TC-042-001 Editor offers new DXCC, continent, CQ zone and ITU zone and the
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-042-02; TC-042-003 Band Activity right-click Ignore / Stop ignoring and the
+// Settings > General ignore lists send exactly the requests written here; the station
+// replies (snapshots, verdicts) are hand-written fixtures; the row loses its Highlight
+// mark only through the station's new verdicts.
+test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60000},async t=>{
+  let state,view;const puts=[],ignores=[],evaluations=[],commands=[];let session=[];
+  const period='2026-10-27T12:00:00.0000000Z';
+  const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
+  const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
+  const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
+  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:2,available_count:2,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    await contactCommands(p,commands);
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:{...view,session_ignore:session}});});
+    await p.route('**/strategy/ignore',async route=>{const b=JSON.parse(route.request().postData());ignores.push(b);
+      session=b.ignore?[...session.filter(e=>e.call!==b.call),{call:b.call,band:'40m',remaining_s:1800}]:session.filter(e=>e.call!==b.call);
+      await route.fulfill({json:{...view,session_ignore:session}});});
+    await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
+      const ignored=session.some(e=>e.call==='K1ABC');
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',sort:'strongest',verdicts:ignored?[{sequence:1,rank:0,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:0,grey:false}]}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest].ba-strategy').length===2,null,{timeout:25000});
+  const row=page.locator('#band-activity tr[data-sequence="0"]');
+  const items=()=>page.locator('#ba-menu button:not([hidden])').evaluateAll(b=>b.map(x=>x.textContent));
+  await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
+  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Ignore K1ABC']);
+  const n=evaluations.length;
+  await page.locator('#ba-menu [data-menu=ignore]').click();
+  for(let i=0;i<60&&!ignores.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(ignores,[{v:1,profile_id:view.profile_id,boot_id:view.boot_id,call:'K1ABC',ignore:true}]);
+  await page.waitForFunction(()=>!document.querySelector('#band-activity tr[data-sequence="0"]').classList.contains('ba-strategy'),null,{timeout:10000});
+  assert.ok(evaluations.length>n,'the shown rows are evaluated again');
+  assert.equal(commands.some(c=>c.action==='set_frequency'),false,'Ignore never sets the Rx frequency');
+  await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
+  assert.deepEqual(await items(),['Reply','Select','Set Rx here','Stop ignoring K1ABC']);
+  await page.keyboard.press('Escape');
+  // Settings > General: the session list with remaining minutes, the permanent list, minutes.
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.locator('#ignore-session li').first().waitFor();
+  assert.deepEqual(await page.locator('#ignore-session li').evaluateAll(l=>l.map(x=>[x.querySelector('.ig-call').textContent,x.querySelector('.ig-left').textContent])),[['K1ABC','30 min']]);
+  await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').dispatchEvent('change');
+  for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[2,{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:['DL1XYZ','W1AW'],session_ignore_minutes:30}]]);
+  await page.fill('#ignore-minutes','45');await page.locator('#ignore-minutes').dispatchEvent('change');
+  for(let i=0;i<60&&puts.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual([puts[1].expected_revision,puts[1].configuration.ignore_calls,puts[1].configuration.session_ignore_minutes],[3,['DL1XYZ','W1AW'],45]);
+  await page.locator('#ignore-session button[aria-label="Stop ignoring K1ABC"]').click();
+  for(let i=0;i<60&&ignores.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(ignores[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,call:'K1ABC',ignore:false});
+  await page.waitForFunction(()=>!document.querySelector('#ignore-session li'));
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
 // uploads a replacement to the actual isolated station and returns to the bundled file;
 // a file that is no cty.dat is refused with its line and changes nothing.
