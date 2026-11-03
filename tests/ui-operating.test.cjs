@@ -1552,7 +1552,7 @@ test('TC-061-004 a period in which the station transmitted shows no empty block 
   }});
   const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.querySelector('.empty-messages')?'empty:'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
   const header=()=>page.locator('#band-activity header .op-muted').textContent();
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory&&window.wstxTransmitted);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory);
   // The station keys in 12:00:15 (a station.tick inside that period says transmitting).
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.parse('2026-10-27T12:00:17.000Z'),period_ms:15000,transmitting:true,rx_level_db:null}}}})));
   publish(2,'2026-10-27T12:00:15.0000000Z',0);await page.evaluate(()=>receiveSync());
