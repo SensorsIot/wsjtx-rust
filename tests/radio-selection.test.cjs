@@ -717,7 +717,12 @@ function liveSelectionFixture(){
       // timed-out login step itself, #22), so a read can still be queued behind contact.js when the
       // clients arrive; its page timeout would then end just inside the segment. The baseline still
       // refuses every abort that ends after it (#8, supersededColdRead).
-      await page.waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:coldRemaining()});
+      // It also starts only on an established status socket: on the starved link a page can
+      // still be reconnecting after a Cold-load socket closed (its last socket closed and the
+      // next not yet created), and a baseline taken then counts the reconnect as a new socket
+      // inside the segment (#8, harness#28). The page's current socket must be open, connected
+      // and the one the selection reads were synchronized on.
+      await page.waitForFunction(()=>connection.dataset.state==='connected'&&socket?.readyState===WebSocket.OPEN&&operatingSocket===socket&&!operatingReadPending&&!operatingReadAgain,null,{timeout:coldRemaining()});
       const socketBaseline={index:observations[index].sockets.length-1,count:observations[index].sockets.length,at:performance.now(),end:null};
       observations[index].acceptance={socketBaseline,expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
         const initialSocket=socket,events=[];
