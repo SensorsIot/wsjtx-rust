@@ -2148,11 +2148,43 @@ test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async 
   await page.locator('#qso-more summary').click();
   const choice=page.locator('#contact-activity');
   await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='ww_digi');
-  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi']]);
+  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi'],['field_day','Field Day'],['rtty','RTTY Roundup']]);
   await choice.selectOption('arrl_digi');
   for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
   const sent=commands.find(c=>c.action==='set_activity');
   assert.equal(sent.activity,'arrl_digi');
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-024-03; TC-024-009 (#24 S2b). Field Day / RTTY Roundup with the Exchange entry:
+// the entry and the serial show the station's setting; choosing and changing send the exchange.
+test('TC-024-009 the contest choice and its Exchange entry',{timeout:40000},async t=>{
+  const commands=[];
+  const settings={activity:'rtty',exchange:'DX',serial:7};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner(),settings:{...settings}})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.locator('#qso-more summary').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='rtty');
+  assert.equal(await page.locator('#contact-exchange').inputValue(),'DX');
+  assert.equal(await page.locator('#contact-serial').textContent(),'Serial 0007');
+  const sentAll=async n=>{for(let i=0;i<40&&commands.filter(c=>c.action==='set_activity').length<n;i++)await page.waitForTimeout(50);return commands.filter(c=>c.action==='set_activity');};
+  await page.locator('#contact-exchange').fill('1A EMA');
+  await page.locator('#contact-activity').selectOption('field_day');
+  let sent=await sentAll(1);
+  assert.deepEqual([sent[0].activity,sent[0].exchange],['field_day','1A EMA']);
+  Object.assign(settings,{activity:'field_day',exchange:'1A EMA'});
+  await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>window.wstxContact.snapshot().settings.activity==='field_day');
+  assert.equal(await page.locator('#contact-serial').textContent(),'','no serial for Field Day');
+  await page.locator('#contact-exchange').fill('2B WI');
+  await page.locator('#contact-exchange').press('Tab');
+  sent=await sentAll(2);
+  assert.deepEqual([sent.at(-1).activity,sent.at(-1).exchange],['field_day','2B WI']);
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
   assert.deepEqual(errors,[]);
 });

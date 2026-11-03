@@ -2407,7 +2407,11 @@ fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
 fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
     let mut s = station();
     let mut table = wstx_rust::decoder::HashTable::new();
-    s.command(Command::SetActivity(Activity::WwDigi)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
     s.engine.settings.call_first = false;
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
@@ -2473,7 +2477,11 @@ fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
 fn na_vhf_moves_to_rogers_on_r_grid() {
     let mut s = station();
     let mut table = wstx_rust::decoder::HashTable::new();
-    s.command(Command::SetActivity(Activity::NaVhf)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::NaVhf,
+        exchange: None,
+    })
+    .unwrap();
     let cq = decoded(&mut s, &mut table, P0, "CQ TEST K1ABC FN42", 1200.0, -10.0);
     s.command(Command::SelectRow {
         row: cq,
@@ -2515,7 +2523,11 @@ fn na_vhf_moves_to_rogers_on_r_grid() {
 fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
     let mut s = station();
     s.call = "DL/HB9BLA".into();
-    s.command(Command::SetActivity(Activity::ArrlDigi)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::ArrlDigi,
+        exchange: None,
+    })
+    .unwrap();
     s.command(Command::EnterDx {
         call: "K1ABC".into(),
         grid: None,
@@ -2526,7 +2538,11 @@ fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
     assert_eq!(set(&s)[1], "K1ABC <DL/HB9BLA> JN47");
     assert_eq!(set(&s)[2], "K1ABC <DL/HB9BLA> R JN47");
     s.call = "HB9BLA".into();
-    s.command(Command::SetActivity(Activity::None)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::None,
+        exchange: None,
+    })
+    .unwrap();
     s.command(Command::EnterDx {
         call: "K1ABC".into(),
         grid: None,
@@ -2544,7 +2560,7 @@ fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
         assert_eq!((a.name(), a.special_operation()), (name, udp));
         assert_eq!(Activity::parse(name), Some(a));
     }
-    assert_eq!(Activity::parse("field_day"), None);
+    assert_eq!(Activity::parse("eu_vhf"), None);
 }
 
 // Proves: CL-024-02; TC-024-005 (e). The activity regenerates a running CQ's Tx6 and an
@@ -2555,13 +2571,21 @@ fn set_activity_regenerates_the_running_contact() {
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     s.command(Command::EditMessage(Slot::Tx6, "CQ DX HB9BLA JN47".into()))
         .unwrap();
-    s.command(Command::SetActivity(Activity::WwDigi)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
     assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
     s.command(Command::EditMessage(Slot::Tx6, "CQ DX HB9BLA JN47".into()))
         .unwrap();
     s.command(Command::SetReport(-10)).unwrap();
     assert_eq!(set(&s)[5], "CQ DX HB9BLA JN47", "a report change keeps Tx6");
-    s.command(Command::SetActivity(Activity::None)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::None,
+        exchange: None,
+    })
+    .unwrap();
     s.command(Command::EnterDx {
         call: "K1ABC".into(),
         grid: None,
@@ -2569,9 +2593,275 @@ fn set_activity_regenerates_the_running_contact() {
     })
     .unwrap();
     assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA -10", "K1ABC HB9BLA R-10"]);
-    s.command(Command::SetActivity(Activity::WwDigi)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
     assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA JN47", "K1ABC HB9BLA R JN47"]);
-    s.command(Command::SetActivity(Activity::None)).unwrap();
+    s.command(Command::SetContest {
+        activity: Activity::None,
+        exchange: None,
+    })
+    .unwrap();
     assert_eq!(set(&s)[1..3], ["K1ABC HB9BLA -10", "K1ABC HB9BLA R-10"]);
     assert_eq!(set(&s)[5], "CQ HB9BLA JN47");
+}
+
+// ---------------------------------------------------------------- #24 S2b
+fn decoded_in(s: &mut Station, period: i64, text: &str, snr: f64, mode: &str) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    let payload = unpack(&wstx_rust::transmit::pack(text).unwrap().bits);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: 1300.0,
+        snr_db: Some(snr),
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, mode).unwrap()
+}
+fn contest(s: &mut Station, activity: Activity, exchange: &str) {
+    s.command(Command::SetContest {
+        activity,
+        exchange: Some(exchange.into()),
+    })
+    .unwrap();
+}
+fn adif_of(c: &Contact) -> String {
+    let record = crate::contact_http::Station::record_of(
+        c,
+        P0 + 300 * SECOND,
+        Some(7_074_000),
+        1500,
+        "HB9BLA",
+        Some("JN47AA"),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::logbook::validate_record(&record, "HB9BLA", "JN47AA"),
+        Ok(())
+    );
+    record.adi_fields()
+}
+
+// Proves: CL-024-03; TC-024-008 (a). Field Day as the CQer: CQ FD, the caller's exchange
+// answered with R + my exchange, RR73 answered with 73, logged with the ADIF contest fields.
+#[test]
+fn field_day_cq_answers_the_exchange_and_logs_the_contest_fields() {
+    let mut s = station();
+    contest(&mut s, Activity::FieldDay, "1a  ema");
+    assert_eq!(s.engine.settings.exchange.as_deref(), Some("1A EMA"));
+    s.engine.settings.call_first = false;
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ FD HB9BLA JN47");
+    s.run(period(1) + 14 * SECOND);
+    let caller = decoded_in(&mut s, period(2), "HB9BLA K1ABC 2A WI", -8.0, "ft8");
+    s.command(Command::SelectRow {
+        row: caller,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "K1ABC HB9BLA JN47",
+            "K1ABC HB9BLA 1A EMA",
+            "K1ABC HB9BLA R 1A EMA",
+            "K1ABC HB9BLA RRR",
+            "K1ABC HB9BLA 73",
+            "CQ FD HB9BLA JN47"
+        ]
+    );
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(period(3) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("K1ABC HB9BLA R 1A EMA")
+    );
+    let rr73 = decoded_in(&mut s, period(4), "HB9BLA K1ABC RR73", -8.0, "ft8");
+    s.deliver(&[rr73]);
+    s.run(period(6));
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("K1ABC HB9BLA 73"));
+    let c = one_log(&mut s);
+    assert_eq!(
+        (c.exchange_sent.as_deref(), c.exchange_rcvd.as_deref()),
+        (Some("1A EMA"), Some("2A WI"))
+    );
+    assert_eq!(s.engine.settings.serial, 2);
+    let adif = adif_of(&c);
+    for field in [
+        "<stx_string:6>1A EMA",
+        "<contest_id:14>ARRL-FIELD-DAY",
+        "<srx_string:5>2A WI",
+        "<class:2>2A",
+        "<arrl_sect:2>WI",
+    ] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+    assert!(!adif.contains("rst_"), "{adif}");
+}
+
+// Proves: CL-024-03; TC-024-008 (b). RTTY Roundup with a DX serial: answering CQ RU
+// starts with Tx2 (Tx1 disabled), "5n9 serial", the TU; R exchange moves to Tx4, the log
+// has the 5n9 RSTs, STX and STATE, and the next contact sends the next serial.
+#[test]
+fn rtty_roundup_answers_cq_ru_with_tx2_and_logs_rst_stx_and_state() {
+    let mut s = station();
+    contest(&mut s, Activity::Rtty, "DX");
+    let cq = decoded_in(&mut s, P0, "CQ RU W9XYZ EN37", -3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1], "W9XYZ HB9BLA 559 0001");
+    assert_eq!(set(&s)[5], "CQ RU HB9BLA JN47");
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(1)).as_deref(),
+        Some("W9XYZ HB9BLA 559 0001")
+    );
+    let r = decoded_in(&mut s, period(2), "TU; HB9BLA W9XYZ R 579 MA", -3.0, "ft8");
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("W9XYZ HB9BLA RRR"));
+    let bye = decoded_in(&mut s, period(4), "HB9BLA W9XYZ 73", -3.0, "ft8");
+    s.deliver(&[bye]);
+    let c = one_log(&mut s);
+    assert_eq!(
+        (c.exchange_sent.as_deref(), c.exchange_rcvd.as_deref()),
+        (Some("559 0001"), Some("579 MA"))
+    );
+    let adif = adif_of(&c);
+    for field in [
+        "<rst_sent:3>559",
+        "<rst_rcvd:3>579",
+        "<stx:4>0001",
+        "<state:2>MA",
+    ] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+    assert!(!adif.contains("contest_id"), "{adif}");
+    let next = decoded_in(&mut s, period(6), "CQ RU K9AN EN50", -3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: next,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1], "K9AN HB9BLA 559 0002");
+}
+
+fn ft4_period(n: i64) -> i64 {
+    P0 + n * 7_500
+}
+/// FT4 RTTY: Tx3 to K1ABC in period 1, their RR73 counted 3 s into period 2 (my Tx3
+/// started 10.5 s before), then a new caller selected `after` ms later; returns its Tx3.
+fn ft4_next_caller_tx3(after: i64) -> String {
+    let mut s = ft4_station();
+    contest(&mut s, Activity::Rtty, "MA");
+    let caller = decoded_in(&mut s, ft4_period(0), "HB9BLA K1ABC 579 NY", -3.0, "ft4");
+    s.command(Command::SelectRow {
+        row: caller,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(ft4_period(2) + 3_000);
+    assert_eq!(
+        s.sent_in(ft4_period(1)).as_deref(),
+        Some("K1ABC HB9BLA R 559 MA")
+    );
+    let rr73 = decoded_in(&mut s, ft4_period(2), "HB9BLA K1ABC RR73", -3.0, "ft4");
+    s.deliver(&[rr73]);
+    s.fake
+        .0
+        .now
+        .store(ft4_period(2) + 3_000 + after, Ordering::SeqCst);
+    let next = decoded_in(&mut s, ft4_period(2), "HB9BLA W9XYZ 579 OH", -3.0, "ft4");
+    s.command(Command::SelectRow {
+        row: next,
+        replace: true,
+    })
+    .unwrap();
+    set(&s)[2].clone()
+}
+// Proves: CL-024-03; TC-024-008 (c). FT4 TU;: the operator's selection right after an
+// RR73 thanks the previous partner in Tx3; three whole seconds later it does not.
+#[test]
+fn ft4_rtty_selection_right_after_rr73_prefixes_tu() {
+    assert_eq!(ft4_next_caller_tx3(500), "TU; W9XYZ HB9BLA R 559 MA");
+    assert_eq!(ft4_next_caller_tx3(3_000), "W9XYZ HB9BLA R 559 MA");
+}
+
+// Proves: CL-024-03; TC-024-008 (d), (e). Exchange validation, a nonstandard DX call, a
+// Field Day row in RTTY, the UDP values, and the slots accept a contest text.
+#[test]
+fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
+    let fd = |x: Option<&str>| contest_exchange(Activity::FieldDay, x);
+    assert_eq!(fd(Some(" 32f  wwa ")), Some(Some("32F WWA".into())));
+    for bad in [
+        None,
+        Some("0A EMA"),
+        Some("33A EMA"),
+        Some("1G EMA"),
+        Some("1A XX"),
+        Some("1AEMA"),
+    ] {
+        assert_eq!(fd(bad), None, "{bad:?}");
+    }
+    let rtty = |x: Option<&str>| contest_exchange(Activity::Rtty, x);
+    for good in ["MA", "#", "dx", "PEI", "X99", "DR"] {
+        assert!(rtty(Some(good)).is_some(), "{good}");
+    }
+    assert_eq!(rtty(Some("DXX")), None);
+    assert_eq!(contest_exchange(Activity::WwDigi, Some("MA")), None);
+    assert_eq!(contest_exchange(Activity::None, None), Some(None));
+    let mut s = station();
+    assert_eq!(
+        s.command(Command::SetContest {
+            activity: Activity::FieldDay,
+            exchange: None
+        }),
+        Err("invalid_exchange")
+    );
+    contest(&mut s, Activity::FieldDay, "1A EMA");
+    assert_eq!(
+        s.command(Command::EnterDx {
+            call: "PJ4/K1ABC".into(),
+            grid: None,
+            replace: false
+        }),
+        Err("invalid_call")
+    );
+    let fd_row = decoded_in(&mut s, P0, "HB9BLA K1ABC 2A WI", -3.0, "ft8");
+    let fd_msg = fd_row.standard.clone().unwrap();
+    assert_eq!(
+        classify_in(&fd_msg, Activity::FieldDay),
+        Received::SignalReport
+    );
+    assert_eq!(classify_in(&fd_msg, Activity::Rtty), Received::Other);
+    assert_eq!(classify_in(&fd_msg, Activity::None), Received::Other);
+    assert_eq!(
+        (
+            Activity::FieldDay.special_operation(),
+            Activity::Rtty.special_operation()
+        ),
+        (3, 4)
+    );
+    assert_eq!(
+        slot_text("k1abc hb9bla 3a wi").as_deref(),
+        Some("K1ABC HB9BLA 3A WI")
+    );
+    assert_eq!(
+        slot_text("TU; K1ABC HB9BLA R 579 MA").as_deref(),
+        Some("TU; K1ABC HB9BLA R 579 MA")
+    );
 }

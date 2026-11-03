@@ -4413,8 +4413,8 @@ package WstxRequirements {
         doc /* TC-024-005 — Grid-exchange contests through the contact engine
              CL-024-02
              Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); hand-authored standard rows; HB9BLA JN47AA; the station fixture over POST /contact/command and its UDP Status.
-             Steps: (a) set_activity ww_digi, Enable Tx with no partner, select the caller "HB9BLA S52XYZ JN76", the partner sends "HB9BLA S52XYZ RR73"; (b) set_activity na_vhf, select "CQ TEST K1ABC FN42", Enable Tx, the CQer sends "HB9BLA K1ABC R FN42"; (c) arrl_digi with my call DL/HB9BLA; (e) during a running CQ with an edited Tx6 set ww_digi, then set_report; with an active contact switch none, ww_digi, none; start station automation with ww_digi set; (d) set_activity none, an unknown activity "field_day", and the settings and UDP Status of each activity.
-             Expected: (a) Tx6 "CQ WW HB9BLA JN47"; the caller's grid selects Tx3 "S52XYZ HB9BLA R JN47" (rogerReport) with Tx2 "S52XYZ HB9BLA JN47"; after RR73 Tx5 is sent, the contact completes and is logged with grid JN76 and no reports; (b) Tx6 "CQ TEST HB9BLA JN47", Tx1 "K1ABC HB9BLA JN47" sent, the R FN42 moves to Tx4 "K1ABC HB9BLA RRR", which completes after it is sent and the partner's 73; (c) Tx6 "CQ DL/HB9BLA" and Tx2 "K1ABC <DL/HB9BLA> JN47"; (d) none restores the report exchange (Tx2 "K1ABC HB9BLA -15"), field_day is refused invalid_request field activity, settings.activity reads the choice and UDP Status special operation 0/1/5/8; (e) Tx6 becomes "CQ WW HB9BLA JN47" and a later set_report keeps it, the active contact's Tx2/Tx3 switch between "-NN"/"R-NN" and "JN47"/"R JN47", and automation start is refused not_ready activity.
+             Steps: (a) set_activity ww_digi, Enable Tx with no partner, select the caller "HB9BLA S52XYZ JN76", the partner sends "HB9BLA S52XYZ RR73"; (b) set_activity na_vhf, select "CQ TEST K1ABC FN42", Enable Tx, the CQer sends "HB9BLA K1ABC R FN42"; (c) arrl_digi with my call DL/HB9BLA; (e) during a running CQ with an edited Tx6 set ww_digi, then set_report; with an active contact switch none, ww_digi, none; start station automation with ww_digi set; (d) set_activity none, an unknown activity "eu_vhf", and the settings and UDP Status of each activity.
+             Expected: (a) Tx6 "CQ WW HB9BLA JN47"; the caller's grid selects Tx3 "S52XYZ HB9BLA R JN47" (rogerReport) with Tx2 "S52XYZ HB9BLA JN47"; after RR73 Tx5 is sent, the contact completes and is logged with grid JN76 and no reports; (b) Tx6 "CQ TEST HB9BLA JN47", Tx1 "K1ABC HB9BLA JN47" sent, the R FN42 moves to Tx4 "K1ABC HB9BLA RRR", which completes after it is sent and the partner's 73; (c) Tx6 "CQ DL/HB9BLA" and Tx2 "K1ABC <DL/HB9BLA> JN47"; (d) none restores the report exchange (Tx2 "K1ABC HB9BLA -15"), eu_vhf is refused invalid_request field activity, settings.activity reads the choice and UDP Status special operation 0/1/5/8; (e) Tx6 becomes "CQ WW HB9BLA JN47" and a later set_report keeps it, the active contact's Tx2/Tx3 switch between "-NN"/"R-NN" and "JN47"/"R JN47", and automation start is refused not_ready activity.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4428,7 +4428,7 @@ package WstxRequirements {
              CL-024-02
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
              Steps: open the fold-out; read the Activity choice with settings.activity ww_digi; choose ARRL Digi.
-             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
+             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4438,9 +4438,9 @@ package WstxRequirements {
     }
     dependency CL_024_02_verified_by_TC_024_006 from 'CL-024-02' to 'TC-024-006';
     requirement 'CL-024-03' {
-        doc /* #24 S2b. Field Day (i3=0 n3=3/4) and FT/RTTY Roundup (i3=3) exchanges come from the configured class/section and state/province or DX serial, with 5x9 reports, FT4 "TU;", and pack/unpack identical to ft8code. Contest exchange values go into ADIF CONTEST_ID/STX/SRX/STX_STRING/SRX_STRING/CLASS/ARRL_SECT/STATE as WSJT-X AdifQso writes them. Slice S2b1: the two packer families, exact against ft8code and ft4sim (WstxTransmit::PackMessage), so the transmit owner accepts such a message; the contact engine still refuses them in its slots; unpack and pack share the WSJT-X 3.3.0-beta5 section (86) and RTTY exchange (171) tables, which replace the QEX 2020 tables (WstxOfflineDecode sectionTable/stateProvinceTable). Slice S2b2: the field_day and rtty activities, the configured exchanges, the 5x9 mapping, TU;, sequencing, logging and the ADIF fields. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/pack.rs; server/src/decoder/payload.rs";
+        doc /* #24 S2b. Field Day (i3=0 n3=3/4) and FT/RTTY Roundup (i3=3) exchanges come from the configured class/section and state/province or DX serial, with 5x9 reports, FT4 "TU;", and pack/unpack identical to ft8code. Contest exchange values go into ADIF CONTEST_ID/STX/SRX/STX_STRING/SRX_STRING/CLASS/ARRL_SECT/STATE as WSJT-X AdifQso writes them. Slice S2b1: the two packer families, exact against ft8code and ft4sim (WstxTransmit::PackMessage), so the transmit owner accepts such a message; the contact engine still refuses them in its slots; unpack and pack share the WSJT-X 3.3.0-beta5 section (86) and RTTY exchange (171) tables, which replace the QEX 2020 tables (WstxOfflineDecode sectionTable/stateProvinceTable). Slice S2b2: the field_day and rtty activities with their configured exchange and the contest serial, the 5x9 mapping, FT4 TU;, the Tx2 start of every contest activity, sequencing on the received exchange, the contact's exchange_sent/exchange_rcvd, the ADIF contest fields of the log (WstxContact::ContestExchange, LogRecord), UDP Status special operation 3/4 and the Activity choice with its Exchange entry; station automation still does not start in a contest activity. Cabrillo is not offered (operator decision S2b-1). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/transmit/pack.rs; server/src/decoder/payload.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/logbook.rs; server/src/logbook_http.rs; client/contact.js";
     }
     dependency CL_024_03_to_FR_004 from 'CL-024-03' to 'FR-004';
     dependency CL_024_03_to_FR_024 from 'CL-024-03' to 'FR-024';
@@ -4459,6 +4459,34 @@ package WstxRequirements {
         attribute executable : String = "server/tests/transmit_vectors.rs; server/tests/transmit_ft4_vectors.rs; server/tests/decoder_vectors.rs";
     }
     dependency CL_024_03_verified_by_TC_024_007 from 'CL-024-03' to 'TC-024-007';
+    verification 'TC-024-008' {
+        doc /* TC-024-008 — Field Day and RTTY Roundup through the contact engine and the log
+             CL-024-03
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); rows built the way the station builds them (pack, unpack, row reader); HB9BLA JN47AA; the station fixture over POST /contact/command with its log and UDP Status; the logbook record validation.
+             Steps: (a) set_activity field_day "1a  ema", Enable Tx with no partner, select the caller "HB9BLA K1ABC 2A WI", the partner answers my Tx3 with "HB9BLA K1ABC RR73"; (b) set_activity rtty "DX", select "CQ RU W9XYZ EN37" with SNR -3, Enable Tx, the CQer sends "TU; HB9BLA W9XYZ R 579 MA", then a second selection; (c) rtty "MA" in FT4: after my Tx3 and the partner's RR73, select the next caller 0.5 s after the RR73 was counted, and in a second run 3 s after it; (d) refusals: field_day without an exchange or with "0A EMA", "33A EMA", "1G EMA", "1A XX"; rtty "DXX"; an exchange with ww_digi; a nonstandard DX call in field_day; a Field Day row while rtty is set; (e) settings and contact snapshot keys, UDP Status special operation; edit_message tx2 "K1ABC HB9BLA 3A WI"; (f) validate_record of the logged records, RST 519 and a contest field with '<'; history record keys.
+             Expected: (a) exchange "1A EMA", Tx6 "CQ FD HB9BLA JN47", the caller's exchange selects Tx3 "K1ABC HB9BLA R 1A EMA" with exchange_rcvd "2A WI"; after their RR73 Tx5 is sent, the contact completes and is logged with STX_STRING "1A EMA", CONTEST_ID ARRL-FIELD-DAY, SRX_STRING "2A WI", CLASS 2A, ARRL_SECT WI and no RST; serial 2 afterwards; (b) Tx6 "CQ RU HB9BLA JN47", the selection starts with Tx2 "W9XYZ HB9BLA 559 0001" (Tx1 disabled), the R exchange moves to Tx4, exchange_rcvd "579 MA", the record has RST_SENT 559, RST_RCVD 579, STX 0001, STATE MA; the second selection's Tx2 carries 0002; (c) Tx3 "TU; W9XYZ HB9BLA R 559 MA" in the first run only; (d) invalid_request field exchange, invalid_call, the row is classified other; (e) settings activity/exchange/serial, contact exchange_sent/exchange_rcvd, special operation 3 and 4; the edited Field Day text is accepted unaltered; (f) the records are valid, RST 519 and '<' are refused, history records carry stx..state.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-03';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/logbook_tests.rs";
+    }
+    dependency CL_024_03_verified_by_TC_024_008 from 'CL-024-03' to 'TC-024-008';
+    verification 'TC-024-009' {
+        doc /* TC-024-009 — The Field Day / RTTY Roundup choice and its Exchange entry
+             CL-024-03
+             Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
+             Steps: open the fold-out with settings activity rtty, exchange DX, serial 7; enter "1A EMA" in the Exchange entry and choose Field Day; change the exchange to "2B WI".
+             Expected: the choice offers None, NA VHF, WW Digi, ARRL Digi, Field Day and RTTY Roundup; it shows RTTY Roundup, the entry DX and the next serial 0007; choosing sends set_activity {activity field_day, exchange "1A EMA"}, the change sends {field_day, "2B WI"}; nothing transmits; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_024_03_verified_by_TC_024_009 from 'CL-024-03' to 'TC-024-009';
     verification 'TC-024-003' {
         doc /* TC-024-003 — Compound and nonstandard QSOs through the contact engine
              CL-024-01

@@ -337,6 +337,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(
         keys(&v["settings"]),
         sorted(&[
+            "exchange",
+            "serial",
             "auto_seq",
             "call_first",
             "tx1_skip",
@@ -362,7 +364,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
-        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none"})
+        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
@@ -386,9 +388,9 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
             "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
-        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50,"activity":"arrl_digi"},
+        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50,"activity":"field_day","exchange":"32F WWA","serial":u32::MAX},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
-            "state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
+            "exchange_sent":"32F WWA","exchange_rcvd":"32F WWA","state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
             "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",
             "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX},
             "dialogue":dialogue},
@@ -648,6 +650,8 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "dx_grid",
             "report_sent",
             "report_rcvd",
+            "exchange_sent",
+            "exchange_rcvd",
             "state",
             "next_slot",
             "tx4",
@@ -916,6 +920,9 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         report: -12,
         report_rcvd: Some(-9),
         report_sent: Some(-12),
+        exchange_sent: None,
+        exchange_rcvd: None,
+        activity: crate::contact::Activity::None,
         state: crate::contact::State::Completed,
         next: crate::contact::Slot::Tx6,
         tx4: crate::contact::Tx4::Rr73,
@@ -946,7 +953,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
             "rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123445",
             "qso_date_off":"20261101","time_off":"123515","band":"20m","freq":"14.081234",
             "station_callsign":"HB9BLA","my_gridsquare":"JN47","tx_pwr":null,"comment":null,
-            "unknown_field_count":0})
+            "stx":null,"stx_string":null,"srx":null,"contest_id":null,"srx_string":null,"class":null,"arrl_sect":null,"state":null,"unknown_field_count":0})
     );
     assert_eq!(
         crate::logbook::validate_record(&record, "HB9BLA", "JN47"),
@@ -1551,9 +1558,7 @@ async fn the_contact_step_gives_the_hash_table_the_dx_call() {
 #[tokio::test]
 async fn set_activity_reads_back_and_reaches_udp_status() {
     let f = fixture("http://127.0.0.1:18001", true);
-    let (s, v) = f
-        .send("set_activity", json!({"activity":"field_day"}))
-        .await;
+    let (s, v) = f.send("set_activity", json!({"activity":"eu_vhf"})).await;
     assert_eq!(
         (s, code(&v)),
         (
@@ -1576,4 +1581,54 @@ async fn set_activity_reads_back_and_reaches_udp_status() {
             "{name}"
         );
     }
+}
+
+// Proves: CL-024-03; TC-024-008 (d), (e). set_activity field_day/rtty with the exchange
+// over POST /contact/command: normalized read-back, the serial, refusals and UDP Status 3/4.
+#[tokio::test]
+async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    for body in [
+        json!({"activity":"field_day"}),
+        json!({"activity":"field_day","exchange":"33A EMA"}),
+        json!({"activity":"rtty","exchange":"DXX"}),
+        json!({"activity":"ww_digi","exchange":"MA"}),
+        json!({"activity":"rtty","exchange":7}),
+    ] {
+        let (s, v) = f.send("set_activity", body.clone()).await;
+        assert_eq!(
+            (s, code(&v)),
+            (
+                StatusCode::BAD_REQUEST,
+                ("invalid_request", Some("exchange"))
+            ),
+            "{body}"
+        );
+    }
+    for (name, exchange, shown, udp) in [
+        ("field_day", "1a  ema", "1A EMA", 3u8),
+        ("rtty", "dx", "DX", 4),
+    ] {
+        let (s, v) = f
+            .send("set_activity", json!({"activity":name,"exchange":exchange}))
+            .await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+        let settings = &f.snapshot().await["settings"];
+        assert_eq!(
+            (
+                &settings["activity"],
+                &settings["exchange"],
+                &settings["serial"]
+            ),
+            (&json!(name), &json!(shown), &json!(1))
+        );
+        assert_eq!(
+            crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+            udp,
+            "{name}"
+        );
+    }
+    let (s, _) = f.send("set_activity", json!({"activity":"none"})).await;
+    assert_eq!(s, StatusCode::ACCEPTED);
+    assert_eq!(f.snapshot().await["settings"]["exchange"], Value::Null);
 }

@@ -59,7 +59,8 @@ MESSAGES = [
     "PJ4/K1ABC W9XYZ 579 MA", "W9XYZ K1ABC/R 579 MA", "TU; <PJ4/K1ABC> W9XYZ R 579 MA",
     "W9XYZ G8ABC 529 8000", "W9XYZ G8ABC 529 0000", "W9XYZ G8ABC 519 0001", "W9XYZ G8ABC 599 13",
     "W9XYZ G8ABC 599 DX", "TU; K1ABC W9XYZ RR73", "TU; TU; K1ABC W9XYZ 579 MA", "K1ABC W9XYZ 579",
-    # Messages the Rust encoder must refuse: altered by WSJT-X or an unsupported family.
+    # Messages WSJT-X alters or packs in a family the Rust encoder refuses; except K1A K2B 6A WI,
+    # K1ABC W9XYZ R 17B EMA and K1ABC W9XYZ 579 WI, which since #24 S2b encode exactly.
     "HELLO WORLD 123", "A", "CAFE", "TNX BOB 73 GL!", "K1ABC W9XYZ -51", "CQ <PJ4/K1ABC>",
     "K1ABC FN42 37", "PJ4/K1ABC 37", "K1A K2B 6A WI", "K1ABC W9XYZ R 17B EMA",
     "K1ABC RR73; W9XYZ <KH1/KH7Z> -08", "K1ABC W9XYZ 579 WI", "<PA9XYZ> <G4ABC/P> 570123 IO91NP",

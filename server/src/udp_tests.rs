@@ -1194,7 +1194,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
             "rst_sent":null,"rst_rcvd":"-09","qso_date":"20261101","time_on":"123420",
             "qso_date_off":"20261101","time_off":"123515","band":null,"freq":null,
             "station_callsign":"HB9BLA","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null,
-            "unknown_field_count":0})
+            "stx":null,"stx_string":null,"srx":null,"contest_id":null,"srx_string":null,"class":null,"arrl_sect":null,"state":null,"unknown_field_count":0})
     );
     let logged = drain(&a);
     assert_eq!(kinds(&logged), [5, 12], "QSO Logged then Logged ADIF");

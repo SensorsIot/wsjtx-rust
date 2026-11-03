@@ -38,7 +38,8 @@
         "member_sha256": "55cee2d6f4dbc06ac53acb931839beafff672e5d872e3878aa25137e84541d55",
         "entries": 84,
         "reason": "#24 S2b: WSJT-X 3.3.0-beta5 jt9/ft8code pack and unpack with these tables (QEX 2020 sections 16/25/44 GTA/MAR/NT are GH/NS/TER, PE and NB added; Dutch provinces and X01-X99 added to the RTTY exchanges)"
-      }
+      },
+      "terms": "WSJT-X source is GPL-3.0 (this repository is GPL-3.0-only); only the ordered list of factual identifiers is extracted, no code"
     },
     {
       "source": "WSJT-X 3.3.0-beta5 (revision d89fe3) lib/77bit/packjt77_grammar.f90 PACK77_RTTY_MULTIPLIERS",
@@ -52,7 +53,8 @@
         "member_sha256": "77fe41de5d83206820b69fe0dab4d911d8b8080309ce4906af2d4d4873d18a35",
         "entries": 65,
         "reason": "#24 S2b: WSJT-X 3.3.0-beta5 jt9/ft8code pack and unpack with these tables (QEX 2020 sections 16/25/44 GTA/MAR/NT are GH/NS/TER, PE and NB added; Dutch provinces and X01-X99 added to the RTTY exchanges)"
-      }
+      },
+      "terms": "WSJT-X source is GPL-3.0 (this repository is GPL-3.0-only); only the ordered list of factual identifiers is extracted, no code"
     }
   ],
   "fixture_files": [

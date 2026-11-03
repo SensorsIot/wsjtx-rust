@@ -107,7 +107,7 @@ package WstxContact {
              always rr73 (MW send_rr73_for_tx4 ~9661 is true for FT4 whatever
              m_send_RR73; set_rr73_tx4 ~9676 forces it), see ToggleTx4Form. */
     }
-    enum def SpecialActivity { enum none; enum na_vhf; enum ww_digi; enum arrl_digi; }
+    enum def SpecialActivity { enum none; enum na_vhf; enum ww_digi; enum arrl_digi; enum field_day; enum rtty; }
     attribute def GridExchangeContest {
         attribute activity : SpecialActivity;
         doc /* #24 S2a, CL-024-02 (WSJT-X 3.3.0-beta5 Settings > Advanced > Special operating
@@ -137,7 +137,56 @@ package WstxContact {
              DX grid. Contest dupes are the existing worked-before indication of the
              call on this band and mode (WorkedBeforeQuery). The UDP Status special
              operation carries the WSJT-X SpecialOperatingActivity value: none 0, na_vhf 1,
-             ww_digi 5, arrl_digi 8. Field Day and FT Roundup are #24 S2b. */
+             ww_digi 5, arrl_digi 8, field_day 3, rtty 4. Field Day and FT Roundup:
+             ContestExchange (#24 S2b). In every activity other than none Tx1 is disabled
+             as in WSJT-X (MW ~8190: "start QSO with Tx2"): a selection or entry that would
+             start with Tx1 starts with Tx2, as with Skip Tx1. */
+    }
+    attribute def ContestExchange {
+        attribute exchange : String[0..1];
+        attribute serial : Integer;
+        doc /* #24 S2b2, CL-024-03 (WSJT-X 3.3.0-beta5 genCQMsg ~9620, genStdMsgs ~9741-9790,
+             DecodedMessageReaction.cpp ~460-560, mainwindow guiUpdate ~8012-8017 and
+             ~10542, logqso.cpp ~386-412, logbook.cpp ~92-110, AdifQso.cpp to_adif;
+             Configuration.cpp Field_Day_Exchange / RTTY_Exchange). set_activity
+             {activity:"field_day"|"rtty", exchange} chooses ARRL Field Day or FT/RTTY
+             Roundup with the station's configured exchange; it is a boot setting like
+             the activity (not saved). field_day: exchange "nC SECTION" (n 1-32 without
+             a leading zero, C A-F, SECTION one of the 86 decoder sections, DX outside
+             W/VE), e.g. "1A EMA". rtty: exchange a state/province/multiplier of the 171
+             RTTY exchanges, e.g. "MA", or "DX" or "#" for a four-digit serial. Upper case
+             is folded and blank runs collapse; anything else, a missing exchange for these
+             two, or an exchange for another activity is refused invalid_request field
+             exchange. serial is the station's contest serial number: 1 at boot,
+             incremented by one each time a contact is logged (DirectLog, completion or
+             Log QSO of a contact not yet logged) while an activity other than none is set
+             (MW ~10542), never reset by set_activity.
+             Messages (both calls must be standard calls; otherwise generation fails
+             invalid_call, since WSJT-X would hash and alter the call): Tx6 "CQ FD MYCALL
+             GRID4" / "CQ RU MYCALL GRID4"; the sent exchange is the Field Day exchange,
+             or for rtty "5n9 X" with n=(report+36)/6 truncated toward zero and clamped to
+             2..9 and X the configured exchange or, for DX/#, the serial as four digits;
+             Tx2 is the StandardMessageSet Tx1-Tx3 stem plus the sent exchange and Tx3 the
+             stem plus "R " plus it (e.g. "K1ABC HB9BLA 1A EMA", "K1ABC HB9BLA R 559
+             0003"); Tx1, Tx4, Tx5 unchanged. FT4 TU; (MW ~9783): in rtty and FT4, when the
+             operator (not automation) selects a row while fewer than 15 whole seconds
+             have passed since the start of the period of the station's last transmission
+             and fewer than 3 whole seconds since the last partner RR73 was counted (Qt
+             secsTo), Tx3 is prefixed "TU; ".
+             Received (ContestReceivedKind): a Field Day message to my call in field_day,
+             or an RTTY Roundup message to my call in rtty (TU; ignored), is a
+             signalReport without R and a rogerReport with R; in another activity it is
+             other. Its last two words (e.g. "6A WI", "579 MA", "559 0013") are the
+             contact's exchange_rcvd; exchange_sent is the last two words of Tx2 once a
+             Tx2 or Tx3 is transmitted. report_sent/report_rcvd stay null.
+             Log (DirectLog, AdifQso::to_adif): rtty RST_SENT/RST_RCVD are the first words
+             (5n9) of exchange_sent/exchange_rcvd. exchange_sent: a two-word value whose
+             second word is a positive number gives STX (that word), otherwise
+             STX_STRING (the value). exchange_rcvd: a positive number second word gives
+             SRX; otherwise field_day gives CONTEST_ID ARRL-FIELD-DAY, SRX_STRING (the
+             value), CLASS (first word) and ARRL_SECT (second word); rtty gives STATE
+             (second word); another activity SRX_STRING. Fields are written in the
+             LogRecord order. */
     }
     action def ToggleTx4Form {
         doc /* D7 adopted (MW on_txrb4_doubleClicked ~9047): switches tx4 between rrr
@@ -665,6 +714,7 @@ package WstxContact {
         attribute myGridsquare : String[0..1];
         attribute txPwrW : String[0..1];
         attribute commentText : String[0..1];
+        attribute contestFields : String[0..8];
         doc /* ADIF 3.1.8 ADI fields (field set follows ADQ to_adif ~50-75 and LQ, D10):
              CALL, GRIDSQUARE (only when known; DIFFERENT from WSJT-X writing it empty),
              MODE FT8 (FT4-NOTE MODE MFSK, SUBMODE FT4), RST_SENT = report of the last
@@ -681,8 +731,12 @@ package WstxContact {
              WSJT-X to_adi_text stripping them: a supplied record is never altered).
              DirectLog writes neither TX_PWR nor COMMENT (no power or comment entry
              since #41 retired the review); SaveContact and ImportAdi may carry them.
-             APP_WSTXRUST_CONTACT_ID = contactId. Name, operator, propagation, satellite
-             and contest exchange fields are not adopted (D10; WSJT-X writes OPERATOR
+             Contest fields (#24 S2b, ContestExchange; D10 reversed for these only), in
+             this order after COMMENT: STX, STX_STRING, SRX, CONTEST_ID, SRX_STRING, CLASS,
+             ARRL_SECT, STATE; each at most 32 printable ASCII characters without '<' and
+             '>' (STX/SRX 1-4 digits). RST_SENT/RST_RCVD are a ReportRange report or a
+             5n9 RST (n 2-9). APP_WSTXRUST_CONTACT_ID = contactId. Name, operator,
+             propagation and satellite fields are not adopted (D10; WSJT-X writes OPERATOR
              only with a configured operator call, which this product does not have).
              Start time (MW set_dateTimeQSO ~8944): the UTC start of the period of this
              contact's first transmitted Tx2, or one period before its first
@@ -967,7 +1021,8 @@ package WstxContact {
              cursor 0..total (total returns an empty page), page at most 16384 encoded
              bytes. Each record is exactly {index,contact_id,call,gridsquare,mode,
              submode,rst_sent,rst_rcvd,qso_date,time_on,qso_date_off,time_off,band,freq,
-             station_callsign,my_gridsquare,tx_pwr,comment,unknown_field_count} with
+             station_callsign,my_gridsquare,tx_pwr,comment,stx,stx_string,srx,contest_id,
+             srx_string,class,arrl_sect,state,unknown_field_count} with
              absent values null, rendered literally. Read-only inspection; no edit or
              delete. */
     }
@@ -1011,8 +1066,8 @@ package WstxContact {
              this with the PointerEffect result); set_hold_tx {enabled};
              set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
              set_call_first {enabled} (CallFirst);
-             set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"}
-             (GridExchangeContest);
+             set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"|"field_day"|"rtty",
+             exchange?} (GridExchangeContest, ContestExchange);
              set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled,
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the
@@ -1060,8 +1115,10 @@ package WstxContact {
              last_period_utc,halt_state,safety_revision,refusal} (safety_revision the
              current CL-022 safety revision of the selected radio scope or null);
              settings exactly {auto_seq,call_first,tx1_skip,
-             tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report,activity}; contact null or
-             exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
+             tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report,activity,exchange,
+             serial} (exchange the ContestExchange text or null); contact null or
+             exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,exchange_sent,
+             exchange_rcvd,state,next_slot,
              tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd,dialogue} (report_sent the
              report of the last transmitted Tx2/Tx3 rendered, null until one is sent;
              suggested_slot null or the slot AutoSequence would select after the latest
