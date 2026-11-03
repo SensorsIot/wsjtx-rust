@@ -532,8 +532,13 @@ async function replyRow(tr){
   if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm('Reply'));
 }
 let clickTimer=null;
-activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>selectRow(tr),250);});
-activity?.addEventListener('dblclick',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);replyRow(tr);});
+// The double-click is the row's second press (click count 2), not the dblclick event: the
+// rows are redrawn with every result page, and the browser drops a click, and its dblclick,
+// whose pressed row was redrawn before the release (#50, 2026-11-03: G8KHF only selected).
+// A click of a double-click never starts the single-click selection.
+const secondPress=(event,selector)=>event.button===0&&event.detail===2?event.target.closest(selector):null;
+activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr||event.detail>1)return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>selectRow(tr),250);});
+activity?.addEventListener('mousedown',event=>{const tr=secondPress(event,'tr[data-sequence]');if(!tr)return;clearTimeout(clickTimer);replyRow(tr);});
 activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;if(event.key==='Enter'){event.preventDefault();selectRow(tr);}else if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();openMenu(tr,tr.getBoundingClientRect().left+20,tr.getBoundingClientRect().bottom);}});
 const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-menu';menu.setAttribute('role','menu');menu.hidden=true;
 menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
@@ -594,7 +599,7 @@ async function answerOther(li){
   if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.textContent);return;}
   if(reply&&!reply.refused&&transmitCapable())arm('Reply');
 }
-othersList.addEventListener('dblclick',event=>{const li=event.target.closest('li[data-row]');if(li)answerOther(li);});
+othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'li[data-row]');if(li)answerOther(li);});
 othersList.addEventListener('keydown',event=>{const li=event.target.closest('li[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});
 if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;othersShow();}).observe(activity,{childList:true});
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
