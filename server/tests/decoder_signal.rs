@@ -768,7 +768,9 @@ fn recorded_corpus_reaches_jt9_deep_decodes() {
                 .any(|d| (d.frequency_hz - r["freq"].as_f64().unwrap()).abs() <= 5.)
             {
                 found += 1;
-            } else if decoded.iter().any(|d| same(&d)) {
+            } else if (input, text) == ("191111_110615.wav", "PA3EPP SP8NFO KN09")
+                && decoded.iter().any(|d| same(&d))
+            {
                 // jt9 and the station each publish a message once per period: the first copy
                 // their own candidate order verifies (ft8_decode drops a repeated msg37). A
                 // message on the air on several carriers (PA3EPP SP8NFO KN09 at 906 Hz and
@@ -784,7 +786,7 @@ fn recorded_corpus_reaches_jt9_deep_decodes() {
     }
     eprintln!("JT9_PARITY total {found}/{total}, {copies} on another carrier");
     assert_eq!(total, 409);
-    // Only the one known multi-carrier message is matched on another copy.
+    // Only the one known multi-carrier message (pinned above) is matched on another copy.
     assert!(copies <= 1, "{copies} decodes matched on another carrier");
     assert!(
         found >= MINIMUM,
