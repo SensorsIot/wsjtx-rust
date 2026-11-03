@@ -980,6 +980,8 @@ pub(crate) fn station_tick(state: &ProfileState) {
         // #42 IgnoreLists: a station band change empties the session list before Auto.
         s.strategy
             .observe_band(crate::strategy::station_band(&state.recording));
+        // #42 Alert: every new live decode once, whether or not a browser is connected.
+        s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
     }
