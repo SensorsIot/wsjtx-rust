@@ -1325,6 +1325,10 @@ package WstxRequirements {
              4. Drop bytes without closing the established test connection. Expect stale detection
                 within the contract's silent-loss bound and scheduler tolerance. Restore byte delivery;
                 expect bounded recovery and another snapshot without waiting for the old close handshake.
+             5. Hold (delay, not drop) every station-to-browser byte for 16s while the page's
+                deferred client download is pending, then deliver it. Expect the same socket, no
+                stale state and no new connection (#8). Hold beyond 31s with the download pending:
+                expect stale detection within the 31s bound plus 1-second scheduler tolerance.
 
              **Oracle:** contract state transitions/time limits and observed request exchange.
              The automation cuts/restores the proxy to the actual server and checks a new snapshot

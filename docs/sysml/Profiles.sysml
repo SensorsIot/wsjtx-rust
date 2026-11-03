@@ -436,7 +436,8 @@ package WstxProfiles {
              without automatic PUT replay or an assumed rollback. Refresh/reconnect reload authoritative settings; preserve in-progress
              edits until explicit reload or successful save. No settings polling/replay.
              Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
-             silence checked each second =>13-second detection; reconnect 1/2/4 seconds,
+             silence checked each second =>13-second detection (31 seconds while a deferred
+             client download is pending, WstxStationProtocol::BrowserLinkLifecycle); reconnect 1/2/4 seconds,
              snapshot+profile within 10 seconds after loss detection/restored link.
              Keep 12.3/12.4 existing bounds; no N-station thin-link guarantee is invented.
              Literal-text output, keyboard access/readability at desktop and 360px.

@@ -214,7 +214,12 @@ package WstxStationProtocol {
         transition silent first connected if silentTooLong then stale;
         transition retry first stale then connecting;
         doc /* >12s with no message checked each1s permits13s detection. Closed socket
-             marks state stale immediately. Reconnect waits1,2,4s then caps4s;
+             marks state stale immediately. The page's own deferred client download
+             (WstxContact log and contact clients after the first snapshots) shares the one
+             station-to-browser bottleneck and can hold queued messages behind it (#8): while
+             one is pending the bound is >30s, checked each1s (31s detection); its
+             completion or failure counts as a message, so the 12s bound restarts there.
+             No other request extends the bound. Reconnect waits1,2,4s then caps4s;
              accepted fresh snapshot resets backoff. A new connection not open within5s
              is abandoned. Watchdog starts reconnect without waiting for old close
              handshake. Ignore replaced-socket callbacks. After restored connectivity
