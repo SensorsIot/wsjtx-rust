@@ -81,7 +81,7 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value)){stationSample(value.utc_ms);transmittedIn(value.transmit?.last_period_utc);}if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
   }catch{}
 }
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
@@ -735,6 +735,16 @@ function countdown(){
 }
 setInterval(displays,250);setInterval(countdown,100);
 // ---------------------------------------------------------------- station events
+// #61 CL-061-03: the T/R periods (start, station UTC ms) in which this station transmitted, from
+// station.tick transmitting and the snapshot's transmit.last_period_utc; Band Activity shows no
+// empty block for them. The latest 16 are kept.
+const transmittedPeriods=new Set();
+function transmittedIn(ms){
+  if(!Number.isSafeInteger(ms)||transmittedPeriods.has(ms))return;
+  transmittedPeriods.add(ms);if(transmittedPeriods.size>16)transmittedPeriods.delete(transmittedPeriods.values().next().value);
+  if(typeof resultView!=='undefined'&&Date.parse(resultView?.period_start_utc??'')===ms)renderResults();
+}
+window.wstxTransmitted=period=>transmittedPeriods.has(Date.parse(period??''));
 // Reconnect (a new socket) reloads the authoritative snapshot; a status refresh on the
 // same socket does not (contact.state announces every change).
 let readySocket=null;
@@ -747,7 +757,7 @@ addEventListener('station-message',event=>{
   if(message.type==='contact.state'&&d&&(!snap||d.contact_revision!==snap.contact_revision||d.boot_id!==snap.boot_id))load();
   else if(message.type==='automation.state'&&d)loadAutomation();
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
-    const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
+    const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);if(d.transmitting===true)transmittedIn(Math.floor(d.utc_ms/d.period_ms)*d.period_ms);
     tick={utc:d.utc_ms,at:performance.now(),period:d.period_ms,transmitting:d.transmitting===true,level:Number.isInteger(d.rx_level_db)?d.rx_level_db:null};$('contact-tx').max=d.period_ms===7500?'2916':'2950';
     displays();if(changed)render();else stationTx();
   }
@@ -787,8 +797,8 @@ function distanceKm(from,to){
   const r=Math.PI/180,h=Math.sin((b[0]-a[0])*r/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin((b[1]-a[1])*r/2)**2;
   return Math.round(12742*Math.asin(Math.min(1,Math.sqrt(h))));
 }
-window.wstxRenderHistory=function renderHistory(body){
-  for(const block of activityHistory){
+window.wstxRenderHistory=function renderHistory(body,blocks=activityHistory){
+  for(const block of blocks){
     const divider=document.createElement('tr');divider.className='ba-divider';divider.setAttribute('role','row');
     const cell=document.createElement('td');cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`${block.mode.toUpperCase()} period ${periodLabel(block.period,block.mode)}${block.period?' UTC':''}`;divider.append(cell);body.append(divider);
     for(const record of activityOrdering(block.rows))body.append(activityRow(record,'history',block.context,block.mode));

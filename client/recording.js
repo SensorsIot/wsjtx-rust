@@ -508,7 +508,9 @@ function applyLatestDecode(view,first){
   // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
   const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
   const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
-  activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
+  // #61 CL-061-03: a period in which this station transmitted has nothing to show; the period kept below it stays.
+  const transmitted=resultView&&!resultRows.length&&window.wstxTransmitted?.(resultView.period_start_utc);
+  activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):transmitted?activityHistory.slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;
@@ -591,10 +593,19 @@ function renderResults(){
   const ordered=activityOrdering();
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
-  document.querySelector('#band-activity header .op-muted').textContent=resultView?
+  // #61 CL-061-03: the period this station transmitted in shows no empty block (as in WSJT-X);
+  // the header and the top rows are the last receive period, kept below it.
+  const own=resultView&&!resultRows.length&&!loading&&window.wstxTransmitted?.(resultView.period_start_utc),top=own?activityHistory[0]??null:null;
+  document.querySelector('#band-activity header .op-muted').textContent=own?(top?`Latest ${top.mode.toUpperCase()} period ${periodLabel(top.period,top.mode)}${top.period?' UTC':''}${historyIncomplete?' · Incomplete history':''}`:'Latest decode period'):resultView?
     `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
-  document.querySelector('#band-activity .op-count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
+  const count=top?top.rows.length:resultRows.length;
+  document.querySelector('#band-activity .op-count').textContent=`${count} message${count===1?'':'s'}`;
+  if(top){
+    body.replaceChildren();
+    for(const record of activityOrdering(top.rows))body.append(activityRow(record,'history',top.context,top.mode));
+    window.wstxRenderHistory?.(body,activityHistory.slice(1));return;
+  }
   if(!resultRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
     const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
@@ -603,7 +614,7 @@ function renderResults(){
       const mode=job.mode.toUpperCase();
       heading=job.state==='running'?(connection.dataset.state==='connected'?`Listening for ${mode}`:`${mode} receive status stale`):job.state==='cancelling'?`Stopping ${mode} receive`:`${mode} receive ${job.state}`;
       message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
-      if(resultView){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
+      if(resultView&&!own){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
     }
     body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;window.wstxRenderHistory?.(body);return;
   }
