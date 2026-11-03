@@ -119,7 +119,10 @@ package WstxContact {
              none) and applies to the next message generation; the current contact's
              Tx2-Tx4 and Tx6 are regenerated at once (a report or tx4 change still
              replaces only Tx2-Tx4). Station automation does not start while an activity
-             other than none is set (WstxMcp, not_ready activity): it only observes. With an activity other than none:
+             other than none is set (WstxMcp, not_ready activity): it only observes. Like
+             the auto_seq and call readiness, this is checked when a run starts; choosing
+             an activity during a running automation run does not stop it (the operator
+             chooses the contest before starting, and HALT or Stop ends a run). With an activity other than none:
              Tx6 is "CQ TEST MYCALL GRID4" (na_vhf, arrl_digi) or "CQ WW MYCALL GRID4"
              (ww_digi) when MYCALL is standard (a nonstandard MYCALL keeps "CQ MYCALL");
              the exchange is my grid instead of the report: Tx2 is the Tx1-Tx3 stem of
