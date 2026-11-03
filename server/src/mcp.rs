@@ -121,7 +121,7 @@ fn mcp_name(headers: &HeaderMap) -> Option<String> {
     Some(raw.to_owned())
 }
 
-const VIEWS: [(&str, &str); 8] = [
+const VIEWS: [(&str, &str); 9] = [
     ("profile", "/profile"),
     ("receive", "/receive"),
     ("selection", "/receive/selection"),
@@ -130,6 +130,7 @@ const VIEWS: [(&str, &str); 8] = [
     ("contact", "/contact"),
     ("automation", "/automation"),
     ("strategy", "/strategy"),
+    ("alerts", "/strategy/alerts"),
 ];
 /// The station routes an MCP tool call dispatches to (WstxMcp::ToolCatalog).
 fn tool_route(method: &Method, path: &str) -> bool {
@@ -171,7 +172,7 @@ pub fn tools() -> Value {
     let safe = json!({"type":"integer","minimum":0,"maximum":9_007_199_254_740_991u64});
     json!([
         {"name":"wstx_read","title":"Read station state",
-         "description":"Read one station view exactly as the browser receives it: profile (GET /profile), receive (GET /receive), selection (GET /receive/selection), radio (GET /radio), transmit (GET /transmit), contact (GET /contact, the ContactSnapshot with contact_revision and transmit.safety_revision), automation (GET /automation) or strategy (GET /strategy: the saved strategies, the active one and my continent; editing stays in the browser). No effect.",
+         "description":"Read one station view exactly as the browser receives it: profile (GET /profile), receive (GET /receive), selection (GET /receive/selection), radio (GET /radio), transmit (GET /transmit), contact (GET /contact, the ContactSnapshot with contact_revision and transmit.safety_revision), automation (GET /automation), strategy (GET /strategy: the saved strategies, the active one and my continent; editing stays in the browser) or alerts (GET /strategy/alerts: the station's alert history of strategy rules marked alert; clearing stays in the browser). No effect.",
          "inputSchema":{"type":"object","properties":{"view":{"type":"string","enum":VIEWS.map(|v|v.0)}},"required":["view"],"additionalProperties":false},
          "outputSchema":output,"annotations":{"readOnlyHint":true}},
         {"name":"wstx_results","title":"Read decoded results",
