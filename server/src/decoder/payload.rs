@@ -272,7 +272,14 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8, table: Option<&HashTable>) -> Option<(St
             let first = c28(g(0, 28), table)?;
             let second = c28(g(28, 28), table)?;
             let h10 = g(56, 10);
-            let hashed = Call::hashed_as(10, h10, table.and_then(|t| t.lookup10(h10)));
+            // unpack77 n3=1 nrx=1 (hashdx10, #24 S4a): the current DX call's 10-bit hash
+            // shows the DX call before the calls10 entry of that hash.
+            let dx = table
+                .and_then(|t| t.dx_call())
+                .filter(|d| super::ihashcall(d, 10) == Some(h10))
+                .map(str::to_owned);
+            let hashed =
+                Call::hashed_as(10, h10, dx.or_else(|| table.and_then(|t| t.lookup10(h10))));
             let report = 2 * g(66, 5) as i32 - 30;
             Some((
                 format!(
