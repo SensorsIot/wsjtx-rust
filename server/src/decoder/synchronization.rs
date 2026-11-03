@@ -234,27 +234,50 @@ impl Spectrum {
         let nf = self.frequencies.len();
         let q = self.mode.tone_count();
         let sync = &self.sync;
-        let mut scores = vec![0f64; starts * nf];
-        for r in 0..starts {
-            budget.checkpoint().await?;
-            for f in 0..nf {
-                let (mut yes, mut other) = (0., 0.);
-                for &(j, t) in sync {
-                    let row = r + 4 * j;
-                    yes += self.power(row, f, t as usize);
+        // Each frequency's tone powers are computed once for all its rows; the sums below
+        // add exactly the same values in the same order as one power call per term. The
+        // frequencies are independent, so they are scored in parallel (#57 CL-057-02).
+        let rows = starts + 4 * (self.mode.symbol_count() - 1);
+        let frequencies = (0..nf).collect::<Vec<_>>();
+        let columns = super::parallel::map(
+            threads,
+            &frequencies,
+            budget,
+            || vec![0f64; rows * q],
+            |&f, power, _| {
+                for row in 0..rows {
                     for tone in 0..q {
-                        if tone != t as usize {
-                            other += self.power(row, f, tone);
-                        }
+                        power[row * q + tone] = self.power(row, f, tone);
                     }
                 }
-                scores[r * nf + f] = if other > 0. {
-                    (q - 1) as f64 * yes / other
-                } else if yes > 0. {
-                    f64::INFINITY
-                } else {
-                    0.
-                };
+                (0..starts)
+                    .map(|r| {
+                        let (mut yes, mut other) = (0., 0.);
+                        for &(j, t) in sync {
+                            let cell = &power[(r + 4 * j) * q..(r + 4 * j + 1) * q];
+                            yes += cell[t as usize];
+                            for (tone, &p) in cell.iter().enumerate() {
+                                if tone != t as usize {
+                                    other += p;
+                                }
+                            }
+                        }
+                        if other > 0. {
+                            (q - 1) as f64 * yes / other
+                        } else if yes > 0. {
+                            f64::INFINITY
+                        } else {
+                            0.
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
+        .await?;
+        let mut scores = vec![0f64; starts * nf];
+        for (f, column) in columns.iter().enumerate() {
+            for (r, &score) in column.iter().enumerate() {
+                scores[r * nf + f] = score;
             }
         }
         let mut heap = BinaryHeap::new();
