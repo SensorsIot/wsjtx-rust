@@ -3745,7 +3745,7 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history (the two-tier ignore lists are delivered by #42, CL-042-02); Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history (the two-tier ignore lists are delivered by #42, CL-042-02; Pounce by #42, CL-042-03); auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
@@ -3810,7 +3810,7 @@ package WstxRequirements {
              CL-042-02
              Setup: the browser fixture of the operating screen with the actual isolated station and its fixture live decodes; Highlight on with a CQ strategy.
              Steps: right-click a decoded row with a resolved sender; choose Ignore; open the menu again on that row; open Settings > General; enter two calls in the permanent list; change the session minutes; remove the session entry.
-             Expected: the menu offers Reply, Select, Set Rx here and "Ignore <call>", Ignore sends POST /strategy/ignore {call, ignore true} and does not set the Rx frequency; the row loses its Highlight mark after the station's new verdicts; the menu then offers "Stop ignoring <call>"; Settings lists the call with its remaining minutes; the permanent list saves with PUT /strategy as ignore_calls in upper case, the minutes as session_ignore_minutes; remove sends ignore false and the list is empty; no page errors.
+             Expected: the menu offers Reply, Select, Set Rx here, "Pounce <call>" (#42 CL-042-03) and "Ignore <call>", Ignore sends POST /strategy/ignore {call, ignore true} and does not set the Rx frequency; the row loses its Highlight mark after the station's new verdicts; the menu then offers "Stop ignoring <call>"; Settings lists the call with its remaining minutes; the permanent list saves with PUT /strategy as ignore_calls in upper case, the minutes as session_ignore_minutes; remove sends ignore false and the list is empty; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3819,6 +3819,41 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_042_02_verified_by_TC_042_003 from 'CL-042-02' to 'TC-042-003';
+    requirement 'CL-042-03' {
+        doc /* Pounce waits for one chosen call and answers it: an operator action (Band Activity right-click "Pounce <call>") starts a station automation run with pounce <call> on the current band and mode (one run at a time, so never beside Auto Call or Auto CQ, and needing a known band); when that call is decoded sending a CQ that the directed-CQ rule leaves to me, or an RR73/73 ending another QSO (then my Tx frequency is held), and it is on no ignore list, the station answers it as a double-click does (select_row, enable_tx; the contact engine calls in the next own period and Auto Seq runs the QSO). The pounce ends when that contact completes, on a station band change (band_changed), on HALT, the Tx watchdog or the operator's Stop pounce; a contact without an answer for max_unanswered_periods partner periods is cancelled and the pounce waits again. While it runs the QSO pane and the strategy element show it. Details: WstxStrategy::Pounce, WstxMcp::AutomationConfiguration, OperatingAutomation. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/mcp.rs; client/contact.js";
+    }
+    dependency CL_042_03_to_FR_007 from 'CL-042-03' to 'FR-007';
+    dependency CL_042_03_to_FR_020 from 'CL-042-03' to 'FR-020';
+    verification 'TC-042-004' {
+        doc /* TC-042-004 — Pounce at the station: configuration, answer, ignore, band change and end
+             CL-042-03
+             Setup: hand-authored rows; the station HB9BLA JN47AA on 40m; the actual station router, contact engine and #9 transmit owner on the recording hardware double (virtual UTC; no audio, PTT or radio); FT8 live job; the browser's grant.
+             Steps: parse configurations with pounce absent, null, K1ABC, lower case, 2 characters, K1ABC/R, with strategy true and with K1ABC in blocked_calls; start a pounce with the station band unknown; start a pounce on K1ABC on 40m; publish CQ W1AW FN31 and CQ DL1XYZ JO62; publish CQ K1ABC FN42; run the own period; the partner's report, RR73 and the own 73 period; start again and configure or start a second run while it waits; publish W1AW K1ABC RR73; a pounce on K1ABC with K1ABC on the session ignore list and a CQ K1ABC; a pounce with CQ NA K1ABC (not for EU); a pounce waiting when the station band changes to 20m; a pounce in its contact with max_unanswered_periods 2 and two partner periods without an answer.
+             Expected: absent and null read as no pounce, K1ABC accepted, the others invalid_request pounce; not_ready band; the run waits with pounce {K1ABC, 40m} and selects nothing for the other calls (candidates 0); CQ K1ABC is selected (replying, Tx1 "K1ABC HB9BLA JN47", armed) and the own period keys "K1ABC HB9BLA JN47"; the completed contact stops the run completed; a second configure or start is state_conflict run; after the RR73 to W1AW K1ABC is selected with my Tx frequency kept; an ignored K1ABC and the CQ NA are never selected (the run keeps waiting); the band change stops band_changed; two unanswered partner periods disarm and cancel the contact and the run waits again for K1ABC.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-03';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_042_03_verified_by_TC_042_004 from 'CL-042-03' to 'TC-042-004';
+    verification 'TC-042-005' {
+        doc /* TC-042-005 — Band Activity Pounce and the pounce line in the QSO pane
+             CL-042-03
+             Setup: the browser fixture of the operating screen with the actual isolated station and its fixture live decodes; the automation routes are hand-written fixtures.
+             Steps: right-click a decoded row with a resolved sender; choose Pounce; confirm; announce the started run; open the menu again; choose Stop pounce in the QSO pane.
+             Expected: the menu offers "Pounce K1ABC"; the confirmation is the Auto one; configure sends exactly {modes [ft8], ranking first_seen, min_snr_db null, allowed_calls [], blocked_calls [], max_contacts 1, max_unanswered_periods 5, completion_action stop, max_run_minutes 480, strategy false, pounce K1ABC}, then start with the shown safety revision; no contact command (no enable_tx) is sent by the browser; the QSO pane reads "Pouncing on K1ABC (40m) · waiting for CQ or 73", the status "Pounce K1ABC waiting · HALT ends it", the Auto button is disabled; the menu then offers "Stop pouncing K1ABC"; Stop pounce sends stop with the run id; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_03_verified_by_TC_042_005 from 'CL-042-03' to 'TC-042-005';
     verification 'TC-039-001' {
         doc /* TC-039-001 — Strategy configuration is exact
              CL-039-01

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02;
-// TC-039-001..005, TC-042-001, TC-042-002 (each test names its case below). Hand-authored records and strategies; the expected ranks,
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02, CL-042-03;
+// TC-039-001..005, TC-042-001, TC-042-002, TC-042-004 (each test names its case below). Hand-authored records and strategies; the expected ranks,
 // grey marks, orders, stop reasons and requests are the WstxStrategy tables written in
 // these tests (geography from the locator square centres), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
@@ -1678,5 +1678,298 @@ async fn tc_042_002_auto_cq_never_answers_an_ignored_caller() {
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(run["last_decision"]["candidates"], json!(1));
+    assert_eq!(f.keys(), 0);
+}
+
+// ------------------------------------------------------------------ #42 Pounce
+/// The browser's Pounce configuration (WstxStrategy::Pounce) with these unanswered periods.
+fn pounce_json(call: Value, unanswered: u64) -> Value {
+    json!({"modes":["ft8"],"ranking":"first_seen","min_snr_db":null,"allowed_calls":[],"blocked_calls":[],
+        "max_contacts":1,"max_unanswered_periods":unanswered,"completion_action":"stop","max_run_minutes":480,
+        "strategy":false,"pounce":call})
+}
+async fn configure_run(f: &Mcp, cfg: Value) -> crate::mcp_tests::Reply {
+    let a = f.browser("GET", "/automation", None).await.json;
+    f.browser("POST", "/automation/command", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "command_id":profile::new_uuid().unwrap(),"action":"configure","expected_policy_revision":a["policy_revision"],"configuration":cfg}))).await
+}
+async fn start_run(f: &Mcp) -> crate::mcp_tests::Reply {
+    let a = f.browser("GET", "/automation", None).await.json;
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    f.browser("POST", "/automation/command", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "command_id":profile::new_uuid().unwrap(),"action":"start","expected_policy_revision":a["policy_revision"],
+        "expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":safety}))).await
+}
+/// Configure and start a pounce from the browser (cookie grant), as Band Activity does.
+async fn pounce(f: &Mcp, call: &str, unanswered: u64) -> crate::mcp_tests::Reply {
+    let c = configure_run(f, pounce_json(json!(call), unanswered)).await;
+    assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
+    start_run(f).await
+}
+fn last_text(f: &Mcp) -> Option<String> {
+    f.state
+        .recording
+        .transmit
+        .get()
+        .unwrap()
+        .service
+        .view()
+        .last_text
+}
+
+// Proves: TC-042-004 (WstxStrategy::Pounce, WstxMcp::AutomationConfiguration pounce key)
+#[test]
+fn tc_042_004_pounce_configuration_is_exact() {
+    use crate::automation::parse_config as automation_config;
+    let mut absent = pounce_json(Value::Null, 5);
+    absent.as_object_mut().unwrap().remove("pounce");
+    assert_eq!(automation_config(&absent).unwrap().unwrap().pounce, None);
+    assert_eq!(
+        automation_config(&pounce_json(Value::Null, 5))
+            .unwrap()
+            .unwrap()
+            .pounce,
+        None
+    );
+    let ok = automation_config(&pounce_json(json!("K1ABC"), 5))
+        .unwrap()
+        .unwrap();
+    assert_eq!(ok.pounce.as_deref(), Some("K1ABC"));
+    assert_eq!(ok.json()["pounce"], json!("K1ABC"), "the snapshot shows pounce");
+    assert_eq!(
+        automation_config(&absent).unwrap().unwrap().json()["pounce"],
+        Value::Null
+    );
+    for bad in [json!("k1abc"), json!("K1"), json!("K1ABC/R"), json!(7)] {
+        assert_eq!(
+            automation_config(&pounce_json(bad.clone(), 5)),
+            Err(("invalid_request", Some("pounce"))),
+            "{bad}"
+        );
+    }
+    let mut with_strategy = pounce_json(json!("K1ABC"), 5);
+    with_strategy["strategy"] = json!(true);
+    assert_eq!(
+        automation_config(&with_strategy),
+        Err(("invalid_request", Some("pounce")))
+    );
+    let mut blocked = pounce_json(json!("K1ABC"), 5);
+    blocked["blocked_calls"] = json!(["K1ABC"]);
+    assert_eq!(
+        automation_config(&blocked),
+        Err(("invalid_request", Some("pounce")))
+    );
+}
+
+// Proves: TC-042-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_004_pounce_answers_the_chosen_call_in_the_next_own_period_and_ends_on_success() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    // No known station band: a pounce cannot say where it waits.
+    let r = pounce(&f, "K1ABC", 5).await;
+    assert_eq!(
+        (
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (json!("not_ready"), json!("band")),
+        "{}",
+        r.json
+    );
+    f.state.recording.fixture_band("40m");
+    let r = pounce(&f, "K1ABC", 5).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (run["state"].clone(), run["pounce"].clone()),
+        (json!("waiting"), json!({"call":"K1ABC","band":"40m"}))
+    );
+    // One run at a time: no Auto or second pounce beside it.
+    let again = configure_run(&f, pounce_json(json!("W1AW"), 5)).await;
+    assert_eq!(
+        (again.status.as_u16(), again.json["error"]["field"].clone()),
+        (409, json!("run"))
+    );
+    assert_eq!(
+        start_run(&f).await.json["error"]["field"],
+        json!("run"),
+        "a second start is state_conflict run"
+    );
+    // Other calls are never answered, whatever they send.
+    publish(
+        &f,
+        e - 30_000,
+        &[
+            ("CQ W1AW FN31", 900.0, Some(5.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
+        ],
+    );
+    assert_eq!(f.read("contact").await["contact"], Value::Null);
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (
+            run["state"].clone(),
+            run["last_decision"]["candidates"].clone()
+        ),
+        (json!("waiting"), json!(0))
+    );
+    // The chosen call's CQ is answered as a double-click: select, Enable Tx.
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
+            ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
+        ],
+    );
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["contact"]["dx_call"].clone(),
+            c["contact"]["state"].clone(),
+            c["contact"]["messages"][0].clone(),
+            c["settings"]["parity"].clone(),
+            c["transmit"]["arm_state"].clone()
+        ),
+        (
+            json!("K1ABC"),
+            json!("replying"),
+            json!("K1ABC HB9BLA JN47"),
+            json!("odd"),
+            json!("armed")
+        ),
+        "{c}"
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (run["state"].clone(), run["selected"]["call"].clone()),
+        (json!("contact_active"), json!("K1ABC"))
+    );
+    // The next own period calls K1ABC.
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(last_text(&f).as_deref(), Some("K1ABC HB9BLA JN47"));
+    // Auto Seq runs the QSO; its completion ends the pounce.
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
+    publish(&f, e + 60_000, &[("HB9BLA K1ABC RR73", 1505.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 75_000).await;
+    assert_eq!(last_text(&f).as_deref(), Some("K1ABC HB9BLA 73"));
+    assert_eq!(contact(&f).await.1, json!("completed"));
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("completed")));
+    // A later CQ of K1ABC is not answered: the pounce is over.
+    publish(&f, e + 90_000, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);
+    assert_eq!(contact(&f).await.2, json!("disarmed"));
+}
+
+// Proves: TC-042-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_directed_cq() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    assert_eq!(
+        ignore(&f, json!("K1ABC"), json!(true)).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
+    // The ignore lists win over the pounce.
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);
+    assert_eq!(f.read("contact").await["contact"], Value::Null);
+    assert_eq!(
+        ignore(&f, json!("K1ABC"), json!(false)).await.status,
+        StatusCode::OK
+    );
+    // CQ NA is not for my continent (EU): never answered (DirectedCqRule).
+    publish(
+        &f,
+        e + 30_000,
+        &[("CQ NA K1ABC FN42", 1500.0, Some(-15.0))],
+    );
+    assert_eq!(f.read("contact").await["contact"], Value::Null);
+    assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
+    // K1ABC ends its QSO with W1AW: answered, my Tx frequency held.
+    let tx = f.read("contact").await["settings"]["tx_hz"].clone();
+    publish(&f, e + 60_000, &[("W1AW K1ABC RR73", 1700.0, Some(-9.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["contact"]["dx_call"].clone(),
+            c["contact"]["messages"][0].clone(),
+            c["transmit"]["arm_state"].clone(),
+            c["settings"]["tx_hz"].clone(),
+            c["settings"]["rx_hz"].clone()
+        ),
+        (
+            json!("K1ABC"),
+            json!("K1ABC HB9BLA JN47"),
+            json!("armed"),
+            tx,
+            json!(1700)
+        ),
+        "Hold Tx after a 73"
+    );
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: TC-042-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_change() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    assert_eq!(pounce(&f, "K1ABC", 2).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // Two partner periods without an answer: the contact ends, the pounce stays.
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    let c = f.read("contact").await;
+    assert_eq!(c["transmit"]["arm_state"], json!("disarmed"));
+    assert!(
+        c["contact"].is_null() || c["contact"]["state"] == json!("cancelled"),
+        "{c}"
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (
+            run["state"].clone(),
+            run["reason"].clone(),
+            run["pounce"]["call"].clone()
+        ),
+        (json!("waiting"), Value::Null, json!("K1ABC"))
+    );
+    // It answers K1ABC's next CQ again.
+    publish(&f, e + 90_000, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // A band change ends the pounce and disarms its contact.
+    f.state.recording.fixture_band("20m");
+    f.tick();
+    assert_eq!(
+        run_state(&f).await,
+        ("stopped".into(), json!("band_changed"))
+    );
+    assert_eq!(contact(&f).await.2, json!("disarmed"));
+    // A waiting pounce ends the same way (the operator first clears the left contact).
+    let revision = f.read("contact").await["contact_revision"].clone();
+    let cancel = f.browser("POST", "/contact/command", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "command_id":profile::new_uuid().unwrap(),"contact_revision":revision,"action":"cancel"}))).await;
+    assert_eq!(cancel.status, StatusCode::ACCEPTED, "{}", cancel.json);
+    assert_eq!(pounce(&f, "K1ABC", 2).await.status, StatusCode::ACCEPTED);
+    f.state.recording.fixture_band("40m");
+    f.tick();
+    assert_eq!(
+        run_state(&f).await,
+        ("stopped".into(), json!("band_changed"))
+    );
     assert_eq!(f.keys(), 0);
 }
