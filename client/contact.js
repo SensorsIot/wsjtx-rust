@@ -22,7 +22,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('qso-reply','Reply','Answer the selected station: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
-<div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="Our measured SNR of a received message" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's report on us, on the line that carries it" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></tbody><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
+<div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></tbody><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
 `);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
@@ -187,27 +187,37 @@ function render(){
 // #37 QsoPane item 7: the server-owned dialogue of the running QSO, oldest first, kept at
 // its newest line; it scrolls inside the card (#qso-area) and goes with the QSO.
 const hhmmss=ms=>Number.isFinite(ms)?new Date(ms).toISOString().slice(11,19):'--:--:--';
-// #60 QsoPane QSO table: UTC | Direction | Exchange | Rx SNR | Tx SNR. Direction is the two
+// #60 QsoPane QSO table: UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR. Direction is the two
 // calls as on the air, recipient first, with "◂" pointing to the recipient (a hashed call
 // as decoded, "<...>" too); a CQ is "CQ [DX] <call>" with its grid as the exchange; another
-// message is all exchange. Rx SNR (ours) and Tx SNR (the partner's report on us, R-02 → −2)
-// only on received lines.
+// message is all exchange. Rep is ×N for a repeated message. On every dialogue row Rx SNR
+// (ours) and Tx SNR (the partner's report on us, R-02 → −2) are the latest received values at
+// or before it (operator 2026-11-03); an Others row shows its own.
 const signedDb=n=>typeof n==='number'?(n=Math.round(n),n>0?`+${n}`:n<0?`−${-n}`:'0'):'';
 const isCall=w=>/^<[^>]+>$/.test(w)||/^(?=.*[A-Z])(?=.*\d)[A-Z0-9/]+$/.test(w);
-function qsoRow(utc,text,rx,snr,count){
+function qsoParts(text){
   const w=(text??'').trim().split(/\s+/).filter(Boolean);let direction='',exchange=text??'';
   if(w[0]==='CQ'){const grid=w.length>2&&/^[A-R]{2}\d{2}$/.test(w.at(-1));direction=(grid?w.slice(0,-1):w).join(' ');exchange=grid?w.at(-1):'';}
   else if(w.length>=2&&isCall(w[0])&&isCall(w[1])){direction=`${w[0]} ◂ ${w[1]}`;exchange=w.slice(2).join(' ');}
-  const report=rx?/^R?([+-]\d{2})$/.exec(exchange):null;
+  return {direction,exchange};
+}
+// The report a received message carries (R-02 → −2, -05 → −5), else null.
+const qsoReport=text=>{const m=/^R?([+-]\d{2})$/.exec(qsoParts(text).exchange);return m?Number(m[1]):null;};
+function qsoRow(utc,text,rxSnr,txSnr,count){
+  const {direction,exchange}=qsoParts(text);
   const tr=document.createElement('tr');
-  for(const cell of [utc,direction,`${exchange}${count>1?` ×${count}`:''}`.trim(),rx?signedDb(snr):'',report?signedDb(Number(report[1])):'']){const td=document.createElement('td');td.textContent=cell;tr.append(td);}
+  for(const cell of [utc,direction,exchange,count>1?`×${count}`:'',signedDb(rxSnr),signedDb(txSnr)]){const td=document.createElement('td');td.textContent=cell;tr.append(td);}
   return tr;
 }
 const qsoTableShow=()=>{$('qso-table').hidden=!$('qso-dialogue').children.length&&!othersList.children.length;};
 function dialogueShow(c){
   const list=$('qso-dialogue'),entries=Array.isArray(c?.dialogue)?c.dialogue:[];
   const key=JSON.stringify(entries);if(list.dataset.key===key)return;list.dataset.key=key;
-  list.replaceChildren(...entries.map(e=>{const tr=qsoRow(hhmmss(e.period_utc_ms),e.text,e.dir==='rx',e.snr,e.count);tr.dataset.dir=e.dir;return tr;}));
+  let rxSnr=null,txSnr=null;// the latest received values so far, oldest entry first
+  list.replaceChildren(...entries.map(e=>{
+    if(e.dir==='rx'){if(typeof e.snr==='number')rxSnr=e.snr;txSnr=qsoReport(e.text)??txSnr;}
+    const tr=qsoRow(hhmmss(e.period_utc_ms),e.text,rxSnr,txSnr,e.count);tr.dataset.dir=e.dir;return tr;
+  }));
   list.hidden=!entries.length;qsoTableShow();
   const area=$('qso-area');area.scrollTop=area.scrollHeight;
 }
@@ -617,7 +627,7 @@ function othersShow(){
   const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}`)]);
   if(othersList.dataset.key===key)return;othersList.dataset.key=key;
   othersList.replaceChildren(...lines.map(({record,context})=>{
-    const tr=qsoRow(`${hhmmss(Date.parse(record.period_start_utc??''))}${qso?' ⚠':''}`,record.text,true,record.snr_db,1);tr.tabIndex=0;tr.dataset.kind=qso?'warn':'candidate';
+    const tr=qsoRow(`${hhmmss(Date.parse(record.period_start_utc??''))}${qso?' ⚠':''}`,record.text,record.snr_db,qsoReport(record.text),1);tr.tabIndex=0;tr.dataset.kind=qso?'warn':'candidate';
     tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;
     tr.title=qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station';
     return tr;

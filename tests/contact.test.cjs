@@ -53,7 +53,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   const others=async()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
   const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212),hms=new Date(period).toISOString().slice(11,19);
-  assert.deepEqual(await others(),[['candidate',[hms,`HB9BLA ${recv} W1XYZ`,'-10',`${minus}10`,`${minus}10`]]]);
+  assert.deepEqual(await others(),[['candidate',[hms,`HB9BLA ${recv} W1XYZ`,'-10','',`${minus}10`,`${minus}10`]]]);
   assert.equal(await page.locator('#qso-others-none').isVisible(),false);
   // Local sorting: no request. The DX entry is in the QSO fold-out.
   const before=requests.length;
