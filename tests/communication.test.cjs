@@ -162,12 +162,14 @@ async function deferredDownloadHold(t, holdMs) {
   await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
   const app = await server({}, ['--profile', dir]); t.after(() => app.close());
   const context = await contextFor(app.origin); t.after(() => context.close());
-  const page = await context.newPage(), state = {held: false, queue: [], lastDelivered: 0, sockets: 0, release: null, heldAt: null};
+  const page = await context.newPage(), state = {held: false, queue: [], lastDelivered: 0, logbookEnded: null, sockets: 0, release: null, heldAt: null};
   await page.addInitScript(() => {
     window.__states = [];
     addEventListener('DOMContentLoaded', () => {const c = document.querySelector('#connection'); new MutationObserver(() => window.__states.push({at: Date.now(), state: c.dataset.state})).observe(c, {attributes: true, attributeFilter: ['data-state']});});
   });
   page.on('websocket', () => state.sockets++);
+  // The finished log client download counts as a message too (its end restarts the 12 s bound).
+  page.on('requestfinished', request => {if (new URL(request.url()).pathname === '/logbook.js') state.logbookEnded = Date.now();});
   await page.routeWebSocket(/\/ws$/, ws => {
     const station = ws.connectToServer();
     station.onMessage(message => {const deliver = () => {state.lastDelivered = Date.now(); try {ws.send(message);} catch {}}; if (state.held) state.queue.push(deliver); else deliver();});
@@ -199,7 +201,7 @@ test('TC-021-007: a pending deferred client download bounds silent loss at 31 s'
   const deadline = Date.now() + 45000;
   while (!state.held) {assert.ok(Date.now() < deadline, 'deferred download requested'); await sleep(50);}
   await page.locator('#connection[data-state=stale]').waitFor({timeout: 40000});
-  const stale = (await page.evaluate(() => window.__states)).find(s => s.state === 'stale').at, silent = stale - state.lastDelivered;
+  const stale = (await page.evaluate(() => window.__states)).find(s => s.state === 'stale').at, silent = stale - Math.max(state.lastDelivered, state.logbookEnded ?? 0);
   assert.ok(silent >= 29900 && silent <= 32000, `stale after ${silent} ms without a message`);
   state.release();
   await page.locator('#connection[data-state=connected]').waitFor({timeout: 10000});
