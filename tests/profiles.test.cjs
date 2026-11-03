@@ -10,7 +10,7 @@ const http = require('node:http');
 const https = require('node:https');
 const {spawn, execFileSync} = require('node:child_process');
 const {once} = require('node:events');
-const {listenBrowser} = require('./support.cjs');
+const {listenBrowser, stationEnv} = require('./support.cjs');
 const crypto = require('node:crypto');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
@@ -44,8 +44,7 @@ async function ports(n) {
   finally {await Promise.all(held.map(s => new Promise(resolve => s.close(resolve))));}
 }
 function launch(args, env = {}, cwd) {
-  const clean = {...process.env}; for (const key of Object.keys(clean)) if (key.startsWith('WSTX_')) delete clean[key];
-  const child = spawn(exe, args, {cwd, env: {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', ...env}, windowsHide: true});
+  const child = spawn(exe, args, {cwd, env: stationEnv(env), windowsHide: true});
   let output = ''; child.stdout.on('data', b => {output = (output + b).slice(-16384);}); child.stderr.on('data', b => {output = (output + b).slice(-16384);});
   const done = once(child, 'exit');
   return {child, get output() {return output;}, done, async close() {if (child.exitCode === null && child.signalCode === null) {child.kill(); await done;}}};
@@ -1956,4 +1955,29 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   await failed.goto(profiles[0].origin);
   await failed.locator('#connection').filter({hasText: 'could not load saved settings.'}).waitFor();
   assert.notEqual(await failed.locator('#connection').getAttribute('data-state'), 'connected');
+});
+
+// Proves: test isolation (harness#28 escape). A station a suite starts claims its profile
+// UUID in the run's own account-local data, never in the account's shared one: the same
+// UUID held there by a concurrent run (another checkout's suite or gate, started with the
+// account's environment) does not refuse it with profile_in_use.
+test('suite stations own profile UUIDs in per-run station data', {timeout: 30000}, async t => {
+  const base = await fs.mkdtemp(path.join(root, 'isolation-')), [heldPort, ownPort] = await ports(2), id = crypto.randomUUID();
+  const profile = async (name, port) => {
+    const dir = path.join(base, name), origin = `http://127.0.0.1:${port}`;
+    await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify({schema_version: 1, profile_id: id, revision: 0, ...settings(1), endpoint: {bind: `127.0.0.1:${port}`, origin: null}, connection_type: 'standard'}));
+    return {dir, origin};
+  };
+  const account = {...process.env}; for (const key of Object.keys(account)) if (key.startsWith('WSTX_')) delete account[key];
+  const held = await profile('held', heldPort), heldLock = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'wstx-rust-profile-locks', `${id}.lock`);
+  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off'}, windowsHide: true});
+  let otherOutput = ''; other.stdout.on('data', b => {otherOutput += b;}); other.stderr.on('data', b => {otherOutput += b;});
+  t.after(async () => {if (other.exitCode === null && other.signalCode === null) {other.kill(); await once(other, 'exit');} await fs.rm(heldLock, {force: true});});
+  const deadline = Date.now() + 10000;
+  while (!otherOutput.includes(`WSTX listening ${held.origin}`)) {
+    assert.ok(other.exitCode === null && Date.now() < deadline, 'concurrent run readiness failed: ' + otherOutput);
+    await new Promise(r => setTimeout(r, 20));
+  }
+  const app = await start(await profile('own', ownPort)); t.after(() => app.close());
+  assert.equal((await request(`http://127.0.0.1:${ownPort}`)).body.profile_id, id);
 });
