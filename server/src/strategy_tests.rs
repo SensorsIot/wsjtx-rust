@@ -371,14 +371,14 @@ fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
         ],
     )));
     // Rows: 0 Germany, 1 France, 2 Japan, 3 Australia (OC, 30, 59, line 3977),
-    // 4 United States, 5 no entity.
+    // 4 United States, 5 XX1ABC (no entity: no cty.dat prefix starts it).
     let records = rows(&[
         ("CQ DL2XYZ JO62", Some(-5.0)),
         ("CQ F5ABC JN18", Some(-5.0)),
         ("CQ JA2ABC PM84", Some(-5.0)),
         ("CQ VK2ABC QF56", Some(-5.0)),
         ("CQ K1ABC FN42", Some(-5.0)),
-        ("CQ Q1ABC FN42", Some(-5.0)),
+        ("CQ XX1ABC FN42", Some(-5.0)),
     ]);
     let all: Vec<u64> = (0..6).collect();
     let matching = |st: &Station, c: &Value| -> Vec<u64> {
@@ -391,7 +391,8 @@ fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
         m.sort();
         m
     };
-    let c = |kind: &str, value: &str, negate: bool| json!({"kind":kind,"negate":negate,"value":value});
+    let c =
+        |kind: &str, value: &str, negate: bool| json!({"kind":kind,"negate":negate,"value":value});
     for (kind, ever, band) in [
         ("new_dxcc", vec![3], vec![1, 2, 3, 4]),
         ("new_continent", vec![3], vec![2, 3, 4]),
@@ -401,9 +402,21 @@ fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
         for (scope, expected) in [("ever", &ever), ("band", &band)] {
             // The wire form round-trips exactly.
             assert_eq!(cond(c(kind, scope, false)).json(), c(kind, scope, false));
-            assert_eq!(matching(&st, &c(kind, scope, false)), *expected, "{kind} {scope}");
-            let complement: Vec<u64> = all.iter().copied().filter(|s| !expected.contains(s)).collect();
-            assert_eq!(matching(&st, &c(kind, scope, true)), complement, "not {kind} {scope}");
+            assert_eq!(
+                matching(&st, &c(kind, scope, false)),
+                *expected,
+                "{kind} {scope}"
+            );
+            let complement: Vec<u64> = all
+                .iter()
+                .copied()
+                .filter(|s| !expected.contains(s))
+                .collect();
+            assert_eq!(
+                matching(&st, &c(kind, scope, true)),
+                complement,
+                "not {kind} {scope}"
+            );
         }
         // Exact keys and values.
         assert_eq!(
@@ -424,7 +437,11 @@ fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
             band: None,
             ..st.clone()
         };
-        assert_eq!(matching(&lost, &c(kind, "band", false)), Vec::<u64>::new(), "{kind}");
+        assert_eq!(
+            matching(&lost, &c(kind, "band", false)),
+            Vec::<u64>::new(),
+            "{kind}"
+        );
         assert_eq!(matching(&lost, &c(kind, "ever", false)), ever, "{kind}");
         // Log unreadable: no claim of new.
         let unread = Station {
@@ -432,16 +449,31 @@ fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
             ..st.clone()
         };
         for scope in ["ever", "band"] {
-            assert_eq!(matching(&unread, &c(kind, scope, false)), Vec::<u64>::new(), "{kind}");
+            assert_eq!(
+                matching(&unread, &c(kind, scope, false)),
+                Vec::<u64>::new(),
+                "{kind}"
+            );
         }
     }
-    let s = strat(vec![vec![cq(), c("new_dxcc", "band", false)]], Sort::Newest, false);
+    let s = strat(
+        vec![vec![cq(), c("new_dxcc", "band", false)]],
+        Sort::Newest,
+        false,
+    );
     assert_eq!(
         evaluate(&s, &records, &st)[0].why,
         "no match (rule 1: new DXCC on band)"
     );
-    let s = strat(vec![vec![c("new_itu_zone", "ever", true)]], Sort::Newest, false);
-    assert_eq!(evaluate(&s, &records, &st)[3].why, "no match (rule 1: not new ITU zone)");
+    let s = strat(
+        vec![vec![c("new_itu_zone", "ever", true)]],
+        Sort::Newest,
+        false,
+    );
+    assert_eq!(
+        evaluate(&s, &records, &st)[3].why,
+        "no match (rule 1: not new ITU zone)"
+    );
 }
 
 pub(crate) fn strategy_json(name: &str, role: &str) -> Value {

@@ -377,6 +377,16 @@ pub struct Logged {
     pub grid: Option<String>,
     /// ADIF band, lower case.
     pub band: Option<String>,
+    /// #42 the effective ADIF mode (MFSK by its SUBMODE), upper case.
+    pub mode: Option<String>,
+}
+/// #42 the entity categories of the strategy's New matrix (WstxStrategy::NewEntity).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Category {
+    Dxcc,
+    Continent,
+    CqZone,
+    ItuZone,
 }
 /// WorkedBefore with highlight by mode off (the WSJT-X default): what the log holds per
 /// category, ever and per band. Calls compare upper case, grids by their 4-character
@@ -387,6 +397,13 @@ pub struct Logged {
 pub struct Worked {
     ever: HashSet<(u8, String)>,
     band: HashSet<(u8, String, String)>,
+    /// #42 per band and mode (the strategy's scope), for the entity categories.
+    band_mode: HashSet<(u8, String, String, String)>,
+}
+impl std::fmt::Debug for Worked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Worked({} keys)", self.ever.len())
+    }
 }
 fn square(grid: &str) -> Option<String> {
     grid.get(..4).map(str::to_ascii_uppercase)
@@ -414,11 +431,36 @@ impl Worked {
                 let Some(key) = key else { continue };
                 if let Some(b) = &l.band {
                     w.band.insert((i as u8, key.clone(), b.clone()));
+                    if let Some(m) = l.mode.as_deref().filter(|_| i >= 2) {
+                        w.band_mode.insert((
+                            i as u8,
+                            key.clone(),
+                            b.clone(),
+                            m.to_ascii_uppercase(),
+                        ));
+                    }
                 }
                 w.ever.insert((i as u8, key));
             }
         }
         w
+    }
+    /// #42 WstxStrategy::NewEntity: no logged contact has this entity's key of the
+    /// category, ever (`band_mode` None) or on that band and mode.
+    pub fn entity_new(&self, c: Category, r: &Resolved, band_mode: Option<(&str, &str)>) -> bool {
+        let i = 2 + c as usize;
+        let Some(key) = keys("", None, Some(r)).into_iter().nth(i).flatten() else {
+            return false;
+        };
+        match band_mode {
+            None => !self.ever.contains(&(i as u8, key)),
+            Some((b, m)) => !self.band_mode.contains(&(
+                i as u8,
+                key,
+                b.to_ascii_lowercase(),
+                m.to_ascii_uppercase(),
+            )),
+        }
     }
     /// The FLAGS that hold for a decoded sender; the _band flags only with a known band,
     /// the grid flags only with a message grid, the entity flags only with an entity.

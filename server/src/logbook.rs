@@ -984,6 +984,7 @@ impl Logbook {
                     call: r.values[CALL].clone().unwrap_or_default(),
                     grid: r.values[GRID].clone(),
                     band: r.effective_band(),
+                    mode: Some(r.effective_mode()).filter(|m| !m.is_empty()),
                 })
                 .collect();
             (inner.revision, logged)

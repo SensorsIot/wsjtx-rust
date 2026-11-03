@@ -218,6 +218,7 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
         call: call.into(),
         grid: grid.map(Into::into),
         band: band.map(Into::into),
+        mode: None,
     };
     let logged = vec![
         log("DL1ABC", Some("JO62"), Some("20m")),

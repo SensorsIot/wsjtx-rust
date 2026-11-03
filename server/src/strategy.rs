@@ -56,7 +56,17 @@ pub(crate) enum Cond {
     Call(Vec<String>),
     CqTarget(Vec<String>),
     Band(Vec<String>),
+    /// #42 WstxStrategy::NewEntity.
+    NewEntity(crate::dxcc::Category, Scope),
 }
+use crate::dxcc::Category;
+/// The wire kinds of the #42 entity New conditions.
+const ENTITY_KINDS: [(&str, Category, &str); 4] = [
+    ("new_dxcc", Category::Dxcc, "DXCC"),
+    ("new_continent", Category::Continent, "continent"),
+    ("new_cq_zone", Category::CqZone, "CQ zone"),
+    ("new_itu_zone", Category::ItuZone, "ITU zone"),
+];
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Condition {
     pub cond: Cond,
@@ -165,7 +175,8 @@ fn condition(v: &Value, field: &str) -> Result<Condition, Field> {
         .as_bool()
         .ok_or(bad(format!("{field}.negate")))?;
     let keys: &[&str] = match kind {
-        "message" | "new_call" | "new_grid" => &["kind", "negate", "value"],
+        "message" | "new_call" | "new_grid" | "new_dxcc" | "new_continent" | "new_cq_zone"
+        | "new_itu_zone" => &["kind", "negate", "value"],
         "continent" | "call" | "cq_target" | "band" => &["kind", "negate", "values"],
         "distance_km" | "azimuth_deg" | "snr_db" | "dt_s" | "audio_hz" => {
             &["kind", "negate", "min", "max"]
@@ -190,6 +201,14 @@ fn condition(v: &Value, field: &str) -> Result<Condition, Field> {
         }),
         "new_call" => Cond::NewCall(scope(&v["value"])?),
         "new_grid" => Cond::NewGrid(scope(&v["value"])?),
+        "new_dxcc" | "new_continent" | "new_cq_zone" | "new_itu_zone" => {
+            let category = ENTITY_KINDS
+                .iter()
+                .find(|k| k.0 == kind)
+                .map(|k| k.1)
+                .ok_or(bad(format!("{field}.kind")))?;
+            Cond::NewEntity(category, scope(&v["value"])?)
+        }
         "continent" => Cond::Continent(list(&v["values"], &values, |x, f| {
             x.as_str()
                 .filter(|c| CONTINENTS.contains(c))
@@ -343,6 +362,13 @@ impl Condition {
                 },
                 json!({"value":if *s==Scope::Ever {"ever"} else {"band"}}),
             ),
+            Cond::NewEntity(c, s) => (
+                ENTITY_KINDS
+                    .iter()
+                    .find(|k| k.1 == *c)
+                    .map_or("new_dxcc", |k| k.0),
+                json!({"value":if *s==Scope::Ever {"ever"} else {"band"}}),
+            ),
             Cond::Continent(l) => ("continent", json!({ "values": l })),
             Cond::Call(l) => ("call", json!({ "values": l })),
             Cond::CqTarget(l) => ("cq_target", json!({ "values": l })),
@@ -390,6 +416,14 @@ impl Condition {
             ),
             Cond::NewGrid(s) => format!(
                 "new grid{}",
+                if *s == Scope::Band { " on band" } else { "" }
+            ),
+            Cond::NewEntity(c, s) => format!(
+                "new {}{}",
+                ENTITY_KINDS
+                    .iter()
+                    .find(|k| k.1 == *c)
+                    .map_or("DXCC", |k| k.2),
                 if *s == Scope::Band { " on band" } else { "" }
             ),
             Cond::Continent(l) => format!("continent {}", l.join("/")),
@@ -535,6 +569,10 @@ pub(crate) struct Station {
     pub calls: HashMap<String, (bool, bool)>,
     pub grids: HashMap<String, (bool, bool)>,
     pub dxcc: crate::dxcc::Table,
+    /// #42 the operating mode (upper case) and the log's cached worked set (None: the
+    /// log is unreadable) for NewEntity.
+    pub mode: String,
+    pub worked: Option<std::sync::Arc<crate::dxcc::Worked>>,
 }
 /// WstxStrategy::DirectedCqRule: is a CQ with this target addressed to my station?
 /// A continent target only to that continent; DX only from another, known continent
@@ -595,6 +633,18 @@ impl Station {
             Cond::Call(l) => l.iter().any(|p| f.from.starts_with(p.as_str())),
             Cond::CqTarget(l) => f.cq && f.target.as_ref().is_some_and(|t| l.contains(t)),
             Cond::Band(l) => self.band.as_ref().is_some_and(|b| l.contains(b)),
+            Cond::NewEntity(c, s) => {
+                let (Some(w), Some(r)) = (&self.worked, self.dxcc.lookup(&f.from)) else {
+                    return false;
+                };
+                match s {
+                    Scope::Ever => w.entity_new(*c, &r, None),
+                    Scope::Band => self
+                        .band
+                        .as_deref()
+                        .is_some_and(|b| w.entity_new(*c, &r, Some((b, &self.mode)))),
+                }
+            }
         }
     }
     /// A CQ, or with treat_73_as_cq an RR73/73 that ends someone else's QSO.
@@ -787,6 +837,9 @@ pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) 
                 .unwrap_or_default(),
         ),
         dxcc,
+        // The log's cached set (#55), rebuilt only after a log or country table change.
+        worked: state.logbook.worked_set().ok(),
+        mode,
     }
 }
 
