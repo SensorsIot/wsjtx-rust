@@ -2281,12 +2281,26 @@ fn nonstandard_entries_and_free_text_are_validated() {
     assert_eq!(set(&s)[3], "PJ4/K1ABC/P <HB9BLA> RRR");
     assert_eq!(enter(&mut s, "PJ4/K1ABCDEF"), Err("invalid_call"));
     let mut table = wstx_rust::decoder::HashTable::new();
-    let row = decoded(&mut s, &mut table, P0, "W9XYZ <PJ4/K9XX> -10", 1500.0, -10.0);
+    let row = decoded(
+        &mut s,
+        &mut table,
+        P0,
+        "W9XYZ <PJ4/K9XX> -10",
+        1500.0,
+        -10.0,
+    );
     assert_eq!(
         s.command(Command::SelectRow { row, replace: true }),
         Err("row_not_standard")
     );
-    let row = decoded(&mut s, &mut table, P0, "<PJ4/K9XX> W9XYZ RR73", 1500.0, -10.0);
+    let row = decoded(
+        &mut s,
+        &mut table,
+        P0,
+        "<PJ4/K9XX> W9XYZ RR73",
+        1500.0,
+        -10.0,
+    );
     s.command(Command::SelectRow { row, replace: true })
         .unwrap();
     for (text, expected) in [
@@ -2323,7 +2337,14 @@ fn call_first_skips_hashed_and_nonstandard_callers() {
     s.run(period(1) + 14 * SECOND);
     assert_eq!(s.state(), (State::Calling, Slot::Tx6));
     let rows = [
-        decoded(&mut s, &mut table, period(2), "<HB9BLA> PA/K1XX", 1100.0, -10.0),
+        decoded(
+            &mut s,
+            &mut table,
+            period(2),
+            "<HB9BLA> PA/K1XX",
+            1100.0,
+            -10.0,
+        ),
         decoded(
             &mut s,
             &mut table,
@@ -2332,7 +2353,14 @@ fn call_first_skips_hashed_and_nonstandard_callers() {
             1200.0,
             -10.0,
         ),
-        decoded(&mut s, &mut table, period(2), "HB9BLA W9XYZ -10", 1300.0, -10.0),
+        decoded(
+            &mut s,
+            &mut table,
+            period(2),
+            "HB9BLA W9XYZ -10",
+            1300.0,
+            -10.0,
+        ),
     ];
     assert_eq!(rows[1].text, "HB9BLA <PJ4/K1ABC> -12");
     s.deliver(&rows);

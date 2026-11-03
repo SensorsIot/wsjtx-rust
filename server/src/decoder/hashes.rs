@@ -28,6 +28,8 @@ pub struct HashTable {
     calls22: VecDeque<(u32, String)>,
     /// My call and its 10/12/22-bit hashes.
     my: Option<(String, u32, u32, u32)>,
+    /// The current contact's DX call (dxcall13), for unpack77's DX-call rule.
+    dx: Option<String>,
 }
 
 impl HashTable {
@@ -54,6 +56,16 @@ impl HashTable {
         };
         self.my = Some((call.clone(), h10, h12, h22));
         self.save(&call);
+    }
+    /// The current contact's DX call (None without a partner); calls of at most 2
+    /// characters count as none, as in unpack77.
+    pub fn set_dx_call(&mut self, call: Option<&str>) {
+        self.dx = call
+            .map(|c| c.trim().to_ascii_uppercase())
+            .filter(|c| c.len() > 2);
+    }
+    pub fn dx_call(&self) -> Option<&str> {
+        self.dx.as_deref()
     }
     pub fn my_call(&self) -> Option<&str> {
         self.my.as_ref().map(|m| m.0.as_str())

@@ -398,6 +398,11 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8, table: Option<&HashTable>) -> Option<(St
                 return None;
             }
             let full_call = Call::named(s.into(), false);
+            // unpack77 type 4: from the DX call, a 'to' hash equal to mine is my call
+            // even when calls12 holds another call with that hash.
+            if !hash_second && table.and_then(|t| t.dx_call()) == Some(s) {
+                mine(&mut hashed_call, table);
+            }
             let roger = ["", "RRR", "RR73", "73"][g(71, 2) as usize].to_string();
             let cq = g(73, 1) != 0;
             let text = if cq {

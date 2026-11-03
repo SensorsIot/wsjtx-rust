@@ -131,7 +131,7 @@ function render(){
   focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
     const row=body.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
-    const message=c?.messages?.[i]??null;setValue(text,message);text.disabled=!message;radio.disabled=!message;radio.checked=c?.next_slot===slot;
+    const message=c?.messages?.[i]??null;setValue(text,message);text.disabled=!message&&!(slot==='tx5'&&c);radio.disabled=!message;radio.checked=c?.next_slot===slot;
     row.classList.toggle('ct-next-row',c?.next_slot===slot);
   }
   $('contact-tx1-skip').checked=!!s?.tx1_skip;$('contact-rr73').checked=c?.tx4==='rr73';$('contact-rr73').disabled=!c?.dx_call;

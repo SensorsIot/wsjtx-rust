@@ -185,8 +185,19 @@ pub enum Call {
     Sign(String),
     /// CQ, DE, QRZ and directed CQ tokens.
     Token(String),
+    /// A hash the station filled in (`<CALL>`, WstxOfflineDecode::HashResolution, #24).
+    Hashed(String),
     /// An unresolved hash (`<...>`).
     Hash,
+}
+impl Call {
+    /// The call this slot names: a concrete or a filled-in hashed call.
+    pub fn call(&self) -> Option<&str> {
+        match self {
+            Call::Sign(c) | Call::Hashed(c) => Some(c),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub enum Exchange {
@@ -266,11 +277,51 @@ pub fn first_slot(to_is_my_call: bool, received: Received, tx1_skipped: bool) ->
 }
 
 // ---------------------------------------------------------------- messages
-/// The packed, normalized text when `text` is a standard (i3=1/2) message that packs
-/// unaltered.
+/// The packed, normalized text when `text` is a standard (i3=1/2) or nonstandard (i3=4)
+/// message that packs unaltered.
 pub fn standard_text(text: &str) -> Option<String> {
     let packed = transmit::pack(text).ok()?;
-    matches!(packed.family, Family::Standard | Family::Portable).then_some(packed.text)
+    matches!(
+        packed.family,
+        Family::Standard | Family::Portable | Family::Nonstandard
+    )
+    .then_some(packed.text)
+}
+/// An operator-edited slot text (StandardMessageSet): standard, nonstandard or free text
+/// of at most 13 characters, packed unaltered and normalized.
+pub fn slot_text(text: &str) -> Option<String> {
+    let packed = transmit::pack(text).ok()?;
+    matches!(
+        packed.family,
+        Family::Standard | Family::Portable | Family::Nonstandard | Family::FreeText
+    )
+    .then_some(packed.text)
+}
+/// Radio::is_standard_callsign (WSJT-X 3.3.0-beta5 Radio.cpp): a prefix of up to two
+/// letters, a letter and a digit or a digit and a letter, then a digit and at most three
+/// letters, optionally /R or /P.
+pub fn is_standard_call(call: &str) -> bool {
+    let base = call
+        .strip_suffix("/R")
+        .or_else(|| call.strip_suffix("/P"))
+        .unwrap_or(call);
+    let b = base.as_bytes();
+    (0..=b.len().min(2)).any(|i| {
+        let (prefix, rest) = b.split_at(i);
+        let prefix_ok = match prefix {
+            [] => true,
+            [a] => a.is_ascii_uppercase(),
+            [a, c] => {
+                a.is_ascii_uppercase() && (c.is_ascii_uppercase() || c.is_ascii_digit())
+                    || a.is_ascii_digit() && c.is_ascii_uppercase()
+            }
+            _ => false,
+        };
+        prefix_ok
+            && rest.first().is_some_and(u8::is_ascii_digit)
+            && rest.len() <= 4
+            && rest[1..].iter().all(u8::is_ascii_uppercase)
+    })
 }
 /// Maidenhead 4 or 6 characters (AA00..RR99[AA..XX]).
 pub fn valid_grid(grid: &str) -> bool {
@@ -292,16 +343,33 @@ pub fn generate(
 ) -> Option<[Option<String>; 6]> {
     let r = render_report(report);
     let mut set: [Option<String>; 6] = Default::default();
-    set[5] = Some(format!("CQ {my_call} {grid4}"));
+    // MW genStdMsgs/genCQMsg, 77-bit: brackets mark the hashed nonstandard side (#24 S1b).
+    let my_standard = is_standard_call(my_call);
+    set[5] = Some(if my_standard {
+        format!("CQ {my_call} {grid4}")
+    } else {
+        format!("CQ {my_call}")
+    });
     if let Some(dx) = dx {
-        set[0] = Some(format!("{dx} {my_call} {grid4}"));
-        set[1] = Some(format!("{dx} {my_call} {r}"));
-        set[2] = Some(format!("{dx} {my_call} R{r}"));
+        // (Tx1-Tx3 stem, Tx4/Tx5 stem)
+        let (exchange, signoff) = match (my_standard, is_standard_call(dx)) {
+            (true, true) => (format!("{dx} {my_call}"), format!("{dx} {my_call}")),
+            (true, false) => (format!("<{dx}> {my_call}"), format!("{dx} <{my_call}>")),
+            (false, true) => (format!("{dx} <{my_call}>"), format!("<{dx}> {my_call}")),
+            (false, false) => return None,
+        };
+        set[0] = Some(if my_standard {
+            format!("{exchange} {grid4}")
+        } else {
+            signoff.clone()
+        });
+        set[1] = Some(format!("{exchange} {r}"));
+        set[2] = Some(format!("{exchange} R{r}"));
         set[3] = Some(format!(
-            "{dx} {my_call} {}",
+            "{signoff} {}",
             if tx4 == Tx4::Rr73 { "RR73" } else { "RRR" }
         ));
-        set[4] = Some(format!("{dx} {my_call} 73"));
+        set[4] = Some(format!("{signoff} 73"));
     }
     for text in set.iter().flatten() {
         if standard_text(text).as_deref() != Some(text.as_str()) {
@@ -744,11 +812,11 @@ impl Engine {
                 let Some(std) = row.standard.clone() else {
                     return Err("row_not_standard");
                 };
-                let Call::Sign(dx) = std.from.clone() else {
+                let Some(dx) = std.from.call().map(str::to_owned) else {
                     return Err("row_not_standard");
                 };
                 let my = ctx.call.clone().ok_or("profile_incomplete")?;
-                let to_me = std.to == Call::Sign(my);
+                let to_me = std.to.call() == Some(my.as_str());
                 let received = classify(&std);
                 let report = row.snr_db.map_or(self.settings.report, report_from_snr);
                 let grid = match &std.exchange {
@@ -810,10 +878,8 @@ impl Engine {
                     return Err("invalid_grid");
                 }
                 let my = ctx.call.clone().ok_or("profile_incomplete")?;
-                // The DX call must pack as the 'to' call of the standard family.
-                if standard_text(&format!("{dx} {my} 73")).as_deref()
-                    != Some(format!("{dx} {my} 73").as_str())
-                {
+                // The DX call must give a message set with my call (StandardMessageSet).
+                if generate(&my, "AA00", Some(&dx), self.settings.report, Tx4::Rrr).is_none() {
                     return Err("invalid_call");
                 }
                 let report = self.settings.report;
@@ -880,7 +946,7 @@ impl Engine {
                 if text.chars().count() > 37 {
                     return Err("invalid_message");
                 }
-                let normalized = standard_text(&text).ok_or("invalid_message")?;
+                let normalized = slot_text(&text).ok_or("invalid_message")?;
                 c.messages[slot.index()] = Some(normalized);
             }
             Command::SetReport(report) => {
@@ -1184,14 +1250,14 @@ impl Engine {
                 continue;
             };
             // Only rows of the contact's own mode count (ContactMode isolation).
-            if row.mode != c.mode || std.from != Call::Sign(dx) || !c.state.active() {
+            if row.mode != c.mode || std.from.call() != Some(dx.as_str()) || !c.state.active() {
                 continue;
             }
             let Some(my) = ctx.call.as_deref() else {
                 continue;
             };
-            match &std.to {
-                Call::Sign(to) if to == my => {
+            match std.to.call() {
+                Some(to) if to == my => {
                     let Some(period) = row.period_start_ms else {
                         continue;
                     };
@@ -1234,7 +1300,7 @@ impl Engine {
                         }
                     }
                 }
-                Call::Sign(_) => {
+                Some(_) => {
                     // partnerWorksOther: the 50 Hz rule (MW auto_sequence 25/50).
                     let applies = c.state == State::Replying
                         || (c.state == State::Report && c.started_tx1_skipped);
@@ -1253,7 +1319,7 @@ impl Engine {
                         self.pending = None;
                     }
                 }
-                _ => {}
+                None => {}
             }
         }
         self.call_first(core.as_deref_mut(), ctx, rows);

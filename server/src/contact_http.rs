@@ -126,13 +126,47 @@ fn call_of(v: &Value) -> Option<Call> {
     match v["kind"].as_str()? {
         "call" => Some(Call::Sign(v["text"].as_str()?.to_owned())),
         "token" => Some(Call::Token(v["text"].as_str()?.to_owned())),
-        "hash" => Some(Call::Hash),
+        // A hash the station filled in names its call (HashResolution, #24 S1b).
+        "hash" => Some(match v["text"].as_str() {
+            Some(t) => Call::Hashed(t.to_owned()),
+            None => Call::Hash,
+        }),
         _ => None,
     }
+}
+/// A nonstandard i3=4 record as an engine message (WstxContact::SelectDecodedRow, #24
+/// S1b): 'to' and 'from' are the hashed and the full call in hash_second order, a CQ
+/// has 'to' CQ, the roger is the exchange (none: blank).
+fn nonstandard_of(f: &Value) -> Option<Standard> {
+    let full = call_of(&f["full_call"])?;
+    let hashed = call_of(&f["hashed_call"])?;
+    let exchange = match f["roger"].as_str()? {
+        "" => Exchange::Blank,
+        "RRR" => Exchange::Rrr,
+        "RR73" => Exchange::Rr73,
+        "73" => Exchange::SeventyThree,
+        _ => return None,
+    };
+    let (to, from) = if f["cq"].as_bool()? {
+        (Call::Token("CQ".into()), full)
+    } else if f["hash_second"].as_bool()? {
+        (full, hashed)
+    } else {
+        (hashed, full)
+    };
+    Some(Standard {
+        to,
+        from,
+        ack: false,
+        exchange,
+    })
 }
 /// A published live result record as an engine row (WstxOfflineDecode::StandardFields).
 pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &str) -> Option<Row> {
     let f = &record["fields"];
+    let nonstandard = (record["status"] == "decoded" && f["type"] == "nonstandard")
+        .then(|| nonstandard_of(f))
+        .flatten();
     let standard = (record["status"] == "decoded" && f["type"] == "standard")
         .then(|| {
             let exchange = match (f["exchange"]["kind"].as_str()?, &f["exchange"]["value"]) {
@@ -169,7 +203,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
         frequency_hz: record["frequency_hz"].as_f64()?,
         snr_db: record["snr_db"].as_f64(),
         text: record["text"].as_str().unwrap_or("").to_owned(),
-        standard,
+        standard: standard.or(nonstandard),
     })
 }
 pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
@@ -319,6 +353,17 @@ impl Station {
                 automatic: false,
             };
             inner.engine.step(core, &ctx, &rows);
+            // HashResolution's DX-call rule reads the current contact's DX call (#24 S1b).
+            r.hashes
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .set_dx_call(
+                    inner
+                        .engine
+                        .contact
+                        .as_ref()
+                        .and_then(|c| c.dx_call.as_deref()),
+                );
             Self::collect_logs(
                 inner,
                 state,

@@ -614,7 +614,7 @@ function renderResults(){
 function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
-  const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  const f=record.fields,decoded=record.status==='decoded',to=f?.type==='nonstandard'?(f.cq?null:(f.hash_second?f.full_call:f.hashed_call)?.text??null):['call','hash'].includes(f?.to?.kind)?f.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
   // #50 BandActivityColours: the slots this row matches. As in WSJT-X, the new_* slots apply only to
   // CQ/QRZ lines (#55 supplies the DXCC/continent/zone flags of a record).
   const hl=decoded&&/^(CQ|QRZ)\b/.test(record.text)?bandFlags.filter(k=>record.flags?.[k]===true):[];
