@@ -23,7 +23,7 @@ impl UnpackTableReserve {
             "../../../fixtures/decoder/protocol-data/states_provinces.json"
         ))
         .unwrap();
-        for (table, count, twos, threes) in [(&sections, 84, 54, 30), (&states, 65, 63, 2)] {
+        for (table, count, twos, threes) in [(&sections, 86, 57, 29), (&states, 171, 70, 101)] {
             assert_eq!(table.len(), count);
             assert_eq!(table.iter().filter(|s| s.len() == 2).count(), twos);
             assert_eq!(table.iter().filter(|s| s.len() == 3).count(), threes);

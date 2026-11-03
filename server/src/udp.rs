@@ -497,7 +497,7 @@ pub(crate) fn adif_text(record: &logbook::Record) -> String {
         record.adi_fields()
     )
 }
-fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::Status {
+pub(crate) fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::Status {
     let (call, grid, name) = {
         let store = state.store.lock().unwrap_or_else(|p| p.into_inner());
         let d = &store.document;
@@ -541,7 +541,7 @@ fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::Status {
         tx_watchdog: view.as_ref().is_some_and(|v| v.tx_expired),
         sub_mode: String::new(),
         fast_mode: false,
-        special_operation: 0,
+        special_operation: facts.as_ref().map_or(0, |f| f.activity.special_operation()),
         frequency_tolerance: u32::MAX,
         tr_period: if mode == "FT4" { 7 } else { 15 },
         configuration_name: name,

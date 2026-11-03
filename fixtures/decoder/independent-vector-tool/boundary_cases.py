@@ -1,4 +1,7 @@
-"""Data-only fixed field-boundary proposal; independent of production code."""
+"""Data-only fixed field-boundary proposal; independent of production code.
+The Field Day section and RTTY exchange edges follow the WSJT-X 3.3.0-beta5
+PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171) tables (#24 S2b,
+protocol-data/provenance.json); the QEX 2020 tables had 84 and 65 entries."""
 import json
 from pathlib import Path
 
@@ -36,12 +39,14 @@ field('free',0,71,[(0,'invalid_payload','all blank'),(42**13-1,'decoded','?'*13)
 field('telemetry',0,71,[(0,'decoded','000000000000000000'),(2**71-1,'decoded','7FFFFFFFFFFFFFFFFF')])
 field('rtty-state',61,13,[(0,'decoded','serial0'),(7999,'decoded','serial7999'),
  (8000,'invalid_payload','reserved'),(8001,'decoded','AL'),(8049,'decoded','WI'),
- (8065,'decoded','DC'),(8066,'invalid_payload','outside state table'),(8191,'invalid_payload','outside exchange domain')])
+ (8065,'decoded','DC'),(8066,'decoded','DR'),(8171,'decoded','X99'),
+ (8172,'invalid_payload','outside exchange table'),(8191,'invalid_payload','outside exchange domain')])
 field('rtty-state',58,3,[(0,'decoded','report529'),(7,'decoded','report599')])
 for family in ['fieldday6','fieldday17']:
     field(family,64,7,[(0,'invalid_payload','one-based section'),(1,'decoded','AB'),
       (75,'decoded','WCF'),(76,'decoded','WI'),(83,'decoded','WY'),(84,'decoded','DX'),
-      (85,'invalid_payload','outside84 sections'),(127,'invalid_payload','outside sections')])
+      (85,'decoded','PE'),(86,'decoded','NB'),(87,'invalid_payload','outside86 sections'),
+      (127,'invalid_payload','outside sections')])
     field(family,61,3,[(0,'decoded','class A'),(5,'decoded','class F'),
       (6,'invalid_payload','reserved class'),(7,'invalid_payload','reserved class')])
     field(family,57,4,[(0,'decoded','transmitters1' if family=='fieldday6' else 'transmitters17'),

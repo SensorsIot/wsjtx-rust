@@ -60,6 +60,14 @@ fn reviewed(id: &str, call: &str) -> Record {
             v("JN47AA"),
             v("10"),
             v("Tnx QSO"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         ],
         unknown: Vec::new(),
     }
@@ -602,6 +610,14 @@ fn history_pages_have_stable_indexes_and_stay_within_the_byte_bound() {
         "my_gridsquare",
         "tx_pwr",
         "comment",
+        "stx",
+        "stx_string",
+        "srx",
+        "contest_id",
+        "srx_string",
+        "class",
+        "arrl_sect",
+        "state",
         "unknown_field_count",
     ];
     expected.sort_unstable();
@@ -731,4 +747,34 @@ fn unreadable_stored_log_is_unavailable_and_left_untouched() {
     assert!(path.is_dir(), "the unreadable path is not replaced");
     assert_eq!(fs::read(path.join("marker")).unwrap(), b"kept");
     assert!(dir.leftovers().is_empty());
+}
+
+// Proves: CL-024-03; TC-024-008 (f). The contest fields and RTTY RSTs of LogRecord.
+#[test]
+fn contest_fields_and_rtty_rst_are_validated() {
+    let mut r = reviewed(ID1, "K1ABC");
+    r.values[4] = Some("559".into());
+    r.values[5] = Some("579".into());
+    r.set("stx", "0001".into());
+    r.set("state", "MA".into());
+    assert_eq!(validate_record(&r, "HB9BLA", "JN47AA"), Ok(()));
+    assert!(
+        r.adi_fields()
+            .contains("<stx:4>0001 <state:2>MA <app_wstxrust_contact_id")
+    );
+    let mut bad = r.clone();
+    bad.values[4] = Some("519".into());
+    assert_eq!(
+        validate_record(&bad, "HB9BLA", "JN47AA"),
+        Err("record.rst_sent")
+    );
+    let mut bad = r.clone();
+    bad.set("srx_string", "2A <WI>".into());
+    assert_eq!(
+        validate_record(&bad, "HB9BLA", "JN47AA"),
+        Err("record.srx_string")
+    );
+    let mut bad = r.clone();
+    bad.set("stx", "00001".into());
+    assert_eq!(validate_record(&bad, "HB9BLA", "JN47AA"), Err("record.stx"));
 }

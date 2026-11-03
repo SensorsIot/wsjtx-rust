@@ -14,7 +14,7 @@
   "EPA",
   "EWA",
   "GA",
-  "GTA",
+  "GH",
   "IA",
   "ID",
   "IL",
@@ -23,7 +23,7 @@
   "KY",
   "LA",
   "LAX",
-  "MAR",
+  "NS",
   "MB",
   "MDC",
   "ME",
@@ -42,7 +42,7 @@
   "NM",
   "NNJ",
   "NNY",
-  "NT",
+  "TER",
   "NTX",
   "NV",
   "OH",
@@ -82,5 +82,7 @@
   "WV",
   "WWA",
   "WY",
-  "DX"
+  "DX",
+  "PE",
+  "NB"
 ]

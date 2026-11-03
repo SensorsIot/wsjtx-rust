@@ -2,7 +2,7 @@
 //! families, following WSJT-X 3.3.0-beta5 packjt77.f90/packjt77_grammar.f90.
 //! See WstxTransmit::PackMessage. Every result is unpacked again and must render the
 //! normalized input; WSJT-X's truncating free-text fallback is not reproduced.
-use crate::decoder::{PayloadStatus, unpack};
+use crate::decoder::{PayloadStatus, arrl_sections, rtty_exchanges, unpack};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Family {
@@ -16,6 +16,10 @@ pub enum Family {
     FreeText,
     /// i3=0, n3=5
     Telemetry,
+    /// i3=0, n3=3/4 (ARRL Field Day, #24 S2b)
+    FieldDay,
+    /// i3=3 (ARRL RTTY / FT Roundup, #24 S2b)
+    RttyRoundup,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PackError {
@@ -41,23 +45,18 @@ const MAX22: u128 = 4_194_304;
 const MAXGRID4: u128 = 32_400;
 const BASE38: &[u8] = b" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/";
 const TEXT42: &[u8] = b" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-./?";
-/// PACK77_ARRL_SECTIONS of packjt77_grammar.f90 (used only to refuse Field Day).
-const ARRL_SECTIONS: [&str; 86] = [
-    "AB", "AK", "AL", "AR", "AZ", "BC", "CO", "CT", "DE", "EB", "EMA", "ENY", "EPA", "EWA", "GA",
-    "GH", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "LAX", "NS", "MB", "MDC", "ME", "MI", "MN",
-    "MO", "MS", "MT", "NC", "ND", "NE", "NFL", "NH", "NL", "NLI", "NM", "NNJ", "NNY", "TER", "NTX",
-    "NV", "OH", "OK", "ONE", "ONN", "ONS", "OR", "ORG", "PAC", "PR", "QC", "RI", "SB", "SC", "SCV",
-    "SD", "SDG", "SF", "SFL", "SJV", "SK", "SNJ", "STX", "SV", "TN", "UT", "VA", "VI", "VT", "WCF",
-    "WI", "WMA", "WNY", "WPA", "WTX", "WV", "WWA", "WY", "DX", "PE", "NB",
-];
-
 pub fn pack(message: &str) -> Result<Packed, PackError> {
     let text = normalize(message)?;
     let words = text.split(' ').collect::<Vec<_>>();
     let special = matches!(words[0], "CQ" | "DE" | "QRZ");
     if !special {
-        if text.contains(';') || field_day(&words) {
+        // A ';' is DXpedition 0.1 unless it is the one leading "TU;" of RTTY Roundup.
+        let tu = words[0] == "TU;" && text.matches(';').count() == 1;
+        if text.contains(';') && !tu {
             return Err(PackError::UnsupportedFamily);
+        }
+        if let Some(bits) = field_day(&words)? {
+            return checked(text, Family::FieldDay, bits);
         }
         if words.len() == 1
             && words[0].len() <= 18
@@ -85,6 +84,9 @@ pub fn pack(message: &str) -> Result<Packed, PackError> {
         && let Ok(packed) = checked(text.clone(), family, bits)
     {
         return Ok(packed);
+    }
+    if let Some(bits) = rtty(&words)? {
+        return checked(text, Family::RttyRoundup, bits);
     }
     if let Some(bits) = nonstandard(&words)
         && let Ok(packed) = checked(text.clone(), Family::Nonstandard, bits)
@@ -189,14 +191,9 @@ fn letters(s: &str) -> bool {
     s.bytes().all(|c| c.is_ascii_uppercase())
 }
 
-/// ihashcall: top `m` bits of the low 64 bits of 47055833459 * base-38 value.
+/// ihashcall (shared with the station's hash table, WstxOfflineDecode::HashResolution).
 fn hash(call: &str, m: u32) -> Option<u128> {
-    let mut n = 0u64;
-    for i in 0..11 {
-        let c = call.as_bytes().get(i).copied().unwrap_or(b' ');
-        n = n * 38 + BASE38.iter().position(|&a| a == c)? as u64;
-    }
-    Some(u128::from(n.wrapping_mul(47_055_833_459) >> (64 - m)))
+    crate::decoder::ihashcall(call, m).map(u128::from)
 }
 /// `<CALL>` hash token body (pack77_valid_hash_call_token).
 fn hash_body(token: &str) -> Option<&str> {
@@ -433,30 +430,113 @@ fn nonstandard(w: &[&str]) -> Option<[u8; 77]> {
     ]))
 }
 
-/// A message WSJT-X would pack as ARRL Field Day (pack77_parse_field_day_source).
-fn field_day(w: &[&str]) -> bool {
-    let call = |t: &str| {
-        (3..=13).contains(&t.len())
-            && t.bytes()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'/')
-            && (standard_call(t)
-                || t.find('/')
-                    .is_some_and(|s| s >= 1 && s < t.len() - 1 && t.matches('/').count() == 1))
+/// pack77_valid_c28_call_slot without hash tokens, then lower_c28_slot: a standard call
+/// is its c28 value; any other slot WSJT-X sends as a 22-bit hash rendered <CALL>, an
+/// altered message (notExact); a slot over 11 characters does not fit and is no match.
+fn contest_call(t: &str) -> Option<Result<u128, PackError>> {
+    let n = t.len();
+    if !(3..=13).contains(&n)
+        || !t
+            .bytes()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'/')
+    {
+        return None;
+    }
+    if standard_call(t) {
+        return Some(Ok(c28_call(t)));
+    }
+    let slash = t.find('/')?;
+    (slash >= 1 && slash < n - 1 && t.matches('/').count() == 1 && n <= 11)
+        .then_some(Err(PackError::NotExact))
+}
+/// Both contest call slots, or no match.
+fn contest_calls(a: &str, b: &str) -> Option<Result<(u128, u128), PackError>> {
+    let (a, b) = (contest_call(a)?, contest_call(b)?);
+    Some(a.and_then(|a| b.map(|b| (a, b))))
+}
+
+/// Type 0.3/0.4 ARRL Field Day (pack77_parse_field_day_source, pack77_03_candidate).
+fn field_day(w: &[&str]) -> Result<Option<[u8; 77]>, PackError> {
+    if !(4..=5).contains(&w.len()) || (w.len() == 5 && w[2] != "R") {
+        return Ok(None);
+    }
+    let Some(section) = arrl_sections().iter().position(|s| s == w[w.len() - 1]) else {
+        return Ok(None);
     };
-    let exchange = |t: &str| {
-        let (count, class) = t.split_at(t.len().saturating_sub(1));
-        t.len() >= 2
-            && !(t.len() > 2 && t.starts_with('0'))
-            && digits(count)
-            && count.parse::<u32>().is_ok_and(|n| (1..=32).contains(&n))
-            && matches!(class, "A" | "B" | "C" | "D" | "E" | "F")
+    let exchange = w[w.len() - 2];
+    let (count, class) = exchange.split_at(exchange.len().saturating_sub(1));
+    let Some(class) = ["A", "B", "C", "D", "E", "F"]
+        .iter()
+        .position(|&c| c == class)
+    else {
+        return Ok(None);
     };
-    (4..=5).contains(&w.len())
-        && ARRL_SECTIONS.contains(&w[w.len() - 1])
-        && call(w[0])
-        && call(w[1])
-        && (w.len() == 4 || w[2] == "R")
-        && exchange(w[w.len() - 2])
+    if exchange.len() < 2 || (exchange.len() > 2 && exchange.starts_with('0')) || !digits(count) {
+        return Ok(None);
+    }
+    let Some(count) = count.parse::<u128>().ok().filter(|n| (1..=32).contains(n)) else {
+        return Ok(None);
+    };
+    let Some(calls) = contest_calls(w[0], w[1]) else {
+        return Ok(None);
+    };
+    let (a, b) = calls?;
+    let (n3, intx) = if count <= 16 {
+        (3, count - 1)
+    } else {
+        (4, count - 17)
+    };
+    Ok(Some(fields(&[
+        (a, 28),
+        (b, 28),
+        (u128::from(w.len() == 5), 1),
+        (intx, 4),
+        (class as u128, 3),
+        (section as u128 + 1, 7),
+        (n3, 3),
+        (0, 3),
+    ])))
+}
+
+/// Type 3 ARRL RTTY / FT Roundup (pack77_parse_type3_source, pack77_3_candidate).
+fn rtty(w: &[&str]) -> Result<Option<[u8; 77]>, PackError> {
+    if !(4..=6).contains(&w.len()) {
+        return Ok(None);
+    }
+    let tu = usize::from(w[0] == "TU;");
+    let r = usize::from(w.get(2 + tu) == Some(&"R"));
+    let report = 2 + tu + r;
+    if report + 2 != w.len() {
+        return Ok(None);
+    }
+    let rst = w[report].as_bytes();
+    if rst.len() != 3 || rst[0] != b'5' || !(b'2'..=b'9').contains(&rst[1]) || rst[2] != b'9' {
+        return Ok(None);
+    }
+    let exchange = w[report + 1];
+    let nexch = if exchange.len() == 4 && digits(exchange) {
+        match exchange.parse::<u128>() {
+            Ok(n @ 1..=7999) => n,
+            _ => return Ok(None),
+        }
+    } else if let Some(i) = rtty_exchanges().iter().position(|m| m == exchange) {
+        8001 + i as u128
+    } else {
+        return Ok(None);
+    };
+    let Some(calls) = contest_calls(w[tu], w[1 + tu]) else {
+        return Ok(None);
+    };
+    let (a, b) = calls?;
+    Ok(Some(fields(&[
+        (tu as u128, 1),
+        (a, 28),
+        (b, 28),
+        (r as u128, 1),
+        (u128::from(rst[1] - b'2'), 3),
+        (nexch, 13),
+        (3, 3),
+    ])))
 }
 
 /// The WSPR shapes WSJT-X tries before type 1 (pack77_parse_wspr_source matched_shape).

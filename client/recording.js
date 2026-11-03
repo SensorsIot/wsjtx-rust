@@ -93,10 +93,10 @@ const localPreferences=document.createElement('div');localPreferences.id='local-
 localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label class="op-check"><input id="display-flatten" type="checkbox"> Flatten (even out the passband across frequency)</label><label class="op-check"><input id="display-spectrum" type="checkbox"> Show spectrum line</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
-// #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority
-// order with its default on/off. A slot without data (DXCC, zones and continent need cty.dat, #55; grids
-// and LotW have no source yet) stays inactive until a record carries its flag. Worked before has no colour; #55: no flag, no colour (CQ off).
-const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',false],['new_call_band','New call on band',false],['lotw','LotW user',false],['cq','CQ',false]];
+// #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
+// only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X: no CQ slot, New call on by default).
+// A slot without data (cty.dat flags #55; grids, LotW) stays inactive until a record carries it. Worked before: none.
+const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',true],['new_call_band','New call on band',true],['lotw','LotW user',false]];
 const bandFlags=bandSlots.map(([k])=>k).filter(k=>k.startsWith('new_'));
 const bandColours=document.createElement('fieldset');bandColours.id='band-colours';bandColours.className='op-server-fieldset';
 bandColours.innerHTML='<legend>Band Activity colours (WSJT-X)</legend>'+bandSlots.map(([k,label])=>`<label class="op-check"><input type="checkbox" data-hl-slot="${k}"> <span class="op-swatch" data-hl-swatch="${k}"></span>${label}</label>`).join('');
@@ -508,7 +508,9 @@ function applyLatestDecode(view,first){
   // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
   const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
   const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
-  activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
+  // #61 CL-061-03: a period in which this station transmitted has nothing to show; the period kept below it stays.
+  const transmitted=resultView&&!resultRows.length&&window.wstxTransmitted?.(resultView.period_start_utc);
+  activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):transmitted?activityHistory.slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
   renderResults();return true;
@@ -591,10 +593,19 @@ function renderResults(){
   const ordered=activityOrdering();
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
-  document.querySelector('#band-activity header .op-muted').textContent=resultView?
+  // #61 CL-061-03: the period this station transmitted in shows no empty block (as in WSJT-X);
+  // the header and the top rows are the last receive period, kept below it.
+  const own=resultView&&!resultRows.length&&!loading&&window.wstxTransmitted?.(resultView.period_start_utc),top=own?activityHistory[0]??null:null;
+  document.querySelector('#band-activity header .op-muted').textContent=own?(top?`Latest ${top.mode.toUpperCase()} period ${periodLabel(top.period,top.mode)}${top.period?' UTC':''}${historyIncomplete?' · Incomplete history':''}`:'Latest decode period'):resultView?
     `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
-  document.querySelector('#band-activity .op-count').textContent=`${resultRows.length} message${resultRows.length===1?'':'s'}`;
+  const count=top?top.rows.length:resultRows.length;
+  document.querySelector('#band-activity .op-count').textContent=`${count} message${count===1?'':'s'}`;
+  if(top){
+    body.replaceChildren();
+    for(const record of activityOrdering(top.rows))body.append(activityRow(record,'history',top.context,top.mode));
+    window.wstxRenderHistory?.(body,activityHistory.slice(1));return;
+  }
   if(!resultRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
     const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
@@ -603,7 +614,7 @@ function renderResults(){
       const mode=job.mode.toUpperCase();
       heading=job.state==='running'?(connection.dataset.state==='connected'?`Listening for ${mode}`:`${mode} receive status stale`):job.state==='cancelling'?`Stopping ${mode} receive`:`${mode} receive ${job.state}`;
       message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
-      if(resultView){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
+      if(resultView&&!own){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
     }
     body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;window.wstxRenderHistory?.(body);return;
   }
@@ -614,11 +625,11 @@ function renderResults(){
 function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
-  const decoded=record.status==='decoded',to=record.fields?.to?.kind==='call'?record.fields.to.text:null,my=(profileData?.settings?.callsign??'').trim().toUpperCase();
+  const f=record.fields,decoded=record.status==='decoded',to=recordTo(f),my=(profileData?.settings?.callsign??'').trim().toUpperCase();
   // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
-  // every decoded sender (operator decision CL-055-04; WSJT-X colours CQ/QRZ lines only).
+  // every decoded sender (operator decision CL-055-04; WSJT-X: CQ/QRZ lines only). No CQ slot (#50).
   const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
-  if(decoded&&/^CQ\b/.test(record.text)){row.classList.add('ba-cq');hl.push('cq');}
+  if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
@@ -1122,10 +1133,13 @@ function keepWaterfall(){
 
 // #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
 // hits, is applied by the Highlight in contact.js) and BandActivityHover (title and aria-description).
+// #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
+// 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).
+function recordTo(f){return f?.type==='nonstandard'?(f.cq?null:(f.hash_second?f.full_call:f.hashed_call)?.text??null):['call','hash'].includes(f?.to?.kind)?f.to.text:null;}
 function activityValue(r){
   if(r?.status!=='decoded')return 8;
   const my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  if(my&&r.fields?.to?.kind==='call'&&r.fields.to.text===my)return 1;
+  if(my&&recordTo(r.fields)===my)return 1;
   const groups=[[3,['new_dxcc','new_continent']],[4,['new_dxcc_band','new_continent_band']],[5,['new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band']],[6,['new_grid','new_grid_band']],[7,['new_call','new_call_band']]];
   return groups.find(([,names])=>names.some(k=>r.flags?.[k]===true))?.[0]??8;
 }
