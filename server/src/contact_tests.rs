@@ -2878,6 +2878,9 @@ fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
     })
     .unwrap();
     contest(&mut s, Activity::FieldDay, "1A EMA");
-    assert_eq!(s.engine.contact.as_ref().unwrap().activity, Activity::FieldDay);
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().activity,
+        Activity::FieldDay
+    );
     assert_eq!(set(&s)[1], "K1ABC HB9BLA 1A EMA");
 }
