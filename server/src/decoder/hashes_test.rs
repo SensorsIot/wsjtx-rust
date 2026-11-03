@@ -247,3 +247,42 @@ fn the_dx_call_rule_prefers_my_call_over_a_colliding_call() {
     t.set_dx_call(None);
     assert_eq!(shown(&t, &to_me), format!("<{x}> PJ4/K1ABC"));
 }
+
+// Proves: CL-024-01; TC-024-010 (#24 S4a). unpack77 n3=1, nrx=1: a 0.1 hash equal to the
+// 10-bit hash of the current DX call shows the DX call, also over a colliding calls10
+// entry; another or a too-short DX call leaves the table entry; my call is not filled in.
+#[test]
+fn a_dxpedition_hash_of_the_dx_call_shows_the_dx_call() {
+    let dx = dxpedition("KH1/KH7Z");
+    let mut t = HashTable::new();
+    assert_eq!(shown(&t, &dx), "K1ABC RR73; W9XYZ <...> -12");
+    t.set_dx_call(Some("kh1/kh7z"));
+    assert_eq!(shown(&t, &dx), "K1ABC RR73; W9XYZ <KH1/KH7Z> -12");
+    // A heard call with the same 10-bit hash: the DX call still wins.
+    let target = ihashcall("KH1/KH7Z", 10).unwrap();
+    let other = (0..100_000)
+        .map(|n| format!("K{}ABC", n))
+        .find(|c| ihashcall(c, 10) == Some(target) && c.len() <= 11)
+        .expect("a 10-bit collision");
+    let mut t = HashTable::new();
+    heard(&mut t, &format!("CQ {other}"));
+    assert_eq!(shown(&t, &dx), format!("K1ABC RR73; W9XYZ <{other}> -12"));
+    t.set_dx_call(Some("KH1/KH7Z"));
+    assert_eq!(shown(&t, &dx), "K1ABC RR73; W9XYZ <KH1/KH7Z> -12");
+    t.set_dx_call(Some("K1ABC"));
+    assert_eq!(shown(&t, &dx), format!("K1ABC RR73; W9XYZ <{other}> -12"));
+    let mut t = HashTable::new();
+    t.set_dx_call(Some("KH"));
+    assert_eq!(shown(&t, &dx), "K1ABC RR73; W9XYZ <...> -12");
+    // My call is filled into a 0.1 only when rendering my own transmission (nrx=0).
+    let mut t = HashTable::new();
+    t.set_my_call(Some("HB9BLA"));
+    assert_eq!(
+        shown(&t, &dxpedition("HB9BLA")),
+        "K1ABC RR73; W9XYZ <...> -12"
+    );
+    assert_eq!(
+        unpack(&dx).text.as_deref(),
+        Some("K1ABC RR73; W9XYZ <...> -12")
+    );
+}

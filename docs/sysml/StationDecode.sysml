@@ -295,8 +295,10 @@ package WstxOfflineDecode {
              DX call's hash shows the DX call; a nonstandard 'to' h12 equal to my h12 is my
              call when the full call is the DX call, even if calls12 holds another call)
              need the contact's DX call: the station sets the current contact's DX call
-             on the table at each contact step (#24 S1b) and applies the nonstandard rule;
-             the 0.1 DXpedition rule belongs to the Hound slices (#24 S4).
+             on the table at each contact step (#24 S1b) and applies the nonstandard rule
+             and the 0.1 rule (#24 S4a): a received 0.1 h10 equal to the 10-bit hash of that
+             DX call (at least 3 characters) shows <DXCALL>, before and instead of the calls10
+             entry of that hash (unpack77 n3=1, nrx=1, hashdx10).
              Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
              22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
              from calls12, and when that is empty and the hash is the 'to' call equal to my
