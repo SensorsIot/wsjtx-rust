@@ -121,7 +121,7 @@ fn mcp_name(headers: &HeaderMap) -> Option<String> {
     Some(raw.to_owned())
 }
 
-const VIEWS: [(&str, &str); 7] = [
+const VIEWS: [(&str, &str); 8] = [
     ("profile", "/profile"),
     ("receive", "/receive"),
     ("selection", "/receive/selection"),
@@ -129,6 +129,7 @@ const VIEWS: [(&str, &str); 7] = [
     ("transmit", "/transmit"),
     ("contact", "/contact"),
     ("automation", "/automation"),
+    ("strategy", "/strategy"),
 ];
 /// The station routes an MCP tool call dispatches to (WstxMcp::ToolCatalog).
 fn tool_route(method: &Method, path: &str) -> bool {
@@ -136,14 +137,14 @@ fn tool_route(method: &Method, path: &str) -> bool {
         Method::GET => path == "/receive/results" || VIEWS.iter().any(|(_, p)| *p == path),
         Method::POST => matches!(
             path,
-            "/contact/command" | "/transmit/halt" | "/automation/command"
+            "/contact/command" | "/transmit/halt" | "/automation/command" | "/strategy/evaluate"
         ),
         _ => false,
     }
 }
 /// #58 boundary guard for every station route: a request whose session credential is an
 /// MCP-principal transport is refused 401 on every route that no MCP tool dispatches to
-/// (POST /transmit/command, PUT /profile, logbook, WS, settings, receive and radio
+/// (POST /transmit/command, PUT /profile, PUT /strategy, logbook, WS, settings, receive and radio
 /// control ...), so the principal never depends on that handle staying in-process.
 pub(crate) async fn principal_guard(
     State(app): State<App>,
@@ -170,7 +171,7 @@ pub fn tools() -> Value {
     let safe = json!({"type":"integer","minimum":0,"maximum":9_007_199_254_740_991u64});
     json!([
         {"name":"wstx_read","title":"Read station state",
-         "description":"Read one station view exactly as the browser receives it: profile (GET /profile), receive (GET /receive), selection (GET /receive/selection), radio (GET /radio), transmit (GET /transmit), contact (GET /contact, the ContactSnapshot with contact_revision and transmit.safety_revision) or automation (GET /automation). No effect.",
+         "description":"Read one station view exactly as the browser receives it: profile (GET /profile), receive (GET /receive), selection (GET /receive/selection), radio (GET /radio), transmit (GET /transmit), contact (GET /contact, the ContactSnapshot with contact_revision and transmit.safety_revision), automation (GET /automation) or strategy (GET /strategy: the saved strategies, the active one and my continent; editing stays in the browser). No effect.",
          "inputSchema":{"type":"object","properties":{"view":{"type":"string","enum":VIEWS.map(|v|v.0)}},"required":["view"],"additionalProperties":false},
          "outputSchema":output,"annotations":{"readOnlyHint":true}},
         {"name":"wstx_results","title":"Read decoded results",
@@ -187,12 +188,16 @@ pub fn tools() -> Value {
          "inputSchema":{"type":"object","properties":{"halt":object("HaltTransmit body")},"required":["halt"],"additionalProperties":false},
          "outputSchema":output,"annotations":{"destructiveHint":true,"idempotentHint":true}},
         {"name":"wstx_automation_command","title":"Automation command",
-         "description":"Configure, start or stop the station's FT4/FT8 automation (POST /automation/command): {v:1,profile_id,boot_id,command_id,action,...}. configure {expected_policy_revision,configuration:null|{modes:[\"ft8\"|\"ft4\"],ranking:\"first_seen\"|\"strongest_snr\"|\"lowest_frequency\",min_snr_db:null|-50..49,allowed_calls:[],blocked_calls:[],max_contacts:1..100,max_unanswered_periods:1..20,completion_action:\"stop\"|\"next_candidate\"}}; start {expected_policy_revision,expected_run_revision,mode,safety_revision}; stop {run_id}. Unconfigured and stopped by default; start needs this credential's transmit grant.",
+         "description":"Configure, start or stop the station's FT4/FT8 automation (POST /automation/command): {v:1,profile_id,boot_id,command_id,action,...}. configure {expected_policy_revision,configuration:null|{modes:[\"ft8\"|\"ft4\"],ranking:\"first_seen\"|\"strongest_snr\"|\"lowest_frequency\",min_snr_db:null|-50..49,allowed_calls:[],blocked_calls:[],max_contacts:1..100,max_unanswered_periods:1..20,completion_action:\"stop\"|\"next_candidate\",max_run_minutes:1..480 (optional, default 120),strategy:true|false (optional, default false; true: the active strategy of wstx_read strategy chooses, calls CQ and answers)}}; start {expected_policy_revision,expected_run_revision,mode,safety_revision}; stop {run_id}. Unconfigured and stopped by default; start needs this credential's transmit grant.",
          "inputSchema":{"type":"object","properties":{"command":object("AutomationCommand body")},"required":["command"],"additionalProperties":false},
-         "outputSchema":output,"annotations":{"destructiveHint":true,"idempotentHint":true}}
+         "outputSchema":output,"annotations":{"destructiveHint":true,"idempotentHint":true}},
+        {"name":"wstx_strategy_evaluate","title":"Strategy verdicts",
+         "description":"The verdicts the browser shows for decoded rows (POST /strategy/evaluate): {v:1,profile_id,boot_id,source_id,job_id,generation,first_sequence,next_sequence (at most 2048 rows),strategy:null (the saved active strategy) or a draft strategy,explain}. In display order: rank (the matched rule) and grey (a directed CQ not for my continent, never answered); with explain every row and why. No effect.",
+         "inputSchema":{"type":"object","properties":{"request":object("StrategyEvaluate body")},"required":["request"],"additionalProperties":false},
+         "outputSchema":output,"annotations":{"readOnlyHint":true}}
     ])
 }
-const INSTRUCTIONS: &str = "WSTX station: read state with wstx_read and wstx_results; operate through \
+const INSTRUCTIONS: &str = "WSTX station: read state with wstx_read, wstx_results and wstx_strategy_evaluate; operate through \
 wstx_contact_command and wstx_automation_command with the profile_id/boot_id and revisions from wstx_read; \
 use a new command_id per intent and never retry a mutation with a new command_id after an unknown outcome \
 (read the state first). wstx_transmit_halt stops transmission at once.";
@@ -271,6 +276,14 @@ fn operation(
         "wstx_transmit_halt" => {
             exact(args, &["halt"], &[])?;
             Ok((Method::POST, "/transmit/halt".into(), Some(object("halt")?)))
+        }
+        "wstx_strategy_evaluate" => {
+            exact(args, &["request"], &[])?;
+            Ok((
+                Method::POST,
+                "/strategy/evaluate".into(),
+                Some(object("request")?),
+            ))
         }
         _ => {
             exact(args, &["command"], &[])?;
