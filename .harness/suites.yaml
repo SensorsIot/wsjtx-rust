@@ -10,9 +10,12 @@
   # dev-dependency features, which would replace the executable the browser groups run
   # (Windows refuses to replace a running executable). The decoder unit tests run in
   # wstx-rust-decoder.
+  # --bins --test '*' plus --lib is --all-targets of this workspace (no bench or example
+  # targets; --benches would also select the lib and bins). A new bench or example target
+  # needs its own --bench/--example here.
   run: >-
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
-    cargo test --workspace --locked --bins --test '*' --benches --examples &&
+    cargo test --workspace --locked --bins --test '*' &&
     cargo test --workspace --locked --lib -- --skip decoder::
   paths:
   - server/
