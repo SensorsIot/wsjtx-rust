@@ -606,6 +606,8 @@ attribute def ActivityOrdering {
              same-parity successor (a skipped period) or an uncorrelated period leaves only
              the latest; a new receive identity (band/mode change, restart) clears it,
              an unknown-loss source epoch of the same receive does not (CL-061-01).
+             A period in which this station transmitted adds no block: the receive
+             period below it stays on top under the header and is kept (CL-061-03).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
