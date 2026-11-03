@@ -30,7 +30,7 @@
   select:
   - server/
   - fixtures/transmit/
-  - fixtures/decoder/protocol-data/
+  - fixtures/decoder/
   - src/
   - benches/
   - examples/
@@ -63,9 +63,7 @@
   - server/src/transmit/mod.rs
   - server/src/lib.rs
   - server/Cargo.toml
-  - fixtures/decoder/protocol-data/
-  - fixtures/decoder/physical-metric-cases.json
-  - fixtures/decoder/independent-vectors/
+  - fixtures/decoder/
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml

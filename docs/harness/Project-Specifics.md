@@ -97,7 +97,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 
 | Group | Functional coverage | Direct change owners |
 |---|---|---|
-| `wstx-rust` | Rust unit and integration tests | Native sources, Cargo inputs and Rust toolchain |
+| `wstx-rust` | Rust unit and integration tests, except the library's `decoder::` unit tests (`wstx-rust-decoder`) | Native sources, the transmit and decoder fixtures the tests include, Cargo inputs and Rust toolchain |
 | `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, `transmit/mod.rs`), the library root, the decoder fixtures they include, Cargo inputs and Rust toolchain |
 | `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
 | `protocol-thin` | Timing: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Timing inputs: router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
