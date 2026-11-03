@@ -3745,7 +3745,7 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39 later slices: DXCC entity, CQ/ITU zone and new-DXCC conditions and the rarest sort (the cty.dat entity itself is delivered by #55, CL-055-01); Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: DXCC entity and CQ/ITU zone list conditions and the rarest sort (the cty.dat entity is delivered by #55, CL-055-01; the new DXCC, continent and zone conditions by #42, CL-042-01); Alert as a third action with history; two-tier ignore lists; Pounce; auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Until delivered these conditions and actions are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
@@ -3762,6 +3762,27 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-042-01' {
+        doc /* The strategy's New matrix is complete: besides new call and new grid, a condition holds for a sender whose DXCC entity, continent, CQ zone or ITU zone (from its cty.dat entity, #55) is not in the internal log, ever or on this band and mode, each negatable; a sender without an entity, an unknown station band (for the band form) or an unreadable log never counts as new. The editor offers the four conditions with the same ever / on this band and mode choice; the live preview names a failing one. Details: WstxStrategy::Condition, NewEntity. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/dxcc.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_042_01_to_FR_007 from 'CL-042-01' to 'FR-007';
+    dependency CL_042_01_to_FR_011 from 'CL-042-01' to 'FR-011';
+    verification 'TC-042-001' {
+        doc /* TC-042-001 — New DXCC, continent and zone conditions
+             CL-042-01
+             Setup: the bundled cty.dat; a worked set from a hand log: DL1ABC 40m FT8 (Fed. Rep. of Germany, EU, CQ 14, ITU 28), JA1XYZ 20m FT8 (Japan, AS, 25, 45), F1ABC 40m FT4 (France, EU, 14, 27), K2ABC with no band (United States, NA, 5, 8), Q1ABC 40m FT8 (no entity); station HB9BLA JN47AA on 40m FT8; rows CQ DL2XYZ, CQ F5ABC, CQ JA2ABC, CQ VK2ABC (Australia, OC, 30, 59), CQ K1ABC, CQ XX1ABC (no entity). A browser editor case on the actual isolated station.
+             Steps: parse and serialize each of the four kinds with ever and band; refuse value any, a values key and a missing value; evaluate each kind and scope as a one-condition rule, and negated; the same with the station band unknown and with the log unreadable; the reason of a failing condition; in the editor add a condition and choose each new kind.
+             Expected (entity columns of the cited cty.dat lines): new_dxcc ever VK2ABC only, band F5ABC JA2ABC VK2ABC K1ABC; new_continent ever VK2ABC, band JA2ABC VK2ABC K1ABC; new_cq_zone ever VK2ABC, band JA2ABC VK2ABC K1ABC; new_itu_zone ever VK2ABC, band F5ABC JA2ABC VK2ABC K1ABC; XX1ABC never; negation the complement among the six rows; band unknown: every band form false, ever unchanged; log unreadable: every form false; the reasons "no match (rule 1: new DXCC on band)" and "no match (rule 1: not new ITU zone)"; the editor lists New DXCC, New continent, New CQ zone and New ITU zone, each with ever / on this band and mode, and the station saves and returns the draft conditions {kind, negate, value} at revision 1.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-01';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_042_01_verified_by_TC_042_001 from 'CL-042-01' to 'TC-042-001';
     verification 'TC-039-001' {
         doc /* TC-039-001 — Strategy configuration is exact
              CL-039-01

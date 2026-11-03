@@ -960,9 +960,11 @@ function showContinent(){
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
-const KINDS=[['message','Message type'],['new_call','New call'],['new_grid','New grid'],['continent','Continent'],['distance_km','Distance (km)'],['azimuth_deg','Azimuth (deg)'],['snr_db','SNR (dB)'],['dt_s','DT (s)'],['audio_hz','Audio frequency (Hz)'],['call','Call or prefix'],['cq_target','CQ target (DX, TEST, POTA...)'],['band','Band']];
+const KINDS=[['message','Message type'],['new_call','New call'],['new_grid','New grid'],['new_dxcc','New DXCC'],['new_continent','New continent'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['continent','Continent'],['distance_km','Distance (km)'],['azimuth_deg','Azimuth (deg)'],['snr_db','SNR (dB)'],['dt_s','DT (s)'],['audio_hz','Audio frequency (Hz)'],['call','Call or prefix'],['cq_target','CQ target (DX, TEST, POTA...)'],['band','Band']];
 const MESSAGES=[['cq','CQ (any)'],['directed_cq','Directed CQ'],['to_me','Calls me'],['signoff','RR73 / 73']];
-const fresh=kind=>({message:{value:'cq'},new_call:{value:'ever'},new_grid:{value:'ever'},continent:{values:['EU']},call:{values:['DL']},cq_target:{values:['DX']},band:{values:['40m']}}[kind]??{min:null,max:null});
+// #42 the New matrix: call, grid and the sender's cty.dat entity, continent, CQ and ITU zone.
+const NEW_KINDS=['new_call','new_grid','new_dxcc','new_continent','new_cq_zone','new_itu_zone'];
+const fresh=kind=>NEW_KINDS.includes(kind)?{value:'ever'}:({message:{value:'cq'},continent:{values:['EU']},call:{values:['DL']},cq_target:{values:['DX']},band:{values:['40m']}}[kind]??{min:null,max:null});
 const newStrategy=name=>({name,rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3});
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
 editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx (Esc, Alt+H)">HALT</button></header>
@@ -987,7 +989,7 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 function conditionMarkup(c,ri,ci){
   let value='';
   if(c.kind==='message')value=`<select data-f="value" aria-label="Message type">${MESSAGES.map(([v,l])=>option(v,l,c.value===v)).join('')}</select>`;
-  else if(c.kind==='new_call'||c.kind==='new_grid')value=`<select data-f="value" aria-label="Scope">${option('ever','ever',c.value==='ever')}${option('band','on this band and mode',c.value==='band')}</select>`;
+  else if(NEW_KINDS.includes(c.kind))value=`<select data-f="value" aria-label="Scope">${option('ever','ever',c.value==='ever')}${option('band','on this band and mode',c.value==='band')}</select>`;
   else if(c.kind==='continent')value=`<span class="se-continents" role="group" aria-label="Continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${c.values.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`;
   else if(c.values)value=`<input data-f="values" value="${esc(c.values.join(' '))}" aria-label="Values, separated by spaces" spellcheck="false" autocomplete="off">`;
   else value=`<input type="number" step="any" data-f="min" value="${c.min??''}" placeholder="min" aria-label="Minimum"><input type="number" step="any" data-f="max" value="${c.max??''}" placeholder="max" aria-label="Maximum">`;

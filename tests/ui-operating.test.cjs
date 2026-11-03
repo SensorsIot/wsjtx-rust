@@ -1743,6 +1743,29 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-042-01; TC-042-001 the editor offers the four entity New conditions, each
+// with ever / on this band and mode, and the actual isolated station accepts and keeps
+// the saved draft. The expected labels and conditions are written here.
+test('TC-042-001 Editor offers new DXCC, continent, CQ zone and ITU zone and the station saves them',{timeout:40000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  const kinds=[['new_dxcc','New DXCC'],['new_continent','New continent'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone']];
+  for(const [i,[kind]] of kinds.entries()){
+    await page.locator('#strategy-editor [data-act=add-condition][data-rule="0"]').click();
+    await page.locator('.se-condition').nth(i+1).locator('[data-f=kind]').selectOption(kind);
+  }
+  const offered=await page.locator('.se-condition').nth(1).locator('[data-f=kind] option').evaluateAll(o=>o.map(x=>[x.value,x.textContent]));
+  for(const k of kinds)assert.ok(offered.some(o=>o[0]===k[0]&&o[1]===k[1]),`${k[0]} offered as ${k[1]}`);
+  for(let i=1;i<=4;i++)assert.deepEqual(await page.locator('.se-condition').nth(i).locator('[data-f=value] option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['ever','ever'],['band','on this band and mode']]);
+  await page.locator('.se-condition').nth(1).locator('[data-f=value]').selectOption('band');
+  await page.locator('.se-condition').nth(4).locator('[data-f=negate]').check();
+  const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.locator('#se-save').click();const reply=await (await saved).json();
+  assert.deepEqual([reply.revision,reply.configuration.strategies[0].rules[0].conditions],[1,[{kind:'message',negate:false,value:'cq'},{kind:'new_dxcc',negate:false,value:'band'},{kind:'new_continent',negate:false,value:'ever'},{kind:'new_cq_zone',negate:false,value:'ever'},{kind:'new_itu_zone',negate:true,value:'ever'}]]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
 // uploads a replacement to the actual isolated station and returns to the bundled file;
 // a file that is no cty.dat is refused with its line and changes nothing.
