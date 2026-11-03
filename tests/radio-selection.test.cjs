@@ -684,8 +684,9 @@ function liveSelectionFixture(){
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
       // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
       // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
-      // queued, this browser's 10 s authorization requests can time out ("Could not authenticate").
-      // The operator then presses Connect securely again; each retry is kept as evidence (#55).
+      // queued, this browser's 10 s authorization attempts can time out. The client retries a
+      // timed-out step itself (CL-022-01, #22); only if every attempt fails ("Could not authenticate")
+      // does the operator press Connect securely again. Each such press is kept as evidence (#55).
       seen.loginRetries=[];
       for(;;){
         await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
@@ -711,6 +712,12 @@ function liveSelectionFixture(){
     for(const [index,page]of pages.entries()){
       const authoritative=observations[index].profileBodies.filter(p=>p.body).at(-1)?.body;assert.ok(authoritative,'authoritative setup profile observed');
       assert.deepEqual(observations[index].navigations.map(n=>n.url),[origin+'/'],'one main-frame navigation (the goto): the client never navigates or reloads');
+      // The qualified segment starts once the page has no Cold-load selection read in flight. On the
+      // starved cold link both browsers' cold loads can overlap (e.g. after the client retried a
+      // timed-out login step itself, #22), so a read can still be queued behind contact.js when the
+      // clients arrive; its page timeout would then end just inside the segment. The baseline still
+      // refuses every abort that ends after it (#8, supersededColdRead).
+      await page.waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:coldRemaining()});
       const socketBaseline={index:observations[index].sockets.length-1,count:observations[index].sockets.length,at:performance.now(),end:null};
       observations[index].acceptance={socketBaseline,expected:{profile_id:authoritative.profile_id,boot_id:authoritative.boot_id,profile_revision:authoritative.revision},events:await page.evaluate(()=>{
         const initialSocket=socket,events=[];
