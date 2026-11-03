@@ -466,9 +466,10 @@ attribute def ActivityOrdering {
              carries its own HALT with the same action and enabled state as the top-bar one,
              because a modal popup makes the rest of the page inert. One HALT is visible at
              a time (#37, operator 2026-11-03): in the operating view it is the QSO pane's
-             HALT and the top-bar HALT is hidden; while a page (Logbook, "?") or the Settings
-             drawer covers the workspace, and at most 48em wide (a phone, where the QSO pane is
-             scrolled away), the top-bar HALT is shown; both are the same action and enabled
+             HALT and the top-bar HALT is hidden while the QSO pane HALT is fully on screen;
+             whenever it is not (a page such as Logbook or "?" or the Settings drawer covers
+             the workspace, or the stacked QSO pane at most 75em wide or on a phone is scrolled
+             out of view), the top-bar HALT is shown, so a pointer HALT is always on screen; both are the same action and enabled
              state, and Esc / Alt+H halt everywhere. The exception chips
              that stood in the top bar are the ErrorField below the QSO pane since #37
              (operator 2026-11-03). A link that is connected shows no entry; the accessible

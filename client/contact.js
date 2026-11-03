@@ -304,6 +304,8 @@ $('qso-cq').addEventListener('click',async()=>{
 });
 $('qso-reply').addEventListener('click',()=>arm('Reply'));
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
+// #37 one HALT: the top-bar HALT hides only while the QSO pane HALT is fully on screen.
+new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(entry.isIntersecting&&entry.intersectionRatio>=0.99);},{threshold:[0,0.99,1]}).observe($('qso-halt'));
 // #37 fold-out Now (operator 2026-11-03, WSJT-X Next/Now): choose the line next and turn Enable
 // Tx on, so it goes from the next own period (never into a waveform already on the air).
 async function nowMessage(slot){

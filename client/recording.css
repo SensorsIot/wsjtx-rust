@@ -390,6 +390,6 @@ main.op-app{--hl-cq:rgba(102,255,102,.24);--hl-lotw:rgba(153,0,0,.35);--hl-new_c
 #error-field:has(.op-error-entry,#station-notice:not([hidden])) .op-error-none{display:none}
 @container (max-width:75em){#qso-column{grid-row:2}#rx-focus{grid-row:auto}}
 /* #37 (operator 2026-11-03): one HALT at a time. In the operating view the QSO pane HALT is it;
-   the top-bar HALT shows while a page or the Settings drawer covers the workspace, and on a phone. */
-@media (min-width:48.01em){.op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx{display:none}}
+   the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (contact.js). */
+body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}

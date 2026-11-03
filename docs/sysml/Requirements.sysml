@@ -2089,7 +2089,9 @@ package WstxRequirements {
              after RR73 chosen, Tx5) send choose_next then enable_tx with the shown safety revision;
              the pane has no RR73 or 73 button; on a completed contact Now is disabled and a forced
              click sends no enable_tx. In the operating view one HALT is visible, the QSO pane's,
-             the top-bar HALT shows on the Logbook page, in the Settings drawer and at 360 px. With the confirmation popup open during an active QSO its HALT
+             the top-bar HALT shows on the Logbook page, in the Settings drawer, and at 1024x768
+             and 360 px where the stacked pane HALT is below the fold; a HALT is in the viewport
+             without scrolling at every size. With the confirmation popup open during an active QSO its HALT
              sends the halt request. Theme switch changes the theme without a request. Keyboard
              shortcuts act as KeyboardShortcuts and letters are inactive while typing. An
              unauthorized browser shows only the token form and its status line, then the full
@@ -4335,7 +4337,7 @@ package WstxRequirements {
     }
     dependency CL_037_02_to_FR_019 from 'CL-037-02' to 'FR-019';
     requirement 'CL-037-03' {
-        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows only while a page or the Settings drawer covers the workspace and at most 48em wide; Esc and Alt+H halt everywhere. The QSO pane's direct buttons are CQ, Reply, Tune, HALT and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply stays until the #50 double-click fix is deployed. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
+        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (a page or the Settings drawer covers the workspace, or the stacked pane is scrolled out of view), so a pointer HALT is always on screen; Esc and Alt+H halt everywhere. The QSO pane's direct buttons are CQ, Reply, Tune, HALT and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply stays until the #50 double-click fix is deployed. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }

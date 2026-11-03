@@ -750,8 +750,15 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   // #37 (operator 2026-11-03): one HALT on the screen, the QSO pane's.
   assert.deepEqual(await page.getByRole('button',{name:/^HALT$|^Halt Tx$/}).filter({visible:true}).evaluateAll(list=>list.map(b=>b.id)),['qso-halt'],'one HALT, in the QSO pane');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
+  // A pointer HALT is on screen without scrolling at every size (the stacked pane at 1024x768
+  // and 360 px is below the fold, so the top-bar HALT shows there).
+  const haltOnScreen=async()=>page.waitForFunction(()=>[...document.querySelectorAll('#halt-tx,#qso-halt')].some(b=>{const r=b.getBoundingClientRect();return b.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),null,{timeout:3000});
+  for(const [width,height] of [[1024,768],[1366,768],[1920,1080]]){await page.setViewportSize({width,height});await haltOnScreen();}
+  await page.setViewportSize({width:1024,height:768});await page.waitForFunction(()=>document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
+  await page.setViewportSize({width:1366,height:768});await page.waitForFunction(()=>!document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'a phone does not overflow horizontally');
+  await haltOnScreen();
   for(const selector of ['#halt-tx','#operating-band','#waterfall','#band-activity','#rx-focus','#qso-cq'])assert.equal(await shown(page,selector),true,`${selector} still present at 360 px`);
   await page.screenshot({path:'test-results/ui-operating/operating-screen-360x800.png',fullPage:true});
   assert.deepEqual(errors,[]);
