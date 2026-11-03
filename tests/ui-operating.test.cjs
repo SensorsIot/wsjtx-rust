@@ -146,7 +146,7 @@ test('receive frame race updates its live owner while recording job is absent',{
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:current});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(current)}));
   }});
-  await page.waitForFunction(()=>live?.source&&snapshot&&snapshot.job===null);
+  await page.waitForFunction(()=>typeof live!=='undefined'&&live?.source&&snapshot&&snapshot.job===null);
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{
     boot_id:live.boot_id,source_id:live.source.id,job_id:live.job.id,generation:live.generation,sequence:0,first_frame:0,end_frame:2400,levels_b64:btoa('\0'.repeat(1024))}}}})));
   await page.waitForFunction(()=>document.querySelector('#waterfall').dataset.rows==='1');
@@ -1830,7 +1830,7 @@ test('TC-051-001 an open page reloads after the station restarts with another cl
   const {state,restart}=await updatedStation(page,app,dir,t);
   assert.equal(state.navigations,0,'the same build never reloads');
   const {before}=await restart('0123456789abcdef');
-  await page.waitForFunction(()=>connection.dataset.state==='connected'&&profileData&&live!==undefined,null,{timeout:30000});
+  await page.waitForFunction(()=>connection.dataset.state==='connected'&&profileData&&typeof live!=='undefined',null,{timeout:30000});
   assert.equal(state.navigations,1,'exactly one reload');assert.equal(state.rewritten,1,'one status of the updated station');
   const after=await page.evaluate(()=>({build:document.body.dataset.build,boot:profileData.boot_id,live:live?.boot_id,theme:document.documentElement.dataset.theme,speed:localStorage.getItem('wstx.waterfall-speed.v1'),reloaded:sessionStorage.getItem('wstx.reloaded-build.v1'),notice:document.querySelector('#station-notice').hidden}));
   assert.notEqual(after.boot,before,'a restarted station');
@@ -1852,7 +1852,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
     await p.route('**/receive/results?*',route=>route.fulfill({json:bad.results?{...emptyResults(receiving),dxcc:null}:emptyResults(receiving)}));
     await p.route('**/receive/selection',async route=>{const json=await (await route.fetch()).json();await route.fulfill({json:bad.selection?{...json,dxcc:null}:json});});
   }});
-  await page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  await page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='calling');
   // A receive snapshot of an unknown shape: visible error chip with the reload action.
   reject=true;await page.evaluate(()=>receiveSync());
@@ -1883,7 +1883,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   await page.waitForTimeout(1500);assert.equal(state.navigations,0,'a QSO in progress holds the reload');
   assert.equal(await notice.getAttribute('data-severity'),'warn');
   contact=null;await notice.click();
-  await page.waitForFunction(()=>connection.dataset.state==='connected'&&live!==undefined,null,{timeout:30000});
+  await page.waitForFunction(()=>connection.dataset.state==='connected'&&typeof live!=='undefined',null,{timeout:30000});
   assert.equal(state.navigations,1,'the chip reloads the page');
   assert.equal(await page.locator('#station-notice').isHidden(),true);
   // An open dialog also holds the reload.
@@ -1912,7 +1912,7 @@ async function liveDisplayFixture(t){
     await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving)receiving=liveFixture(json);await route.fulfill({json:receiving});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(receiving)}));
   }});
-  await f.page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  await f.page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   return {...f,newJob:async()=>{receiving={...receiving,job:{...receiving.job,id:crypto.randomUUID()}};await f.page.evaluate(()=>receiveSync());await f.page.waitForFunction(id=>live.job.id===id,receiving.job.id);}};
 }
 // Proves: CL-054-02; TC-054-002 a fixed level mapping with Zero/Gain sliders, Flatten and the spectrum line option.
@@ -1931,7 +1931,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   // No automatic level: more rows and a new job keep the mapping.
   await liveFrames(page,[{sequence:2,levels:levels.map(q=>q+10)}]);assert.deepEqual(await cell(page,100),[255,192,0],'a louder row is louder, not re-levelled (t=0.833)');
   await newJob();await liveFrames(page,[{sequence:0,levels}]);assert.deepEqual(await cell(page,100),[0,220,240],'a new job keeps the levels');
-  await page.reload();await page.waitForFunction(()=>live?.job?.mode==='ft8'&&live.source);
+  await page.reload();await page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   assert.deepEqual(await page.evaluate(()=>[sensitivity,displayRange]),[10,30],'per-browser settings survive a reload');
   // Flatten: a 30 dB passband slope is evened out across frequency; the native readout is unchanged.
   const slope=Array.from({length:1024},(_,k)=>30+Math.floor(30*k/1024));
