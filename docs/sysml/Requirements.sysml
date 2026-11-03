@@ -3786,7 +3786,7 @@ package WstxRequirements {
     requirement 'CL-042-02' {
         doc /* Two-tier ignore lists govern the strategy: a permanent list of calls (Settings > General, saved in the strategy configuration) and a session list in station memory (Band Activity right-click "Ignore <call>" / "Stop ignoring <call>", POST /strategy/ignore), whose entries end after the configured minutes (1..720, default 30) and which the station empties on any change of the station band. An ignored sender (exact call) never matches a rule: Highlight gives it no mark, Auto Call never selects it and Auto CQ never answers it, also when Auto CQ answers every caller; a contact already in progress and a manual Reply or Select are not changed. A saved configuration from before the lists reads with empty lists and 30 minutes. Details: WstxStrategy::IgnoreLists. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
+        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
     }
     dependency CL_042_02_to_FR_007 from 'CL-042-02' to 'FR-007';
     dependency CL_042_02_to_FR_010 from 'CL-042-02' to 'FR-010';
