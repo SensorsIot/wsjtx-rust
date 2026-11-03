@@ -107,6 +107,33 @@ package WstxContact {
              always rr73 (MW send_rr73_for_tx4 ~9661 is true for FT4 whatever
              m_send_RR73; set_rr73_tx4 ~9676 forces it), see ToggleTx4Form. */
     }
+    enum def SpecialActivity { enum none; enum na_vhf; enum ww_digi; enum arrl_digi; }
+    attribute def GridExchangeContest {
+        attribute activity : SpecialActivity;
+        doc /* #24 S2a, CL-024-02 (WSJT-X 3.3.0-beta5 Settings > Advanced > Special operating
+             activity; MW genCQMsg ~9610-9631, genStdMsgs ~9758-9760 sent=my_grid;
+             DecodedMessageReaction.cpp ~533-547; make-qso.adoc Contest Messages). The
+             operator chooses the station's activity with set_activity {activity}: none
+             (default), na_vhf (NA VHF), ww_digi (WW Digi) or arrl_digi (ARRL Digi). It is
+             a station setting of this boot like Call 1st (not saved; a restart starts with
+             none) and applies to the next message generation; the current contact is
+             regenerated at once. With an activity other than none:
+             Tx6 is "CQ TEST MYCALL GRID4" (na_vhf, arrl_digi) or "CQ WW MYCALL GRID4"
+             (ww_digi) when MYCALL is standard (a nonstandard MYCALL keeps "CQ MYCALL");
+             the exchange is my grid instead of the report: Tx2 is the Tx1-Tx3 stem of
+             StandardMessageSet plus GRID4 and Tx3 the stem plus "R GRID4" (e.g. "K1ABC
+             HB9BLA JN47", "K1ABC HB9BLA R JN47"); Tx1, Tx4 and Tx5 are unchanged. A
+             partner message to my call is classified (ContestReceivedKind): a grid
+             without R as signalReport, a grid with R as rogerReport, everything else as
+             in a standard QSO. So a caller's grid after my CQ selects Tx3 (rogerReport),
+             a CQer's "R GRID" after my Tx1 moves to Tx4 (rogers), and RRR/RR73/73 end the
+             contact as usual, which logs it (log on RRR/RR73/73, make-qso.adoc NIL
+             guidance); report_sent and report_rcvd stay null and the received grid is the
+             DX grid. Contest dupes are the existing worked-before indication of the
+             call on this band and mode (WorkedBeforeQuery). The UDP Status special
+             operation carries the WSJT-X SpecialOperatingActivity value: none 0, na_vhf 1,
+             ww_digi 5, arrl_digi 8. Field Day and FT Roundup are #24 S2b. */
+    }
     action def ToggleTx4Form {
         doc /* D7 adopted (MW on_txrb4_doubleClicked ~9047): switches tx4 between rrr
              and rr73 for the current contact and regenerates Tx4. Applies to the next
@@ -956,6 +983,7 @@ package WstxContact {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
         enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs;
+        enum set_activity;
         enum enable_tx; enum tune; enum redecode; enum open_log;
         doc /* discard_review is retired (#41, no log review queue) and refused
              invalid_request with field action. */
@@ -978,6 +1006,8 @@ package WstxContact {
              this with the PointerEffect result); set_hold_tx {enabled};
              set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
              set_call_first {enabled} (CallFirst);
+             set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"}
+             (GridExchangeContest);
              set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled,
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the
@@ -1025,7 +1055,7 @@ package WstxContact {
              last_period_utc,halt_state,safety_revision,refusal} (safety_revision the
              current CL-022 safety revision of the selected radio scope or null);
              settings exactly {auto_seq,call_first,tx1_skip,
-             tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report}; contact null or
+             tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report,activity}; contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,state,next_slot,
              tx4,messages,start_utc,end_utc,saved,suggested_slot,last_rcvd,dialogue} (report_sent the
              report of the last transmitted Tx2/Tx3 rendered, null until one is sent;

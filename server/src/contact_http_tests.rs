@@ -1544,3 +1544,25 @@ async fn the_contact_step_gives_the_hash_table_the_dx_call() {
     r.contact.get().unwrap().tick(&f.state);
     assert_eq!(r.hashes.lock().unwrap().dx_call(), None);
 }
+
+// Proves: CL-024-02; TC-024-005 (d). set_activity over POST /contact/command: the settings
+// read it back, an unknown activity is refused and UDP Status carries WSJT-X's value.
+#[tokio::test]
+async fn set_activity_reads_back_and_reaches_udp_status() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let (s, v) = f.send("set_activity", json!({"activity":"field_day"})).await;
+    assert_eq!(
+        (s, code(&v)),
+        (StatusCode::BAD_REQUEST, ("invalid_request", Some("activity")))
+    );
+    for (name, udp) in [("ww_digi", 5u8), ("arrl_digi", 8), ("na_vhf", 1), ("none", 0)] {
+        let (s, v) = f.send("set_activity", json!({ "activity": name })).await;
+        assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+        assert_eq!(f.snapshot().await["settings"]["activity"], name);
+        assert_eq!(
+            crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+            udp,
+            "{name}"
+        );
+    }
+}

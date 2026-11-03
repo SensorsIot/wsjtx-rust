@@ -703,7 +703,8 @@ attribute def ActivityOrdering {
              A fold-out shows the DX Call/Grid entry with Generate, Tx1-Tx6 with their Next
              choice and editable text (Tx5 is editable whenever a contact exists, also
              without a message, for WSJT-X Tx5 free text, #24 S1b; the others once they have
-             a message), Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
+             a message), an Activity choice (None, NA VHF, WW Digi, ARRL Digi; set_activity,
+             WstxContact::GridExchangeContest, #24 S2a) that shows the station's setting, Skip Tx1, RRR/RR73, report, Tx period, Auto Seq and
              Cancel contact in place. On a station without transmit capability the transmit
              buttons are disabled with the reason. */
     }

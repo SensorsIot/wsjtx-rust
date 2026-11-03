@@ -2134,3 +2134,25 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'editing never transmits');
   assert.deepEqual(errors,[]);
 });
+
+// Proves: CL-024-02; TC-024-006 (#24 S2a). The QSO fold-out's Activity choice shows the station's
+// special activity and sends set_activity.
+test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async t=>{
+  const commands=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner(),settings:{activity:'ww_digi'}})}));
+    await contactCommands(p,commands);
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.locator('#qso-more summary').click();
+  const choice=page.locator('#contact-activity');
+  await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='ww_digi');
+  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi']]);
+  await choice.selectOption('arrl_digi');
+  for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
+  const sent=commands.find(c=>c.action==='set_activity');
+  assert.equal(sent.activity,'arrl_digi');
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
+  assert.deepEqual(errors,[]);
+});

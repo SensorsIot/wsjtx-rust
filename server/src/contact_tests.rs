@@ -2399,3 +2399,119 @@ fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
     assert!(!s.armed());
     assert!(s.engine.take_logs().is_empty());
 }
+
+// ---------------------------------------------------------------- #24 S2a
+// Proves: CL-024-02; TC-024-005 (a). WW Digi: CQ WW, a caller's grid answered with R+grid,
+// RR73 answered with 73 and the contact logged with the grid and no reports.
+#[test]
+fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    s.command(Command::SetActivity(Activity::WwDigi)).unwrap();
+    s.engine.settings.call_first = false;
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ WW HB9BLA JN47");
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ WW HB9BLA JN47"));
+    let caller = decoded(&mut s, &mut table, period(2), "HB9BLA S52XYZ JN76", 1300.0, -8.0);
+    s.command(Command::SelectRow {
+        row: caller,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        set(&s),
+        [
+            "S52XYZ HB9BLA JN47",
+            "S52XYZ HB9BLA JN47",
+            "S52XYZ HB9BLA R JN47",
+            "S52XYZ HB9BLA RRR",
+            "S52XYZ HB9BLA 73",
+            "CQ WW HB9BLA JN47"
+        ]
+    );
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    s.run(period(3) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("S52XYZ HB9BLA R JN47"));
+    let rr73 = decoded(&mut s, &mut table, period(4), "HB9BLA S52XYZ RR73", 1300.0, -8.0);
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(6));
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("S52XYZ HB9BLA 73"));
+    let logged = one_log(&mut s);
+    assert_eq!(
+        (
+            logged.dx_call.as_deref(),
+            logged.dx_grid.as_deref(),
+            logged.report_sent,
+            logged.report_rcvd
+        ),
+        (Some("S52XYZ"), Some("JN76"), None, None)
+    );
+}
+
+// Proves: CL-024-02; TC-024-005 (b). NA VHF: answering a CQ TEST, the CQer's R+grid
+// moves to Tx4 and the partner's 73 completes the contact.
+#[test]
+fn na_vhf_moves_to_rogers_on_r_grid() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    s.command(Command::SetActivity(Activity::NaVhf)).unwrap();
+    let cq = decoded(&mut s, &mut table, P0, "CQ TEST K1ABC FN42", 1200.0, -10.0);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[5], "CQ TEST HB9BLA JN47");
+    assert_eq!(set(&s)[2], "K1ABC HB9BLA R JN47");
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    let r = decoded(&mut s, &mut table, period(2), "HB9BLA K1ABC R FN42", 1200.0, -10.0);
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("K1ABC HB9BLA RRR"));
+    let bye = decoded(&mut s, &mut table, period(4), "HB9BLA K1ABC 73", 1200.0, -10.0);
+    s.deliver(&[bye]);
+    assert_eq!(s.state().0, State::Completed);
+    assert_eq!(one_log(&mut s).dx_grid.as_deref(), Some("FN42"));
+}
+
+// Proves: CL-024-02; TC-024-005 (c, d). ARRL Digi with a nonstandard own call, and none.
+#[test]
+fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
+    let mut s = station();
+    s.call = "DL/HB9BLA".into();
+    s.command(Command::SetActivity(Activity::ArrlDigi)).unwrap();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[5], "CQ DL/HB9BLA");
+    assert_eq!(set(&s)[1], "K1ABC <DL/HB9BLA> JN47");
+    assert_eq!(set(&s)[2], "K1ABC <DL/HB9BLA> R JN47");
+    s.call = "HB9BLA".into();
+    s.command(Command::SetActivity(Activity::None)).unwrap();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(set(&s)[1], "K1ABC HB9BLA -10");
+    assert_eq!(set(&s)[5], "CQ HB9BLA JN47");
+    for (a, name, udp) in [
+        (Activity::None, "none", 0),
+        (Activity::NaVhf, "na_vhf", 1),
+        (Activity::WwDigi, "ww_digi", 5),
+        (Activity::ArrlDigi, "arrl_digi", 8),
+    ] {
+        assert_eq!((a.name(), a.special_operation()), (name, udp));
+        assert_eq!(Activity::parse(name), Some(a));
+    }
+    assert_eq!(Activity::parse("field_day"), None);
+}

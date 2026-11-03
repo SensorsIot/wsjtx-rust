@@ -148,7 +148,8 @@ package WstxUdp {
              decoder is processing an analysis window: true from the start of a window's
              decode until it returns, completed, abandoned, failed or cancelled), Rx DF and Tx DF (Hz), DE call and DE grid
              (profile), DX grid, Tx watchdog (expired), sub-mode "", fast mode false,
-             special operation 0, frequency tolerance 4294967295, T/R period 15 (FT8) or 7
+             special operation the WSJT-X value of the contact settings' activity (none 0,
+             na_vhf 1, ww_digi 5, arrl_digi 8, WstxContact::GridExchangeContest), frequency tolerance 4294967295, T/R period 15 (FT8) or 7
              (FT4), configuration name (profile display name), Tx message (the contact's
              next message, else "").
              Decode (2), New true, once per decoded record (decoded status with text and a
