@@ -190,7 +190,12 @@ fn the_later_of_two_calls_with_one_hash_wins() {
 #[test]
 fn sent_messages_teach_their_calls() {
     let mut t = HashTable::new();
-    for text in ["<VP2X/K1JT> HB9BLA", "CQ YW18FIFA", "K1ABC W9XYZ R-07"] {
+    for text in [
+        "<VP2X/K1JT> HB9BLA",
+        "CQ YW18FIFA",
+        "K1ABC W9XYZ R-07",
+        "DL1ABC/P HB9BLA -05",
+    ] {
         let p = pack(text).unwrap();
         t.learn_sent(&unpack(&p.bits), &p.text);
     }
@@ -200,6 +205,9 @@ fn sent_messages_teach_their_calls() {
         ("<K1ABC> PA/K1XX", "<K1ABC> PA/K1XX"),
         ("<W9XYZ> PA/K1XX", "<W9XYZ> PA/K1XX"),
         ("<HB9BLA> PA/K1XX", "<HB9BLA> PA/K1XX"),
+        // A sent /P call teaches its base call (pack28 stages the base).
+        ("<DL1ABC> PA/K1XX", "<DL1ABC> PA/K1XX"),
+        ("<DL1ABC/P> W9XYZ", "<...> W9XYZ"),
     ] {
         assert_eq!(shown(&t, &packed(text)), expected);
     }

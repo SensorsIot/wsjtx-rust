@@ -148,8 +148,9 @@ impl HashTable {
         }
     }
     /// The calls a transmitted message teaches (pack28/pack77_hash_index): every
-    /// concrete call of a standard, Field Day or RTTY message, the full call of a
-    /// nonstandard CQ and every bracketed `<CALL>` of the text.
+    /// concrete call of a standard (its base call, without /R or /P, as
+    /// pack77_parse_type12_call stages it), Field Day or RTTY message, the full call of
+    /// a nonstandard CQ and every bracketed `<CALL>` of the text.
     pub fn learn_sent(&mut self, payload: &Payload, text: &str) {
         let concrete =
             |c: &super::Call| (c.kind == CallKind::Call).then(|| c.text.clone()).flatten();
@@ -158,7 +159,18 @@ impl HashTable {
                 Fields::Standard { to, from, .. }
                 | Fields::FieldDay { to, from, .. }
                 | Fields::Rtty { to, from, .. },
-            ) => [to, from].into_iter().filter_map(concrete).collect(),
+            ) => [to, from]
+                .into_iter()
+                .filter_map(concrete)
+                .map(
+                    |c| match c.strip_suffix("/R").or_else(|| c.strip_suffix("/P")) {
+                        Some(base) if matches!(payload.fields, Some(Fields::Standard { .. })) => {
+                            base.to_owned()
+                        }
+                        _ => c,
+                    },
+                )
+                .collect(),
             Some(Fields::Nonstandard {
                 full_call,
                 cq: true,

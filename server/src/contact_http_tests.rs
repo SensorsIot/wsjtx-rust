@@ -1507,3 +1507,16 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
         "{snap}"
     );
 }
+
+// Proves: CL-024-01; TC-024-002 (#24 S1). The station's startup wiring gives the transmit
+// owner the Recording's call hash table and sets my call from the profile.
+#[test]
+fn startup_shares_the_hash_table_with_the_transmit_owner() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    assert!(r.transmit.get().unwrap().hash_table().is_none());
+    r.start_hashes("hb9bla");
+    let shared = r.transmit.get().unwrap().hash_table().unwrap();
+    assert!(Arc::ptr_eq(&shared, &r.hashes));
+    assert_eq!(r.hashes.lock().unwrap().my_call(), Some("HB9BLA"));
+}

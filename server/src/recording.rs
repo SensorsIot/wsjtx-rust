@@ -1307,6 +1307,14 @@ impl Recording {
 }
 
 impl Recording {
+    /// Startup wiring of HashResolution (CL-024-01): my call from the profile and the
+    /// table shared with this station's transmit owner, once it is started.
+    pub(crate) fn start_hashes(&self, callsign: &str) {
+        self.set_my_call(Some(callsign));
+        if let Some(transmit) = self.transmit.get() {
+            transmit.attach_hashes(self.hashes.clone());
+        }
+    }
     /// My call for the hash table (the profile callsign; None without one).
     pub(crate) fn set_my_call(&self, call: Option<&str>) {
         self.hashes

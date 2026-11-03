@@ -4391,15 +4391,15 @@ package WstxRequirements {
     verification 'TC-024-002' {
         doc /* TC-024-002 — The station's live publication fills in hashed calls
              CL-024-01
-             Setup: the actual station Recording owner with a fixture live FT8 job and hand-authored decodes; my call HB9BLA set as the station does from the profile.
-             Steps: publish "<VP2X/K1JT> W9XYZ -05", then "CQ VP2X/K1JT", then "<VP2X/K1JT> W9XYZ -05" again, "<HB9BLA> VP2X/K1JT" and "<DL/K1ABC> W9XYZ"; read the published records, their UDP Decode messages and the strategy facts; change my call to HB9BLB and publish "<HB9BLB> VP2X/K1JT".
-             Expected: the first record keeps "<...> W9XYZ -05" (no rewriting of history); the later one reads "<VP2X/K1JT> W9XYZ -05" with to {kind hash, text VP2X/K1JT}, "<HB9BLA> VP2X/K1JT" and "<...> W9XYZ" with text null; the UDP Decode messages carry the same texts; the strategy has no facts for a record whose 'from' is hashed and unchanged facts otherwise; after the change "<HB9BLB> VP2X/K1JT".
+             Setup: the actual station Recording owner with a fixture live FT8 job and hand-authored decodes; my call HB9BLA set on the Recording; the station fixture with its transmit owner on the recording hardware double; the real profile PUT handler.
+             Steps: publish "<VP2X/K1JT> W9XYZ -05", then "CQ VP2X/K1JT", then "<VP2X/K1JT> W9XYZ -05" again, "<HB9BLA> VP2X/K1JT" and "<DL/K1ABC> W9XYZ"; read the published records, their UDP Decode messages and the strategy facts; change my call to HB9BLB and publish "<HB9BLB> VP2X/K1JT"; run the station's startup hash wiring with the profile call hb9bla; save a profile with callsign HB9BLA through PUT /profile.
+             Expected: the first record keeps "<...> W9XYZ -05" (no rewriting of history); the later one reads "<VP2X/K1JT> W9XYZ -05" with to {kind hash, text VP2X/K1JT}, "<HB9BLA> VP2X/K1JT" and "<...> W9XYZ" with text null; the UDP Decode messages carry the same texts; the strategy has no facts for a record whose 'from' is hashed and unchanged facts otherwise; after the change "<HB9BLB> VP2X/K1JT"; after the startup wiring the transmit owner holds the Recording's own table and my call is HB9BLA; after the profile save my call is HB9BLA.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-024-01';
         }
-        attribute executable : String = "server/src/recording_tests.rs";
+        attribute executable : String = "server/src/recording_tests.rs; server/src/contact_http_tests.rs; server/src/auth_tests.rs";
     }
     dependency CL_024_01_verified_by_TC_024_002 from 'CL-024-01' to 'TC-024-002';
 

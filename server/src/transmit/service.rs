@@ -395,6 +395,10 @@ impl<H: Hardware> Core<H> {
     pub fn attach_hashes(&mut self, hashes: Arc<Mutex<crate::decoder::HashTable>>) {
         self.hashes = Some(hashes);
     }
+    /// The attached call hash table, if any.
+    pub fn hash_table(&self) -> Option<&Arc<Mutex<crate::decoder::HashTable>>> {
+        self.hashes.as_ref()
+    }
     /// WstxTransmit::StationModeGate: the station's operating mode. A request of
     /// another mode is refused staleRequest at admission and never keyed or started.
     pub fn set_station_mode(&mut self, mode: Option<Mode>) {

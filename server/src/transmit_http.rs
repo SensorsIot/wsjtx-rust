@@ -205,6 +205,11 @@ impl Station {
     pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {
         self.service.with(|c| c.attach_hashes(hashes));
     }
+    /// The call hash table the transmit owner feeds, if attached.
+    #[cfg(test)]
+    pub(crate) fn hash_table(&self) -> Option<Arc<Mutex<wstx_rust::decoder::HashTable>>> {
+        self.service.with(|c| c.hash_table().cloned())
+    }
     /// Test seam: the same station with injected hardware (virtual devices, no radio).
     #[cfg(test)]
     pub(crate) fn start_with(hardware: Box<dyn Hardware>) -> std::io::Result<Arc<Self>> {

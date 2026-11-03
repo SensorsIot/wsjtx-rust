@@ -280,8 +280,15 @@ package WstxOfflineDecode {
              (with its /R or /P) and the full call of a nonstandard i3=4 message whose hash
              is the 'to' call (including CQ); a 'to' call or other families teach nothing
              (unpack77 nrx=1, not configured); from each transmit request the transmit owner
-             accepts, every concrete call of a standard/Field Day/RTTY message, the full call
-             of a nonstandard CQ and every bracketed <CALL> (pack28/pack77_hash_index).
+             accepts, every concrete call of a standard (its base call without /R or /P, as
+             pack77_parse_type12_call stages it)/Field Day/RTTY message, the full call of a
+             nonstandard CQ and every bracketed <CALL> (pack28/pack77_hash_index).
+             Deliberate deviations: WSJT-X packs transmitted texts in its GUI process and
+             feeds the decoder's table the DX call instead (ft8apset/dxcall13); the station
+             learns from accepted requests. unpack77's DX-call rules (a 0.1 h10 equal to the
+             DX call's hash shows the DX call; a nonstandard 'to' h12 equal to my h12 is my
+             call when the full call is the DX call, even if calls12 holds another call)
+             need the contact's DX call and are delivered with #24 S1b.
              Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
              22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
              from calls12, and when that is empty and the hash is the 'to' call equal to my
