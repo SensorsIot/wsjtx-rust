@@ -69,18 +69,30 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   });
   await t.test('actual frozen source and exact caller stack',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:799},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.equal(cadenceCaller(initiator(874),origin,mapping),'automatic');for(const line of [813,827,841,858,859,867,876])assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');assert.throws(()=>cadenceCaller(initiator(873),origin,mapping),/unknown/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(874).stack.callFrames]}};
+    const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:line}]}});
+    assert.ok(mapping.explicitLines.length>0&&!mapping.explicitLines.includes(mapping.timerLine),'timer and explicit callers are distinct');
+    assert.equal(cadenceCaller(initiator(mapping.timerLine),origin,mapping),'automatic');for(const line of mapping.explicitLines)assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');
+    assert.ok(!mapping.explicitLines.includes(mapping.timerLine-1));assert.throws(()=>cadenceCaller(initiator(mapping.timerLine-1),origin,mapping),/unknown selection caller.*review the cadence caller mapping/);
+    const wrongFetch=initiator(mapping.timerLine);wrongFetch.stack.callFrames[0].lineNumber=mapping.fetchLine+1;assert.throws(()=>cadenceCaller(wrongFetch,origin,mapping),/review the cadence caller mapping/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(mapping.timerLine).stack.callFrames]}};
     assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
     assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
-  await t.test('frozen source pin is line-ending neutral but still content-exact',async()=>{
-    const lf=Buffer.from((await fs.readFile(path.join(__dirname,'../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),'utf8');
-    const crlf=Buffer.from(lf.toString('utf8').replace(/\n/g,'\r\n'),'utf8');
-    assert.notDeepEqual(lf,crlf);assert.equal(cadenceSource(crlf).sha256,cadenceSource(lf).sha256);
-    assert.throws(()=>cadenceSource(Buffer.concat([lf,Buffer.from('\n')])),/review caller/,'any content change still breaks the pin');
+  await t.test('caller mapping is derived from the source and line-ending neutral',async()=>{
+    const lf=(await fs.readFile(path.join(__dirname,'../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),crlf=lf.replace(/\n/g,'\r\n');
+    const lines=({fetchLine,timerLine,explicitLines})=>({fetchLine,timerLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
+    assert.notEqual(lf,crlf);assert.deepEqual(lines(cadenceSource(Buffer.from(crlf))),base);
+    // A change that only moves lines (a comment above the fetch) moves the mapping with it (#8).
+    const at=lf.indexOf("    const response=await stationFetch('/receive/selection'"),shifted=lines(cadenceSource(Buffer.from(lf.slice(0,at)+'    // shifted\n'+lf.slice(at))));
+    assert.deepEqual(shifted,{fetchLine:base.fetchLine+1,timerLine:base.timerLine+1,explicitLines:base.explicitLines.map(n=>n+1)});
+    // A change that makes the mapping ambiguous or loses a site needs review, not a renewal.
+    const src=lf.split('\n'),timer=src[base.timerLine],fetch=src[base.fetchLine];
+    const variant=(index,replacement)=>Buffer.from([...src.slice(0,index),...replacement,...src.slice(index+1)].join('\n'));
+    assert.throws(()=>cadenceSource(variant(base.timerLine,[timer,timer])),/review the cadence caller mapping: the automatic timer caller matched 2 lines/);
+    assert.throws(()=>cadenceSource(variant(base.timerLine,['  lastOperatingRead=0;'])),/review the cadence caller mapping: the automatic timer caller matched 0 lines/);
+    assert.throws(()=>cadenceSource(variant(base.fetchLine,['    const response=await fetch(\'/x\'),text=await response.text();'])),/review the cadence caller mapping: the selection fetch matched 0 lines/);
+    assert.throws(()=>cadenceSource(variant(base.fetchLine,[fetch,fetch])),/review the cadence caller mapping: the selection fetch matched 2 lines/);
   });
   await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js')));
@@ -131,7 +143,7 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   // (net::ERR_ABORTED) before the baseline and failed the join, though the page superseded it.
   await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:799},{url:origin+'/recording.js',lineNumber:874}]}};
+    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.timerLine}]}};
     const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
     const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
     const seen=(abort={})=>{
@@ -474,20 +486,27 @@ function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.metho
 function supersededColdRead(transfer,read,baseline){
   return transfer.failure==='net::ERR_ABORTED'&&read?.failed===true&&!read.body&&transfer.ended!==null&&Number.isFinite(baseline?.at)&&transfer.ended<baseline.at&&transfer.ended-transfer.started>=9500;
 }
-// Freeze the actual served caller and acceptance guards, not just a function name.
+// Map the actual served caller sites and acceptance guards, not just a function name. The
+// mapping is derived from the served source, so a change that only moves lines needs no
+// renewal; a site that is missing or ambiguous fails and asks for a review (#8).
 function cadenceSource(bytes){
   // The station serves working-tree bytes, whose line endings depend on the checkout
-  // (autocrlf CRLF or LF). Pin the LF-normalized text, the same as git's content (#8).
-  const source=Buffer.from(bytes).toString('utf8').replace(/\r\n/g,'\n');
-  const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
-  assert.equal(sha256,'eb823202c09abc92d14209b3a23caf9a075e548b77b246b209d75956215af117','review caller/acceptance mapping when recording.js changes');
+  // (autocrlf CRLF or LF). Derive from the LF-normalized text, the same as git's content.
+  const source=Buffer.from(bytes).toString('utf8').replace(/\r\n/g,'\n'),lines=source.split('\n');
+  // CDP line numbers are 0-based, the same as these indices.
+  const single=(what,hits)=>{assert.equal(hits.length,1,`review the cadence caller mapping: ${what} matched ${hits.length} lines of recording.js (${hits.map(n=>n+1).join(',')||'none'})`);return hits[0];};
+  const fetchLine=single('the selection fetch',lines.flatMap((line,n)=>line.includes("stationFetch('/receive/selection'")?[n]:[]));
+  // Every call of operatingSync (not its definition). The automatic one is the operatingSync(false)
+  // inside a top-level setInterval( timer: its statement starts at the nearest unindented line.
+  const callers=lines.flatMap((line,n)=>/(?<!function )\boperatingSync\(/.test(line)?[n]:[]);
+  const inTimer=n=>{while(n>0&&/^\s/.test(lines[n]))n--;return lines[n].startsWith('setInterval(');};
+  const timerLine=single('the automatic timer caller',callers.filter(n=>lines[n].includes('operatingSync(false)')&&inTimer(n)));
+  const explicitLines=callers.filter(n=>n!==timerLine);
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
-  const mapping={sha256,valid,fetchLine:799,timerLine:874},lines=source.split('\n');
-  // CDP line numbers are 0-based: they must still name the selection fetch and the timer caller.
-  assert.ok(lines[mapping.fetchLine].includes("stationFetch('/receive/selection'"),'fetchLine names the selection read');
-  assert.ok(lines[mapping.timerLine].includes('operatingSync(false)')&&lines[mapping.timerLine-3].startsWith('setInterval('),'timerLine names the automatic timer caller');
-  return mapping;
+  // The digest is report evidence of which source was served, not a gate.
+  const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
+  return {sha256,valid,fetchLine,timerLine,explicitLines};
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
@@ -498,13 +517,12 @@ function cadenceCaller(initiator,origin,mapping){
     frames=frames.slice(2);
   }
   assert.ok(frames?.length>=2,'complete selection caller stack');
-  assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine);
+  assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine,`selection read from line ${frames[0].lineNumber}, not the selection fetch ${mapping.fetchLine}: review the cadence caller mapping`);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
-  // All non-timer entry points of this exact frozen source. Unknown stacks fail closed.
-  // Reviewed for CL-022-03: Connect/Disconnect CAT callers removed; catSync never reads selection.
-  const explicitLines=[813,827,841,858,859,867,876];
+  // Every other operatingSync call of the served source is explicit or reconciliation.
+  // Unknown stacks fail closed. catSync never reads selection (CL-022-03).
   if(caller.lineNumber===mapping.timerLine)return 'automatic';
-  assert.ok(explicitLines.includes(caller.lineNumber),`unknown selection caller ${caller.lineNumber}`);
+  assert.ok(mapping.explicitLines.includes(caller.lineNumber),`unknown selection caller line ${caller.lineNumber}: review the cadence caller mapping`);
   return 'explicit/reconciliation';
 }
 function cadencePair(previous,current,mutations){
