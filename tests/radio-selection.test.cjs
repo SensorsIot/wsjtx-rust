@@ -634,8 +634,9 @@ function liveSelectionFixture(){
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
       // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
       // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
-      // queued, this browser's 10 s authorization requests can time out ("Could not authenticate").
-      // The operator then presses Connect securely again; each retry is kept as evidence (#55).
+      // queued, this browser's 10 s authorization attempts can time out. The client retries a
+      // timed-out step itself (CL-022-01, #22); only if every attempt fails ("Could not authenticate")
+      // does the operator press Connect securely again. Each such press is kept as evidence (#55).
       seen.loginRetries=[];
       for(;;){
         await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
