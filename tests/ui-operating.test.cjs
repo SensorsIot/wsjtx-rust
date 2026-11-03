@@ -1531,6 +1531,48 @@ test('TC-057-004 three consecutive periods leave only the latest even and odd pe
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-061-03; TC-061-004 (#61, operator 2026-11-03). The period in which this station
+// transmitted (station.tick transmitting) publishes no records; Band Activity then shows no
+// empty-period block: the header and the top rows are the last receive period, and the next
+// receive period keeps it below its divider. A genuinely empty receive period keeps its note.
+test('TC-061-004 a period in which the station transmitted shows no empty block and keeps the receive periods',{timeout:45000},async t=>{
+  let state,records=[];
+  const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`PERIOD FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
+  const publish=(id,period,count)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+    state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    publish(1,'2026-10-27T12:00:00.0000000Z',3);
+    await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await page.route('**/receive/results?*',async route=>{
+      const query=new URL(route.request().url()).searchParams,cursor=Number(query.get('cursor')),limit=Number(query.get('limit'));
+      const batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
+    });
+  }});
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.querySelector('.empty-messages')?'empty:'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
+  const header=()=>page.locator('#band-activity header .op-muted').textContent();
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory&&window.wstxTransmitted);
+  // The station keys in 12:00:15 (a station.tick inside that period says transmitting).
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.parse('2026-10-27T12:00:17.000Z'),period_ms:15000,transmitting:true,rx_level_db:null}}}})));
+  publish(2,'2026-10-27T12:00:15.0000000Z',0);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.id===2);await page.waitForTimeout(300);
+  assert.deepEqual(await shown(),['history:0','history:1','history:2'],'the transmit period adds no block; the receive period stays on top');
+  assert.doesNotMatch(await page.locator('#band-activity').innerText(),/No stations decoded|No verified stations/);
+  assert.equal(await header(),'Latest FT8 period 12:00:00 UTC','the header names the last receive period');
+  assert.match(await page.locator('#band-activity .op-count').textContent(),/^3 messages$/);
+  publish(3,'2026-10-27T12:00:30.0000000Z',2);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.id===3&&document.querySelectorAll('tr[data-period=latest]').length===2);
+  assert.deepEqual(await shown(),['latest:3','latest:4','|FT8 period 12:00:00 UTC','history:0','history:1','history:2'],'the receive period before the transmission stays below');
+  assert.match(await header(),/^Latest FT8 period 12:00:30 UTC/);
+  // 12:00:45 is a receive period (no transmission) that decodes nothing: its small note stays.
+  publish(4,'2026-10-27T12:00:45.0000000Z',0);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>resultView?.id===4);
+  assert.deepEqual(await shown(),['empty:No stations decodedNo verified stations were decoded in this period.','|FT8 period 12:00:30 UTC','history:3','history:4']);
+  assert.match(await header(),/^Latest FT8 period 12:00:45 UTC/);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
 test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];
