@@ -3697,7 +3697,7 @@ package WstxRequirements {
     dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
     requirement 'CL-057-03' {
-        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by value or by the chosen column (ActivityOrdering, #55 CL-055-04); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. */
+        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by value or by the chosen column (ActivityOrdering, #55 CL-055-04); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. A period in which this station transmitted is the exception of CL-061-03: it adds no block, and the period kept below it stays until a receive period replaces it. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js";
     }
@@ -4627,5 +4627,27 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_061_02_verified_by_TC_061_003 from 'CL-061-02' to 'TC-061-003';
+    // #61 operator report 2026-11-03: after each own transmission Band Activity looked as if reception had stopped.
+    requirement 'CL-061-03' {
+        doc /* A T/R period in which this station transmitted shows nothing in Band Activity, as in WSJT-X: the station hears only itself then, so its decode attempt publishes no records, and that is no empty-period block ("No stations decoded"). The browser knows the period from the station: a station.tick inside the period with transmitting true, or the contact snapshot's transmit.last_period_utc (the start of the last transmitted period, station UTC ms); it remembers the latest 16 such period starts per page. While such a period with no records is the latest view, the header "Latest <MODE> period <UTC> UTC" and the top rows are those of the receive period kept below it (CL-057-03), without its divider; without a kept period the header is "Latest decode period" and the listening note shows. When the next period arrives, the period kept below the transmit period stays below the new one with its divider (it replaces the transmit period, not the receive period before it). A receive period in which this station did not transmit and that decodes nothing keeps its note "No stations decoded" as before. The station's receive results, records and the QSO pane are unchanged. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/contact.js";
+    }
+    dependency CL_061_03_to_FR_010 from 'CL-061-03' to 'FR-010';
+    dependency CL_061_03_to_FR_019 from 'CL-061-03' to 'FR-019';
+    verification 'TC-061-004' {
+        doc /* TC-061-004 — A period in which the station transmitted shows no empty block
+             CL-061-03
+             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route and a scripted station.tick (explicit presentation fixtures, never modem truth).
+             Steps: publish 12:00:00 UTC with 3 records; deliver a station.tick at 12:00:17 with transmitting true; publish 12:00:15 with no records; publish 12:00:30 with 2 records; publish 12:00:45 (no transmission) with no records.
+             Expected (independent: the scripted periods and the tick): after 12:00:15 Band Activity shows only the three 12:00:00 rows, no "No stations decoded" and no "No verified stations" text, header "Latest FT8 period 12:00:00 UTC", count "3 messages"; after 12:00:30 its 2 rows on top and the 12:00:00 rows below the divider "FT8 period 12:00:00 UTC"; after 12:00:45 the note "No stations decoded" with the 12:00:30 rows below their divider; no page error. On the parent client the 12:00:15 period shows "No stations decoded".
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: #61 on HB9BLA (FT4 and FT8 CQ). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-03';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_03_verified_by_TC_061_004 from 'CL-061-03' to 'TC-061-004';
 
 }
