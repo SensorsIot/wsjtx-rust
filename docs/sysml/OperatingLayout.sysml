@@ -46,7 +46,8 @@ package WstxOperatingLayout {
              opens audio. Separate operating mode/band
              behavior is WstxOperatingReceive/contract 4.7.5/12.8.1. Actual12.7 records alone populate
              Band Activity using latest UTC period and relative DT when correlated, nullable SNR and audio frequency;
-             no fabricated UTC/DT, message text or resolved hash. Full source/job/
+             no fabricated UTC/DT or message text; a hashed call shows as the station's
+             publication gives it (<CALL> or <...>, WstxOfflineDecode::HashResolution). Full source/job/
              generation/sequence binds each row; new identity clears rows, stale
              pages cannot append. At most2048 rows, explicit cursor-expiry history
              warning and partial stop/failure output; unsupported payloads display

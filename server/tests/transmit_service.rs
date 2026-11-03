@@ -1468,3 +1468,32 @@ fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
     stop.store(true, Ordering::SeqCst);
     driver.join().unwrap();
 }
+
+// Proves: CL-024-01; TC-024-001 (#24 S1). Every request the transmit owner accepts teaches
+// the station's call hash table its calls; a refused request teaches nothing.
+#[test]
+fn accepted_requests_teach_the_station_hash_table() {
+    use wstx_rust::decoder::{HashTable, unpack};
+    let shown = |t: &HashTable, text: &str| {
+        let bits = wstx_rust::transmit::pack(text).unwrap().bits;
+        t.resolve(&unpack(&bits)).text.unwrap()
+    };
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    let table = Arc::new(Mutex::new(HashTable::new()));
+    core.attach_hashes(table.clone());
+    f.at(P - 3_000);
+    let refused = core.submit(request(1, P, "<3D2CR/P> HB9BLA"));
+    assert_eq!(refused.refusal, Some(TransmitRefusal::NotArmed));
+    core.arm(7).unwrap();
+    for (seq, text) in [(2, "<VP2X/K1JT> HB9BLA"), (3, "CQ YW18FIFA")] {
+        assert_eq!(
+            core.submit(request(seq, P, text)).kind,
+            OutcomeKind::Accepted
+        );
+    }
+    let t = table.lock().unwrap();
+    assert_eq!(shown(&t, "<VP2X/K1JT> W9XYZ"), "<VP2X/K1JT> W9XYZ");
+    assert_eq!(shown(&t, "<YW18FIFA> PA/K1XX"), "<YW18FIFA> PA/K1XX");
+    assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
+}

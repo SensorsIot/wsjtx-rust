@@ -138,6 +138,12 @@ package WstxRequirements {
              Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Phase-two target; not implemented. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
+    requirement 'FR-024' {
+        doc /* Contest, special-activity and DXpedition operation — phase three
+             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound; S5 SuperFox Hound. Fox (S6) is out of scope; EU VHF (S3) is backlog. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs";
+    }
     requirement 'CL-003-01' {
         doc /* The Rust server MUST serve the HTML/CSS/JavaScript operator client. The browser MUST visibly show server version, connection state and an unconfigured radio. Refresh status MUST request a fresh snapshot and update the displayed last-update time. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -296,7 +302,7 @@ package WstxRequirements {
     dependency CL_007_01_to_FR_004 from 'CL-007-01' to 'FR-004';
     dependency CL_007_01_to_FR_018 from 'CL-007-01' to 'FR-018';
     requirement 'CL-007-02' {
-        doc /* The common browser MUST show exact supported payload fields, unresolved hash identities, UTC period time and relative DT when correlated or explicit unknown timing under4.7.4, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. */
+        doc /* The common browser MUST show exact supported payload fields, hash identities (filled in by the station per CL-024-01 or unresolved), UTC period time and relative DT when correlated or explicit unknown timing under4.7.4, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
     }
@@ -4361,5 +4367,40 @@ package WstxRequirements {
     dependency CL_054_02_verified_by_TC_054_003 from 'CL-054-02' to 'TC-054-003';
     dependency CL_050_01_verified_by_TC_054_003 from 'CL-050-01' to 'TC-054-003';
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
+    requirement 'CL-024-01' {
+        doc /* #24 S1. The station keeps one session hash table per station instance, fed by every concrete call decoded or sent and by my own call, and shows a hashed call as <CALL> once it resolves, otherwise <...>, as packjt77 does (this reverses the earlier StationDecode rule that a hash is never filled in). It generates and accepts the WSJT-X message sets for exactly one nonstandard or compound call with the bracket rules of genStdMsgs and refuses two nonstandard calls. It accepts free text of at most 13 characters (0.0) in an operator-edited slot. Every transmitted text packs unaltered. Delivered: the hash table and fill-in (slice S1a, WstxOfflineDecode::HashResolution); outstanding (slice S1b): compound/nonstandard QSOs through the contact engine and free text from the operating screen; until delivered, hashed and nonstandard rows are refused on selection as before. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs";
+    }
+    dependency CL_024_01_to_FR_024 from 'CL-024-01' to 'FR-024';
+    dependency CL_024_01_to_FR_004 from 'CL-024-01' to 'FR-004';
+    verification 'TC-024-001' {
+        doc /* TC-024-001 — Hash table learning and fill-in, known and unknown calls
+             CL-024-01
+             Setup: the pure payload codec and the hash table of WstxOfflineDecode::HashResolution; the transmit owner on its recording hardware double (virtual clock; no audio, PTT or radio).
+             Steps: unpack "<PJ4/K1ABC> W9XYZ -05" with no table and with an empty table; learn the decodes "CQ PJ4/K1ABC" (i3=4), "CQ K1ABC/R FN42", "CQ K1ABC FN42", "W9XYZ DL1ABC JO62" and "VK9/K1XX <W9XYZ>" (hash 'from'); fill in "<PJ4/K1ABC> W9XYZ -05", "<K1ABC/R> W9XYZ", "<DL1ABC> PA/K1XX", "<W9XYZ> PA/K1XX", "<VK9/K1XX> W9XYZ", "PA/K1XX <DL1ABC> RR73", a DXpedition 0.1 "K1ABC RR73; W9XYZ <KH1/KH7Z> -12" before and after KH1/KH7Z is learned and an EU VHF i3=5 message; set my call HB9BLA and fill in "<HB9BLA> PJ4/K1ABC", "<HB9BLA> K1ABC -05", "PJ4/K1ABC <HB9BLA> RR73" (i3=4, hash 'from') and "<HB9BLA> <K1ABC> R 570001 JN37VL" (EU VHF); learn 1000 more calls; two calls with the same 12-bit hash one after the other; the transmit owner with the table attached accepts "<VP2X/K1JT> HB9BLA" and "CQ YW18FIFA" and refuses (not armed) "<3D2CR/P> HB9BLA".
+             Expected: without a table the text is "<...> W9XYZ -05" with to {kind hash, text null, hash_bits 22}; the 'from' calls K1ABC/R, DL1ABC and the nonstandard CQ call are learned, the 'to' call W9XYZ of "W9XYZ DL1ABC JO62" and the nonstandard full 'to' call of a hash-'from' message are not; filled-in texts "<PJ4/K1ABC> W9XYZ -05" with to {kind hash, text PJ4/K1ABC, hash_bits 22, the same hash_value}, "<K1ABC/R> W9XYZ", "<DL1ABC> PA/K1XX", "<...> PA/K1XX", "<...> W9XYZ", "PA/K1XX <DL1ABC> RR73"; the DXpedition hash "<...>" then "<KH1/KH7Z>"; my call fills "<HB9BLA>" in the 'to' slot of standard, nonstandard and EU VHF messages but not the nonstandard hash 'from' slot ("PJ4/K1ABC <...> RR73"), and still after 1000 more calls have pushed it out of the 22-bit list, where the oldest call is then "<...>"; the later of two calls with one 12-bit hash wins; the accepted requests teach VP2X/K1JT and YW18FIFA, the refused one nothing; the pure unpack of every message is unchanged.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-01';
+        }
+        attribute executable : String = "server/src/decoder/hashes_test.rs; server/tests/transmit_service.rs";
+    }
+    dependency CL_024_01_verified_by_TC_024_001 from 'CL-024-01' to 'TC-024-001';
+    verification 'TC-024-002' {
+        doc /* TC-024-002 — The station's live publication fills in hashed calls
+             CL-024-01
+             Setup: the actual station Recording owner with a fixture live FT8 job and hand-authored decodes; my call HB9BLA set as the station does from the profile.
+             Steps: publish "<VP2X/K1JT> W9XYZ -05", then "CQ VP2X/K1JT", then "<VP2X/K1JT> W9XYZ -05" again, "<HB9BLA> VP2X/K1JT" and "<DL/K1ABC> W9XYZ"; read the published records, their UDP Decode messages and the strategy facts; change my call to HB9BLB and publish "<HB9BLB> VP2X/K1JT".
+             Expected: the first record keeps "<...> W9XYZ -05" (no rewriting of history); the later one reads "<VP2X/K1JT> W9XYZ -05" with to {kind hash, text VP2X/K1JT}, "<HB9BLA> VP2X/K1JT" and "<...> W9XYZ" with text null; the UDP Decode messages carry the same texts; the strategy has no facts for a record whose 'from' is hashed and unchanged facts otherwise; after the change "<HB9BLB> VP2X/K1JT".
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-024-01';
+        }
+        attribute executable : String = "server/src/recording_tests.rs";
+    }
+    dependency CL_024_01_verified_by_TC_024_002 from 'CL-024-01' to 'TC-024-002';
 
 }

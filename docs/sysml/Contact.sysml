@@ -80,8 +80,8 @@ package WstxContact {
              that reason. Without a DX call only Tx6 exists. Directed CQ (CQ DX/nnn)
              is not offered. Every generated text must pack unaltered with
              WstxTransmit::PackMessage (standard i3=1/2 family); a DX call that does
-             not is refused at entry. Hashed/nonstandard <...> calls and contest
-             forms belong to #24. Regenerating after a report, DX call or tx4 change
+             not is refused at entry. Hashed calls (filled in or not, CL-024-01)
+             and nonstandard calls and contest forms belong to #24 (S1b, S2). Regenerating after a report, DX call or tx4 change
              replaces Tx2-Tx4 (and Tx1/Tx5 on a DX-call change); operator-edited text
              of a slot is kept until the next regeneration and requires server
              validation through PackMessage before it can be chosen as next.
@@ -237,8 +237,8 @@ package WstxContact {
              to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
              txParity = opposite of the row's period parity; message set generated;
-             nextSlot and state per FirstSlotOnSelection. Unresolved hashes, rows
-             without a concrete call, old/wrong-profile tuples and non-standard
+             nextSlot and state per FirstSlotOnSelection. Hashed calls (filled in or not,
+             until #24 S1b), rows without a concrete call, old/wrong-profile tuples and non-standard
              families are refused with a reason. Never sets enableTx (DIFFERENT from
              CFG quick_call "double-click sets Tx enable": #10 safety rule; the browser's
              double-click sends SetEnableTx on after it, OperatingLayout BandActivity) and

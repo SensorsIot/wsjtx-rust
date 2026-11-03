@@ -157,7 +157,9 @@ package WstxUdp {
              zero (unknown: 0), Delta time = dt_seconds (unknown: 0) as single precision,
              Delta frequency = frequency_hz rounded, Mode "~" (FT8) or "+" (FT4), Message =
              the WSJT-X text form (D4: a standard message with R and a signal report
-             renders "R-09"), Low confidence false, Off air false.
+             renders "R-09"; a hashed call as the record gives it, <CALL> once
+             WstxOfflineDecode::HashResolution filled it in, else <...>), Low confidence
+             false, Off air false.
              Clear (3): when the current live job changes or ends after at least one of its
              records produced a Decode.
              QSO Logged (5) then Logged ADIF (12): when SaveContact stores a new record

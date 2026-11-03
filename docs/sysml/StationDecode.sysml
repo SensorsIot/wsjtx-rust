@@ -187,8 +187,10 @@ package WstxOfflineDecode {
              Grid/report0..32399 aregrids,32400reserved,32401blank,32402RRR,
             32403RR73,32404'73'. ReportCode below is exact,>32505invalid. Invalid
              structured content never falls back to free text. Hashes keep10/12/22-bit
-             numeric identity and display<...>; no configured/prior-job/station inverse.
-             A concrete type4full call stays concrete; no cross-profile/source/job cache.
+             numeric identity. The pure unpack has no hash table and displays<...>; only a
+             station's live publication fills a hash in, from its HashResolution table of
+             calls heard and sent (CL-024-01, #24), never by inverse guessing. A concrete
+             type4full call stays concrete; no cross-profile cache.
              CRC14 polynomial0x6757,zero state, operates on payload zero-extended82bits;
              append14CRCbits to77payload bits then published GF(2) parity=>174bits.
              FT4 XORs the exact77-bit mask beforeCRC/FEC and reverses onlyafter validation.
@@ -230,7 +232,9 @@ package WstxOfflineDecode {
              SNRnullorfinite[-60,60]. Record<=2048UTF8bytes, numericalcharge<=1024;
              oversizedpublication=>decode_limit with acceptedpartials. CallValue exactly
              {kind,text,hash_bits,hash_value}; concretecall uppercase1..13(nonstandard<=11),
-             tokenCQ/DE/QRZ/modifier bothnullhashfields; hashnulltext with exactwidth/value.
+             tokenCQ/DE/QRZ/modifier bothnullhashfields; hash exactwidth/value with text null,
+             or the call without brackets when HashResolution filled it in (the message text
+             then shows<CALL>).
              Every supported PayloadFields variant has all its defined keys, no extras:
              free_text/telemetry{type,value};standard{type,to,from,ack,exchange};
              rtty{type,tu,to,from,ack,report,exchange};dxpedition{type,first,second,hashed,report};
@@ -250,9 +254,45 @@ package WstxOfflineDecode {
         attribute text : String[0..1];
         attribute hash_bits : Integer[0..1];
         attribute hash_value : Integer[0..1];
-        doc /* Exact wire keys. call/token have text and null hash fields; hash has null
-             text, width10/12/22 and unsigned value below2^width. Display hash as<...>.
-             No inverse guessing/configured call/cache across profile/source/job. */
+        doc /* Exact wire keys. call/token have text and null hash fields; hash has
+             width10/12/22 and unsigned value below2^width, and text null (displayed<...>)
+             or, in a station's live publication, the call HashResolution filled in, without
+             brackets (displayed<CALL>; kind stays hash). No inverse guessing; no cache across
+             profiles. */
+    }
+    requirement def HashResolution {
+        doc /* CL-024-01 (#24 S1, reversing the earlier "display<...>, no station inverse"
+             rule at the operator's approval of 2026-11-03): WSJT-X shows a hashed call as
+             <CALL> once the full call is known (packjt77.f90 save_hash_call, hash10/12/22,
+             hashmy10/12/22; one session-persistent table shared by receive and transmit),
+             and so does the station. One table per station instance (profile process), kept
+             for the process lifetime across jobs, bands and modes, never shared between
+             profiles, never saved.
+             Hash: ihashcall, the top m bits (10/12/22) of the low 64 bits of
+             47055833459 * the base-38 value of the call's first 11 characters, blank
+             padded (WstxTransmit::PackMessage uses the same function).
+             Learning (save_hash_call): a call of at least 3 characters, brackets removed,
+             sets calls10[h10] and calls12[h12] unless it is my call, and in the 22-bit list
+             of at most 1000 entries replaces the call of an existing h22 entry, else is put
+             first (the oldest entry falls out). Calls learned: my profile callsign at
+             startup and whenever it changes; from each decoded record as it is published
+             (after its own fill-in), the concrete 'from' call of a standard i3=1/2 message
+             (with its /R or /P) and the full call of a nonstandard i3=4 message whose hash
+             is the 'to' call (including CQ); a 'to' call or other families teach nothing
+             (unpack77 nrx=1, not configured); from each transmit request the transmit owner
+             accepts, every concrete call of a standard/Field Day/RTTY message, the full call
+             of a nonstandard CQ and every bracketed <CALL> (pack28/pack77_hash_index).
+             Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
+             22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
+             from calls12, and when that is empty and the hash is the 'to' call equal to my
+             h12, my call (a nonstandard CQ shows no hash); DXpedition h10 from calls10;
+             EU VHF 'to' h12 is my call when equal to my h12, else calls12, 'from' h22 from
+             the list. A slot not found stays<...> with text null. Records published before
+             a call was learned keep their text (no rewriting of history). The filled-in text
+             reaches Band Activity, the QSO pane, MCP reads and the UDP Decode message
+             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash, so contact
+             selection, the strategy, DXCC/worked-before and Pounce, which need a concrete
+             call, treat it as before until #24 S1b (compound/nonstandard QSOs). */
     }
     attribute def StandardExchange {
         attribute kind : ExchangeKind;
