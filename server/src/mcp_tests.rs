@@ -517,7 +517,9 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     );
     assert_eq!(
         verdicts["result"],
-        f.browser("POST", "/strategy/evaluate", Some(evaluate)).await.json
+        f.browser("POST", "/strategy/evaluate", Some(evaluate))
+            .await
+            .json
     );
     // Decoded results: the hand-authored rows, literally, and the browser's page.
     let args =
@@ -883,11 +885,17 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
     let v = f.tool("wstx_read", json!({"view":"secrets"})).await;
     assert_eq!(refused(&v), (400, "invalid_request".into(), json!("view")));
     let v = f.tool("wstx_strategy_evaluate", json!({})).await;
-    assert_eq!(refused(&v), (400, "invalid_request".into(), json!("request")));
+    assert_eq!(
+        refused(&v),
+        (400, "invalid_request".into(), json!("request"))
+    );
     let v = f
         .tool("wstx_strategy_evaluate", json!({"request":"all"}))
         .await;
-    assert_eq!(refused(&v), (400, "invalid_request".into(), json!("request")));
+    assert_eq!(
+        refused(&v),
+        (400, "invalid_request".into(), json!("request"))
+    );
     let v = f
         .tool(
             "wstx_results",
