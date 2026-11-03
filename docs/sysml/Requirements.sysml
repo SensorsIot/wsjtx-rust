@@ -948,7 +948,7 @@ package WstxRequirements {
     dependency CL_010_09_to_FR_010 from 'CL-010-09' to 'FR-010';
     dependency CL_010_09_to_FR_019 from 'CL-010-09' to 'FR-019';
     requirement 'CL-010-16' {
-        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, exception chips, Logbook, Settings and HALT; the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
+        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings and HALT; the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "client/recording.js; client/recording.css; client/contact.js; client/logbook.js";
     }
@@ -2076,18 +2076,20 @@ package WstxRequirements {
              development PC; no radio, audio device or network service. At 1366x768: no page
              scroll or horizontal overflow; the top bar holds only the TopBarItem set; no Monitor,
              Enable Tx, Start/Stop receive or Next receive mode control exists; no status text or
-             chip is shown for a healthy station and each injected exception (stale link, receive
-             stopped, unknown receive outcome, audio unavailable) shows its chip, which opens its
-             detail; the Rx/Tx strip, Band Activity with the strategy element and the QSO pane are
+             error field entry is shown for a healthy station and each injected exception (stale
+             link, receive stopped, unknown receive outcome, audio unavailable) shows its entry in
+             the error field below the QSO pane (CL-037-02), which opens its detail; the Rx/Tx strip, Band Activity with the strategy element and the QSO pane are
              visible. At 360x800 the page does not overflow horizontally. The Settings drawer has
              exactly General, Radio, Logging & Reporting and Expert and every control that left the
              operating screen is reachable there, with HALT visible and the waterfall running; a
              restart change during an active contact asks before Apply. Rx/Tx strip steps (1/10 Hz),
              Tx=Rx/Rx=Tx and Hold Tx send exactly the expected contact requests. Band Activity shows
              history newest first with period dividers, double-click replies (select then
-             enable_tx) and the right-click menu acts. QSO pane CQ/Reply/RR73/73 send enable_tx with
-             the shown safety revision; on a completed contact RR73 and 73 are disabled and a forced
-             click sends no enable_tx. With the confirmation popup open during an active QSO its HALT
+             enable_tx) and the right-click menu acts. QSO pane CQ and Reply and a fold-out Now (Tx4
+             after RR73 chosen, Tx5) send choose_next then enable_tx with the shown safety revision;
+             the pane has no RR73 or 73 button; on a completed contact Now is disabled and a forced
+             click sends no enable_tx. In the operating view one HALT is visible, the QSO pane's,
+             the top-bar HALT shows on the Logbook page, in the Settings drawer and at 360 px. With the confirmation popup open during an active QSO its HALT
              sends the halt request. Theme switch changes the theme without a request. Keyboard
              shortcuts act as KeyboardShortcuts and letters are inactive while typing. An
              unauthorized browser shows only the token form and its status line, then the full
@@ -2117,8 +2119,8 @@ package WstxRequirements {
              same contact); item 8 (#60, operator 2026-11-03): the pane height equals its content
              height (within 3 px), at most 300 px at 1366x768, at the top of its column, the QSO
              area at most its header row and 6 rows; at 1920x1080 the area is the header row and
-             6 rows, the pane at most 340 px and at least 100 px of free height lie below it
-             down to Band Activity's bottom; there is no LAST row or
+             6 rows, the pane at most 340 px, and the Control panel and the error field follow
+             below it (#37 LowerPanel, TC-037-001); there is no LAST row or
              crowding badge; double-clicking an Others line sends select_row with replace true
              then enable_tx. Idle, every station calling me is a table row "HH:MM:SS | <my call> ◂ <caller> | <exchange> |
              <SNR> |" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
@@ -2132,6 +2134,7 @@ package WstxRequirements {
             verify 'CL-010-16';
             verify 'CL-045-01';
             verify 'CL-040-02';
+            verify 'CL-037-03';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -2391,6 +2394,7 @@ package WstxRequirements {
     dependency CL_008_07_verified_by_TC_009_005 from 'CL-008-07' to 'TC-009-005';
     dependency CL_010_05_verified_by_TC_007_002 from 'CL-010-05' to 'TC-007-002';
     dependency CL_010_16_verified_by_TC_007_009 from 'CL-010-16' to 'TC-007-009';
+    dependency CL_037_03_verified_by_TC_007_009 from 'CL-037-03' to 'TC-007-009';
     dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
     dependency CL_040_02_verified_by_TC_007_009 from 'CL-040-02' to 'TC-007-009';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
@@ -4033,7 +4037,7 @@ package WstxRequirements {
              CL-051-02, CL-051-03
              Setup: actual candidate server and Chromium at 1366x768; routed contact snapshot with a contact calling CQ; the receive snapshot routed through, optionally with an unknown key dxcc; the proxy of TC-051-001.
              Steps: read receive with the unknown key, then without; the same for a result page, the operating selection snapshot and a contact snapshot; announce a spectrum.detail.frame of the current job with an unknown key; restart the station with build fedcba9876543210 while calling CQ; wait 1.5 s; click the chip; open a confirmation popup and reconnect to a status with another build.
-             Expected: the error chip "Station data not understood (receive) · reload" in the top bar, hidden again after the valid read; the same with (results), (selection) and (contact); (waterfall) for the frame; while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
+             Expected: the error chip "Station data not understood (receive) · reload" in the error field, hidden again after the valid read; the same with (results), (selection) and (contact); (waterfall) for the frame; while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4295,7 +4299,7 @@ package WstxRequirements {
     dependency CL_050_02_verified_by_TC_054_003 from 'CL-050-02' to 'TC-054-003';
     // #60 QSO pane dialogue as a table (operator 2026-11-03, final spec).
     requirement 'CL-060-01' {
-        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rx SNR | Tx SNR", and the stations calling me (Others, ⚠ after the time while a QSO runs) as rows of the same table and columns below a thin separator. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rx SNR is our measured SNR, signed, on received rows only. Tx SNR is the partner's report on us, only on the received row that carries it ("R-02" gives "−2", a plain report "-05" gives "−5"). The pane is content high at the top of its column, its table area at most the header row and 6 rows, scrolling inside at its newest row, so the height below the pane stays free (#37 item 8, operator 2026-11-03: "The QSO part is way too long"); it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated there. Details: WstxOperatingLayout::QsoPane items 3 and 7. */
+        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rx SNR | Tx SNR", and the stations calling me (Others, ⚠ after the time while a QSO runs) as rows of the same table and columns below a thin separator. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rx SNR is our measured SNR, signed, on received rows only. Tx SNR is the partner's report on us, only on the received row that carries it ("R-02" gives "−2", a plain report "-05" gives "−5"). The pane is content high at the top of its column, its table area at most the header row and 6 rows, scrolling inside at its newest row, so the height below the pane is free for the #37 Control panel and error field (#37 item 8, operator 2026-11-03: "The QSO part is way too long"); it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated there. Details: WstxOperatingLayout::QsoPane items 3 and 7. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js";
     }
@@ -4315,5 +4319,56 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_060_01_verified_by_TC_060_001 from 'CL-060-01' to 'TC-060-001';
+
+    // #37 lower panel below the compact QSO pane (operator 2026-11-03).
+    requirement 'CL-037-01' {
+        doc /* (#37) The right column of the workspace is one vertical stack at every width: the QSO pane, below it the Control panel and below that the error field, each with the left and right edges of the QSO pane card. The Control panel is always visible (no fold-out) and holds DX Call and DX Grid with Generate, Report, Auto Seq, Call 1st, Hold Tx and the Tx period Even / 1st or Odd / 2nd, laid out in rows across its width; each control sends the same single contact request as before and shows only the server-confirmed value. Tx1-Tx6 stay in the QSO pane fold-out; Rx/Tx and dial frequency stay under the waterfall and in the top bar; there is no level meter. The stack fits the fixed 1366x768 screen and 360 CSS px without horizontal overflow. Details: WstxOperatingLayout::LowerPanel, ControlPanel. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_037_01_to_FR_007 from 'CL-037-01' to 'FR-007';
+    dependency CL_037_01_to_FR_019 from 'CL-037-01' to 'FR-019';
+    requirement 'CL-037-02' {
+        doc /* (#37) The error field, a small block below the Control panel that replaces the top-bar exception chips, lists only the problems that still apply and need the operator to act (CAT or radio, audio input missing or its level too low or too high, clock unsynchronized or unknown, a transmit refusal the operator must fix, a failed band/mode change, receive stopped, the station connection lost, a station update or rejected data), one line each with its cause and "since HH:MM" UTC. An entry disappears by itself when its condition clears; there is no acknowledge control and no history; transient events (a retried refusal, busy, stale revision, a receive restart) are no entries. With no entry it shows "No problems". A click opens the entry's detail as the chip did. Details: WstxOperatingLayout::ErrorField, ErrorFieldEntry. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_037_02_to_FR_019 from 'CL-037-02' to 'FR-019';
+    requirement 'CL-037-03' {
+        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows only while a page or the Settings drawer covers the workspace and at most 48em wide; Esc and Alt+H halt everywhere. The QSO pane's direct buttons are CQ, Reply, Tune, HALT and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply stays until the #50 double-click fix is deployed. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_037_03_to_FR_008 from 'CL-037-03' to 'FR-008';
+    dependency CL_037_03_to_FR_019 from 'CL-037-03' to 'FR-019';
+    dependency CL_037_02_to_FR_021 from 'CL-037-02' to 'FR-021';
+    verification 'TC-037-001' {
+        doc /* TC-037-001 — Control panel below the QSO pane
+             CL-037-01
+             Setup: actual candidate server and Chromium at 1366x768, 1920x1080 and 360x800; routed ContactSnapshot of a running QSO.
+             Steps: without opening the fold-out read the visibility of #dx-call, #dx-grid, #dx-generate, #contact-report, #contact-auto, #contact-call-first, #contact-hold and #contact-parity; read the bounding boxes of the QSO pane, #qso-control and #error-field; change each control and record the contact requests; check the fold-out holds the Tx1-Tx6 rows and no longer the moved controls, and the Rx/Tx strip holds no Hold Tx.
+             Expected (oracle: the operator's #37 comments of 2026-11-03): every control visible with the fold-out closed and inside #qso-control; the three blocks stacked top to bottom (pane bottom <= control top, control bottom <= error-field top) with equal left and right edges (within 1 px) at all three sizes; the controls span at least 80% of the panel width at 1366x768 (rows, not a narrow column); Report 7 sends set_report {report 7}, Auto Seq off set_auto_seq false, Call 1st off set_call_first false, Hold Tx on set_hold_tx true, Odd / 2nd set_parity odd, DX Call W1AW with Enter sends enter_dx; no page scroll at 1366x768 and no horizontal overflow at 360 px; screenshots at 1366x768 and 360x800.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-037-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_037_01_verified_by_TC_037_001 from 'CL-037-01' to 'TC-037-001';
+    verification 'TC-037-002' {
+        doc /* TC-037-002 — Error field lists current problems only
+             CL-037-02
+             Setup: actual candidate server and Chromium at 1366x768 with a CAT profile; routed CAT status, contact snapshot transmit refusal and connection state.
+             Steps: healthy station; inject a CAT status not ready; then a transmit refusal radio_lost and a stale_revision-like transient refusal busy; then clear the CAT condition; then clear the refusal; then make the station link stale; read #error-field each time and the top bar.
+             Expected (oracle: the operator's #37 correction "NO history"): healthy, the field shows "No problems" and no entry; the CAT entry names the CAT status and "since HH:MM" with the current UTC hour and minute; radio_lost adds "Tx refused · radio lost", busy adds nothing; after the CAT condition clears its entry is gone without any operator action and the refusal entry stays; after the refusal clears the field shows "No problems" again; with the link stale the field shows "Station connection lost · reconnecting"; the field has no acknowledge or dismiss control; the top bar holds no exception chips.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-037-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_037_02_verified_by_TC_037_002 from 'CL-037-02' to 'TC-037-002';
 
 }
