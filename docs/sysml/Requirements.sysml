@@ -2213,8 +2213,10 @@ package WstxRequirements {
                 priority and no backlog. Detailed2s/500ms is separately labelled fast-link coverage.
 
                 Cadence evidence classifies actual interval dispatch separately from explicit user/
-                reconciliation reads using recorded CDP initiators and the exact frozen caller
-                mapping, joined to validated request/response identity. A pending-context pair is
+                reconciliation reads using recorded CDP initiators and the caller mapping derived
+                from the served client source (its single selection fetch, its single interval-timer
+                caller, every other caller explicit; a missing, ambiguous or unmapped site refuses),
+                joined to validated request/response identity. A pending-context pair is
                 the last accepted pending snapshot for commandX followed by an automatic interval
                 GET while that remains the accepted state, with matching station/profile/boot,
                 saved-profile/operating revision and command context, sequential actual transport,
