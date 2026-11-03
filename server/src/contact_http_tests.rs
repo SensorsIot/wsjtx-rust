@@ -993,12 +993,49 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
     assert!((65..=66).contains(&recording::rx_level_db(sum, 120_000)));
 }
 
-/// TC-007-001/003/004, TC-010-008/009 in the real browser: launches
+/// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches
 /// tests/contact.test.cjs against this router with a request-recording peer.
 /// Mandatory release execution is registered as the contact-browser suite.
+/// The two TC-050-004 tests each wait for several real-clock FT8 periods, so each runs
+/// against its own station and browser, concurrently with the other tests (harness#28);
+/// together the three runs cover every test of the file once.
 #[cfg(not(debug_assertions))]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn contact_browser_operating_flow() {
+    let (rest, switch_mid_qso, switch_from_cq) = tokio::join!(
+        contact_browser_station(&["--test-skip-pattern=^TC-050-004 "]),
+        contact_browser_station(&["--test-name-pattern=^TC-050-004 mid-QSO: "]),
+        contact_browser_station(&["--test-name-pattern=^TC-050-004 from-CQ: "]),
+    );
+    let runs = [
+        ("other tests", rest),
+        ("TC-050-004 mid-QSO", switch_mid_qso),
+        ("TC-050-004 from-CQ", switch_from_cq),
+    ];
+    // Every run's output first, so that one failure does not hide the others.
+    for (label, outcome) in &runs {
+        println!("{label}:\n{}", String::from_utf8_lossy(&outcome.stdout));
+    }
+    for (label, outcome) in runs {
+        let stdout = String::from_utf8_lossy(&outcome.stdout);
+        assert!(
+            outcome.status.success(),
+            "{label}:\n{stdout}\n{}",
+            String::from_utf8_lossy(&outcome.stderr)
+        );
+        // A filter that matched nothing would pass vacuously.
+        assert!(
+            stdout.contains("\u{2139} pass ") && !stdout.contains("\u{2139} pass 0"),
+            "{label}: no test selected\n{stdout}"
+        );
+    }
+}
+
+/// One isolated station (router, contact step and control peer) running
+/// tests/contact.test.cjs with the given node test filter.
+#[cfg(not(debug_assertions))]
+async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
+    let filter: Vec<String> = filter.iter().map(|f| f.to_string()).collect();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let origin = format!("http://{address}");
@@ -1073,7 +1110,9 @@ async fn contact_browser_operating_flow() {
     });
     let outcome = tokio::task::spawn_blocking(move || {
         std::process::Command::new("node")
-            .args(["--test", "--test-concurrency=1", "tests/contact.test.cjs"])
+            .args(["--test", "--test-concurrency=1"])
+            .args(&filter)
+            .arg("tests/contact.test.cjs")
             .current_dir(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .parent()
@@ -1089,13 +1128,7 @@ async fn contact_browser_operating_flow() {
     ticker.abort();
     service.abort();
     control_service.abort();
-    assert!(
-        outcome.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&outcome.stdout),
-        String::from_utf8_lossy(&outcome.stderr)
-    );
-    println!("{}", String::from_utf8_lossy(&outcome.stdout));
+    outcome
 }
 
 // ---------------------------------------------------------------- FT4 (#11 slice B)
