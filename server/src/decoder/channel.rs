@@ -3,7 +3,7 @@
 // Copyright the WSJT-X contributors. GPL-3.0-only; see the project LICENSE.
 use super::Mode;
 pub type ChannelWord = [u8; 174];
-const MASK: &[u8; 77] =
+pub(super) const MASK: &[u8; 77] =
     b"01001010010111101000100110110100101100001000101001111001010101011011111000101";
 /// Information bits of the (174,91) code: 77 payload bits and the 14-bit CRC.
 const K: usize = 91;
