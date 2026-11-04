@@ -48,12 +48,14 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.equal((await dxcc('CQ DL1ABC JO62'))[0],'Germany');
   assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
   // #37 QsoPane, no contact (operator 2026-11-02): only the stations calling my call, on any
-  // frequency, with their period start and SNR; never the CQs near Rx or HB9BL.
+  // frequency; never the CQs near Rx or HB9BL.
   // Proves: CL-050-05; TC-050-005 (Others).
   const others=async()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
-  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212),hms=new Date(period).toISOString().slice(11,19);
-  assert.deepEqual(await others(),[['candidate',[hms,`HB9BLA ${recv} W1XYZ`,'-10','',`${minus}10`,`${minus}10`]]]);
+  const minus=String.fromCharCode(0x2212),hms=new Date(period).toISOString().slice(11,19);
+  // #37 Calling me (2026-11-04): call, SNR, grid (none in a report) and country.
+  assert.deepEqual(await others(),[['candidate',['W1XYZ',`${minus}10`,'','U.S.A.']]]);
+  assert.equal(await page.locator('#qso-others tr').first().evaluate(tr=>tr.title.split('\n')[0]),`${hms} HB9BLA W1XYZ -10`);
   assert.equal(await page.locator('#qso-others-none').isVisible(),false);
   // Local sorting: no request. The DX entry is in the QSO fold-out.
   const before=requests.length;

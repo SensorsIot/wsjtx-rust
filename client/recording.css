@@ -120,15 +120,18 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 
 @container (max-width:75em){#controls .operating-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#band-activity{grid-column:1/-1}}
 @container (max-width:48em){#controls .operating-grid{grid-template-columns:minmax(0,1fr)}#band-activity{grid-column:auto}}
+/* #37 (live finding 2026-11-04: ~325 px cards, one decode on screen at 360 px): a narrow Band
+   Activity shows compact two-line rows, the numbers and the country on the first line and the
+   message on the second, without field labels. */
 @container (max-width:44em){
  #band-activity table,#band-activity tbody{display:block;width:100%}
  #band-activity thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
- #band-activity tbody tr:not(:has(.empty-messages)){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:6px;border-bottom:1px solid #203342}
- #band-activity td:not(.empty-messages){display:block;min-width:0;width:auto;border:0}
- #band-activity td:nth-child(5){grid-column:1/-1}
- #band-activity td[data-label]::before{content:attr(data-label);display:block;white-space:normal;color:#8099aa;font:var(--op-font-secondary)/1.4 'Segoe UI',sans-serif;margin-bottom:3px}
+ #band-activity tbody tr:not(:has(.empty-messages)):not(.ba-divider){display:grid;grid-template-columns:max-content max-content max-content max-content minmax(0,1fr) max-content;grid-template-areas:"utc db dt freq country dist" "msg msg msg msg msg msg";column-gap:0;padding:2px 0 2px 8px;border-bottom:1px solid #203342;font-size:var(--op-font-secondary);line-height:1.3}
+ #band-activity td:not(.empty-messages){display:block;min-width:0;width:auto;border:0;padding:0 8px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #band-activity td:nth-child(1){grid-area:utc;padding-left:0}#band-activity td:nth-child(2){grid-area:db}#band-activity td:nth-child(3){grid-area:dt}#band-activity td:nth-child(4){grid-area:freq}
+ #band-activity td:nth-child(5){grid-area:msg;white-space:normal;overflow-wrap:anywhere;color:#d6e4ec}#band-activity td:nth-child(6){grid-area:country;color:#8ba4b6}#band-activity td:nth-child(7){grid-area:dist;color:#8ba4b6;text-align:right}
+ #band-activity td:nth-child(n+6){min-width:0}
 }
-@container (max-width:23em){#band-activity tbody tr:not(:has(.empty-messages)){grid-template-columns:minmax(0,1fr)}#band-activity td:nth-child(5){grid-column:auto}}
 
 #band-activity>header{flex-wrap:wrap;gap:10px}
 #operating-receive-controls{display:flex;flex-wrap:wrap;align-items:end;gap:.6rem;width:100%;min-width:0}
@@ -413,3 +416,75 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
    the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (contact.js). */
 body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
+/* #37 QsoPane item 8 (operator 2026-11-04, "fixed in size that the things below it do not move
+   all the time up and down"; "make this section big enough to accommodate also longer QSOs"):
+   the pane height depends on the screen width only, never on its content. The header (partner
+   line and badge; the partner's last message, the direct buttons and the Tx1-Tx6 fold-out, which
+   opens over the pane) and the message lines (NEXT first) are fixed high, the lines scrolling
+   inside; the QSO section holds the table header and 12 dialogue rows (6 at most 48em wide),
+   Calling me its header and 5 rows; each scrolls inside and shows a placeholder when empty. The
+   Control panel below therefore never moves. The default split leaves room for it at 1366x768
+   (recording.js), helped by the tighter spacing of the strip, the workspace and the Control panel. */
+#rx-focus{--ct-row:15px;--ct-line:18px;position:relative;flex:none;gap:0}
+#qso-column>#rx-focus{flex:none}
+#controls #rx-focus>header.op-qso-head{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"id id" "heard tools";align-items:center;gap:2px 8px;height:calc(var(--ct-line) + 29px);box-sizing:border-box;padding:2px 10px 3px;overflow:visible;position:relative}
+#rx-focus .op-qso-head .op-contact-identity{grid-area:id;min-width:0;padding-right:7.5rem}
+#rx-focus .op-qso-head .op-contact-badge{position:absolute;top:3px;right:10px;padding:0 6px;line-height:var(--ct-line)}
+#rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:baseline;gap:0 10px;min-width:0}
+#rx-focus .op-contact-identity h3{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#rx-focus .op-contact-identity strong{display:block;flex:none;font-size:var(--op-font-normal);line-height:var(--ct-line);white-space:nowrap}
+#rx-focus .op-contact-identity div>span{display:block;min-width:0;line-height:var(--ct-line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rx-focus .op-qso-head #qso-heard{grid-area:heard;min-width:0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--op-font-secondary);line-height:var(--ct-line)}
+#rx-focus .ct-head-tools{grid-area:tools;display:flex;align-items:center;gap:4px;justify-self:end}
+#rx-focus .ct-head-tools .op-qso-buttons{flex-wrap:nowrap}
+#rx-focus .ct-head-tools .op-qso-buttons button,#rx-focus #qso-more>summary{padding:2px 8px;line-height:1.25}
+#rx-focus #qso-more{margin:0;position:static}
+#rx-focus #qso-more>summary{border:1px solid #2c4557;border-radius:6px;white-space:nowrap;font-size:var(--op-font-secondary)}
+#rx-focus #qso-more>.ct-more-body{position:absolute;left:0;right:0;top:100%;z-index:6;max-height:calc(2 * var(--ct-line) + 19 * var(--ct-row) + 12px);overflow:auto;padding:6px 12px;background:#11212d;border:1px solid #2a4151;border-radius:0 0 8px 8px;box-shadow:0 12px 24px rgba(0,0,0,.45)}
+#rx-focus .op-contact-body{flex:none;height:calc(var(--ct-line) + 4px);box-sizing:border-box;overflow:auto;min-height:0;gap:0;padding:2px 12px}
+#rx-focus .op-contact-body .ct-line,#rx-focus .op-contact-body>p{line-height:var(--ct-line);font-size:var(--op-font-secondary)}
+#rx-focus #qso-next{order:-1;position:relative;display:flex;align-items:baseline;gap:6px;min-width:0;white-space:nowrap;line-height:var(--ct-line);padding-bottom:3px}
+#rx-focus #qso-next[hidden]{display:none}
+#rx-focus #qso-next strong{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#rx-focus #qso-next #qso-countdown{margin-left:auto}
+#rx-focus #qso-next .op-qso-progress{position:absolute;left:0;right:0;bottom:0;border-radius:2px;height:3px}
+#controls #rx-focus .ct-section{flex:none;margin:0;border-top:1px solid #253c4c;padding:0 10px;box-sizing:border-box}
+#rx-focus .ct-qso-area,#rx-focus .ct-calling-area{overflow:auto;display:block;max-height:none;font-size:.8125rem}
+#rx-focus .ct-qso-area{height:calc(13 * var(--ct-row) + 2px)}
+#rx-focus .ct-calling-area{height:calc(6 * var(--ct-row) + 2px)}
+#rx-focus .ct-qso-table{font-size:.8125rem;line-height:var(--ct-row)}
+#rx-focus .ct-qso-table :is(td,th){line-height:var(--ct-row);height:var(--ct-row);box-sizing:border-box;padding-top:0;padding-bottom:0}
+#rx-focus .ct-calling-table{table-layout:fixed}
+#rx-focus .ct-calling-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rx-focus .ct-calling-table :is(th,td):nth-child(1){width:34%;text-align:left}
+#rx-focus .ct-calling-table :is(th,td):nth-child(2){width:12%;text-align:right}
+#rx-focus .ct-calling-table :is(th,td):nth-child(3){width:14%;text-align:left}
+#rx-focus .ct-calling-table :is(th,td):nth-child(4){width:40%;text-align:left}
+#rx-focus .ct-calling-table th:first-child{color:#c6dce7}
+#rx-focus .ct-placeholder{margin:0;font-size:var(--op-font-secondary);line-height:var(--ct-line)}
+#rx-focus .ct-placeholder[hidden],#rx-focus .ct-qso-table[hidden]{display:none}
+#rx-focus .ct-others tr:first-child td{border-top:0}
+#qso-column{gap:4px}
+#controls .operating-grid{padding-top:4px;padding-bottom:4px}
+#rxtx-strip{padding-top:3px;padding-bottom:3px}
+#rxtx-strip button,#rxtx-strip input[type=number]{padding-top:2px;padding-bottom:2px}
+#qso-control .op-control-grid{padding:2px 10px;gap:2px}
+#qso-control :is(input:not([type=checkbox]),select,button){height:22px;box-sizing:border-box;padding-top:0;padding-bottom:0}
+#error-field{padding:2px 12px}
+#error-field .op-error-none,#error-field .op-lower-head{line-height:18px;padding-top:0}
+@container (max-width:48em){
+ #rx-focus .op-contact-identity>div{flex-direction:column;gap:0}
+ #rx-focus .ct-head-tools{justify-self:stretch}
+ #rx-focus .ct-head-tools .op-qso-buttons{flex:1}
+ #controls #rx-focus>header.op-qso-head{grid-template-areas:"id" "id" "heard" "tools";grid-template-columns:minmax(0,1fr);grid-template-rows:var(--ct-line) var(--ct-line) var(--ct-line) auto;height:calc(3 * var(--ct-line) + 36px)}
+ #rx-focus .op-contact-body{height:calc(2 * var(--ct-line) + 6px)}
+ #rx-focus .ct-qso-area{height:calc(7 * var(--ct-row) + 2px)}
+ #rx-focus .ct-calling-area{height:calc(6 * var(--ct-row) + 2px)}
+ /* Band Activity above the QSO pane has a fixed height too and scrolls inside, so new decodes
+    do not move the QSO pane and the Control panel. */
+ #band-activity{height:28rem;min-height:0}
+}
+/* The visually hidden Control heading and the narrow Band Activity header row are positioned
+   inside their cards; positioned against the page they made it scroll past the screen at 360 px,
+   leaving a blank viewport (live finding 2026-11-04). */
+#qso-control,#band-activity{position:relative}

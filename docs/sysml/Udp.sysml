@@ -280,7 +280,7 @@ package WstxUdp {
              (none when null) and the row text colour to its foreground (unchanged when
              null). A floor hides the rows of its job below its sequence, and while its job
              is the live job also every row of another job: band_activity in Band Activity
-             (both the latest and the kept period), rx_frequency in the QSO pane Others,
+             (both the latest and the kept period), rx_frequency in the QSO pane Calling me,
              which replace the WSJT-X Rx Frequency window. Rows decoded later show as
              usual. Deviation, as the browser derives the rows from this state: CLEARALL!
              and a removal also take the colour off rows already shown (WSJT-X leaves text
