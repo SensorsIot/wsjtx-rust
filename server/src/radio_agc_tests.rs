@@ -430,11 +430,16 @@ fn ft8_and_ft4_selections_apply_the_agc_inside_the_selection() {
         .expect("dial set in the selection");
     assert!(dial < set, "after the receive setup: {all:02x?}");
     assert_eq!(radio.lock().unwrap().agc, 3);
-    // (f) a spectrum selection sends no AGC frame.
-    radio.lock().unwrap().agc = 1;
+    // (f) an FT4 selection with the radio already at SLOW: only the AGC read.
     radio.lock().unwrap().writes.clear();
-    begin(&f, "mode", "spectrum", None);
-    assert!(agc_frames(&radio).is_empty(), "{:02x?}", writes(&radio));
+    begin(&f, "mode", "ft4", None);
+    let s = f.state.recording.agc.status().unwrap();
+    assert_eq!((s.result, s.trigger), ("unchanged", "selection"));
+    assert_eq!(
+        agc_frames(&radio),
+        [READ_AGC.to_vec()],
+        "a matching read writes nothing"
+    );
 }
 
 // TC-044-009 (h)

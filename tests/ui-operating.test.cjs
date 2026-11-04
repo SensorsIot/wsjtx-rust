@@ -938,7 +938,7 @@ test('TC-044-010 AGC field and read-back in Settings > Radio',{timeout:60000},as
   assert.deepEqual([await select.isVisible(),await line.isVisible()],[false,false]);
   // Detect radio recommends SLOW and Use this setup sets it.
   await page.locator('#detect-ack').check();await page.locator('#detect-run:enabled').click();await page.locator('#detect-proposal:not([hidden])').waitFor();
-  assert.ok((await page.locator('#detect-fields').textContent()).includes('AGC SLOW · recommended for FT8/FT4'));
+  assert.equal(await page.evaluate(()=>[...document.querySelectorAll('#detect-fields dt')].find(dt=>dt.textContent==='AGC')?.nextElementSibling.textContent),'SLOW · recommended for FT8/FT4');
   await page.locator('#detect-use').click();
   assert.deepEqual([await select.isVisible(),await select.inputValue()],[true,'SLOW']);
   assert.equal(requests.filter(r=>r==='PUT /profile').length,1,'only the Apply saved');
