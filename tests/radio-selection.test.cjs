@@ -8,7 +8,7 @@ const {once}=require('node:events');
 const {randomUUID}=require('node:crypto');
 const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
-const {server,grant,loginPage,browserPort}=require('./support.cjs');
+const {server,grant,loginPage,browserPort,listenBrowser}=require('./support.cjs');
 
 async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-selection-'));
@@ -435,7 +435,7 @@ test('TC-009-005 evidence reader tolerates only a page-abandoned receive body th
     else if(request.url.startsWith('/receive/results?malformed'))response.end('{"v":');
     else response.end('{"v":1}');
   });
-  await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));t.after(()=>{fixture.closeAllConnections();fixture.close();});
+  await listenBrowser(fixture);t.after(()=>{fixture.closeAllConnections();fixture.close();});
   const browser=await chromium.launch();t.after(()=>browser.close());
   const page=await browser.newPage(),seen={http:[],abandonedBodies:[],receive:null,results:[],active:0},errors=[],pending=[];
   page.on('response',response=>{const route=new URL(response.url()).pathname;if(route==='/')return;

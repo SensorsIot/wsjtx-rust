@@ -184,7 +184,7 @@ async fn live_native_browser_mode(mode: &str) {
         profile::new_uuid().unwrap()
     ));
     std::fs::create_dir(&dir).unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = crate::test_ports::browser_listener();
     let address = listener.local_addr().unwrap();
     let origin = format!("http://{address}");
     let profile_id = profile::new_uuid().unwrap();
@@ -422,7 +422,7 @@ async fn live_native_busy_period_rows_promptly() {
     let input = BusyPeriodInput::load(period.clone());
     let dir = std::env::temp_dir().join(format!("wstx-busy-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = crate::test_ports::browser_listener();
     let address = listener.local_addr().unwrap();
     let origin = format!("http://{address}");
     let profile_id = profile::new_uuid().unwrap();

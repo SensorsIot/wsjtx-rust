@@ -48,12 +48,18 @@ async function contextFor(origin, authenticated = false) {
 // Test-tool oracle: a protocol fixture proves heartbeat interleaving and a fixed deadline.
 // #35: Chromium refuses its kRestrictedPorts with ERR_UNSAFE_PORT; Windows here hands out
 // dynamic ports from 1024, so a browser-facing listen(0) can land on one.
-test('port helper: browser-facing ports are never Chromium restricted ports', async () => {
+test('port helper: browser- and fetch-facing ports are never Chromium restricted or fetch bad ports', async () => {
   // Spot values of Chromium net/base/port_util.cc kRestrictedPorts, including the ones seen on HB9BLA.
   for (const port of [1, 25, 1719, 1720, 1723, 2049, 5060, 5061, 6000, 6665, 6666, 6667, 6668, 6669, 6697, 10080]) assert.ok(restrictedPorts.has(port), String(port));
   for (const port of [80, 443, 1024, 8080, 18001]) assert.equal(restrictedPorts.has(port), false, String(port));
+  // #8: Node's fetch (undici) refuses the Fetch standard's bad ports with "bad port"; 4190 and
+  // 6679 are not on Chromium's list. Each one is restricted, and this Node refuses each.
+  for (const port of [1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]) {
+    assert.ok(restrictedPorts.has(port), String(port));
+    await assert.rejects(fetch(`http://127.0.0.1:${port}/`), error => error.cause?.message === 'bad port', String(port));
+  }
   // A listener that the OS gives restricted ports first: the helper must skip all of them.
-  const offered = [1719, 1723, 6000, 10080, 40000];
+  const offered = [1719, 4190, 1723, 6679, 6000, 10080, 40000];
   let closed = 0;
   const fake = Object.assign(new EventEmitter(), {
     listen(port, host) { assert.equal(port, 0); assert.equal(host, '127.0.0.1'); setImmediate(() => this.emit('listening')); },
@@ -61,7 +67,7 @@ test('port helper: browser-facing ports are never Chromium restricted ports', as
     close(done) { closed++; setImmediate(done); },
   });
   assert.equal(await listenBrowser(fake), 40000);
-  assert.equal(closed, 4, 'each restricted port is released');
+  assert.equal(closed, 6, 'each restricted port is released');
   // Only restricted ports: the helper fails instead of returning one.
   const stuck = Object.assign(new EventEmitter(), {listen() { setImmediate(() => this.emit('listening')); }, address() { return {port: 1720}; }, close(done) { setImmediate(done); }});
   await assert.rejects(listenBrowser(stuck), /No browser-accepted port/);

@@ -47,6 +47,8 @@ mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
 mod spectrum;
 mod strategy;
+#[cfg(test)]
+mod test_ports;
 mod transmit_http;
 #[cfg(test)]
 mod transmit_http_tests;
