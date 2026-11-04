@@ -568,8 +568,8 @@ attribute def ActivityOrdering {
              standard message (CQ, replies to others, reports, R-reports, RR73, 73), and they match
              only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
              adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
-             to my call keeps mycall on top. Every row with a flag, my call, a strategy verdict or
-             a worked-before status carries hover text (BandActivityHover). Settings > General > Display lists the slots with their
+             to my call keeps mycall on top. A row with a reason of its colour carries the reason
+             tip of BandActivityHover (#50 CL-050-08). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
              accent (a left bar and the message text), never a row background.
              UDP highlight (#40, CL-040-08, operator 2026-11-04): a Highlight Callsign from a UDP
@@ -580,7 +580,54 @@ attribute def ActivityOrdering {
              background (none when the highlight has no valid background, as WSJT-X clears
              it) and, when given, the row text colour. A reset or removed highlight gives the
              row its slot colour back. Highlights from a target without accept_commands never
-             reach the browser. */
+             reach the browser.
+             Row scheme (operator 2026-11-04, refining 2026-11-03; BandActivityScheme): what a
+             slot colours depends on the row's mark, in BandActivityRowMark order. */
+    }
+    enum def BandActivityRowMark {
+        doc /* #50 (operator 2026-11-04). The mark of a decoded Band Activity row, highest
+             first; a row takes the first that applies. */
+        enum partner; enum callsMe; enum newWholeRow; enum newSenderOnly; enum plain;
+    }
+    attribute def BandActivityScheme {
+        attribute partnerFirst : Boolean = true;
+        attribute partnerStripe : Boolean = true;
+        doc /* CL-050-08 (#50, operator 2026-11-04). The sender of a row is recordFrom (the
+             'from' call, also as a filled-in hash, or the sender of a nonstandard i3=4
+             message); the partner is the dx_call of the contact snapshot the page already
+             holds (WstxContact::ContactSnapshot, no further request or poll) while the
+             contact is prepared or running (replying, report, roger_report, rogers,
+             signoff): from the contact preparation (select_row) until it is logged
+             (completed) or cancelled. Marks (BandActivityRowMark):
+             partner: a decoded row whose sender is the partner. All partner rows of the
+             shown periods (latest and kept) are moved to the top of Band Activity, in
+             whatever column order, newest period first, followed by a red separator
+             stripe (a divider row without text, 3 px, #ff4040); the period blocks below
+             keep their own order and dividers, and a period divider whose rows all moved
+             up is dropped. A partner row carries a 4 px red left bar, a "◆ QSO" badge
+             after its message (outside the message text) and a bold message; it has no
+             slot background (also when it is to my call).
+             callsMe: a decoded row to my call (as the mycall slot: also a filled-in hash
+             <MYCALL> or a nonstandard i3=4 'to', #24) whose sender is not the partner:
+             the whole row in the mycall colour, also when the sender was worked before on
+             this band and mode (calling me is always actionable).
+             newWholeRow: a CQ or QRZ message (text starting CQ or QRZ, or a nonstandard
+             CQ) whose sender has an enabled new_* slot: the whole row in the colour of its
+             highest-priority enabled slot.
+             newSenderOnly: any other decoded row (a station in QSO with another station:
+             replies, reports, R-reports, RR73, 73) whose sender has an enabled new_* slot:
+             only the sender's call in the message carries that slot's colour (an inline
+             mark around the call word, also inside < >), the rest of the row is plain.
+             plain: everything else, no colour.
+             The Settings > General > Display slot choice applies to every mark: with
+             mycall off a callsMe row falls back to its new_* slots as a newWholeRow;
+             without an enabled slot a newWholeRow or newSenderOnly row is plain.
+             An accepted UDP highlight (CL-040-08) wins over every slot colour of every
+             mark (it colours the whole row); on a partner row the partner marker (bar,
+             badge, bold, the place on top) stays and the UDP colours apply under it.
+             The #39 strategy accent and value order stay as they are; the partner block
+             is a period block of its own for the strategy order. The reason tip of a row:
+             BandActivityHover. */
     }
     attribute def BandActivityValue {
         attribute levels : Integer = 8;
@@ -595,20 +642,32 @@ attribute def ActivityOrdering {
              sender, CQ or not. */
     }
     attribute def BandActivityHover {
-        doc /* #55 (operator 2026-11-03, CL-055-04). A row with any reason below carries it as
-             its title (shown on hover over the row and its colour mark, the first cell's
-             strategy bar included; the DXCC and Distance cells keep their own titles) and as
-             aria-description, one reason per line in this order (value order first, so the
-             first line names the row's value): "Calling me"; the strategy verdict "Strategy
-             <name>: rule <n>" or "Directed CQ not addressed to my continent: never
-             answered"; "New continent <cont>", "New continent on <band>", "New DXCC:
-             <shown name>", "New DXCC on <band>", "New CQ zone <cq>", "New CQ zone on
-             <band>", "New ITU zone <itu>", "New ITU zone on <band>", "New grid <square>",
-             "New grid on <band>", "New call", "New call on <band>" for each flag present;
-             then the worked-before status of the sender (WstxContact::WorkedBeforeQuery):
-             "Worked before on <band> <MODE>" or "Worked before on another band or mode".
-             <band> is the operating selection band ("this band" when none). A row with no
-             reason has no title. */
+        doc /* #55 (CL-055-04), #50 (operator 2026-11-04, CL-050-08: "too much information",
+             "line them up horizontally", "the rest is already visible in the band activity").
+             A Band Activity row's reason tip names only the reasons of its colour that the row
+             does not show: no country, continent, distance (their columns show them) and no
+             "Calls you" (the message shows my call). Per kind, in this order, the strongest
+             reason whose slot is enabled in Settings (BandActivityColours): continent "New
+             continent <cont>", else "New continent on <band>"; DXCC "New DXCC", else "New
+             DXCC on <band>"; zone "New CQ zone <cq>", else "New ITU zone <itu>", else "New CQ
+             zone on <band>", else "New ITU zone on <band>"; grid "New grid <square>", else "New
+             grid on <band>"; call "New call", else "New on <band>" followed by the sender's
+             worked-before status in parentheses ("(worked on another band or mode)" or "(worked
+             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
+             overall flag implies its on-band flag, so the on-band text appears only without
+             it. Then "UDP highlight" for an accepted UDP highlight (CL-040-08) and the #39
+             strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ not addressed to my
+             continent: never answered"). The reasons form one line joined by " · ", for
+             example "New DXCC · New call", "New on 40m (worked on another band or mode)",
+             "New CQ zone 10". A partner row carries no flag reason (its marker shows it). A
+             row without such a reason has no tip; a worked-before status alone gives none.
+             The tip is a compact one-line box (no native title, which wraps unpredictably) at
+             the pointer while it is over the row, except over a cell with its own title (DXCC,
+             Distance), and under the row while the row has keyboard focus; it goes when the
+             pointer leaves, focus moves or the row is redrawn, and follows a Settings slot
+             change. The same text is the row's aria-description. <band> is the operating
+             selection band ("this band" when none). The QSO pane callers keep their own list
+             of reasons (QsoPane item 3). */
     }
     attribute def BandActivityView {
         attribute newestFirst : Boolean = true;
@@ -642,7 +701,10 @@ attribute def ActivityOrdering {
              row backgrounds; the only text mark is WSJT-X's a-priori marker: a record with
              a_priori N shows a small "aN" after its message, outside the message text
              (#56 slice 5, WstxStationDecode::APrioriHypotheses); worked before (WstxContact::
-             WorkedBeforeQuery) feeds only the hover text (BandActivityHover); rows are ordered
+             WorkedBeforeQuery) feeds only the hover text (BandActivityHover); what a slot
+             colours (whole row, sender call only, none) and the QSO partner's rows on top
+             with their marker and the red stripe follow BandActivityScheme (#50, CL-050-08);
+             rows are ordered
              by value (BandActivityValue, ActivityOrdering); row density (#55, operator 2026-11-03,
              CL-055-05): table rows with a fine pointer have 1 px vertical cell padding and line
              height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
@@ -760,7 +822,10 @@ attribute def ActivityOrdering {
              its record flags (BandActivityColours, the same Settings choice; mycall is
              not used, since every line calls me), none without such a flag, so a sender
              worked before on this band and mode has no colour; its hover text (title and
-             aria-description) names the reasons of BandActivityHover and the
+             aria-description) names each flag of its record, one per line ("New continent
+             <cont>", "New continent on <band>", "New DXCC: <shown name>", "New DXCC on <band>",
+             "New CQ zone <cq>", "New ITU zone <itu>", "New grid <square>", "New call", "New call
+             on <band>" and the other on-band forms) and the
              worked-before status ("Worked before on <band> <MODE>" or "Worked before on
              another band or mode") from the answers of the Band Activity
              WorkedBeforeQuery of the latest and the previous period (no further query),
