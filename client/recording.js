@@ -474,7 +474,7 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
-let live,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+let live,liveFailed=false,resultsAnnounced=null,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
@@ -482,7 +482,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
-const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
   return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
@@ -568,8 +568,8 @@ async function receiveSync(current=socket){
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
-    live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
-  }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
+    live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';liveFailed=false;receiveShow();show();
+  }catch(error){if(current===socket)liveFailed=true;if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
   finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);else if(resultsDue())receiveResults();}
 }
 function activityOrdering(records=resultRows){
@@ -703,8 +703,11 @@ function validRecord(r){
 }const FLAG_NAMES=['new_call','new_call_band','new_grid','new_grid_band','new_dxcc','new_dxcc_band','new_continent','new_continent_band','new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band'];function validDxcc(d){return !!d&&typeof d==='object'&&!Array.isArray(d)&&Object.keys(d).every(k=>['name','cont','cq','itu','km'].includes(k))&&typeof d.name==='string'&&/^[\x20-\x7e]{1,40}$/.test(d.name)&&['AF','AN','AS','EU','NA','OC','SA'].includes(d.cont)&&Number.isInteger(d.cq)&&d.cq>=0&&d.cq<=40&&Number.isInteger(d.itu)&&d.itu>=0&&d.itu<=90&&(d.km===undefined||(Number.isInteger(d.km)&&d.km>=0&&d.km<=20038));}function validFlags(f){return !!f&&typeof f==='object'&&!Array.isArray(f)&&Object.keys(f).length>0&&Object.entries(f).every(([k,v])=>FLAG_NAMES.includes(k)&&v===true);}
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
-  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:4000))return;
-  resultPending=true;lastResultStart=now;
+  // #10 PushedStationState: Thin/Off read records of an announced or unread view at most once
+  // per 4 s; with nothing announced or pending they wait for receive.state (the station pushes
+  // each publication) and keep only a safety read at most once per 30 s.
+  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:resultsUnread()?4000:30000))return;
+  resultPending=true;lastResultStart=now;const started=now;
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
   try{
@@ -731,7 +734,7 @@ async function receiveResults(){
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
-    live.job.state=page.state;live.job.error=page.error;resultFailed=false;stationData('results',true);renderResults();receiveShow();
+    live.job.state=page.state;live.job.error=page.error;resultFailed=false;if(resultsAnnounced!==null&&started>=resultsAnnounced&&cursor>=page.next_sequence)resultsAnnounced=null;stationData('results',true);renderResults();receiveShow();
   }catch(error){resultFailed=true;if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch){receiveStatus.textContent=`Result state unavailable · ${error.message}`;if(/^Invalid|descriptor/.test(error.message))stationData('results',false);}}
   finally{resultPending=false;if(resultsDue()&&resultCursor!==cursor)setTimeout(receiveResults,0);}
 }
@@ -774,7 +777,7 @@ function receiveReady(current){
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
 function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
-addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;receiveSync(current);
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
@@ -1105,7 +1108,7 @@ addEventListener('station-stale',catShow);
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
 transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><p id="transmit-result" role="status"></p>';
 const transmitDetails=secondary('transmit-details','Transmit test panel',transmitPanel,expertSection);transmitDetails.hidden=true;
-let transmitView=null,transmitTimer=null;
+let transmitView=null,transmitViewAt=0;
 const transmitConfigured=()=>profileData?.settings.control.ptt==='cat';
 function transmitBody(extra){return JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...extra});}
 async function transmitPost(path,extra){
@@ -1117,21 +1120,40 @@ function transmitShow(){
   const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;const qsoHalt=document.querySelector('#qso-halt');if(qsoHalt)qsoHalt.disabled=!on;
   if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
   const v=transmitView,status=document.querySelector('#transmit-status');
-  const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement;
-  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC${{air:' corrected from the air',both:', NTP with air fallback'}[v.clock_source]??''}, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${Math.round(m0.age_ms/1000)} s ago`:' · no SNTP measurement'}`;
+  const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement,ageS=m=>Math.round((m.age_ms+performance.now()-transmitViewAt)/1000);
+  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC${{air:' corrected from the air',both:', NTP with air fallback'}[v.clock_source]??''}, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${ageS(m0)} s ago`:' · no SNTP measurement'}`;
   chipsShow();
   if(!on||!v){status.textContent='Transmit unavailable';return;}
-  const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${Math.round(m.age_ms/1000)} s ago`:'';
+  const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${ageS(m)} s ago`:'';
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_minutes} min`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-async function transmitSync(){
-  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return;}
-  try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok)transmitView=await response.json();}catch{}
-  transmitShow();
+// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the station
+// pushes transmit.state on change; this browser reads GET /transmit once per socket, on an
+// announced revision it has not read, after its own requests and otherwise at most once per
+// 30 s as a safety read. One read pending, at most one queued; no 1 s poll.
+let transmitRead=null,transmitAgain=false,transmitReadAt=-Infinity,transmitRevision=null,transmitSocket=null,transmitEventSocket=null;
+function transmitSync(){
+  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return Promise.resolve();}
+  if(transmitRead){transmitAgain=true;return transmitRead;}
+  transmitRead=(async()=>{
+    do{
+      transmitAgain=false;transmitReadAt=performance.now();
+      try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok){transmitView=await response.json();transmitViewAt=performance.now();}}catch{}
+      transmitShow();
+    }while(transmitAgain&&transmitConfigured());
+  })().finally(()=>{transmitRead=null;});
+  return transmitRead;
 }
-function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
-setInterval(transmitPoll,2000);addEventListener('station-ready',()=>transmitPoll()); // #57: HALT is enabled as soon as the station is ready, not on the first 2 s poll.
+function transmitPoll(){if(transmitConfigured()&&connection.dataset.state==='connected'&&performance.now()-transmitReadAt>=30000)transmitSync();transmitShow();}
+setInterval(transmitPoll,2000);
+// #57: HALT is enabled as soon as the station is ready. A new socket reads the snapshot once:
+// at its first transmit.state (sent at the peer's first step) or, without one, by the safety
+// read 3-5 s after it became ready.
+addEventListener('station-ready',event=>{transmitShow();if(event.detail===transmitSocket)return;transmitSocket=event.detail;transmitReadAt=Math.max(transmitReadAt,performance.now()-27000);});
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='transmit.state')return;
+  const d=message.data;if(!d||!Number.isSafeInteger(d.transmit_revision)||d.profile_id!==profileData?.profile_id)return;
+  if(transmitEventSocket!==current||d.transmit_revision!==transmitRevision){transmitEventSocket=current;transmitRevision=d.transmit_revision;transmitSync();}});
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
