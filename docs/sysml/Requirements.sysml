@@ -2099,9 +2099,9 @@ package WstxRequirements {
              restart change during an active contact asks before Apply. Rx/Tx strip steps (1/10 Hz),
              Tx=Rx/Rx=Tx and Hold Tx send exactly the expected contact requests. Band Activity shows
              history newest first with period dividers, double-click replies (select then
-             enable_tx) and the right-click menu acts. QSO pane CQ and Reply and a fold-out Now (Tx4
-             after RR73 chosen, Tx5) send choose_next then enable_tx with the shown safety revision;
-             the pane has no RR73 or 73 button; on a completed contact Now is disabled and a forced
+             enable_tx) and the right-click menu acts. QSO pane CQ sends enable_tx and a fold-out Now (Tx4
+             after RR73 chosen, Tx5) sends choose_next then enable_tx, each with the shown safety revision;
+             the pane has no Reply, RR73 or 73 button; on a completed contact Now is disabled and a forced
              click sends no enable_tx. In the operating view one HALT is visible, the QSO pane's,
              the top-bar HALT shows on the Logbook page, in the Settings drawer, and at 1024x768
              and 360 px where the stacked pane HALT is below the fold; a HALT is in the viewport
@@ -4804,7 +4804,7 @@ package WstxRequirements {
     }
     dependency CL_037_02_to_FR_019 from 'CL-037-02' to 'FR-019';
     requirement 'CL-037-03' {
-        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (a page or the Settings drawer covers the workspace, or the stacked pane is scrolled out of view), so a pointer HALT is always on screen; Esc and Alt+H halt everywhere. The QSO pane's direct buttons are CQ, Reply, Tune, HALT and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply stays until the #50 double-click fix is deployed. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
+        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (a page or the Settings drawer covers the workspace, or the stacked pane is scrolled out of view), so a pointer HALT is always on screen; Esc and Alt+H halt everywhere. The QSO pane's direct buttons are CQ, Tune, HALT and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply is gone since the #50 double-click fix is installed: a double-click on a Band Activity or Others row, or the row menu Reply, starts the reply. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }
@@ -4841,17 +4841,17 @@ package WstxRequirements {
     dependency CL_037_02_verified_by_TC_037_002 from 'CL-037-02' to 'TC-037-002';
     // Found in the #61 gate (TC-050-004, CQ right after a completed contact refused stale_revision).
     requirement 'CL-061-02' {
-        doc /* The QSO pane CQ and Reply buttons are explicit operator choices like the double-click (CL-050-04): a stale_revision refusal of their enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */
+        doc /* The QSO pane CQ button is an explicit operator choice like the double-click (CL-050-04): a stale_revision refusal of its enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js";
     }
     dependency CL_061_02_to_FR_007 from 'CL-061-02' to 'FR-007';
     verification 'TC-061-003' {
-        doc /* TC-061-003 — CQ and Reply retry a stale_revision refusal
+        doc /* TC-061-003 — CQ retries a stale_revision refusal
              CL-061-02
              Setup: actual station Router and browser client with scripted contact snapshots and contact command replies (explicit presentation fixtures).
-             Steps: click CQ while the station refuses one command with stale_revision and moves its revision; click CQ while it refuses three; prepare a contact and click Reply while it refuses one.
-             Expected (independent: the scripted revisions): CQ sends enable_tx with revision 3, then 4 (accepted); then 4, 5, 6 and shows the refusal; Reply sends 7, then 8. On the parent client CQ and Reply send once.
+             Steps: click CQ while the station refuses one command with stale_revision and moves its revision; click CQ while it refuses three.
+             Expected (independent: the scripted revisions): CQ sends enable_tx with revision 3, then 4 (accepted); then 4, 5, 6 and shows the refusal. On the parent client CQ sends once.
              2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

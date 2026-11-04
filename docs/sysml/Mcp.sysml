@@ -147,7 +147,9 @@ package WstxMcp {
              /transmit, /contact, /automation, /strategy, /strategy/alerts (#42
              WstxStrategy::Alert, read-only; clearing stays in the browser). wstx_results {source_id, job_id: UUID; generation, cursor: safe
              integer; limit optional 1..16} -> GET /receive/results. wstx_contact_command
-             {command: WstxContact::ContactCommand} -> POST /contact/command.
+             {command: WstxContact::ContactCommand} -> POST /contact/command; its description
+             states that open_log (WstxContact::DirectLog) closes an unfinished contact
+             (completed, Enable Tx off, nothing queued, #37).
              wstx_transmit_halt {halt: HaltTransmit body} -> POST /transmit/halt.
              wstx_automation_command {command: AutomationCommand} -> POST
              /automation/command; its description names every AutomationConfiguration

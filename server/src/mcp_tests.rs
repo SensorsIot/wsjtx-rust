@@ -445,6 +445,14 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ])
     );
     assert_eq!(catalog[5]["annotations"]["readOnlyHint"], true);
+    // #37: open_log closes an unfinished contact (DirectLog); the tool says so.
+    let contact = catalog[2]["description"].as_str().unwrap();
+    assert!(
+        contact.contains(
+            "an unfinished contact is closed by it: completed, Enable Tx off, nothing queued"
+        ),
+        "wstx_contact_command states what open_log does to an unfinished contact"
+    );
     let described = catalog[4]["description"].as_str().unwrap();
     for key in [
         "modes",

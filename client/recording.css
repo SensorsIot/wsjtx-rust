@@ -247,7 +247,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-focus .ct-qso-area{flex:0 1 auto;min-height:0;overflow:auto;display:grid;align-content:start;gap:2px;font-size:var(--op-font-secondary);max-height:calc(7 * 1.3em + 2px)}#rx-focus .ct-dialogue tr[data-dir=tx]{color:#9fb8c9}#rx-focus .op-qso-next[data-now=true] .op-eyebrow{color:rgb(255,64,64);font-weight:700}
 .op-qso-buttons{display:flex;flex-wrap:wrap;gap:6px}
 .op-qso-buttons button{flex:1 1 4.2rem;padding:8px 6px;font-weight:600}
-.op-app .op-qso-buttons #qso-cq,.op-app .op-qso-buttons #qso-reply{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}
+.op-app .op-qso-buttons #qso-cq{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}
 .op-app .op-qso-buttons button:disabled{opacity:.45}
 .op-app button.op-halt-small{background:#5a1f1c;border-color:#b84a42;color:#ffd6d1}
 #qso-more summary{cursor:pointer;font-size:var(--op-font-secondary);color:#9fb8c9}
