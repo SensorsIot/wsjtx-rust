@@ -421,21 +421,24 @@ package WstxStrategy {
         doc /* At least 3 characters with a digit and a letter, not ending /R (rover). */
     }
     attribute def WatchdogFromOperator {
-        doc /* The Tx watchdog counts from the last operator action and is never paused or
-             reset by automation. Only a human action in the browser is an operator
-             action: an Enable Tx, any accepted ContactCommand or an Auto start sent by
-             the browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
+        doc /* The Tx watchdog counts unanswered own transmissions (WstxContact::TxWatchdog,
+             operator redefinition 2026-11-04) and is never paused or reset by
+             automation. Only an answer (a decoded message addressed to my call from the
+             partner, or from anyone to my CQ) or a human action in the browser resets
+             it: an Enable Tx, any accepted ContactCommand or an Auto start sent by the
+             browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
              the credential at the auth boundary, so an MCP client is never one on any
-             route, #58). Never operator actions:
-             commands of a run (select_row, set_frequency, enable_tx, cancel, disarm), any
-             MCP request (also starting or restarting a run) and any UDP command (Reply,
-             Free Text). Such an enable_tx arms with the watchdog already counting from
-             the last browser action and is refused tx_watchdog when that time is spent
-             (until a human acts in the browser); an MCP-started run is bounded by it;
-             only the browser may change the watchdog setting (set_watchdogs from any
-             other source is refused operator_required); a changed message text of a contact armed by
-             automation does not reset it. Halt from any source stops the run; grant,
-             clock, period and safety-revision checks are unchanged. */
+             route, #58). Never operator actions: commands of a run (select_row,
+             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
+             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
+             arms with the count kept and is refused tx_watchdog when the limit is used
+             up or no browser action was seen this boot (until a human acts in the
+             browser or an answer arrives); a run selecting a new station does not reset
+             it; only the browser may change the watchdog setting (set_watchdogs from any
+             other source is refused operator_required). At the limit Enable Tx goes off
+             without a halt and a run stops tx_watchdog.
+             Halt from any source stops the run; grant, clock, period and safety-revision
+             checks are unchanged. */
     }
 
     dependency storeClause from StrategyConfiguration to WstxRequirements::'CL-039-01';

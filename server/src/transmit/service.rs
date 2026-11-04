@@ -240,8 +240,8 @@ pub struct View {
     pub transmitting: bool,
     pub clock: ClockState,
     pub clock_measurement: Option<super::clock::Measurement>,
-    pub tx_minutes: u32,
-    pub tx_remaining_minutes: u32,
+    pub tx_calls: u32,
+    pub tx_remaining_calls: u32,
     pub tx_expired: bool,
     pub tune_seconds: u32,
     pub tune_remaining_seconds: u32,
@@ -285,15 +285,15 @@ pub struct Core<H: Hardware> {
     refusal: Option<TransmitRefusal>,
     outcomes: VecDeque<Outcome>,
     outcome_sequence: u64,
-    tx_minutes: u32,
+    /// WstxTransmit::TransmitWatchdog: the limit of consecutive unanswered own
+    /// transmissions (#39, 2026-11-04).
+    tx_calls: u32,
     tune_seconds: u32,
-    watchdog_from: Option<i64>,
-    /// #39: UTC ms of the last operator action (operator arm, accepted operator activity
-    /// or an automation start). Automation never moves it.
-    operator_mark: Option<i64>,
-    /// #39: armed by automation; the watchdog then counts from `operator_mark` and a
-    /// changed message text does not reset it.
-    automatic: bool,
+    /// Own transmissions started since the last answer or operator action.
+    unanswered: u32,
+    /// #39: an operator action (operator arm or accepted browser activity) was seen this
+    /// boot; automation never sets it.
+    operator_seen: bool,
     tx_expired: bool,
     ever_keyed: bool,
     startup_release: StartupRelease,
@@ -377,11 +377,10 @@ impl<H: Hardware> Core<H> {
             refusal: None,
             outcomes: VecDeque::new(),
             outcome_sequence: 0,
-            tx_minutes: 6,
+            tx_calls: 6,
             tune_seconds: 90,
-            watchdog_from: None,
-            operator_mark: None,
-            automatic: false,
+            unanswered: 0,
+            operator_seen: false,
             tx_expired: false,
             ever_keyed: false,
             startup_release: StartupRelease::Pending,
@@ -465,7 +464,6 @@ impl<H: Hardware> Core<H> {
         self.arm = ArmState::Disarmed;
         self.armed_revision = None;
         self.cause = cause;
-        self.watchdog_from = None;
     }
     /// Disarm and drop every request whose audio has not started and that is not keyed
     /// (before-key Disarm cancels; a keyed or started transmission finishes).
@@ -511,52 +509,49 @@ impl<H: Hardware> Core<H> {
         self.armed_revision = Some(safety_revision);
         self.refusal = None;
         self.tx_expired = false;
-        let now = self.hardware.now_utc_ms();
-        self.watchdog_from = Some(now);
-        self.operator_mark = Some(now);
-        self.automatic = false;
+        self.unanswered = 0;
+        self.operator_seen = true;
         Ok(())
     }
     /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation. The
-    /// Tx watchdog keeps counting from the last operator action; it is never reset here.
+    /// unanswered count is kept; automation never resets the Tx watchdog.
     pub fn arm_automatic(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
-        let mark = self.operator_mark;
+        let (unanswered, seen) = (self.unanswered, self.operator_seen);
         self.arm(safety_revision)?;
-        self.operator_mark = mark;
-        self.watchdog_from = mark;
-        self.automatic = true;
+        self.unanswered = unanswered;
+        self.operator_seen = seen;
         Ok(())
     }
-    /// True when no operator action is recorded or the Tx watchdog has run out since it:
-    /// automation may then not arm.
+    /// True when no operator action is recorded this boot or the Tx watchdog's count of
+    /// unanswered transmissions is used up: automation may then not arm.
     pub fn watchdog_spent(&self) -> bool {
-        let now = self.hardware.now_utc_ms();
-        self.operator_mark
-            .is_none_or(|m| now - m >= i64::from(self.tx_minutes) * 60_000)
+        !self.operator_seen || self.unanswered >= self.tx_calls
     }
     /// Operator or contact disarm; no new request is sent.
     pub fn disarm(&mut self, cause: DisarmCause) {
         self.disarm_with(cause);
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
-    /// Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog).
-    /// It is also the operator mark automation counts from (#39).
+    /// Accepted operator activity in the browser (WstxContact::TxWatchdog): a human is
+    /// present, so the unanswered count starts again.
     pub fn activity(&mut self) {
-        let now = self.hardware.now_utc_ms();
-        self.operator_mark = Some(now);
-        if self.arm == ArmState::Armed {
-            self.watchdog_from = Some(now);
-        }
+        self.operator_seen = true;
+        self.unanswered = 0;
+    }
+    /// The contact consumer decoded an answer to my transmission (a message addressed
+    /// to my call from the current partner, or from anyone while no partner is set).
+    pub fn answered(&mut self) {
+        self.unanswered = 0;
     }
     pub fn set_watchdogs(
         &mut self,
-        tx_minutes: u32,
+        tx_calls: u32,
         tune_seconds: u32,
     ) -> Result<(), TransmitRefusal> {
-        if !(1..=99).contains(&tx_minutes) || !(1..=300).contains(&tune_seconds) {
+        if !(1..=99).contains(&tx_calls) || !(1..=300).contains(&tune_seconds) {
             return Err(TransmitRefusal::FrequencyOutOfRange);
         }
-        self.tx_minutes = tx_minutes;
+        self.tx_calls = tx_calls;
         self.tune_seconds = tune_seconds;
         Ok(())
     }
@@ -822,18 +817,6 @@ impl<H: Hardware> Core<H> {
                 }
             }
         }
-        // Tx watchdog.
-        if self.arm == ArmState::Armed
-            && self
-                .watchdog_from
-                .is_some_and(|from| now - from >= i64::from(self.tx_minutes) * 60_000)
-        {
-            // halt() records the true halt state (pending if the release failed).
-            self.halt();
-            self.cause = DisarmCause::TxWatchdog;
-            self.tx_expired = true;
-            return;
-        }
         // Authority/radio loss while armed.
         if self.arm == ArmState::Armed {
             if context.safety_revision != self.armed_revision
@@ -880,6 +863,13 @@ impl<H: Hardware> Core<H> {
                 return;
             }
             if !job.keyed {
+                // Tx watchdog (#39): the next transmission is never keyed after the
+                // limit of unanswered ones; Enable Tx goes off without a halt.
+                if self.arm == ArmState::Armed && self.unanswered >= self.tx_calls {
+                    self.tx_expired = true;
+                    self.disarm(DisarmCause::TxWatchdog);
+                    return;
+                }
                 // Key at the period start (audio delay before the first sample), or at
                 // once for a late admitted start; output is opened before PTT.
                 if let Err(e) = plan_start(mode, now, self.hardware.clock(), period, SAMPLE_RATE_HZ)
@@ -954,12 +944,7 @@ impl<H: Hardware> Core<H> {
                 self.fail_current(failure, DisarmCause::DeviceLost);
                 return;
             }
-            if self.last_text.as_deref() != Some(text.as_str())
-                && self.arm == ArmState::Armed
-                && !self.automatic
-            {
-                self.watchdog_from = Some(now);
-            }
+            self.unanswered = self.unanswered.saturating_add(1);
             self.last_text = Some(text);
             self.last_period = Some(period);
             let remaining = (job_len - start.skipped_samples as usize) as i64 * 1000
@@ -1092,11 +1077,8 @@ impl<H: Hardware> Core<H> {
                     .filter(|j| j.audio_start_utc_ms.is_none())
                     .map(|j| j.prepared.request.request_sequence)
             });
-        let tx_remaining_minutes = match (self.arm, self.watchdog_from) {
-            (ArmState::Armed, Some(from)) => {
-                let left = i64::from(self.tx_minutes) * 60_000 - (now - from);
-                u32::try_from((left.max(0) + 59_999) / 60_000).unwrap_or(0)
-            }
+        let tx_remaining_calls = match self.arm {
+            ArmState::Armed => self.tx_calls.saturating_sub(self.unanswered),
             _ => 0,
         };
         View {
@@ -1117,8 +1099,8 @@ impl<H: Hardware> Core<H> {
                 || self.tune.is_some(),
             clock: self.hardware.clock(),
             clock_measurement: self.hardware.clock_measurement(),
-            tx_minutes: self.tx_minutes,
-            tx_remaining_minutes,
+            tx_calls: self.tx_calls,
+            tx_remaining_calls,
             tx_expired: self.tx_expired,
             tune_seconds: self.tune_seconds,
             tune_remaining_seconds: self.tune.as_ref().map_or(0, |t| {

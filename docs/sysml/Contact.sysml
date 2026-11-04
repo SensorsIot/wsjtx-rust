@@ -679,31 +679,35 @@ package WstxContact {
 
     // ---------------------------------------------------------------- watchdogs
     attribute def TxWatchdog {
-        attribute limitMinutes : Integer = 6;
-        attribute minimumMinutes : Integer = 1;
-        attribute maximumMinutes : Integer = 99;
-        attribute remainingMinutes : Integer;
-        assert constraint limitDomain { limitMinutes >= minimumMinutes and limitMinutes <= maximumMinutes }
-        doc /* D4 adopted (CFG TxWatchdog default 6 ~3749; MW tx_watchdog ~14646,
-             update_watchdog_label ~14680). Server-owned station-session setting,
-             default 6 at each station start, settable 1..99 minutes. DIFFERENT: WSJT-X
-             0 = disabled is not offered; a safety bound always applies. It counts only
-             while Enable Tx is on (counter 0 when off) in whole minutes and resets on
-             operator activity: any accepted operating request of this station from
-             the browser (select, entry, message/slot choice, frequency, report,
-             Enable Tx, Auto Seq, Log), and the start of a transmission whose text
-             differs from the previous one (MW ~8139). DIFFERENT (#39,
-             WstxStrategy::WatchdogFromOperator): only a human action in the browser is
-             operator activity; automation, MCP requests (including a run start) and UDP
-             commands never reset or extend the watchdog, their Enable Tx counts from the
-             last browser action and is refused tx_watchdog when that time is spent, and
-             a changed text of a contact armed by them does not reset it; only the
-             browser may set the watchdogs (set_watchdogs from another source is refused
-             operator_required). Mouse movement the server cannot
-             observe is not activity. At expiry the server sends #9's halt (the
-             transmission stops, as MW ~7690/7763), turns Enable Tx off, keeps the
-             contact state, and shows "Tx watchdog expired" until the next Enable Tx.
-             The remaining minutes are shown while Enable Tx is on (WD:nm). */
+        attribute limitCalls : Integer = 6;
+        attribute minimumCalls : Integer = 1;
+        attribute maximumCalls : Integer = 99;
+        attribute remainingCalls : Integer;
+        assert constraint limitDomain { limitCalls >= minimumCalls and limitCalls <= maximumCalls }
+        doc /* Operator redefinition #39, 2026-11-04 (replaces the WSJT-X time watchdog,
+             CFG TxWatchdog ~3749, MW tx_watchdog ~14646): the Tx watchdog counts
+             consecutive own transmissions that got no answer, in manual operation and
+             under automation alike, whatever the message (CQ, Tx1..Tx5, free text).
+             Server-owned station-session setting: limit 1..99 unanswered calls, default 6
+             at each station start (about 3 min of FT8 with alternate periods). DIFFERENT:
+             WSJT-X 0 = disabled is not offered; a safety bound always applies.
+             Counting: every own transmission whose audio starts adds one. An answer
+             resets the count to 0: a decoded message addressed to my call from the
+             contact's partner (dxCall), or from any station while no partner is set
+             (my CQ answered by anyone), decoded in a period after my last transmission
+             started. A human action in the browser (an operator Enable Tx or any
+             accepted operating request of this station from the browser) also resets it
+             (a human is present). Automation, MCP requests (including a run start) and
+             UDP commands never reset it (WstxStrategy::WatchdogFromOperator); their
+             Enable Tx keeps the count, and is refused tx_watchdog when the limit is used
+             up or no browser action was seen this boot; only the browser may set the
+             watchdogs (set_watchdogs from another source is refused operator_required).
+             Stop: the next transmission after the limit is never keyed: Enable Tx goes
+             off (cause txWatchdog) before keying, PTT stays released, nothing is halted
+             (no HaltTransmit, halt_state unchanged), the contact state is
+             kept and the station shows "Tx watchdog: N unanswered calls" until the next
+             Enable Tx. The remaining calls are shown while Enable Tx is on (WD:n). Mouse
+             movement the server cannot observe is not activity. */
     }
     attribute def TuneWatchdog {
         attribute limitSeconds : Integer = 90;
@@ -1227,7 +1231,7 @@ package WstxContact {
              set_call_first {enabled} (CallFirst);
              set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"|"field_day"|"rtty"|"hound",
              exchange?} (GridExchangeContest, ContestExchange, HoundOperation);
-             set_watchdogs {tx_minutes,tune_seconds}; enable_tx {enabled,
+             set_watchdogs {tx_calls,tune_seconds}; enable_tx {enabled,
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the
              station's current revision is stale_revision with field safety_revision);
@@ -1274,7 +1278,7 @@ package WstxContact {
              last_period_utc,halt_state,safety_revision,refusal} (safety_revision the
              current CL-022 safety revision of the selected radio scope or null);
              settings exactly {auto_seq,call_first,tx1_skip,
-             tx_minutes,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report,activity,exchange,
+             tx_calls,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report,activity,exchange,
              serial} (exchange the ContestExchange text or null); contact null or
              exactly {id,origin,dx_call,dx_grid,report_sent,report_rcvd,exchange_sent,
              exchange_rcvd,state,next_slot,
@@ -1304,7 +1308,7 @@ package WstxContact {
              contact of this boot was logged, else exactly {contact_id,call,outcome,error}
              of the latest attempt: outcome saved (stored, replaced or already stored)
              with error null, or unsaved with error storage_unavailable (pending, retried),
-             log_queue_full or log_invalid_field (not retried); watchdog exactly {tx_remaining_minutes,
+             log_queue_full or log_invalid_field (not retried); watchdog exactly {tx_remaining_calls,
              tx_expired,tune_remaining_seconds}. contact_revision advances on every
              accepted command and every server-side sequence/transmit/watchdog change;
              snapshot_sequence also on clock-free material changes. No content coding:
