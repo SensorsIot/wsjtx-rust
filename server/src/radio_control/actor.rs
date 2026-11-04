@@ -32,6 +32,8 @@ struct SetupRequest {
     command: SetupCommand,
     deadline: Instant,
     response: SyncSender<Result<SetupReply>>,
+    /// Set when the exchange runs inside a receive transition's reservation.
+    reservation: Option<Arc<AtomicBool>>,
 }
 pub struct Actor {
     commands: SyncSender<Command>,
@@ -75,6 +77,12 @@ impl TransitionLease {
     pub fn execute(&self, request: Request) -> Result<Observation> {
         self.actor
             .execute_inner(request, Some(self.released.clone()))
+    }
+    /// A menu exchange (#44 AGC on mode selection) inside this reservation, so it
+    /// completes before the transition releases the actor.
+    pub fn setup(&self, command: SetupCommand, deadline: Instant) -> Result<SetupReply> {
+        self.actor
+            .setup_inner(command, deadline, Some(self.released.clone()))
     }
 }
 impl Drop for TransitionLease {
@@ -191,7 +199,7 @@ impl Actor {
                         continue;
                     }
                     if let Ok(request) = setup_receive.try_recv() {
-                        let _lease = Lease(busy.clone(), None);
+                        let _lease = Lease(busy.clone(), request.reservation);
                         let result = if stop.load(Ordering::Acquire) {
                             Err(Error::Cancelled)
                         } else {
@@ -342,14 +350,27 @@ impl Actor {
     /// single I/O owner. It takes the ordinary lease, waiting until deadline while an
     /// operation, transition, poll or transmit hold holds it (then Busy); no queue.
     pub fn setup(&self, command: SetupCommand, deadline: Instant) -> Result<SetupReply> {
+        self.setup_inner(command, deadline, None)
+    }
+    fn setup_inner(
+        &self,
+        command: SetupCommand,
+        deadline: Instant,
+        reservation: Option<Arc<AtomicBool>>,
+    ) -> Result<SetupReply> {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
+        let (expected, occupied) = if reservation.is_some() {
+            (2, 3)
+        } else {
+            (0, 1)
+        };
         // The 1 s poll holds the lease briefly; wait for it (bounded by the deadline)
         // instead of refusing, as the transmit hold does.
         while self
             .lease
-            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             if Instant::now() >= deadline || self.shutdown.load(Ordering::Acquire) {
@@ -362,8 +383,9 @@ impl Actor {
             command,
             deadline,
             response,
+            reservation,
         }) {
-            self.lease.store(0, Ordering::Release);
+            self.lease.store(expected, Ordering::Release);
             return Err(match error {
                 TrySendError::Full(_) => Error::Busy,
                 TrySendError::Disconnected(_) => Error::Unavailable,

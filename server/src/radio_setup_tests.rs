@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-04; CL-044-05; TC-044-001; TC-044-002; TC-044-003.
+// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-04; CL-044-05; CL-044-11; TC-044-001; TC-044-002; TC-044-003; TC-044-009.
 // The actual router, Recording owner and CAT actor; a scripted IC-7300 behind
 // the station's CAT owner, a detection hardware double of ports and audio endpoints.
 // Expected bytes are hand-written from the IC-7300 Full Manual section 19 command table.
@@ -513,6 +513,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
         v["proposal"],
         json!({"port":"COM3","model":"IC-7300","civ_address":"94","baud":9600,
             "control":{"mode":"cat","endpoint":"icom7300://COM3?baud=9600&radio=94&controller=e0","ptt":"cat"},
+            "radio":{"agc":"SLOW"},
             "audio":{"input_device":CAPTURE,"output_device":RENDER,
                 "input_name":"Microphone (USB Audio CODEC )","output_name":"Speakers (USB Audio CODEC )"}})
     );

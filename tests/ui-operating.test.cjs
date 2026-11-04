@@ -13,10 +13,10 @@ const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
-async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1}={}){
+async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1,control=null}={}){
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
-  const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
+  const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:control??{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
   const app=await server({},['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
@@ -889,6 +889,60 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   assert.deepEqual([saved.control,saved.audio],[{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},{input_device:capture,output_device:render}]);
   await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'the panel fits a phone');
   await page.locator('#settings-detect').screenshot({path:'test-results/ui-operating/detect-radio-mobile.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-044-11; TC-044-010. AGC is a Radio/CAT setting: the select is in the CAT group only
+// for an IC-7300 CAT endpoint, the read-back line follows the server's radio.agc push (the real
+// server's first event, then injected outcomes), Apply saves settings.radio, Detect radio
+// recommends SLOW. The station is plaintext, so CAT is never authorized and no port opens.
+test('TC-044-010 AGC field and read-back in Settings > Radio',{timeout:60000},async t=>{
+  const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{
+    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+    await p.route('**/radio/detect',async route=>{const body=JSON.parse(route.request().postData());await route.fulfill({json:{v:1,profile_id:body.profile_id,boot_id:body.boot_id,
+      ports:[{port:'COM250',friendly_name:'Silicon Labs CP210x USB to UART Bridge (COM250)',vid:'10C4',pid:'EA60',instance_id:'USB\VID_10C4&PID_EA60\IC-7300',state:'identified',
+        radios:[{model:'IC-7300',id:'94',civ_address:'94',baud:19200,station_cat:true,unknown_model:false}],audio:null}],
+      manual:['Yaesu','Kenwood','Elecraft'],supported_radios:1,audio_error:null,
+      proposal:{port:'COM250',model:'IC-7300',civ_address:'94',baud:19200,control:{mode:'cat',endpoint,ptt:'cat'},radio:{agc:'SLOW'},
+        audio:{input_device:null,output_device:null,input_name:null,output_name:null}},settings:null}});});
+  }});
+  await page.waitForFunction(()=>!!profileData,null,{timeout:30000});
+  const profile=await (await fetch(app.origin+'/profile')).json();
+  assert.deepEqual(profile.settings.radio,{agc:'SLOW'},'a profile saved without radio reads the IC-7300 default');
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  const select=page.locator('#server-fields-radio #control-agc'),line=page.locator('#server-fields-radio #cat-agc');
+  await select.scrollIntoViewIfNeeded();assert.equal(await select.isVisible(),true,'AGC is in the CAT group');
+  assert.equal(await select.inputValue(),'SLOW');
+  assert.deepEqual(await select.locator('option').allTextContents(),['FAST','MID','SLOW']);
+  // The server's own first radio.agc event: the target, not yet read (no CAT owner).
+  await line.filter({hasText:'Radio AGC SLOW · not yet read from the radio'}).waitFor({timeout:10000});
+  const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.agc',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
+  await inject({target:'SLOW',connection_generation:1,value:'SLOW',result:'written',trigger:'connect'});
+  assert.equal(await line.textContent(),'Radio AGC SLOW · set to SLOW and read back');
+  await inject({target:'SLOW',connection_generation:1,value:'SLOW',result:'unchanged',trigger:'selection'});
+  assert.equal(await line.textContent(),'Radio AGC SLOW · read back, already as set');
+  await inject({target:'SLOW',connection_generation:2,value:null,result:'busy',trigger:'connect'});
+  assert.equal(await line.textContent(),'Radio AGC SLOW not applied · busy');
+  // A malformed event is ignored.
+  await inject({target:'LOW',connection_generation:2,value:null,result:'written',trigger:'connect'});
+  assert.equal(await line.textContent(),'Radio AGC SLOW not applied · busy');
+  // Apply ⟳ saves the choice as settings.radio; the server pushes the new target.
+  await select.selectOption('MID');await page.locator('#settings-save').click();
+  await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  const saved=(await (await fetch(app.origin+'/profile')).json()).settings;
+  assert.deepEqual([saved.control,saved.radio],[{mode:'cat',endpoint,ptt:'disabled'},{agc:'MID'}]);
+  await line.filter({hasText:'Radio AGC MID · not yet read from the radio'}).waitFor({timeout:10000});
+  // Hidden for a control without a known AGC command.
+  await page.selectOption('#control-mode','disabled');
+  assert.deepEqual([await select.isVisible(),await line.isVisible()],[false,false]);
+  // Detect radio recommends SLOW and Use this setup sets it.
+  await page.locator('#detect-ack').check();await page.locator('#detect-run:enabled').click();await page.locator('#detect-proposal:not([hidden])').waitFor();
+  assert.ok((await page.locator('#detect-fields').textContent()).includes('AGC SLOW · recommended for FT8/FT4'));
+  await page.locator('#detect-use').click();
+  assert.deepEqual([await select.isVisible(),await select.inputValue()],[true,'SLOW']);
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,1,'only the Apply saved');
+  await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'fits a phone');
   assert.deepEqual(errors,[]);
 });
 

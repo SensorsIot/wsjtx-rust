@@ -59,6 +59,29 @@ pub struct Control {
     pub endpoint: Option<String>,
     pub ptt: String,
 }
+/// #44 CL-044-10 radio settings the station manages over CAT. Present exactly when the
+/// control names a radio with a known CI-V AGC command (`manages_radio`); kept apart
+/// from `control`, which is the receive-only authorization's checked identity.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Radio {
+    pub agc: wstx_rust::radio_control::setup::Agc,
+}
+impl Radio {
+    /// FT8/FT4 default on the IC-7300 (operator decision 2026-11-04, #44/#54).
+    pub const DEFAULT: Self = Self {
+        agc: wstx_rust::radio_control::setup::Agc::Slow,
+    };
+}
+/// True when the control is CAT on a radio whose CI-V AGC command is known: every
+/// station CAT endpoint is an IC-7300 CI-V configuration (CL-022, catalogue).
+pub fn manages_radio(control: &Control) -> bool {
+    control.mode == "cat"
+        && control
+            .endpoint
+            .as_deref()
+            .is_some_and(|e| wstx_rust::radio_control::Configuration::parse(e).is_ok())
+}
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -67,6 +90,10 @@ pub struct Settings {
     pub locator: String,
     pub audio: Audio,
     pub control: Control,
+    /// Omitted in an edit: the saved value is kept (or the default for a newly managed
+    /// radio); omitted in a representation when the radio has no managed settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radio: Option<Radio>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -88,6 +115,8 @@ pub struct Document {
     pub connection_type: String,
     pub audio: Audio,
     pub control: Control,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radio: Option<Radio>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -135,7 +164,18 @@ impl Settings {
                 return Err(field);
             }
         }
-        self.control.validate()
+        self.control.validate()?;
+        if self.radio.is_some() != manages_radio(&self.control) {
+            return Err("radio");
+        }
+        Ok(())
+    }
+    /// CL-044-10 an edit without `radio` keeps the saved radio settings, or takes the
+    /// default for a radio that becomes managed; an unmanaged control has none.
+    pub fn complete_radio(&mut self, saved: Option<Radio>) {
+        if self.radio.is_none() && manages_radio(&self.control) {
+            self.radio = Some(saved.unwrap_or(Radio::DEFAULT));
+        }
     }
 }
 
@@ -215,6 +255,7 @@ impl Document {
                 endpoint: None,
                 ptt: "disabled".into(),
             },
+            radio: None,
         })
     }
     pub fn settings(&self) -> Settings {
@@ -224,6 +265,7 @@ impl Document {
             locator: self.locator.clone(),
             audio: self.audio.clone(),
             control: self.control.clone(),
+            radio: self.radio,
         }
     }
     pub fn set_settings(&mut self, s: Settings) {
@@ -232,6 +274,7 @@ impl Document {
         self.locator = s.locator;
         self.audio = s.audio;
         self.control = s.control;
+        self.radio = s.radio;
     }
     pub fn admit_response_budget(&self, origin: &str) -> Result<(), &'static str> {
         let mut maximum = self.clone();
@@ -251,6 +294,9 @@ impl Document {
                 endpoint: Some("\\".repeat(256)),
                 ptt: "disabled".into(),
             },
+            radio: Some(Radio {
+                agc: wstx_rust::radio_control::setup::Agc::Slow,
+            }),
         });
         let body = representation(&maximum, "00000000-0000-4000-8000-000000000000", origin);
         let bytes = serde_json::to_vec(&body).map_err(|_| "invalid_profile")?;
@@ -528,7 +574,12 @@ fn read_document(directory: &Path) -> Result<(Document, SocketAddr), &'static st
     if bytes.len() > usize::try_from(MAX_FILE).map_err(|_| "resource_unavailable")? {
         return Err("invalid_profile");
     }
-    let document: Document = serde_json::from_slice(&bytes).map_err(|_| "invalid_profile")?;
+    let mut document: Document = serde_json::from_slice(&bytes).map_err(|_| "invalid_profile")?;
+    // CL-044-10 migration: a profile saved before the radio settings existed gets the
+    // default for a managed radio (IC-7300 CAT) in memory; the file changes on next save.
+    if document.radio.is_none() && manages_radio(&document.control) {
+        document.radio = Some(Radio::DEFAULT);
+    }
     let address = document.validate()?;
     Ok((document, address))
 }

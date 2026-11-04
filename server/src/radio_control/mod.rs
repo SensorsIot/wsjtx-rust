@@ -145,12 +145,21 @@ pub enum SetupCommand {
     ReadId,
     Read(setup::Setting),
     Write(setup::Setting, u16),
+    /// #44 CL-044-10 read the AGC (16 12).
+    ReadAgc,
+    /// #44 CL-044-09/10 read the AGC, set it only when it differs, read it back.
+    EnsureAgc(setup::Agc),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetupReply {
     Id(u8),
     /// None: the radio refused the read (FA).
     Value(Option<u16>),
+    /// The AGC read (or read back after a write); `written`: a set frame was sent.
+    Agc {
+        value: setup::Agc,
+        written: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

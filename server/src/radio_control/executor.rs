@@ -401,7 +401,60 @@ impl<T: Transport> Executor<T> {
                 _ => None,
             })?
         };
+        // FA: the radio refused the read (Rejected); a code outside 01..03 is a protocol error.
+        let read_agc = |transport: &mut T| -> Result<setup::Agc> {
+            let bytes = setup::read_agc_frame(address);
+            exchange_setup(transport, &bytes, step(), cancel, |h| match h {
+                setup::Heard::Agc { address: a, code } if a == address => {
+                    Some(setup::Agc::from_code(code).ok_or(Error::Protocol))
+                }
+                setup::Heard::Ng { address: a } if a == address => Some(Err(Error::Rejected)),
+                _ => None,
+            })?
+        };
         let result = (|| match command {
+            SetupCommand::ReadAgc => read_agc(transport).map(|value| SetupReply::Agc {
+                value,
+                written: false,
+            }),
+            // CL-044-09 read, compare, write only on a difference, verify by readback.
+            SetupCommand::EnsureAgc(target) => {
+                let current = read_agc(transport)?;
+                if current == target {
+                    return Ok(SetupReply::Agc {
+                        value: current,
+                        written: false,
+                    });
+                }
+                let state = exchange(
+                    transport,
+                    configuration,
+                    &Operation::ReadRxTx,
+                    step(),
+                    cancel,
+                )?;
+                if state != Reply::Transmitting(false) {
+                    return Err(Error::Busy);
+                }
+                let bytes = setup::write_agc_frame(address, target);
+                let acknowledged =
+                    exchange_setup(transport, &bytes, step(), cancel, |h| match h {
+                        setup::Heard::Ack { address: a } if a == address => Some(true),
+                        setup::Heard::Ng { address: a } if a == address => Some(false),
+                        _ => None,
+                    })?;
+                if !acknowledged {
+                    return Err(Error::Rejected);
+                }
+                match read_agc(transport) {
+                    Ok(actual) if actual == target => Ok(SetupReply::Agc {
+                        value: actual,
+                        written: true,
+                    }),
+                    Ok(_) => Err(Error::ReadbackMismatch),
+                    Err(_) => Err(Error::Indeterminate),
+                }
+            }
             SetupCommand::ReadId => {
                 let bytes = setup::ProbeFrame::ReadId(address).bytes();
                 exchange_setup(transport, &bytes, step(), cancel, |h| match h {

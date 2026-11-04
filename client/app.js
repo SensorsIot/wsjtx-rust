@@ -194,6 +194,11 @@ for (const [button, action] of [[logoutButton, 'logout'], [forgetButton, 'forget
 }
 connect();
 
+// #44 CL-044-11: the managed AGC is sent only while the CAT endpoint names a radio
+// with a known CI-V AGC command (the row is shown), so other radios carry no radio key.
+function agcManaged() {
+  return document.querySelector('#control-mode').value === 'cat' && /^(icom7300:\/\/COM[0-9]{1,3}\?|COM[0-9]{1,3}$)/i.test(document.querySelector('#control-endpoint').value);
+}
 function formSettings() {
   const value = id => document.querySelector(id).value;
   return {display_name: value('#display-name'), callsign: value('#callsign'), locator: value('#locator'),
@@ -238,6 +243,7 @@ async function loadProfile(reload, current = socket) {
   if (reload || !dirty) {
     const s = data.settings;
     for (const [id, value] of [['#display-name', s.display_name], ['#callsign', s.callsign], ['#locator', s.locator], ['#audio-input', s.audio.input_device], ['#audio-output', s.audio.output_device], ['#control-mode', s.control.mode], ['#control-endpoint', s.control.endpoint], ['#ptt-mode', s.control.ptt]]) document.querySelector(id).value = value ?? '';
+    document.querySelector('#control-agc').value = s.radio?.agc ?? 'SLOW';
     editingRevision = data.revision; dirty = false; conflict = false;
   }
   document.querySelector('#settings-save').disabled = saving || conflict;
@@ -257,7 +263,7 @@ settingsForm.addEventListener('submit', async event => {
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
   for (const [element] of controls) element.disabled = true;
   try {
-    const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: formSettings()})});
+    const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: {...formSettings(), ...(agcManaged() ? {radio: {agc: document.querySelector('#control-agc').value}} : {})}})});
     const result = await response.json();
     if(!stationContext(current,authEpoch)||context!==JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]))throw new Error('Stale save completion');
     if (!response.ok) {
