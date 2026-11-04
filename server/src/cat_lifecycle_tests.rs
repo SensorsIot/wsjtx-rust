@@ -255,6 +255,15 @@ impl Transport for Port {
                 peer.transmitting = false;
                 vec![0xfb]
             }
+            // RF work (an operator band selection), never the lifecycle: the radio
+            // accepts the dial, mode and data setters.
+            [5, f @ ..] if f.len() == 5 => {
+                peer.dial = f.iter().rev().fold(0, |hz, b| {
+                    hz * 100 + u64::from(b >> 4) * 10 + u64::from(b & 0x0f)
+                });
+                vec![0xfb]
+            }
+            [6, _, _] | [0x1a, 6, _, _] => vec![0xfb],
             _ => vec![0xfa],
         };
         self.pending.extend([0xfe, 0xfe, 0xe0, 0x94]);
@@ -759,4 +768,189 @@ fn station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band()
         "no receive started"
     );
     s.assert_read_only();
+}
+
+/// An operator band selection (RF work) on the lifecycle's own connection.
+fn begin_band(s: &Station, band: &str) {
+    let v = s.recording.selection_snapshot(true).unwrap();
+    let intent = crate::selection::Intent {
+        command_id: crate::profile::new_uuid().unwrap(),
+        profile_id: v["profile_id"].as_str().unwrap().into(),
+        boot_id: v["boot_id"].as_str().unwrap().into(),
+        profile_revision: v["profile_revision"].as_u64().unwrap(),
+        generation: v["generation"].as_u64().unwrap(),
+        revision: v["operating_revision"].as_u64().unwrap(),
+        action: "band",
+        mode: Some("ft8"),
+        band: Some(band.into()),
+    };
+    s.recording.selection_begin(intent, None, true).unwrap();
+}
+fn operation(s: &Station) -> serde_json::Value {
+    s.recording.selection_snapshot(true).unwrap()["operation"].clone()
+}
+fn no_ptt(s: &Station) {
+    for w in &s.peer.lock().unwrap().writes {
+        assert!(
+            w.len() < 6 || w[4..w.len() - 1] != [0x1c, 0, 1],
+            "PTT frame {w:02x?}"
+        );
+    }
+}
+
+// Proves: CL-022-04; TC-022-009 (concurrent observers/RF work). Operator RF work runs
+// on the lifecycle's one native owner: ticking the lifecycle and many status observers
+// while it runs open, close or attempt nothing; the lifecycle itself sends only queries
+// before and after, and no frame ever keys PTT.
+#[test]
+fn station_rf_work_shares_the_one_owner_without_lifecycle_interference() {
+    let s = Station::new(Device::Present);
+    let gate = eligible(1);
+    let t0 = Instant::now();
+    s.tick(&gate, t0);
+    s.settle(READY);
+    s.tick(&gate, secs(t0, 0.1));
+    let generation = s.attempts();
+    begin_band(&s, "20m");
+    let mut tick = 0.2;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while operation(&s)["result"] == "pending" {
+        assert!(Instant::now() < deadline, "RF work did not finish");
+        s.tick(&gate, secs(t0, tick));
+        for _ in 0..5 {
+            s.recording.cat_status(&gate);
+            s.recording.radio_view();
+        }
+        tick += 0.05;
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // The RF part completed: the dial setter took effect and the selection is the
+    // confirmed readback. The fixture has no audio input, so the receive restart that
+    // follows the RF part is refused; that is not RF work.
+    let op = operation(&s);
+    assert_eq!(
+        (&op["result"], &op["error"]),
+        (&"failed".into(), &"audio_unconfigured".into()),
+        "{op}"
+    );
+    assert_eq!(s.peer.lock().unwrap().dial, 14_074_000);
+    let selection = s.recording.selection_snapshot(true).unwrap()["selection"].clone();
+    assert_eq!(
+        (&selection["band"], &selection["origin"]),
+        (&"20m".into(), &"cat_readback".into())
+    );
+    assert_eq!(s.attempts(), generation, "no attempt during RF work");
+    let p = s.peer.lock().unwrap();
+    assert_eq!(
+        (p.opens, p.closes),
+        (1, 0),
+        "one native owner, never closed by the lifecycle"
+    );
+    let writes = p.writes.len();
+    drop(p);
+    // After the RF work the lifecycle keeps the owner and adds only queries.
+    for i in 0..100 {
+        s.tick(&gate, secs(t0, 10.0 + f64::from(i)));
+    }
+    s.settle(READY);
+    let p = s.peer.lock().unwrap();
+    assert_eq!((p.opens, p.closes), (1, 0));
+    let queries: [&[u8]; 5] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f]];
+    for w in &p.writes[writes..] {
+        assert!(
+            queries.contains(&&w[4..w.len() - 1]),
+            "lifecycle sent a non-query frame {w:02x?}"
+        );
+    }
+    drop(p);
+    assert_eq!(s.recording.cat_status(&gate), ("ready", None, None));
+    no_ptt(&s);
+}
+
+// Proves: CL-022-02, CL-022-04; TC-022-009. Revocation while RF work holds the owner:
+// the lifecycle's release cancels that work, the owner closes within the 250 ms RF
+// release bound, and nothing reopens or replays it.
+#[test]
+fn station_revocation_during_rf_work_cancels_it_and_releases_without_reopen() {
+    let s = Station::new(Device::Present);
+    let gate = eligible(1);
+    let t0 = Instant::now();
+    s.tick(&gate, t0);
+    s.settle(READY);
+    // A silent radio keeps the RF work's exchange in flight.
+    s.set(Device::Silent);
+    begin_band(&s, "20m");
+    assert_eq!(operation(&s)["result"], "pending");
+    let revoked = Instant::now();
+    s.tick(&Gate::Unauthorized, secs(t0, 0.1));
+    s.settle(|state| state == Some(cat::State::Closed));
+    assert!(
+        revoked.elapsed() <= Duration::from_millis(250),
+        "RF release bound"
+    );
+    let op = operation(&s);
+    assert_eq!(
+        (&op["result"], &op["error"]),
+        (&"failed".into(), &"radio_unavailable".into()),
+        "{op}"
+    );
+    let writes = s.peer.lock().unwrap().writes.len();
+    s.set(Device::Present);
+    for i in 0..100 {
+        s.tick(&Gate::Unauthorized, secs(t0, 1.0 + f64::from(i)));
+    }
+    let p = s.peer.lock().unwrap();
+    assert_eq!(p.opens, 1, "no reopen after revocation");
+    assert_eq!(p.writes.len(), writes, "no replayed RF work");
+    drop(p);
+    assert_eq!(
+        s.peer.lock().unwrap().dial,
+        7_074_000,
+        "the setter never took effect"
+    );
+    no_ptt(&s);
+}
+
+// Proves: CL-022-04; TC-022-009. An attempt refused because RF work or another owner
+// holds the resource is no failure: the same due time is retried, no delay grows.
+#[test]
+fn policy_attempt_deferred_by_rf_work_is_not_a_failure() {
+    let mut l = Lifecycle::new();
+    let gate = eligible(1);
+    let t0 = Instant::now();
+    assert_eq!(l.step(&gate, Observed::Absent, t0), Action::Attempt);
+    l.deferred(t0);
+    for i in 1..5 {
+        let now = secs(t0, 0.05 * f64::from(i));
+        assert_eq!(l.step(&gate, Observed::Absent, now), Action::Attempt);
+        l.deferred(now);
+    }
+    // The first real failure still waits the first delay of the series.
+    let now = secs(t0, 1.0);
+    assert_eq!(l.step(&gate, Observed::Absent, now), Action::Attempt);
+    let failed = secs(t0, 1.1);
+    assert_eq!(
+        l.step(
+            &gate,
+            Observed::FailedReleased(cat::Error::Unavailable),
+            failed
+        ),
+        Action::None
+    );
+    assert_eq!(
+        l.step(
+            &gate,
+            Observed::FailedReleased(cat::Error::Unavailable),
+            failed + Duration::from_secs(DELAYS[0]) - Duration::from_millis(1)
+        ),
+        Action::None
+    );
+    assert_eq!(
+        l.step(
+            &gate,
+            Observed::FailedReleased(cat::Error::Unavailable),
+            failed + Duration::from_secs(DELAYS[0])
+        ),
+        Action::Attempt
+    );
 }

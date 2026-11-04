@@ -2201,6 +2201,73 @@ mod automatic_cat {
         }
     }
 
+    // Proves: CL-022-02, CL-022-03; TC-022-009 (corrupt/unwritable store). A store
+    // write that fails while CAT runs quarantines the authority: the lifecycle cancels
+    // and releases the owner, and nothing reopens, queries or sets afterwards. Startup
+    // with a corrupt or missing expected record refuses the profile before any owner
+    // exists (profile_tests::expected_authorization_corruption_blocks_...).
+    #[tokio::test]
+    async fn failed_store_write_quarantines_and_releases_cat_with_zero_reopen() {
+        for stage in ["write", "flush", "replace"] {
+            let f = HttpFixture::new("https://localhost:8080");
+            let state = f.app().profile.as_ref().unwrap().clone();
+            let peer = attach_peer(&state.recording, Device::Present);
+            let g = f.authorize().await;
+            assert_eq!(
+                put_control(&f, &g.cookie, ENDPOINT).await.status,
+                StatusCode::OK
+            );
+            let cookie = f.renew(&g).await;
+            let scope = status(&f, &cookie).await["scope"].clone();
+            commission(&f, &cookie, &scope).await;
+            wait_state(&f, |v| v["state"] == "ready").await;
+            assert_eq!(peer.lock().unwrap().opens, 1);
+            let failed = {
+                let mut store = state.store.lock().unwrap();
+                let mut owner = state.authorization.lock().unwrap();
+                let service = owner.as_mut().unwrap();
+                profile::tests::with_fault(stage, || {
+                    service.authority.revoke(
+                        &mut store,
+                        &g.id,
+                        &profile::new_uuid().unwrap(),
+                        false,
+                    )
+                })
+            };
+            assert_eq!(
+                failed.map(|_| ()),
+                Err(authorization::Error::PersistenceFailed),
+                "{stage}"
+            );
+            wait_state(&f, |v| v["state"] == "closed").await;
+            assert!(peer.lock().unwrap().closes >= 1, "{stage}");
+            let writes = peer.lock().unwrap().writes.len();
+            ticks(&f, 200);
+            let (opens, after) = {
+                let p = peer.lock().unwrap();
+                (p.opens, p.writes.len())
+            };
+            assert_eq!(opens, 1, "quarantined store never reopens CAT ({stage})");
+            assert_eq!(after, writes, "zero bytes after quarantine ({stage})");
+            let reply = f
+                .post(
+                    "/authorization/v1/status",
+                    json!({"version":1}),
+                    Some(&cookie),
+                )
+                .await;
+            assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE, "{stage}");
+            let queries: [&[u8]; 5] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f]];
+            for w in &peer.lock().unwrap().writes {
+                assert!(
+                    queries.contains(&&w[4..w.len() - 1]),
+                    "non-query frame {w:02x?}"
+                );
+            }
+        }
+    }
+
     #[tokio::test]
     async fn status_reports_retry_reason_and_never_fresh_frequency_while_unavailable() {
         let f = HttpFixture::new("https://localhost:8080");

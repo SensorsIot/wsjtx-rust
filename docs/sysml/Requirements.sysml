@@ -2898,8 +2898,18 @@ package WstxRequirements {
              endpoint edit and last-grant revocation release, deprecated routes409
              zero I/O, status retry reason) and tests/radio-selection.test.cjs
              TC-022-009 (browser confirm action, no Connect/Disconnect, retry reason,
-             non-fresh frequency). Pending: corrupt-store case, concurrent RF-work
-             arbitration case and real Windows native release/cancel measurement. */
+             non-fresh frequency). Corrupt store: auth_tests automatic_cat
+             failed_store_write_quarantines_and_releases_cat_with_zero_reopen (a failed
+             write/flush/replace while CAT is ready quarantines the authority, the owner
+             is released, zero later open/byte, status503) with profile_tests startup
+             refusal of a corrupt/missing expected record. RF work: cat_lifecycle_tests
+             station_rf_work_shares_the_one_owner_without_lifecycle_interference (an
+             operator band selection on the same owner: no attempt/open/close by the
+             lifecycle or status observers, lifecycle bytes stay query-only),
+             station_revocation_during_rf_work_cancels_it_and_releases_without_reopen
+             (<=250ms release, work failed, no reopen/replay) and
+             policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
+             native release/cancel measurement. */
         attribute automation : AutomationState = AutomationState::partial;
         attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; tests/radio-selection.test.cjs";
         objective {
