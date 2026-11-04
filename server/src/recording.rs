@@ -273,6 +273,8 @@ pub struct Recording {
     cat: Mutex<crate::cat_lifecycle::Lifecycle>,
     /// WstxTransmit slice B transmit owner of this station, started once by the process.
     pub(crate) transmit: std::sync::OnceLock<Arc<crate::transmit_http::Station>>,
+    /// #61 the periods this station transmitted in, observed from the transmit owner.
+    pub(crate) tx: Mutex<TxPeriods>,
     /// WstxContact engine of this station (#10), started once by the process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// WstxUdp interface of this station (#40), opened once by the process.
@@ -330,6 +332,44 @@ struct LatestDecode {
     next_sequence: u64,
     period_start_utc: Option<String>,
     complete: bool,
+    /// #61 CL-061-04: the period is one this station transmitted in; it had no decode
+    /// attempt. The key is present only when true.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    transmitted: bool,
+}
+
+/// #61 Tx periods (CL-061-04): the T/R period starts (station UTC ms) in which this
+/// station was on the air (WstxTransmit PTT keyed, a transmission or Tune), the latest 16,
+/// and whether it is on the air now. The receive path neither decodes nor measures the Rx
+/// level in them; capture keeps running.
+#[derive(Default)]
+pub(crate) struct TxPeriods {
+    keyed: bool,
+    starts: VecDeque<i64>,
+}
+impl TxPeriods {
+    /// One observation of the transmit owner at station UTC `now_ms`.
+    pub(crate) fn note(
+        &mut self,
+        now_ms: i64,
+        keyed: bool,
+        last_period_ms: Option<i64>,
+        period_ms: i64,
+    ) {
+        self.keyed = keyed;
+        let current = keyed.then(|| now_ms.div_euclid(period_ms) * period_ms);
+        for start in [last_period_ms, current].into_iter().flatten() {
+            if !self.starts.contains(&start) {
+                self.starts.push_back(start);
+                if self.starts.len() > 16 {
+                    self.starts.pop_front();
+                }
+            }
+        }
+    }
+    fn contains(&self, start_ms: i64) -> bool {
+        self.starts.contains(&start_ms)
+    }
 }
 
 struct LiveState {
@@ -515,8 +555,13 @@ impl Recording {
             .get()
             .map_or(0, |c| i128::from(c.station.correction_ms()) * 10_000)
     }
-    /// The latest Rx level while audio runs (WstxContact::OperatorDisplays), else None.
+    /// The latest Rx level while audio runs and the station receives (WstxContact::
+    /// OperatorDisplays), else None: never while on the air or in the rest of a Tx period
+    /// (#61 CL-061-04; the live worker resets the measurement there).
     pub(crate) fn rx_level(&self) -> Option<i32> {
+        if self.observe_transmit() {
+            return None;
+        }
         let s = self.state.lock().unwrap();
         let l = s.live.as_ref()?;
         if l.audio.state == audio::AudioState::Running {
@@ -524,6 +569,52 @@ impl Recording {
         } else {
             None
         }
+    }
+    /// #61: reads the transmit owner's on-air state without waiting for it and records the
+    /// Tx period; returns whether the station is on the air (the last known state while the
+    /// owner is busy). Never called under the station mutex.
+    pub(crate) fn observe_transmit(&self) -> bool {
+        let period = if self.operating_mode() == "ft4" {
+            7500
+        } else {
+            15000
+        };
+        let observed = self.transmit.get().and_then(|t| {
+            t.service.try_with(|c| {
+                let (keyed, last) = c.on_air();
+                (c.hardware().now_utc_ms(), keyed, last)
+            })
+        });
+        let mut tx = self.tx.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((now, keyed, last)) = observed {
+            tx.note(now, keyed, last, period);
+        }
+        tx.keyed
+    }
+    /// #61: whether the UTC period holding canonical `frame` of this live receive is a Tx
+    /// period (false without a correlated clock).
+    fn tx_period_at(&self, l: &LiveState, frame: u64) -> bool {
+        let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
+        period_start_ms(l.timing.as_ref(), l.mode, frame, drift).is_some_and(|start| {
+            self.tx
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains(start)
+        })
+    }
+    /// #61: whether the analysis window `interval` belongs to a Tx period (the period
+    /// publish_view selects for it).
+    fn tx_window(&self, interval: (u64, u64)) -> bool {
+        let s = self.state.lock().unwrap();
+        let Some(l) = s.live.as_ref() else {
+            return false;
+        };
+        window_slot(l, interval).is_some_and(|(_, slot)| {
+            self.tx
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains(unix_ms(slot))
+        })
     }
     /// The live decoding job's identity (source, job, generation) and mode.
     pub(crate) fn live_identity(&self) -> Option<(String, String, u64, &'static str)> {
@@ -718,6 +809,7 @@ impl Recording {
             next_sequence: next,
             period_start_utc: Some(period_start_utc.into()),
             complete: true,
+            transmitted: false,
         });
         self.publication.send_modify(|n| *n = n.wrapping_add(1));
         sequences
@@ -1114,6 +1206,19 @@ impl Recording {
         complete: bool,
         late: bool,
     ) -> Result<()> {
+        self.publish_view(context, interval, first, complete, late, false)
+    }
+    /// Publishes the latest view of the window `interval`; `transmitted` (#61 CL-061-04)
+    /// publishes its period as a Tx period: no attempt, no records, not complete.
+    fn publish_view(
+        &self,
+        context: &Job,
+        interval: (u64, u64),
+        first: u64,
+        complete: bool,
+        late: bool,
+        transmitted: bool,
+    ) -> Result<()> {
         let mut s = self.state.lock().unwrap();
         if context.cancel.load(Ordering::Acquire)
             || !s.job.as_ref().is_some_and(|j| {
@@ -1126,18 +1231,12 @@ impl Recording {
             return Ok(());
         }
         let l = s.live.as_ref().ok_or("state_conflict")?;
-        let period = if let Some(timing) = l.timing.as_ref().filter(|t| t.correlated) {
-            let Some((period, nominal, support)) = period_parameters(l.mode) else {
+        let period = if l.timing.as_ref().is_some_and(|t| t.correlated) {
+            let (Some((begin, slot)), Some((_, nominal, _))) =
+                (window_slot(l, interval), period_parameters(l.mode))
+            else {
                 return Ok(());
             };
-            let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
-            let (Some(begin), Some(end)) = (
-                source_ticks(timing, interval.0).map(|t| t + drift),
-                source_ticks(timing, interval.1).map(|t| t + drift),
-            ) else {
-                return Ok(());
-            };
-            let slot = (end - nominal - support).div_euclid(period) * period;
             // A scheduled late window begins after its period's nominal start and republishes
             // that period's view, now including its late starters.
             if slot + nominal < begin && !late {
@@ -1159,7 +1258,9 @@ impl Recording {
         {
             return Ok(());
         }
-        let (first_sequence, next_sequence) = if let Some(period) = period.as_ref() {
+        let (first_sequence, next_sequence) = if transmitted {
+            (l.next_sequence, l.next_sequence)
+        } else if let Some(period) = period.as_ref() {
             let mut matching = l
                 .records
                 .iter()
@@ -1186,6 +1287,7 @@ impl Recording {
         {
             view.next_sequence = next_sequence;
             view.complete |= complete;
+            view.transmitted |= transmitted;
             self.publication.send_modify(|n| *n = n.wrapping_add(1));
             return Ok(());
         }
@@ -1201,6 +1303,7 @@ impl Recording {
             next_sequence,
             period_start_utc: period,
             complete,
+            transmitted,
         });
         self.publication.send_modify(|n| *n = n.wrapping_add(1));
         Ok(())
@@ -2390,6 +2493,8 @@ impl LiveWorker {
                     .map_err(window_error)?;
                 let frames = self.spectrum.push(&block)?;
                 let drift = self.track_clock(block.timing.as_deref());
+                // #61: read the transmit owner before the station mutex.
+                let keyed = self.owner.observe_transmit();
                 let mut s = self.owner.state.lock().unwrap();
                 if !self.current() {
                     return Err("cancelled");
@@ -2414,17 +2519,31 @@ impl LiveWorker {
                 }
                 l.clock_correction = self.air;
                 l.next_frame = next;
-                l.accumulate_level(&block.samples, Instant::now());
+                // #61 CL-061-04: no Rx level while on the air or in the rest of a Tx period;
+                // the measurement restarts in the next receive period.
+                if keyed || self.owner.tx_period_at(l, next) {
+                    l.level = (0.0, 0, None, None);
+                } else {
+                    l.accumulate_level(&block.samples, Instant::now());
+                }
+                let tx_rows = frames
+                    .iter()
+                    .flatten()
+                    .map(|row| keyed || self.owner.tx_period_at(l, (row.first + row.end) / 2))
+                    .collect::<Vec<_>>();
                 self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
                 if self.reset {
                     self.modem = None;
                 }
-                for SpectrumRow {
-                    first,
-                    end,
-                    levels,
-                    detailed,
-                } in frames.into_iter().flatten()
+                for (
+                    SpectrumRow {
+                        first,
+                        end,
+                        levels,
+                        detailed,
+                    },
+                    tx,
+                ) in frames.into_iter().flatten().zip(tx_rows)
                 {
                     let sequence = first / if detailed { 2400 } else { 12000 };
                     let kind = if detailed {
@@ -2432,9 +2551,13 @@ impl LiveWorker {
                     } else {
                         "spectrum.frame"
                     };
-                    let frame = json!({"v":1,"type":kind,"data":{"boot_id":self.owner.boot,
+                    let mut frame = json!({"v":1,"type":kind,"data":{"boot_id":self.owner.boot,
                         "source_id":self.job.source_id,"job_id":self.job.id,"generation":self.job.generation,
                         "sequence":sequence,"first_frame":first,"end_frame":end,"levels_b64":STANDARD.encode(&levels)}});
+                    // #61 CL-061-04: a row of a Tx period is marked; the key is present only then.
+                    if tx {
+                        frame["data"]["tx"] = json!(true);
+                    }
                     if detailed {
                         push_detail(&mut s, frame);
                     } else {
@@ -2523,6 +2646,19 @@ impl LiveWorker {
         let mut pending: Option<receive::AnalysisWindow> = None;
         loop {
             let mode = self.mode.ok_or("state_conflict")?;
+            // #61 CL-061-04: no decode attempt for a period this station transmitted in; its
+            // view is published as a Tx period (WSJT-X stops monitoring while it transmits).
+            let span = (window.origin, window.origin + window.samples.len() as u64);
+            if self.owner.tx_window(span) {
+                let job = self.job.clone();
+                self.owner
+                    .publish_view(&job, span, 0, false, window.waits, true)?;
+                if let Some(next) = pending.take() {
+                    window = next;
+                    continue;
+                }
+                return Ok(());
+            }
             let mut state = if self.reset {
                 self.modem = None;
                 decoder::DecodeState::new_live(mode)
@@ -2780,6 +2916,32 @@ fn source_ticks(timing: &source::SourceTiming, frame: u64) -> Option<i128> {
         anchor
             + (i128::from(frame) - i128::from(timing.canonical_anchor_frame)) * 10_000_000 / 12000,
     )
+}
+/// The window's begin (station UTC FILETIME ticks) and the period slot it publishes: the
+/// latest UTC period whose nominal support ends inside the window (RadioIO
+/// LatestDecodePeriod). None without a correlated clock or a period mode.
+fn window_slot(l: &LiveState, interval: (u64, u64)) -> Option<(i128, i128)> {
+    let timing = l.timing.as_ref().filter(|t| t.correlated)?;
+    let (period, nominal, support) = period_parameters(l.mode)?;
+    let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
+    let begin = source_ticks(timing, interval.0)? + drift;
+    let end = source_ticks(timing, interval.1)? + drift;
+    Some((begin, (end - nominal - support).div_euclid(period) * period))
+}
+/// Station UTC FILETIME ticks as Unix milliseconds.
+fn unix_ms(ticks: i128) -> i64 {
+    i64::try_from((ticks - 116_444_736_000_000_000).div_euclid(10_000)).unwrap_or(i64::MIN)
+}
+/// The start (station UTC ms) of the UTC period holding canonical `frame`.
+fn period_start_ms(
+    timing: Option<&source::SourceTiming>,
+    mode: &str,
+    frame: u64,
+    drift: i128,
+) -> Option<i64> {
+    let observed = source_ticks(timing?, frame)? + drift;
+    let (period, _, _) = period_parameters(mode)?;
+    Some(unix_ms(observed.div_euclid(period) * period))
 }
 impl LiveWorker {
     /// #52: the window's zero-sample and capture counters, and its dump when enabled.
@@ -3177,6 +3339,7 @@ impl Recording {
                 boot,
                 cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
                 transmit: std::sync::OnceLock::new(),
+                tx: Default::default(),
                 contact: std::sync::OnceLock::new(),
                 udp: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
@@ -3249,6 +3412,7 @@ impl Recording {
             boot,
             cat: Mutex::new(crate::cat_lifecycle::Lifecycle::new()),
             transmit: std::sync::OnceLock::new(),
+            tx: Default::default(),
             contact: std::sync::OnceLock::new(),
             udp: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),

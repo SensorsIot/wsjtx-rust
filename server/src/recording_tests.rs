@@ -2,6 +2,8 @@
 use super::*;
 use std::cell::Cell;
 thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
+#[path = "recording_tx_tests.rs"]
+mod tx;
 
 fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
     let source = Arc::new(SourceDescriptor {

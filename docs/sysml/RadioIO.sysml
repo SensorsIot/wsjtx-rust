@@ -547,7 +547,9 @@ offset from the anchor's prediction (integer ms) and its rate (one decimal ppm, 
 the first 60 s), both null until measured. Snapshot<=8192 bytes.
 
 latest_decode is null until an attempt publishes a view, otherwise exactly
-`{id,first_sequence,next_sequence,period_start_utc,complete}`. id is a positive safe
+`{id,first_sequence,next_sequence,period_start_utc,complete}`, plus `transmitted: true`
+for a correlated period in which this station transmitted (#61 CL-061-04: no attempt,
+an empty range at the frozen publication end, complete false; the key is absent otherwise). id is a positive safe
 integer increasing per publication within the source/job epoch, except that a later
 window of the same correlated period with the same first_sequence (the #47 late window)
 extends that view under the same id: unchanged it publishes nothing, grown it only raises

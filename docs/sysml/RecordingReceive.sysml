@@ -767,6 +767,9 @@ package WstxRecordingReceive {
 
              Detailed peers instead receive exactly
              `{v:1,type:"spectrum.detail.frame",data:{boot_id,source_id,job_id,generation,sequence,first_frame,end_frame,levels_b64}}`.
+             A live row of a Tx period (#61 CL-061-04) carries "tx": true in data, in Thin and
+             Detailed frames alike; the key is absent otherwise, and the browser paints such a
+             row as a Tx row RGB(90,20,30), not with its levels.
              The UUID/safe-integer identity rules are unchanged, first=2400*sequence,
              end=min(first+2400,source_frames), sequence0..599. levels_b64 is canonical RFC4648
              standard base64 with padding: exactly1368 ASCII characters decoding to1024 bytes,

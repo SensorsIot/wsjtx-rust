@@ -418,6 +418,20 @@ impl<H: Hardware> Core<H> {
     pub fn hardware(&self) -> &H {
         &self.hardware
     }
+    /// #61 (CL-061-04): whether the station is on the air now (PTT keyed or not confirmed
+    /// released, a transmission's audio running or Tune on) and the start of the last
+    /// transmitted period (station UTC ms); a cheap read for the receive path.
+    pub fn on_air(&self) -> (bool, Option<i64>) {
+        (
+            self.ptt != PttState::Released
+                || self
+                    .current
+                    .as_ref()
+                    .is_some_and(|j| j.audio_start_utc_ms.is_some())
+                || self.tune.is_some(),
+            self.last_period,
+        )
+    }
     pub fn hardware_mut(&mut self) -> &mut H {
         &mut self.hardware
     }
@@ -1221,6 +1235,15 @@ impl<H: Hardware + 'static> Service<H> {
     pub fn with<R>(&self, f: impl FnOnce(&mut Core<H>) -> R) -> R {
         let mut core = self.core.lock().unwrap_or_else(|p| p.into_inner());
         f(&mut core)
+    }
+    /// Like `with`, but never waits: None while another thread holds the core (#61: the
+    /// receive path must not stall its capture queue on a slow transmit step).
+    pub fn try_with<R>(&self, f: impl FnOnce(&mut Core<H>) -> R) -> Option<R> {
+        match self.core.try_lock() {
+            Ok(mut core) => Some(f(&mut core)),
+            Err(std::sync::TryLockError::Poisoned(p)) => Some(f(&mut p.into_inner())),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
     }
     pub fn view(&self) -> View {
         self.with(|c| c.view())

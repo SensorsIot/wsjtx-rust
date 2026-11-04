@@ -4900,20 +4900,22 @@ package WstxRequirements {
     }
     dependency CL_061_02_verified_by_TC_061_003 from 'CL-061-02' to 'TC-061-003';
     // #61 operator report 2026-11-03: after each own transmission Band Activity looked as if reception had stopped.
+    // Operator decision 2026-11-04 (#61): "distinguish exactly between TX and RX ... do not listen to audio when you do TX";
+    // the station decides the Tx period (CL-061-04) and the browser renders its marker (CL-061-03).
     requirement 'CL-061-03' {
-        doc /* A T/R period in which this station transmitted shows nothing in Band Activity, as in WSJT-X: the station hears only itself then, so its decode attempt publishes no records, and that is no empty-period block ("No stations decoded"). The browser knows the period from the station: a station.tick inside the period with transmitting true, or the contact snapshot's transmit.last_period_utc (the start of the last transmitted period, station UTC ms); it remembers the latest 16 such period starts per page. While such a period with no records is the latest view, the header "Latest <MODE> period <UTC> UTC" and the top rows are those of the receive period kept below it (CL-057-03), without its divider; without a kept period the header is "Latest decode period" and the listening note shows. When the next period arrives, the period kept below the transmit period stays below the new one with its divider (it replaces the transmit period, not the receive period before it). A receive period in which this station did not transmit and that decodes nothing keeps its note "No stations decoded" as before. The station's receive results, records and the QSO pane are unchanged. */
+        doc /* Band Activity renders the station's Tx period marker (CL-061-04); the browser no longer infers it from station.tick or the contact snapshot. While the latest view is a Tx period (latest_decode.transmitted true) the header reads "Tx · <MODE> period <UTC> UTC · this station transmitted, no decode", the top row is one marker row (data-period "tx", text "Tx <UTC> · this station transmitted · no decode") and the receive period it replaced follows below its divider "<MODE> period <UTC> UTC" when it has the other parity (CL-057-03); there is no empty-period block ("No stations decoded") for it; the count is the number of rows shown below the marker. When the next period arrives the Tx marker disappears and the receive period kept below it stays below the new one with its divider (it replaces the Tx period, not the receive period before it). A receive period that decodes nothing keeps its note "No stations decoded" as before. The station's receive results and records are unchanged. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.js; client/contact.js";
+        attribute implementation : String = "client/recording.js; client/recording.css";
     }
     dependency CL_061_03_to_FR_010 from 'CL-061-03' to 'FR-010';
     dependency CL_061_03_to_FR_019 from 'CL-061-03' to 'FR-019';
     verification 'TC-061-004' {
-        doc /* TC-061-004 — A period in which the station transmitted shows no empty block
+        doc /* TC-061-004 — A Tx period shows the station's Tx marker, no empty block
              CL-061-03
-             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route and a scripted station.tick (explicit presentation fixtures, never modem truth).
-             Steps: publish 12:00:00 UTC with 3 records; deliver a station.tick at 12:00:17 with transmitting true; publish 12:00:15 with no records; publish 12:00:30 with 2 records; publish 12:00:45 (no transmission) with no records.
-             Expected (independent: the scripted periods and the tick): after 12:00:15 Band Activity shows only the three 12:00:00 rows, no "No stations decoded" and no "No verified stations" text, header "Latest FT8 period 12:00:00 UTC", count "3 messages"; after 12:00:30 its 2 rows on top and the 12:00:00 rows below the divider "FT8 period 12:00:00 UTC"; after 12:00:45 the note "No stations decoded" with the 12:00:30 rows below their divider; no page error. On the parent client the 12:00:15 period shows "No stations decoded".
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: #61 on HB9BLA (FT4 and FT8 CQ). */
+             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
+             Steps: publish 12:00:00 UTC with 3 records; publish 12:00:15 as a Tx period (latest_decode transmitted true, no records); publish 12:00:30 with 2 records; publish 12:00:45 (a receive period) with no records. No station.tick says transmitting.
+             Expected (independent: the scripted periods and the marker): after 12:00:15 Band Activity shows the marker row "Tx 12:00:15 · this station transmitted · no decode" on top, then the divider "FT8 period 12:00:00 UTC" and the three 12:00:00 rows; no "No stations decoded" and no "No verified stations" text; header "Tx · FT8 period 12:00:15 UTC · this station transmitted, no decode"; count "3 messages"; after 12:00:30 its 2 rows on top and the 12:00:00 rows below the divider "FT8 period 12:00:00 UTC", no marker; after 12:00:45 the note "No stations decoded" with the 12:00:30 rows below their divider; no page error. On the parent client the 12:00:15 view is refused (unknown key) and no marker shows.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-007. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-03';
@@ -4921,5 +4923,55 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_061_03_verified_by_TC_061_004 from 'CL-061-03' to 'TC-061-004';
+    requirement 'CL-061-04' {
+        doc /* The station treats every T/R period in which it is on the air as a Tx period and decides it itself (WstxStationProtocol client-server rule, #10: the server decides and pushes, the browser renders). On the air means the transmit owner's PTT is keyed or not confirmed released, a transmission's audio runs, or Tune is on; the station records the period start (its UTC on the transmit owner's clock, the clock the transmitter keys on) of every such observation and the start of the last transmitted period (transmit.last_period_utc), the latest 16. The receive path reads this without waiting for the transmit owner. For a Tx period: (1) no decode attempt: the live worker skips its analysis windows (prompt and late), no record and no UDP decode is published for it and the decoder is not marked busy; the job's latest_decode for that period carries "transmitted": true with an empty range (first_sequence = next_sequence = the frozen publication end) and complete false (RadioIO LatestDecodePeriod); (2) no Rx level measurement while on the air and for the rest of that Tx period: station.tick rx_level_db is null then, and the measurement restarts with the next receive period, so a level and the "Audio level low/overdriven" error-field entries refer to receive periods only (the browser shows "Tx · not measured" while station.tick says transmitting); (3) the waterfall rows of a Tx period carry "tx": true (spectrum.frame and spectrum.detail.frame, the key present only then) and the browser paints them as Tx rows (RGB(90,20,30)) without a spectrum trace, never as received silence; (4) the period bar (red), the QSO pane line "TX now", the Band Activity marker (CL-061-03) and the meter state Tx while the error field shows no level entry. Audio capture keeps running throughout: no device stop or start and no loss epoch; only the use of the samples is suspended. HALT, the Tx watchdog and PTT release are unchanged. Without a correlated receive clock no period can be named: decoding continues and only the level stops while on the air. Deliberate differences from WSJT-X 3.3 (half duplex: MainWindow::transmitDisplay calls monitor(false), which suspends the audio input stream and cancels a pending FT8 decode, and stopTx resumes it with monitor(true); the signal meter is set to 0 and the waterfall receives no rows while transmitting): this station keeps capturing (one continuous source, no restart), marks the Tx rows instead of leaving them out, publishes the Tx period as a marked view, reports the level as unavailable (null) rather than 0 and suspends it to the end of the Tx period rather than to the end of the transmission. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/recording.rs; server/src/transmit/service.rs; client/recording.js; client/contact.js";
+    }
+    dependency CL_061_04_to_FR_007 from 'CL-061-04' to 'FR-007';
+    dependency CL_061_04_to_FR_010 from 'CL-061-04' to 'FR-010';
+    dependency CL_061_04_to_FR_019 from 'CL-061-04' to 'FR-019';
+    verification 'TC-061-005' {
+        doc /* TC-061-005 — The station does not decode or measure in its Tx period
+             CL-061-04
+             Setup: actual Recording manager and live worker with a correlated FT8 live ring anchored at 2026-10-27T12:00:00 UTC; the Tx periods noted directly on the station's Tx period record (an explicit fixture of the transmit owner's observation).
+             Steps: note 12:00:15 as a Tx period; analyze the window of 12:00:15 (prompt) and its late window; analyze the window of 12:00:30; push live blocks inside 12:00:15 with full-scale samples while not on the air, then blocks in 12:00:30; push a block while on the air; then attach the actual transmit owner with a frozen-clock hardware double (no radio) at 12:00:23 in FT8 and in FT4, arm it and turn Tune on, push a block of a receive period, turn Tune off.
+             Expected (independent: the noted period and the scripted windows): the 12:00:15 view has transmitted true, complete false, first_sequence = next_sequence and the late window keeps that view; the decoder busy count did not move for it; the 12:00:30 view has no transmitted key and complete true; no level is measured (rx_level null) during the 12:00:15 blocks; the 12:00:30 blocks give a level again after 1 s; while on the air rx_level is null and the waterfall rows carry tx true, receive rows carry no tx key; with the transmit owner on the air rx_level is null at once and the block adds no level, and after the release the recorded Tx period is exactly 12:00:15 (FT8) or 12:00:22.5 (FT4). On the parent code the 12:00:15 window is decoded and published complete.
+             2 — Isolated Rust tests; Windows PC, no radio (wstx-rust suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-04';
+        }
+        attribute executable : String = "server/src/recording_tx_tests.rs";
+    }
+    dependency CL_061_04_verified_by_TC_061_005 from 'CL-061-04' to 'TC-061-005';
+    verification 'TC-061-006' {
+        doc /* TC-061-006 — The browser renders Tx rows and shows level warnings only for receive periods
+             CL-061-04
+             Setup: actual station Router and browser client with a scripted correlated live receive, Detailed waterfall frames and station.tick events (explicit presentation fixtures).
+             Steps: deliver a station.tick with rx_level_db 5 (low) while receiving; then a tick with transmitting true and rx_level_db null; then a tick after the transmission with rx_level_db null; then a tick of the next receive period with rx_level_db 5; send two Detailed rows with tx true and one without.
+             Expected (independent: the scripted ticks and rows): the error field shows "Audio level low" for the first tick; while transmitting the meter reads "Tx · not measured" and neither "Audio level low" nor "Audio overdriven" is listed, nor after the transmission while rx_level_db is null; the receive tick shows "Audio level low" again; the waterfall paints the tx rows RGB(90,20,30) and the receive row with its levels. On the parent client the meter reads "Unavailable" while transmitting and the tx frames are refused (unknown key); on the parent station the level is still measured in the Tx period (TC-061-005).
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_04_verified_by_TC_061_006 from 'CL-061-04' to 'TC-061-006';
+    verification 'TC-061-007' {
+        doc /* TC-061-007 — Tx periods on HB9BLA
+             CL-061-04
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 and FT4, CQ at 1 W, one browser on the LAN.
+             Steps: call CQ for at least three own periods; watch Band Activity, the waterfall, the meter and the error field; read GET /receive during a Tx period.
+             Expected: each Tx period shows the Tx marker and no empty block, its waterfall rows are Tx rows, no "Audio level low" entry appears in or right after a Tx period, the receive periods decode and show their level; audio.loss_epochs does not grow from the transmissions; HALT stops the transmission as before.
+             3 — Live on the station with transmission; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-061-04';
+        }
+    }
+    dependency CL_061_04_verified_by_TC_061_007 from 'CL-061-04' to 'TC-061-007';
 
 }
