@@ -1062,6 +1062,8 @@ async fn connection(
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut contact_seen: Option<u64> = None;
+    // WstxTransmit::TransmitWire transmit.state (pushed state, coalesced like contact.state).
+    let mut transmit_seen: Option<u64> = None;
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
@@ -1122,6 +1124,13 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(contact_http::state_event(r,revision).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{contact_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                if let Some(revision)=transmit_http::state_revision(r) && transmit_seen!=Some(revision) {
+                    match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision).into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{transmit_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }

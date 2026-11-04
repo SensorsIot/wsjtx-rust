@@ -1072,7 +1072,7 @@ addEventListener('station-stale',catShow);
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
 transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><p id="transmit-result" role="status"></p>';
 const transmitDetails=secondary('transmit-details','Transmit test panel',transmitPanel,expertSection);transmitDetails.hidden=true;
-let transmitView=null,transmitTimer=null;
+let transmitView=null;
 const transmitConfigured=()=>profileData?.settings.control.ptt==='cat';
 function transmitBody(extra){return JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...extra});}
 async function transmitPost(path,extra){
@@ -1092,13 +1092,30 @@ function transmitShow(){
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_minutes} min`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-async function transmitSync(){
-  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return;}
-  try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok)transmitView=await response.json();}catch{}
-  transmitShow();
+// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the station
+// pushes transmit.state on change; this browser reads GET /transmit on (re)connect, on an
+// announced revision it has not read, after its own requests and otherwise at most once per
+// 30 s as a safety read. One read pending, at most one queued; no 1 s poll.
+let transmitRead=null,transmitAgain=false,transmitReadAt=-Infinity,transmitRevision=null,transmitSocket=null;
+function transmitSync(){
+  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return Promise.resolve();}
+  if(transmitRead){transmitAgain=true;return transmitRead;}
+  transmitRead=(async()=>{
+    do{
+      transmitAgain=false;transmitReadAt=performance.now();
+      try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok)transmitView=await response.json();}catch{}
+      transmitShow();
+    }while(transmitAgain&&transmitConfigured());
+  })().finally(()=>{transmitRead=null;});
+  return transmitRead;
 }
-function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
-setInterval(transmitPoll,2000);addEventListener('station-ready',()=>transmitPoll()); // #57: HALT is enabled as soon as the station is ready, not on the first 2 s poll.
+function transmitPoll(){if(transmitConfigured()&&connection.dataset.state==='connected'&&performance.now()-transmitReadAt>=30000)transmitSync();transmitShow();}
+setInterval(transmitPoll,2000);
+// #57: HALT is enabled as soon as the station is ready; a new socket reads the snapshot once.
+addEventListener('station-ready',event=>{if(event.detail!==transmitSocket){transmitSocket=event.detail;transmitRevision=null;transmitSync();}else transmitShow();});
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='transmit.state')return;
+  const d=message.data;if(!d||!Number.isSafeInteger(d.transmit_revision)||d.profile_id!==profileData?.profile_id)return;
+  if(d.transmit_revision!==transmitRevision||d.boot_id!==profileData?.boot_id){transmitRevision=d.transmit_revision;transmitSync();}});
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
