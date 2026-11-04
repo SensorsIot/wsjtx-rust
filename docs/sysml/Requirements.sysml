@@ -992,8 +992,7 @@ package WstxRequirements {
     }
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
-    // CL-010-04 partial coverage, open item: ExportAdi built in memory rather than
-    // streamed with backpressure. #41 retired the #10 log review queue: completion and
+    // CL-010-04: ExportAdi is streamed (#10, 2026-11-04). #41 retired the #10 log review queue: completion and
     // Log QSO log directly (WstxContact::DirectLog); TIME_ON/TIME_OFF come from the
     // contact engine (server/src/contact.rs).
     // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
@@ -1002,7 +1001,7 @@ package WstxRequirements {
     // CL-010-15 partial: TC-007-005 Thin/Off measurement with the new events and MCP.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/logbook.js; client/contact.js";
     }
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';

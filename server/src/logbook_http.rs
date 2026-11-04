@@ -438,8 +438,11 @@ pub async fn export(
     if raw.is_some() || !matches!(&body, Ok(b) if b.is_empty()) {
         return error("invalid_request", None);
     }
+    // The snapshot is taken off the runtime; the records are formatted chunk by chunk as
+    // the connection takes them (chunked transfer, no Content-Length), so a large log is
+    // never built in memory at once (WstxContact::ExportAdi).
     match tokio::task::spawn_blocking(move || state.logbook.export()).await {
-        Ok(Ok(bytes)) => (
+        Ok(Ok(stream)) => (
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, "application/octet-stream"),
@@ -448,7 +451,7 @@ pub async fn export(
                     "attachment; filename=\"contacts.adi\"",
                 ),
             ],
-            bytes,
+            axum::body::Body::from_stream(stream),
         )
             .into_response(),
         Ok(Err(e)) => stored(e),

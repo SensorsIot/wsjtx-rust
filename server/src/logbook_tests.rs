@@ -91,6 +91,18 @@ fn import(log: &Logbook, bytes: &[u8]) -> (Result<Value, &'static str>, Value) {
     }
     (result, log.import_view(&id).unwrap())
 }
+/// The next chunk of an ExportAdi stream (it is always ready).
+fn next_chunk(export: &mut AdiExport) -> Option<String> {
+    use futures_core::Stream;
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    match std::pin::Pin::new(export).poll_next(&mut cx) {
+        std::task::Poll::Ready(chunk) => chunk.map(|c| c.unwrap()),
+        std::task::Poll::Pending => panic!("an export chunk is always ready"),
+    }
+}
+fn drain(mut export: AdiExport) -> Vec<String> {
+    std::iter::from_fn(|| next_chunk(&mut export)).collect()
+}
 fn calls(log: &Logbook) -> Vec<String> {
     let page = log.history(ID1, 0, 10).unwrap();
     page["records"]
@@ -470,9 +482,9 @@ fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_ad
         (json!(1), json!(7), json!(0))
     );
     // Export then update adds nothing.
-    let exported = log.export().unwrap();
+    let exported = drain(log.export().unwrap()).concat();
     assert_eq!(
-        summary(&import(&log, &exported).0.unwrap()),
+        summary(&import(&log, exported.as_bytes()).0.unwrap()),
         (json!(0), json!(5), json!(0))
     );
     assert_eq!(log.total().unwrap(), 5);
@@ -1083,4 +1095,91 @@ fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones(
     // Every kept record passes the SaveContact contest rule on reload.
     let reopened = Logbook::open(&dir.0);
     assert_eq!(reopened.history(ID1, 0, 2).unwrap()["records"], records);
+}
+
+// Proves: CL-010-04; TC-011-002 ExportAdi streamed (#10 2026-11-04): a 300-record log is
+// exported as the header with the first 128 records, then 128 and 44 records, each chunk
+// formatted when taken; the chunks together are exactly the stored log's records after a
+// fresh header; the export is a snapshot that holds no lock, so a save during it succeeds
+// and appears only in the next export.
+#[test]
+fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let mut file = String::new();
+    for i in 0..300 {
+        file.push_str(&format!(
+            "<call:6>K{:05} <qso_date:8>20261031 <time_on:6>{:02}{:02}00 <band:3>20m <mode:3>FT8 <eor>
+",
+            i,
+            i / 60,
+            i % 60
+        ));
+    }
+    assert_eq!(
+        summary(&import(&log, file.as_bytes()).0.unwrap()),
+        (json!(300), json!(0), json!(0))
+    );
+    let stored = String::from_utf8(dir.file().unwrap()).unwrap();
+    let stored_records = &stored[stored
+        .find(
+            "<eoh>
+",
+        )
+        .unwrap()
+        + 6..];
+    let mut export = log.export().unwrap();
+    let first = next_chunk(&mut export).unwrap();
+    assert!(first.starts_with(
+        "ADIF Export
+<adif_ver:5>3.1.8
+<created_timestamp:15>"
+    ));
+    assert!(first.contains(
+        "<programid:8>WSTXRUST
+"
+    ));
+    // While the export runs the log is not locked: a save succeeds now.
+    assert_eq!(
+        log.save(reviewed(ID2, "W1XYZ"), GATE).unwrap(),
+        SaveOutcome::Saved
+    );
+    let mut chunks = vec![first];
+    chunks.extend(drain(export));
+    let counts: Vec<usize> = chunks
+        .iter()
+        .map(|c| {
+            c.matches(
+                " <eor>
+",
+            )
+            .count()
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        [128, 128, 44],
+        "bounded chunks of the snapshot (no W1XYZ)"
+    );
+    let whole = chunks.concat();
+    assert_eq!(
+        &whole[whole
+            .find(
+                "<eoh>
+"
+            )
+            .unwrap()
+            + 6..],
+        stored_records
+    );
+    let next = drain(log.export().unwrap()).concat();
+    assert_eq!(
+        next.matches(
+            " <eor>
+"
+        )
+        .count(),
+        301
+    );
+    assert!(next.contains("<call:5>W1XYZ "));
 }

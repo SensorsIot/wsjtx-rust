@@ -10,7 +10,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -788,7 +788,9 @@ pub struct Receipt {
 }
 struct Inner {
     available: bool,
-    records: Vec<Record>,
+    /// Shared with a running ExportAdi stream, which keeps its snapshot without the lock;
+    /// a change replaces the whole vector.
+    records: Arc<Vec<Record>>,
     ids: HashMap<String, usize>,
     created: String,
     import: Option<Import>,
@@ -927,6 +929,32 @@ fn header(created: &str) -> String {
         version.len()
     )
 }
+/// Records per chunk of an ExportAdi stream (about 30 KiB of a typical log).
+pub const EXPORT_CHUNK_RECORDS: usize = 128;
+/// ExportAdi as a stream: the header with the first chunk, then EXPORT_CHUNK_RECORDS
+/// records per chunk, each formatted only when the connection takes it, so a large log is
+/// never held as one document (WstxContact::ExportAdi).
+pub struct AdiExport {
+    header: Option<String>,
+    records: Arc<Vec<Record>>,
+    next: usize,
+}
+impl futures_core::Stream for AdiExport {
+    type Item = Result<String, std::convert::Infallible>;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let this = &mut *self;
+        let mut chunk = this.header.take().unwrap_or_default();
+        let end = (this.next + EXPORT_CHUNK_RECORDS).min(this.records.len());
+        for record in &this.records[this.next..end] {
+            chunk.push_str(&record.to_adi());
+        }
+        this.next = end;
+        std::task::Poll::Ready((!chunk.is_empty()).then_some(Ok(chunk)))
+    }
+}
 fn document(created: &str, records: &[Record]) -> Vec<u8> {
     let mut text = header(created);
     for record in records {
@@ -978,7 +1006,7 @@ impl Logbook {
             directory: directory.to_owned(),
             inner: Mutex::new(Inner {
                 available,
-                records,
+                records: Arc::new(records),
                 ids,
                 created,
                 import: None,
@@ -1054,7 +1082,7 @@ impl Logbook {
         result
     }
     fn append(&self, inner: &mut Inner, new: Vec<Record>, gate: Gate) -> Result<(), StoreError> {
-        let mut next = inner.records.clone();
+        let mut next = Vec::clone(&inner.records);
         next.extend(new);
         self.publish(inner, &next, gate)?;
         inner.ids = next
@@ -1062,7 +1090,7 @@ impl Logbook {
             .enumerate()
             .map(|(i, r)| (r.contact_id.clone(), i))
             .collect();
-        inner.records = next;
+        inner.records = Arc::new(next);
         inner.revision += 1;
         Ok(())
     }
@@ -1095,14 +1123,14 @@ impl Logbook {
         if first_difference(&inner.records[index], &record).is_none() {
             return Ok(LogOutcome::AlreadySaved);
         }
-        let mut next = inner.records.clone();
+        let mut next = Vec::clone(&inner.records);
         next[index] = Record {
             unknown: next[index].unknown.clone(),
             source: next[index].source.clone(),
             ..record
         };
         self.publish(&inner, &next, gate)?;
-        inner.records = next;
+        inner.records = Arc::new(next);
         inner.revision += 1;
         Ok(LogOutcome::Replaced)
     }
@@ -1154,9 +1182,14 @@ impl Logbook {
         }
         Ok(page(&records))
     }
-    pub fn export(&self) -> Result<Vec<u8>, StoreError> {
+    /// ExportAdi: a snapshot of the log at the request, streamed without the lock.
+    pub fn export(&self) -> Result<AdiExport, StoreError> {
         let inner = self.lock()?;
-        Ok(document(&utc_timestamp(), &inner.records))
+        Ok(AdiExport {
+            header: Some(header(&utc_timestamp())),
+            records: inner.records.clone(),
+            next: 0,
+        })
     }
     /// The worked-before index of the current log, rebuilt only when the log changed.
     fn index(&self, inner: &Inner) -> std::sync::Arc<WorkedIndex> {
@@ -1421,7 +1454,7 @@ impl Logbook {
         let source = parsed.program.unwrap_or_else(|| "ADIF".to_owned());
         let mut ids: std::collections::HashSet<String> = inner.ids.keys().cloned().collect();
         let mut starts: HashMap<(String, String, String), Vec<i64>> = HashMap::new();
-        for record in &inner.records {
+        for record in inner.records.iter() {
             if let Some(start) = record.start_seconds() {
                 starts
                     .entry(record.consolidation_key())
