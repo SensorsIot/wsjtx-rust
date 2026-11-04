@@ -561,7 +561,23 @@ package WstxTransmit {
     attribute def TransmitWire {
         doc /* Selected-profile routes, existing authentication, exact Origin on mutations,
              JSON media rules, 1024-byte bodies and error envelope; identity-coded (not
-             in the compressed GET allowlist); no WebSocket or StatusReply change.
+             in the compressed GET allowlist); no StatusReply change. Pushed state
+             (WstxStationProtocol::PushedStationState, #10 2026-11-04): a versioned
+             WebSocket event exactly {v:1,type:"transmit.state",data:{profile_id,boot_id,
+             transmit_revision}}, at most 192 bytes, sent to each peer with a display
+             subscription when the transmit read view changes (every field of GET
+             /transmit except clock_measurement.age_ms; transmit_revision a station-wide
+             counter, safe integer, increasing at each such change), coalesced to at most
+             one per second per peer and sent within 1 s of a change, at the first contact
+             step of a subscribed peer as well. A browser of a transmit-configured profile
+             reads GET /transmit once per socket at its first transmit.state (or, with
+             none, 3-5 s after the socket is ready), on each later transmit.state whose
+             revision it has not read (one pending read, at most one queued), after its
+             own transmit or halt request, and otherwise at most once per 30 s as a safety
+             read; it runs no 1 s poll. Ages it shows (clock_measurement.age_ms) advance
+             locally from the read. HALT, PTT keying/release and the watchdogs are decided by the owner
+             and never wait for a browser read; the keyed/transmitting indication also
+             follows station.tick (one extra tick at each transmit start/stop).
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
              clock,clock_measurement,clock_source,clock_warning,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
              without its safety_revision: {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
