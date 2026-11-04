@@ -992,3 +992,47 @@ async fn cty_upload_replaces_the_country_table_and_refusals_change_nothing() {
     );
     assert_eq!(std::fs::read(&path).unwrap(), b"not a country file");
 }
+
+// Proves: CL-010-04; TC-011-002 ExportAdi over HTTP is streamed (#10 2026-11-04): no
+// Content-Length and no exact body size (chunked transfer), the 129 records arrive in two
+// data frames (128, then 1), with the export headers unchanged and no content coding.
+#[tokio::test]
+async fn export_over_http_is_streamed_in_chunks_without_content_length() {
+    use axum::body::HttpBody;
+    let f = HttpFixture::new("http://localhost:8100");
+    ready(&f);
+    for i in 0..129 {
+        let r = record(&format!("{i:08x}-0000-4000-8000-000000000000"));
+        assert_eq!(
+            f.post("/contacts", save_body(&f, r), None).await.status,
+            StatusCode::CREATED
+        );
+    }
+    let mut request = axum::http::Request::builder()
+        .uri("/contacts/export.adi")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    *request.headers_mut() = f.headers(None);
+    let response = router(f.app().clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let (parts, mut body) = response.into_parts();
+    assert!(parts.headers.get(header::CONTENT_LENGTH).is_none());
+    assert!(parts.headers.get(header::CONTENT_ENCODING).is_none());
+    assert_eq!(
+        parts.headers[header::CONTENT_DISPOSITION],
+        "attachment; filename=\"contacts.adi\""
+    );
+    assert_eq!(body.size_hint().exact(), None, "not one sized document");
+    let mut frames = Vec::new();
+    while let Some(frame) =
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx)).await
+    {
+        frames.push(String::from_utf8(frame.unwrap().into_data().unwrap().to_vec()).unwrap());
+    }
+    let counts: Vec<usize> = frames
+        .iter()
+        .map(|c| c.matches(" <eor>\n").count())
+        .collect();
+    assert_eq!(counts, [128, 1]);
+    assert!(frames[0].starts_with("ADIF Export\n<adif_ver:5>3.1.8\n"));
+}

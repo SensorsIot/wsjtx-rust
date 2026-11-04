@@ -1157,8 +1157,14 @@ package WstxContact {
              every stored record in storage order with its supported fields (LogRecord
              set), APP_WSTXRUST_CONTACT_ID and preserved unknown fields verbatim. Content
              type application/octet-stream with attachment filename contacts.adi; no
-             content coding; streamed with backpressure behind status/control. Export
-             then UpdateLogbook of the same file adds no record (all already present). */
+             content coding; streamed with backpressure behind status/control: the log
+             as it is at the request (a snapshot that holds no lock, so a save or update
+             during the export succeeds and appears in the next export), sent with chunked
+             transfer and no Content-Length, the header with the first 128 records and then
+             128 records per chunk, each formatted only when the connection takes it, so a
+             log of about 27,000 QSOs is never built in memory as one document (#10,
+             2026-11-04). Export then UpdateLogbook of the same file adds no record (all
+             already present). */
     }
     action def ContactHistory {
         in cursor : Integer;
