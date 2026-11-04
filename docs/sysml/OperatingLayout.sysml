@@ -959,7 +959,9 @@ attribute def ActivityOrdering {
              saved on change with POST /receive/startup; it acts at the next station start
              and restarts nothing, so it carries no restart mark).
              Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
-             audio (input, output, input listing, Rx level meter), transmit (Tx watchdog
+             audio (one Audio section, #44 CL-044-08: input select with the Rx level meter,
+             output select, both by endpoint name, and the radio's recommendation with
+             Use IC-7300 audio), transmit (Tx watchdog
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
              Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
              logbook from ADIF" (WstxContact::UpdateLogbook: an ADIF file input, the Update
@@ -981,7 +983,7 @@ attribute def ActivityOrdering {
              start/stop, the startup resume state of #45 (resume state and last receive
              choice from GET /receive/startup), the decode window diagnostics of #52 (Save
              FT8 decode windows and the latest window's counters, CL-052-01), selection
-             refresh, connection details,
+             refresh, connection details, the saved audio endpoint IDs (CL-044-08),
              recordings/replay and the
              raw transmit test panel (WstxTransmit, #9).
              Operative changes (display, theme, watchdogs) apply immediately and never

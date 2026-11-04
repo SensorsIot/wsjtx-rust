@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-04; CL-044-05; TC-044-001; TC-044-002; TC-044-003.
+// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-04; CL-044-05; CL-044-07; TC-044-001; TC-044-002; TC-044-003; TC-044-006.
 // The actual router, Recording owner and CAT actor; a scripted IC-7300 behind
 // the station's CAT owner, a detection hardware double of ports and audio endpoints.
 // Expected bytes are hand-written from the IC-7300 Full Manual section 19 command table.
@@ -514,7 +514,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
         json!({"port":"COM3","model":"IC-7300","civ_address":"94","baud":9600,
             "control":{"mode":"cat","endpoint":"icom7300://COM3?baud=9600&radio=94&controller=e0","ptt":"cat"},
             "audio":{"input_device":CAPTURE,"output_device":RENDER,
-                "input_name":"Microphone (USB Audio CODEC )","output_name":"Speakers (USB Audio CODEC )"}})
+                "input_name":"Microphone (USB Audio CODEC)","output_name":"Speakers (USB Audio CODEC)"}})
     );
     // The proposal's endpoint is a valid station CAT configuration.
     assert!(
@@ -821,4 +821,141 @@ fn startup_migration_replaces_unique_friendly_names_only() {
     );
     drop(store);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// CL-044-07: a listing double whose endpoints can be unplugged or fail.
+struct Listing {
+    ports: Vec<PortInfo>,
+    endpoints: Mutex<Option<Vec<AudioEndpoint>>>,
+}
+impl radio_setup::Hardware for Listing {
+    fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
+        Ok(self.ports.clone())
+    }
+    fn endpoints(&self) -> Result<Vec<AudioEndpoint>, cat::Error> {
+        self.endpoints
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(cat::Error::Unavailable)
+    }
+    fn open(&self, _: u16, _: Instant, _: &AtomicBool) -> Result<Box<dyn Transport>, cat::Error> {
+        panic!("listing endpoints never opens a port")
+    }
+}
+
+// Proves: CL-044-07; TC-044-006 (d)-(e). Hand-written endpoint list; expected labels by hand.
+#[tokio::test]
+async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_input() {
+    let f = fixture("http://127.0.0.1:18049", false);
+    {
+        let mut store = f.state.store.lock().unwrap();
+        store.document.control = profile::Control {
+            mode: "cat".into(),
+            endpoint: Some("COM3".into()),
+            ptt: "cat".into(),
+        };
+        store.document.audio.input_device = Some(CAPTURE.into());
+    }
+    let hw = Arc::new(Listing {
+        ports: vec![port(3, "USB\\HUB\\IC7300")],
+        endpoints: Mutex::new(Some(
+            double(vec![], HashMap::new(), vec![]).endpoints.clone(),
+        )),
+    });
+    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, ["boot_id", "inputs", "outputs", "profile_id", "v"]);
+    assert_eq!(
+        (v["profile_id"].as_str(), v["boot_id"].as_str()),
+        (Some(f.id.as_str()), Some(f.boot.as_str()))
+    );
+    let mut entry: Vec<_> = v["inputs"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    entry.sort();
+    assert_eq!(entry, ["id", "label", "name", "present", "radio"]);
+    assert_eq!(
+        v["inputs"],
+        json!([
+            {"id":CAPTURE,"name":"Microphone (USB Audio CODEC)","label":"Microphone (USB Audio CODEC) — IC-7300","present":true,"radio":"IC-7300"},
+            {"id":"{0.0.1.00000000}.{00000000-0000-4000-8000-00000000000c}","name":"Microphone (Webcam)","label":"Microphone (Webcam)","present":true,"radio":null}
+        ])
+    );
+    assert_eq!(
+        v["outputs"],
+        json!([{"id":RENDER,"name":"Speakers (USB Audio CODEC)","label":"Speakers (USB Audio CODEC) — IC-7300","present":true,"radio":"IC-7300"}])
+    );
+    // Only the saved endpoint is remembered.
+    let file = || -> Value {
+        serde_json::from_slice(&std::fs::read(f.dir.join(radio_setup::NAMES_FILE)).unwrap())
+            .unwrap()
+    };
+    assert_eq!(
+        file(),
+        json!({"schema_version":1,"names":{CAPTURE:"Microphone (USB Audio CODEC)"}})
+    );
+    // GET /receive names the live input.
+    f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_live_device(CAPTURE);
+    let (s, v, _, _) = f.call("GET", "/receive", None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        (
+            v["audio"]["device_id"].as_str(),
+            v["audio"]["device_name"].as_str()
+        ),
+        (Some(CAPTURE), Some("Microphone (USB Audio CODEC)"))
+    );
+    // The CODEC unplugged: listed not present by its last known name.
+    hw.endpoints
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .retain(|e| e.id != CAPTURE);
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        v["inputs"][1],
+        json!({"id":CAPTURE,"name":"Microphone (USB Audio CODEC)","label":"Microphone (USB Audio CODEC) · not present","present":false,"radio":null})
+    );
+    assert_eq!(v["inputs"][0]["label"], "Microphone (Webcam)");
+    // A restarted station reads the remembered names without any listing.
+    *hw.endpoints.lock().unwrap() = None;
+    let other = "{0.0.0.00000000}.{0d0d0d0d-1111-4222-8333-944444444444}";
+    f.state.store.lock().unwrap().document.audio.output_device = Some(other.into());
+    std::fs::write(
+        f.dir.join(radio_setup::NAMES_FILE),
+        serde_json::to_vec(&json!({"schema_version":1,"names":{other:"Speakers (Old radio)"}}))
+            .unwrap(),
+    )
+    .unwrap();
+    radio_setup::startup_names(&f.state);
+    assert_eq!(
+        f.state.recording.radio_setup.name(other).as_deref(),
+        Some("Speakers (Old radio)")
+    );
+    assert_eq!(
+        f.state.recording.radio_setup.name(RENDER),
+        None,
+        "names come only from the record"
+    );
+    // (e) refusals: a query, an enumeration failure.
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints?x=1", None).await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_request"))
+    );
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("audio_unavailable"))
+    );
 }

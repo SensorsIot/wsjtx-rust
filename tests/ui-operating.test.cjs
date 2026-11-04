@@ -331,7 +331,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -821,9 +821,8 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
     assert.equal(await inViewport(page,'#halt-tx'),true,'HALT stays reachable');
   }
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
-  await page.locator('#tab-radio').click();await page.locator('#audio-enumerate').click();
-  await page.locator('#audio-inputs').filter({hasText:/\S/}).waitFor();
-  assert.ok(requests.includes('GET /audio/devices'));assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
+  // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
+  assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
@@ -846,7 +845,7 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
         radios:[{model:'IC-7300',id:'94',civ_address:'94',baud:19200,station_cat:true,unknown_model:false}],audio:null}],
       manual:['Yaesu','Kenwood','Elecraft'],supported_radios:1,audio_error:null,
       proposal:{port:'COM250',model:'IC-7300',civ_address:'94',baud:19200,control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},
-        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC )',output_name:'Speakers (USB Audio CODEC )'}},
+        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC)',output_name:'Speakers (USB Audio CODEC)'}},
       settings:{port:3,source:'probe',civ_baud:19200,error:null,items:[{item:'0078',name:'usb_send',value:1,label:'DTR',recommended:0,severity:'blocking',message:'USB SEND on DTR/RTS can key the transmitter.'},
         {item:'0067',name:'data_mod',value:3,label:'USB',recommended:3,severity:'ok',message:'DATA MOD takes transmit audio from USB.'}]}}});});
     await p.route('**/radio/settings/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop(),body=JSON.parse(route.request().postData());radio.push([action,body]);
@@ -862,7 +861,10 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   await page.locator('#detect-proposal:not([hidden])').waitFor();
   assert.deepEqual(radio,[['detect',{v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,keying_inhibit_confirmed:true}]]);
   const fields=await page.locator('#detect-fields').textContent();
-  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC )',capture,'Speakers (USB Audio CODEC )',render])assert.ok(fields.includes(text),text);
+  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC)','Speakers (USB Audio CODEC)'])assert.ok(fields.includes(text),text);
+  // CL-044-07/08: the endpoint IDs are not in the text, only in the hover titles.
+  assert.equal(fields.includes('{0.0.'),false,'no endpoint ID in the proposal text');
+  assert.deepEqual(await page.locator('#detect-fields dd[title]').evaluateAll(list=>list.map(dd=>dd.title)),[capture,render]);
   assert.match(await page.locator('#detect-items').textContent(),/0078 usb send: DTR · blocking/);
   assert.equal(await page.locator('#detect-ack').isChecked(),false,'the confirmation is asked again for the next detection');
   await page.locator('#detect-use').click();
@@ -2872,5 +2874,46 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
   stale=3;m=commands.length;await page.locator('#qso-cq').click();
   assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
   await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-044-08; TC-044-007. GET /audio/endpoints is a route fixture (hand-written names and
+// labels), so no audio device is read; the endpoint IDs are fixture GUIDs.
+test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and Expert, and saves the radio audio',{timeout:60000},async t=>{
+  const codecIn='{0.0.1.00000000}.{6b9f2c1e-1111-4222-8333-944444444444}',codecOut='{0.0.0.00000000}.{f4069c8a-1111-4222-8333-944444444444}';
+  const headsetA='{0.0.1.00000000}.{aaaaaaaa-0000-4000-8000-000000000000}',headsetB='{0.0.1.00000000}.{bbbbbbbb-0000-4000-8000-000000000000}';
+  const saved='{0.0.1.00000000}.{0a0a0a0a-0000-4000-8000-000000000000}',headset='Headset Microphone (Sennheiser Communication Audio)';
+  const requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:saved,beforeNavigate:async(p,_app,doc)=>{
+    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+    await p.route('**/audio/endpoints',route=>route.fulfill({json:{v:1,profile_id:doc.profile_id,boot_id:'fixture-boot',
+      inputs:[{id:codecIn,name:'Microphone (USB Audio CODEC)',label:'Microphone (USB Audio CODEC) \u2014 IC-7300',present:true,radio:'IC-7300'},
+        {id:headsetB,name:headset,label:headset+' #2',present:true,radio:null},{id:headsetA,name:headset,label:headset+' #1',present:true,radio:null},
+        {id:saved,name:'Microphone (Old radio)',label:'Microphone (Old radio) \u00b7 not present',present:false,radio:null}],
+      outputs:[{id:codecOut,name:'Speakers (USB Audio CODEC)',label:'Speakers (USB Audio CODEC) \u2014 IC-7300',present:true,radio:'IC-7300'}]}}));
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact&&!!profileData,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  await page.locator('#audio-input option[value="'+codecIn+'"]').waitFor({state:'attached'});
+  // One Audio section with both selects and the meter; no listing button, no free-text device field.
+  assert.equal(await page.locator('#settings-audio #audio-input').evaluate(el=>el.tagName),'SELECT');
+  assert.equal(await page.locator('#settings-audio #audio-output').evaluate(el=>el.tagName),'SELECT');
+  assert.equal(await page.locator('#settings-audio .op-input-meter').count(),1);
+  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input').count(),0);
+  const options=sel=>page.locator(sel+' option').evaluateAll(list=>list.map(o=>[o.textContent,o.title,o.disabled]));
+  assert.deepEqual(await options('#audio-input'),[['None','',false],['Microphone (USB Audio CODEC) \u2014 IC-7300',codecIn,false],[headset+' #2',headsetB,false],[headset+' #1',headsetA,false],['Microphone (Old radio) \u00b7 not present',saved,true]]);
+  assert.deepEqual(await options('#audio-output'),[['None','',false],['Speakers (USB Audio CODEC) \u2014 IC-7300',codecOut,false]]);
+  assert.equal(await page.locator('#audio-input').inputValue(),saved,'the missing saved input stays selected');
+  assert.equal((await page.locator('#settings-radio').innerText()).includes('{0.0.'),false,'no endpoint ID in the visible Radio text');
+  assert.match(await page.locator('#audio-recommend').innerText(),/Recommended: Microphone \(USB Audio CODEC\) \u2014 IC-7300 \/ Speakers \(USB Audio CODEC\) \u2014 IC-7300/);
+  assert.equal(await page.locator('#audio-id-input').textContent(),saved,'Expert shows the saved endpoint ID');
+  await page.locator('#tab-radio').click();
+  await page.selectOption('#audio-input',headsetB);await page.waitForTimeout(300);
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,0,'choosing saves nothing');
+  await page.locator('#audio-use-radio').click();await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,1,'Use IC-7300 audio is one Apply');
+  assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.audio,{input_device:codecIn,output_device:codecOut});
+  await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'the Audio section fits a phone');
+  await page.locator('#settings-audio').screenshot({path:'test-results/ui-operating/audio-section-mobile.png'});
   assert.deepEqual(errors,[]);
 });

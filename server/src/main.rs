@@ -336,6 +336,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recording,
                 logbook,
             });
+            // CL-044-07: the saved audio endpoints' names, before the first /receive.
+            let named = state.clone();
+            tokio::task::spawn_blocking(move || radio_setup::startup_names(&named)).await?;
             // WstxContact: the station-wide contact step, whether or not a browser is connected.
             let contacts = state.clone();
             tokio::spawn(async move {
@@ -449,6 +452,7 @@ fn router(state: App) -> Router {
         .route("/profile", get(get_profile).put(put_profile))
         .route("/recording", get(recording_http::snapshot))
         .route("/audio/devices", get(receive_http::devices))
+        .route("/audio/endpoints", get(radio_setup::endpoints_route))
         .route("/receive", get(receive_http::snapshot))
         .route("/receive/start", post(receive_http::start).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))

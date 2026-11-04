@@ -861,7 +861,7 @@ window.wstxChipsShow=function(){
     else if(operatingState?.operation?.result==='failed')list.push(chip('selection','error',`Band/mode change failed${operatingState.operation.error?' \u00b7 '+operatingState.operation.error:''}`,open('receive-details')));
     else if(live&&!active&&!mutationPending&&!receiveTarget()&&a?.state!=='unavailable'){
       if(profileData?.settings.audio.input_device)list.push(chip('receive','warn','Receive stopped \u00b7 start',()=>receiveToggle()));
-      else list.push(chip('receive','warn','No audio input',open('server-fields-audio')));
+      else list.push(chip('receive','warn','No audio input',open('settings-audio')));
     }
   }
   const now=new Date(),keys=new Set(list.map(b=>b.dataset.chip));
