@@ -230,18 +230,6 @@ fn ensure_agc_reads_first_and_writes_only_a_differing_value_with_readback() {
         })
     );
     assert_eq!(writes(&radio), [READ_AGC.to_vec()]);
-    // (g) ReadAgc reports the radio's value.
-    radio.lock().unwrap().agc = 1;
-    assert_eq!(
-        actor(&f).setup(
-            cat::SetupCommand::ReadAgc,
-            Instant::now() + Duration::from_secs(3)
-        ),
-        Ok(cat::SetupReply::Agc {
-            value: setup::Agc::Fast,
-            written: false
-        })
-    );
     drop(f);
     // (b) MID: read, RX check, write SLOW, read back.
     let (f, radio) = station(Ic7300::at(2));

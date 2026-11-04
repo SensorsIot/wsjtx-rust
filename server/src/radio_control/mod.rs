@@ -145,8 +145,6 @@ pub enum SetupCommand {
     ReadId,
     Read(setup::Setting),
     Write(setup::Setting, u16),
-    /// #44 CL-044-10 read the AGC (16 12).
-    ReadAgc,
     /// #44 CL-044-09/10 read the AGC, set it only when it differs, read it back.
     EnsureAgc(setup::Agc),
 }

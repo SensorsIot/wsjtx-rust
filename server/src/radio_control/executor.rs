@@ -413,10 +413,6 @@ impl<T: Transport> Executor<T> {
             })?
         };
         let result = (|| match command {
-            SetupCommand::ReadAgc => read_agc(transport).map(|value| SetupReply::Agc {
-                value,
-                written: false,
-            }),
             // CL-044-09 read, compare, write only on a difference, verify by readback.
             SetupCommand::EnsureAgc(target) => {
                 let current = read_agc(transport)?;

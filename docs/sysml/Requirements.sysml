@@ -3712,8 +3712,8 @@ package WstxRequirements {
         doc /* TC-044-008 — AGC CI-V read, compare, write, verify on the scripted IC-7300
              CL-044-09, CL-044-10
              Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of each frame, hand-written replies) holding AGC 01, 02 or 03; independent byte expectations from the IC-7300 command table.
-             Steps: (a) EnsureAgc SLOW with the radio at SLOW; (b) with the radio at MID; (c) with the radio reporting TX and MID; (d) a radio that answers FA to the write; (e) a radio that acknowledges but stays MID; (f) a radio that answers FA to the read; (g) ReadAgc; (h) the codec: frames and decoding of 16 12 replies, an unknown code 04.
-             Expected: (a) exactly one written frame FE FE 94 E0 16 12 FD, reply SLOW, written false; (b) frames FE FE 94 E0 16 12 FD, FE FE 94 E0 1C 00 FD, FE FE 94 E0 16 12 03 FD, FE FE 94 E0 16 12 FD in this order, written true; (c) busy after the read and the RX check, no 16 12 03 frame; (d) radio_rejected; (e) readback_mismatch; (f) radio_rejected and no write; (g) the radio's value; (h) FAST 01, MID 02, SLOW 03; 04 is no AGC. CAT stays ready in (a)-(g).
+             Steps: (a) EnsureAgc SLOW with the radio at SLOW; (b) with the radio at MID; (c) with the radio reporting TX and MID; (d) a radio that answers FA to the write; (e) a radio that acknowledges but stays MID; (f) a radio that answers FA to the read; (h) the codec: frames and decoding of 16 12 replies, an unknown code 04.
+             Expected: (a) exactly one written frame FE FE 94 E0 16 12 FD, reply SLOW, written false; (b) frames FE FE 94 E0 16 12 FD, FE FE 94 E0 1C 00 FD, FE FE 94 E0 16 12 03 FD, FE FE 94 E0 16 12 FD in this order, written true; (c) busy after the read and the RX check, no 16 12 03 frame; (d) radio_rejected; (e) readback_mismatch; (f) radio_rejected and no write; (h) FAST 01, MID 02, SLOW 03; 04 is no AGC. CAT stays ready in (a)-(f).
              2 — Isolated automated tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
