@@ -625,7 +625,8 @@ function othersShow(){
   const near=f=>[rx,tx].some(o=>typeof o==='number'&&f>=o-50&&f<=o+50);
   const lines=!snap||!my?[]:recentRows().filter(({record})=>{
     if(record.status!=='decoded')return false;
-    const from=record.fields?.from?.text,to=record.fields?.to?.kind==='call'?record.fields.to.text:null;
+    // #24: addressed to me as in Band Activity (recordTo: also <MYCALL> and nonstandard i3=4).
+    const from=recordFrom(record.fields),to=recordTo(record.fields);
     if(to!==my||(dx&&from===dx))return false;
     return !qso||near(record.frequency_hz);
   }).sort((a,b)=>(b.record.period_start_utc??'').localeCompare(a.record.period_start_utc??'')||b.record.sequence-a.record.sequence).slice(0,OTHER_LINES).reverse();
