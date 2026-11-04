@@ -1578,6 +1578,7 @@ package WstxArchitecture {
         doc /* Presentation and preferences are frontend-owned. Waterfall frequency span
              is independent of physical receiver filter width and the radio's own scope. */
         doc /* Own presentation/local filtering/color, pending/stale state and requests; not authoritative radio state, timing-critical modulation or transmit authority. */
+        doc /* Holds station state from one snapshot plus the station's pushed events and does not poll it (WstxStationProtocol::PushedStationState, the governing rule of this exchange). */
         port operator : ~LocalInteraction;
         port station : BrowserExchange;
     }

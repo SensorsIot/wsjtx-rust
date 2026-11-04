@@ -961,7 +961,9 @@ async function saveConfiguration(configuration,label){
     const response=await stationFetch('/strategy',{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:view.revision,configuration}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`${label} not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere, reloaded':''}`;if(e?.code==='stale_revision')await loadStrategy();return false;}
-    view=data;verdicts=new Map();evaluatedKey='';show();return true;
+    // A saved configuration is evaluated at once, not at the next row change or 5 s check (#10:
+    // no result re-read re-renders the rows any more).
+    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();return true;
   }catch(error){statusNode.textContent=`${label} not saved · ${error.message}`;return false;}
 }
 function show(){
