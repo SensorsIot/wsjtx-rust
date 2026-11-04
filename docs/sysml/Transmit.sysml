@@ -570,10 +570,12 @@ package WstxTransmit {
              counter, safe integer, increasing at each such change), coalesced to at most
              one per second per peer and sent within 1 s of a change, at the first contact
              step of a subscribed peer as well. A browser of a transmit-configured profile
-             reads GET /transmit once on (re)connect, on a transmit.state whose revision it
-             has not read (one pending read, at most one queued), after its own transmit or
-             halt request, and otherwise at most once per 30 s as a safety read; it runs no
-             1 s poll. HALT, PTT keying/release and the watchdogs are decided by the owner
+             reads GET /transmit once per socket at its first transmit.state (or, with
+             none, 3-5 s after the socket is ready), on each later transmit.state whose
+             revision it has not read (one pending read, at most one queued), after its
+             own transmit or halt request, and otherwise at most once per 30 s as a safety
+             read; it runs no 1 s poll. Ages it shows (clock_measurement.age_ms) advance
+             locally from the read. HALT, PTT keying/release and the watchdogs are decided by the owner
              and never wait for a browser read; the keyed/transmitting indication also
              follows station.tick (one extra tick at each transmit start/stop).
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,

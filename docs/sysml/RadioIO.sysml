@@ -622,8 +622,10 @@ browser history/readouts without changing the fixed0..3000 Hz axis or local slid
 The combined Thin live mode emits at most one optional spectrum row/2 s; each browser
 has one result request pending, requests limit1 and starts at most once/4 s, waiting
 behind explicit status/control. With no announced or unread view (receive.state announces
-each publication) a Thin/Off browser keeps only a safety result read at most once/30 s
-(#10 WstxStationProtocol::PushedStationState). Its result page is at most3072 encoded bytes.
+each publication; the browser answers it with result reads until one read at the job's
+end that started after it) and no failed live or result read, a browser on any display profile
+keeps only a safety result read at most once/30 s (#10
+WstxStationProtocol::PushedStationState). Its result page is at most3072 encoded bytes.
 Detailed remains an explicit fast-link option; Off disables optional spectrum only.
 On Detailed a decode publication is announced at once and its records are fetched page
 after page without the 4 s cadence (#57 CL-057-01).

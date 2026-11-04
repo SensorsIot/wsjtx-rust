@@ -318,20 +318,24 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
 /// (every field of GET /transmit except clock_measurement.age_ms). It increases at each
 /// change any peer's step observes; None without a transmit owner.
 pub(crate) fn state_revision(r: &recording::Recording) -> Option<u64> {
-    use std::hash::{Hash, Hasher};
     let s = r.transmit.get()?;
-    let mut view = view_json(r, &s.service.view());
-    if let Some(m) = view["clock_measurement"].as_object_mut() {
-        m.remove("age_ms");
-    }
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    view.to_string().hash(&mut hasher);
-    let digest = hasher.finish();
+    let digest = view_digest(view_json(r, &s.service.view()));
     let mut seen = s.revision.lock().unwrap_or_else(|p| p.into_inner());
     if seen.0 != Some(digest) {
         *seen = (Some(digest), seen.1 + 1);
     }
     Some(seen.1)
+}
+/// Digest of a GET /transmit view without clock_measurement.age_ms (the one field that
+/// changes with time alone).
+pub(crate) fn view_digest(mut view: Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+    if let Some(m) = view["clock_measurement"].as_object_mut() {
+        m.remove("age_ms");
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    view.to_string().hash(&mut hasher);
+    hasher.finish()
 }
 /// The transmit.state event for `revision` (at most 192 bytes).
 pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
