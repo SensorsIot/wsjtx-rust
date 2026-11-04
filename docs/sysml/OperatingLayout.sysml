@@ -663,7 +663,7 @@ attribute def ActivityOrdering {
              row without such a reason has no tip; a worked-before status alone gives none.
              The tip is a compact one-line box (no native title, which wraps unpredictably) at
              the pointer while it is over the row, except over a cell with its own title (DXCC,
-             Distance), and under the row while the row has keyboard focus; it goes when the
+             Distance, the message of an a-priori decode), and under the row while the row has keyboard focus; it goes when the
              pointer leaves, focus moves or the row is redrawn, and follows a Settings slot
              change. The same text is the row's aria-description. <band> is the operating
              selection band ("this band" when none). The QSO pane callers keep their own list

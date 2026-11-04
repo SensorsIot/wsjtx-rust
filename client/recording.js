@@ -1242,8 +1242,8 @@ function activityWhy(row){
   if(tip){row.dataset.tip=tip;row.setAttribute('aria-description',tip);}else{delete row.dataset.tip;row.removeAttribute('aria-description');}
   const t=window.wstxActivityTip;if(t?.row===row)t.show(row);
 }
-// The compact one-line tip: at the pointer over a row (not over a cell with its own title, DXCC and
-// Distance), under the row while it has keyboard focus; gone when the row leaves or is redrawn.
+// The compact one-line tip: at the pointer over a row (not over a cell with its own title: DXCC,
+// Distance, an a-priori message), under the row while it has keyboard focus; gone when the row leaves or is redrawn.
 {const tip=document.createElement('div');tip.id='ba-tip';tip.className='op-tip';tip.hidden=true;tip.setAttribute('aria-hidden','true');document.querySelector('main').append(tip);
  const state={row:null,show(row,x,y){
   if(!row?.isConnected||!row.dataset.tip){tip.hidden=true;state.row=null;return;}
