@@ -9,6 +9,7 @@
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
+const crypto=require('node:crypto');
 const origin=process.env.WSTX_CONTACT_FIXTURE_ORIGIN,control=process.env.WSTX_CONTACT_FIXTURE_CONTROL;
 let browser,page,requests=[];
 const publish=async(period_ms,rows)=>(await fetch(control+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({period_ms,rows})})).json();
@@ -310,6 +311,30 @@ async function completes(call,report){
 // contact, the #61 stale_revision path) and from-CQ (then (c) after the completed contact),
 // each on its own station and browser started by contact_browser_operating_flow, so that
 // their real-clock periods elapse concurrently (harness#28); every step and assertion is kept.
+// Proves: CL-010-15; TC-007-005 (#10 pushed transmit state, browser subset). The actual
+// station pushes transmit.state; the page reads GET /transmit once per socket, once per
+// announced change and not on a timer while the view is unchanged.
+test('TC-007-005 transmit state is pushed: one GET /transmit per socket, one per announced change, no 1 s poll',{timeout:60000},async()=>{
+  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='transmit.state')frames.push({at:performance.now(),revision:m.data.transmit_revision});}catch{}}));
+  const reads=since=>requests.filter(r=>r.method==='GET'&&r.path==='/transmit'&&r.at>=since);
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await sleep(8000);
+  assert.equal(reads(loaded).length,1,'one snapshot read per socket');
+  assert.ok(frames.some(f=>f.at>=loaded),'transmit.state at the first step');
+  const idle=performance.now();await sleep(10000);
+  assert.equal(reads(idle).length,0,'no timer read while the view is unchanged');
+  const live=await (await fetch(origin+'/receive')).json();
+  const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
+  const changed=performance.now();await watchdogs(8);
+  await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===8,'pushed change read',5000);
+  assert.ok(frames.some(f=>f.at>=changed),'the change is announced');
+  await sleep(1500);
+  assert.equal(reads(changed).length,1,'one read per announced change');
+  await watchdogs(6);await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===6,'restored',5000);
+  assert.deepEqual(page.errors,[]);
+});
+
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);

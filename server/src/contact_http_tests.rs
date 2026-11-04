@@ -989,6 +989,46 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
     assert!((65..=66).contains(&recording::rx_level_db(sum, 120_000)));
 }
 
+// Proves: CL-010-15; TC-007-005 (#10 pushed transmit state, unit subset). The
+// transmit.state revision follows the GET /transmit read view only: unchanged while the
+// view is unchanged (no time-driven step), one step per change, age_ms ignored; the event
+// has exactly its keys within 192 bytes.
+#[tokio::test]
+async fn transmit_state_revision_follows_the_read_view_only() {
+    let f = fixture("http://127.0.0.1:18077", true);
+    let r = &f.state.recording;
+    let first = transmit_http::state_revision(r).unwrap();
+    std::thread::sleep(Duration::from_millis(1100));
+    assert_eq!(transmit_http::state_revision(r), Some(first), "time alone");
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "action":"set_watchdogs","tx_calls":7,"tune_seconds":90});
+    let (status, reply, _, _) = f.call("POST", "/transmit/command", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    let changed = transmit_http::state_revision(r).unwrap();
+    assert_eq!(changed, first + 1, "one step per change");
+    assert_eq!(transmit_http::state_revision(r), Some(changed));
+    let view = json!({"ptt":"released","clock_measurement":{"server":"a","offset_ms":3,"round_trip_ms":9,"age_ms":10}});
+    let mut older = view.clone();
+    older["clock_measurement"]["age_ms"] = json!(99_000);
+    assert_eq!(
+        transmit_http::view_digest(view.clone()),
+        transmit_http::view_digest(older)
+    );
+    let mut keyed = view.clone();
+    keyed["ptt"] = json!("keyed");
+    assert_ne!(
+        transmit_http::view_digest(view),
+        transmit_http::view_digest(keyed)
+    );
+    let event = transmit_http::state_event(r, MAX_SAFE_TEST);
+    assert!(event.len() <= 192, "{event}");
+    let event: Value = serde_json::from_str(&event).unwrap();
+    assert_eq!(
+        event,
+        json!({"v":1,"type":"transmit.state","data":{"profile_id":f.id,"boot_id":f.boot,"transmit_revision":MAX_SAFE_TEST}})
+    );
+}
+
 /// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches
 /// tests/contact.test.cjs against this router with a request-recording peer.
 /// Mandatory release execution is registered as the contact-browser suite.
