@@ -2930,7 +2930,9 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   await page.waitForFunction(()=>document.querySelectorAll("tr[data-period=latest]").length===10&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const show=async(next,tx={})=>{contact=next;transmit=tx;await page.evaluate(()=>window.wstxContact.load());};
   // The same period gains the callers of my call (a later result page of the published view).
+  // #10 PushedStationState: the station announces the publication with receive.state.
   const addCallers=async()=>{records=[...cqs,...callers];Object.assign(state.job,{next_sequence:records.length,available_count:records.length,latest_decode:{...state.job.latest_decode,id:2,next_sequence:records.length}});
+    await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation,source_id:s.source.id,job_id:s.job.id,state:'running'}}}})),state);
     await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===3,null,{timeout:15000});};
   const p0=Date.parse('2026-10-27T11:58:00Z'),entry=(i,dir,text,snr=null)=>({dir,text,snr,period_utc_ms:p0+i*15000,count:1});
   const dialogue=n=>Array.from({length:n},(_,i)=>i%2?entry(i,'rx',`HB9BLA IW9FRA ${['-05','R-07','RR73'][i%3]}`,-5-i):entry(i,'tx',`IW9FRA HB9BLA ${['JN37','+10','73'][i%3]}`));
