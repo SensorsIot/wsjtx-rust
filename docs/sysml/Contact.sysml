@@ -800,6 +800,7 @@ package WstxContact {
         attribute txPwrW : String[0..1];
         attribute commentText : String[0..1];
         attribute contestFields : String[0..8];
+        attribute confirmationFields : String[0..7];
         doc /* ADIF 3.1.8 ADI fields (field set follows ADQ to_adif ~50-75 and LQ, D10):
              CALL, GRIDSQUARE (only when known; DIFFERENT from WSJT-X writing it empty),
              MODE FT8 (FT4-NOTE MODE MFSK, SUBMODE FT4), RST_SENT = report of the last
@@ -819,7 +820,17 @@ package WstxContact {
              Contest fields (#24 S2b, ContestExchange; D10 reversed for these only), in
              this order after COMMENT: STX, STX_STRING, SRX, CONTEST_ID, SRX_STRING, CLASS,
              ARRL_SECT, STATE; each at most 32 printable ASCII characters without '<' and
-             '>' (STX/SRX 1-4 digits). RST_SENT/RST_RCVD are a ReportRange report or a
+             '>' (STX/SRX 1-4 digits). Confirmation fields (#10, operator 2026-11-04, for
+             the #39 award strategies), in this order after the contest fields:
+             LOTW_QSL_RCVD, LOTW_QSLRDATE, QSL_RCVD, QSLRDATE, QSL_RCVD_VIA, EQSL_QSL_RCVD,
+             EQSL_QSLRDATE; the statuses the ADIF 3.1 QSL Rcvd enumeration Y, N, R, I, V,
+             the dates YYYYMMDD, QSL_RCVD_VIA the QSL Via enumeration B, D, E, M (values
+             case-insensitive, stored as written). A record is confirmed when any of the
+             three statuses is Y or V; N, R, I and absent are not confirmed. Only
+             UpdateLogbook sets them; DirectLog and SaveContact never write them, a DirectLog
+             replacement keeps the stored ones, and the one-record-per-contactId
+             comparison ignores them. In the stored log a confirmation field that is invalid
+             or repeated (a log kept verbatim before #10) stays an unknown field. RST_SENT/RST_RCVD are a ReportRange report or a
              5n9 RST (n 2-9). APP_WSTXRUST_CONTACT_ID = contactId; APP_WSTXRUST_SOURCE (a
              token of 1..32 letters, digits or '-') marks a record added by UpdateLogbook
              with the program it came from and is absent on the station's own records.
@@ -915,7 +926,14 @@ package WstxContact {
              browser sends at most one query per published period with at most
              64 distinct concrete calls of that period's rows; rows show unknown (no
              indicator) until answered and for hashed/absent calls. Indication uses a
-             text/icon label plus colour; it changes no decoding, sequence or log. */
+             text/icon label plus colour; it changes no decoding, sequence or log.
+             Award standing (#10, operator 2026-11-04, consumed by the #39 award
+             strategies): the worked set of DecodedEntity holds, for each DXCC entity
+             (and continent, CQ and ITU zone) ever, per band and per band and mode, whether
+             it is worked and whether a confirmed record (LogRecord confirmationFields)
+             holds it, from the same lookup; an entity is needed in a scope when it is not
+             worked or not confirmed there. It is rebuilt with the worked set when the log
+             changes, including a confirmation upgrade. */
     }
 
     // ---------------------------------------------------------------- country data (#55)
@@ -1065,6 +1083,7 @@ package WstxContact {
         in sha256 : String;
         out added : Integer;
         out present : Integer;
+        out confirmed : Integer;
         out skipped : Integer;
         out error : AdiError[0..1];
         doc /* #10 operator request 2026-11-03 ("updating the logbook"): consolidate the
@@ -1093,8 +1112,10 @@ package WstxContact {
                RST_SENT, RST_RCVD, QSO_DATE, TIME_ON, QSO_DATE_OFF, TIME_OFF, BAND,
                FREQ, STATION_CALLSIGN, MY_GRIDSQUARE, TX_PWR, COMMENT and the #24
                contest fields STX, STX_STRING, SRX, CONTEST_ID, SRX_STRING, CLASS,
-               ARRL_SECT, STATE), a valid APP_WSTXRUST_CONTACT_ID and APP_WSTXRUST_SOURCE. Every other field
-               (names, addresses, e-mail, QSL and upload states, other APP_ fields) is
+               ARRL_SECT, STATE), the confirmation fields (LOTW_QSL_RCVD, LOTW_QSLRDATE,
+               QSL_RCVD, QSLRDATE, QSL_RCVD_VIA, EQSL_QSL_RCVD, EQSL_QSLRDATE; #10,
+               2026-11-04), a valid APP_WSTXRUST_CONTACT_ID and APP_WSTXRUST_SOURCE. Every other field
+               (names, addresses, e-mail, QSL sent and upload states, other APP_ fields) is
                not stored, so the update does not widen the personal data the station
                keeps.
              - A record is skipped, with reason {code,field}, when CALL, QSO_DATE
@@ -1109,7 +1130,8 @@ package WstxContact {
                STATION_CALLSIGN 1..32 letters, digits or '/', the #24 contest fields as
                SaveContact admits them in LogRecord (STX and SRX 1-4 digits, the others
                at most 32 printable characters without '<' and '>'; coordinator
-               decision on #10, 2026-11-04), a contact id a UUID, a
+               decision on #10, 2026-11-04), the confirmation fields their LogRecord
+               enumerations and dates, a contact id a UUID, a
                source a token; every value printable ASCII and at most
                fieldCharactersMax, with no text after it) is left out of that record,
                which is still added;
@@ -1124,8 +1146,16 @@ package WstxContact {
              (BAND, or without BAND the ADIF band of FREQ, or none) and effective mode,
              whose start (QSO_DATE + TIME_ON) is at most 120 s from this record's start
              (WSJT-X/ADIF practice: loggers differ in seconds and rounding). The stored
-             record wins and is never changed, so the station's own records keep all
-             their fields. Otherwise the record is added: a new contact id when it has
+             (or earlier added) record wins, so the station's own records keep all their
+             fields, except that its confirmation is upgraded (#10, operator 2026-11-04):
+             for each of LoTW (LOTW_QSL_RCVD, LOTW_QSLRDATE), paper QSL (QSL_RCVD,
+             QSLRDATE, QSL_RCVD_VIA) and eQSL (EQSL_QSL_RCVD, EQSL_QSLRDATE) whose status
+             is Y or V in this record and not Y or V in the present one, the present
+             record takes this record's status and, where this record has them, its date
+             and via. A confirmation is only added, never removed or downgraded; Y and V
+             are both confirmed and do not replace each other; nothing else changes. The
+             upgraded stored records are replaced in place (their indexes kept) in the
+             same atomic replace as the added records. Otherwise the record is added: a new contact id when it has
              none, APP_WSTXRUST_SOURCE the file's marker unless it carries one. Added
              records are appended in file order in one atomic replace of contacts.adi
              (as SaveContact); a failed replace adds none.
@@ -1134,11 +1164,13 @@ package WstxContact {
              log adds none.
              Nothing leaves the station: no WstxUdp QSO Logged or Logged ADIF, no other
              forwarding or upload; only DirectLog sends logged contacts.
-             Summary: added, present, skipped, reasons (the skipped records grouped by
+             Summary: added, present, confirmed (the present records whose confirmation
+             this update upgraded), skipped, reasons (the skipped records grouped by
              {code,field} with count and first record index) and dropped (the dropped
              fields grouped likewise), each at most 16 groups in order of first
              occurrence (skipped is always the full count). The browser shows "Logbook
-             updated: N added, M already present, K skipped" with the reasons and the
+             updated: N added, M already present (C confirmations updated), K skipped"
+             ("1 confirmation updated" for one) with the reasons and the
              dropped fields, or "Logbook not updated" with the error and its
              record/field.
              Retry identity: importId is a caller-chosen UUID. Reserving the same
@@ -1151,14 +1183,16 @@ package WstxContact {
              and never delays HaltTransmit. Authorization: an operator action with the
              configuration access of the other log routes.
              Workload (#10): a 28 MB export of about 27,000 QSOs is consolidated within
-             seconds of its last chunk, and worked-before stays an index lookup
+             seconds of its last chunk, also when a rerun upgrades the confirmation of
+             all of its records, and worked-before stays an index lookup
              (WorkedBeforeQuery). */
     }
     action def ExportAdi {
         doc /* GET /contacts/export.adi streams the whole profile log as ADIF 3.1.8 ADI:
              header with ADIF_VER 3.1.8, PROGRAMID WSTXRUST and CREATED_TIMESTAMP, then
              every stored record in storage order with its supported fields (LogRecord
-             set), APP_WSTXRUST_CONTACT_ID and preserved unknown fields verbatim. Content
+             set, including the confirmation fields), APP_WSTXRUST_CONTACT_ID and
+             preserved unknown fields verbatim. Content
              type application/octet-stream with attachment filename contacts.adi; no
              content coding; streamed with backpressure behind status/control: the log
              as it is at the request (a snapshot that holds no lock, so a save or update
@@ -1182,7 +1216,8 @@ package WstxContact {
              submode,rst_sent,rst_rcvd,qso_date,time_on,qso_date_off,time_off,band,freq,
              station_callsign,my_gridsquare,tx_pwr,comment,stx,stx_string,srx,contest_id,
              srx_string,class,arrl_sect,state,unknown_field_count} with
-             absent values null, rendered literally. Read-only inspection; no edit or
+             absent values null, rendered literally (not the LogRecord confirmation
+             fields; ExportAdi carries them). Read-only inspection; no edit or
              delete. */
     }
 
@@ -1355,7 +1390,7 @@ package WstxContact {
              (ExportAdi); POST /contacts/imports {v,profile_id,boot_id,import_id,
              total_bytes,sha256} 201/200 reserve; PUT /contacts/imports/{id} chunks;
              GET /contacts/imports/{id} exactly {v:1,id,state,received_bytes,total_bytes,
-             added,present,skipped,reasons,dropped,error} with reasons and dropped arrays
+             added,present,confirmed,skipped,reasons,dropped,error} with reasons and dropped arrays
              of {code,field,count,record} and error null or {code,record,field}; the
              completing chunk answers 201 with that view, a refused update 422
              import_failed (UpdateLogbook); POST /transmit/halt (WstxTransmit::HaltTransmit).
