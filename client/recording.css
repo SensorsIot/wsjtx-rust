@@ -360,6 +360,20 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 #band-activity[data-hl-on~=new_continent_band] tr[data-hl~=new_continent_band] td{background:var(--hl-new_continent_band)}
 #band-activity[data-hl-on~=new_continent] tr[data-hl~=new_continent] td{background:var(--hl-new_continent)}
 #band-activity[data-hl-on~=mycall] tr[data-hl~=mycall] td{background:var(--hl-mycall)}
+/* CL-010-13: the QSO pane's callers take the same enabled slot colours (no My call: every line calls me). */
+#rx-focus[data-hl-on~=lotw] .ct-others tr[data-hl~=lotw] td{background:var(--hl-lotw)}
+#rx-focus[data-hl-on~=new_call_band] .ct-others tr[data-hl~=new_call_band] td{background:var(--hl-new_call_band)}
+#rx-focus[data-hl-on~=new_call] .ct-others tr[data-hl~=new_call] td{background:var(--hl-new_call)}
+#rx-focus[data-hl-on~=new_grid_band] .ct-others tr[data-hl~=new_grid_band] td{background:var(--hl-new_grid_band)}
+#rx-focus[data-hl-on~=new_grid] .ct-others tr[data-hl~=new_grid] td{background:var(--hl-new_grid)}
+#rx-focus[data-hl-on~=new_dxcc_band] .ct-others tr[data-hl~=new_dxcc_band] td{background:var(--hl-new_dxcc_band)}
+#rx-focus[data-hl-on~=new_dxcc] .ct-others tr[data-hl~=new_dxcc] td{background:var(--hl-new_dxcc)}
+#rx-focus[data-hl-on~=new_itu_zone_band] .ct-others tr[data-hl~=new_itu_zone_band] td{background:var(--hl-new_itu_zone_band)}
+#rx-focus[data-hl-on~=new_itu_zone] .ct-others tr[data-hl~=new_itu_zone] td{background:var(--hl-new_itu_zone)}
+#rx-focus[data-hl-on~=new_cq_zone_band] .ct-others tr[data-hl~=new_cq_zone_band] td{background:var(--hl-new_cq_zone_band)}
+#rx-focus[data-hl-on~=new_cq_zone] .ct-others tr[data-hl~=new_cq_zone] td{background:var(--hl-new_cq_zone)}
+#rx-focus[data-hl-on~=new_continent_band] .ct-others tr[data-hl~=new_continent_band] td{background:var(--hl-new_continent_band)}
+#rx-focus[data-hl-on~=new_continent] .ct-others tr[data-hl~=new_continent] td{background:var(--hl-new_continent)}
 .op-swatch{display:inline-block;width:1.4em;height:.9em;margin:0 .4em;border:1px solid #567;vertical-align:middle}.op-swatch[data-hl-swatch=lotw]{background:var(--hl-lotw)}.op-swatch[data-hl-swatch=new_call_band]{background:var(--hl-new_call_band)}.op-swatch[data-hl-swatch=new_call]{background:var(--hl-new_call)}.op-swatch[data-hl-swatch=new_grid_band]{background:var(--hl-new_grid_band)}.op-swatch[data-hl-swatch=new_grid]{background:var(--hl-new_grid)}.op-swatch[data-hl-swatch=new_dxcc_band]{background:var(--hl-new_dxcc_band)}.op-swatch[data-hl-swatch=new_dxcc]{background:var(--hl-new_dxcc)}.op-swatch[data-hl-swatch=new_itu_zone_band]{background:var(--hl-new_itu_zone_band)}.op-swatch[data-hl-swatch=new_itu_zone]{background:var(--hl-new_itu_zone)}.op-swatch[data-hl-swatch=new_cq_zone_band]{background:var(--hl-new_cq_zone_band)}.op-swatch[data-hl-swatch=new_cq_zone]{background:var(--hl-new_cq_zone)}.op-swatch[data-hl-swatch=new_continent_band]{background:var(--hl-new_continent_band)}.op-swatch[data-hl-swatch=new_continent]{background:var(--hl-new_continent)}.op-swatch[data-hl-swatch=mycall]{background:var(--hl-mycall)}
 /* #37 compact QSO pane: one header line, tight lines, one row of buttons. */
 #rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 10px}

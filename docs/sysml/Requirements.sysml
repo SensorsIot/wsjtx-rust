@@ -999,7 +999,6 @@ package WstxRequirements {
     // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
     // the same contact operations through WstxMcp (#12). CL-010-11 partial: since #37 the
     // browser sends no re-decode; the wire redecode stays refused redecode_unavailable.
-    // CL-010-13 partial: worked-before marks are not yet shown in the Rx Frequency pane.
     // CL-010-15 partial: TC-007-005 Thin/Off measurement with the new events and MCP.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
@@ -1044,8 +1043,8 @@ package WstxRequirements {
     dependency CL_010_12_to_FR_007 from 'CL-010-12' to 'FR-007';
     requirement 'CL-010-13' {
         doc /* Indicate worked-before status of decoded calls in Band Activity and the Rx Frequency pane (this band and mode, other band or mode, not worked, unknown) determined by the server from the profile log, by text or icon as well as colour, with at most one bounded query per published period. Details: WstxContact::WorkedBeforeQuery. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; client/logbook.js";
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; client/logbook.js; client/contact.js";
     }
     dependency CL_010_13_to_FR_010 from 'CL-010-13' to 'FR-010';
     dependency CL_010_13_to_FR_011 from 'CL-010-13' to 'FR-011';
@@ -1205,7 +1204,8 @@ package WstxRequirements {
              CL-010-13
              Setup: profile log fixture with K1ABC on 20m FT8, W1XYZ on 40m FT8, DL1ABC on 20m MFSK/FT4; dial 20m FT8; rows from K1ABC, W1XYZ, DL1ABC, k1abc case variant, N0NEW and a hashed call; 65 distinct calls in one period.
              Steps: publish periods, save a new contact with N0NEW, publish again.
-             Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the indication is text/icon plus colour in Band Activity and the Rx Frequency pane; one query per period with at most 64 calls (the 65th unknown); no change to decoding, sequence or log.
+             Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the status is text (hover text and aria-description, BandActivityHover) in Band Activity and the QSO pane's stations calling me, colour only from the enabled new_* slots of the record flags, so worked before on this band and mode has no colour; one query per period with at most 64 calls (the 65th unknown); no change to decoding, sequence or log.
+             QSO pane subset (#10 2026-11-04, WstxOperatingLayout::QsoPane item 3). Setup: actual server log K1ABC 20m FT8 and DL1ABC 40m FT8; selection 20m FT8; one period with callers to my call HB9BLA K1ABC FN42 (no flags), HB9BLA W1XYZ FN31 (new_call, new_call_band) and HB9BLA DL1ABC -10 (new_call_band). Steps: wait for the Band Activity worked-before answer; read the callers; turn New call off in Settings; refresh status. Expected: K1ABC no colour, "Worked before on 20m FT8"; W1XYZ the New call colour, "New call", "New call on 20m"; DL1ABC the New call on band colour, "New call on 20m", "Worked before on another band or mode"; each title ends with the double-click hint; no My call colour; with New call off W1XYZ takes New call on band; exactly one worked-before query (the callers add none).
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {

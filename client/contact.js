@@ -630,12 +630,21 @@ function othersShow(){
     return !qso||near(record.frequency_hz);
   }).sort((a,b)=>(b.record.period_start_utc??'').localeCompare(a.record.period_start_utc??'')||b.record.sequence-a.record.sequence).slice(0,OTHER_LINES).reverse();
   const none=$('qso-others-none');none.hidden=!snap||lines.length>0;none.textContent=qso?'nobody else calling':'nobody calling';
-  const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}`)]);
+  // CL-010-13 (WstxOperatingLayout::QsoPane item 3): each caller carries the Band Activity
+  // marks of its sender: the enabled new_* slot colours of its #55 flags (My call is not used,
+  // every line calls me), the reasons and the worked-before status as text; worked before on
+  // this band and mode adds no colour.
+  const workedOf=record=>{const from=recordFrom(record.fields);return from?window.wstxWorkedOf?.(from.toUpperCase())??null:null;};
+  const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}/${workedOf(l.record)?.status??''}`)]);
   if(othersList.dataset.key===key)return;othersList.dataset.key=key;
   othersList.replaceChildren(...lines.map(({record,context})=>{
     const tr=qsoRow(`${hhmmss(Date.parse(record.period_start_utc??''))}${qso?' ⚠':''}`,record.text,record.snr_db,qsoReport(record.text),1);tr.tabIndex=0;tr.dataset.kind=qso?'warn':'candidate';
     tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;
-    tr.title=qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station';
+    const hl=bandFlags.filter(k=>record.flags?.[k]===true),w=workedOf(record);if(hl.length)tr.dataset.hl=hl.join(' ');
+    if(w)tr.dataset.worked=w.status;
+    const why=[...activityReasons(record),w?.status==='worked_this_band_and_mode'?`Worked before on ${w.on}`:w?.status==='worked_other_band_or_mode'?'Worked before on another band or mode':''].filter(Boolean);
+    if(why.length)tr.setAttribute('aria-description',why.join('; '));
+    tr.title=[...why,qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station'].join('\n');
     return tr;
   }));qsoTableShow();
   const area=$('qso-area');area.scrollTop=area.scrollHeight;
@@ -650,6 +659,10 @@ async function answerOther(li){
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
 othersList.addEventListener('keydown',event=>{const li=event.target.closest('tr[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});
 if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;othersShow();}).observe(activity,{childList:true});
+document.addEventListener('wstx-worked',()=>othersShow());
+// The Band Activity colour choice (Settings > General > Display) applies to the callers too.
+const bandActivity=document.querySelector('#band-activity');
+if(bandActivity){const mirror=()=>{focus.dataset.hlOn=bandActivity.dataset.hlOn??'';};mirror();new MutationObserver(mirror).observe(bandActivity,{attributes:true,attributeFilter:['data-hl-on']});}
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
 const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];

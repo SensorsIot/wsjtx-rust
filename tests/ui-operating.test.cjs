@@ -1803,6 +1803,48 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-010-13; TC-011-003 QSO pane subset (#10 2026-11-04). Actual server log and worked-before
+// query; receive pages, flags and the manual band selection are presentation fixtures, not RF truth.
+// The stations calling me carry the Band Activity marks: only interesting senders coloured, worked
+// before on this band and mode no colour, the status as text, and no extra query.
+test('TC-011-003 QSO pane callers show worked-before status and only interesting stations are coloured',{timeout:40000},async t=>{
+ let state;const queries=[],period='2026-10-27T12:00:15.0000000Z';
+ const standard=(from,exchange)=>({type:'standard',to:{kind:'call',text:'HB9BLA',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
+ const rows=[['HB9BLA K1ABC FN42','K1ABC',{kind:'grid',value:'FN42'},null],['HB9BLA W1XYZ FN31','W1XYZ',{kind:'grid',value:'FN31'},{new_call:true,new_call_band:true}],['HB9BLA DL1ABC -10','DL1ABC',{kind:'report',value:-10},{new_call_band:true}]];
+ const records=rows.map(([text,from,exchange,flags],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*300,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,exchange),period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{})}));
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  const profile=await(await fetch(app.origin+'/profile')).json();
+  for(const [call,band] of [['K1ABC','20m'],['DL1ABC','40m']]){
+   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call,gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band,freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
+   assert.equal(saved.status,201);
+  }
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  Object.assign(state.job,{first_sequence:0,next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:3,available_count:3,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/contact',route=>route.fulfill({json:contactSnapshot(profile,{contact:null,transmit:{},log:null,settings:{}})}));
+  page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
+ }});
+ await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-worked]').length===3,null,{timeout:25000});
+ const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.text,tr.dataset.worked??null,tr.dataset.hl??null,getComputedStyle(tr.cells[1]).backgroundColor,tr.title,tr.getAttribute('aria-description')]));
+ const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
+ const hint='Double-click: answer this station';
+ assert.deepEqual(await others(),[
+  ['HB9BLA K1ABC FN42','worked_this_band_and_mode',null,none,`Worked before on 20m FT8\n${hint}`,'Worked before on 20m FT8'],
+  ['HB9BLA W1XYZ FN31','not_worked','new_call new_call_band',newCall,`New call\nNew call on 20m\n${hint}`,'New call; New call on 20m'],
+  ['HB9BLA DL1ABC -10','worked_other_band_or_mode','new_call_band',newCallBand,`New call on 20m\nWorked before on another band or mode\n${hint}`,'New call on 20m; Worked before on another band or mode']],
+  'worked before on this band and mode has no colour; the status is text; My call is not a caller colour');
+ // The Band Activity colour choice applies here too.
+ await page.locator('#open-server-settings').click();
+ await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
+ assert.deepEqual((await others()).map(r=>r[3]),[none,newCallBand,newCallBand],'with New call off, New call on band remains');
+ await refreshStatus(page);await page.waitForTimeout(500);
+ assert.equal(queries.length,1,'the callers add no worked-before query');
+ assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-055-04; TC-055-006 browser subset. Actual server log and worked-before query;
 // the result records (with #55 dxcc and flags), the strategy verdict and the selection band
 // are presentation fixtures.

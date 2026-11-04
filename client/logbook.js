@@ -111,7 +111,10 @@ $('log-export').addEventListener('click',async()=>{
 
 // ---------------------------------------------------------------- Band Activity worked-before
 // At most one query per published period with at most 64 distinct concrete calls.
-let askedPeriod=null,answered=new Map();
+// The answers of the latest and the previous asked period also mark the QSO pane's callers
+// (CL-010-13, WstxOperatingLayout::QsoPane item 3); they add no query.
+let askedPeriod=null,answered=new Map(),previous=new Map(),answeredOn='';
+window.wstxWorkedOf=call=>{const status=answered.get(call)??previous.get(call);return status?{status,on:answeredOn}:null;};
 function annotate(body,records){
   const band=operatingState?.selection?.band,mode=live?.job?.mode;
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
@@ -122,8 +125,9 @@ function annotate(body,records){
   if(period===askedPeriod){decorate();return;}
   if(!complete)return;
   const calls=[...new Set(records.map(from).filter(Boolean))].slice(0,64);
-  askedPeriod=period;answered=new Map();if(!calls.length)return;
-  worked(band,mode.toUpperCase(),calls).then(map=>{if(map&&askedPeriod===period){answered=map;decorate();}}).catch(()=>{});
+  const on=`${band} ${mode.toUpperCase()}`;previous=on===answeredOn?answered:new Map();
+  askedPeriod=period;answered=new Map();answeredOn=on;if(!calls.length)return;
+  worked(band,mode.toUpperCase(),calls).then(map=>{if(map&&askedPeriod===period){answered=map;decorate();document.dispatchEvent(new Event('wstx-worked'));}}).catch(()=>{});
 }
 // Observe the rendered rows instead of changing recording.js (its served source is pinned).
 const activity=document.querySelector('#band-activity tbody');
