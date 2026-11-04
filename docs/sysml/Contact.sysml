@@ -1103,7 +1103,10 @@ package WstxContact {
              - An optional kept field whose value fails its domain (FREQ and TX_PWR
                positive decimals, GRIDSQUARE and MY_GRIDSQUARE 2/4/6/8 Maidenhead, BAND
                the ADIF enumeration, RST at most 16 characters, SUBMODE a token,
-               STATION_CALLSIGN 1..32 letters, digits or '/', a contact id a UUID, a
+               STATION_CALLSIGN 1..32 letters, digits or '/', the #24 contest fields as
+               SaveContact admits them in LogRecord (STX and SRX 1-4 digits, the others
+               at most 32 printable characters without '<' and '>'; coordinator
+               decision on #10, 2026-11-04), a contact id a UUID, a
                source a token; every value printable ASCII and at most
                fieldCharactersMax, with no text after it) is left out of that record,
                which is still added;

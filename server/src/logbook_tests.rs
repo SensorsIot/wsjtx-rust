@@ -1021,3 +1021,66 @@ fn contest_fields_and_rtty_rst_are_validated() {
     bad.set("stx", "00001".into());
     assert_eq!(validate_record(&bad, "HB9BLA", "JN47AA"), Err("record.stx"));
 }
+
+// Proves: CL-010-04, CL-024-03; TC-011-002 Update logbook keeps only contest values that
+// SaveContact admits (coordinator decision on #10, 2026-11-04): a non-conforming STX, SRX
+// or contest text is dropped and reported, the record is still added, a conforming value
+// (exactly 32 characters, 4 digits) is kept.
+#[test]
+fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let at32 = "A".repeat(32);
+    let at33 = "B".repeat(33);
+    let file = format!(
+        "<call:5>N1AAA <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <stx:3>12A <srx:5>12345 <contest_id:33>{at33} <srx_string:7>2A <WI> <state:2>MA <eor>\n\
+         <call:5>N2BBB <qso_date:8>20261031 <time_on:4>1301 <mode:3>FT8 <stx:4>0001 <srx:1>7 <contest_id:32>{at32} <class:2>3A <eor>\n"
+    );
+    let (result, view) = import(&log, file.as_bytes());
+    assert_eq!(summary(&result.unwrap()), (json!(2), json!(0), json!(0)));
+    assert_eq!(
+        view["dropped"],
+        json!([
+            {"code":"invalid_value","field":"stx","count":1,"record":0},
+            {"code":"invalid_value","field":"srx","count":1,"record":0},
+            {"code":"invalid_value","field":"contest_id","count":1,"record":0},
+            {"code":"invalid_value","field":"srx_string","count":1,"record":0}
+        ])
+    );
+    let records = log.history(ID1, 0, 2).unwrap()["records"].clone();
+    let pick = |r: &Value| {
+        [
+            "call",
+            "stx",
+            "srx",
+            "contest_id",
+            "srx_string",
+            "class",
+            "state",
+        ]
+        .map(|k| r[k].clone())
+    };
+    let rows: Vec<_> = records.as_array().unwrap().iter().map(pick).collect();
+    let n = Value::Null;
+    assert!(rows.contains(&[
+        json!("N1AAA"),
+        n.clone(),
+        n.clone(),
+        n.clone(),
+        n.clone(),
+        n.clone(),
+        json!("MA")
+    ]));
+    assert!(rows.contains(&[
+        json!("N2BBB"),
+        json!("0001"),
+        json!("7"),
+        json!(at32),
+        n.clone(),
+        json!("3A"),
+        n.clone()
+    ]));
+    // Every kept record passes the SaveContact contest rule on reload.
+    let reopened = Logbook::open(&dir.0);
+    assert_eq!(reopened.history(ID1, 0, 2).unwrap()["records"], records);
+}

@@ -355,6 +355,17 @@ pub fn valid_report(value: &str) -> bool {
         && value.parse::<i32>().is_ok_and(|n| (-50..=49).contains(&n))
 }
 
+/// #24 contest field domain of LogRecord (STX/SRX 1-4 digits, the others at most 32
+/// printable characters without '<' and '>'), shared by SaveContact and UpdateLogbook.
+fn valid_contest_value(name: &str, value: &str) -> bool {
+    match name {
+        "stx" | "srx" => {
+            (1..=4).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_digit())
+        }
+        _ => (1..=32).contains(&value.len()) && printable(value) && !value.contains(['<', '>']),
+    }
+}
+
 /// Import-domain validation of one supported field (AdiError invalidValue otherwise).
 fn valid_import_value(index: usize, value: &str) -> bool {
     match FIELDS[index] {
@@ -625,7 +636,11 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
             } else if v.is_empty() {
                 Ok(None)
             } else if match supported {
-                Some(i) => valid_import_value(i, &v),
+                // UpdateLogbook keeps only contest values SaveContact would accept (#10,
+                // 2026-11-04); the stored-log reading stays as before.
+                Some(i) => {
+                    valid_import_value(i, &v) && (i < 16 || valid_contest_value(FIELDS[i], &v))
+                }
                 None if lname == SOURCE_FIELD => token(&v),
                 None => crate::profile::valid_uuid(&v.to_ascii_lowercase()),
             } {
@@ -1535,13 +1550,7 @@ pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result
     // most 32 printable characters without '<' and '>'.
     for (i, name) in FIELDS.iter().enumerate().skip(16) {
         let Some(value) = v(i) else { continue };
-        let ok = match *name {
-            "stx" | "srx" => {
-                (1..=4).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_digit())
-            }
-            _ => (1..=32).contains(&value.len()) && printable(value) && !value.contains(['<', '>']),
-        };
-        if !ok {
+        if !valid_contest_value(name, value) {
             return Err(match *name {
                 "stx" => "record.stx",
                 "stx_string" => "record.stx_string",
