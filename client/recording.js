@@ -304,7 +304,7 @@ function paint() {
         const q=new Uint8Array(c.width);levels.forEach((v,k)=>{const x=Math.floor(k*c.width/B);q[x]=Math.max(q[x],v);});return q;
       };
       if(id==='spectrum'){
-        const row=rows.at(-1);if(!row?.levels||c.hidden)continue;const values=project(shown(row)),E=effectiveBlack();
+        const row=rows.at(-1);if(!row?.levels||row.tx||c.hidden)continue;const values=project(shown(row)),E=effectiveBlack();
         ctx.strokeStyle='rgb(180 245 220)';ctx.lineWidth=Math.max(1,devicePixelRatio);ctx.beginPath();
         values.forEach((q,k)=>{const x=Math.floor(k*c.width/values.length),y=Math.max(0,Math.min(c.height-1,(120-q)*c.height/(-E)));k?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
       }else{
@@ -316,7 +316,9 @@ function paint() {
             const group=projection.groups[y],key=group?group.join(','):'none';
             if(key!==previous){
               previous=key;line=new Uint8ClampedArray(W*4);const native=group?groupLevels(...group,B):null,values=native?project(native):null;
-              if(!values){for(let x=0;x<W;x++)line.set(group?[96,96,96,255]:[0,0,12,255],x*4);}
+              // #61 CL-061-04: rows of a Tx period are Tx rows, never received silence.
+              if(group&&rows.slice(rows.length-1-group[1],rows.length-group[0]).some(r=>r.tx)){for(let x=0;x<W;x++)line.set([90,20,30,255],x*4);}
+              else if(!values){for(let x=0;x<W;x++)line.set(group?[96,96,96,255]:[0,0,12,255],x*4);}
               else for(let k=0;k<values.length;k++){
                 const left=Math.floor(k*W/values.length),right=Math.floor((k+1)*W/values.length),rgb=lut[values[k]];
                 for(let x=left;x<right;x++)line.set(rgb,x*4);
@@ -411,7 +413,8 @@ addEventListener('station-message',event => {
   if(!f||!context||!['running','completed'].includes(context.job?.state)||f.boot_id!==context.boot_id||f.generation!==context.generation||f.job_id!==context.job?.id||f.source_id!==context.job?.source_id)return;
   if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1){stationData('waterfall',false);return;}
   const keys=['boot_id','source_id','job_id','generation','sequence','first_frame','end_frame',detail?'levels_b64':'levels'].sort().join(',');
-  if(Object.keys(f).sort().join(',')!==keys){stationData('waterfall',false);return;}if(!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
+  // #61 CL-061-04: a live row of a Tx period carries tx true.
+  if(Object.keys(f).filter(k=>!(k==='tx'&&f.tx===true&&currentLive)).sort().join(',')!==keys){stationData('waterfall',false);return;}if(!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
   if(currentLive ? f.end_frame!==f.first_frame+interval : (!snapshot.recording||f.first_frame>=snapshot.recording.frames||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording.frames)))return;
   let values=f.levels;
   if(detail){
@@ -422,8 +425,8 @@ addEventListener('station-message',event => {
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
   // #54: live Thin is paced to one row per 2 s, so one or two missing sequences are drawn with the next row (held); longer runs are real gaps.
   const held=!detail&&currentLive&&previous>=0&&f.sequence-previous<=3;
-  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held});
-  const row={...f,levels:Uint8Array.from(values)};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);paint();
+  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held,tx:held&&f.tx===true});
+  const row={...f,levels:Uint8Array.from(values),tx:f.tx===true};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);paint();
 
   if(currentLive){live.job.processed_frames=Math.max(live.job.processed_frames,f.end_frame);live.source.next_frame=Math.max(live.source.next_frame,f.end_frame);}
   else snapshot.job.processed_frames=f.end_frame;
@@ -487,7 +490,8 @@ function validPeriodTime(value,mode){
 }
 function validLatestDecode(view,mode,end){
   if(view===null)return true;
-  return view&&Object.keys(view).sort().join(',')==='complete,first_sequence,id,next_sequence,period_start_utc'&&
+  // #61 CL-061-04: a Tx period carries transmitted true (no attempt: an empty range, not complete).
+  return view&&Object.keys(view).filter(k=>!(k==='transmitted'&&view.transmitted===true&&view.period_start_utc!==null&&!view.complete&&view.first_sequence===view.next_sequence)).sort().join(',')==='complete,first_sequence,id,next_sequence,period_start_utc'&&
     ['id','first_sequence','next_sequence'].every(k=>Number.isSafeInteger(view[k])&&view[k]>=0)&&view.id>0&&
     view.first_sequence<=view.next_sequence&&view.next_sequence<=end&&typeof view.complete==='boolean'&&
     (view.period_start_utc===null||validPeriodTime(view.period_start_utc,mode));
@@ -509,8 +513,8 @@ function applyLatestDecode(view,first){
   // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
   const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
   const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
-  // #61 CL-061-03: a period in which this station transmitted has nothing to show; the period kept below it stays.
-  const transmitted=resultView&&!resultRows.length&&window.wstxTransmitted?.(resultView.period_start_utc);
+  // #61 CL-061-03: the station's Tx period has nothing to show; the period kept below it stays.
+  const transmitted=resultView?.transmitted===true;
   activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):transmitted?activityHistory.slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
   if(view&&first>view.first_sequence)historyIncomplete=true;
@@ -635,19 +639,18 @@ function renderResults(){
   const ordered=activityOrdering(shownRows);
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
-  // #61 CL-061-03: the period this station transmitted in shows no empty block (as in WSJT-X);
-  // the header and the top rows are the last receive period, kept below it.
-  const own=resultView&&!resultRows.length&&!loading&&window.wstxTransmitted?.(resultView.period_start_utc),kept=own?activityHistory[0]??null:null;
-  const top=kept&&{...kept,rows:kept.rows.filter(r=>udpVisible('band_activity',r,kept.context))};
-  document.querySelector('#band-activity header .op-muted').textContent=own?(top?`Latest ${top.mode.toUpperCase()} period ${periodLabel(top.period,top.mode)}${top.period?' UTC':''}${historyIncomplete?' · Incomplete history':''}`:'Latest decode period'):resultView?
+  // #61 CL-061-03: the station's Tx period (CL-061-04) shows its marker row and no empty block;
+  // the receive period it replaced stays below its divider.
+  const own=resultView?.transmitted===true,mode=live?.job?.mode;
+  document.querySelector('#band-activity header .op-muted').textContent=own?`Tx \u00b7 ${mode?.toUpperCase()} period ${periodLabel(resultView.period_start_utc,mode)} UTC \u00b7 this station transmitted, no decode`:resultView?
     `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
-  const count=top?top.rows.length:shownRows.length;
+  const count=own?activityHistory.reduce((n,h)=>n+h.rows.filter(r=>udpVisible('band_activity',r,h.context)).length,0):shownRows.length;
   document.querySelector('#band-activity .op-count').textContent=`${count} message${count===1?'':'s'}`;
-  if(top){
-    body.replaceChildren();
-    for(const record of activityOrdering(top.rows))body.append(activityRow(record,'history',top.context,top.mode));
-    window.wstxRenderHistory?.(body,activityHistory.slice(1));partnerFirst(body);return;
+  if(own){
+    const marker=document.createElement('tr'),cell=document.createElement('td');marker.className='ba-tx';marker.dataset.period='tx';marker.setAttribute('role','row');
+    cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`Tx ${periodLabel(resultView.period_start_utc,mode)} \u00b7 this station transmitted \u00b7 no decode`;marker.append(cell);
+    body.replaceChildren(marker);window.wstxRenderHistory?.(body);partnerFirst(body);return;
   }
   if(!shownRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';

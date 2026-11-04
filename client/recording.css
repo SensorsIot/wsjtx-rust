@@ -205,11 +205,12 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #band-activity td:nth-child(6){min-width:5ch}#band-activity td:nth-child(7){min-width:7ch}
 #band-activity th:nth-child(6),#band-activity th:nth-child(7){width:1%}
 #band-activity tr.ba-divider td{padding:1px 12px;font:600 var(--op-font-secondary) 'Segoe UI',system-ui,sans-serif;color:#7e9bad;background:#0f1e29;letter-spacing:.06em}
+#band-activity tr.ba-tx td{padding:3px 12px;font:600 var(--op-font-secondary) 'Segoe UI',system-ui,sans-serif;color:#ffc2c8;background:#3a1418;letter-spacing:.04em}
 #band-activity tr[data-period=history] td{opacity:.78}
 #band-activity th[data-sort=value]{white-space:nowrap}#band-activity th.op-sort{cursor:pointer}#band-activity th.op-sort:focus-visible{outline:2px solid #e0a030;outline-offset:-2px}
 #band-activity th[aria-sort=ascending]:after{content:" \25B2"}#band-activity th[aria-sort=descending]:after{content:" \25BC"}
 #band-activity thead:focus-within{clip-path:none!important;position:static!important;width:auto!important;height:auto!important}
-@container (max-width:44em){#band-activity tr.ba-divider{display:block!important}#band-activity tr.ba-divider td{display:block}}
+@container (max-width:44em){#band-activity tr.ba-divider,#band-activity tr.ba-tx{display:block!important}#band-activity tr.ba-divider td,#band-activity tr.ba-tx td{display:block}}
 .op-qso{display:flex;flex-direction:column}
 .op-qso-head{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-bottom:1px solid #253c4c}
 .op-qso-head .op-contact-identity{flex:1;min-width:0}

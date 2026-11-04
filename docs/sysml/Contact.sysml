@@ -1026,7 +1026,10 @@ package WstxContact {
              the canonical receive samples scaled to 16-bit full scale (32768), over the
              last status interval, at most one value per second on the status link;
              labelled "high" above 85 dB and "low" below 15 dB (meterwidget.cpp ~61/~64 thresholds)
-             in text and colour; null shows unavailable when audio is not running. */
+             in text and colour; null shows unavailable when audio is not running. #61
+             CL-061-04: the station measures no level while on the air and for the rest of
+             that Tx period (null then, "Tx · not measured" while transmitting); a level and
+             its low/high entry refer to receive periods only. */
     }
 
     // ---------------------------------------------------------------- ADI log
