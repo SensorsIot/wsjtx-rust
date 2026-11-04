@@ -1534,14 +1534,15 @@ test('TC-057-004 three consecutive periods leave only the latest even and odd pe
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-061-03; TC-061-004 (#61, operator 2026-11-03). The period in which this station
-// transmitted (station.tick transmitting) publishes no records; Band Activity then shows no
-// empty-period block: the header and the top rows are the last receive period, and the next
-// receive period keeps it below its divider. A genuinely empty receive period keeps its note.
-test('TC-061-004 a period in which the station transmitted shows no empty block and keeps the receive periods',{timeout:45000},async t=>{
+// Proves: CL-061-03; TC-061-004 (#61, operator decision 2026-11-04). The station marks its Tx
+// period (latest_decode transmitted true, no records, CL-061-04); Band Activity renders that
+// marker and no empty-period block, the receive period before it stays below its divider, and
+// the next receive period keeps it. A genuinely empty receive period keeps its note. No
+// station.tick says transmitting: the browser does not infer the Tx period.
+test('TC-061-004 a Tx period shows the station Tx marker, no empty block, and keeps the receive periods',{timeout:45000},async t=>{
   let state,records=[];
   const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`PERIOD FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
-  const publish=(id,period,count)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  const publish=(id,period,count,transmitted)=>{const first=records.length;for(let i=0;i<count;i++)records.push(makeRecord(first+i,period));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:transmitted?{id,first_sequence:first,next_sequence:first,period_start_utc:period,complete:false,transmitted:true}:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
     state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
@@ -1553,26 +1554,52 @@ test('TC-061-004 a period in which the station transmitted shows no empty block 
       await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});
     });
   }});
-  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.querySelector('.empty-messages')?'empty:'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.querySelector('.empty-messages')?'empty:'+r.textContent:r.dataset.period==='tx'?'tx:'+r.textContent:`${r.dataset.period}:${r.dataset.sequence}`));
   const header=()=>page.locator('#band-activity header .op-muted').textContent();
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory);
-  // The station keys in 12:00:15 (a station.tick inside that period says transmitting).
-  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.parse('2026-10-27T12:00:17.000Z'),period_ms:15000,transmitting:true,rx_level_db:null}}}})));
-  publish(2,'2026-10-27T12:00:15.0000000Z',0);await page.evaluate(()=>receiveSync());
+  // The station transmitted in 12:00:15 and publishes it as a Tx period.
+  publish(2,'2026-10-27T12:00:15.0000000Z',0,true);await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>resultView?.id===2);await page.waitForTimeout(300);
-  assert.deepEqual(await shown(),['history:0','history:1','history:2'],'the transmit period adds no block; the receive period stays on top');
+  assert.deepEqual(await shown(),['tx:Tx 12:00:15 · this station transmitted · no decode','|FT8 period 12:00:00 UTC','history:0','history:1','history:2'],'the Tx marker on top, the receive period below its divider');
   assert.doesNotMatch(await page.locator('#band-activity').innerText(),/No stations decoded|No verified stations/);
-  assert.equal(await header(),'Latest FT8 period 12:00:00 UTC','the header names the last receive period');
+  assert.equal(await header(),'Tx · FT8 period 12:00:15 UTC · this station transmitted, no decode');
   assert.match(await page.locator('#band-activity .op-count').textContent(),/^3 messages$/);
   publish(3,'2026-10-27T12:00:30.0000000Z',2);await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>resultView?.id===3&&document.querySelectorAll('tr[data-period=latest]').length===2);
-  assert.deepEqual(await shown(),['latest:3','latest:4','|FT8 period 12:00:00 UTC','history:0','history:1','history:2'],'the receive period before the transmission stays below');
+  assert.deepEqual(await shown(),['latest:3','latest:4','|FT8 period 12:00:00 UTC','history:0','history:1','history:2'],'the receive period before the transmission stays below; the marker is gone');
   assert.match(await header(),/^Latest FT8 period 12:00:30 UTC/);
   // 12:00:45 is a receive period (no transmission) that decodes nothing: its small note stays.
   publish(4,'2026-10-27T12:00:45.0000000Z',0);await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>resultView?.id===4);
   assert.deepEqual(await shown(),['empty:No stations decodedNo verified stations were decoded in this period.','|FT8 period 12:00:30 UTC','history:3','history:4']);
   assert.match(await header(),/^Latest FT8 period 12:00:45 UTC/);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-061-04; TC-061-006 (#61, operator decision 2026-11-04). The station measures no Rx
+// level in its Tx period (station.tick rx_level_db null) and marks its waterfall rows (tx true);
+// the browser shows level warnings for receive periods only and paints Tx rows as Tx.
+test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive periods only',{timeout:45000},async t=>{
+  const {page,errors}=await liveDisplayFixture(t);
+  // Each tick is read in the same task (its handler redraws the meter synchronously and the
+  // error field is rebuilt from it), so no other station.tick can interleave.
+  const tick=(transmitting,level)=>page.evaluate(([transmitting,level])=>{
+    dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:15000,transmitting,rx_level_db:level}}}}));
+    window.wstxChipsShow();
+    return [document.querySelector('#settings-audio .op-input-meter strong').textContent,/Audio level low|Audio overdriven/.test(document.querySelector('#error-field').innerText)];
+  },[transmitting,level]);
+  await page.waitForSelector('#error-field');await testTicksOnly(page);
+  assert.deepEqual(await tick(false,5),['5 dB low',true],'a receive period with a low level shows the warning');
+  assert.deepEqual(await tick(true,null),['Tx · not measured',false],'on the air: no level, no warning');
+  assert.deepEqual(await tick(false,null),['Unavailable',false],'the rest of the Tx period: still no level and no warning');
+  assert.deepEqual(await tick(false,5),['5 dB low',true],'the next receive period measures again');
+  // Waterfall: two Tx rows, then a receive row.
+  const level=q=>Array.from({length:1024},()=>q);
+  await liveFrames(page,[{sequence:0,levels:level(60),tx:true},{sequence:1,levels:level(60),tx:true}]);
+  assert.deepEqual(await page.evaluate(()=>rows.map(r=>[r.sequence,r.tx])),[[0,true],[1,true]],'the tx rows are accepted');
+  assert.deepEqual(await cell(page,500),[90,20,30],'a Tx row is painted as Tx, not with its levels');
+  await liveFrames(page,[{sequence:2,levels:level(0)}]);
+  assert.deepEqual(await cell(page,500),[0,0,12],'a receive row shows its levels');
   assert.deepEqual(errors,[]);
 });
 
@@ -2514,8 +2541,9 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
 
 // #54: live frames for the current routed live job, injected as the station would announce them.
 async function liveFrames(page,frames){
-  await page.evaluate(frames=>{for(const {sequence,levels,thin} of frames){
+  await page.evaluate(frames=>{for(const {sequence,levels,thin,tx} of frames){
     const data={boot_id:live.boot_id,source_id:live.source.id,job_id:live.job.id,generation:live.generation,sequence,first_frame:sequence*(thin?12000:2400),end_frame:(sequence+1)*(thin?12000:2400)};
+    if(tx)data.tx=true;
     if(thin)data.levels=levels;else data.levels_b64=btoa(String.fromCharCode(...levels));
     dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:thin?'spectrum.frame':'spectrum.detail.frame',data}}}));}},frames);
 }
