@@ -754,7 +754,17 @@ attribute def ActivityOrdering {
              a row of the QSO table ("22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |");
              double-click (or Enter) answers (select, then
              SetEnableTx on). Stations that do not call me are not listed (Band Activity
-             shows them). When no row qualifies, one muted line says so instead of an empty
+             shows them). Worked-before marks (CL-010-13, #10 2026-11-04): each line
+             carries the Band Activity marks of its sender, so only stations of interest
+             are coloured: the background of the highest-priority enabled new_* slot of
+             its record flags (BandActivityColours, the same Settings choice; mycall is
+             not used, since every line calls me), none without such a flag, so a sender
+             worked before on this band and mode has no colour; its hover text (title and
+             aria-description) names the reasons of BandActivityHover and the
+             worked-before status ("Worked before on <band> <MODE>" or "Worked before on
+             another band or mode") from the answers of the Band Activity
+             WorkedBeforeQuery of the latest and the previous period (no further query),
+             followed by the double-click hint. When no row qualifies, one muted line says so instead of an empty
              list: "nobody calling" when no QSO runs, "nobody else calling" while one runs.
              An inbound UDP Clear of window 1 or 2 (WSJT-X Rx Frequency window) hides the
              rows below its floor (WstxUdp::UdpDisplayEvent rx_frequency, #40 CL-040-08).
