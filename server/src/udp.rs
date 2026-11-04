@@ -260,8 +260,17 @@ struct Runtime {
     replay_status: bool,
 }
 type Identity = (String, String, u64);
-/// (call, background, foreground, last_only).
-type Highlight = (String, (u8, u8, u8), (u8, u8, u8), bool);
+/// One Highlight Callsign entry (WSJT-X DisplayText::highlight_callsign): the call upper
+/// case, each colour or none (cleared), and for a last-period-only entry the period start
+/// of the live job's latest decode when it arrived (None: no decode, it colours nothing).
+#[derive(Clone)]
+struct Highlight {
+    call: String,
+    background: nm::Color,
+    foreground: nm::Color,
+    last_only: bool,
+    period: Option<String>,
+}
 #[derive(Default)]
 struct Inner {
     revision: u64,
@@ -274,7 +283,11 @@ struct Inner {
     decoded: bool,
     /// Reply/Replay ignore decodes below this sequence of this job (inbound Clear).
     floor: Option<(Identity, u64)>,
+    /// The Rx Frequency floor of the last inbound Clear of window 1 or 2 (browser only).
+    rx_floor: Option<(Identity, u64)>,
     highlights: VecDeque<Highlight>,
+    /// Advances with every applied Highlight Callsign and Clear (the udp.display event).
+    display: u64,
     clear: (u64, Option<u8>),
     received: u64,
     ignored: u64,
@@ -548,8 +561,30 @@ pub(crate) fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::S
         tx_message: facts.and_then(|f| f.next_message).unwrap_or_default(),
     }
 }
-fn color_text((r, g, b): (u8, u8, u8)) -> String {
-    format!("#{r:02x}{g:02x}{b:02x}")
+fn color_text(color: nm::Color) -> Value {
+    color.map_or(Value::Null, |(r, g, b)| {
+        json!(format!("#{r:02x}{g:02x}{b:02x}"))
+    })
+}
+/// (highlights, clear) of UdpSnapshot and UdpDisplayEvent.
+fn display_of(inner: &Inner) -> (Vec<Value>, Value) {
+    let highlights = inner
+        .highlights
+        .iter()
+        .map(|h| {
+            json!({"call":h.call,"background":color_text(h.background),
+                "foreground":color_text(h.foreground),"last_only":h.last_only,"period":h.period})
+        })
+        .collect();
+    let floor = |f: &Option<(Identity, u64)>| {
+        f.as_ref()
+            .map_or(Value::Null, |((source, job, generation), sequence)| {
+                json!({"source_id":source,"job_id":job,"generation":generation,"sequence":sequence})
+            })
+    };
+    let clear = json!({"sequence":inner.clear.0,"window":inner.clear.1,
+        "band_activity":floor(&inner.floor),"rx_frequency":floor(&inner.rx_floor)});
+    (highlights, clear)
 }
 fn armed(r: &recording::Recording) -> bool {
     r.transmit
@@ -633,18 +668,26 @@ impl Owner {
                     "last_send_utc_ms":rt.last_send,"error":rt.error,"last_command":rt.last_command})
             })
             .collect();
-        let highlights: Vec<Value> = inner
-            .highlights
-            .iter()
-            .map(|(call, bg, fg, last)| {
-                json!({"call":call,"background":color_text(*bg),"foreground":color_text(*fg),"last_only":last})
-            })
-            .collect();
+        let (highlights, clear) = display_of(&inner);
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
             "configuration":inner.config.as_ref().map(Config::json),"configuration_error":inner.error,
-            "status":status,"highlights":highlights,
-            "clear":{"sequence":inner.clear.0,"window":inner.clear.1},
+            "status":status,"highlights":highlights,"clear":clear,
             "received":inner.received,"ignored":inner.ignored})
+    }
+    /// The udp.display revision: 0 until a Highlight Callsign or Clear was applied.
+    pub(crate) fn display_revision(&self) -> u64 {
+        self.lock().display
+    }
+    /// WstxUdp::UdpDisplayEvent: the highlights and clear floors the browser renders.
+    pub(crate) fn display_event(&self, r: &recording::Recording) -> (u64, String) {
+        let inner = self.lock();
+        let (highlights, clear) = display_of(&inner);
+        let data = json!({"profile_id":r.profile,"boot_id":r.boot,"display_revision":inner.display,
+            "highlights":highlights,"clear":clear});
+        (
+            inner.display,
+            json!({"v":1,"type":"udp.display","data":data}).to_string(),
+        )
     }
     /// PUT /udp after the route checks: validation, revision, atomic save, then the
     /// running sockets follow the saved configuration.
@@ -947,17 +990,22 @@ impl Owner {
                 I::Close | I::SwitchConfiguration | I::Configure => ("ignored", None),
                 _ if !(t.accept && from_target) => ("not_accepted", None),
                 I::Clear { window } => {
-                    if window != 1
-                        && let Some((identity, _, records)) =
-                            state.recording.live_records_after(None, 0)
+                    if let Some((identity, _, records)) =
+                        state.recording.live_records_after(None, 0)
                     {
                         let next = records
                             .last()
                             .and_then(|r| r["sequence"].as_u64())
                             .map_or(0, |s| s + 1);
-                        inner.floor = Some((identity, next));
+                        if window != 1 {
+                            inner.floor = Some((identity.clone(), next));
+                        }
+                        if window != 0 {
+                            inner.rx_floor = Some((identity, next));
+                        }
                     }
                     inner.clear = (inner.clear.0.saturating_add(1), Some(window));
+                    inner.display = inner.display.saturating_add(1);
                     APPLIED
                 }
                 I::Reply {
@@ -1047,19 +1095,51 @@ impl Owner {
                     foreground,
                     last_only,
                 } => {
-                    if call.is_empty() || call.len() > 32 || call.chars().any(char::is_control) {
+                    // WSJT-X DisplayText::highlight_callsign: an empty, " " or "0" call
+                    // does nothing; CLEARALL! empties the map; calls match without
+                    // regard to case.
+                    if call.is_empty()
+                        || call == " "
+                        || call == "0"
+                        || call.len() > 32
+                        || call.chars().any(char::is_control)
+                    {
                         ("ignored", None)
                     } else if call == "CLEARALL!" {
                         inner.highlights.clear();
+                        inner.display = inner.display.saturating_add(1);
                         APPLIED
                     } else {
-                        inner.highlights.retain(|h| h.0 != call);
-                        if let (Some(bg), Some(fg)) = (background, foreground) {
+                        let call = call.to_uppercase();
+                        let coloured = background.is_some() || foreground.is_some();
+                        // The last period: that of the live job's latest decode.
+                        let period = last_only
+                            .then(|| state.recording.live_records_after(None, 0))
+                            .flatten()
+                            .and_then(|(_, _, records)| {
+                                records.last()?["period_start_utc"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                            });
+                        // A last-period entry (also a reset, without colours) replaces the
+                        // call's last-period entry and keeps its map entry; a map entry or
+                        // its removal replaces both (WSJT-X recolours every occurrence).
+                        inner
+                            .highlights
+                            .retain(|h| h.call != call || (last_only && !h.last_only));
+                        if last_only || coloured {
                             if inner.highlights.len() == HIGHLIGHTS_MAX {
                                 inner.highlights.pop_front();
                             }
-                            inner.highlights.push_back((call, bg, fg, last_only));
+                            inner.highlights.push_back(Highlight {
+                                call,
+                                background,
+                                foreground,
+                                last_only,
+                                period,
+                            });
                         }
+                        inner.display = inner.display.saturating_add(1);
                         APPLIED
                     }
                 }

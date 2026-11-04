@@ -212,15 +212,28 @@ package WstxUdp {
              StandardMessageSet, #24 S1b); the Send flag is ignored.
              Replay: the retained decodes (as for Reply) are sent to that target only, New
              false, in sequence order, at most replayPerStep per station step, then Status.
-             Clear: window 0 (also when missing) or 2 sets the Reply/Replay floor to the
-             current next sequence; window 1 has no decode effect; each applied Clear
-             advances clear.sequence and records clear.window for the browser (#37); window
-             above 2 is malformed.
-             Highlight Callsign: "CLEARALL!" removes every highlight; an invalid background
-             or foreground removes that call's highlight; else it is set or replaced
-             {call, background, foreground as "#rrggbb", last_only}; at most highlightsMax
-             (the oldest is dropped); volatile. Calls are 1..32 bytes without control
-             characters. */
+             Clear: window 0 (also when missing) or 2 sets the Reply/Replay floor, which is
+             also the Band Activity floor (clear.band_activity), to the current live job and
+             its next sequence; window 1 or 2 sets the Rx Frequency floor
+             (clear.rx_frequency) the same way, which has no decode effect; without a live
+             job a floor stays as it was; each applied Clear advances clear.sequence and
+             records clear.window; window above 2 is malformed. The browser applies both
+             floors (UdpDisplayEvent, #40 CL-040-08).
+             Highlight Callsign (WSJT-X 3.3 widgets/displaytext.cpp
+             DisplayText::highlight_callsign): an empty, " " or "0" call is ignored;
+             "CLEARALL!" removes every highlight; any other call is kept upper case (WSJT-X
+             keys its map upper case and finds case-insensitively). A colour is "#rrggbb" or
+             null for an invalid QColor. Highlight last off: with at least one valid colour
+             the call's map entry {call, background, foreground, last_only false, period
+             null} is set or replaced, with both invalid it is removed; either way the call's
+             last-period entry is removed too (WSJT-X recolours or resets every occurrence).
+             Highlight last on: the call's last-period entry {call, background, foreground,
+             last_only true, period} replaces its earlier one, also with both colours invalid
+             (a reset in that period); period is period_start_utc of the current live job's
+             latest decode when it arrived (null without one: it colours nothing); the map
+             entry is kept. At most highlightsMax entries (the oldest is dropped); volatile.
+             Calls are 1..32 bytes without control characters. Each applied Highlight
+             Callsign advances the display revision. */
     }
     attribute def UdpHttp {
         attribute bodyBytesMax : Integer = 8192;
@@ -228,8 +241,9 @@ package WstxUdp {
              query or body: exactly {v:1, profile_id, boot_id, revision, configuration (null
              or {instance_name, targets}), configuration_error (null or
              invalid_configuration), status [TargetStatus], highlights [{call, background,
-             foreground, last_only}], clear {sequence, window (null or 0..2)}, received,
-             ignored}.
+             foreground, last_only, period}], clear {sequence, window (null or 0..2),
+             band_activity, rx_frequency (each null or {source_id, job_id, generation,
+             sequence})}, received, ignored} (InboundRules).
              PUT /udp: Origin, session, no query, application/json, at most bodyBytesMax
              (413), JSON; exactly {v, profile_id, boot_id, expected_revision,
              configuration {instance_name, targets}}; refusals in this order 400
@@ -241,6 +255,37 @@ package WstxUdp {
              (Close to a removed, disabled or socket-changed target, activation of a new or
              changed one;
              an unchanged target keeps its socket, schema and status). */
+    }
+
+    item def UdpDisplayEvent {
+        attribute v : Integer = 1;
+        attribute 'type' : String = "udp.display";
+        doc /* #40 (CL-040-08). Versioned WebSocket event on the existing wstx.v1 socket,
+             exactly {v:1, type:"udp.display", data:{profile_id, boot_id, display_revision,
+             highlights, clear}} with highlights and clear as in UdpHttp. The display
+             revision starts at 0 and advances with each applied inbound Highlight Callsign
+             and Clear (InboundRules); a display-subscribed peer receives the event, paced
+             with contact.state as an optional write, once its revision differs from the
+             last one sent to that peer, and at once after it subscribes when the revision
+             is above 0, so a page opened later shows the current state; nothing is sent
+             while no command was applied, and the browser reads no /udp for it. A datagram
+             that is not_accepted changes nothing and sends nothing.
+             The browser (WstxOperatingLayout::BandActivityColours, BandActivityView,
+             QsoPane) keeps the event of the highest revision of its boot and applies it only while its profile_id and boot_id are the station's (a station restart drops the earlier boot's highlights and floors). A row matches a
+             highlight when a whole word of its message, also inside <>, equals the call
+             (upper case), the sending call first, then the words in message order; for
+             each word a last-period entry whose period equals the row's period_start_utc
+             applies (a reset leaves that word without a UDP colour), else the call's map
+             entry. The first applicable entry sets the row background to its background
+             (none when null) and the row text colour to its foreground (unchanged when
+             null). A floor hides the rows of its job below its sequence, and while its job
+             is the live job also every row of another job: band_activity in Band Activity
+             (both the latest and the kept period), rx_frequency in the QSO pane Others,
+             which replace the WSJT-X Rx Frequency window. Rows decoded later show as
+             usual. Deviation, as the browser derives the rows from this state: CLEARALL!
+             and a removal also take the colour off rows already shown (WSJT-X leaves text
+             already coloured until it is re-highlighted or erased), and the colours apply
+             to the whole row rather than the word, as the slot colours do (#50). */
     }
 
     dependency servicePlacement from OutboundRules to WstxArchitecture::StationService;
@@ -256,4 +301,6 @@ package WstxUdp {
     dependency inboundClause from InboundRules to WstxRequirements::'CL-040-03';
     dependency textClause from OutboundRules to WstxRequirements::'CL-040-04';
     dependency statusCadenceClause from OutboundRules to WstxRequirements::'CL-040-07';
+    dependency displayClause from UdpDisplayEvent to WstxRequirements::'CL-040-08';
+    dependency displayRulesClause from InboundRules to WstxRequirements::'CL-040-08';
 }

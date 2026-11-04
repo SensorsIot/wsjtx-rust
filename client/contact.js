@@ -614,7 +614,8 @@ function recentRows(){
   const rows=resultRows.map(record=>({record,context}));
   const previous=activityHistory[0];
   if(previous&&previous.context===context&&Number.isFinite(latest)&&latest-Date.parse(previous.period??'')<=len)rows.push(...previous.rows.map(record=>({record,context})));
-  return rows;
+  // #40 CL-040-08: an inbound UDP Clear of window 1 or 2 (Rx Frequency) clears these lines.
+  return rows.filter(({record})=>window.wstxUdpVisible?.('rx_frequency',record,context)??true);
 }
 // #37 (operator 2026-11-02): only stations calling my call, oldest first below the dialogue;
 // during a QSO those other than the partner within ±50 Hz of my Rx or Tx offset
@@ -810,7 +811,9 @@ function distanceKm(from,to){
   return Math.round(12742*Math.asin(Math.min(1,Math.sqrt(h))));
 }
 window.wstxRenderHistory=function renderHistory(body,blocks=activityHistory){
-  for(const block of blocks){
+  // #40 CL-040-08: rows below an inbound UDP Clear (window 0 or 2) are not shown.
+  for(const kept of blocks){
+    const block={...kept,rows:kept.rows.filter(r=>window.wstxUdpVisible?.('band_activity',r,kept.context)??true)};if(!block.rows.length)continue;
     const divider=document.createElement('tr');divider.className='ba-divider';divider.setAttribute('role','row');
     const cell=document.createElement('td');cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`${block.mode.toUpperCase()} period ${periodLabel(block.period,block.mode)}${block.period?' UTC':''}`;divider.append(cell);body.append(divider);
     for(const record of activityOrdering(block.rows))body.append(activityRow(record,'history',block.context,block.mode));

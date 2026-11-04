@@ -571,7 +571,16 @@ attribute def ActivityOrdering {
              to my call keeps mycall on top. Every row with a flag, my call, a strategy verdict or
              a worked-before status carries hover text (BandActivityHover). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
-             accent (a left bar and the message text), never a row background. */
+             accent (a left bar and the message text), never a row background.
+             UDP highlight (#40, CL-040-08, operator 2026-11-04): a Highlight Callsign from a UDP
+             target with accept_commands on (GridTracker, JTAlert; WstxUdp::InboundRules,
+             UdpDisplayEvent) marks a station of interest by definition: the row it matches
+             is coloured even when it matches no slot, and its colours win over every slot
+             (also mycall) and over the strategy accent's message colour; it sets the row
+             background (none when the highlight has no valid background, as WSJT-X clears
+             it) and, when given, the row text colour. A reset or removed highlight gives the
+             row its slot colour back. Highlights from a target without accept_commands never
+             reach the browser. */
     }
     attribute def BandActivityValue {
         attribute levels : Integer = 8;
@@ -617,6 +626,9 @@ attribute def ActivityOrdering {
              an unknown-loss source epoch of the same receive does not (CL-061-01).
              A period in which this station transmitted adds no block: the receive
              period below it stays on top under the header and is kept (CL-061-03).
+             An inbound UDP Clear of window 0 or 2 hides the rows below its floor, in the
+             latest and the kept period, until later decodes arrive (WstxUdp::UdpDisplayEvent
+             band_activity, #40 CL-040-08).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
@@ -742,6 +754,8 @@ attribute def ActivityOrdering {
              SetEnableTx on). Stations that do not call me are not listed (Band Activity
              shows them). When no row qualifies, one muted line says so instead of an empty
              list: "nobody calling" when no QSO runs, "nobody else calling" while one runs.
+             An inbound UDP Clear of window 1 or 2 (WSJT-X Rx Frequency window) hides the
+             rows below its floor (WstxUdp::UdpDisplayEvent rx_frequency, #40 CL-040-08).
              4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
              the next period of the contact's parity, only while Enable Tx is on and the
              contact is calling or a QSO runs. While the station reports transmitting

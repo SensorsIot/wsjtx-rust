@@ -589,24 +589,67 @@ function sortBy(button){
 }
 document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
 document.querySelector('#band-activity thead').addEventListener('keydown',event=>{const th=event.target.closest('th[data-sort]');if(th&&(event.key==='Enter'||event.key===' ')){event.preventDefault();sortBy(th);}});
+// #40 CL-040-08 WstxUdp::UdpDisplayEvent: Highlight Callsign and Clear from a UDP target with
+// accept_commands on (GridTracker, JTAlert), as WSJT-X's Band Activity and Rx Frequency
+// windows apply them. kind band_activity or rx_frequency: a Clear hides the rows of its job
+// below its floor (and, while that job is live, the rows of every earlier job).
+// The event is kept whatever the page knows yet and applies only while its profile and boot are
+// the station's (a station restart drops the earlier boot's highlights and floors).
+let udpDisplay=null;
+const udpCurrent=()=>udpDisplay&&udpDisplay.profile_id===profileData?.profile_id&&udpDisplay.boot_id===profileData?.boot_id?udpDisplay:null;
+function udpVisible(kind,record,context){
+  const d=udpCurrent(),f=d?.clear?.[kind];if(!f)return true;
+  const at=`${d.profile_id}/${d.boot_id}/${f.source_id}/${f.job_id}/${f.generation}`;
+  return at===liveIdentity(live)?context===at&&record.sequence>=f.sequence:context!==at||record.sequence>=f.sequence;
+}
+window.wstxUdpVisible=udpVisible;
+// The UDP highlight of a row (WSJT-X DisplayText::highlight_callsign): a whole message word,
+// also in <>, the sender first. A last-period entry of the row's period wins over the call's
+// map entry; a last-period reset (no colours) leaves that word uncoloured. It is interesting by
+// definition and replaces the slot colour (BandActivityColours).
+function udpHighlight(record){
+  const list=udpCurrent()?.highlights;if(!list?.length||record.status!=='decoded')return null;
+  const words=record.text.toUpperCase().split(' ').filter(Boolean).map(w=>w.replace(/^<(.+)>$/,'$1')),from=record.fields?.from?.text?.toUpperCase();
+  for(const word of from&&words.includes(from)?[from,...words.filter(w=>w!==from)]:words){
+    const last=list.findLast(h=>h.last_only&&h.call===word&&h.period!==null&&h.period===record.period_start_utc);
+    if(last){if(last.background||last.foreground)return last;continue;}
+    const map=list.find(h=>!h.last_only&&h.call===word);if(map)return map;
+  }
+  return null;
+}
+function validUdpDisplay(d){
+  const colour=c=>c===null||(typeof c==='string'&&/^#[0-9a-f]{6}$/.test(c));
+  const floor=f=>f===null||(!!f&&typeof f==='object'&&typeof f.source_id==='string'&&typeof f.job_id==='string'&&Number.isSafeInteger(f.generation)&&Number.isSafeInteger(f.sequence));
+  return !!d&&typeof d.profile_id==='string'&&typeof d.boot_id==='string'&&Number.isSafeInteger(d.display_revision)&&Array.isArray(d.highlights)&&d.highlights.length<=100&&d.highlights.every(h=>h&&typeof h.call==='string'&&colour(h.background)&&colour(h.foreground)&&typeof h.last_only==='boolean'&&(h.period===null||typeof h.period==='string'))&&
+    !!d.clear&&floor(d.clear.band_activity)&&floor(d.clear.rx_frequency);
+}
+addEventListener('station-message',event=>{
+  const {current,message}=event.detail;if(current!==socket||message?.type!=='udp.display')return;
+  const d=message.data;
+  if(!validUdpDisplay(d)){stationData('udp',false);return;}stationData('udp',true);
+  if(udpDisplay&&udpDisplay.profile_id===d.profile_id&&udpDisplay.boot_id===d.boot_id&&d.display_revision<=udpDisplay.display_revision)return;
+  udpDisplay=d;renderResults();
+});
 function renderResults(){
-  const ordered=activityOrdering();
+  const shownRows=resultRows.filter(r=>udpVisible('band_activity',r,liveIdentity(live)));
+  const ordered=activityOrdering(shownRows);
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
   // #61 CL-061-03: the period this station transmitted in shows no empty block (as in WSJT-X);
   // the header and the top rows are the last receive period, kept below it.
-  const own=resultView&&!resultRows.length&&!loading&&window.wstxTransmitted?.(resultView.period_start_utc),top=own?activityHistory[0]??null:null;
+  const own=resultView&&!resultRows.length&&!loading&&window.wstxTransmitted?.(resultView.period_start_utc),kept=own?activityHistory[0]??null:null;
+  const top=kept&&{...kept,rows:kept.rows.filter(r=>udpVisible('band_activity',r,kept.context))};
   document.querySelector('#band-activity header .op-muted').textContent=own?(top?`Latest ${top.mode.toUpperCase()} period ${periodLabel(top.period,top.mode)}${top.period?' UTC':''}${historyIncomplete?' · Incomplete history':''}`:'Latest decode period'):resultView?
     `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
-  const count=top?top.rows.length:resultRows.length;
+  const count=top?top.rows.length:shownRows.length;
   document.querySelector('#band-activity .op-count').textContent=`${count} message${count===1?'':'s'}`;
   if(top){
     body.replaceChildren();
     for(const record of activityOrdering(top.rows))body.append(activityRow(record,'history',top.context,top.mode));
     window.wstxRenderHistory?.(body,activityHistory.slice(1));return;
   }
-  if(!resultRows.length){
+  if(!shownRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
     const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
     let heading='Decoder unavailable',message='No decoded messages are available from this server.';
@@ -631,11 +674,13 @@ function activityRow(record,period,context,mode){
   const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
   if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
-  if(hl.length)row.dataset.hl=hl.join(' ');
+  const udp=udpHighlight(record);
+  if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
+    if(udp){if(udp.background)cell.style.backgroundColor=udp.background;if(udp.foreground)cell.style.color=udp.foreground;}
     if(index===4){cell.dataset.col='message';
       // #56: WSJT-X's a-priori marker (aN), shown after the message but not part of its text.
       if(decoded&&Number.isInteger(record.a_priori)){cell.dataset.ap=`a${record.a_priori}`;cell.title=`A-priori decode (WSJT-X a${record.a_priori})`;}}

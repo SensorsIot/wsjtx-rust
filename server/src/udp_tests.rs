@@ -205,9 +205,18 @@ fn free_text(text: &str) -> Vec<u8> {
     b
 }
 fn highlight(call: &str, bg: Option<(u8, u8, u8)>) -> Vec<u8> {
+    highlight_with(call, bg, Some((255, 255, 255)), false)
+}
+/// Highlight Callsign (13) with a QColor each (None: an invalid colour) and Highlight last.
+fn highlight_with(
+    call: &str,
+    bg: Option<(u8, u8, u8)>,
+    fg: Option<(u8, u8, u8)>,
+    last_only: bool,
+) -> Vec<u8> {
     let mut b = header(13, 2, "WSTX-Rust");
     put_s(&mut b, call);
-    for color in [bg, Some((255, 255, 255))] {
+    for color in [bg, fg] {
         b.push(u8::from(color.is_some()));
         let (r, g, bl) = color.unwrap_or_default();
         for c in [255u16, u16::from(r), u16::from(g), u16::from(bl), 0] {
@@ -221,7 +230,7 @@ fn highlight(call: &str, bg: Option<(u8, u8, u8)>) -> Vec<u8> {
             );
         }
     }
-    b.push(0);
+    b.push(u8::from(last_only));
     b
 }
 fn halt_tx(schema: u32, id: &str) -> Vec<u8> {
@@ -500,6 +509,7 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
         ),
         (json!([]), json!(0))
     );
+    assert_eq!(owner.display_revision(), 0, "nothing for the browser");
 
     // From C: a mismatching Reply, then the matching one prepares K1ABC disarmed.
     let v = command(&f, &owner, &c, 1, &reply(time, -11, 1235, "CQ K1ABC FN42"));
@@ -559,14 +569,20 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     assert_eq!(outcome(&v).0, "applied");
     assert_eq!(
         owner.snapshot(&f.state.recording)["highlights"],
-        json!([{"call":"K1ABC","background":"#ff0000","foreground":"#ffffff","last_only":false}])
+        json!([{"call":"K1ABC","background":"#ff0000","foreground":"#ffffff","last_only":false,"period":null}])
     );
     command(&f, &owner, &c, 1, &highlight("W1AW", Some((0, 255, 0))));
-    command(&f, &owner, &c, 1, &highlight("K1ABC", None));
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("K1ABC", None, None, false),
+    );
     assert_eq!(
         owner.snapshot(&f.state.recording)["highlights"][0]["call"],
         "W1AW",
-        "invalid colour removes"
+        "two invalid colours remove"
     );
     command(&f, &owner, &c, 1, &highlight("CLEARALL!", Some((0, 0, 0))));
     assert_eq!(owner.snapshot(&f.state.recording)["highlights"], json!([]));
@@ -643,9 +659,15 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     // Clear (window 0) hides the earlier decodes from Replay and Reply.
     let v = command(&f, &owner, &c, 1, &header(3, 2, "WSTX-Rust"));
     assert_eq!(outcome(&v).0, "applied");
+    let clear = owner.snapshot(&f.state.recording)["clear"].clone();
     assert_eq!(
-        owner.snapshot(&f.state.recording)["clear"],
-        json!({"sequence":1,"window":0})
+        (
+            &clear["sequence"],
+            &clear["window"],
+            &clear["band_activity"]["sequence"],
+            &clear["rx_frequency"]
+        ),
+        (&json!(1), &json!(0), &json!(1), &Value::Null)
     );
     drain(&c);
     command(&f, &owner, &c, 1, &header(7, 2, "WSTX-Rust"));
@@ -655,6 +677,200 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
     assert_eq!(outcome(&v), ("refused".into(), json!("no_match")));
     let keys = f.bench.keys.lock().unwrap().clone();
     assert!(keys.iter().all(|(_, on)| !on), "PTT never keyed: {keys:?}");
+}
+
+// Proves: CL-040-08, TC-012-008 (the station side; tests/contact.test.cjs renders it).
+// Hand table from WSJT-X 3.3.0-beta5 widgets/displaytext.cpp highlight_callsign.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_008_highlight_callsign_and_clear_keep_the_wsjtx_display_rules() {
+    let f = fixture("http://127.0.0.1:18408", false);
+    let (a, c) = (peer(), peer());
+    let owner = install(
+        &f,
+        vec![
+            target_json(a.local_addr().unwrap(), &MESSAGES, false),
+            target_json(c.local_addr().unwrap(), &MESSAGES, true),
+        ],
+    );
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let p1 = period_text(1_793_536_470_000);
+    let p2 = period_text(1_793_536_485_000);
+    f.state.recording.fixture_publish_period(
+        &p1,
+        vec![
+            record("CQ K1ABC FN42", 1234.6, Some(-12.4)),
+            record("CQ W1AW FN31", 800.0, Some(-3.0)),
+        ],
+    );
+    owner.step(&f.state);
+    drain(&a);
+    drain(&c);
+    let list = || owner.snapshot(&f.state.recording)["highlights"].clone();
+    let entry = |call: &str, bg: Value, fg: Value, last: bool, period: Value| json!({"call":call,"background":bg,"foreground":fg,"last_only":last,"period":period});
+    let (red, white, green, blue, yellow) = (
+        json!("#ff0000"),
+        json!("#ffffff"),
+        json!("#00ff00"),
+        json!("#0000ff"),
+        json!("#ffff00"),
+    );
+
+    // Accept commands off: nothing reaches the display.
+    let v = command(
+        &f,
+        &owner,
+        &a,
+        0,
+        &highlight_with("K1ABC", Some((255, 0, 0)), None, false),
+    );
+    assert_eq!(outcome(&v).0, "not_accepted");
+    let v = command(&f, &owner, &a, 0, &header(3, 2, "WSTX-Rust"));
+    assert_eq!(outcome(&v).0, "not_accepted");
+    assert_eq!((list(), owner.display_revision()), (json!([]), 0));
+
+    // A map entry, upper-cased (WSJT-X keys and finds without case).
+    let v = command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("k1abc", Some((255, 0, 0)), Some((255, 255, 255)), false),
+    );
+    assert_eq!(outcome(&v).0, "applied");
+    assert_eq!(
+        list(),
+        json!([entry(
+            "K1ABC",
+            red.clone(),
+            white.clone(),
+            false,
+            Value::Null
+        )])
+    );
+    assert_eq!(owner.display_revision(), 1);
+    // Last period only: anchored to the period of the latest decode.
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("W1AW", Some((0, 255, 0)), None, true),
+    );
+    assert_eq!(
+        list()[1],
+        entry("W1AW", green, Value::Null, true, json!(p1))
+    );
+    f.state
+        .recording
+        .fixture_publish_period(&p2, vec![record("K1ABC W1AW -05", 900.0, Some(-5.0))]);
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("W1AW", Some((0, 0, 255)), None, true),
+    );
+    assert_eq!(
+        list(),
+        json!([
+            entry("K1ABC", red.clone(), white.clone(), false, Value::Null),
+            entry("W1AW", blue.clone(), Value::Null, true, json!(p2))
+        ]),
+        "a newer last-period highlight of the call replaces its older one"
+    );
+    // A map entry of the call replaces its last-period entry (WSJT-X recolours all).
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("W1AW", None, Some((255, 255, 0)), false),
+    );
+    assert_eq!(
+        list(),
+        json!([
+            entry("K1ABC", red.clone(), white.clone(), false, Value::Null),
+            entry("W1AW", Value::Null, yellow.clone(), false, Value::Null)
+        ]),
+        "one valid colour is enough; the other is cleared"
+    );
+    // A last-period reset keeps the map entry; a map removal removes both.
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("K1ABC", None, None, true),
+    );
+    assert_eq!(
+        list(),
+        json!([
+            entry("K1ABC", red.clone(), white.clone(), false, Value::Null),
+            entry("W1AW", Value::Null, yellow.clone(), false, Value::Null),
+            entry("K1ABC", Value::Null, Value::Null, true, json!(p2))
+        ])
+    );
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("K1ABC", None, None, false),
+    );
+    assert_eq!(
+        list(),
+        json!([entry(
+            "W1AW",
+            Value::Null,
+            yellow.clone(),
+            false,
+            Value::Null
+        )])
+    );
+    let revision = owner.display_revision();
+    for call in [" ", "0"] {
+        let v = command(
+            &f,
+            &owner,
+            &c,
+            1,
+            &highlight_with(call, Some((1, 2, 3)), None, false),
+        );
+        assert_eq!(outcome(&v).0, "ignored", "{call:?}");
+    }
+    assert_eq!(owner.display_revision(), revision);
+    command(
+        &f,
+        &owner,
+        &c,
+        1,
+        &highlight_with("CLEARALL!", None, None, false),
+    );
+    assert_eq!(list(), json!([]));
+    assert_eq!(owner.display_revision(), revision + 1);
+
+    // Clear: window 1 the Rx Frequency floor only, window 2 both, at the next sequence.
+    let floor = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":3});
+    let mut clear1 = header(3, 2, "WSTX-Rust");
+    clear1.push(1);
+    command(&f, &owner, &c, 1, &clear1);
+    let clear = owner.snapshot(&f.state.recording)["clear"].clone();
+    assert_eq!(
+        clear,
+        json!({"sequence":1,"window":1,"band_activity":null,"rx_frequency":floor})
+    );
+    let mut clear2 = header(3, 2, "WSTX-Rust");
+    clear2.push(2);
+    command(&f, &owner, &c, 1, &clear2);
+    let (revision, text) = owner.display_event(&f.state.recording);
+    let event: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        event,
+        json!({"v":1,"type":"udp.display","data":{"profile_id":f.id,"boot_id":f.boot,
+            "display_revision":revision,"highlights":[],
+            "clear":{"sequence":2,"window":2,"band_activity":floor,"rx_frequency":floor}}})
+    );
+    assert_eq!(revision, owner.display_revision());
 }
 
 fn config_body(f: &Fixture, revision: u64, targets: Value) -> Value {

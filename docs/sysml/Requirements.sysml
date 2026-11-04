@@ -3124,6 +3124,26 @@ package WstxRequirements {
         attribute executable : String = "server/src/udp_tests.rs; server/src/recording_tests.rs";
     }
     dependency CL_040_07_verified_by_TC_012_007 from 'CL-040-07' to 'TC-012-007';
+    requirement 'CL-040-08' {
+        doc /* Issue #40: an inbound Highlight Callsign (13) or Clear (3) that a target with accept_commands on applied (CL-040-03) changes the browser's display as WSJT-X 3.3 applies them (widgets/displaytext.cpp DisplayText::highlight_callsign; Clear window 0 Band Activity, 1 Rx Frequency, 2 both): the station announces the current highlights and clear floors to every display-subscribed browser (udp.display), Band Activity colours the rows of a highlighted call with its background and foreground (Highlight last: only rows of the period of the latest decode when it arrived; a call with no valid colour is reset; CLEARALL! removes all), and Clear hides the decoded rows below its floor in Band Activity (window 0, 2) and in the QSO pane's callers that replace the Rx Frequency window (window 1, 2) until later decodes arrive. A UDP highlight marks a station of interest by definition: it colours a row that matches no slot and wins over the Band Activity colour slots (#50 CL-050-02, operator 2026-11-04). A target without accept_commands changes nothing. Details: WstxUdp::InboundRules, UdpDisplayEvent; WstxOperatingLayout::BandActivityColours. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/main.rs; client/recording.js; client/contact.js";
+    }
+    dependency CL_040_08_to_FR_012 from 'CL-040-08' to 'FR-012';
+    verification 'TC-012-008' {
+        doc /* TC-012-008 — Highlight Callsign and Clear in the browser
+             CL-040-08
+             Setup: (a) actual candidate UDP owner on a disposable profile with loopback peers A (accept_commands off) and C (on), an FT8 live job with period P1 (CQ K1ABC FN42, CQ W1AW FN31); (b) the actual candidate router, contact engine and UDP owner started with no target, the browser, and two loopback peers that the test configures through PUT /udp (other: accept_commands off, tool: on) and whose datagrams it packs by hand.
+             Steps: (a) from A Highlight K1ABC and Clear; from C: "k1abc" red on white; W1AW green Highlight last; publish P2 (K1ABC W1AW -05); W1AW blue Highlight last; W1AW foreground yellow only; K1ABC without colours Highlight last; K1ABC without colours; " " and "0"; CLEARALL!; Clear window 1; Clear window 2; read the udp.display event. (b) publish P1 (CQ K1ABC FN42, CQ W1AW FN31, HB9BLA DL1XYZ JO62); from other K1ABC red; from tool W1AW green Highlight last without foreground, "dl1xyz" blue on yellow; publish P1+15 s (CQ W1AW FN31, HB9BLA DL1XYZ R-05); DL1XYZ without colours Highlight last; DL1XYZ without colours; K1ABC magenta, then the page given another boot_id and back, then K1ABC without colours; Clear window 1; Clear window 0; publish P1+30 s (CQ K1ABC FN42).
+             Expected (hand table from DisplayText::highlight_callsign): (a) A not_accepted, nothing listed, display revision 0; K1ABC listed upper case with period null; W1AW last-only with period P1, then replaced by blue with period P2; the map entry W1AW (background null, foreground #ffff00) replaces the last-only one; the K1ABC reset is a last-only entry with period P2 beside its map entry; the K1ABC removal removes both; " " and "0" ignored without a revision change; CLEARALL! empties the list; window 1 sets only rx_frequency, window 2 both, at the next sequence 3 of the live job; the event is exactly {v 1, type udp.display, data {profile_id, boot_id, display_revision, highlights, clear}}. (b) the other target is not_accepted and K1ABC keeps its look; the P1 W1AW row green with its own text colour; the DL1XYZ row blue on yellow instead of the My call slot; in P1+15 s W1AW uncoloured while P1's stays green, DL1XYZ blue; the last-period reset uncolours only the P1+15 s DL1XYZ row (My call slot) and P1's stays blue; the removal gives both DL1XYZ rows the My call slot again; under another boot_id K1ABC shows its own look, back under the station's boot it is highlighted; window 1 empties the QSO pane callers and keeps the five Band Activity rows; window 0 empties Band Activity; the later decode is the one row shown; no page error.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only (never 2237), no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-040-08';
+        }
+        attribute executable : String = "server/src/udp_tests.rs; tests/contact.test.cjs; server/src/contact_http_tests.rs";
+    }
+    dependency CL_040_08_verified_by_TC_012_008 from 'CL-040-08' to 'TC-012-008';
     verification 'TC-012-001' {
         doc /* TC-012-001 — NetworkMessage wire vectors
              CL-040-01, CL-040-03, CL-040-04
