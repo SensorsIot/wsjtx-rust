@@ -66,7 +66,7 @@ const browserSettings=block('settings-browsers','Access &amp; grants',generalSec
 browserSettings.append(document.querySelector('#authorization-actions'));
 chips.after(document.querySelector('#forget'));
 const profilePanel=document.querySelector('#profile-panel'),profileMetadata=profilePanel.querySelector('dl');
-for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']],['audio','Audio &#10227;',['audio-input','audio-output']]]){
+for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']]]){
   const group=document.createElement('fieldset');group.id='server-fields-'+name;group.className='op-server-fieldset';group.innerHTML=`<legend>${legendText}</legend>`;
   if(name==='radio')group.append(serverForm.querySelector('select:not([id])').closest('label'));
   for(const id of ids)group.append(document.getElementById(id).closest('label'));
@@ -75,7 +75,10 @@ for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','con
 document.querySelector('#settings-save').textContent='Apply ⟳';
 radioSection.append(profilePanel);
 const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
-block('settings-audio','Audio input',radioSection,'<div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><p class="op-muted">Listing the inputs reads the device names only; it never opens audio.</p><button type="button" id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output>');
+// #44 CL-044-08: one Audio section; the selects belong to the profile form (Apply ⟳), their values are endpoint IDs.
+const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
+for(const [id,slot] of [['audio-input','.op-audio-input'],['audio-output','.op-audio-output']]){const select=document.getElementById(id);select.setAttribute('form','settings');audioSettings.querySelector(slot).append(select.closest('label'));}
+for(const type of ['input','change'])audioSettings.addEventListener(type,event=>{if(event.target.form===serverForm)serverForm.dispatchEvent(new Event(type));});
 const connectionPanel=document.createElement('div');connectionPanel.append(controls.querySelector('section[aria-label="Station status"]'),profileMetadata);
 const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionPanel.append(capabilities);
 const receivePanel=document.createElement('div');receivePanel.id='receive-diagnostics';
@@ -542,7 +545,7 @@ function receiveShow(){
   if(live){
     receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.audio.loss_epochs?` · ${live.audio.loss_epochs} audio loss restart${live.audio.loss_epochs===1?'':'s'} (last ${live.audio.last_loss})`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
-    capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
+    capabilities[0].textContent=live.audio.state==='running'?`Running · ${live.audio.device_name??'selected input'}`:`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
     document.querySelector('#receive-generation').textContent=`Receive generation ${live.generation} · source ${live.source?.id??'none'} · job ${live.job?.id??'none'}`;
     const c=live.clock;document.querySelector('#clock-detail').textContent=`Clock ${c.basis} · ${c.correlated?`receive periods correlated to UTC anchor ${c.utc_anchor}, uncertainty ${c.uncertainty_ns} ns`:'receive periods not correlated to UTC'} · external accuracy ${c.external_accuracy}`;
@@ -753,10 +756,44 @@ async function receiveStop(){
   catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 }
-document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
-  const output=document.querySelector('#audio-inputs');
-  try{const data=await request('/audio/devices');output.textContent=data.devices.map(d=>`${d.name} [${d.id}]`).join('\n')||'No audio inputs available';}
-  catch(error){output.textContent=`Audio inputs unavailable · ${error.message}`;}
+// #44 CL-044-08: the pickers name the endpoints (GET /audio/endpoints); the ID is only a hover title and in Expert.
+let audioView=null,audioRead=-Infinity,audioLoading=null,audioRevision=null;
+const audioIds=document.createElement('dl');audioIds.id='audio-endpoint-ids';audioIds.innerHTML='<div><dt>Input</dt><dd id="audio-id-input">none</dd></div><div><dt>Output</dt><dd id="audio-id-output">none</dd></div>';
+secondary('audio-ids','Audio endpoint IDs',audioIds,expertSection).open=true;
+function audioOption(text,value,disabled=false){const option=new Option(text,value);if(value)option.title=value;option.disabled=disabled;return option;}
+function audioRadio(){return [audioView?.inputs.find(e=>e.radio&&e.present),audioView?.outputs.find(e=>e.radio&&e.present)];}
+function audioRender(){
+  for(const [id,list] of [['audio-input',audioView?.inputs],['audio-output',audioView?.outputs]]){
+    const select=document.getElementById(id),current=select.value,options=[audioOption('None','')];
+    for(const e of list??[])options.push(audioOption(e.label,e.id,!e.present));
+    if(current&&!options.some(o=>o.value===current))options.push(audioOption(audioView?'Unknown device · not present':'Saved device',current,!!audioView));
+    select.replaceChildren(...options);select.value=current;
+  }
+  const saved=profileData?.settings.audio;
+  document.getElementById('audio-id-input').textContent=saved?.input_device??'none';document.getElementById('audio-id-output').textContent=saved?.output_device??'none';
+  const [input,output]=audioRadio(),radio=(input??output)?.radio;
+  document.getElementById('audio-recommend').hidden=!radio;
+  if(radio){document.getElementById('audio-recommend-text').textContent=`Recommended: ${input?.label??'no input matched'} / ${output?.label??'no output matched'}`;document.getElementById('audio-use-radio').textContent=`Use ${radio} audio`;}
+}
+function loadAudio(force=false){
+  if(audioLoading||!profileData||(!force&&performance.now()-audioRead<5000))return audioLoading;
+  audioRead=performance.now();const status=document.getElementById('audio-list-status');
+  audioLoading=request('/audio/endpoints',{cache:'no-store'}).then(v=>{
+    const entry=e=>e&&typeof e.id==='string'&&typeof e.label==='string'&&typeof e.present==='boolean';
+    if(v?.v!==1||v.profile_id!==profileData?.profile_id||![v.inputs,v.outputs].every(l=>Array.isArray(l)&&l.every(entry)))throw new Error('invalid_listing');
+    audioView=v;status.textContent='';
+  }).catch(error=>{audioView=null;status.textContent=`Audio devices unavailable · ${error.message}`;}).finally(()=>{audioLoading=null;audioRender();});
+  return audioLoading;
+}
+// A status refresh re-renders only; the listing is read again only for a new saved revision
+// (a save) or Reload saved settings, so an open drawer adds no periodic traffic (Thin budget).
+addEventListener('profile-fields',()=>{audioRender();const revision=profileData?JSON.stringify([profileData.boot_id,profileData.revision]):null,changed=audioRevision!==null&&revision!==audioRevision;audioRevision=revision;if(changed&&!drawer.hidden)loadAudio(true);});
+document.querySelector('#settings-reload').addEventListener('click',()=>{if(!drawer.hidden)loadAudio(true);});
+new MutationObserver(()=>{if(!drawer.hidden)loadAudio();}).observe(drawer,{attributes:true,attributeFilter:['hidden']});
+document.getElementById('audio-use-radio').addEventListener('click',()=>{
+  const [input,output]=audioRadio();
+  for(const [id,e] of [['audio-input',input],['audio-output',output]])if(e){const select=document.getElementById(id);select.value=e.id;select.dispatchEvent(new Event('change',{bubbles:true}));}
+  serverForm.requestSubmit();
 });
 function receiveReadyKey(profile,statusId){
   const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
@@ -1023,7 +1060,7 @@ async function radioSetupPost(path,body){
   if(!response.ok)throw new Error(value?.error?.code??`request_failed ${response.status}`);
   return value;
 }
-function detectRow(list,term,text){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=term;dd.textContent=text;list.append(dt,dd);}
+function detectRow(list,term,text,title=''){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=term;dd.textContent=text;if(title)dd.title=title;list.append(dt,dd);}
 function detectShow(v){
   const ports=v.ports??[],radios=ports.flatMap(p=>(p.radios??[]).map(r=>`${p.port} ${r.model??'unknown ID '+r.id} ${r.civ_address}h ${r.baud} baud`));
   detectEl('detect-result').textContent=ports.length?`${ports.length} port(s): ${ports.map(p=>`${p.port} ${p.state}`).join(', ')}${radios.length?' · found '+radios.join('; '):' · no radio answered'}${v.proposal?'':v.supported_radios>1?' · several supported radios: no proposal':''}`:'No COM ports found';
@@ -1032,8 +1069,8 @@ function detectShow(v){
     const p=v.proposal,a=p.audio;
     detectRow(fields,'Port',p.port);detectRow(fields,'Model',p.model);detectRow(fields,'CI-V address',`${p.civ_address}h`);detectRow(fields,'Baud',String(p.baud));
     detectRow(fields,'Control endpoint',p.control.endpoint);
-    detectRow(fields,'Audio input',a.input_device?`${a.input_name} · ${a.input_device}`:'not matched (choose manually)');
-    detectRow(fields,'Audio output',a.output_device?`${a.output_name} · ${a.output_device}`:'not matched (choose manually)');
+    detectRow(fields,'Audio input',a.input_device?a.input_name:'not matched (choose manually)',a.input_device??'');
+    detectRow(fields,'Audio output',a.output_device?a.output_name:'not matched (choose manually)',a.output_device??'');
   }
   detectEl('detect-proposal').hidden=!v.proposal;
   const items=detectEl('detect-items');items.replaceChildren();
@@ -1050,9 +1087,9 @@ detectEl('detect-run').addEventListener('click',async()=>{
 });
 detectEl('detect-use').addEventListener('click',()=>{
   const p=detectProposal;if(!p)return;
-  const set=(id,value)=>{const field=document.getElementById(id);if(value===null||value===undefined)return;field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));};
+  const set=(id,value,name)=>{const field=document.getElementById(id);if(value===null||value===undefined)return;if(field.tagName==='SELECT'&&![...field.options].some(o=>o.value===value))field.add(audioOption(name??'Detected device',value));field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));};
   set('control-mode',p.control.mode);set('control-endpoint',p.control.endpoint);set('ptt-mode',p.control.ptt);
-  set('audio-input',p.audio.input_device);set('audio-output',p.audio.output_device);
+  set('audio-input',p.audio.input_device,p.audio.input_name);set('audio-output',p.audio.output_device,p.audio.output_name);
   detectEl('detect-result').textContent='Radio section filled · press Apply ⟳, then confirm the receive-only setup';
   document.querySelector('#settings-save').focus();
 });

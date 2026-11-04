@@ -84,14 +84,22 @@ pub(crate) fn native_endpoints() -> Result<Vec<AudioEndpoint>, cat::Error> {
     Ok(all)
 }
 
-/// Per-station detection state: one detection at a time, and the test seam.
+/// Per-station detection state: one detection at a time, the known endpoint names
+/// (CL-044-07) and the test seam.
 #[derive(Default)]
 pub(crate) struct Owner {
     pub(crate) busy: AtomicBool,
+    /// Endpoint ID to display name: the latest listing's endpoints and the remembered
+    /// names of the saved endpoints.
+    names: Mutex<std::collections::HashMap<String, String>>,
     #[cfg(test)]
     pub(crate) hardware: Mutex<Option<Arc<dyn Hardware>>>,
 }
 impl Owner {
+    /// CL-044-07: the known name of an endpoint, for GET /receive audio.device_name.
+    pub(crate) fn name(&self, id: &str) -> Option<String> {
+        self.names.lock().ok()?.get(id).cloned()
+    }
     fn hardware(&self) -> Option<Arc<dyn Hardware>> {
         #[cfg(test)]
         if let Some(h) = self.hardware.lock().unwrap().clone() {
@@ -127,7 +135,7 @@ fn readings_json(readings: &[(Setting, Option<u16>)]) -> Value {
 }
 fn audio_json(m: &Match) -> Value {
     match m {
-        Match::One(e) => json!({"state":"one","id":e.id,"name":e.name}),
+        Match::One(e) => json!({"state":"one","id":e.id,"name":setup::display_name(&e.name)}),
         Match::None => json!({"state":"none","id":null,"name":null}),
         Match::Ambiguous(n) => json!({"state":"ambiguous","id":null,"name":null,"count":n}),
     }
@@ -306,7 +314,7 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
                 _ => Value::Null,
             };
             let name = |m: &Match| match m {
-                Match::One(e) => json!(e.name),
+                Match::One(e) => json!(setup::display_name(&e.name)),
                 _ => Value::Null,
             };
             json!({"port":format!("COM{port}"),"model":"IC-7300","civ_address":hex(radio.address),"baud":radio.baud,
@@ -514,6 +522,160 @@ pub(crate) fn undo(state: &ProfileState, generation: u64) -> Result<Value, &'sta
         .remove_document_file(UNDO_FILE)
         .map_err(|_| "storage_unavailable")?;
     Ok(outcome(state, "undo", done, None, None))
+}
+
+pub(crate) const NAMES_FILE: &str = "audio-endpoint-names.json";
+const NAMES_MAX: u64 = 4096;
+const MAX_ENDPOINTS: usize = 64;
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct NamesRecord {
+    schema_version: u8,
+    names: std::collections::BTreeMap<String, String>,
+}
+/// CL-044-07: remember the names of the saved endpoints (from `endpoints`, else the
+/// record) and know every listed endpoint's name. Returns the remembered names.
+fn remember(
+    state: &ProfileState,
+    endpoints: &[AudioEndpoint],
+) -> std::collections::BTreeMap<String, String> {
+    let mut known = std::collections::HashMap::new();
+    for e in endpoints {
+        known.insert(e.id.clone(), setup::display_name(&e.name));
+    }
+    let remembered = match state.store.lock() {
+        Ok(mut store) => {
+            let old = store
+                .read_document_file(NAMES_FILE, NAMES_MAX)
+                .ok()
+                .flatten()
+                .and_then(|b| serde_json::from_slice::<NamesRecord>(&b).ok())
+                .filter(|r| r.schema_version == 1)
+                .unwrap_or_default();
+            let audio = store.document.audio.clone();
+            let mut next = NamesRecord {
+                schema_version: 1,
+                names: Default::default(),
+            };
+            for id in [audio.input_device, audio.output_device]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(name) = known.get(&id).or_else(|| old.names.get(&id)) {
+                    let name = setup::display_name(name);
+                    next.names.insert(id, name);
+                }
+            }
+            if next != old && store.write_document_file(NAMES_FILE, &next).is_err() {
+                eprintln!("profile: audio endpoint names could not be saved (storage_unavailable)");
+            }
+            next.names
+        }
+        Err(_) => Default::default(),
+    };
+    for (id, name) in &remembered {
+        known.entry(id.clone()).or_insert_with(|| name.clone());
+    }
+    if let Ok(mut names) = state.recording.radio_setup.names.lock() {
+        *names = known;
+    }
+    remembered
+}
+/// CL-044-07 at station start: the remembered names, refreshed from a listing when the
+/// endpoints can be read (nothing is opened).
+pub(crate) fn startup_names(state: &ProfileState) {
+    let endpoints = state
+        .recording
+        .radio_setup
+        .hardware()
+        .and_then(|h| h.endpoints().ok())
+        .unwrap_or_default();
+    remember(state, &endpoints);
+}
+/// CL-044-07: GET /audio/endpoints, the named listing for the Settings pickers.
+pub(crate) fn endpoints_view(state: &ProfileState) -> Result<Value, &'static str> {
+    let hardware = state
+        .recording
+        .radio_setup
+        .hardware()
+        .ok_or("audio_unavailable")?;
+    let endpoints = hardware.endpoints().map_err(|_| "audio_unavailable")?;
+    for flow in [Flow::Capture, Flow::Render] {
+        if endpoints.iter().filter(|e| e.flow == flow).count() > MAX_ENDPOINTS {
+            return Err("device_limit");
+        }
+    }
+    if endpoints.iter().any(|e| {
+        let name = setup::display_name(&e.name);
+        e.id.is_empty() || e.id.len() > 256 || name.is_empty() || name.len() > 256
+    }) {
+        return Err("device_limit");
+    }
+    let remembered = remember(state, &endpoints);
+    let (audio, control) = {
+        let store = state.store.lock().map_err(|_| "storage_unavailable")?;
+        (store.document.audio.clone(), store.document.control.clone())
+    };
+    let radio_port = (control.mode == "cat")
+        .then(|| {
+            control
+                .endpoint
+                .as_deref()
+                .and_then(|e| cat::Configuration::parse(e).ok())
+        })
+        .flatten()
+        .and_then(|c| {
+            hardware
+                .ports()
+                .ok()?
+                .into_iter()
+                .find(|p| p.port == c.port)
+        });
+    let list = |flow: Flow, saved: &Option<String>| {
+        let saved = saved
+            .as_deref()
+            .map(|id| (id, remembered.get(id).map(String::as_str)));
+        Value::Array(
+            setup::endpoint_choices(
+                &endpoints,
+                flow,
+                radio_port.as_ref().map(|p| (p, "IC-7300")),
+                saved,
+            )
+            .into_iter()
+            .map(|c| {
+                json!({"id":c.id,"name":c.name,"label":c.label,"present":c.present,"radio":c.radio})
+            })
+            .collect(),
+        )
+    };
+    Ok(
+        json!({"v":1,"profile_id":state.recording.profile,"boot_id":state.boot,
+        "inputs":list(Flow::Capture,&audio.input_device),"outputs":list(Flow::Render,&audio.output_device)}),
+    )
+}
+pub async fn endpoints_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    if let Err(e) = authorize(&app, &headers, false).await {
+        return error(e);
+    }
+    match &body {
+        Err(_) => return error("request_too_large"),
+        Ok(b) if !b.is_empty() || query.is_some() => return error("invalid_request"),
+        Ok(_) => {}
+    }
+    let Some(state) = app.profile.clone() else {
+        return error("not_found");
+    };
+    match tokio::task::spawn_blocking(move || endpoints_view(&state)).await {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => error(e),
+        Err(_) => error("audio_unavailable"),
+    }
 }
 
 /// CL-044-05 startup migration of friendly-name device entries. Returns the log lines.

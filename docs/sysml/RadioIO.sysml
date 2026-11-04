@@ -338,7 +338,8 @@ macOS/Linux adapter implementations retain these contracts but are separate rele
 
 **Configuration and device identity.** Profile document/schema1 and its existing
 GET/PUT shape remain unchanged. `audio.input_device` stores an exact opaque
-IMMDevice endpoint ID; the UI displays its separately enumerated friendly name.
+IMMDevice endpoint ID; the UI displays its separately enumerated friendly name
+(GET /audio/endpoints, #44 CL-044-07/08), never the ID outside Expert or a hover title.
 Unknown, missing or ambiguous input is unavailable, never a default/camera fallback.
 The baseline selects channel0; capture accepts mono/stereo 44100/48000 Hz shared mix
 formats float32 or signed PCM16/24/32. Preserve finite float values; integer divisors
@@ -521,6 +522,9 @@ literal data; clients never evaluate endpoint names, catalogue strings or radio 
 most64 exact `{id,name}` objects, nonempty strings at most256 UTF-8 bytes, total encoded
 response at most16384 bytes. A missing selected input remains visibly unavailable.
 Enumeration overflow returns device_limit rather than silently dropping entries.
+`GET /audio/endpoints` (CL-044-07) is the named listing of capture and render endpoints
+for the Settings pickers; `GET /audio/devices` keeps its version1 shape.
+`audio.device_name` of `GET /receive` is the known friendly name of `device_id` or null.
 
 `GET /receive` returns exactly `{v,profile_id,boot_id,generation,audio,source,job,clock}`.
 Audio is `{state,device_id,device_name,error,retry_after_ms,loss_epochs,last_loss}` with the4.5 states,
