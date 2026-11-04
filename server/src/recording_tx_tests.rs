@@ -193,3 +193,80 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
     assert_eq!(s["audio"]["state"], "running");
     assert_eq!(s["audio"]["loss_epochs"], 0, "capture is never restarted");
 }
+
+// Proves: CL-061-04; TC-061-005. The actual transmit owner (frozen-clock hardware double, no
+// radio) puts the station on the air with Tune: the Rx level is unavailable at once, the live
+// worker resets its measurement and marks the block's period, and the period start on the
+// mode's grid (FT8 15 s, FT4 7.5 s) stays a Tx period after the release.
+#[test]
+fn transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level() {
+    for (mode, now, start) in [
+        (
+            "ft8",
+            "2026-10-27T12:00:23.0000000Z",
+            "2026-10-27T12:00:15.0000000Z",
+        ),
+        (
+            "ft4",
+            "2026-10-27T12:00:23.0000000Z",
+            "2026-10-27T12:00:22.5000000Z",
+        ),
+    ] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        let (job, _) = live_ring(&r);
+        relative_clock(&r, mode, "2026-10-27T12:00:00.0000000Z", 0);
+        r.state.lock().unwrap().operating_mode = mode;
+        let bench = crate::contact_http_tests::Bench::default();
+        bench.frozen.store(ms(now), Ordering::SeqCst);
+        let station = crate::transmit_http::Station::start_with(Box::new(bench)).unwrap();
+        let _ = r.transmit.set(station.clone());
+        let context = {
+            let mut s = r.state.lock().unwrap();
+            let l = s.live.as_mut().unwrap();
+            l.level = (0.0, 0, None, Some(60));
+            source::SourceContext {
+                descriptor: l.source.as_ref().unwrap().clone(),
+                timing: Arc::new(l.timing.as_ref().unwrap().clone()),
+            }
+        };
+        assert_eq!(r.rx_level(), Some(60), "{mode}: receiving");
+        station.service.with(|c| {
+            c.arm(3).unwrap();
+            c.set_tune(true, 1500).unwrap();
+        });
+        assert_eq!(r.rx_level(), None, "{mode}: no level while on the air");
+        // A block of a receive period (12:01:00) while on the air: the measurement is reset.
+        let queue = Arc::new(Mutex::new(VecDeque::from([SampleBlock::live(
+            &context,
+            720000,
+            Arc::from(vec![0.5; 240]),
+            true,
+        )
+        .unwrap()])));
+        let mut worker = LiveWorker::new(
+            r.clone(),
+            job,
+            Box::new(Blocks {
+                descriptor: context.descriptor.clone(),
+                queue,
+            }),
+            mode,
+        );
+        assert!(worker.step().unwrap().is_none());
+        assert_eq!(
+            r.state.lock().unwrap().live.as_ref().unwrap().level,
+            (0.0, 0, None, None),
+            "{mode}: no level accumulated while on the air"
+        );
+        station.service.with(|c| c.set_tune(false, 1500).unwrap());
+        r.observe_transmit();
+        let tx = r.tx.lock().unwrap();
+        assert!(!tx.keyed, "{mode}: released");
+        assert!(
+            tx.contains(ms(start)),
+            "{mode}: the Tx period {start} is recorded"
+        );
+        assert_eq!(tx.starts.len(), 1, "{mode}: only that period");
+    }
+}
