@@ -540,8 +540,11 @@ impl<H: Hardware> Core<H> {
     }
     /// The contact consumer decoded an answer to my transmission (a message addressed
     /// to my call from the current partner, or from anyone while no partner is set).
+    /// After a watchdog stop only an operator action restarts it (#39 review).
     pub fn answered(&mut self) {
-        self.unanswered = 0;
+        if !self.tx_expired {
+            self.unanswered = 0;
+        }
     }
     pub fn set_watchdogs(
         &mut self,

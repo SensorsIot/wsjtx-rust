@@ -1163,6 +1163,9 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     let keys = f.keys();
     not_keyed_in(&f, e + 45_000).await;
     assert_eq!(f.keys(), keys);
+    // A station calling me after the stop is no human: the watchdog stays spent.
+    publish(&f, e + 30_000, &[("HB9BLA DL1XYZ JO62", 900.0, Some(-7.0))]);
+    assert!(spent(), "an answer after the stop does not re-open arming");
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
     assert!(!armed());

@@ -695,7 +695,8 @@ package WstxContact {
              resets the count to 0: a decoded message addressed to my call from the
              contact's partner (dxCall), or from any station while no partner is set
              (my CQ answered by anyone), decoded in a period after my last transmission
-             started. A human action in the browser (an operator Enable Tx or any
+             started; after a watchdog stop answers no longer reset it, only the next
+             operator Enable Tx does. A human action in the browser (an operator Enable Tx or any
              accepted operating request of this station from the browser) also resets it
              (a human is present). Automation, MCP requests (including a run start) and
              UDP commands never reset it (WstxStrategy::WatchdogFromOperator); their

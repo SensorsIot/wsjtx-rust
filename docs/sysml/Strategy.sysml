@@ -433,7 +433,7 @@ package WstxStrategy {
              restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
              arms with the count kept and is refused tx_watchdog when the limit is used
              up or no browser action was seen this boot (until a human acts in the
-             browser or an answer arrives); a run selecting a new station does not reset
+             browser; after a watchdog stop an answer no longer resets it); a run selecting a new station does not reset
              it; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off
              without a halt and a run stops tx_watchdog.
