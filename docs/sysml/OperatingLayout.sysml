@@ -624,8 +624,9 @@ attribute def ActivityOrdering {
              same-parity successor (a skipped period) or an uncorrelated period leaves only
              the latest; a new receive identity (band/mode change, restart) clears it,
              an unknown-loss source epoch of the same receive does not (CL-061-01).
-             A period in which this station transmitted adds no block: the receive
-             period below it stays on top under the header and is kept (CL-061-03).
+             A Tx period (the station's latest_decode transmitted marker, CL-061-04)
+             shows one Tx marker row and no empty block; the receive period below it
+             keeps its divider and stays when the next period arrives (CL-061-03).
              An inbound UDP Clear of window 0 or 2 hides the rows below its floor, in the
              latest and the kept period, until later decodes arrive (WstxUdp::UdpDisplayEvent
              band_activity, #40 CL-040-08).
