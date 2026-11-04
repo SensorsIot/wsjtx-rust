@@ -448,6 +448,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #rx-focus:has(#qso-more[open]) .ct-section{visibility:hidden}
 #rx-focus .op-contact-body{flex:none;height:var(--ct-lines);box-sizing:border-box;overflow:auto;min-height:0;gap:0;padding:2px 12px}
 #rx-focus .op-contact-body .ct-line,#rx-focus .op-contact-body>p{line-height:var(--ct-line)}
+#rx-focus .op-contact-body button{padding:0 6px;min-height:0;line-height:1.1;font-size:var(--op-font-secondary)}/* a line's button fits its line */
 #rx-focus #qso-next{order:-1;position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;min-width:0;line-height:var(--ct-line);padding-bottom:3px}
 #rx-focus #qso-next[hidden]{display:none}
 #rx-focus #qso-next strong{min-width:0}

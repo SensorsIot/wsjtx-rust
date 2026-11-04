@@ -1209,7 +1209,7 @@ if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){
 // WstxStrategy::Pounce: the station runs it as an automation run with pounce <call>; this
 // client only starts and stops it and shows it (QSO pane line, strategy element status).
 const pouncing=call=>runActive()&&run.pounce?.call===call;
-document.querySelector('#qso-heard')?.insertAdjacentHTML('afterend','<p id="qso-pounce" class="ct-line op-pounce" role="status" hidden><span id="qso-pounce-text"></span> <button type="button" id="qso-pounce-stop" title="Stop waiting for this station">Stop pounce</button></p>');
+document.querySelector('#contact-state')?.insertAdjacentHTML('afterend','<p id="qso-pounce" class="ct-line op-pounce" role="status" hidden><span id="qso-pounce-text"></span> <button type="button" id="qso-pounce-stop" title="Stop waiting for this station">Stop pounce</button></p>');
 const pounceLine=$('qso-pounce');
 function showPounce(){
   if(!pounceLine)return;const p=runActive()?run.pounce:null;pounceLine.hidden=!p;if(!p)return;
