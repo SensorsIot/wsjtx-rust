@@ -774,11 +774,13 @@ attribute def ActivityOrdering {
              it is red, as the waterfall Tx marker rgb(255,64,64), in a period of my Tx
              parity while Enable Tx is on and whenever the station reports transmitting,
              and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
-             5. Direct buttons: CQ, Reply, Tune, HALT, Log QSO (SetEnableTx (#37). Operator
+             5. Direct buttons: CQ, Tune, HALT, Log QSO (SetEnableTx (#37). Operator
              2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
              and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
-             and the fold-out Next/Now overrides by hand as in WSJT-X; Reply stays only until
-             the #50 double-click fix is deployed (the operator's workaround), then it goes;
+             and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
+             operator's workaround until the #50 double-click fix was installed, is gone too:
+             a double-click on a Band Activity row or an Others row, or the row menu Reply,
+             starts the reply;
              this HALT is the one HALT of the operating view (OperatingScreen);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result

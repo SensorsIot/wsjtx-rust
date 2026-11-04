@@ -84,11 +84,12 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-007-001 Reply starts transmission, partner report advances to Tx3, Esc halts first and cancels with a panel open',{timeout:90000},async()=>{
-  // #37 WstxContact::SetEnableTx: no Enable Tx control; Reply arms the prepared contact.
-  assert.equal(await page.locator('#contact-enable').count(),0);
+test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc halts first and cancels with a panel open',{timeout:90000},async()=>{
+  // #37 WstxContact::SetEnableTx: no Enable Tx control and no Reply button (gone since the #50
+  // double-click fix); a double-click on the decoded row selects it again and arms.
+  assert.equal(await page.locator('#contact-enable,#qso-reply').count(),0);
   const shown=(await snapshot()).transmit.safety_revision;
-  await page.getByRole('button',{name:'Reply',exact:true}).click();
+  await page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K1ABC FN42'}).dblclick();
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed');
   const enable=commands().filter(c=>c.action==='enable_tx');assert.equal(enable.length,1);assert.deepEqual([enable[0].enabled,enable[0].safety_revision],[true,shown]);
   await page.locator('#rx-focus[data-armed=true]').waitFor();

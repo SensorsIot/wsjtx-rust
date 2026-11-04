@@ -93,7 +93,7 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     await page.waitForFunction(()=>document.querySelector('#receive-status').textContent.includes('Partial results retained'),null,{timeout:15000});
     assert.equal(await row.count(),1,'accepted partial records survive stop');
     assert.equal((await (await fetch(origin+'/receive/results?'+query)).json()).records[0].text,'CQ K1ABC FN42');
-    for(const name of ['CQ','Reply','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
+    for(const name of ['CQ','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
     // #37 one HALT: the top-bar HALT hides while the QSO pane HALT is on screen; both are disabled.
     for(const id of ['#halt-tx','#qso-halt'])assert.equal(await page.locator(id).isDisabled(),true,id);
     assert.equal(await page.locator('#contact-auto').isDisabled(),true);
