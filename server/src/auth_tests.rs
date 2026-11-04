@@ -2315,7 +2315,7 @@ async fn profile_save_sets_my_call_for_the_hash_table() {
 
 // Proves: CL-022-05; TC-022-008. The read-only status request is exactly {"version":1}:
 // extra, duplicate, missing or wrongly typed fields 400, wrong media 415, 1025 bytes 413
-// (1024 padded bytes accepted), an unknown transport 401. None of them changes the
+// (1024 padded bytes accepted), a missing Origin 403, an unknown transport 401. None of them changes the
 // durable record or the current transport.
 #[tokio::test]
 async fn status_strict_request_bounds_have_zero_effects() {
@@ -2351,6 +2351,22 @@ async fn status_strict_request_bounds_have_zero_effects() {
     body.push(b' ');
     let reply = post(body, "application/json", g.cookie.clone()).await;
     assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+    let mut originless = f.headers(Some(&g.cookie));
+    originless.remove(header::ORIGIN);
+    let reply = f
+        .request(
+            axum::http::Method::POST,
+            "/authorization/v1/status",
+            br#"{"version":1}"#.to_vec(),
+            originless,
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::FORBIDDEN,
+        "missing Origin, before auth"
+    );
+    assert!(!reply.headers.contains_key(header::SET_COOKIE));
     let unknown = format!(
         "{}={}",
         g.cookie.split('=').next().unwrap(),

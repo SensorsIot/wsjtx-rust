@@ -2870,8 +2870,8 @@ package WstxRequirements {
              reload; the 401 read ends 'Connected' within2s, retained-key proof
              reconnects with one OPEN socket and zero token/session/enrollment, every
              status read is POST {"version":1} with the exact page Origin) and
-             server/src/auth_tests.rs (status GET405, wrong Origin403 before auth,
-             strict body/media/size refusals).
+             server/src/auth_tests.rs (status GET405, wrong and missing Origin403
+             before auth, strict body/media/size refusals, unknown transport401).
              Still planned: the Thin/Off accounted-traffic companions
              tests/communication.test.cjs and tests/recording.test.cjs TC-010-002; same traffic windows and ceilings. */
         attribute automation : AutomationState = AutomationState::partial;
