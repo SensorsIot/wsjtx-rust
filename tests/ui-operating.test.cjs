@@ -2530,14 +2530,15 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
 });
 
 // Proves: CL-024-01; TC-024-004 (#24 S1b). Tx5 takes free text with no message yet (WSJT-X Tx5
-// free text), and Band Activity marks rows to <MYCALL> and nonstandard rows to my call as mine.
+// free text), and Band Activity marks rows to <MYCALL> and nonstandard rows to my call as mine;
+// the QSO pane Others list them as calling me, without the partner's own rows.
 test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeout:45000},async t=>{
-  let state,records=[];const commands=[],period='2026-10-27T12:00:00.0000000Z';
+  let state,records=[],contact,settings={};const commands=[],period='2026-10-27T12:00:00.0000000Z';
   const call=(kind,text,bits=null)=>({kind,text,hash_bits:bits,hash_value:bits===null?null:1});
   const standard=(to,from)=>({type:'standard',to,from,ack:false,exchange:{kind:'report',value:-12}});
   const nonstandard=(hashed,full,hash_second)=>({type:'nonstandard',full_call:call('call',full),hashed_call:hashed,hash_second,cq:false,roger:''});
   const record=(sequence,text,fields,hz,i3)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3,n3:null,status:'decoded',text,fields,period_start_utc:period});
-  const cq={id:crypto.randomUUID(),origin:'own_cq',dx_call:null,dx_grid:null,report_sent:null,report_rcvd:null,state:'calling',next_slot:'tx6',tx4:'rrr',messages:[null,null,null,null,null,'CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false};
+  const cq={id:crypto.randomUUID(),origin:'own_cq',dx_call:null,dx_grid:null,report_sent:null,report_rcvd:null,state:'calling',next_slot:'tx6',tx4:'rrr',messages:[null,null,null,null,null,'CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false};contact=cq;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
@@ -2551,13 +2552,25 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
     Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:cq})}));
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,settings})}));
     await contactCommands(p,commands);
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.classList.contains('ba-tome')]));
   // #55 value order: the three rows to my call (also as <HB9BLA> and nonstandard) are value 1, first.
   assert.deepEqual(marks,[['<HB9BLA> PJ4/K1ABC',true],['HB9BLA <PJ4/K1ABC> -12',true],['<HB9BLA> K1ABC -12',true],['<...> PJ4/K1ABC',false]]);
+  // QsoPane Others (#24, the same mycall rule): an own CQ is idle, so every row to my call is
+  // listed, oldest first; the unresolved <...> row is not.
+  const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(r=>r.dataset.text));
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===3,null,{timeout:10000}).catch(()=>{});
+  assert.deepEqual(await others(),['<HB9BLA> PJ4/K1ABC','HB9BLA <PJ4/K1ABC> -12','<HB9BLA> K1ABC -12']);
+  // During a QSO with PJ4/K1ABC (Rx 1000, Tx 1300 Hz): its own nonstandard row at 1000 Hz is the
+  // partner's and the row at 1100 Hz is near neither offset, so only K1ABC's row at 1300 Hz stays.
+  contact={...cq,origin:'selected_row',dx_call:'PJ4/K1ABC',state:'replying',next_slot:'tx1',messages:['<PJ4/K1ABC> HB9BLA','<PJ4/K1ABC> HB9BLA -12',null,null,null,'CQ HB9BLA JN47']};settings={rx_hz:1000,tx_hz:1300};
+  await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>document.querySelector('#qso-others tr')?.dataset.kind==='warn'||document.querySelectorAll('#qso-others tr').length===0,null,{timeout:10000});
+  assert.deepEqual(await others(),['<HB9BLA> K1ABC -12']);
+  contact=cq;settings={};await page.evaluate(()=>window.wstxContact.load());
   await page.locator('#qso-more summary').click();
   const tx5=page.locator('#contact-messages .ct-text[data-slot=tx5]');
   assert.equal(await tx5.isEnabled(),true,'Tx5 takes free text without a message');

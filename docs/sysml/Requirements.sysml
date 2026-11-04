@@ -4727,8 +4727,8 @@ package WstxRequirements {
         doc /* TC-024-010 — The 0.1 DXpedition DX-call rule (hashdx10)
              CL-024-01
              Setup: the pure payload codec and the hash table of WstxOfflineDecode::HashResolution; 0.1 payloads built from their fields (the packer refuses 0.1).
-             Steps: resolve "K1ABC RR73; W9XYZ <KH1/KH7Z> -12" with no DX call, with the DX call KH1/KH7Z set, with KH1/KH7Z set while calls10 holds another call of the same 10-bit hash, with the DX call K1ABC (another hash) and with a 2-character DX call; my call HB9BLA in the 0.1 hash slot.
-             Expected: "<...>" without a DX call; "<KH1/KH7Z>" with the DX call set, also over the colliding calls10 entry; the calls10 entry (or "<...>") for another or a too-short DX call; the received 0.1 hash slot is not filled with my call (unpack77 applies hashmy10 only to nrx=0); the pure unpack is unchanged.
+             Steps: resolve "K1ABC RR73; W9XYZ <KH1/KH7Z> -12" with no DX call, with the DX call KH1/KH7Z set, with KH1/KH7Z set while calls10 holds another call of the same 10-bit hash, with the DX call K1ABC (another hash) and with the 2-character DX call KH on a payload built for the DXpedition call KH, so its hash matches; my call HB9BLA in the 0.1 hash slot.
+             Expected: "<...>" without a DX call; "<KH1/KH7Z>" with the DX call set, also over the colliding calls10 entry; the calls10 entry (or "<...>") for another DX call and "<...>" for KH although its hash matches (hashdx10 needs at least 3 characters); the received 0.1 hash slot is not filled with my call (unpack77 applies hashmy10 only to nrx=0); the pure unpack is unchanged.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4742,7 +4742,8 @@ package WstxRequirements {
              CL-024-01
              Setup: the browser fixture of the operating screen with the actual isolated station, hand-written live records and a hand-written contact snapshot of an own CQ (no partner, only Tx6), the profile call HB9BLA; contact commands are recorded (the station's validation of the text is TC-024-003).
              Steps: publish rows "<HB9BLA> PJ4/K1ABC" (nonstandard, 'to' filled in), "HB9BLA <PJ4/K1ABC> -12" (standard, 'from' filled in), "<...> PJ4/K1ABC" and "<HB9BLA> K1ABC -12" (standard, 'to' filled in); open the message fold-out and type "tnx 73 gl" into Tx5.
-             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 BandActivityValue), the unresolved one does not and follows them; Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
+             Then (QsoPane Others) the same rows during a QSO with PJ4/K1ABC, Rx 1000 Hz and Tx 1300 Hz.
+             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 BandActivityValue), the unresolved one does not and follows them; the QSO pane Others list exactly the three rows to my call, oldest first, and not the unresolved one; during the QSO only "<HB9BLA> K1ABC -12" (1300 Hz, not the partner PJ4/K1ABC's nonstandard row at 1000 Hz, not the row at 1100 Hz); Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

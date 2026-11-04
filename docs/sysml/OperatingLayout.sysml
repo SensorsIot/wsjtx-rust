@@ -741,7 +741,9 @@ attribute def ActivityOrdering {
              3. Others (#37, operator 2026-11-02), in the QSO area below the dialogue (item
              7), at most maximumOtherLines lines, oldest first (period, then decode order) as
              the dialogue, from the decoded rows of the latest two published periods that
-             are standard messages to my call from another station than the partner (the
+             are addressed to my call by the Band Activity mycall rule (a standard message to
+             my call or to a filled-in hash <MYCALL>, or a nonstandard i3=4 message whose 'to'
+             call is mine, #24) from another station than the partner (the
              partner of the last QSO stays excluded after it ended, until another contact
              runs): while a QSO runs, those within +/-50 Hz of my Rx or Tx offset
              (QsoPaneCrowding), each a ⚠ row of the QSO table (item 7, #60) ("22:48:15 ⚠ |

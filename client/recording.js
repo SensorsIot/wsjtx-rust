@@ -1181,6 +1181,8 @@ function keepWaterfall(){
 // #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
 // 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).
 function recordTo(f){return f?.type==='nonstandard'?(f.cq?null:(f.hash_second?f.full_call:f.hashed_call)?.text??null):['call','hash'].includes(f?.to?.kind)?f.to.text:null;}
+// Its sender: the other call of a nonstandard i3=4 message (the full call of a CQ).
+function recordFrom(f){return f?.type==='nonstandard'?((!f.cq&&f.hash_second?f.hashed_call:f.full_call)?.text??null):['call','hash'].includes(f?.from?.kind)?f.from.text:null;}
 function activityValue(r){
   if(r?.status!=='decoded')return 8;
   const my=(profileData?.settings?.callsign??'').trim().toUpperCase();

@@ -271,9 +271,11 @@ fn a_dxpedition_hash_of_the_dx_call_shows_the_dx_call() {
     assert_eq!(shown(&t, &dx), "K1ABC RR73; W9XYZ <KH1/KH7Z> -12");
     t.set_dx_call(Some("K1ABC"));
     assert_eq!(shown(&t, &dx), format!("K1ABC RR73; W9XYZ <{other}> -12"));
+    // A 2-character DX call is refused although the payload carries exactly its hash.
     let mut t = HashTable::new();
     t.set_dx_call(Some("KH"));
-    assert_eq!(shown(&t, &dx), "K1ABC RR73; W9XYZ <...> -12");
+    assert_eq!(t.dx_call(), None);
+    assert_eq!(shown(&t, &dxpedition("KH")), "K1ABC RR73; W9XYZ <...> -12");
     // My call is filled into a 0.1 only when rendering my own transmission (nrx=0).
     let mut t = HashTable::new();
     t.set_my_call(Some("HB9BLA"));
