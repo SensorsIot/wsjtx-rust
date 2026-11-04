@@ -22,6 +22,7 @@ verify their availability in the actual agent environment before starting work.
 - IC-7300: **COM3**, USB Audio CODEC; in use on **40 m FT8 (7.074 MHz USB-D)**, 1 W for
   agent tests; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
   periods). Read back before changes — CI-V reads first and writes only on a difference.
+  The camera microphone belongs to Dictate, not the radio.
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
   2026-11-04 from the operator's Log4OM export (26,886 QSOs). A rerun of Update logbook
   with the same export adds nothing.
@@ -30,7 +31,6 @@ verify their availability in the actual agent environment before starting work.
   `station-update.ps1 -Manifest …`, then `.harness\deploy\station-probe.ps1 -Manifest …`;
   afterwards `cr_state.py installed <commit> --since <previous>`. Check `/transmit` is
   idle first; never install while the operator is in a QSO without asking.
-  The camera microphone belongs to Dictate, not the radio.
 - Official WSJT-X **3.3.0-beta4** runs alongside ours as `WSTX-Comparison`,
   Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.
 - Keep credentials private. Codex is signed in. Development secrets/SSH keys and
