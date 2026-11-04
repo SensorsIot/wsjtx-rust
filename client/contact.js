@@ -29,7 +29,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 // QSO (the #60 dialogue table, kept at its newest row) and Calling me (every station calling my
 // call except the partner). The lines above them take the rest of the pane and scroll inside.
 focus.querySelector('.op-contact-body').insertAdjacentHTML('afterend',`<section id="qso-section" class="ct-section" aria-label="QSO dialogue"><div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue"></tbody></table><p id="qso-none" class="op-muted ct-placeholder">No QSO</p></div></section>
-<section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
+<section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading" title="Double-click a station to answer it (during a QSO: switch the contact to it)">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
 <div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
@@ -632,6 +632,18 @@ function callerText(record){
   const my=myCall(),w=(record.text??'').trim().split(/\s+/),mine=x=>x===my||x===`<${my}>`;
   return w.length>=2&&mine(w[0])&&isCall(w[1])?w[1]:w.length>=2&&mine(w[1])&&isCall(w[0])?w[0]:recordFrom(record.fields)??'';
 }
+// The compact caller tip, the #50 BandActivityHover rule: per kind (continent, DXCC, zone, grid,
+// call) the strongest reason whose slot is enabled in Settings, joined by " · "; the on-band call
+// reason carries the worked-before status. No country, continent or distance text (the line shows
+// the country); a line without such a reason has no tip.
+const TIP_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_band'],['new_cq_zone','new_itu_zone','new_cq_zone_band','new_itu_zone_band'],['new_grid','new_grid_band'],['new_call','new_call_band']];
+function callerTip(record,w){
+  const f=record.flags??{},dx=record.dxcc,band=(typeof operatingState!=='undefined'&&operatingState?.selection?.band)||'this band',ex=record.fields?.exchange,grid=ex?.kind==='grid'&&typeof ex.value==='string'?ex.value.slice(0,4).toUpperCase():'';
+  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
+  const worked=w?.status==='worked_this_band_and_mode'?`on ${w.on}`:w?.status==='worked_other_band_or_mode'?'on another band or mode':'';
+  const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:'New DXCC',new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New on ${band}`};
+  return TIP_KINDS.map(kind=>{const k=kind.find(k=>f[k]===true&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${text[k].trim()} (worked ${worked})`:text[k].trim();}).filter(Boolean).join(' · ');
+}
 function othersShow(){
   const rx=snap?.settings?.rx_hz,tx=snap?.settings?.tx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:lastPartner,my=myCall();
   const near=f=>[rx,tx].some(o=>typeof o==='number'&&f>=o-50&&f<=o+50);
@@ -650,7 +662,7 @@ function othersShow(){
   // every line calls me), the reasons and the worked-before status as text; worked before on
   // this band and mode adds no colour.
   const workedOf=record=>{const from=recordFrom(record.fields);return from?window.wstxWorkedOf?.(from.toUpperCase())??null:null;};
-  const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}/${near(l.record.frequency_hz)}/${workedOf(l.record)?.status??''}`)]);
+  const key=JSON.stringify([qso,document.querySelector('#band-activity')?.dataset.hlOn??'',lines.map(l=>`${l.context}/${l.record.sequence}/${near(l.record.frequency_hz)}/${workedOf(l.record)?.status??''}`)]);
   if(othersList.dataset.key===key)return;othersList.dataset.key=key;
   othersList.replaceChildren(...lines.map(({record,context})=>{
     const warn=qso&&near(record.frequency_hz),grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value??'':'';
@@ -660,10 +672,10 @@ function othersShow(){
     tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;
     const hl=bandFlags.filter(k=>record.flags?.[k]===true),w=workedOf(record);if(hl.length)tr.dataset.hl=hl.join(' ');
     if(w)tr.dataset.worked=w.status;
-    const why=[...activityReasons(record),w?.status==='worked_this_band_and_mode'?`Worked before on ${w.on}`:w?.status==='worked_other_band_or_mode'?'Worked before on another band or mode':''].filter(Boolean);
-    if(why.length)tr.setAttribute('aria-description',why.join('; '));
-    // The title also names the decode itself (period start and message) and a crowding warning.
-    tr.title=[`${hhmmss(Date.parse(record.period_start_utc??''))} ${record.text}`,...(warn?['Within 50 Hz of my Rx or Tx frequency']:[]),...why,qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station'].join('\n');
+    // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): only the colour
+    // reasons the line does not show, the strongest enabled one per kind, on one line.
+    const tip=callerTip(record,w);
+    if(tip){tr.title=tip;tr.setAttribute('aria-description',tip);}
     return tr;
   }));
   const area=$('calling-area');area.scrollTop=area.scrollHeight;
@@ -681,7 +693,7 @@ if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll(
 document.addEventListener('wstx-worked',()=>othersShow());
 // The Band Activity colour choice (Settings > General > Display) applies to the callers too.
 const bandActivity=document.querySelector('#band-activity');
-if(bandActivity){const mirror=()=>{focus.dataset.hlOn=bandActivity.dataset.hlOn??'';};mirror();new MutationObserver(mirror).observe(bandActivity,{attributes:true,attributeFilter:['data-hl-on']});}
+if(bandActivity){const mirror=()=>{focus.dataset.hlOn=bandActivity.dataset.hlOn??'';othersShow();};mirror();new MutationObserver(mirror).observe(bandActivity,{attributes:true,attributeFilter:['data-hl-on']});}
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
 const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];

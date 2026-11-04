@@ -742,11 +742,14 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   // #37 (operator 2026-11-03): one HALT on the screen, the QSO pane's.
   assert.deepEqual(await page.getByRole('button',{name:/^HALT$|^Halt Tx$/}).filter({visible:true}).evaluateAll(list=>list.map(b=>b.id)),['qso-halt'],'one HALT, in the QSO pane');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
-  // A pointer HALT is on screen without scrolling at every size (the stacked pane at 1024x768
-  // and 360 px is below the fold, so the top-bar HALT shows there).
+  // A pointer HALT is on screen without scrolling at every size (the stacked pane at 360 px is
+  // below the fold, so the top-bar HALT shows there).
   const haltOnScreen=async()=>page.waitForFunction(()=>[...document.querySelectorAll('#halt-tx,#qso-halt')].some(b=>{const r=b.getBoundingClientRect();return b.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),null,{timeout:3000});
   for(const [width,height] of [[1024,768],[1366,768],[1920,1080]]){await page.setViewportSize({width,height});await haltOnScreen();}
-  await page.setViewportSize({width:1024,height:768});await page.waitForFunction(()=>document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
+  // At 1024x768 the stacked pane's header (with its HALT) is on screen below Band Activity since
+  // the #37 fixed-height pane (2026-11-04): the top-bar HALT shows exactly when it is not.
+  await page.setViewportSize({width:1024,height:768});
+  await page.waitForFunction(()=>{const q=document.querySelector('#qso-halt'),r=q.getBoundingClientRect(),full=q.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight;return document.querySelector('#halt-tx').checkVisibility()===!full;},null,{timeout:3000});
   await page.setViewportSize({width:1366,height:768});await page.waitForFunction(()=>!document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'a phone does not overflow horizontally');
@@ -1847,17 +1850,18 @@ test('TC-011-003 QSO pane callers show worked-before status and only interesting
  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-worked]').length===3,null,{timeout:25000});
  const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.text,tr.dataset.worked??null,tr.dataset.hl??null,getComputedStyle(tr.cells[1]).backgroundColor,tr.title,tr.getAttribute('aria-description')]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- const hint='Double-click: answer this station',at=await page.locator('#qso-others tr').first().evaluate(tr=>tr.title.slice(0,8));
- assert.match(at,/^\d\d:\d\d:\d\d$/,'the title starts with the period start');
+ // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): one line, only the
+ // enabled colour reasons, the strongest per kind; an uncoloured line has no tip.
  assert.deepEqual(await others(),[
-  ['HB9BLA K1ABC FN42','worked_this_band_and_mode',null,none,`${at} HB9BLA K1ABC FN42\nWorked before on 20m FT8\n${hint}`,'Worked before on 20m FT8'],
-  ['HB9BLA W1XYZ FN31','not_worked','new_call new_call_band',newCall,`${at} HB9BLA W1XYZ FN31\nNew call\nNew call on 20m\n${hint}`,'New call; New call on 20m'],
-  ['HB9BLA DL1ABC -10','worked_other_band_or_mode','new_call_band',newCallBand,`${at} HB9BLA DL1ABC -10\nNew call on 20m\nWorked before on another band or mode\n${hint}`,'New call on 20m; Worked before on another band or mode']],
+  ['HB9BLA K1ABC FN42','worked_this_band_and_mode',null,none,'',null],
+  ['HB9BLA W1XYZ FN31','not_worked','new_call new_call_band',newCall,'New call','New call'],
+  ['HB9BLA DL1ABC -10','worked_other_band_or_mode','new_call_band',newCallBand,'New on 20m (worked on another band or mode)','New on 20m (worked on another band or mode)']],
   'worked before on this band and mode has no colour; the status is text; My call is not a caller colour');
  // The Band Activity colour choice applies here too.
  await page.locator('#open-server-settings').click();
  await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
  assert.deepEqual((await others()).map(r=>r[3]),[none,newCallBand,newCallBand],'with New call off, New call on band remains');
+ assert.deepEqual((await others()).map(r=>r[4]),['','New on 20m','New on 20m (worked on another band or mode)'],'the tip follows the Settings slots');
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'the callers add no worked-before query');
  assert.deepEqual(errors,[]);
@@ -2555,7 +2559,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   const {page,errors,newJob}=await liveDisplayFixture(t);
   // Independent palette anchors (CL-006-03): t=0.1 -> (0,0,57), t=0.9 -> (255,105,0), t=0.3 -> (0,60,185), t=0.5 -> (0,220,240).
   const noise=40,carrier=80,levels=Array.from({length:1024},(_,k)=>k>=498&&k<=502?carrier:noise);
-  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-200))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 400 px (#37 LowerPanel)');
+  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-290))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 490 px (#37 LowerPanel, 2026-11-04)');
   await liveFrames(page,[{sequence:0,levels},{sequence:1,levels}]);
   assert.deepEqual([await cell(page,100),await cell(page,500)],[[0,0,57],[255,105,0]],'noise -80 dBFS and a -40 dBFS carrier on the fixed -85..-35 dBFS scale');
   assert.match(await page.locator('#level-legend').textContent(),/WF -85 to -35 dBFS/);

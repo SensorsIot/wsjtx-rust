@@ -648,11 +648,13 @@ attribute def ActivityOrdering {
              CL-055-05): table rows with a fine pointer have 1 px vertical cell padding and line
              height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
              so more stations fit; with a coarse pointer (touch) rows keep 8 px padding; at most
-             44em wide (360 px, 200 % zoom) a row is a compact two-line row without field labels
-             (#37, live finding 2026-11-04: the earlier labelled card rows were about 325 px high,
-             one decode on screen): UTC, dB, DT, Freq, country and distance on the first line,
-             the message on the second, about 40 px high, still tappable, so at least six rows
-             are on screen at 360x800 (TC-037-003); with Highlight on the strategy accent of
+             44em wide (360 px, 200 % zoom) a row is a compact row without field labels (#37, live
+             finding 2026-11-04: the earlier labelled card rows were about 325 px high, one
+             decode on screen): UTC, dB, DT, Freq and the distance on the first line, then the
+             message and the country, wrapping only between whole fields at the readable text
+             size (usually two lines, about 45 px, still tappable), so at least six rows are on
+             screen at 360x800 (TC-037-003); at most 48em wide Band Activity, above the QSO
+             pane, has a fixed height (28rem) and scrolls inside; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; another station while a contact is active only offers "Change
@@ -731,15 +733,20 @@ attribute def ActivityOrdering {
              height (fixedHeight): its height depends on the screen width only, never on its
              content, so the ControlPanel and the ErrorField below it (LowerPanel) never move
              when a QSO starts or ends, dialogue rows or callers are added or a line such as
-             NEXT appears. From top to bottom: the header (item 1, two fixed lines), the
-             message lines (items 2, 4, 6, the exception status, Pounce, Auto Seq off and the
-             fold-out, a fixed height of three lines that scrolls inside), the QSO section
+             NEXT appears. From top to bottom: the header (item 1: the partner line, which
+             wraps and scrolls in its own fixed line when longer; then the last partner message
+             of item 2, cut to the line since the dialogue repeats it, the direct buttons of
+             item 5, the Tx1-Tx6 fold-out and the badge), the message lines (item 4 NEXT first,
+             then items 6, the exception status, Pounce and Auto Seq off; one fixed line, two at
+             most 48em wide, scrolling inside), the QSO section
              (the #60 dialogue table, item 7: its header row and qsoAreaRows (12) rows without
              scrolling, narrowQsoAreaRows (6) when the workspace is at most 48em wide; more
              rows scroll inside, kept at the newest row; "No QSO" while no QSO runs), the
              Calling me section (item 3: its header row and callingMeRows (5) rows, scrolling
              inside; "Nobody is calling" when none) and the direct buttons (item 5). Each
-             section keeps its height whether it is empty or full. The whole stack fits the
+             section keeps its height whether it is empty or full; the open Tx1-Tx6 fold-out
+             covers the message lines and both sections in place, so it moves nothing. Heights
+             follow the text size (rem), so 200 % text keeps the same rows. The whole stack fits the
              1366x768 screen (TC-007-009, TC-037-003); the default split (LowerPanel) leaves
              room for it.
              A running QSO is a contact with a DX call in replying..signoff
@@ -783,12 +790,15 @@ attribute def ActivityOrdering {
              its record flags (BandActivityColours, the same Settings choice; mycall is
              not used, since every line calls me), none without such a flag, so a sender
              worked before on this band and mode has no colour; its hover text (title and
-             aria-description) names the reasons of BandActivityHover and the
-             worked-before status ("Worked before on <band> <MODE>" or "Worked before on
-             another band or mode") from the answers of the Band Activity
+             aria-description) follows the compact BandActivityHover rule (#50, operator
+             2026-11-04 "too much information"): one line joined by " · ", per kind
+             (continent, DXCC, zone, grid, call) only the strongest reason whose slot is
+             enabled, no country, continent or distance text, "New on <band>" followed by the
+             worked-before status in parentheses ("(worked on <band> <MODE>)" or "(worked on
+             another band or mode)") from the answers of the Band Activity
              WorkedBeforeQuery of the latest and the previous period (no further query),
-             preceded by the decode's period start and message and followed by the
-             double-click hint. When no row qualifies, the section shows the muted placeholder
+             e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
+             double-click hint is the title of the section's "Calling me" header. When no row qualifies, the section shows the muted placeholder
              "Nobody is calling" instead of an empty list, in the same height.
              An inbound UDP Clear of window 1 or 2 (WSJT-X Rx Frequency window) hides the
              rows below its floor (WstxUdp::UdpDisplayEvent rx_frequency, #40 CL-040-08).
