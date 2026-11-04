@@ -448,7 +448,9 @@ def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subproc
     java, jar, library = tool_paths(cache)
     if not paths or any(not path.is_file() for path in paths):
         raise ValueError("Semantic validation requires existing model files")
-    result = subprocess.run([str(java), "-classpath", str(jar), str(ROOT / "tools/sysml/Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=120)
+    # Cap the heap: the JVM default (a quarter of RAM) let parallel checks take
+    # gigabytes next to the real-time station; 512 MB with the serial collector passes.
+    result = subprocess.run([str(java), "-Xmx512m", "-XX:+UseSerialGC", "-classpath", str(jar), str(ROOT / "tools/sysml/Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=120)
     if result.returncode == 0 and "OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed." not in result.stdout:
         raise ValueError("Validator returned no semantic completion marker")
     return result
