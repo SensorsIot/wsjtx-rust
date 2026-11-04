@@ -83,7 +83,7 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value)){stationSample(value.utc_ms);transmittedIn(value.transmit?.last_period_utc);}if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
   }catch{}
 }
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
@@ -724,8 +724,10 @@ function displays(){
   if(!tick){label.textContent='UTC unavailable';meter.querySelector('strong').textContent='Unknown';return;}
   const stale=connection.dataset.state!=='connected',utc=stationNow()??tick.utc;
   label.textContent=`UTC ${new Date(utc).toISOString().slice(11,19)}${stale?' (stale)':''}`;
+  // #61 CL-061-04: the station measures no level in its Tx period (rx_level_db null); a level
+  // and its low/high entry refer to receive periods only.
   const level=tick.level,strong=meter.querySelector('strong');
-  strong.textContent=level===null?'Unavailable':`${level} dB${level>85?' high':level<15?' low':''}`;
+  strong.textContent=level===null?(tick.transmitting?'Tx \u00b7 not measured':'Unavailable'):`${level} dB${level>85?' high':level<15?' low':''}`;
   meter.dataset.level=level===null?'':level>85?'high':level<15?'low':'ok';
   meter.querySelector('div').style.setProperty('--ct-level',`${level===null?0:Math.min(100,level/0.9)}%`);
   countdown();
@@ -760,16 +762,6 @@ function countdown(){
 }
 setInterval(displays,250);setInterval(countdown,100);
 // ---------------------------------------------------------------- station events
-// #61 CL-061-03: the T/R periods (start, station UTC ms) in which this station transmitted, from
-// station.tick transmitting and the snapshot's transmit.last_period_utc; Band Activity shows no
-// empty block for them. The latest 16 are kept.
-const transmittedPeriods=new Set();
-function transmittedIn(ms){
-  if(!Number.isSafeInteger(ms)||transmittedPeriods.has(ms))return;
-  transmittedPeriods.add(ms);if(transmittedPeriods.size>16)transmittedPeriods.delete(transmittedPeriods.values().next().value);
-  if(typeof resultView!=='undefined'&&Date.parse(resultView?.period_start_utc??'')===ms)renderResults();
-}
-window.wstxTransmitted=period=>transmittedPeriods.has(Date.parse(period??''));
 // Reconnect (a new socket) reloads the authoritative snapshot; a status refresh on the
 // same socket does not (contact.state announces every change).
 let readySocket=null;
@@ -782,7 +774,7 @@ addEventListener('station-message',event=>{
   if(message.type==='contact.state'&&d&&(!snap||d.contact_revision!==snap.contact_revision||d.boot_id!==snap.boot_id))load();
   else if(message.type==='automation.state'&&d)loadAutomation();
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
-    const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);if(d.transmitting===true)transmittedIn(Math.floor(d.utc_ms/d.period_ms)*d.period_ms);
+    const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
     tick={utc:d.utc_ms,at:performance.now(),period:d.period_ms,transmitting:d.transmitting===true,level:Number.isInteger(d.rx_level_db)?d.rx_level_db:null};$('contact-tx').max=d.period_ms===7500?'2916':'2950';
     displays();if(changed)render();else stationTx();
   }
