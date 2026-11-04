@@ -697,10 +697,10 @@ impl Station {
         };
         let s = &e.settings;
         let settings = json!({"auto_seq":s.auto_seq,"call_first":s.call_first,"tx1_skip":s.tx1_skip,
-            "tx_minutes":view.as_ref().map_or(6,|v|v.tx_minutes),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
+            "tx_calls":view.as_ref().map_or(6,|v|v.tx_calls),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
             "activity":s.activity.name(),"exchange":s.exchange,"serial":s.serial});
-        let watchdog = json!({"tx_remaining_minutes":view.as_ref().map_or(0,|v|v.tx_remaining_minutes),
+        let watchdog = json!({"tx_remaining_calls":view.as_ref().map_or(0,|v|v.tx_remaining_calls),
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
         let material = json!([transmit, settings, contact, log, watchdog]);
@@ -810,7 +810,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "set_tx4" => &["form"],
         "set_frequency" => &["rx_hz", "tx_hz"],
         "set_parity" => &["parity"],
-        "set_watchdogs" => &["tx_minutes", "tune_seconds"],
+        "set_watchdogs" => &["tx_calls", "tune_seconds"],
         _ => return None,
     })
 }
@@ -923,10 +923,10 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             _ => return Err(("invalid_request", Some("parity"))),
         }),
         "set_watchdogs" => {
-            let m = safe(b, "tx_minutes")?;
+            let m = safe(b, "tx_calls")?;
             let s = safe(b, "tune_seconds")?;
             Command::SetWatchdogs {
-                tx_minutes: u32::try_from(m).unwrap_or(u32::MAX),
+                tx_calls: u32::try_from(m).unwrap_or(u32::MAX),
                 tune_seconds: u32::try_from(s).unwrap_or(u32::MAX),
             }
         }
