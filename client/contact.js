@@ -51,7 +51,9 @@ errorBody.prepend(chips);const notice=document.querySelector('#station-notice');
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
 const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
-let dxLookup={call:null,entity:null},snap=null,sending=false,tick=null,changeTarget=null,lastLog=null,loggedTimer=null,wasRunning=false,lastPartner=null;
+let dxLookup={call:null,entity:null},snap=null,sending=false,tick=null,changeTarget=null,lastLog=null,loggedTimer=null,wasRunning=false,lastPartner=null,bandPartner=null;
+// #50 CL-050-08: the QSO partner of Band Activity, from the contact snapshot this page already holds.
+window.wstxPartner=()=>bandPartner;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
@@ -127,6 +129,8 @@ function render(){
   // Nothing of a finished contact stays: an accepted command's result goes with it.
   if(wasRunning&&!qso&&/: accepted$/.test(resultText.textContent))resultText.textContent='';
   wasRunning=qso;
+  // #50 CL-050-08: from the preparation (replying) until logged (completed) or cancelled; a change redraws Band Activity.
+  const partner=qso?String(c.dx_call).toUpperCase():null;if(partner!==bandPartner){bandPartner=partner;if(typeof renderResults==='function')renderResults();}
   // The partner of the last running QSO stays out of the Others until another contact runs.
   if(qso||(c?.state==='completed'&&c.dx_call))lastPartner=c.dx_call;
   const strong=identity.querySelector('strong'),detail=identity.querySelector('div > span');
@@ -561,7 +565,7 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
-  const text=tr.children[4]?.firstChild?.textContent??'';
+  const text=tr.children[4]?.textContent??'';
   const reply=await send('select_row',{row,replace:false},'Select station');
   if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true},'Change contact'),text);
   return reply;

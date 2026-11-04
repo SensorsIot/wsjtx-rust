@@ -332,6 +332,15 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 #band-activity tr.ba-strategy td:first-child{box-shadow:inset 3px 0 var(--op-accent,#99e1c3)}#band-activity tr.ba-strategy td[data-col=message]{color:#c9f2df;font-weight:600}
 #band-activity td[data-ap]::after{content:' ' attr(data-ap);font-size:.75em;opacity:.7}
 #band-activity tr.ba-grey td{opacity:.45}#band-activity tr.ba-grey td[data-col=message]{text-decoration:line-through;text-decoration-thickness:1px}
+/* #50 CL-050-08 BandActivityScheme: the QSO partner's rows (on top, red stripe below), the sender-only
+   mark of a station in QSO with another, and the compact one-line reason tip. */
+#band-activity tr.ba-partner td:first-child{box-shadow:inset 4px 0 #ff4040}
+#band-activity tr.ba-partner td[data-col=message]{font-weight:700}
+#band-activity tr.ba-partner td[data-col=message]::after{content:' \25C6  QSO';font-size:.8em;color:#ff8080;white-space:nowrap}
+#band-activity tr.ba-partner td[data-col=message][data-ap]::after{content:' ' attr(data-ap) ' \25C6  QSO'}
+#band-activity tbody tr.ba-partner-stripe{padding:0;border:0}#band-activity tr.ba-partner-stripe td{padding:0;height:3px;line-height:0;font-size:0;background:#ff4040}
+#band-activity .ba-from{border-radius:3px;padding:0 2px}
+.op-tip{position:fixed;z-index:40;max-width:calc(100vw - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;padding:2px 8px;border:1px solid #567;border-radius:4px;background:#0b1620;color:#e6eef3;font:var(--op-font-secondary)/1.4 'Segoe UI',system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.5)}
 .op-app .op-segmented button[aria-pressed=true]{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}.op-app #strategy-auto[aria-pressed=true]{background:#5a3a14;border-color:#c58a2e;color:#ffe2b3}
 .op-strategy-editor{max-width:min(60rem,calc(100vw - 32px));width:60rem;max-height:calc(100dvh - 32px);overflow:auto}.op-strategy-editor form{display:flex;flex-direction:column;gap:10px}.op-strategy-editor h2{font-size:1.25rem;margin:0}.op-strategy-editor h3{font-size:var(--op-font-normal);margin:0}
 .se-head,.se-pick,.op-strategy-editor .op-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:end;justify-content:space-between}.se-pick{justify-content:flex-start}.op-strategy-editor label{display:flex;flex-direction:column;gap:3px}.op-strategy-editor label.op-check{flex-direction:row;align-items:center}
@@ -346,20 +355,20 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
    highest-priority enabled slot it matches: the rules run lowest priority first, so a later one wins.
    There is no CQ slot: only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X). */
 main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);--hl-new_call:rgba(0,255,255,.24);--hl-new_grid_band:rgba(255,204,153,.22);--hl-new_grid:rgba(255,128,0,.26);--hl-new_dxcc_band:rgba(255,170,255,.22);--hl-new_dxcc:rgba(255,0,255,.26);--hl-new_itu_zone_band:rgba(221,255,153,.22);--hl-new_itu_zone:rgba(166,255,0,.24);--hl-new_cq_zone_band:rgba(255,228,153,.22);--hl-new_cq_zone:rgba(255,191,0,.26);--hl-new_continent_band:rgba(255,153,194,.22);--hl-new_continent:rgba(255,0,99,.28);--hl-mycall:rgba(255,102,102,.32)}
-#band-activity[data-hl-on~=lotw] tr[data-hl~=lotw] td{background:var(--hl-lotw)}
-#band-activity[data-hl-on~=new_call_band] tr[data-hl~=new_call_band] td{background:var(--hl-new_call_band)}
-#band-activity[data-hl-on~=new_call] tr[data-hl~=new_call] td{background:var(--hl-new_call)}
-#band-activity[data-hl-on~=new_grid_band] tr[data-hl~=new_grid_band] td{background:var(--hl-new_grid_band)}
-#band-activity[data-hl-on~=new_grid] tr[data-hl~=new_grid] td{background:var(--hl-new_grid)}
-#band-activity[data-hl-on~=new_dxcc_band] tr[data-hl~=new_dxcc_band] td{background:var(--hl-new_dxcc_band)}
-#band-activity[data-hl-on~=new_dxcc] tr[data-hl~=new_dxcc] td{background:var(--hl-new_dxcc)}
-#band-activity[data-hl-on~=new_itu_zone_band] tr[data-hl~=new_itu_zone_band] td{background:var(--hl-new_itu_zone_band)}
-#band-activity[data-hl-on~=new_itu_zone] tr[data-hl~=new_itu_zone] td{background:var(--hl-new_itu_zone)}
-#band-activity[data-hl-on~=new_cq_zone_band] tr[data-hl~=new_cq_zone_band] td{background:var(--hl-new_cq_zone_band)}
-#band-activity[data-hl-on~=new_cq_zone] tr[data-hl~=new_cq_zone] td{background:var(--hl-new_cq_zone)}
-#band-activity[data-hl-on~=new_continent_band] tr[data-hl~=new_continent_band] td{background:var(--hl-new_continent_band)}
-#band-activity[data-hl-on~=new_continent] tr[data-hl~=new_continent] td{background:var(--hl-new_continent)}
-#band-activity[data-hl-on~=mycall] tr[data-hl~=mycall] td{background:var(--hl-mycall)}
+#band-activity[data-hl-on~=lotw] tr[data-hl~=lotw]:not(.ba-sender) td,#band-activity[data-hl-on~=lotw] tr.ba-sender[data-hl~=lotw] .ba-from{background:var(--hl-lotw)}
+#band-activity[data-hl-on~=new_call_band] tr[data-hl~=new_call_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_call_band] tr.ba-sender[data-hl~=new_call_band] .ba-from{background:var(--hl-new_call_band)}
+#band-activity[data-hl-on~=new_call] tr[data-hl~=new_call]:not(.ba-sender) td,#band-activity[data-hl-on~=new_call] tr.ba-sender[data-hl~=new_call] .ba-from{background:var(--hl-new_call)}
+#band-activity[data-hl-on~=new_grid_band] tr[data-hl~=new_grid_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_grid_band] tr.ba-sender[data-hl~=new_grid_band] .ba-from{background:var(--hl-new_grid_band)}
+#band-activity[data-hl-on~=new_grid] tr[data-hl~=new_grid]:not(.ba-sender) td,#band-activity[data-hl-on~=new_grid] tr.ba-sender[data-hl~=new_grid] .ba-from{background:var(--hl-new_grid)}
+#band-activity[data-hl-on~=new_dxcc_band] tr[data-hl~=new_dxcc_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_dxcc_band] tr.ba-sender[data-hl~=new_dxcc_band] .ba-from{background:var(--hl-new_dxcc_band)}
+#band-activity[data-hl-on~=new_dxcc] tr[data-hl~=new_dxcc]:not(.ba-sender) td,#band-activity[data-hl-on~=new_dxcc] tr.ba-sender[data-hl~=new_dxcc] .ba-from{background:var(--hl-new_dxcc)}
+#band-activity[data-hl-on~=new_itu_zone_band] tr[data-hl~=new_itu_zone_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_itu_zone_band] tr.ba-sender[data-hl~=new_itu_zone_band] .ba-from{background:var(--hl-new_itu_zone_band)}
+#band-activity[data-hl-on~=new_itu_zone] tr[data-hl~=new_itu_zone]:not(.ba-sender) td,#band-activity[data-hl-on~=new_itu_zone] tr.ba-sender[data-hl~=new_itu_zone] .ba-from{background:var(--hl-new_itu_zone)}
+#band-activity[data-hl-on~=new_cq_zone_band] tr[data-hl~=new_cq_zone_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_cq_zone_band] tr.ba-sender[data-hl~=new_cq_zone_band] .ba-from{background:var(--hl-new_cq_zone_band)}
+#band-activity[data-hl-on~=new_cq_zone] tr[data-hl~=new_cq_zone]:not(.ba-sender) td,#band-activity[data-hl-on~=new_cq_zone] tr.ba-sender[data-hl~=new_cq_zone] .ba-from{background:var(--hl-new_cq_zone)}
+#band-activity[data-hl-on~=new_continent_band] tr[data-hl~=new_continent_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_continent_band] tr.ba-sender[data-hl~=new_continent_band] .ba-from{background:var(--hl-new_continent_band)}
+#band-activity[data-hl-on~=new_continent] tr[data-hl~=new_continent]:not(.ba-sender) td,#band-activity[data-hl-on~=new_continent] tr.ba-sender[data-hl~=new_continent] .ba-from{background:var(--hl-new_continent)}
+#band-activity[data-hl-on~=mycall] tr[data-hl~=mycall]:not(.ba-sender) td,#band-activity[data-hl-on~=mycall] tr.ba-sender[data-hl~=mycall] .ba-from{background:var(--hl-mycall)}
 /* CL-010-13: the QSO pane's callers take the same enabled slot colours (no My call: every line calls me). */
 #rx-focus[data-hl-on~=lotw] .ct-others tr[data-hl~=lotw] td{background:var(--hl-lotw)}
 #rx-focus[data-hl-on~=new_call_band] .ct-others tr[data-hl~=new_call_band] td{background:var(--hl-new_call_band)}
