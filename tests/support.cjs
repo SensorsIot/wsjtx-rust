@@ -7,12 +7,15 @@ const fs = require('node:fs');
 const os = require('node:os');
 const {performance} = require('node:perf_hooks');
 
-// Chromium net/base/port_util.cc kRestrictedPorts (main branch, read 2026-10-31). A page on
-// one of these ports fails with ERR_UNSAFE_PORT, and Windows may hand out dynamic ports
-// from 1024, so every port a browser loads comes from listenBrowser/browserPort (#35).
-const restrictedPorts = new Set([0,1,7,9,11,13,15,17,19,20,21,22,23,25,37,42,43,53,69,77,79,87,95,101,102,103,104,109,110,111,113,115,117,119,123,135,137,139,143,161,179,389,427,465,512,513,514,515,526,530,531,532,540,548,554,556,563,587,601,636,989,990,993,995,1719,1720,1723,2049,3659,4045,5060,5061,6000,6566,6665,6666,6667,6668,6669,6697,10080]);
-// Listens `listener` on an OS-chosen port of `host` that Chromium accepts, closing and
-// retrying while the port is restricted. Resolves the port.
+// Ports no test may hand to a browser or to Node's fetch: Chromium net/base/port_util.cc
+// kRestrictedPorts (main branch, read 2026-10-31; a page on one fails with ERR_UNSAFE_PORT)
+// united with the Fetch standard's bad ports that Node's fetch (undici) refuses with
+// "bad port" (Node v26.13.0, read 2026-11-04; adds 4190 and 6679, #8), plus 0. Windows may
+// hand out dynamic ports from 1024, so every port a browser or fetch uses comes from
+// listenBrowser/browserPort (#35). The Rust tests that start node read the same file.
+const restrictedPorts = new Set(require('./blocked-ports.json'));
+// Listens `listener` on an OS-chosen port of `host` that Chromium and fetch accept, closing
+// and retrying while the port is restricted. Resolves the port.
 async function listenBrowser(listener, host = '127.0.0.1') {
   for (let attempt = 0; attempt < 64; attempt++) {
     listener.listen(0, host); await once(listener, 'listening');
@@ -22,7 +25,7 @@ async function listenBrowser(listener, host = '127.0.0.1') {
   }
   throw new Error('No browser-accepted port after 64 attempts');
 }
-// A free port Chromium accepts, released again for a child process to bind.
+// A free port Chromium and fetch accept, released again for a child process to bind.
 async function browserPort(host = '127.0.0.1') {
   const held = net.createServer();
   const port = await listenBrowser(held, host);
