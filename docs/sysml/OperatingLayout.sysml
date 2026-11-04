@@ -743,9 +743,9 @@ attribute def ActivityOrdering {
              scrolling, narrowQsoAreaRows (6) when the workspace is at most 48em wide; more
              rows scroll inside, kept at the newest row; "No QSO" while no QSO runs), the
              Calling me section (item 3: its header row and callingMeRows (5) rows, scrolling
-             inside; "Nobody is calling" when none) and the direct buttons (item 5). Each
+             inside; "Nobody is calling" when none). Each
              section keeps its height whether it is empty or full; the open Tx1-Tx6 fold-out
-             covers the message lines and both sections in place, so it moves nothing. Heights
+             covers both sections in place, so it moves nothing. Heights
              follow the text size (rem), so 200 % text keeps the same rows. The whole stack fits the
              1366x768 screen (TC-007-009, TC-037-003); the default split (LowerPanel) leaves
              room for it.
@@ -768,7 +768,7 @@ attribute def ActivityOrdering {
              the Others rows of the QSO table): a table with the columns "Calling me" (the
              caller's call as decoded, a hashed call as "<...>"), SNR (signed), Grid (the
              grid of its message, else empty) and Country (the #55 cty.dat name of its
-             record, else empty); the decode's period start and message are its hover text.
+             record, else empty).
              One line per station, its newest decode, at most maximumOtherLines lines, oldest
              first (period, then decode order) and kept at the newest line, from the decoded
              rows of the latest two published periods that
