@@ -593,10 +593,13 @@ document.querySelector('#band-activity thead').addEventListener('keydown',event=
 // accept_commands on (GridTracker, JTAlert), as WSJT-X's Band Activity and Rx Frequency
 // windows apply them. kind band_activity or rx_frequency: a Clear hides the rows of its job
 // below its floor (and, while that job is live, the rows of every earlier job).
+// The event is kept whatever the page knows yet and applies only while its profile and boot are
+// the station's (a station restart drops the earlier boot's highlights and floors).
 let udpDisplay=null;
+const udpCurrent=()=>udpDisplay&&udpDisplay.profile_id===profileData?.profile_id&&udpDisplay.boot_id===profileData?.boot_id?udpDisplay:null;
 function udpVisible(kind,record,context){
-  const f=udpDisplay?.clear?.[kind];if(!f)return true;
-  const at=`${udpDisplay.profile_id}/${udpDisplay.boot_id}/${f.source_id}/${f.job_id}/${f.generation}`;
+  const d=udpCurrent(),f=d?.clear?.[kind];if(!f)return true;
+  const at=`${d.profile_id}/${d.boot_id}/${f.source_id}/${f.job_id}/${f.generation}`;
   return at===liveIdentity(live)?context===at&&record.sequence>=f.sequence:context!==at||record.sequence>=f.sequence;
 }
 window.wstxUdpVisible=udpVisible;
@@ -605,7 +608,7 @@ window.wstxUdpVisible=udpVisible;
 // map entry; a last-period reset (no colours) leaves that word uncoloured. It is interesting by
 // definition and replaces the slot colour (BandActivityColours).
 function udpHighlight(record){
-  const list=udpDisplay?.highlights;if(!list?.length||record.status!=='decoded')return null;
+  const list=udpCurrent()?.highlights;if(!list?.length||record.status!=='decoded')return null;
   const words=record.text.toUpperCase().split(' ').filter(Boolean).map(w=>w.replace(/^<(.+)>$/,'$1')),from=record.fields?.from?.text?.toUpperCase();
   for(const word of from&&words.includes(from)?[from,...words.filter(w=>w!==from)]:words){
     const last=list.findLast(h=>h.last_only&&h.call===word&&h.period!==null&&h.period===record.period_start_utc);
@@ -617,14 +620,14 @@ function udpHighlight(record){
 function validUdpDisplay(d){
   const colour=c=>c===null||(typeof c==='string'&&/^#[0-9a-f]{6}$/.test(c));
   const floor=f=>f===null||(!!f&&typeof f==='object'&&typeof f.source_id==='string'&&typeof f.job_id==='string'&&Number.isSafeInteger(f.generation)&&Number.isSafeInteger(f.sequence));
-  return !!d&&Number.isSafeInteger(d.display_revision)&&Array.isArray(d.highlights)&&d.highlights.length<=100&&d.highlights.every(h=>h&&typeof h.call==='string'&&colour(h.background)&&colour(h.foreground)&&typeof h.last_only==='boolean'&&(h.period===null||typeof h.period==='string'))&&
+  return !!d&&typeof d.profile_id==='string'&&typeof d.boot_id==='string'&&Number.isSafeInteger(d.display_revision)&&Array.isArray(d.highlights)&&d.highlights.length<=100&&d.highlights.every(h=>h&&typeof h.call==='string'&&colour(h.background)&&colour(h.foreground)&&typeof h.last_only==='boolean'&&(h.period===null||typeof h.period==='string'))&&
     !!d.clear&&floor(d.clear.band_activity)&&floor(d.clear.rx_frequency);
 }
 addEventListener('station-message',event=>{
   const {current,message}=event.detail;if(current!==socket||message?.type!=='udp.display')return;
-  const d=message.data;if(d?.profile_id!==profileData?.profile_id||d?.boot_id!==profileData?.boot_id)return;
+  const d=message.data;
   if(!validUdpDisplay(d)){stationData('udp',false);return;}stationData('udp',true);
-  if(udpDisplay&&udpDisplay.boot_id===d.boot_id&&d.display_revision<=udpDisplay.display_revision)return;
+  if(udpDisplay&&udpDisplay.profile_id===d.profile_id&&udpDisplay.boot_id===d.boot_id&&d.display_revision<=udpDisplay.display_revision)return;
   udpDisplay=d;renderResults();
 });
 function renderResults(){

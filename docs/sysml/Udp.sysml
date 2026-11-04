@@ -271,7 +271,7 @@ package WstxUdp {
              while no command was applied, and the browser reads no /udp for it. A datagram
              that is not_accepted changes nothing and sends nothing.
              The browser (WstxOperatingLayout::BandActivityColours, BandActivityView,
-             QsoPane) keeps the event of the highest revision of this boot. A row matches a
+             QsoPane) keeps the event of the highest revision of its boot and applies it only while its profile_id and boot_id are the station's (a station restart drops the earlier boot's highlights and floors). A row matches a
              highlight when a whole word of its message, also inside <>, equals the call
              (upper case), the sending call first, then the words in message order; for
              each word a last-period entry whose period equals the row's period_start_utc

@@ -414,10 +414,24 @@ test('TC-012-008 UDP Highlight Callsign colours Band Activity rows and Clear emp
     assert.equal((await look(w2)).udp,null,'last period only: not the newer period');
     assert.equal((await look(w1)).bg,'rgb(0, 255, 0)','the older period below keeps it');
     assert.deepEqual(await look(d2).then(v=>[v.udp,v.bg]),['DL1XYZ','rgb(0, 0, 255)']);
+    // Highlight last without colours: a reset in the latest period only; the map entry stays.
+    await send(tool,highlightCall('DL1XYZ',null,null,true));
+    const d2reset=await until(d2,v=>v.udp===null,'DL1XYZ reset in the latest period');
+    assert.match(d2reset.hl??'',/\bmycall\b/,'the reset row has its slot colour');
+    assert.deepEqual(await look(d1).then(v=>[v.udp,v.bg]),['DL1XYZ','rgb(0, 0, 255)'],'the earlier period keeps the map colour');
     // Both colours invalid: the highlight is removed and the slot colour returns.
     await send(tool,highlightCall('DL1XYZ',null,null));
-    await until(d2,v=>v.udp===null,'DL1XYZ reset');
+    await until(d1,v=>v.udp===null,'DL1XYZ removed');
     assert.deepEqual(await look(d1),base.d1,'the My call slot colour is back');
+    // A station restart (another boot) drops the earlier boot's display state.
+    await send(tool,highlightCall('K1ABC','#ff00ff',null));
+    await until(k1,v=>v.udp==='K1ABC','K1ABC highlighted');
+    await page.evaluate(()=>{profileData={...profileData,boot_id:'00000000-0000-4000-8000-000000000000'};renderResults();});
+    assert.deepEqual(await look(k1),base.k1,'no highlight of another boot');
+    await page.evaluate(b=>{profileData={...profileData,boot_id:b};renderResults();},udp.boot_id);
+    assert.equal((await look(k1)).udp,'K1ABC');
+    await send(tool,highlightCall('K1ABC',null,null));
+    await until(k1,v=>v.udp===null,'K1ABC removed');
 
     // Clear window 1 (Rx Frequency): the QSO pane's callers go, Band Activity stays.
     const others=page.locator('#qso-others tr');
